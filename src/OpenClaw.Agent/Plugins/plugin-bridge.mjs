@@ -54,8 +54,9 @@ function createPluginApi(pluginId, pluginConfig, logger) {
 
       // Normalize parameters to plain JSON Schema
       let parameters = def.parameters;
-      if (parameters && typeof parameters === "object" && !parameters.type) {
-        // TypeBox object — extract to plain schema
+      if (parameters && typeof parameters === "object") {
+        // If it looks like a TypeBox or standard JSON schema object without a top-level type,
+        // we just ensure it's a cloneable object.
         parameters = JSON.parse(JSON.stringify(parameters));
       }
 

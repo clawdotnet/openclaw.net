@@ -222,6 +222,8 @@ Once enabled, you can naturally ask the agent to handle emails:
 
 OpenClaw.NET is designed to be compatible with the original [OpenClaw](https://github.com/openclaw/openclaw) TypeScript/JavaScript plugin ecosystem. This allows you to leverage hundreds of community plugins without rewriting them.
 
+For a detailed breakdown of supported features and implementation details, see the **[Plugin Compatibility Guide](COMPATIBILITY.md)**.
+
 ### How it works
 
 When you enable the plugin system, OpenClaw.NET spawns a optimized Node.js "Bridge" process for each plugin. This bridge loads the TypeScript or JavaScript files, registers the exported tools, and communicates with the .NET Gateway via a high-performance JSON-RPC protocol over local pipes.
