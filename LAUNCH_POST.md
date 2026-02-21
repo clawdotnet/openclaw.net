@@ -1,109 +1,106 @@
 ---
-title: "Building a Production AI Agent in .NET 10 with NativeAOT: Introducing OpenClaw.NET"
+title: "Building a Production AI Agent Gateway in .NET 10 with NativeAOT: Introducing OpenClaw.NET"
 published: false
-description: "Why we built a self-hosted, sovereign AI agent framework in C# instead of Python/TypeScript."
+description: "A self-hosted agent gateway + runtime in C# with NativeAOT-friendly tooling, channels, and OpenTelemetry."
 tags: dotnet, ai, csharp, nativeaot, llm
-cover_image: https://raw.githubusercontent.com/user/openclaw.net/main/assets/cover.png
-canonical_url: https://openclaw.net/blog/launch
 ---
 
-Today, we're excited to open-source **[OpenClaw.NET](https://github.com/user/openclaw.net)** — a production-hardened, self-hosted AI agent runtime built for .NET teams who want to ship, not experiment.
+Today we’re open-sourcing **OpenClaw.NET** — a self-hosted agent gateway + runtime built for .NET teams who want a deployable service, not just a library.
 
-Unlike the fragmented Python ecosystem or the heavy TypeScript runtimes, OpenClaw.NET is a single, self-contained binary (under 15 MB) that gives you a complete agent gateway with 15 native tools, 10 LLM providers, and a full security stack.
+If you’ve used popular agent frameworks in other ecosystems (like LangChain or AutoGen), you’ll recognize some familiar primitives (tools, memory, “agent loops”). The difference is that OpenClaw is intentionally **.NET-native** and **service-shaped**: configuration-first, AOT-friendly, with security and observability baked in.
 
-## The Problem: "It works in my notebook"
+We’re not trying to be a drop-in port of another framework. This is OpenClaw’s opinionated take on what it looks like to ship an “agent product” on .NET.
 
-Building an AI agent prototype is easy. Moving it to production is hard.
+*Note: This post avoids claiming ownership of any domain. If you deploy OpenClaw publicly, you’ll use **your own** hostname (e.g. `openclaw.example.com`) behind your own TLS.*
 
-- Python dependencies are a nightmare to manage in enterprise environments.
-- TypeScript agents are heavy (Node_modules hell) and often leak memory in long-running processes.
-- Most frameworks (LangChain, Semantic Kernel) are libraries, not runtimes. You still have to build the API, auth, rate limiting, and observability yourself.
+## The Problem
+
+Building an AI agent prototype is easy. Moving it to production is harder:
+
+- Python dependencies can be difficult to manage and isolate in strict enterprise environments.
+- TypeScript agents often bloat into complex “Node runtime + bundling + deployment” pipeline projects.
+- Many popular frameworks are libraries, not runtimes. You still have to build the API surface, authentication, rate limiting, and observability yourself.
 
 We wanted something different: **A deployable artifact.**
 
 ## Enter OpenClaw.NET
 
-Built on the cutting edge of **.NET 10** and **NativeAOT**, OpenClaw is designed to be treated like a database or a message broker: you configure it, deploy it, and connect to it over WebSocket or HTTP.
+Built on **.NET 10** with a NativeAOT-first posture, OpenClaw is designed to be treated like infrastructure: you configure it, deploy it, and connect to it over WebSocket or a small set of HTTP endpoints.
 
 ### Features at a Glance
 
-*   **Self-Contained**: `<15 MB` Docker image (Alpine/Ubuntu Chiseled + NativeAOT).
-*   **Provider Agnostic**: Use OpenAI, Anthropic, Google, Ollama, or any local LLM via `Microsoft.Extensions.AI`.
-*   **15 Built-in Tools**: Interactive Headless Browser (Playwright), Shell, File I/O, Web Search, Git, Code Execution, PDF Reading, Memory, and more.
-*   **Multi-Agent**: The `delegate_agent` tool lets your main agent spawn sub-agents for specific tasks and connect to them cross-session.
-*   **Channels & Background Jobs**: Natively hook into Telegram or Twilio, and configure robust repeating internal `Cron` processes.
-*   **Resilient**: Circuit breakers, exponential backoff, token budgets, and per-request timeouts.
-*   **Observable**: Structured logging, Prometheus metrics, and native `OpenTelemetry` distributed tracing out of the box.
+*   **Self-hosted gateway**: WebSocket-first control plane with optional webhooks (Telegram/Twilio).
+*   **Provider-agnostic LLMs**: OpenAI, Azure OpenAI, Ollama, plus other OpenAI-compatible endpoints (e.g., LM Studio or an API gateway via `MODEL_PROVIDER_ENDPOINT`).
+*   **Native tools**: Shell, file I/O, web fetch, interactive browser automation (Playwright), Git, code execution, PDF reading, and more. *All restricted by explicit opt-in flags.*
+*   **Conversation branching**: Snapshot and restore session history (effectively "forking" a conversation state).
+*   **Background jobs**: Cron-style scheduled prompts for persistent automated tasks.
+*   **Resilience**: Intelligent retry/backoff, per-request timeouts, circuit breaking, and session-level token budgets.
+*   **Observability**: OpenTelemetry logs/metrics/traces (OTLP exporter) alongside a built-in JSON `/metrics` endpoint.
 
 ## Why .NET 10 & NativeAOT?
 
-We chose **C# 14** and **.NET 10** for three reasons:
+We chose **.NET 10** and **NativeAOT** for three reasons:
 
-1.  **Performance**: NativeAOT compilation starts instantly (no JIT warmup) and uses minimal memory.
-2.  **Type Safety**: The entire tool execution pipeline is strongly typed.
-3.  **Ecosystem**: `Microsoft.Extensions.AI` provides a unified abstraction for all LLM providers.
-
-Here is what the startup looks like:
-
-```text
-[14:02:23 INF] OpenClaw Gateway v1.0.0 starting...
-[14:02:23 INF] Loaded 15 tools (Browser, Shell, FileRead, FileWrite, Memory...)
-[14:02:23 INF] Connected to OpenAI (gpt-4o)
-[14:02:23 INF] Listening on ws://0.0.0.0:18789
-```
-
-And it stays under **50MB of RAM** even under load.
+1.  **Deployment Footprint**: NativeAOT compilation starts instantly (no JIT warmup) and generates a single binary. Docker images can easily stay under 50 MB.
+2.  **Type Safety**: The entire tool execution pipeline is strongly typed, making parameter bindings from untrusted LLM outputs safe.
+3.  **Ecosystem**: `Microsoft.Extensions.AI` gives us a clean provider abstraction without locking the core runtime to a specific vendor's SDK.
 
 ## The Architecture
 
-OpenClaw isn't just a loop. It's a pipeline.
+OpenClaw isn't just a cognitive loop. It's a pipeline.
 
-1.  **Gateway**: Handles WebSocket/HTTP connections and authentication.
-2.  **Middleware**: Rate limiting, token budgeting, and context management.
-3.  **Agent Runtime**: The core loop (Think → Act → Observe).
-4.  **Tool Sandbox**: Executes tools with strict permission checks (path traversal protection, command allowlists).
-5.  **LLM Backend**: Abstracts the provider complexity.
+1.  **Gateway**: Handles WebSocket/HTTP connections and token-based authentication.
+2.  **Middleware**: Enforces rate limiting, token budgeting limiters, and context tracking before the inner LLM is hit.
+3.  **Agent Runtime**: The core operational loop (Think → Act → Observe).
+4.  **Tool Sandbox**: Executes tools with strict permission boundaries (e.g., `AllowShell=false`, explicit `AllowedReadRoots`, limits on JavaScript bridging).
+5.  **LLM Backend**: Handles provider complexity and system message injection.
 
-**Conversation Branching**:
-A unique feature of OpenClaw is branching. You can "fork" a conversation at any point to explore a different path without losing the original context.
+**Session Branching**:
+A unique capability of OpenClaw is branching memory states.
 
 ```csharp
-// Fork the session
-var branchId = await sessionManager.BranchAsync(sessionId, "exploring-sql-solution");
+// Fork the current session’s history via the gateway pipeline
+var branchId = await sessionManager.BranchAsync(session, "exploring-sql-solution", ct);
 
-// Switch to branch
-await sessionManager.RestoreBranchAsync(sessionId, branchId);
+// Restore that branch later to backtrack on a mistake
+await sessionManager.RestoreBranchAsync(session, branchId, ct);
 ```
 
-**Delgation**:
-The main agent can delegate work to specialized sub-agents.
-*"I need to research this topic. Spawning a research specialist..."*
+**Delegation**:
+The gateway can be optionally configured to expose a `delegate_agent` tool, allowing the main agent process to spawn worker agents for specialized tasks.
 
 ## Getting Started
 
-You can run OpenClaw in seconds using Docker:
+You can run OpenClaw locally with the .NET SDK. Tell it what LLM model backplane to use using environment variables:
 
 ```bash
-docker run -d -p 18789:18789 \
-  -e MODEL_PROVIDER_KEY="sk-..." \
-  ghcr.io/user/openclaw-gateway:latest
-```
-
-Or build it from source:
-
-```bash
-git clone https://github.com/user/openclaw.net
+export MODEL_PROVIDER_KEY="sk-..."
+export MODEL_PROVIDER_ENDPOINT="https://api.openai.com/v1" # Optional if using OpenAI
 dotnet run --project src/OpenClaw.Gateway -c Release
 ```
 
-## Join the Community
+If you prefer containers, use Docker Compose (builds the image natively):
 
-We are building OpenClaw in the open.
+```bash
+export MODEL_PROVIDER_KEY="sk-..."
+export OPENCLAW_AUTH_TOKEN="$(openssl rand -hex 32)"
+docker compose up -d openclaw
+```
 
-*   **GitHub**: [github.com/user/openclaw.net](https://github.com/user/openclaw.net)
-*   **Discord**: [Join the server](https://discord.gg/openclaw)
-*   **Docs**: [docs.openclaw.net](https://docs.openclaw.net)
+Then connect your frontend client via WebSocket:
 
-If you're a .NET developer tired of Python envy, give OpenClaw a try. Let's build agents that are robust, fast, and ready for production.
+```bash
+ws://127.0.0.1:18789/ws
+```
 
-Happy coding! 🚀
+## Community & Ecosystem
+
+OpenClaw is MIT licensed and built entirely in the open. 
+
+*   **GitHub Repository**: `<REPO_URL>`
+*   **Docs and Tutorials**: `<DOCS_URL>`
+*   **Community Discord**: `<DISCORD_URL>`
+
+If you're a .NET developer tired of porting Python libraries into your monolith, give OpenClaw a try. Let's build agents that are robust, compiled, and ready for production.
+
+Happy coding!
