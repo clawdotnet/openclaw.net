@@ -18,6 +18,10 @@ import { pathToFileURL } from "node:url";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 
+// ── Redirect console to protect JSON-RPC on stdout ───────────────────
+console.log = console.error;
+console.info = console.error;
+
 /** @type {Map<string, { execute: Function, optional?: boolean }>} */
 const registeredTools = new Map();
 

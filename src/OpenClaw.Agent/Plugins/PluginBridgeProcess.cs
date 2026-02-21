@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Plugins;
+using Microsoft.Extensions.Logging;
 
 namespace OpenClaw.Agent.Plugins;
 
@@ -18,10 +19,12 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
     private int _nextId;
     private Task? _readLoop;
     private readonly string _bridgeScriptPath;
+    private readonly ILogger _logger;
 
-    public PluginBridgeProcess(string bridgeScriptPath)
+    public PluginBridgeProcess(string bridgeScriptPath, ILogger logger)
     {
         _bridgeScriptPath = bridgeScriptPath;
+        _logger = logger;
     }
 
     /// <summary>
@@ -57,6 +60,15 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
 
         _process = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start Node.js plugin bridge process.");
+
+        _process.ErrorDataReceived += (sender, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Data))
+            {
+                _logger.LogInformation("[Node] {Output}", e.Data);
+            }
+        };
+        _process.BeginErrorReadLine();
 
         // Start reading stdout for responses
         _readLoop = Task.Run(() => ReadLoopAsync(_process), CancellationToken.None);

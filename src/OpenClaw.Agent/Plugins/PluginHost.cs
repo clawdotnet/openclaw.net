@@ -74,7 +74,7 @@ public sealed class PluginHost : IAsyncDisposable
         var id = plugin.Manifest.Id;
         _logger.LogInformation("Loading plugin '{PluginId}' from {EntryPath}", id, plugin.EntryPath);
 
-        var bridge = new PluginBridgeProcess(_bridgeScriptPath);
+        var bridge = new PluginBridgeProcess(_bridgeScriptPath, _logger);
         var pluginConfig = _config.Entries.TryGetValue(id, out var entry) ? entry.Config : null;
 
         var tools = await bridge.StartAsync(plugin.EntryPath, id, pluginConfig, ct);
