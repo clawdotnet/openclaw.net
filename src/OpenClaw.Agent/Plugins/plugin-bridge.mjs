@@ -69,30 +69,40 @@ function createPluginApi(pluginId, pluginConfig, logger) {
     },
 
     registerChannel(channelDef) {
-      const id =
-        channelDef?.plugin?.id ?? channelDef?.id ?? `channel-${registeredChannels.size}`;
-      registeredChannels.set(id, channelDef);
-      logger.info(`Channel "${id}" registered (bridge does not activate channels)`);
+      const id = channelDef?.id ?? "unknown";
+      logger.warn(
+        `Plugin "${pluginId}" registered channel "${id}". Note: OpenClaw.NET bridge does not currently activate bridged channels. Use native .NET channels if possible.`
+      );
     },
 
-    registerGatewayMethod(_name, _handler) {
-      // Gateway RPC methods are not bridged to .NET — stub
+    registerGatewayMethod(name, _handler) {
+      logger.warn(
+        `Plugin "${pluginId}" tried to register gateway method "${name}". Custom gateway RPC methods are not currently supported via the .NET bridge.`
+      );
     },
 
-    registerCli(_factory, _opts) {
-      // CLI commands are not bridged — stub
+    registerCli(factory, opts) {
+      logger.warn(
+        `Plugin "${pluginId}" tried to register CLI command. CLI extensions are not supported via the .NET bridge.`
+      );
     },
 
-    registerCommand(_def) {
-      // Auto-reply commands are not bridged — stub
+    registerCommand(def) {
+      logger.warn(
+        `Plugin "${pluginId}" tried to register an auto-reply command. Auto-reply commands are not supported via the .NET bridge.`
+      );
     },
 
     registerService(def) {
-      registeredServices.set(def.id, def);
+      const id = def.id ?? "unknown";
+      logger.info(`Registering background service "${id}" for plugin "${pluginId}"`);
+      registeredServices.set(id, def);
     },
 
-    registerProvider(_def) {
-      // Provider auth flows are not bridged — stub
+    registerProvider(def) {
+      logger.warn(
+        `Plugin "${pluginId}" tried to register a model provider. Model provider authentication flows are not supported via the .NET bridge.`
+      );
     },
   };
 }

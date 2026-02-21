@@ -178,4 +178,36 @@ Once enabled, you can naturally ask the agent to handle emails:
 - *"Check my inbox for any emails from 'Support' in the last hour and summarize them."*
 - *"Search my email for a receipt from Amazon and tell me the total amount."*
 
+---
+
+## Plugin Bridge (Ecosystem Compatibility)
+
+OpenClaw.NET is designed to be compatible with the original [OpenClaw](https://github.com/openclaw/openclaw) TypeScript/JavaScript plugin ecosystem. This allows you to leverage hundreds of community plugins without rewriting them.
+
+### How it works
+
+When you enable the plugin system, OpenClaw.NET spawns a optimized Node.js "Bridge" process for each plugin. This bridge loads the TypeScript or JavaScript files, registers the exported tools, and communicates with the .NET Gateway via a high-performance JSON-RPC protocol over local pipes.
+
+### Requirements
+
+- **Node.js 18+**: The bridge requires a modern Node.js runtime.
+- **Enabled Config**: Set `OpenClaw:Plugins:Enabled=true` in `appsettings.json`.
+
+### Compatibility Levels
+
+| Feature | Support | Note |
+| --- | --- | --- |
+| **Tools** | ✅ Full | Bridged tools appear natively to the AI. |
+| **Background Services** | ✅ Full | Lifecycle methods `start()` and `stop()` are supported. |
+| **Logging** | ✅ Full | Plugin console output is captured and routed to .NET logs. |
+| **Channels** | ⚠️ Partial | Registered but not yet active in the .NET gateway. |
+| **Model Providers** | ❌ No | Auth flows for third-party providers must be native. |
+
+### Installing Plugins
+
+You can install plugins by placing them in:
+1. Your workspace: `.openclaw/extensions/`
+2. Your home directory: `~/.openclaw/extensions/`
+3. Custom paths: configure them in `Plugins:Load:Paths`.
+
 The agent will automatically choose the `email` tool and perform the requested actions!

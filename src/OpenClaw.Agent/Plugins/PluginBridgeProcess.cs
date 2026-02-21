@@ -263,7 +263,7 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
 
     private static string? FindNodeExecutable()
     {
-        // Check common locations
+        // 1. Check PATH via 'which' or 'where'
         string[] candidates = OperatingSystem.IsWindows()
             ? ["node.exe"]
             : ["node"];
@@ -289,9 +289,45 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
                 if (proc.ExitCode == 0 && !string.IsNullOrEmpty(output))
                     return output.Split('\n', '\r')[0].Trim();
             }
-            catch
+            catch { }
+        }
+
+        // 2. Check common installation paths
+        string[] commonPaths = OperatingSystem.IsWindows()
+            ? [
+                @"C:\Program Files\nodejs\node.exe",
+                @"C:\Program Files (x86)\nodejs\node.exe",
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), @"AppData\Roaming\nvm\v* \node.exe")
+              ]
+            : [
+                "/usr/local/bin/node",
+                "/usr/bin/node",
+                "/opt/homebrew/bin/node",
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nvm/versions/node/v*/bin/node")
+              ];
+
+        foreach (var path in commonPaths)
+        {
+            if (path.Contains('*'))
             {
-                continue;
+                // Simple glob for NVM/n
+                var dir = Path.GetDirectoryName(path);
+                var pattern = Path.GetFileName(path);
+                var parent = Path.GetDirectoryName(dir);
+                var subDirPattern = Path.GetFileName(dir);
+
+                if (parent is not null && Directory.Exists(parent))
+                {
+                    foreach (var subDir in Directory.GetDirectories(parent, subDirPattern))
+                    {
+                        var fullPath = Path.Combine(subDir, pattern);
+                        if (File.Exists(fullPath)) return fullPath;
+                    }
+                }
+            }
+            else if (File.Exists(path))
+            {
+                return path;
             }
         }
 

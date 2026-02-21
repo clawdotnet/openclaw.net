@@ -70,3 +70,16 @@ Query SQLite, PostgreSQL, or MySQL databases.
 1. **Approval Mode**: Enable `RequireToolApproval: true` to review dangerous commands before they run.
 2. **Environment Variables**: Always use `env:SECRET_NAME` for API keys and passwords instead of plain text in `appsettings.json`.
 3. **Path Restricting**: Limit `AllowedReadRoots` and `AllowedWriteRoots` to your project directory.
+
+---
+
+## 🌉 Bridged Tools (TypeScript/JS)
+
+OpenClaw.NET can run original OpenClaw plugins via the **Plugin Bridge**. These tools are loaded dynamically from the `.openclaw/extensions` folder or custom paths.
+
+### 11. Third-Party Plugin Tools
+Any tool provided by a TypeScript or JavaScript plugin (e.g., `notion-search`, `spotify-control`) is automatically exposed as a bridged tool.
+
+- **Requirement**: Node.js 18+ installed on your system.
+- **Config**: Ensure `OpenClaw:Plugins:Enabled` is set to `true`.
+- **Note**: Bridged tools may have slightly higher latency than native (C#) tools due to Inter-Process Communication (IPC).
