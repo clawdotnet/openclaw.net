@@ -92,6 +92,15 @@ This project includes local tools (`shell`, `read_file`, `write_file`). If you e
 - `OpenClaw:Tooling:AllowShell=false`
 - `OpenClaw:Tooling:AllowedReadRoots` / `AllowedWriteRoots` to specific directories
 
+## Plugin Ecosystem Compatibility 🔌
+
+OpenClaw.NET natively supports the original [OpenClaw TypeScript/JavaScript plugin ecosystem](https://github.com/openclaw/openclaw). You don't need to learn C# to extend your agent!
+
+When you enable `OpenClaw:Plugins:Enabled=true`, the Gateway spawns a highly-optimized Node.js JSON-RPC bridge.
+Simply drop any standard OpenClaw `.ts` or `.js` plugin into your `.openclaw/extensions` folder (or configure `Plugins:Load:Paths`), and the .NET runtime will expose those tools to the AI seamlessly.
+
+For full details, feature matrices, and TypeScript requirements (like `jiti`), please see the **[Plugin Compatibility Guide](COMPATIBILITY.md)**.
+
 ## Telegram Webhook channel
 
 ### Setup

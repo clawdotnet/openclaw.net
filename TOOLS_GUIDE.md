@@ -4,6 +4,30 @@ This guide provides a comprehensive overview of the native tools available in Op
 
 ---
 
+## 🚀 How to Use / Install Tools
+
+### How the Agent Uses Tools
+You don't need to manually invoke tools! OpenClaw's cognitive architecture (the "ReAct" loop) analyzes your prompt, looks at the list of enabled tools, and decides which ones to use to accomplish your goal. 
+
+For example, if you say *"Email my weekly report to my boss,"* the agent will automatically formulate the `email` tool call, execute it, and tell you when it's done.
+
+### How to Install New Tools
+
+There are two primary ways to add new capabilities to your agent:
+
+1. **Native C# Tools**
+   Configure them in `src/OpenClaw.Gateway/appsettings.json`. Native tools (like `email`, `browser`, or `shell`) are built into the robust .NET runtime and offer the highest performance and AOT compatibility. See the Core and Native Plugin tool lists below.
+
+2. **Community Node.js Plugins (The Bridge)**
+   OpenClaw.NET is fully compatible with the massive ecosystem of original [OpenClaw](https://github.com/openclaw/openclaw) Node.js plugins!
+   - Ensure Node.js 18+ is installed on your machine.
+   - Download or clone a community plugin into your `.openclaw/extensions/` folder.
+   - Run `npm install` inside that plugin's folder.
+   - Restart the OpenClaw.NET gateway. The gateway will automatically detect, load, and bridge the plugin!
+   - *For in-depth details on bridging, see the [Compatibility Guide](COMPATIBILITY.md).*
+
+---
+
 ## 🏗 Core Tools
 These tools are enabled by default but can be restricted via `Security` and `Tooling` configurations.
 
