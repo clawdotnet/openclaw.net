@@ -7,6 +7,7 @@ public sealed record InboundMessage
 {
     public required string ChannelId { get; init; }
     public required string SenderId { get; init; }
+    public string? SessionId { get; init; }
     public required string Text { get; init; }
     public string? MessageId { get; init; }
     public string? ReplyToMessageId { get; init; }

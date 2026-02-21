@@ -114,6 +114,18 @@ var channelAdapters = new Dictionary<string, IChannelAdapter>(StringComparer.Ord
 if (smsChannel is not null)
     channelAdapters["sms"] = smsChannel;
 
+if (config.Channels.Telegram.Enabled)
+{
+    // Defer instantiation until required or use DI extension
+    // channelAdapters["telegram"] will be populated via DI later if we implement a fully injected service,
+    // but for now we will skip adding it to channelAdapters since Telegram pushes to us via Webhook 
+    // and outbound is done within the webhook context if we resolve it there.
+    
+    // Actually, TelegramChannel *is* needed for OutboundWorkers to route to it.
+    // Instead of BuildServiceProvider, simply register the adapter in DI and retrieve it later
+    builder.Services.AddSingleton<TelegramChannel>();
+}
+
 // LLM client via Microsoft.Extensions.AI (provider-agnostic, AOT-safe)
 IChatClient chatClient = LlmClientFactory.CreateChatClient(config.Llm);
 
@@ -134,8 +146,25 @@ var builtInTools = new List<ITool>
 // ── App ────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
+// Retrieve TelegramChannel from DI and add it to the active channels dictionary
+if (config.Channels.Telegram.Enabled)
+{
+    channelAdapters["telegram"] = app.Services.GetRequiredService<TelegramChannel>();
+}
+
 var sessionLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SessionManager");
 var sessionManager = new SessionManager(memoryStore, config, sessionLogger);
+
+var pairingLogger = app.Services.GetRequiredService<ILogger<PairingManager>>();
+var pairingManager = new PairingManager(config.Memory.StoragePath, pairingLogger);
+var commandProcessor = new ChatCommandProcessor(sessionManager);
+
+builtInTools.Add(new SessionsTool(sessionManager, pipeline.InboundWriter));
+
+if (config.Tooling.EnableBrowserTool)
+{
+    builtInTools.Add(new BrowserTool(config.Tooling));
+}
 
 // Native plugin replicas (C# implementations of popular OpenClaw plugins)
 var nativeRegistry = new NativePluginRegistry(
@@ -310,6 +339,13 @@ var lockLastUsed = new System.Collections.Concurrent.ConcurrentDictionary<string
 var programLogger = app.Services.GetRequiredService<ILogger<Program>>();
 var workerCount = Math.Max(1, Math.Min(Environment.ProcessorCount, 4));
 
+if (config.Cron.Enabled)
+{
+    var cronLogger = app.Services.GetRequiredService<ILogger<CronScheduler>>();
+    var cronTask = new CronScheduler(config, cronLogger, pipeline.InboundWriter);
+    _ = cronTask.StartAsync(app.Lifetime.ApplicationStopping);
+}
+
 GatewayWorkers.Start(
     app.Lifetime,
     programLogger,
@@ -321,7 +357,44 @@ GatewayWorkers.Start(
     middlewarePipeline,
     wsChannel,
     agentRuntime,
-    channelAdapters);
+    channelAdapters,
+    config,
+    pairingManager,
+    commandProcessor);
+
+// Embedded WebChat UI
+app.MapGet("/chat", async (HttpContext ctx) =>
+{
+    var htmlPath = Path.Combine(AppContext.BaseDirectory, "wwwroot", "webchat.html");
+    if (File.Exists(htmlPath))
+    {
+        ctx.Response.ContentType = "text/html";
+        await ctx.Response.SendFileAsync(htmlPath);
+    }
+    else
+    {
+        ctx.Response.StatusCode = 404;
+        await ctx.Response.WriteAsync("WebChat UI not found.");
+    }
+});
+
+app.MapPost("/pairing/approve", (string channelId, string senderId, string code) =>
+{
+    if (pairingManager.TryApprove(channelId, senderId, code))
+        return Results.Ok(new { success = true, error = "Approved successfully." }); // Actually returning success
+    return Results.BadRequest(new { success = false, error = "Invalid code or no pairing request found." });
+});
+
+app.MapPost("/pairing/revoke", (string channelId, string senderId) =>
+{
+    pairingManager.Revoke(channelId, senderId);
+    return Results.Ok(new { success = true });
+});
+
+app.MapGet("/pairing/list", () =>
+{
+    return Results.Ok(pairingManager.GetApprovedList());
+});
 
 // WebSocket endpoint — the primary control plane
 app.Map("/ws", async (HttpContext ctx) =>
@@ -413,7 +486,81 @@ if (smsChannel is not null && smsWebhookHandler is not null)
         }
     });
 }
+if (config.Channels.Telegram.Enabled)
+{
+    app.MapPost(config.Channels.Telegram.WebhookPath, async (HttpContext ctx) =>
+    {
+        using var document = await JsonDocument.ParseAsync(ctx.Request.Body, cancellationToken: ctx.RequestAborted);
+        var root = document.RootElement;
+        
+        if (root.TryGetProperty("message", out var message) &&
+            message.TryGetProperty("text", out var textNode) &&
+            message.TryGetProperty("chat", out var chat) &&
+            chat.TryGetProperty("id", out var chatId))
+        {
+            var text = textNode.GetString() ?? "";
+            var senderIdStr = chatId.GetRawText();
+            
+            if (config.Channels.Telegram.AllowedFromUserIds.Length > 0 && 
+                !config.Channels.Telegram.AllowedFromUserIds.Contains(senderIdStr))
+            {
+                ctx.Response.StatusCode = 403;
+                return;
+            }
 
+            var msg = new InboundMessage
+            {
+                ChannelId = "telegram",
+                SenderId = senderIdStr,
+                Text = text
+            };
+
+            await pipeline.InboundWriter.WriteAsync(msg, ctx.RequestAborted);
+        }
+        
+        ctx.Response.StatusCode = 200;
+        await ctx.Response.WriteAsync("OK");
+    });
+}
+
+if (config.Webhooks.Enabled)
+{
+    app.MapPost("/webhooks/{name}", async (HttpContext ctx, string name) =>
+    {
+        if (!config.Webhooks.Endpoints.TryGetValue(name, out var hookCfg))
+        {
+            ctx.Response.StatusCode = 404;
+            return;
+        }
+
+        using var sr = new StreamReader(ctx.Request.Body);
+        var body = await sr.ReadToEndAsync(ctx.RequestAborted);
+
+        if (hookCfg.ValidateHmac && !string.IsNullOrWhiteSpace(hookCfg.Secret))
+        {
+            var signatureHeader = ctx.Request.Headers[hookCfg.HmacHeader].ToString();
+            var computed = GatewaySecurity.ComputeHmacSha256Hex(hookCfg.Secret, body);
+            if (!string.Equals(signatureHeader, computed, StringComparison.OrdinalIgnoreCase))
+            {
+                ctx.Response.StatusCode = 401;
+                return;
+            }
+        }
+
+        var prompt = hookCfg.PromptTemplate.Replace("{body}", body);
+        var msg = new InboundMessage
+        {
+            ChannelId = "webhook",
+            SessionId = hookCfg.SessionId ?? $"webhook:{name}",
+            SenderId = "system",
+            Text = prompt
+        };
+
+        await pipeline.InboundWriter.WriteAsync(msg, ctx.RequestAborted);
+        ctx.Response.StatusCode = 202; // Accepted
+        await ctx.Response.WriteAsync("Webhook queued.");
+    });
+}
 // ── Run ────────────────────────────────────────────────────────────────
 // ── Graceful Shutdown ──────────────────────────────────────────────────
 var draining = 0; // 0 = normal, 1 = draining

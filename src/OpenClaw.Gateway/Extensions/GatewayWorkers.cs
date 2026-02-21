@@ -11,6 +11,7 @@ using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Middleware;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Pipeline;
+using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
 
 namespace OpenClaw.Gateway.Extensions;
@@ -28,10 +29,13 @@ public static class GatewayWorkers
         MiddlewarePipeline middlewarePipeline,
         WebSocketChannel wsChannel,
         AgentRuntime agentRuntime,
-        IReadOnlyDictionary<string, IChannelAdapter> channelAdapters)
+        IReadOnlyDictionary<string, IChannelAdapter> channelAdapters,
+        GatewayConfig config,
+        PairingManager pairingManager,
+        ChatCommandProcessor commandProcessor)
     {
         StartSessionCleanup(lifetime, logger, sessionManager, sessionLocks, lockLastUsed);
-        StartInboundWorkers(lifetime, logger, workerCount, sessionManager, sessionLocks, pipeline, middlewarePipeline, wsChannel, agentRuntime);
+        StartInboundWorkers(lifetime, logger, workerCount, sessionManager, sessionLocks, pipeline, middlewarePipeline, wsChannel, agentRuntime, config, pairingManager, commandProcessor);
         StartOutboundWorkers(lifetime, logger, workerCount, pipeline, channelAdapters);
     }
 
@@ -122,7 +126,10 @@ public static class GatewayWorkers
         MessagePipeline pipeline,
         MiddlewarePipeline middlewarePipeline,
         WebSocketChannel wsChannel,
-        AgentRuntime agentRuntime)
+        AgentRuntime agentRuntime,
+        GatewayConfig config,
+        PairingManager pairingManager,
+        ChatCommandProcessor commandProcessor)
     {
         for (var i = 0; i < workerCount; i++)
         {
@@ -132,12 +139,53 @@ public static class GatewayWorkers
                 {
                     while (pipeline.InboundReader.TryRead(out var msg))
                     {
+                        // ── DM Pairing Check ─────────────────────────────────
+                        var policy = "open";
+                        if (msg.ChannelId == "sms") policy = config.Channels.Sms.DmPolicy;
+                        if (msg.ChannelId == "telegram") policy = config.Channels.Telegram.DmPolicy;
+
+                        if (policy is "closed")
+                            continue; // Silently drop all inbound messages
+                            
+                        if (policy is "pairing" && !pairingManager.IsApproved(msg.ChannelId, msg.SenderId))
+                        {
+                            var code = pairingManager.GeneratePairingCode(msg.ChannelId, msg.SenderId);
+                            var pairingMsg = $"Welcome to OpenClaw. Your pairing code is {code}. Your messages will be ignored until an admin approves this pair.";
+                            
+                            await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
+                            {
+                                ChannelId = msg.ChannelId,
+                                RecipientId = msg.SenderId,
+                                Text = pairingMsg,
+                                ReplyToMessageId = msg.MessageId
+                            }, lifetime.ApplicationStopping);
+
+                            continue; // Drop the inbound request after sending pairing code
+                        }
+
                         var session = await sessionManager.GetOrCreateAsync(msg.ChannelId, msg.SenderId, lifetime.ApplicationStopping);
                         var lockObj = sessionLocks.GetOrAdd(session.Id, _ => new SemaphoreSlim(1, 1));
                         await lockObj.WaitAsync(lifetime.ApplicationStopping);
 
                         try
                         {
+                            // ── Chat Command Processing ──────────────────────
+                            var (handled, cmdResponse) = await commandProcessor.TryProcessCommandAsync(session, msg.Text, lifetime.ApplicationStopping);
+                            if (handled)
+                            {
+                                if (cmdResponse is not null)
+                                {
+                                    await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
+                                    {
+                                        ChannelId = msg.ChannelId,
+                                        RecipientId = msg.SenderId,
+                                        Text = cmdResponse,
+                                        ReplyToMessageId = msg.MessageId
+                                    }, lifetime.ApplicationStopping);
+                                }
+                                continue; // Skip LLM completely
+                            }
+
                             var mwContext = new MessageContext
                             {
                                 ChannelId = msg.ChannelId,
@@ -176,6 +224,8 @@ public static class GatewayWorkers
 
                             if (useStreaming)
                             {
+                                await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_start", "", msg.MessageId, lifetime.ApplicationStopping);
+
                                 await foreach (var evt in agentRuntime.RunStreamingAsync(
                                     session, messageText, lifetime.ApplicationStopping))
                                 {
@@ -183,12 +233,18 @@ public static class GatewayWorkers
                                         msg.SenderId, evt.EnvelopeType, evt.Content, msg.MessageId,
                                         lifetime.ApplicationStopping);
                                 }
+                                
+                                await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_stop", "", msg.MessageId, lifetime.ApplicationStopping);
                                 await sessionManager.PersistAsync(session, lifetime.ApplicationStopping);
                             }
                             else
                             {
                                 var responseText = await agentRuntime.RunAsync(session, messageText, lifetime.ApplicationStopping);
                                 await sessionManager.PersistAsync(session, lifetime.ApplicationStopping);
+
+                                // Append Usage Tracking string if configured
+                                if (config.UsageFooter is "tokens")
+                                    responseText += $"\n\n---\n↑ {session.TotalInputTokens} in / {session.TotalOutputTokens} out tokens";
 
                                 await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
                                 {
@@ -215,6 +271,8 @@ public static class GatewayWorkers
                                     await wsChannel.SendStreamEventAsync(
                                         msg.SenderId, "error", errorText, msg.MessageId,
                                         lifetime.ApplicationStopping);
+                                        
+                                    await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_stop", "", msg.MessageId, lifetime.ApplicationStopping);
                                 }
                                 else
                                 {

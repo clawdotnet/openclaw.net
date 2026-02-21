@@ -51,5 +51,13 @@ internal static class GatewaySecurity
             Encoding.UTF8.GetBytes(provided),
             Encoding.UTF8.GetBytes(expected));
     }
+
+    public static string ComputeHmacSha256Hex(string secret, string payload)
+    {
+        var secretBytes = Encoding.UTF8.GetBytes(secret);
+        var payloadBytes = Encoding.UTF8.GetBytes(payload);
+        var hashBytes = HMACSHA256.HashData(secretBytes, payloadBytes);
+        return Convert.ToHexStringLower(hashBytes);
+    }
 }
 

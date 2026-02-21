@@ -173,6 +173,25 @@ public sealed class SessionManager
     public ValueTask<IReadOnlyList<SessionBranch>> ListBranchesAsync(string sessionId, CancellationToken ct)
         => _store.ListBranchesAsync(sessionId, ct);
 
+    /// <summary>
+    /// Returns a list of all currently active sessions in memory.
+    /// </summary>
+    public Task<List<Session>> ListActiveAsync(CancellationToken ct)
+    {
+        return Task.FromResult(_active.Values.ToList());
+    }
+
+    /// <summary>
+    /// Loads a specific session from memory or disk by its ID.
+    /// </summary>
+    public async ValueTask<Session?> LoadAsync(string sessionId, CancellationToken ct)
+    {
+        if (_active.TryGetValue(sessionId, out var session))
+            return session;
+
+        return await _store.GetSessionAsync(sessionId, ct);
+    }
+
 
     /// <summary>
     /// Returns true if the given session key is currently in the active sessions dictionary.

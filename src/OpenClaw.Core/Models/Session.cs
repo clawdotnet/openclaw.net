@@ -19,6 +19,9 @@ public sealed class Session
     public DateTimeOffset LastActiveAt { get; set; } = DateTimeOffset.UtcNow;
     public List<ChatTurn> History { get; } = [];
     public SessionState State { get; set; } = SessionState.Active;
+    
+    /// <summary>Optional model override for this specific session (set via /model command).</summary>
+    public string? ModelOverride { get; set; }
 
     /// <summary>Total input tokens consumed across all turns in this session.</summary>
     public long TotalInputTokens { get; set; }
@@ -106,6 +109,12 @@ public sealed record ToolInvocation
 [JsonSerializable(typeof(AgentProfile))]
 [JsonSerializable(typeof(DelegationConfig))]
 [JsonSerializable(typeof(Dictionary<string, AgentProfile>))]
+[JsonSerializable(typeof(TelegramChannelConfig))]
+[JsonSerializable(typeof(CronConfig))]
+[JsonSerializable(typeof(CronJobConfig))]
+[JsonSerializable(typeof(WebhooksConfig))]
+[JsonSerializable(typeof(WebhookEndpointConfig))]
+[JsonSerializable(typeof(List<string>))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

@@ -20,6 +20,10 @@ public sealed class GatewayConfig
     public PluginsConfig Plugins { get; set; } = new();
     public SkillsConfig Skills { get; set; } = new();
     public DelegationConfig Delegation { get; set; } = new();
+    public CronConfig Cron { get; set; } = new();
+    public WebhooksConfig Webhooks { get; set; } = new();
+    public string UsageFooter { get; set; } = "off"; // "off", "tokens", "full"
+
     public int MaxConcurrentSessions { get; set; } = 64;
     public int SessionTimeoutMinutes { get; set; } = 30;
 
@@ -39,6 +43,7 @@ public sealed class LlmProviderConfig
     public string Model { get; set; } = "gpt-4o";
     public string? ApiKey { get; set; }
     public string? Endpoint { get; set; }
+    public string[] FallbackModels { get; set; } = [];
     public int MaxTokens { get; set; } = 4096;
     public float Temperature { get; set; } = 0.7f;
 
@@ -126,15 +131,21 @@ public sealed class ToolingConfig
 
     /// <summary>Tool names that require user approval when RequireToolApproval is true.</summary>
     public string[] ApprovalRequiredTools { get; set; } = ["shell", "write_file"];
+
+    public bool EnableBrowserTool { get; set; } = true;
+    public bool BrowserHeadless { get; set; } = true;
+    public int BrowserTimeoutSeconds { get; set; } = 30;
 }
 
 public sealed class ChannelsConfig
 {
     public SmsChannelConfig Sms { get; set; } = new();
+    public TelegramChannelConfig Telegram { get; set; } = new();
 }
 
 public sealed class SmsChannelConfig
 {
+    public string DmPolicy { get; set; } = "pairing"; // open, pairing, closed
     public TwilioSmsConfig Twilio { get; set; } = new();
 }
 
@@ -154,4 +165,46 @@ public sealed class TwilioSmsConfig
     public int RateLimitPerFromPerMinute { get; set; } = 30;
     public bool AutoReplyForBlocked { get; set; } = false;
     public string HelpText { get; set; } = "OpenClaw: reply STOP to opt out.";
+}
+
+public sealed class TelegramChannelConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string DmPolicy { get; set; } = "pairing"; // open, pairing, closed
+    public string? BotToken { get; set; }
+    public string BotTokenRef { get; set; } = "env:TELEGRAM_BOT_TOKEN";
+    public string WebhookPath { get; set; } = "/telegram/inbound";
+    public string? WebhookPublicBaseUrl { get; set; }
+    public string[] AllowedFromUserIds { get; set; } = [];
+    public int MaxInboundChars { get; set; } = 4096;
+}
+
+public sealed class CronConfig
+{
+    public bool Enabled { get; set; } = false;
+    public List<CronJobConfig> Jobs { get; set; } = [];
+}
+
+public sealed class CronJobConfig
+{
+    public string Name { get; set; } = "";
+    public string CronExpression { get; set; } = "";
+    public string Prompt { get; set; } = "";
+    public string? SessionId { get; set; }
+    public string? ChannelId { get; set; }
+}
+
+public sealed class WebhooksConfig
+{
+    public bool Enabled { get; set; } = false;
+    public Dictionary<string, WebhookEndpointConfig> Endpoints { get; set; } = [];
+}
+
+public sealed class WebhookEndpointConfig
+{
+    public string? Secret { get; set; }
+    public bool ValidateHmac { get; set; } = false;
+    public string HmacHeader { get; set; } = "X-Hub-Signature-256";
+    public string? SessionId { get; set; }
+    public string PromptTemplate { get; set; } = "Webhook received:\n\n{body}";
 }

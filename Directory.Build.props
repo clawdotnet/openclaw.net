@@ -8,6 +8,6 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- NativeAOT perf: trim aggressively -->
     <TrimMode>link</TrimMode>
-    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <!-- <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault> -->
   </PropertyGroup>
 </Project>

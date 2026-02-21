@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw WebChat</title>
+    <style>
+        :root {
+            --bg: #121212;
+            --surface: #1e1e1e;
+            --primary: #bb86fc;
+            --secondary: #03dac6;
+            --error: #cf6679;
+            --text: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #header {
+            background-color: var(--surface);
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        #token-input {
+            background: var(--bg);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: var(--text);
+            padding: 0.5rem;
+            border-radius: 4px;
+        }
+
+        #chat-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 0.8rem 1rem;
+            border-radius: 8px;
+            line-height: 1.4;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .user {
+            background-color: var(--primary);
+            color: #000;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+
+        .assistant {
+            background-color: var(--surface);
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+        }
+
+        .system {
+            background-color: transparent;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            align-self: center;
+            text-align: center;
+            font-style: italic;
+        }
+
+        .error { color: var(--error); }
+
+        #typing-indicator {
+            align-self: flex-start;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            display: none;
+            padding: 0.5rem;
+            font-style: italic;
+        }
+
+        #input-container {
+            background-color: var(--surface);
+            padding: 1rem;
+            display: flex;
+            gap: 0.5rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        #message-input {
+            flex-grow: 1;
+            background: var(--bg);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: var(--text);
+            padding: 0.8rem;
+            border-radius: 4px;
+            font-size: 1rem;
+            resize: none;
+        }
+
+        button {
+            background-color: var(--primary);
+            color: #000;
+            border: none;
+            padding: 0 1.5rem;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        button:hover { opacity: 0.9; }
+        button:disabled { background-color: #555; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h2>OpenClaw WebChat</h2>
+        <input type="password" id="token-input" placeholder="Auth Token (optional)">
+    </div>
+
+    <div id="chat-container">
+        <div class="message system">Connecting to Gateway...</div>
+    </div>
+    <div id="typing-indicator">Agent is typing...</div>
+
+    <div id="input-container">
+        <textarea id="message-input" rows="1" placeholder="Type a message (or /help)..." disabled></textarea>
+        <button id="send-button" disabled>Send</button>
+    </div>
+
+    <script>
+        const chatContainer = document.getElementById('chat-container');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const tokenInput = document.getElementById('token-input');
+        const typingIndicator = document.getElementById('typing-indicator');
+
+        let ws = null;
+        let activeResponseDiv = null;
+
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                appendSystem('Connected to Gateway. Envelope mode enabled.');
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+                
+                // Auth handshake
+                const token = tokenInput.value || localStorage.getItem('openclaw_token') || 'bypass';
+                ws.send(JSON.stringify({
+                    type: "auth",
+                    token: token,
+                    envelope_mode: true
+                }));
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const env = JSON.parse(event.data);
+                    
+                    switch (env.type) {
+                        case 'auth_success':
+                            appendSystem('Authentication successful.');
+                            if (tokenInput.value) {
+                                localStorage.setItem('openclaw_token', tokenInput.value);
+                            }
+                            break;
+                            
+                        case 'auth_challenge':
+                            appendSystem('Authentication failed or invalid. Please provide a valid Auth Token.', true);
+                            break;
+
+                        case 'typing_start':
+                            typingIndicator.style.display = 'block';
+                            chatContainer.scrollTo(0, chatContainer.scrollHeight);
+                            break;
+
+                        case 'typing_stop':
+                            typingIndicator.style.display = 'none';
+                            activeResponseDiv = null;
+                            break;
+
+                        case 'assistant_message':
+                        case 'text_delta':
+                            if (!activeResponseDiv) {
+                                activeResponseDiv = document.createElement('div');
+                                activeResponseDiv.className = 'message assistant';
+                                chatContainer.appendChild(activeResponseDiv);
+                            }
+                            activeResponseDiv.textContent += env.content;
+                            chatContainer.scrollTo(0, chatContainer.scrollHeight);
+                            break;
+                            
+                        case 'error':
+                            appendSystem('Error: ' + env.content, true);
+                            break;
+                            
+                        case 'tool_start':
+                            appendSystem(`[Tool executing: ${env.content}]`);
+                            break;
+                            
+                        case 'tool_result':
+                            // appendSystem(`[Tool result attached]`);
+                            break;
+                    }
+                } catch (e) {
+                    // Fallback for non-envelope text
+                    if (!activeResponseDiv) {
+                        activeResponseDiv = document.createElement('div');
+                        activeResponseDiv.className = 'message assistant';
+                        chatContainer.appendChild(activeResponseDiv);
+                    }
+                    activeResponseDiv.textContent += event.data;
+                    chatContainer.scrollTo(0, chatContainer.scrollHeight);
+                }
+            };
+
+            ws.onclose = () => {
+                appendSystem('Connection closed. Reconnecting in 3s...', true);
+                messageInput.disabled = true;
+                sendButton.disabled = true;
+                typingIndicator.style.display = 'none';
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = () => {
+                appendSystem('WebSocket error occurred.', true);
+            };
+        }
+
+        function appendSystem(text, isError = false) {
+            const div = document.createElement('div');
+            div.className = 'message system' + (isError ? ' error' : '');
+            div.textContent = text;
+            chatContainer.appendChild(div);
+            chatContainer.scrollTo(0, chatContainer.scrollHeight);
+        }
+
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+            const div = document.createElement('div');
+            div.className = 'message user';
+            div.textContent = text;
+            chatContainer.appendChild(div);
+            
+            // Envelope mode send
+            ws.send(JSON.stringify({
+                type: "user_message",
+                content: text
+            }));
+            
+            messageInput.value = '';
+            messageInput.style.height = 'auto'; // Reset height
+            activeResponseDiv = null;
+            chatContainer.scrollTo(0, chatContainer.scrollHeight);
+        }
+
+        // Auto-resize textarea
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+            if (this.value === '') this.style.height = 'auto';
+        });
+
+        // Enter to send (Shift+Enter for newline)
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        sendButton.addEventListener('click', sendMessage);
+        
+        // Load saved token
+        if (localStorage.getItem('openclaw_token')) {
+            tokenInput.value = localStorage.getItem('openclaw_token');
+        }
+
+        // Initialize connection
+        connect();
+    </script>
+</body>
+</html>
