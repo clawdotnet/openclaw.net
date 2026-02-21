@@ -98,6 +98,8 @@ You can lock down the agent via the `Tooling` config block:
 
 If you expose OpenClaw to the internet (a non-loopback bind address like `0.0.0.0`), the Gateway will **refuse to start** unless you explicitly harden these settings or opt-out of the safety checks.
 
+For a complete list of all available tools and their configuration details, see the **[Tool Guide](TOOLS_GUIDE.md)**.
+
 ---
 
 ## Interacting With Your Agent

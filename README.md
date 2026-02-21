@@ -13,6 +13,10 @@ Typical local layout:
 - `openclaw.net/` (Community)
 - `openclaw.net-enterprise/` (Enterprise)
 
+- [Tool Guide](TOOLS_GUIDE.md) — Detailed setup for all 18+ native tools.
+- [User Guide](USER_GUIDE.md) — Core concepts and architecture.
+- [Security Guide](SECURITY.md) — Mandatory reading for public deployments.
+
 ## Quickstart (local)
 
 1. Set your API key:
