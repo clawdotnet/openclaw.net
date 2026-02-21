@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Channels;
 
@@ -23,11 +24,8 @@ public sealed class WhatsAppChannel : IChannelAdapter
         _logger = logger;
         _http = httpClient;
 
-        var tokenSource = config.CloudApiTokenRef.StartsWith("env:")
-            ? Environment.GetEnvironmentVariable(config.CloudApiTokenRef[4..])
-            : config.CloudApiToken;
-
-        _apiToken = tokenSource ?? "";
+        var resolvedToken = SecretResolver.Resolve(config.CloudApiTokenRef) ?? config.CloudApiToken;
+        _apiToken = resolvedToken ?? "";
     }
 
     public string ChannelType => "whatsapp";
@@ -50,7 +48,10 @@ public sealed class WhatsAppChannel : IChannelAdapter
         var payload = new WhatsAppSendPayload
         {
             To = outbound.RecipientId,
-            Text = new WhatsAppTextObj { Body = outbound.Text }
+            Text = new WhatsAppTextObj { Body = outbound.Text },
+            Context = string.IsNullOrWhiteSpace(outbound.ReplyToMessageId) 
+                ? null 
+                : new WhatsAppContextObj { MessageId = outbound.ReplyToMessageId }
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
@@ -91,6 +92,9 @@ public sealed class WhatsAppSendPayload
     [JsonPropertyName("recipient_type")]
     public string RecipientType { get; set; } = "individual";
 
+    [JsonPropertyName("context")]
+    public WhatsAppContextObj? Context { get; set; }
+
     [JsonPropertyName("to")]
     public required string To { get; set; }
 
@@ -99,6 +103,12 @@ public sealed class WhatsAppSendPayload
 
     [JsonPropertyName("text")]
     public required WhatsAppTextObj Text { get; set; }
+}
+
+public sealed class WhatsAppContextObj
+{
+    [JsonPropertyName("message_id")]
+    public required string MessageId { get; set; }
 }
 
 public sealed class WhatsAppTextObj
