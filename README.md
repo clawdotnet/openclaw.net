@@ -1,8 +1,47 @@
 # OpenClaw.NET
 
+[![Build Status](https://github.com/Telli/openclaw.net/actions/workflows/ci.yml/badge.svg)](https://github.com/Telli/openclaw.net/actions/workflows/ci.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/telli/openclaw-gateway.svg)](https://hub.docker.com/r/telli/openclaw-gateway)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 > **Disclaimer**: This project is not affiliated with, endorsed by, or associated with [OpenClaw](https://github.com/openclaw/openclaw). It is an independent .NET implementation inspired by their excellent work.
 
 Self-hosted OpenClaw gateway + agent runtime in .NET (NativeAOT-friendly).
+
+## Architecture
+
+OpenClaw.NET uses a decoupled architecture to achieve NativeAOT performance while retaining full compatibility with the massive JavaScript plugin ecosystem.
+
+```mermaid
+graph TD
+    Client[WebClient / WebSocket] <--> Gateway[C# OpenClaw Gateway]
+    Webhooks[WhatsApp / Telegram / Twilio] -->|HTTP Webhook| Gateway
+    
+    subgraph .NET Core [NativeAOT]
+        Gateway <--> Agent[Agent Runtime]
+        Agent <--> Tools[Native C# Tools]
+        Agent <--> Memory[(Memory Storage)]
+    end
+    
+    Agent <-->|JSON-RPC via stdin/out| Bridge(Node.js Plugin Bridge)
+    
+    subgraph JavaScript Ecosystem
+        Bridge <--> TSPlugins[OpenClaw TS/JS Plugins]
+    end
+    
+    Agent <-->|REST API| LLM{LLM Provider}
+```
+
+## Why OpenClaw.NET? (Comparison)
+
+| Feature | Original OpenClaw | OpenClaw.NET (This Project) |
+| :--- | :--- | :--- |
+| **Language** | Node.js / TypeScript | C# 13 / .NET 10 |
+| **Runtime Size** | Large (Requires full Node/npm) | **~15MB** (Standalone NativeAOT binary) |
+| **Idle Memory (RAM)**| ~150MB+ | **<50MB** |
+| **Startup Time** | ~2-3 seconds | **Sub-second** (Instant) |
+| **Ecosystem Support**| Native TS Plugins | **Full Native + Bridged TS Plugins** |
+| **Orchestration** | Express/Koa based | ASP.NET Core Kestrel |
 
 ## Editions
 
