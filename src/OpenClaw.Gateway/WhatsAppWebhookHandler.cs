@@ -83,16 +83,40 @@ internal sealed class WhatsAppWebhookHandler
                 foreach (var change in entry.Changes)
                 {
                     if (change.Value?.Messages is null) continue;
+
+                    var contacts = change.Value.Contacts;
+
                     foreach (var message in change.Value.Messages)
                     {
                         if (message.Type != "text" || message.Text is null || string.IsNullOrWhiteSpace(message.From))
                             continue;
 
+                        string? senderName = null;
+                        if (contacts is not null)
+                        {
+                            foreach (var contact in contacts)
+                            {
+                                if (contact.WaId == message.From)
+                                {
+                                    senderName = contact.Profile?.Name;
+                                    break;
+                                }
+                            }
+                        }
+
+                        var text = message.Text.Body;
+                        if (text.Length > _config.MaxInboundChars)
+                        {
+                            _logger.LogWarning("Truncating WhatsApp message from {Sender} (exceeds {Max} chars).", message.From, _config.MaxInboundChars);
+                            text = text[.._config.MaxInboundChars];
+                        }
+
                         var msg = new InboundMessage
                         {
                             ChannelId = "whatsapp",
                             SenderId = message.From,
-                            Text = message.Text.Body,
+                            SenderName = senderName,
+                            Text = text,
                             MessageId = message.Id
                         };
 
@@ -125,12 +149,20 @@ internal sealed class WhatsAppWebhookHandler
             if (payload is null || string.IsNullOrWhiteSpace(payload.From))
                 return WebhookResult.BadRequest("Missing From");
 
+            var text = payload.Text ?? "";
+            if (text.Length > _config.MaxInboundChars)
+            {
+                _logger.LogWarning("Truncating WhatsApp Bridge message from {Sender} (exceeds {Max} chars).", payload.From, _config.MaxInboundChars);
+                text = text[.._config.MaxInboundChars];
+            }
+
             var msg = new InboundMessage
             {
                 ChannelId = "whatsapp",
                 SenderId = payload.From,
-                Text = payload.Text ?? "",
-                SenderName = payload.SenderName
+                Text = text,
+                SenderName = payload.SenderName,
+                MessageId = payload.MessageId
             };
 
             await enqueue(msg, ct);

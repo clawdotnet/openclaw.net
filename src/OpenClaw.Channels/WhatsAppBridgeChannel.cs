@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Channels;
 
@@ -24,11 +25,8 @@ public sealed class WhatsAppBridgeChannel : IChannelAdapter
         _logger = logger;
         _http = httpClient;
 
-        var tokenSource = config.BridgeTokenRef.StartsWith("env:")
-            ? Environment.GetEnvironmentVariable(config.BridgeTokenRef[4..])
-            : config.BridgeToken;
-
-        _bridgeToken = tokenSource ?? "";
+        var resolvedToken = SecretResolver.Resolve(config.BridgeTokenRef) ?? config.BridgeToken;
+        _bridgeToken = resolvedToken ?? "";
     }
 
     public string ChannelType => "whatsapp-bridge";
@@ -50,7 +48,8 @@ public sealed class WhatsAppBridgeChannel : IChannelAdapter
         var payload = new WhatsAppBridgeSendPayload
         {
             To = outbound.RecipientId,
-            Text = outbound.Text
+            Text = outbound.Text,
+            ReplyToMessageId = outbound.ReplyToMessageId
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, _config.BridgeUrl);
@@ -93,6 +92,9 @@ public sealed class WhatsAppBridgeSendPayload
 
     [JsonPropertyName("text")]
     public required string Text { get; set; }
+
+    [JsonPropertyName("reply_to_message_id")]
+    public string? ReplyToMessageId { get; set; }
 }
 
 public sealed class WhatsAppBridgeInboundPayload
@@ -105,6 +107,9 @@ public sealed class WhatsAppBridgeInboundPayload
 
     [JsonPropertyName("sender_name")]
     public string? SenderName { get; set; }
+
+    [JsonPropertyName("message_id")]
+    public string? MessageId { get; set; }
 }
 
 [JsonSerializable(typeof(WhatsAppBridgeSendPayload))]
