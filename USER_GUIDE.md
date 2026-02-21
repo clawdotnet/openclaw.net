@@ -16,14 +16,19 @@ OpenClaw is split into three main logical layers:
 OpenClaw.NET relies on `Microsoft.Extensions.AI` to abstract away provider complexity. You can configure which provider to use via `appsettings.json` or environment variables.
 
 ### Environment Variable Defaults
-For the quickest start, set your API key as an environment variable before running the gateway:
+For the quickest start, set your API key as an environment variable before running the gateway.
+
+**Bash / Zsh (Linux/macOS):**
 ```bash
 export MODEL_PROVIDER_KEY="sk-..."
 ```
-If you need to change the endpoint (e.g., for Azure or local models), set:
-```bash
-export MODEL_PROVIDER_ENDPOINT="https://my-endpoint.com/v1"
+
+**PowerShell (Windows/macOS/Linux):**
+```powershell
+$env:MODEL_PROVIDER_KEY = "sk-..."
 ```
+
+If you need to change the endpoint (e.g., for Azure or local models), set `MODEL_PROVIDER_ENDPOINT` similarly.
 
 ### Advanced Provider Configuration (`appsettings.json`)
 

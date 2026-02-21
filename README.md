@@ -134,10 +134,19 @@ Recommended exposure options:
 ## Docker deployment
 
 ### Quick start
+1. Set required environment variables:
+
+**Bash / Zsh:**
 ```bash
-# 1. Set required environment variables
 export MODEL_PROVIDER_KEY="sk-..."
 export OPENCLAW_AUTH_TOKEN="$(openssl rand -hex 32)"
+```
+
+**PowerShell:**
+```powershell
+$env:MODEL_PROVIDER_KEY = "sk-..."
+$env:OPENCLAW_AUTH_TOKEN = [Convert]::ToHexString((1..32 | Array { Get-Random -Min 0 -Max 256 }))
+```
 
 > **Note**: For the built-in WebChat UI (`http://<ip>:18789/chat`), enter this exact `OPENCLAW_AUTH_TOKEN` value in the "Auth Token" field at the top of the interface.
 
