@@ -1,133 +1,406 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenClaw WebChat</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <!-- Highlight.js for Code Blocks -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+
     <style>
         :root {
-            --bg: #121212;
-            --surface: #1e1e1e;
-            --primary: #bb86fc;
-            --secondary: #03dac6;
-            --error: #cf6679;
-            --text: #ffffff;
-            --text-secondary: rgba(255, 255, 255, 0.7);
+            --bg: #09090b;
+            --surface-glass: rgba(24, 24, 27, 0.65);
+            --surface: #18181b;
+            --surface-hover: #27272a;
+            --primary: #818cf8;
+            --primary-hover: #6366f1;
+            --secondary: #2dd4bf;
+            --error: #f87171;
+            --text: #f4f4f5;
+            --text-secondary: #a1a1aa;
+            --border: rgba(255, 255, 255, 0.08);
+            --radius-lg: 12px;
+            --radius-message: 16px;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
             background-color: var(--bg);
+            background-image:
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(45, 212, 191, 0.1) 0px, transparent 50%);
+            background-attachment: fixed;
             color: var(--text);
             height: 100vh;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
         }
 
+        /* Glass Header */
         #header {
-            background-color: var(--surface);
-            padding: 1rem;
+            background-color: var(--surface-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            padding: 1rem 1.5rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
+            border-bottom: 1px solid var(--border);
+            z-index: 10;
+        }
+
+        #header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            background: linear-gradient(to right, #818cf8, #2dd4bf);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
 
         #token-input {
-            background: var(--bg);
-            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border);
             color: var(--text);
-            padding: 0.5rem;
-            border-radius: 4px;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+            width: 200px;
         }
 
+        #token-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+        }
+
+        /* Chat Stream Container */
         #chat-container {
             flex-grow: 1;
             overflow-y: auto;
-            padding: 1rem;
+            padding: 1.5rem;
             display: flex;
             flex-direction: column;
-            gap: 1rem;
+            gap: 1.5rem;
+            scroll-behavior: smooth;
+        }
+
+        /* Message Bubbles */
+        .message-row {
+            display: flex;
+            width: 100%;
+        }
+
+        .message-row.user-row {
+            justify-content: flex-end;
+        }
+
+        .message-row.assistant-row {
+            justify-content: flex-start;
+        }
+
+        .message-row.system-row {
+            justify-content: center;
         }
 
         .message {
-            max-width: 80%;
-            padding: 0.8rem 1rem;
-            border-radius: 8px;
-            line-height: 1.4;
+            max-width: 75%;
+            padding: 1rem 1.25rem;
+            border-radius: var(--radius-message);
+            line-height: 1.6;
             word-wrap: break-word;
-            white-space: pre-wrap;
+            font-size: 0.95rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            animation: fadeIn 0.3s ease-out;
         }
 
-        .user {
-            background-color: var(--primary);
-            color: #000;
-            align-self: flex-end;
-            border-bottom-right-radius: 2px;
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
-        .assistant {
+        .message.user {
+            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+            color: #ffffff;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.assistant {
             background-color: var(--surface);
-            align-self: flex-start;
-            border-bottom-left-radius: 2px;
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 4px;
+            color: var(--text);
         }
 
-        .system {
+        .message.system {
             background-color: transparent;
+            box-shadow: none;
             color: var(--text-secondary);
             font-size: 0.85rem;
-            align-self: center;
             text-align: center;
-            font-style: italic;
-        }
-
-        .error { color: var(--error); }
-
-        #typing-indicator {
-            align-self: flex-start;
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-            display: none;
-            padding: 0.5rem;
-            font-style: italic;
-        }
-
-        #input-container {
-            background-color: var(--surface);
-            padding: 1rem;
+            padding: 0.5rem 1rem;
             display: flex;
+            align-items: center;
             gap: 0.5rem;
-            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .message.system.error {
+            color: var(--error);
+        }
+
+        /* Tool Pills */
+        .tool-pill {
+            background: rgba(45, 212, 191, 0.1);
+            border: 1px solid rgba(45, 212, 191, 0.2);
+            color: var(--secondary);
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0.5rem auto;
+            align-self: center;
+        }
+
+        .tool-pill::before {
+            content: '';
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: var(--secondary);
+            box-shadow: 0 0 6px var(--secondary);
+            animation: pulse 2s infinite;
+        }
+
+        /* Markdown Styles within Assistant Messages */
+        .message.assistant p:not(:last-child) {
+            margin-bottom: 0.75rem;
+        }
+
+        .message.assistant a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .message.assistant a:hover {
+            text-decoration: underline;
+        }
+
+        .message.assistant code:not(pre code) {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.2em 0.4em;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+        }
+
+        .message.assistant pre {
+            background: #0d1117;
+            /* GitHub Dark bg */
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 0.75rem 0;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+        }
+
+        .message.assistant pre code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            padding: 0;
+            background: transparent;
+        }
+
+        .message.assistant ul,
+        .message.assistant ol {
+            padding-left: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        /* Typing Indicator */
+        .typing-row {
+            display: none;
+            justify-content: flex-start;
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
+
+        .typing-indicator {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            padding: 0.8rem 1rem;
+            border-radius: var(--radius-message);
+            border-bottom-left-radius: 4px;
+            display: flex;
+            gap: 0.3rem;
+            align-items: center;
+        }
+
+        .dot {
+            width: 6px;
+            height: 6px;
+            background-color: var(--text-secondary);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .dot:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+
+        .dot:nth-child(2) {
+            animation-delay: -0.16s;
+        }
+
+        @keyframes bounce {
+
+            0%,
+            80%,
+            100% {
+                transform: scale(0);
+                opacity: 0.5;
+            }
+
+            40% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 0.6;
+            }
+
+            50% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0.6;
+            }
+        }
+
+        /* Glass Input Container */
+        #input-container {
+            background-color: var(--surface-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            padding: 1rem 1.5rem;
+            display: flex;
+            gap: 0.75rem;
+            border-top: 1px solid var(--border);
+            z-index: 10;
         }
 
         #message-input {
             flex-grow: 1;
             background: var(--bg);
-            border: 1px solid rgba(255,255,255,0.2);
+            border: 1px solid var(--border);
             color: var(--text);
-            padding: 0.8rem;
-            border-radius: 4px;
-            font-size: 1rem;
+            padding: 0.8rem 1rem;
+            border-radius: var(--radius-lg);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
             resize: none;
+            min-height: 44px;
+            max-height: 150px;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
 
-        button {
-            background-color: var(--primary);
-            color: #000;
+        #message-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+        }
+
+        #message-input:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #send-button {
+            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+            color: #ffffff;
             border: none;
             padding: 0 1.5rem;
-            border-radius: 4px;
-            font-weight: bold;
+            border-radius: var(--radius-lg);
+            font-weight: 600;
+            font-size: 0.95rem;
             cursor: pointer;
-            transition: opacity 0.2s;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        button:hover { opacity: 0.9; }
-        button:disabled { background-color: #555; cursor: not-allowed; }
+        #send-button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 8px -1px rgba(99, 102, 241, 0.3);
+        }
+
+        #send-button:active:not(:disabled) {
+            transform: translateY(1px);
+            box-shadow: 0 2px 4px -1px rgba(99, 102, 241, 0.2);
+        }
+
+        #send-button:disabled {
+            background: var(--surface-hover);
+            color: var(--text-secondary);
+            box-shadow: none;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
     </style>
 </head>
+
 <body>
     <div id="header">
         <h2>OpenClaw WebChat</h2>
@@ -135,33 +408,104 @@
     </div>
 
     <div id="chat-container">
-        <div class="message system">Connecting to Gateway...</div>
+        <!-- Messages will render here -->
     </div>
-    <div id="typing-indicator">Agent is typing...</div>
+
+    <div class="typing-row" id="typing-row">
+        <div class="typing-indicator">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+        </div>
+    </div>
 
     <div id="input-container">
-        <textarea id="message-input" rows="1" placeholder="Type a message (or /help)..." disabled></textarea>
-        <button id="send-button" disabled>Send</button>
+        <textarea id="message-input" rows="1" placeholder="Message the Agent (or type /help)..." disabled></textarea>
+        <button id="send-button" disabled>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+            Send
+        </button>
     </div>
 
+    <!-- Scripts for Markdown parsing and Syntax Highlighting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.9/purify.min.js"></script>
+
     <script>
+        // Set up marked to use highlight.js
+        marked.setOptions({
+            highlight: function(code, lang) {
+                const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                return hljs.highlight(code, { language }).value;
+            },
+            langPrefix: 'hljs language-'
+        });
+
         const chatContainer = document.getElementById('chat-container');
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
         const tokenInput = document.getElementById('token-input');
-        const typingIndicator = document.getElementById('typing-indicator');
+        const typingRow = document.getElementById('typing-row');
 
         let ws = null;
         let activeResponseDiv = null;
+        let activeRawContent = ""; // Store raw markdown until streaming completes
+
+        function scrollToBottom() {
+            chatContainer.scrollTo({
+                top: chatContainer.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+
+        function createRow(type) {
+            const row = document.createElement('div');
+            row.className = `message-row ${type}-row`;
+            return row;
+        }
+
+        function appendSystem(text, isError = false) {
+            const row = createRow('system');
+            const div = document.createElement('div');
+            
+            if (isError) {
+                div.className = 'message system error';
+                div.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> ${text}`;
+            } else {
+                div.className = 'message system';
+                div.textContent = text;
+            }
+            
+            row.appendChild(div);
+            chatContainer.insertBefore(row, typingRow);
+            scrollToBottom();
+        }
+
+        function appendToolPill(toolName) {
+            const row = createRow('system');
+            const pill = document.createElement('div');
+            pill.className = 'tool-pill';
+            pill.textContent = `Agent invoked tool: ${toolName}`;
+            
+            row.appendChild(pill);
+            chatContainer.insertBefore(row, typingRow);
+            scrollToBottom();
+        }
 
         function connect() {
+            appendSystem('Connecting to Gateway endpoint...');
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws`;
             
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
-                appendSystem('Connected to Gateway. Envelope mode enabled.');
+                appendSystem('Connected securely. Handshake complete.');
                 messageInput.disabled = false;
                 sendButton.disabled = false;
                 
@@ -180,90 +524,100 @@
                     
                     switch (env.type) {
                         case 'auth_success':
-                            appendSystem('Authentication successful.');
                             if (tokenInput.value) {
                                 localStorage.setItem('openclaw_token', tokenInput.value);
                             }
                             break;
                             
                         case 'auth_challenge':
-                            appendSystem('Authentication failed or invalid. Please provide a valid Auth Token.', true);
+                            appendSystem('Authentication failed. Please provide a valid Auth Token.', true);
                             break;
 
                         case 'typing_start':
-                            typingIndicator.style.display = 'block';
-                            chatContainer.scrollTo(0, chatContainer.scrollHeight);
+                            typingRow.style.display = 'flex';
+                            scrollToBottom();
                             break;
 
                         case 'typing_stop':
-                            typingIndicator.style.display = 'none';
+                            typingRow.style.display = 'none';
+                            // Finalize Markdown render on stop
+                            if (activeResponseDiv && activeRawContent) {
+                                const renderHtml = DOMPurify.sanitize(marked.parse(activeRawContent));
+                                activeResponseDiv.innerHTML = renderHtml;
+                            }
                             activeResponseDiv = null;
+                            activeRawContent = "";
+                            scrollToBottom();
                             break;
 
                         case 'assistant_message':
                         case 'text_delta':
                             if (!activeResponseDiv) {
+                                const row = createRow('assistant');
                                 activeResponseDiv = document.createElement('div');
                                 activeResponseDiv.className = 'message assistant';
-                                chatContainer.appendChild(activeResponseDiv);
+                                row.appendChild(activeResponseDiv);
+                                chatContainer.insertBefore(row, typingRow);
                             }
-                            activeResponseDiv.textContent += env.content;
-                            chatContainer.scrollTo(0, chatContainer.scrollHeight);
+                            
+                            activeRawContent += env.content;
+                            // Fast approximate render while streaming (can be glitchy for code blocks, but better than plaintext)
+                            activeResponseDiv.innerHTML = DOMPurify.sanitize(marked.parse(activeRawContent));
+                            scrollToBottom();
                             break;
                             
                         case 'error':
-                            appendSystem('Error: ' + env.content, true);
+                            appendSystem(env.content, true);
                             break;
                             
                         case 'tool_start':
-                            appendSystem(`[Tool executing: ${env.content}]`);
+                            appendToolPill(env.content);
                             break;
                             
                         case 'tool_result':
-                            // appendSystem(`[Tool result attached]`);
+                            // Result attached silently.
                             break;
                     }
                 } catch (e) {
                     // Fallback for non-envelope text
                     if (!activeResponseDiv) {
+                        const row = createRow('assistant');
                         activeResponseDiv = document.createElement('div');
                         activeResponseDiv.className = 'message assistant';
-                        chatContainer.appendChild(activeResponseDiv);
+                        row.appendChild(activeResponseDiv);
+                        chatContainer.insertBefore(row, typingRow);
                     }
-                    activeResponseDiv.textContent += event.data;
-                    chatContainer.scrollTo(0, chatContainer.scrollHeight);
+                    activeRawContent += event.data;
+                    activeResponseDiv.innerHTML = DOMPurify.sanitize(marked.parse(activeRawContent));
+                    scrollToBottom();
                 }
             };
 
             ws.onclose = () => {
-                appendSystem('Connection closed. Reconnecting in 3s...', true);
+                appendSystem('Connection dropped. Retrying in 3s...', true);
                 messageInput.disabled = true;
                 sendButton.disabled = true;
-                typingIndicator.style.display = 'none';
+                typingRow.style.display = 'none';
                 setTimeout(connect, 3000);
             };
 
             ws.onerror = () => {
-                appendSystem('WebSocket error occurred.', true);
+                console.error('WebSocket encountered an error.');
             };
-        }
-
-        function appendSystem(text, isError = false) {
-            const div = document.createElement('div');
-            div.className = 'message system' + (isError ? ' error' : '');
-            div.textContent = text;
-            chatContainer.appendChild(div);
-            chatContainer.scrollTo(0, chatContainer.scrollHeight);
         }
 
         function sendMessage() {
             const text = messageInput.value.trim();
             if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
 
+            // Render User Message
+            const row = createRow('user');
             const div = document.createElement('div');
             div.className = 'message user';
-            div.textContent = text;
-            chatContainer.appendChild(div);
+            div.textContent = text; // User input is safe textContent
+            row.appendChild(div);
+            
+            chatContainer.insertBefore(row, typingRow);
             
             // Envelope mode send
             ws.send(JSON.stringify({
@@ -274,14 +628,22 @@
             messageInput.value = '';
             messageInput.style.height = 'auto'; // Reset height
             activeResponseDiv = null;
-            chatContainer.scrollTo(0, chatContainer.scrollHeight);
+            activeRawContent = "";
+            scrollToBottom();
         }
 
-        // Auto-resize textarea
+        // Auto-resize textarea logic
         messageInput.addEventListener('input', function() {
             this.style.height = 'auto';
-            this.style.height = (this.scrollHeight) + 'px';
+            this.style.height = Math.min(this.scrollHeight, 150) + 'px';
             if (this.value === '') this.style.height = 'auto';
+            
+            // Toggle send button visual state
+            if(this.value.trim().length > 0) {
+                sendButton.style.opacity = '1';
+            } else {
+                sendButton.style.opacity = '0.7';
+            }
         });
 
         // Enter to send (Shift+Enter for newline)
@@ -303,4 +665,5 @@
         connect();
     </script>
 </body>
+
 </html>
