@@ -35,7 +35,7 @@ public static class GatewayWorkers
         ChatCommandProcessor commandProcessor)
     {
         StartSessionCleanup(lifetime, logger, sessionManager, sessionLocks, lockLastUsed);
-        StartInboundWorkers(lifetime, logger, workerCount, sessionManager, sessionLocks, pipeline, middlewarePipeline, wsChannel, agentRuntime, config, pairingManager, commandProcessor);
+        StartInboundWorkers(lifetime, logger, workerCount, sessionManager, sessionLocks, lockLastUsed, pipeline, middlewarePipeline, wsChannel, agentRuntime, config, pairingManager, commandProcessor);
         StartOutboundWorkers(lifetime, logger, workerCount, pipeline, channelAdapters);
     }
 
@@ -69,7 +69,7 @@ public static class GatewayWorkers
                             var lastUsed = lockLastUsed.GetValueOrDefault(sessionKey, now);
                             var isOrphaned = (now - lastUsed) > orphanThreshold;
                             
-                            if (semaphore.Wait(0))
+                            if (isOrphaned && semaphore.CurrentCount == 1 && semaphore.Wait(0))
                             {
                                 try
                                 {
@@ -78,7 +78,6 @@ public static class GatewayWorkers
                                         if (sessionLocks.TryRemove(sessionKey, out _))
                                         {
                                             lockLastUsed.TryRemove(sessionKey, out _);
-                                            semaphore.Dispose();
                                             logger.LogDebug("Cleaned up session lock for {SessionKey}", sessionKey);
                                         }
                                     }
@@ -89,17 +88,7 @@ public static class GatewayWorkers
                                 }
                                 finally
                                 {
-                                    if (sessionLocks.ContainsKey(sessionKey))
-                                        semaphore.Release();
-                                }
-                            }
-                            else if (isOrphaned)
-                            {
-                                if (sessionLocks.TryRemove(sessionKey, out var removed))
-                                {
-                                    lockLastUsed.TryRemove(sessionKey, out _);
-                                    logger.LogWarning("Force-removed orphaned session lock for {SessionKey}", sessionKey);
-                                    try { removed.Dispose(); } catch { /* ignore */ }
+                                    try { semaphore.Release(); } catch { /* ignore */ }
                                 }
                             }
                         }
@@ -123,6 +112,7 @@ public static class GatewayWorkers
         int workerCount,
         SessionManager sessionManager,
         ConcurrentDictionary<string, SemaphoreSlim> sessionLocks,
+        ConcurrentDictionary<string, DateTimeOffset> lockLastUsed,
         MessagePipeline pipeline,
         MiddlewarePipeline middlewarePipeline,
         WebSocketChannel wsChannel,
@@ -139,36 +129,43 @@ public static class GatewayWorkers
                 {
                     while (pipeline.InboundReader.TryRead(out var msg))
                     {
-                        // ── DM Pairing Check ─────────────────────────────────
-                        var policy = "open";
-                        if (msg.ChannelId == "sms") policy = config.Channels.Sms.DmPolicy;
-                        if (msg.ChannelId == "telegram") policy = config.Channels.Telegram.DmPolicy;
-
-                        if (policy is "closed")
-                            continue; // Silently drop all inbound messages
-                            
-                        if (policy is "pairing" && !pairingManager.IsApproved(msg.ChannelId, msg.SenderId))
-                        {
-                            var code = pairingManager.GeneratePairingCode(msg.ChannelId, msg.SenderId);
-                            var pairingMsg = $"Welcome to OpenClaw. Your pairing code is {code}. Your messages will be ignored until an admin approves this pair.";
-                            
-                            await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
-                            {
-                                ChannelId = msg.ChannelId,
-                                RecipientId = msg.SenderId,
-                                Text = pairingMsg,
-                                ReplyToMessageId = msg.MessageId
-                            }, lifetime.ApplicationStopping);
-
-                            continue; // Drop the inbound request after sending pairing code
-                        }
-
-                        var session = await sessionManager.GetOrCreateAsync(msg.ChannelId, msg.SenderId, lifetime.ApplicationStopping);
-                        var lockObj = sessionLocks.GetOrAdd(session.Id, _ => new SemaphoreSlim(1, 1));
-                        await lockObj.WaitAsync(lifetime.ApplicationStopping);
-
+                        Session? session = null;
+                        SemaphoreSlim? lockObj = null;
+                        var lockAcquired = false;
                         try
                         {
+                            // ── DM Pairing Check ─────────────────────────────────
+                            var policy = "open";
+                            if (msg.ChannelId == "sms") policy = config.Channels.Sms.DmPolicy;
+                            if (msg.ChannelId == "telegram") policy = config.Channels.Telegram.DmPolicy;
+
+                            if (policy is "closed")
+                                continue; // Silently drop all inbound messages
+
+                            if (policy is "pairing" && !pairingManager.IsApproved(msg.ChannelId, msg.SenderId))
+                            {
+                                var code = pairingManager.GeneratePairingCode(msg.ChannelId, msg.SenderId);
+                                var pairingMsg = $"Welcome to OpenClaw. Your pairing code is {code}. Your messages will be ignored until an admin approves this pair.";
+
+                                await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
+                                {
+                                    ChannelId = msg.ChannelId,
+                                    RecipientId = msg.SenderId,
+                                    Text = pairingMsg,
+                                    ReplyToMessageId = msg.MessageId
+                                }, lifetime.ApplicationStopping);
+
+                                continue; // Drop the inbound request after sending pairing code
+                            }
+
+                            session = await sessionManager.GetOrCreateAsync(msg.ChannelId, msg.SenderId, lifetime.ApplicationStopping);
+                            if (session is null)
+                                throw new InvalidOperationException("Session manager returned null session.");
+
+                            lockObj = sessionLocks.GetOrAdd(session.Id, _ => new SemaphoreSlim(1, 1));
+                            await lockObj.WaitAsync(lifetime.ApplicationStopping);
+                            lockAcquired = true;
+
                             // ── Chat Command Processing ──────────────────────
                             var (handled, cmdResponse) = await commandProcessor.TryProcessCommandAsync(session, msg.Text, lifetime.ApplicationStopping);
                             if (handled)
@@ -255,13 +252,23 @@ public static class GatewayWorkers
                                 }, lifetime.ApplicationStopping);
                             }
                         }
+                        catch (OperationCanceledException) when (lifetime.ApplicationStopping.IsCancellationRequested)
+                        {
+                            return;
+                        }
                         catch (OperationCanceledException)
                         {
-                            logger.LogWarning("Request canceled for session {SessionId}", session.Id);
+                            if (session is not null)
+                                logger.LogWarning("Request canceled for session {SessionId}", session.Id);
+                            else
+                                logger.LogWarning("Request canceled for channel {ChannelId} sender {SenderId}", msg.ChannelId, msg.SenderId);
                         }
                         catch (Exception ex)
                         {
-                            logger.LogError(ex, "Internal error processing message for session {SessionId}", session.Id);
+                            if (session is not null)
+                                logger.LogError(ex, "Internal error processing message for session {SessionId}", session.Id);
+                            else
+                                logger.LogError(ex, "Internal error processing message for channel {ChannelId} sender {SenderId}", msg.ChannelId, msg.SenderId);
 
                             try
                             {
@@ -289,7 +296,13 @@ public static class GatewayWorkers
                         }
                         finally
                         {
-                            lockObj.Release();
+                            if (lockAcquired && lockObj is not null)
+                            {
+                                try { lockObj.Release(); } catch { /* ignore */ }
+                            }
+
+                            if (session is not null)
+                                lockLastUsed[session.Id] = DateTimeOffset.UtcNow;
                         }
                     }
                 }

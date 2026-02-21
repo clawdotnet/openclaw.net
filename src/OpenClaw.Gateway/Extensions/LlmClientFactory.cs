@@ -32,7 +32,7 @@ public static class LlmClientFactory
                     Endpoint = config.Endpoint
                         ?? throw new InvalidOperationException(
                             $"Endpoint must be set for provider '{config.Provider}'. " +
-                            "Set OpenClaw:Llm:Endpoint or OPENCLAW_ENDPOINT.")
+                            "Set OpenClaw:Llm:Endpoint or MODEL_PROVIDER_ENDPOINT.")
                 })
                 .GetChatClient(config.Model)
                 .AsIChatClient(),
@@ -45,7 +45,7 @@ public static class LlmClientFactory
     private static OpenAI.OpenAIClient CreateOpenAiClient(LlmProviderConfig llm)
     {
         if (string.IsNullOrWhiteSpace(llm.ApiKey))
-            throw new InvalidOperationException("OPENCLAW_API_KEY must be set for the OpenAI provider.");
+            throw new InvalidOperationException("MODEL_PROVIDER_KEY must be set for the OpenAI provider.");
 
         if (string.IsNullOrWhiteSpace(llm.Endpoint))
             return new OpenAI.OpenAIClient(llm.ApiKey);
@@ -61,9 +61,9 @@ public static class LlmClientFactory
     private static OpenAI.OpenAIClient CreateAzureOpenAiClient(LlmProviderConfig llm)
     {
         if (string.IsNullOrWhiteSpace(llm.ApiKey))
-            throw new InvalidOperationException("OPENCLAW_API_KEY must be set for the Azure OpenAI provider.");
+            throw new InvalidOperationException("MODEL_PROVIDER_KEY must be set for the Azure OpenAI provider.");
         if (string.IsNullOrWhiteSpace(llm.Endpoint))
-            throw new InvalidOperationException("OPENCLAW_ENDPOINT must be set for the Azure OpenAI provider (e.g. https://myresource.openai.azure.com/).");
+            throw new InvalidOperationException("MODEL_PROVIDER_ENDPOINT must be set for the Azure OpenAI provider (e.g. https://myresource.openai.azure.com/).");
 
         var options = new OpenAI.OpenAIClientOptions
         {

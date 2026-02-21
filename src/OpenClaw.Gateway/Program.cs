@@ -37,9 +37,9 @@ builder.Services.ConfigureHttpJsonOptions(opts =>
 var config = builder.Configuration.GetSection("OpenClaw").Get<GatewayConfig>() ?? new GatewayConfig();
 
 // Override from environment (12-factor friendly)
-config.Llm.ApiKey ??= Environment.GetEnvironmentVariable("OPENCLAW_API_KEY");
-config.Llm.Model = Environment.GetEnvironmentVariable("OPENCLAW_MODEL") ?? config.Llm.Model;
-config.Llm.Endpoint ??= Environment.GetEnvironmentVariable("OPENCLAW_ENDPOINT");
+config.Llm.ApiKey ??= Environment.GetEnvironmentVariable("MODEL_PROVIDER_KEY");
+config.Llm.Model = Environment.GetEnvironmentVariable("MODEL_PROVIDER_MODEL") ?? config.Llm.Model;
+config.Llm.Endpoint ??= Environment.GetEnvironmentVariable("MODEL_PROVIDER_ENDPOINT");
 config.AuthToken ??= Environment.GetEnvironmentVariable("OPENCLAW_AUTH_TOKEN");
 
 var isNonLoopbackBind = !GatewaySecurity.IsLoopbackBind(config.BindAddress);

@@ -18,11 +18,11 @@ OpenClaw.NET relies on `Microsoft.Extensions.AI` to abstract away provider compl
 ### Environment Variable Defaults
 For the quickest start, set your API key as an environment variable before running the gateway:
 ```bash
-export OPENCLAW_API_KEY="sk-..."
+export MODEL_PROVIDER_KEY="sk-..."
 ```
 If you need to change the endpoint (e.g., for Azure or local models), set:
 ```bash
-export OPENCLAW_ENDPOINT="https://my-endpoint.com/v1"
+export MODEL_PROVIDER_ENDPOINT="https://my-endpoint.com/v1"
 ```
 
 ### Advanced Provider Configuration (`appsettings.json`)
@@ -35,7 +35,7 @@ To explicitly define your LLM configuration, edit `src/OpenClaw.Gateway/appsetti
     "Llm": {
       "Provider": "openai",
       "Model": "gpt-4o",
-      "ApiKey": "env:OPENCLAW_API_KEY",
+      "ApiKey": "env:MODEL_PROVIDER_KEY",
       "Temperature": 0.7,
       "MaxTokens": 4096
     }

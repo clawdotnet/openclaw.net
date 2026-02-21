@@ -30,7 +30,7 @@ dotnet test src/OpenClaw.Tests
 ### Run the Gateway
 
 ```bash
-export OPENCLAW_API_KEY="sk-..."
+export MODEL_PROVIDER_KEY="sk-..."
 dotnet run --project src/OpenClaw.Gateway -c Release
 ```
 

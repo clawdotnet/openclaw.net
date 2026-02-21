@@ -18,6 +18,7 @@ public sealed class WebSocketChannel : IChannelAdapter
     private readonly WebSocketConfig _config;
     private readonly ConcurrentDictionary<string, ConnectionState> _connections = new();
     private readonly ConcurrentDictionary<string, int> _connectionsPerIp = new();
+    private int _connectionCount;
 
     private sealed class ConnectionState
     {
@@ -38,33 +39,24 @@ public sealed class WebSocketChannel : IChannelAdapter
         private readonly int _limit;
         private long _windowMinute;
         private int _count;
+        private readonly object _gate = new();
 
         public RateWindow(int limit) => _limit = Math.Max(1, limit);
 
         public bool TryConsume()
         {
-            var minute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
-            var currentWindow = Interlocked.Read(ref _windowMinute);
-
-            // Fast path: same window, just increment
-            if (minute == currentWindow)
+            lock (_gate)
             {
-                var newCount = Interlocked.Increment(ref _count);
-                return newCount <= _limit;
-            }
+                var minute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
+                if (minute != _windowMinute)
+                {
+                    _windowMinute = minute;
+                    _count = 0;
+                }
 
-            // Window changed - need to reset
-            // Use CompareExchange to handle race conditions
-            if (Interlocked.CompareExchange(ref _windowMinute, minute, currentWindow) == currentWindow)
-            {
-                // We won the race to update the window
-                Interlocked.Exchange(ref _count, 1);
-                return true;
+                _count++;
+                return _count <= _limit;
             }
-
-            // Someone else updated the window, retry
-            var count = Interlocked.Increment(ref _count);
-            return count <= _limit;
         }
     }
 
@@ -143,6 +135,18 @@ public sealed class WebSocketChannel : IChannelAdapter
             if (state.Socket.State == WebSocketState.Open)
                 await state.Socket.SendAsync(payload.AsMemory(), WebSocketMessageType.Text, endOfMessage: true, cancellationToken: ct);
         }
+        catch (ObjectDisposedException)
+        {
+            // Client disconnected mid-send.
+        }
+        catch (WebSocketException)
+        {
+            // Client disconnected mid-send.
+        }
+        catch (InvalidOperationException)
+        {
+            // Socket is no longer usable.
+        }
         finally
         {
             state.SendLock.Release();
@@ -184,6 +188,18 @@ public sealed class WebSocketChannel : IChannelAdapter
             if (state.Socket.State == WebSocketState.Open)
                 await state.Socket.SendAsync(payload.AsMemory(), WebSocketMessageType.Text, endOfMessage: true, cancellationToken: ct);
         }
+        catch (ObjectDisposedException)
+        {
+            // Client disconnected mid-send.
+        }
+        catch (WebSocketException)
+        {
+            // Client disconnected mid-send.
+        }
+        catch (InvalidOperationException)
+        {
+            // Socket is no longer usable.
+        }
         finally
         {
             state.SendLock.Release();
@@ -206,6 +222,7 @@ public sealed class WebSocketChannel : IChannelAdapter
 
         _connections.Clear();
         _connectionsPerIp.Clear();
+        Interlocked.Exchange(ref _connectionCount, 0);
     }
 
     internal bool TryAddConnectionForTest(string clientId, WebSocket ws, IPAddress? remoteIp, bool useJsonEnvelope)
@@ -219,25 +236,34 @@ public sealed class WebSocketChannel : IChannelAdapter
 
     private bool TryAddConnection(string clientId, WebSocket ws, IPAddress? remoteIp, out ConnectionState state)
     {
+        state = null!;
+
+        var newCount = Interlocked.Increment(ref _connectionCount);
+        if (newCount > _config.MaxConnections)
+        {
+            Interlocked.Decrement(ref _connectionCount);
+            return false;
+        }
+
+        var ipKey = remoteIp?.ToString() ?? "unknown";
         state = new ConnectionState(_config.MessagesPerMinutePerConnection)
         {
             Socket = ws,
-            IpKey = remoteIp?.ToString() ?? "unknown"
+            IpKey = ipKey
         };
-
-        if (_connections.Count >= _config.MaxConnections)
-            return false;
 
         var perIp = _connectionsPerIp.AddOrUpdate(state.IpKey, 1, (_, c) => c + 1);
         if (perIp > _config.MaxConnectionsPerIp)
         {
             _connectionsPerIp.AddOrUpdate(state.IpKey, 0, (_, c) => Math.Max(0, c - 1));
+            Interlocked.Decrement(ref _connectionCount);
             return false;
         }
 
         if (!_connections.TryAdd(clientId, state))
         {
             _connectionsPerIp.AddOrUpdate(state.IpKey, 0, (_, c) => Math.Max(0, c - 1));
+            Interlocked.Decrement(ref _connectionCount);
             return false;
         }
 
@@ -246,9 +272,9 @@ public sealed class WebSocketChannel : IChannelAdapter
 
     private void RemoveConnection(string clientId, ConnectionState state)
     {
-        _connections.TryRemove(clientId, out _);
+        if (_connections.TryRemove(clientId, out _))
+            Interlocked.Decrement(ref _connectionCount);
         _connectionsPerIp.AddOrUpdate(state.IpKey, 0, (_, c) => Math.Max(0, c - 1));
-        try { state.SendLock.Dispose(); } catch { /* ignore */ }
         try { state.Socket.Dispose(); } catch { /* ignore */ }
     }
 
@@ -335,7 +361,7 @@ public sealed class WebSocketChannel : IChannelAdapter
 
     private static ValueTask CloseIfOpenAsync(WebSocket ws, WebSocketCloseStatus status, string description, CancellationToken ct)
     {
-        if (ws.State != WebSocketState.Open)
+        if (ws.State is not WebSocketState.Open and not WebSocketState.CloseReceived)
             return ValueTask.CompletedTask;
 
         return new ValueTask(ws.CloseAsync(status, description, ct));

@@ -14,7 +14,7 @@ Typical local layout:
 ## Quickstart (local)
 
 1. Set your API key:
-   - `export OPENCLAW_API_KEY="..."`
+   - `export MODEL_PROVIDER_KEY="..."`
    - *For advanced LLM provider setup (Ollama, Anthropic, Azure) see the [User Guide](USER_GUIDE.md).*
 2. Run the gateway:
    - `dotnet run --project src/OpenClaw.Gateway -c Release`
@@ -134,7 +134,7 @@ Recommended exposure options:
 ### Quick start
 ```bash
 # 1. Set required environment variables
-export OPENCLAW_API_KEY="sk-..."
+export MODEL_PROVIDER_KEY="sk-..."
 export OPENCLAW_AUTH_TOKEN="$(openssl rand -hex 32)"
 
 # 2. Run (gateway only)
@@ -149,7 +149,7 @@ docker compose --profile with-tls up -d
 ```bash
 docker build -t openclaw-gateway .
 docker run -d -p 18789:18789 \
-  -e OPENCLAW_API_KEY="sk-..." \
+  -e MODEL_PROVIDER_KEY="sk-..." \
   -e OPENCLAW_AUTH_TOKEN="change-me" \
   -v openclaw-memory:/app/memory \
   openclaw-gateway
@@ -168,7 +168,7 @@ The Dockerfile uses a multi-stage build:
 ## Production hardening checklist
 
 - [ ] Set `OPENCLAW_AUTH_TOKEN` to a strong random value
-- [ ] Set `OPENCLAW_API_KEY` via environment variable (never in config files)
+- [ ] Set `MODEL_PROVIDER_KEY` via environment variable (never in config files)
 - [ ] Use `appsettings.Production.json` (`AllowShell=false`, restricted roots)
 - [ ] Enable TLS (reverse proxy or Kestrel HTTPS)
 - [ ] Set `AllowedOrigins` if serving a web frontend

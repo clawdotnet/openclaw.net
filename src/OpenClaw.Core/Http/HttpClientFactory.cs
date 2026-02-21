@@ -20,11 +20,12 @@ public static class HttpClientFactory
     /// Creates an <see cref="HttpClient"/> backed by a <see cref="SocketsHttpHandler"/>
     /// with a 2-minute pooled connection lifetime to avoid DNS staleness.
     /// </summary>
-    public static HttpClient Create(TimeSpan? pooledConnectionLifetime = null)
+    public static HttpClient Create(TimeSpan? pooledConnectionLifetime = null, bool allowAutoRedirect = true)
     {
         var handler = new SocketsHttpHandler
         {
-            PooledConnectionLifetime = pooledConnectionLifetime ?? DefaultPooledConnectionLifetime
+            PooledConnectionLifetime = pooledConnectionLifetime ?? DefaultPooledConnectionLifetime,
+            AllowAutoRedirect = allowAutoRedirect
         };
 
         return new HttpClient(handler);

@@ -49,6 +49,7 @@ public sealed class AgentRuntime
     private readonly CircuitBreaker _circuitBreaker;
     private readonly RuntimeMetrics? _metrics;
     private readonly long _sessionTokenBudget;
+    private readonly LlmProviderConfig _config;
 
     public AgentRuntime(
         IChatClient chatClient,
@@ -75,6 +76,7 @@ public sealed class AgentRuntime
         _toolsByName = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         _memory = memory;
         _logger = logger;
+        _config = config;
         _maxTokens = config.MaxTokens;
         _maxIterations = Math.Max(1, maxIterations);
         _temperature = config.Temperature;
@@ -144,6 +146,7 @@ public sealed class AgentRuntime
         // Build tool definitions for the LLM (use pre-cached declarations)
         var chatOptions = new ChatOptions
         {
+            ModelId = session.ModelOverride ?? _config.Model,
             MaxOutputTokens = _maxTokens,
             Temperature = _temperature,
             Tools = _cachedToolDeclarations,
@@ -163,7 +166,7 @@ public sealed class AgentRuntime
                 return "You've reached the token limit for this session. Please start a new conversation.";
             }
 
-            ChatResponse response;
+            ChatResponse? response = null;
             var llmSw = Stopwatch.StartNew();
             try
             {
@@ -183,11 +186,51 @@ public sealed class AgentRuntime
             catch (Exception ex)
             {
                 _metrics?.IncrementLlmErrors();
-                _logger?.LogError(ex, "[{CorrelationId}] LLM call failed after all retries", turnCtx.CorrelationId);
-                LogTurnComplete(turnCtx);
-                return "Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly.";
+                
+                // Attempt Failover logic if configured
+                var currentModel = chatOptions.ModelId ?? _config.Model;
+                var fallbacksTried = false;
+
+                if (_config.FallbackModels is not null && _config.FallbackModels.Length > 0)
+                {
+                    foreach (var fallback in _config.FallbackModels)
+                    {
+                        if (string.Equals(fallback, currentModel, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                            
+                        _logger?.LogWarning("[{CorrelationId}] Primary model '{Model}' failed. Retrying with fallback '{Fallback}'", turnCtx.CorrelationId, currentModel, fallback);
+                        
+                        try 
+                        {
+                            chatOptions.ModelId = fallback;
+                            response = await CallLlmWithResilienceAsync(messages, chatOptions, turnCtx, ct);
+                            fallbacksTried = true;
+                            // Reset modelid if successful
+                            chatOptions.ModelId = currentModel; 
+                            break; 
+                        }
+                        catch (Exception innerEx)
+                        {
+                            _logger?.LogWarning(innerEx, "[{CorrelationId}] Fallback model '{Fallback}' failed.", turnCtx.CorrelationId, fallback);
+                            // continue trying next
+                        }
+                    }
+                }
+                
+                if (!fallbacksTried)
+                {
+                    _logger?.LogError(ex, "[{CorrelationId}] LLM call failed after all retries and fallbacks", turnCtx.CorrelationId);
+                    LogTurnComplete(turnCtx);
+                    return "Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly.";
+                }
             }
             llmSw.Stop();
+
+            if (response is null)
+            {
+                 LogTurnComplete(turnCtx);
+                 return "Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly.";
+            }
 
             // Extract token usage from response
             var inputTokens = response.Usage?.InputTokenCount ?? 0;
@@ -882,6 +925,46 @@ public sealed class AgentRuntime
 
     private static string BuildSystemPrompt(IReadOnlyList<SkillDefinition> skills, bool requireApproval)
     {
+        const int PromptFileMaxChars = 20_000;
+
+        static string? TryReadPromptFile(string path, int maxChars)
+        {
+            try
+            {
+                using var fs = File.OpenRead(path);
+                using var reader = new StreamReader(fs, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: false);
+
+                var buffer = new char[maxChars + 1];
+                var read = reader.ReadBlock(buffer, 0, buffer.Length);
+                if (read <= 0)
+                    return null;
+
+                var take = Math.Min(read, maxChars);
+                var text = new string(buffer, 0, take);
+
+                if (read > maxChars || !reader.EndOfStream)
+                    text += "…";
+
+                return text;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        static void AppendOptionalPromptFile(ref string prompt, string label, string path, int maxChars)
+        {
+            if (!File.Exists(path))
+                return;
+
+            var content = TryReadPromptFile(path, maxChars);
+            if (string.IsNullOrWhiteSpace(content))
+                return;
+
+            prompt += $"\n\n[{label}]\n{content}";
+        }
+
         var basePrompt =
             """
             You are OpenClaw, a self-hosted AI assistant. You run locally on the user's machine.
@@ -899,6 +982,14 @@ public sealed class AgentRuntime
                 explain what you were trying to do and ask the user how they'd like to proceed.
                 """;
         }
+
+        var workspacePath = Environment.GetEnvironmentVariable("OPENCLAW_WORKSPACE") ?? Directory.GetCurrentDirectory();
+        
+        var agentsFile = Path.Combine(workspacePath, "AGENTS.md");
+        AppendOptionalPromptFile(ref basePrompt, "Workspace Memory (AGENTS.md)", agentsFile, PromptFileMaxChars);
+
+        var soulFile = Path.Combine(workspacePath, "SOUL.md");
+        AppendOptionalPromptFile(ref basePrompt, "Agent Personality (SOUL.md)", soulFile, PromptFileMaxChars);
 
         var skillSection = SkillPromptBuilder.Build(skills);
         return string.IsNullOrEmpty(skillSection) ? basePrompt : basePrompt + "\n" + skillSection;
