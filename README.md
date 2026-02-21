@@ -85,6 +85,20 @@ This project includes local tools (`shell`, `read_file`, `write_file`). If you e
 - `OpenClaw:Tooling:AllowShell=false`
 - `OpenClaw:Tooling:AllowedReadRoots` / `AllowedWriteRoots` to specific directories
 
+## Telegram Webhook channel
+
+### Setup
+1. Create a Telegram Bot via BotFather and obtain the Bot Token.
+2. Set the auth token as an environment variable:
+   - `export OPENCLAW_BOT_TOKEN="..."`
+3. Configure `OpenClaw:Channels:Telegram` in `src/OpenClaw.Gateway/appsettings.json`:
+   - `Enabled=true`
+   - `BotTokenRef="env:OPENCLAW_BOT_TOKEN"`
+
+### Webhook
+Register your public webhook URL directly with Telegram's API:
+- `POST https://api.telegram.org/bot<vour-bot-token>/setWebhook?url=https://<your-public-host>/.openclaw/telegram/webhook`
+
 ## Twilio SMS channel
 
 ### Setup
@@ -211,19 +225,20 @@ Configure directly in `appsettings.json`:
 }
 ```
 
-## Observability
+### Observability & Distributed Tracing
 
-### Endpoints
+OpenClaw natively integrates with **OpenTelemetry**, providing deep insights into agent reasoning, tool execution, and session lifecycles.
+
 | Endpoint | Auth | Description |
 |----------|------|-------------|
 | `GET /health` | Token (if non-loopback) | Basic health check (`{ status, uptime }`) |
 | `GET /metrics` | Token (if non-loopback) | Runtime counters (requests, tokens, tool calls, circuit breaker state) |
 
 ### Structured logging
-All agent operations emit structured logs with correlation IDs:
+All agent operations emit structured logs and `.NET Activity` traces with correlation IDs. You can export these to OTLP collectors like Jaeger, Prometheus, or Grafana:
 ```
 [abc123def456] Turn start session=ws:user1 channel=websocket
-[abc123def456] Tool shell completed in 250ms ok=True
+[abc123def456] Tool browser completed in 1250ms ok=True
 [abc123def456] Turn complete: Turn[abc123def456] session=ws:user1 llm=2 retries=0 tokens=150in/80out tools=1
 ```
 
