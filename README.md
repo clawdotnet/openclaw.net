@@ -15,6 +15,7 @@ Typical local layout:
 
 1. Set your API key:
    - `export OPENCLAW_API_KEY="..."`
+   - *For advanced LLM provider setup (Ollama, Anthropic, Azure) see the [User Guide](USER_GUIDE.md).*
 2. Run the gateway:
    - `dotnet run --project src/OpenClaw.Gateway -c Release`
 3. Connect a WebSocket client:
