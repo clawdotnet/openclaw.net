@@ -141,6 +141,31 @@ public sealed class ChannelsConfig
 {
     public SmsChannelConfig Sms { get; set; } = new();
     public TelegramChannelConfig Telegram { get; set; } = new();
+    public WhatsAppChannelConfig WhatsApp { get; set; } = new();
+}
+
+public sealed class WhatsAppChannelConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string Type { get; set; } = "official"; // "official" or "bridge"
+    public string DmPolicy { get; set; } = "pairing"; // open, pairing, closed
+    public string WebhookPath { get; set; } = "/whatsapp/inbound";
+    public string? WebhookPublicBaseUrl { get; set; }
+    public string WebhookVerifyToken { get; set; } = "openclaw-verify";
+    public string WebhookVerifyTokenRef { get; set; } = "env:WHATSAPP_VERIFY_TOKEN";
+    
+    // Official Cloud API settings
+    public string? CloudApiToken { get; set; }
+    public string CloudApiTokenRef { get; set; } = "env:WHATSAPP_CLOUD_API_TOKEN";
+    public string? PhoneNumberId { get; set; }
+    public string? BusinessAccountId { get; set; }
+
+    // Bridge settings (e.g. for whatsmeow bridge)
+    public string? BridgeUrl { get; set; }
+    public string? BridgeToken { get; set; }
+    public string BridgeTokenRef { get; set; } = "env:WHATSAPP_BRIDGE_TOKEN";
+
+    public int MaxInboundChars { get; set; } = 4096;
 }
 
 public sealed class SmsChannelConfig

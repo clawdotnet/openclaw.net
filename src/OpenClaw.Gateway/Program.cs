@@ -114,15 +114,18 @@ var channelAdapters = new Dictionary<string, IChannelAdapter>(StringComparer.Ord
 if (smsChannel is not null)
     channelAdapters["sms"] = smsChannel;
 
+if (config.Channels.WhatsApp.Enabled)
+{
+    builder.Services.AddSingleton(config.Channels.WhatsApp);
+    builder.Services.AddSingleton<WhatsAppWebhookHandler>();
+    if (config.Channels.WhatsApp.Type == "bridge")
+        builder.Services.AddSingleton<WhatsAppBridgeChannel>();
+    else
+        builder.Services.AddSingleton<WhatsAppChannel>();
+}
+
 if (config.Channels.Telegram.Enabled)
 {
-    // Defer instantiation until required or use DI extension
-    // channelAdapters["telegram"] will be populated via DI later if we implement a fully injected service,
-    // but for now we will skip adding it to channelAdapters since Telegram pushes to us via Webhook 
-    // and outbound is done within the webhook context if we resolve it there.
-    
-    // Actually, TelegramChannel *is* needed for OutboundWorkers to route to it.
-    // Instead of BuildServiceProvider, simply register the adapter in DI and retrieve it later
     builder.Services.AddSingleton<TelegramChannel>();
 }
 
@@ -150,6 +153,14 @@ var app = builder.Build();
 if (config.Channels.Telegram.Enabled)
 {
     channelAdapters["telegram"] = app.Services.GetRequiredService<TelegramChannel>();
+}
+
+if (config.Channels.WhatsApp.Enabled)
+{
+    if (config.Channels.WhatsApp.Type == "bridge")
+        channelAdapters["whatsapp"] = app.Services.GetRequiredService<WhatsAppBridgeChannel>();
+    else
+        channelAdapters["whatsapp"] = app.Services.GetRequiredService<WhatsAppChannel>();
 }
 
 var sessionLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SessionManager");
@@ -520,6 +531,40 @@ if (config.Channels.Telegram.Enabled)
         
         ctx.Response.StatusCode = 200;
         await ctx.Response.WriteAsync("OK");
+    });
+}
+
+if (config.Channels.WhatsApp.Enabled)
+{
+    var whatsappWebhookHandler = app.Services.GetRequiredService<WhatsAppWebhookHandler>();
+    app.MapGet(config.Channels.WhatsApp.WebhookPath, async (HttpContext ctx) =>
+    {
+        var res = await whatsappWebhookHandler.HandleAsync(
+            ctx, 
+            (msg, ct) => pipeline.InboundWriter.WriteAsync(msg, ct), 
+            ctx.RequestAborted);
+        
+        ctx.Response.StatusCode = res.StatusCode;
+        if (res.Body is not null)
+        {
+            ctx.Response.ContentType = res.ContentType;
+            await ctx.Response.WriteAsync(res.Body, ctx.RequestAborted);
+        }
+    });
+
+    app.MapPost(config.Channels.WhatsApp.WebhookPath, async (HttpContext ctx) =>
+    {
+        var res = await whatsappWebhookHandler.HandleAsync(
+            ctx, 
+            (msg, ct) => pipeline.InboundWriter.WriteAsync(msg, ct), 
+            ctx.RequestAborted);
+        
+        ctx.Response.StatusCode = res.StatusCode;
+        if (res.Body is not null)
+        {
+            ctx.Response.ContentType = res.ContentType;
+            await ctx.Response.WriteAsync(res.Body, ctx.RequestAborted);
+        }
     });
 }
 

@@ -312,11 +312,13 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
             {
                 // Simple glob for NVM/n
                 var dir = Path.GetDirectoryName(path);
+                if (dir is null) continue;
+                
                 var pattern = Path.GetFileName(path);
                 var parent = Path.GetDirectoryName(dir);
                 var subDirPattern = Path.GetFileName(dir);
 
-                if (parent is not null && Directory.Exists(parent))
+                if (parent is not null && subDirPattern is not null && Directory.Exists(parent))
                 {
                     foreach (var subDir in Directory.GetDirectories(parent, subDirPattern))
                     {

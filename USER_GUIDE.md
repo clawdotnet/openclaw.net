@@ -117,8 +117,46 @@ You can also interact via the C# desktop interface:
 The app will connect to `ws://127.0.0.1:18789/ws` automatically.
 
 ### Webhook Channels
-You can configure OpenClaw to listen to SMS or Telegram messages in the background natively.
+You can configure OpenClaw to listen to messages in the background natively.
 Enable them under the `Channels` block in your config.
+
+- **Telegram**: Basic bot API support.
+- **Twilio SMS**: SMS support via Twilio.
+- **WhatsApp**: Official Cloud API or custom bridge support.
+
+---
+
+## WhatsApp Setup
+
+OpenClaw.NET supports WhatsApp via two methods: the **Official Meta Cloud API** and a **Bridge** (for `whatsmeow` or similar proxies).
+
+### 1. Official Meta Cloud API
+1. Create a Meta Developer App and set up "WhatsApp Business API".
+2. Get your **Phone Number ID** and **Cloud API Access Token**.
+3. Set your **Webhook URL** to `https://your-public-url.com/whatsapp/inbound`.
+4. Set the **Verify Token** (default: `openclaw-verify`).
+
+```json
+"WhatsApp": {
+  "Enabled": true,
+  "Type": "official",
+  "PhoneNumberId": "YOUR_PHONE_ID",
+  "CloudApiTokenRef": "env:WHATSAPP_CLOUD_API_TOKEN"
+}
+```
+
+### 2. WhatsApp Bridge
+If you are using a proxy that handles the WhatsApp protocol (like a `whatsmeow` wrapper), use the bridge mode.
+
+```json
+"WhatsApp": {
+  "Enabled": true,
+  "Type": "bridge",
+  "BridgeUrl": "http://your-bridge:3000/send",
+  "BridgeTokenRef": "env:WHATSAPP_BRIDGE_TOKEN"
+}
+```
+
 ---
 
 ## Email Features

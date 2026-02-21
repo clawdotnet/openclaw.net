@@ -9,6 +9,7 @@ public sealed record InboundMessage
     public required string SenderId { get; init; }
     public string? SessionId { get; init; }
     public required string Text { get; init; }
+    public string? SenderName { get; init; }
     public string? MessageId { get; init; }
     public string? ReplyToMessageId { get; init; }
     public DateTimeOffset ReceivedAt { get; init; } = DateTimeOffset.UtcNow;
