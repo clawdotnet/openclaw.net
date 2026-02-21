@@ -97,8 +97,14 @@ If you expose OpenClaw to the internet (a non-loopback bind address like `0.0.0.
 
 ## Interacting With Your Agent
 
+### WebChat UI (Built-In)
+The easiest way to interact with OpenClaw locally is via the embedded frontend:
+1. Start the Gateway: `dotnet run --project src/OpenClaw.Gateway`
+2. Open your browser to `http://127.0.0.1:18789/chat`
+3. Enter your `OPENCLAW_AUTH_TOKEN` value into the **Auth Token** field at the top of the page.
+
 ### Avalonia Desktop Companion
-The easiest way to interact with OpenClaw locally is via the desktop interface:
+You can also interact via the C# desktop interface:
 1. Start the Gateway: `dotnet run --project src/OpenClaw.Gateway`
 2. Start the UI: `dotnet run --project src/OpenClaw.Companion`
 The app will connect to `ws://127.0.0.1:18789/ws` automatically.

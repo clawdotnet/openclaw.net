@@ -139,6 +139,8 @@ Recommended exposure options:
 export MODEL_PROVIDER_KEY="sk-..."
 export OPENCLAW_AUTH_TOKEN="$(openssl rand -hex 32)"
 
+> **Note**: For the built-in WebChat UI (`http://<ip>:18789/chat`), enter this exact `OPENCLAW_AUTH_TOKEN` value in the "Auth Token" field at the top of the interface.
+
 # 2. Run (gateway only)
 docker compose up -d openclaw
 
