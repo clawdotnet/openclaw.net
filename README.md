@@ -1,5 +1,7 @@
 # OpenClaw.NET
 
+> **Disclaimer**: This project is not affiliated with, endorsed by, or associated with [OpenClaw](https://github.com/openclaw/openclaw). It is an independent .NET implementation inspired by their excellent work.
+
 Self-hosted OpenClaw gateway + agent runtime in .NET (NativeAOT-friendly).
 
 ## Editions
