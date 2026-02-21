@@ -1,0 +1,63 @@
+version: "3.8"
+
+services:
+  openclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    ports:
+      - "18789:18789"
+    environment:
+      # Required: set your LLM API key
+      - OPENCLAW_API_KEY=${OPENCLAW_API_KEY:?Set OPENCLAW_API_KEY}
+      # Required for non-loopback bind
+      - OPENCLAW_AUTH_TOKEN=${OPENCLAW_AUTH_TOKEN:?Set OPENCLAW_AUTH_TOKEN}
+      # Optional overrides
+      - OPENCLAW_MODEL=${OPENCLAW_MODEL:-gpt-4o}
+      - OPENCLAW_ENDPOINT=${OPENCLAW_ENDPOINT:-}
+      # ASP.NET Core config via env (double underscore = section separator)
+      - OpenClaw__BindAddress=0.0.0.0
+      - OpenClaw__Port=18789
+      - OpenClaw__Tooling__AllowShell=false
+      - OpenClaw__Tooling__AllowedReadRoots__0=/app/workspace
+      - OpenClaw__Tooling__AllowedWriteRoots__0=/app/workspace
+      - OpenClaw__Security__TrustForwardedHeaders=true
+      - OpenClaw__Security__KnownProxies__0=${PROXY_IP:-172.17.0.1}
+    volumes:
+      # Persist memory/session data
+      - openclaw-memory:/app/memory
+      # Optional: mount a workspace for file tools
+      - ${OPENCLAW_WORKSPACE:-./workspace}:/app/workspace
+    healthcheck:
+      test: ["CMD", "/app/OpenClaw.Gateway", "--health-check"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Optional: reverse proxy with automatic TLS
+  caddy:
+    image: caddy:2-alpine
+    container_name: openclaw-caddy
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "80:80"
+    environment:
+      - DOMAIN=${OPENCLAW_DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      openclaw:
+        condition: service_healthy
+    profiles:
+      - with-tls
+
+volumes:
+  openclaw-memory:
+  caddy-data:
+  caddy-config:

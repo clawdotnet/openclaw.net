@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/node_modules/
+*.user
+*.suo
+.git/
+.github/
+*.md
+*.txt
+!README.md
+LICENSE
+.DS_Store
+Thumbs.db

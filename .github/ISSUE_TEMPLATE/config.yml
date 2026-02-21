@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerabilities
+    url: https://github.com/user/openclaw.net/blob/main/SECURITY.md
+    about: Please report security vulnerabilities privately.
+  - name: Discord Community
+    url: https://discord.gg/openclaw
+    about: Ask questions and discuss features with the community.
