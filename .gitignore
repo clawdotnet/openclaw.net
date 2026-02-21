@@ -19,3 +19,12 @@ memory/
 
 # Local dotnet tools (profiling helpers)
 .dotnet-tools/
+
+# Secrets
+.env
+.env.*
+appsettings.Development.json
+appsettings.Local.json
+
+# Playwright
+.playwright/
