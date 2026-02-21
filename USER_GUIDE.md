@@ -117,5 +117,63 @@ The app will connect to `ws://127.0.0.1:18789/ws` automatically.
 ### Webhook Channels
 You can configure OpenClaw to listen to SMS or Telegram messages in the background natively.
 Enable them under the `Channels` block in your config.
+---
 
-> **Tip**: If you configure a Cron Job under the `Cron` block, OpenClaw can actively "wake up" and begin a task without you prompting it!
+## Email Features
+
+OpenClaw.NET includes a built-in **Email Tool** that allows your agent to interact with the world via email. Unlike Telegram or SMS which act as "Channels" to talking to the agent, the Email Tool is a capability the agent uses to perform tasks like sending reports or reading your inbox.
+
+### Configuring the Email Tool
+
+To enable the email tool, update the `Plugins:Native` section in your `appsettings.json` or use environment variables.
+
+#### Example `appsettings.json` Configuration:
+
+```json
+{
+  "OpenClaw": {
+    "Plugins": {
+      "Native": {
+        "Email": {
+          "Enabled": true,
+          "SmtpHost": "smtp.gmail.com",
+          "SmtpPort": 587,
+          "SmtpUseTls": true,
+          "ImapHost": "imap.gmail.com",
+          "ImapPort": 993,
+          "Username": "your-email@gmail.com",
+          "PasswordRef": "env:EMAIL_PASSWORD",
+          "FromAddress": "your-email@gmail.com",
+          "MaxResults": 10
+        }
+      }
+    }
+  }
+}
+```
+
+### Authentication Security
+
+We strongly recommend using `env:VARIABLE_NAME` for the `PasswordRef` field. 
+
+**For PowerShell:**
+```powershell
+$env:EMAIL_PASSWORD = "your-app-password"
+```
+
+**For Bash/Zsh:**
+```bash
+export EMAIL_PASSWORD="your-app-password"
+```
+
+> [!TIP]
+> If using Gmail, you **must** use an "App Password" rather than your primary password if Two-Factor Authentication is enabled.
+
+### Using Email via the Agent
+
+Once enabled, you can naturally ask the agent to handle emails:
+- *"Send an email to boss@example.com with the subject 'Weekly Report' and a summary of my recent work."*
+- *"Check my inbox for any emails from 'Support' in the last hour and summarize them."*
+- *"Search my email for a receipt from Amazon and tell me the total amount."*
+
+The agent will automatically choose the `email` tool and perform the requested actions!

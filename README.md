@@ -146,9 +146,10 @@ export OPENCLAW_AUTH_TOKEN="$(openssl rand -hex 32)"
 ```powershell
 $env:MODEL_PROVIDER_KEY = "sk-..."
 $env:OPENCLAW_AUTH_TOKEN = [Convert]::ToHexString((1..32 | Array { Get-Random -Min 0 -Max 256 }))
+$env:EMAIL_PASSWORD = "..." # (Optional) For email tool
 ```
 
-> **Note**: For the built-in WebChat UI (`http://<ip>:18789/chat`), enter this exact `OPENCLAW_AUTH_TOKEN` value in the "Auth Token" field at the top of the interface.
+> **Note**: For the built-in WebChat UI (`http://<ip>:18789/chat`), enter this exact `OPENCLAW_AUTH_TOKEN` value in the "Auth Token" field at the top of the interface. If you enable the **Email Tool**, make sure to set `EMAIL_PASSWORD` similarly.
 
 # 2. Run (gateway only)
 docker compose up -d openclaw
