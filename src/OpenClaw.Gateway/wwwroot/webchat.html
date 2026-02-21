@@ -409,13 +409,12 @@
 
     <div id="chat-container">
         <!-- Messages will render here -->
-    </div>
-
-    <div class="typing-row" id="typing-row">
-        <div class="typing-indicator">
-            <div class="dot"></div>
-            <div class="dot"></div>
-            <div class="dot"></div>
+        <div class="typing-row" id="typing-row">
+            <div class="typing-indicator">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
         </div>
     </div>
 
@@ -439,7 +438,7 @@
     <script>
         // Set up marked to use highlight.js
         marked.setOptions({
-            highlight: function(code, lang) {
+            highlight: function (code, lang) {
                 const language = hljs.getLanguage(lang) ? lang : 'plaintext';
                 return hljs.highlight(code, { language }).value;
             },
@@ -472,7 +471,7 @@
         function appendSystem(text, isError = false) {
             const row = createRow('system');
             const div = document.createElement('div');
-            
+
             if (isError) {
                 div.className = 'message system error';
                 div.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> ${text}`;
@@ -480,7 +479,7 @@
                 div.className = 'message system';
                 div.textContent = text;
             }
-            
+
             row.appendChild(div);
             chatContainer.insertBefore(row, typingRow);
             scrollToBottom();
@@ -491,7 +490,7 @@
             const pill = document.createElement('div');
             pill.className = 'tool-pill';
             pill.textContent = `Agent invoked tool: ${toolName}`;
-            
+
             row.appendChild(pill);
             chatContainer.insertBefore(row, typingRow);
             scrollToBottom();
@@ -501,14 +500,14 @@
             appendSystem('Connecting to Gateway endpoint...');
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws`;
-            
+
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
                 appendSystem('Connected securely. Handshake complete.');
                 messageInput.disabled = false;
                 sendButton.disabled = false;
-                
+
                 // Auth handshake
                 const token = tokenInput.value || localStorage.getItem('openclaw_token') || 'bypass';
                 ws.send(JSON.stringify({
@@ -521,14 +520,14 @@
             ws.onmessage = (event) => {
                 try {
                     const env = JSON.parse(event.data);
-                    
+
                     switch (env.type) {
                         case 'auth_success':
                             if (tokenInput.value) {
                                 localStorage.setItem('openclaw_token', tokenInput.value);
                             }
                             break;
-                            
+
                         case 'auth_challenge':
                             appendSystem('Authentication failed. Please provide a valid Auth Token.', true);
                             break;
@@ -559,21 +558,21 @@
                                 row.appendChild(activeResponseDiv);
                                 chatContainer.insertBefore(row, typingRow);
                             }
-                            
+
                             activeRawContent += env.content;
                             // Fast approximate render while streaming (can be glitchy for code blocks, but better than plaintext)
                             activeResponseDiv.innerHTML = DOMPurify.sanitize(marked.parse(activeRawContent));
                             scrollToBottom();
                             break;
-                            
+
                         case 'error':
                             appendSystem(env.content, true);
                             break;
-                            
+
                         case 'tool_start':
                             appendToolPill(env.content);
                             break;
-                            
+
                         case 'tool_result':
                             // Result attached silently.
                             break;
@@ -616,15 +615,15 @@
             div.className = 'message user';
             div.textContent = text; // User input is safe textContent
             row.appendChild(div);
-            
+
             chatContainer.insertBefore(row, typingRow);
-            
+
             // Envelope mode send
             ws.send(JSON.stringify({
                 type: "user_message",
                 content: text
             }));
-            
+
             messageInput.value = '';
             messageInput.style.height = 'auto'; // Reset height
             activeResponseDiv = null;
@@ -633,13 +632,13 @@
         }
 
         // Auto-resize textarea logic
-        messageInput.addEventListener('input', function() {
+        messageInput.addEventListener('input', function () {
             this.style.height = 'auto';
             this.style.height = Math.min(this.scrollHeight, 150) + 'px';
             if (this.value === '') this.style.height = 'auto';
-            
+
             // Toggle send button visual state
-            if(this.value.trim().length > 0) {
+            if (this.value.trim().length > 0) {
                 sendButton.style.opacity = '1';
             } else {
                 sendButton.style.opacity = '0.7';
@@ -655,7 +654,7 @@
         });
 
         sendButton.addEventListener('click', sendMessage);
-        
+
         // Load saved token
         if (localStorage.getItem('openclaw_token')) {
             tokenInput.value = localStorage.getItem('openclaw_token');
