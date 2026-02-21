@@ -1,0 +1,66 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:OpenClaw.Companion.ViewModels"
+        xmlns:models="using:OpenClaw.Companion.Models"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        x:Class="OpenClaw.Companion.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="OpenClaw.Companion">
+
+    <Design.DataContext>
+        <!-- This only sets the DataContext for the previewer in an IDE,
+             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="12" RowSpacing="12">
+        <Border Grid.Row="0" Padding="10" CornerRadius="8" BorderThickness="1"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+            <Grid ColumnDefinitions="2*,*,Auto,Auto,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Gateway" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="Auth Token" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="Remember" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="0" Grid.Column="3" Text="Status" FontWeight="SemiBold" />
+
+                <TextBox Grid.Row="1" Grid.Column="0" Text="{Binding ServerUrl}" Watermark="ws://127.0.0.1:18789/ws" />
+                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding AuthToken}" PasswordChar="•" Watermark="Bearer token (optional on localhost)" />
+                <CheckBox Grid.Row="1" Grid.Column="2" IsChecked="{Binding RememberToken}" />
+                <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding Status}" VerticalAlignment="Center" />
+
+                <StackPanel Grid.Row="1" Grid.Column="4" Orientation="Horizontal" Spacing="8">
+                    <Button Content="Connect" Command="{Binding ConnectCommand}"
+                            IsVisible="{Binding IsConnected, Converter={StaticResource InverseBool}}"
+                            IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" />
+                    <Button Content="Disconnect" Command="{Binding DisconnectCommand}"
+                            IsVisible="{Binding IsConnected}"
+                            IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Padding="10" CornerRadius="8" BorderThickness="1"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+            <ListBox ItemsSource="{Binding Messages}" Background="Transparent" BorderThickness="0">
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="models:ChatMessage">
+                        <StackPanel Margin="0,0,0,10" Spacing="4">
+                            <TextBlock Text="{Binding RoleLabel}" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+            <TextBox Text="{Binding InputText}" AcceptsReturn="True" TextWrapping="Wrap"
+                     MinHeight="42" Watermark="Type a message…" />
+            <Button Grid.Column="1" Content="Send" Command="{Binding SendCommand}"
+                    IsEnabled="{Binding IsConnected}" MinWidth="90" />
+        </Grid>
+    </Grid>
+
+</Window>

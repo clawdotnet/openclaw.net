@@ -1,0 +1,20 @@
+{$DOMAIN} {
+    reverse_proxy openclaw:18789
+    encode gzip
+
+    header {
+        # Security headers
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        -Server
+    }
+
+    # WebSocket upgrade
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @websocket openclaw:18789
+}

@@ -1,0 +1,21 @@
+# .NET build output
+bin/
+obj/
+
+# Rider / VS / VS Code
+.idea/
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS
+.DS_Store
+
+# Local runtime data
+memory/
+
+# Local dotnet tools (profiling helpers)
+.dotnet-tools/
