@@ -1,6 +1,6 @@
 # Show HN: I ported OpenClaw to .NET NativeAOT (15MB Docker, TS plugin bridge)
 
-**Link**: [https://github.com/Telli/openclaw.net](https://github.com/Telli/openclaw.net)
+**Link**: [https://github.com/clawdotnet/openclaw.net](https://github.com/clawdotnet/openclaw.net)
 
 Hey HN,
 
