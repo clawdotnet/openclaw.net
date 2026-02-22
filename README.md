@@ -210,7 +210,7 @@ docker run -d -p 18789:18789 \
 
 The Dockerfile uses a multi-stage build:
 1. **Build stage** — full .NET SDK, runs tests, publishes NativeAOT binary
-2. **Runtime stage** — Ubuntu Chiseled (distroless), ~15 MB, non-root user
+2. **Runtime stage** — Ubuntu Chiseled (distroless), ~23 MB NativeAOT binary, non-root user
 
 ### Volumes
 | Path | Purpose |
