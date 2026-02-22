@@ -88,6 +88,14 @@ Query SQLite, PostgreSQL, or MySQL databases.
 - **Required**: `Provider`, `ConnectionString`.
 - **Options**: `AllowWrite` (default: false).
 
+### 11. Inbox Zero (`inbox_zero`)
+AI-powered email triage inspired by [paperMoose/inbox-zero](https://github.com/paperMoose/inbox-zero). Works with **any IMAP email provider**.
+- **Actions**: `analyze` (categorize + report), `cleanup` (archive newsletters/promos), `trash-sender` (trash all from one sender), `spam-rescue` (find false positives in spam), `categorize` (alias for analyze).
+- **Config**: Set `Plugins:Native:InboxZero:Enabled=true`. Requires IMAP credentials in `Plugins:Native:Email`.
+- **Safety**: `DryRun=true` by default — the agent reports what it *would* do without making changes.
+- **Customizable**: Set `VipSenders`, `ProtectedSenders`, and `ProtectedKeywords` arrays.
+- **Built-in protection**: Emails from banks (Chase, PayPal, etc.), healthcare, government, and major tech (Google, GitHub, Apple) are never auto-archived.
+
 ---
 
 ## 🛡 Security Best Practices

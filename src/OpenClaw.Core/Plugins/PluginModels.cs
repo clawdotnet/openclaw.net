@@ -119,6 +119,7 @@ public sealed class NativePluginsConfig
     public CalendarConfig Calendar { get; set; } = new();
     public EmailConfig Email { get; set; } = new();
     public DatabaseConfig Database { get; set; } = new();
+    public InboxZeroConfig InboxZero { get; set; } = new();
 }
 
 public sealed class WebSearchConfig
@@ -284,6 +285,26 @@ public sealed class DatabaseConfig
 
     /// <summary>Maximum rows to return.</summary>
     public int MaxRows { get; set; } = 1000;
+}
+
+public sealed class InboxZeroConfig
+{
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>VIP sender addresses — emails from these are never auto-archived.</summary>
+    public string[] VipSenders { get; set; } = [];
+
+    /// <summary>Protected sender addresses or domains — e.g. doctor@hospital.org, bank.com.</summary>
+    public string[] ProtectedSenders { get; set; } = [];
+
+    /// <summary>Protected keywords in subject — emails matching these are never auto-archived.</summary>
+    public string[] ProtectedKeywords { get; set; } = ["appointment", "flight", "boarding", "medical", "prescription", "invoice", "payment", "receipt"];
+
+    /// <summary>Maximum emails to process per batch.</summary>
+    public int MaxBatchSize { get; set; } = 100;
+
+    /// <summary>When true, report what would happen without actually moving/deleting anything.</summary>
+    public bool DryRun { get; set; } = true;
 }
 
 public sealed class PluginLoadConfig
