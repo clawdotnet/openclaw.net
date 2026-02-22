@@ -1,4 +1,4 @@
-# Show HN: I ported OpenClaw to .NET NativeAOT (15MB Docker, TS plugin bridge)
+# Show HN: I ported OpenClaw to .NET NativeAOT (23MB binary, TS plugin bridge)
 
 **Link**: [https://github.com/clawdotnet/openclaw.net](https://github.com/clawdotnet/openclaw.net)
 
@@ -12,7 +12,7 @@ Here's how it works and what it achieved:
 
 ### 1. The .NET NativeAOT Core
 The orchestration core (ReAct loop, tool dispatch, WebSockets, Webhooks) is written completely in C# 13 and optimized for NativeAOT.
-- **Footprint**: It compiles down to a single binary. The runtime Docker image (using Ubuntu Chiseled) is just ~15MB.
+- **Footprint**: It compiles down to a single binary. The NativeAOT executable is just **23MB**.
 - **Memory**: It idles at a fraction of the RAM compared to the Node.js/V8 equivalent, making it way easier to self-host on cheap VPS instances or tiny Raspberry Pis.
 - **Security**: It has hardened public-bind defaults (rejecting wildcard tooling roots, disabling shell tools if bound publicly, and requiring tokens).
 
