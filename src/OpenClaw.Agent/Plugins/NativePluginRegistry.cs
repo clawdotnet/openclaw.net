@@ -46,6 +46,9 @@ public sealed class NativePluginRegistry : IDisposable
 
         if (config.Database.Enabled)
             RegisterTool(new DatabaseTool(config.Database, _logger), "database", config.Database.Provider);
+
+        if (config.InboxZero.Enabled)
+            RegisterTool(new InboxZeroTool(config.InboxZero, config.Email), "inbox-zero");
     }
 
     private void RegisterTool(ITool tool, string pluginId, string? detail = null)
