@@ -14,7 +14,13 @@
     <DebuggerSupport>false</DebuggerSupport>
     <MetricsSupport>true</MetricsSupport>
     <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <!-- Playwright is not AOT-compatible (deep reflection usage). Suppress all trim/AOT analysis warnings. -->
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <NoWarn>$(NoWarn);IL2104;IL3000;IL3002;IL3050;IL3053</NoWarn>
   </PropertyGroup>
+  <ItemGroup>
+    <TrimmerRootAssembly Include="Microsoft.Playwright" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
     <ProjectReference Include="..\OpenClaw.Agent\OpenClaw.Agent.csproj" />
