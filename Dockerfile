@@ -12,11 +12,12 @@ WORKDIR /src
 COPY Directory.Build.props OpenClaw.Net.sln ./
 
 # Copy csproj files individually for restore caching
-COPY src/OpenClaw.Core/OpenClaw.Core.csproj      src/OpenClaw.Core/
-COPY src/OpenClaw.Agent/OpenClaw.Agent.csproj     src/OpenClaw.Agent/
-COPY src/OpenClaw.Channels/OpenClaw.Channels.csproj src/OpenClaw.Channels/
-COPY src/OpenClaw.Gateway/OpenClaw.Gateway.csproj src/OpenClaw.Gateway/
-COPY src/OpenClaw.Tests/OpenClaw.Tests.csproj     src/OpenClaw.Tests/
+COPY src/OpenClaw.Core/OpenClaw.Core.csproj          src/OpenClaw.Core/
+COPY src/OpenClaw.Agent/OpenClaw.Agent.csproj         src/OpenClaw.Agent/
+COPY src/OpenClaw.Channels/OpenClaw.Channels.csproj   src/OpenClaw.Channels/
+COPY src/OpenClaw.Companion/OpenClaw.Companion.csproj src/OpenClaw.Companion/
+COPY src/OpenClaw.Gateway/OpenClaw.Gateway.csproj     src/OpenClaw.Gateway/
+COPY src/OpenClaw.Tests/OpenClaw.Tests.csproj         src/OpenClaw.Tests/
 
 # Restore (cached unless csproj files change)
 RUN dotnet restore OpenClaw.Net.sln
