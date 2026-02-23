@@ -14,8 +14,9 @@ obj/
 # OS
 .DS_Store
 
-# Local runtime data
-memory/
+# Local runtime data (lowercase 'memory/' dirs — not src/OpenClaw.Core/Memory/)
+**/memory/
+!src/OpenClaw.Core/Memory/
 
 # Local dotnet tools (profiling helpers)
 .dotnet-tools/
