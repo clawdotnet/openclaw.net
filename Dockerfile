@@ -27,8 +27,7 @@ COPY src/ src/
 # Publish Gateway as NativeAOT single-file binary
 RUN dotnet publish src/OpenClaw.Gateway/OpenClaw.Gateway.csproj \
     -c Release \
-    -o /app \
-    --no-restore
+    -o /app
 
 # ── Stage 2: Runtime (minimal, no SDK) ─────────────────────────────────
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled AS runtime
