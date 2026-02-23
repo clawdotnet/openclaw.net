@@ -19,7 +19,7 @@ COPY src/OpenClaw.Channels/OpenClaw.Channels.csproj src/OpenClaw.Channels/
 COPY src/OpenClaw.Gateway/OpenClaw.Gateway.csproj   src/OpenClaw.Gateway/
 
 # Restore (cached unless csproj files change)
-RUN dotnet restore src/OpenClaw.Gateway
+RUN dotnet restore src/OpenClaw.Gateway/OpenClaw.Gateway.csproj
 
 # Copy all source
 COPY src/ src/
