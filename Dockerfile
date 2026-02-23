@@ -29,6 +29,9 @@ RUN dotnet publish src/OpenClaw.Gateway/OpenClaw.Gateway.csproj \
     -c Release \
     -o /app
 
+# Create memory directory in build stage (chiseled images don't have mkdir)
+RUN mkdir -p /app/memory
+
 # ── Stage 2: Runtime (minimal, no SDK) ─────────────────────────────────
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled AS runtime
 
@@ -36,9 +39,6 @@ FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled AS runtime
 WORKDIR /app
 
 COPY --from=build /app .
-
-# Create memory directory with correct permissions
-RUN mkdir -p /app/memory
 
 # Default environment variables
 ENV ASPNETCORE_URLS=http://+:18789 \
