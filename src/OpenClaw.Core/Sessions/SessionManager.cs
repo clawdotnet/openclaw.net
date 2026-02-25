@@ -223,6 +223,8 @@ public sealed class SessionManager
 
     private void EvictLeastRecentlyActive()
     {
+        // TODO: This is an O(n) scan over all active sessions. If MaxConcurrentSessions grows
+        // beyond hundreds, consider replacing with a PriorityQueue<string, DateTimeOffset> for O(log n) eviction.
         // Safety bound to prevent spin-looping under heavy concurrent access
         var maxAttempts = _maxSessions + 1;
         var attempts = 0;

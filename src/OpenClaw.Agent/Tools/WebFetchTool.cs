@@ -96,21 +96,24 @@ public sealed partial class WebFetchTool : ITool, IDisposable
 
                 var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
 
-                // Read the body with size limit using pooled buffer to avoid LOH allocation
+                // Read the body with size limit using a small pooled read buffer + MemoryStream
+                // to avoid renting a potentially large (up to 512KB) array upfront from ArrayPool.
                 var maxBytes = _config.MaxSizeKb * 1024;
                 var stream = await response.Content.ReadAsStreamAsync(cts.Token);
-                var buffer = ArrayPool<byte>.Shared.Rent(maxBytes);
+                const int ReadBufferSize = 16 * 1024; // 16KB read chunks
+                var readBuffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize);
                 try
                 {
-                    var totalRead = 0;
+                    using var ms = new System.IO.MemoryStream();
                     int bytesRead;
-                    while (totalRead < maxBytes &&
-                           (bytesRead = await stream.ReadAsync(buffer.AsMemory(totalRead, maxBytes - totalRead), cts.Token)) > 0)
+                    while (ms.Length < maxBytes &&
+                           (bytesRead = await stream.ReadAsync(readBuffer.AsMemory(0, (int)Math.Min(ReadBufferSize, maxBytes - ms.Length)), cts.Token)) > 0)
                     {
-                        totalRead += bytesRead;
+                        ms.Write(readBuffer, 0, bytesRead);
                     }
 
-                    var raw = Encoding.UTF8.GetString(buffer, 0, totalRead);
+                    var totalRead = (int)ms.Length;
+                    var raw = Encoding.UTF8.GetString(ms.GetBuffer(), 0, totalRead);
                     var truncated = totalRead == maxBytes;
 
                     // For HTML, strip tags and extract readable text
@@ -135,10 +138,10 @@ public sealed partial class WebFetchTool : ITool, IDisposable
                     var redirectNote = redirects > 0 ? $" (redirected from {url})" : "";
                     var header = $"URL: {urlLine}{redirectNote}\nContent-Type: {contentType}\nLength: {text.Length} chars{(truncated ? " (truncated)" : "")}\n\n";
                     return header + text;
-                } // end of try for ArrayPool buffer
+                }
                 finally
                 {
-                    ArrayPool<byte>.Shared.Return(buffer);
+                    ArrayPool<byte>.Shared.Return(readBuffer);
                 }
             }
             catch (HttpRequestException ex)
