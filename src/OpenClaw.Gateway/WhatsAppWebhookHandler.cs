@@ -70,10 +70,13 @@ internal sealed class WhatsAppWebhookHandler
     {
         try
         {
-            var payload = await JsonSerializer.DeserializeAsync(
-                context.Request.Body,
-                WhatsAppJsonContext.Default.WhatsAppInboundPayload,
-                ct);
+            var body = await ReadBodyWithLimitAsync(context, _config.MaxRequestBytes, ct);
+            if (body is null)
+                return WebhookResult.Status(StatusCodes.Status413PayloadTooLarge);
+
+            var payload = JsonSerializer.Deserialize(
+                body,
+                WhatsAppJsonContext.Default.WhatsAppInboundPayload);
 
             if (payload?.Entry is null) return WebhookResult.Ok();
 
@@ -141,10 +144,13 @@ internal sealed class WhatsAppWebhookHandler
     {
         try
         {
-            var payload = await JsonSerializer.DeserializeAsync(
-                context.Request.Body,
-                WhatsAppBridgeJsonContext.Default.WhatsAppBridgeInboundPayload,
-                ct);
+            var body = await ReadBodyWithLimitAsync(context, _config.MaxRequestBytes, ct);
+            if (body is null)
+                return WebhookResult.Status(StatusCodes.Status413PayloadTooLarge);
+
+            var payload = JsonSerializer.Deserialize(
+                body,
+                WhatsAppBridgeJsonContext.Default.WhatsAppBridgeInboundPayload);
 
             if (payload is null || string.IsNullOrWhiteSpace(payload.From))
                 return WebhookResult.BadRequest("Missing From");
@@ -173,5 +179,32 @@ internal sealed class WhatsAppWebhookHandler
             _logger.LogError(ex, "Failed to parse WhatsApp Bridge webhook.");
             return WebhookResult.BadRequest("Invalid JSON");
         }
+    }
+
+    private static async Task<byte[]?> ReadBodyWithLimitAsync(HttpContext context, int maxBytes, CancellationToken ct)
+    {
+        var contentLength = context.Request.ContentLength;
+        if (contentLength.HasValue && contentLength.Value > maxBytes)
+            return null;
+
+        var feature = context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
+        if (feature is { IsReadOnly: false })
+            feature.MaxRequestBodySize = maxBytes;
+
+        var buffer = new byte[8 * 1024];
+        await using var ms = new MemoryStream();
+        while (true)
+        {
+            var read = await context.Request.Body.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
+            if (read == 0)
+                break;
+
+            if (ms.Length + read > maxBytes)
+                return null;
+
+            ms.Write(buffer, 0, read);
+        }
+
+        return ms.ToArray();
     }
 }

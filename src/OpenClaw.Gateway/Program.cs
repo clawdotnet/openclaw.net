@@ -2,7 +2,9 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Net.Http.Headers;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.AI;
 using OpenClaw.Gateway;
 using OpenClaw.Agent;
@@ -119,13 +121,26 @@ if (config.Channels.WhatsApp.Enabled)
     builder.Services.AddSingleton(config.Channels.WhatsApp);
     builder.Services.AddSingleton<WhatsAppWebhookHandler>();
     if (config.Channels.WhatsApp.Type == "bridge")
-        builder.Services.AddSingleton<WhatsAppBridgeChannel>();
+    {
+        builder.Services.AddSingleton<WhatsAppBridgeChannel>(sp =>
+            new WhatsAppBridgeChannel(
+                config.Channels.WhatsApp,
+                OpenClaw.Core.Http.HttpClientFactory.Create(),
+                sp.GetRequiredService<ILogger<WhatsAppBridgeChannel>>()));
+    }
     else
-        builder.Services.AddSingleton<WhatsAppChannel>();
+    {
+        builder.Services.AddSingleton<WhatsAppChannel>(sp =>
+            new WhatsAppChannel(
+                config.Channels.WhatsApp,
+                OpenClaw.Core.Http.HttpClientFactory.Create(),
+                sp.GetRequiredService<ILogger<WhatsAppChannel>>()));
+    }
 }
 
 if (config.Channels.Telegram.Enabled)
 {
+    builder.Services.AddSingleton(config.Channels.Telegram);
     builder.Services.AddSingleton<TelegramChannel>();
 }
 
@@ -307,15 +322,57 @@ app.UseWebSockets(new WebSocketOptions
     KeepAliveInterval = TimeSpan.FromSeconds(30)
 });
 
+static bool IsAuthorizedRequest(HttpContext ctx, bool nonLoopbackBind, GatewayConfig gatewayConfig)
+{
+    if (!nonLoopbackBind)
+        return true;
+
+    var token = GatewaySecurity.GetToken(ctx, gatewayConfig.Security.AllowQueryStringToken);
+    return GatewaySecurity.IsTokenValid(token, gatewayConfig.AuthToken!);
+}
+
+static bool TrySetMaxRequestBodySize(HttpContext ctx, long maxBytes)
+{
+    var feature = ctx.Features.Get<IHttpMaxRequestBodySizeFeature>();
+    if (feature is { IsReadOnly: false })
+    {
+        feature.MaxRequestBodySize = maxBytes;
+        return true;
+    }
+
+    return false;
+}
+
+static async Task<(bool Success, string Text)> TryReadBodyTextAsync(HttpContext ctx, long maxBytes, CancellationToken ct)
+{
+    var contentLength = ctx.Request.ContentLength;
+    if (contentLength.HasValue && contentLength.Value > maxBytes)
+        return (false, "");
+
+    TrySetMaxRequestBodySize(ctx, maxBytes);
+
+    var buffer = new byte[8 * 1024];
+    await using var ms = new MemoryStream();
+    while (true)
+    {
+        var read = await ctx.Request.Body.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
+        if (read == 0)
+            break;
+
+        if (ms.Length + read > maxBytes)
+            return (false, "");
+
+        ms.Write(buffer, 0, read);
+    }
+
+    return (true, Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length));
+}
+
 // Health check — useful for monitoring
 app.MapGet("/health", (HttpContext ctx) =>
 {
-    if (isNonLoopbackBind)
-    {
-        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
-        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
-            return Results.Unauthorized();
-    }
+    if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
+        return Results.Unauthorized();
 
     return Results.Ok(new { status = "ok", uptime = Environment.TickCount64 });
 });
@@ -323,12 +380,8 @@ app.MapGet("/health", (HttpContext ctx) =>
 // Detailed metrics endpoint — same auth as health
 app.MapGet("/metrics", (HttpContext ctx) =>
 {
-    if (isNonLoopbackBind)
-    {
-        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
-        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
-            return Results.Unauthorized();
-    }
+    if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
+        return Results.Unauthorized();
 
     runtimeMetrics.SetActiveSessions(sessionManager.ActiveCount);
     runtimeMetrics.SetCircuitBreakerState((int)agentRuntime.CircuitBreakerState);
@@ -381,21 +434,34 @@ app.MapGet("/chat", async (HttpContext ctx) =>
     }
 });
 
-app.MapPost("/pairing/approve", (string channelId, string senderId, string code) =>
+app.MapPost("/pairing/approve", (HttpContext ctx, string channelId, string senderId, string code) =>
 {
-    if (pairingManager.TryApprove(channelId, senderId, code))
+    if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
+        return Results.Unauthorized();
+
+    if (pairingManager.TryApprove(channelId, senderId, code, out var error))
         return Results.Ok(new { success = true, message = "Approved successfully." });
-    return Results.BadRequest(new { success = false, error = "Invalid code or no pairing request found." });
+
+    if (error.Contains("Too many invalid attempts", StringComparison.Ordinal))
+        return Results.Json(new { success = false, error }, statusCode: StatusCodes.Status429TooManyRequests);
+
+    return Results.BadRequest(new { success = false, error });
 });
 
-app.MapPost("/pairing/revoke", (string channelId, string senderId) =>
+app.MapPost("/pairing/revoke", (HttpContext ctx, string channelId, string senderId) =>
 {
+    if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
+        return Results.Unauthorized();
+
     pairingManager.Revoke(channelId, senderId);
     return Results.Ok(new { success = true });
 });
 
-app.MapGet("/pairing/list", () =>
+app.MapGet("/pairing/list", (HttpContext ctx) =>
 {
+    if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
+        return Results.Unauthorized();
+
     return Results.Ok(pairingManager.GetApprovedList());
 });
 
@@ -419,8 +485,7 @@ app.Map("/ws", async (HttpContext ctx) =>
 
     if (isNonLoopbackBind)
     {
-        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
-        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
+        if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
         {
             ctx.Response.StatusCode = 401;
             return;
@@ -451,14 +516,7 @@ if (smsChannel is not null && smsWebhookHandler is not null)
 {
     app.MapPost(config.Channels.Sms.Twilio.WebhookPath, async (HttpContext ctx) =>
     {
-        // Enforce request size limit (Twilio webhooks are typically < 10KB)
-        const long MaxRequestSize = 64 * 1024; // 64KB safety margin
-        if (ctx.Request.ContentLength > MaxRequestSize)
-        {
-            ctx.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
-            await ctx.Response.WriteAsync("Request too large.", ctx.RequestAborted);
-            return;
-        }
+        var maxRequestSize = Math.Max(4 * 1024, config.Channels.Sms.Twilio.MaxRequestBytes);
 
         if (!ctx.Request.HasFormContentType)
         {
@@ -467,9 +525,17 @@ if (smsChannel is not null && smsWebhookHandler is not null)
             return;
         }
 
-        var form = await ctx.Request.ReadFormAsync(ctx.RequestAborted);
+        var (bodyOk, bodyText) = await TryReadBodyTextAsync(ctx, maxRequestSize, ctx.RequestAborted);
+        if (!bodyOk)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            await ctx.Response.WriteAsync("Request too large.", ctx.RequestAborted);
+            return;
+        }
+
+        var parsed = QueryHelpers.ParseQuery(bodyText);
         var dict = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var kvp in form)
+        foreach (var kvp in parsed)
             dict[kvp.Key] = kvp.Value.ToString();
 
         var sig = ctx.Request.Headers["X-Twilio-Signature"].ToString();
@@ -509,26 +575,27 @@ if (config.Channels.Telegram.Enabled)
         if (telegramSecretBytes is not null)
         {
             var provided = ctx.Request.Headers["X-Telegram-Bot-Api-Secret-Token"].ToString();
-            if (string.IsNullOrEmpty(provided) ||
+            var providedBytes = Encoding.UTF8.GetBytes(provided ?? "");
+            if (providedBytes.Length != telegramSecretBytes.Length ||
                 !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                    Encoding.UTF8.GetBytes(provided), telegramSecretBytes))
+                    providedBytes, telegramSecretBytes))
             {
                 ctx.Response.StatusCode = 401;
                 return;
             }
         }
 
-        // Enforce body size limit (matching the Twilio handler pattern)
-        const long MaxRequestSize = 64 * 1024;
-        if (ctx.Request.ContentLength > MaxRequestSize)
+        var maxRequestSize = Math.Max(4 * 1024, config.Channels.Telegram.MaxRequestBytes);
+        var (bodyOk, bodyText) = await TryReadBodyTextAsync(ctx, maxRequestSize, ctx.RequestAborted);
+        if (!bodyOk)
         {
             ctx.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
             await ctx.Response.WriteAsync("Request too large.", ctx.RequestAborted);
             return;
         }
 
-        using var document = await JsonDocument.ParseAsync(ctx.Request.Body,
-            new JsonDocumentOptions { MaxDepth = 64 }, ctx.RequestAborted);
+        using var document = JsonDocument.Parse(bodyText,
+            new JsonDocumentOptions { MaxDepth = 64 });
         var root = document.RootElement;
 
         if (root.TryGetProperty("message", out var message) &&
@@ -537,6 +604,8 @@ if (config.Channels.Telegram.Enabled)
             chat.TryGetProperty("id", out var chatId))
         {
             var text = textNode.GetString() ?? "";
+            if (text.Length > config.Channels.Telegram.MaxInboundChars)
+                text = text[..config.Channels.Telegram.MaxInboundChars];
             var senderIdStr = chatId.GetRawText();
 
             if (config.Channels.Telegram.AllowedFromUserIds.Length > 0 &&
@@ -590,8 +659,14 @@ if (config.Webhooks.Enabled)
             return;
         }
 
-        using var sr = new StreamReader(ctx.Request.Body);
-        var body = await sr.ReadToEndAsync(ctx.RequestAborted);
+        var maxRequestSize = Math.Max(4 * 1024, hookCfg.MaxRequestBytes);
+        var (bodyOk, body) = await TryReadBodyTextAsync(ctx, maxRequestSize, ctx.RequestAborted);
+        if (!bodyOk)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            await ctx.Response.WriteAsync("Request too large.", ctx.RequestAborted);
+            return;
+        }
 
         // Truncate body to limit prompt injection surface
         if (body.Length > hookCfg.MaxBodyLength)

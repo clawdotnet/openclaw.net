@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Http;
 using OpenClaw.Core.Models;
 
 namespace OpenClaw.Channels;
@@ -19,11 +20,11 @@ public sealed class TelegramChannel : IChannelAdapter
     private readonly ILogger<TelegramChannel> _logger;
     private readonly string _botToken;
 
-    public TelegramChannel(TelegramChannelConfig config, IHttpClientFactory httpClientFactory, ILogger<TelegramChannel> logger)
+    public TelegramChannel(TelegramChannelConfig config, ILogger<TelegramChannel> logger)
     {
         _config = config;
         _logger = logger;
-        _http = httpClientFactory.CreateClient("TelegramChannel");
+        _http = HttpClientFactory.Create();
         
         var tokenSource = config.BotTokenRef.StartsWith("env:") 
             ? Environment.GetEnvironmentVariable(config.BotTokenRef[4..]) 
