@@ -110,6 +110,11 @@ The easiest way to interact with OpenClaw locally is via the embedded frontend:
 2. Open your browser to `http://127.0.0.1:18789/chat`
 3. Enter your `OPENCLAW_AUTH_TOKEN` value into the **Auth Token** field at the top of the page.
 
+WebChat token details:
+- The browser client authenticates WebSocket using `?token=<value>` on the `/ws` URL.
+- For non-loopback/public binds, enable `OpenClaw:Security:AllowQueryStringToken=true` if you use the built-in WebChat.
+- Entered token values are stored as `openclaw_token` in browser `localStorage`.
+
 ### Avalonia Desktop Companion
 You can also interact via the C# desktop interface:
 1. Start the Gateway: `dotnet run --project src/OpenClaw.Gateway`
@@ -123,6 +128,14 @@ Enable them under the `Channels` block in your config.
 - **Telegram**: Basic bot API support.
 - **Twilio SMS**: SMS support via Twilio.
 - **WhatsApp**: Official Cloud API or custom bridge support.
+
+Webhook request size controls:
+- `OpenClaw:Channels:Sms:Twilio:MaxRequestBytes` (default `65536`)
+- `OpenClaw:Channels:Telegram:MaxRequestBytes` (default `65536`)
+- `OpenClaw:Channels:WhatsApp:MaxRequestBytes` (default `65536`)
+- `OpenClaw:Webhooks:Endpoints:<name>:MaxRequestBytes` (default `131072`)
+
+For custom `/webhooks/{name}` routes, `MaxBodyLength` still controls prompt truncation after size validation.
 
 ---
 

@@ -94,6 +94,11 @@ Preferred client auth:
 Optional legacy auth (disabled by default):
 - `?token=<token>` when `OpenClaw:Security:AllowQueryStringToken=true`
 
+Built-in WebChat auth behavior:
+- The `/chat` UI connects to `/ws` using `?token=<token>` from the Auth Token field.
+- For Internet-facing/non-loopback binds, set `OpenClaw:Security:AllowQueryStringToken=true` if you use the built-in WebChat.
+- The token value is saved in browser `localStorage` as `openclaw_token` when entered.
+
 ### TLS
 You can run TLS either:
 - Behind a reverse proxy (recommended): nginx / Caddy / Cloudflare, forwarding to `http://127.0.0.1:18789`
@@ -132,14 +137,15 @@ For full details, feature matrices, and TypeScript requirements (like `jiti`), p
 ### Setup
 1. Create a Telegram Bot via BotFather and obtain the Bot Token.
 2. Set the auth token as an environment variable:
-   - `export OPENCLAW_BOT_TOKEN="..."`
+   - `export TELEGRAM_BOT_TOKEN="..."`
 3. Configure `OpenClaw:Channels:Telegram` in `src/OpenClaw.Gateway/appsettings.json`:
    - `Enabled=true`
-   - `BotTokenRef="env:OPENCLAW_BOT_TOKEN"`
+   - `BotTokenRef="env:TELEGRAM_BOT_TOKEN"`
+   - `MaxRequestBytes=65536` (default; inbound webhook body cap)
 
 ### Webhook
 Register your public webhook URL directly with Telegram's API:
-- `POST https://api.telegram.org/bot<vour-bot-token>/setWebhook?url=https://<your-public-host>/.openclaw/telegram/webhook`
+- `POST https://api.telegram.org/bot<your-bot-token>/setWebhook?url=https://<your-public-host>/.openclaw/telegram/webhook`
 
 ## Twilio SMS channel
 
@@ -155,6 +161,7 @@ Register your public webhook URL directly with Telegram's API:
    - `AllowedFromNumbers=[ "+1YOUR_MOBILE" ]`
    - `AllowedToNumbers=[ "+1YOUR_TWILIO_NUMBER" ]`
    - `WebhookPublicBaseUrl="https://<your-public-host>"` (required when `ValidateSignature=true`)
+   - `MaxRequestBytes=65536` (default; inbound webhook body cap)
 
 ### Webhook
 Point Twilio’s inbound SMS webhook to:
@@ -169,6 +176,17 @@ Recommended exposure options:
 - Keep `ValidateSignature=true`
 - Use strict allowlists (`AllowedFromNumbers`, `AllowedToNumbers`)
 - Do not set `AuthTokenRef` to `raw:...` outside local development
+
+## Webhook body limits
+
+Inbound webhook payloads are hard-capped before parsing. Configure these limits as needed:
+
+- `OpenClaw:Channels:Sms:Twilio:MaxRequestBytes` (default `65536`)
+- `OpenClaw:Channels:Telegram:MaxRequestBytes` (default `65536`)
+- `OpenClaw:Channels:WhatsApp:MaxRequestBytes` (default `65536`)
+- `OpenClaw:Webhooks:Endpoints:<name>:MaxRequestBytes` (default `131072`)
+
+For generic `/webhooks/{name}` endpoints, `MaxBodyLength` still controls prompt truncation after request-size validation.
 
 ## Docker deployment
 
@@ -188,7 +206,7 @@ $env:OPENCLAW_AUTH_TOKEN = [Convert]::ToHexString((1..32 | Array { Get-Random -M
 $env:EMAIL_PASSWORD = "..." # (Optional) For email tool
 ```
 
-> **Note**: For the built-in WebChat UI (`http://<ip>:18789/chat`), enter this exact `OPENCLAW_AUTH_TOKEN` value in the "Auth Token" field at the top of the interface. If you enable the **Email Tool**, make sure to set `EMAIL_PASSWORD` similarly.
+> **Note**: For the built-in WebChat UI (`http://<ip>:18789/chat`), enter this exact `OPENCLAW_AUTH_TOKEN` value in the "Auth Token" field. WebChat connects with a query token (`?token=`), so on non-loopback binds you must also set `OpenClaw:Security:AllowQueryStringToken=true`. If you enable the **Email Tool**, set `EMAIL_PASSWORD` similarly.
 
 # 2. Run (gateway only)
 docker compose up -d openclaw
