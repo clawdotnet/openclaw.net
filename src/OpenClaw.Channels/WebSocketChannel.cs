@@ -342,13 +342,17 @@ public sealed class WebSocketChannel : IChannelAdapter
         try
         {
             var env = JsonSerializer.Deserialize(payload, CoreJsonContext.Default.WsClientEnvelope);
-            if (env is { Type: "user_message", Text: not null })
+            if (env is { Type: "user_message" })
             {
+                var extractedText = env.Text ?? env.Content;
+                if (extractedText is null)
+                    return (payload, null, null, false);
+
                 // Validate extracted text length to prevent memory pressure
-                if (env.Text.Length > MaxExtractedTextLength)
-                    return (env.Text[..MaxExtractedTextLength], env.MessageId, env.ReplyToMessageId, true);
-                
-                return (env.Text, env.MessageId, env.ReplyToMessageId, true);
+                if (extractedText.Length > MaxExtractedTextLength)
+                    return (extractedText[..MaxExtractedTextLength], env.MessageId, env.ReplyToMessageId, true);
+
+                return (extractedText, env.MessageId, env.ReplyToMessageId, true);
             }
         }
         catch

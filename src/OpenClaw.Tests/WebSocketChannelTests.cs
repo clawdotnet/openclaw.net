@@ -54,6 +54,29 @@ public sealed class WebSocketChannelTests
     }
 
     [Fact]
+    public async Task HandleConnectionAsync_AcceptsLegacyContentEnvelope()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });
+        var ws = new TestWebSocket();
+
+        var payload = """{"type":"user_message","content":"legacy"}""";
+        ws.QueueReceiveBytes(System.Text.Encoding.UTF8.GetBytes(payload), endOfMessage: true);
+        ws.QueueClose();
+
+        InboundMessage? received = null;
+        channel.OnMessageReceived += (msg, _) =>
+        {
+            received = msg;
+            return ValueTask.CompletedTask;
+        };
+
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+
+        Assert.NotNull(received);
+        Assert.Equal("legacy", received!.Text);
+    }
+
+    [Fact]
     public async Task SendAsync_UsesJsonEnvelopeWhenClientOptedIn()
     {
         var channel = new WebSocketChannel(new WebSocketConfig());
@@ -76,4 +99,3 @@ public sealed class WebSocketChannelTests
         Assert.Equal("m1", env.InReplyToMessageId);
     }
 }
-

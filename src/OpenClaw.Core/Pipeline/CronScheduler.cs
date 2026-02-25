@@ -107,7 +107,7 @@ public sealed class CronScheduler : BackgroundService
         {
             var stepParts = field.Split('/');
             if (stepParts.Length == 2 && stepParts[0] == "*" && int.TryParse(stepParts[1], out var step))
-                return value % step == 0;
+                return step > 0 && value % step == 0;
         }
 
         if (field.Contains(','))
