@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Channels;
@@ -9,7 +8,7 @@ using OpenClaw.Core.Models;
 namespace OpenClaw.Core.Pipeline;
 
 /// <summary>
-/// A simple background service that checks registered cron jobs every minute 
+/// A simple background service that checks registered cron jobs every minute
 /// and publishes an InboundMessage to the pipeline.
 /// </summary>
 public sealed class CronScheduler : BackgroundService
@@ -17,9 +16,6 @@ public sealed class CronScheduler : BackgroundService
     private readonly GatewayConfig _config;
     private readonly ILogger<CronScheduler> _logger;
     private readonly ChannelWriter<InboundMessage> _pipelineChannel;
-    
-    // Quick cache for "is it this minute?" evaluations
-    private readonly ConcurrentDictionary<string, bool> _cronCache = new();
 
     public CronScheduler(GatewayConfig config, ILogger<CronScheduler> logger, ChannelWriter<InboundMessage> pipelineChannel)
     {
@@ -41,11 +37,27 @@ public sealed class CronScheduler : BackgroundService
 
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
-            var now = DateTimeOffset.UtcNow;
-            
+            var utcNow = DateTimeOffset.UtcNow;
+
             // Re-evaluate jobs at the top of the minute
             foreach (var job in _config.Cron.Jobs)
             {
+                // Convert to job-specific timezone if configured, otherwise use UTC
+                var now = utcNow;
+                if (!string.IsNullOrWhiteSpace(job.Timezone))
+                {
+                    try
+                    {
+                        var tz = TimeZoneInfo.FindSystemTimeZoneById(job.Timezone);
+                        now = TimeZoneInfo.ConvertTime(utcNow, tz);
+                    }
+                    catch (TimeZoneNotFoundException)
+                    {
+                        _logger.LogWarning("Cron job '{JobName}' has invalid timezone '{Timezone}', falling back to UTC.",
+                            job.Name, job.Timezone);
+                    }
+                }
+
                 if (IsTime(job.CronExpression, now))
                 {
                     _logger.LogInformation("Triggering cron job '{JobName}' at {Time}", job.Name, now);

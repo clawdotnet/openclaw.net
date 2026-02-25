@@ -202,6 +202,15 @@ public sealed class TelegramChannelConfig
     public string? WebhookPublicBaseUrl { get; set; }
     public string[] AllowedFromUserIds { get; set; } = [];
     public int MaxInboundChars { get; set; } = 4096;
+
+    /// <summary>When true, validates the X-Telegram-Bot-Api-Secret-Token header on inbound webhooks.</summary>
+    public bool ValidateSignature { get; set; } = true;
+
+    /// <summary>Secret token set via Telegram's setWebhook API (direct value).</summary>
+    public string? WebhookSecretToken { get; set; }
+
+    /// <summary>Secret token reference (env: or raw:). Used when WebhookSecretToken is null.</summary>
+    public string WebhookSecretTokenRef { get; set; } = "env:TELEGRAM_WEBHOOK_SECRET";
 }
 
 public sealed class CronConfig
@@ -217,6 +226,9 @@ public sealed class CronJobConfig
     public string Prompt { get; set; } = "";
     public string? SessionId { get; set; }
     public string? ChannelId { get; set; }
+
+    /// <summary>IANA timezone ID (e.g. "America/New_York"). Null defaults to UTC.</summary>
+    public string? Timezone { get; set; }
 }
 
 public sealed class WebhooksConfig
@@ -232,4 +244,7 @@ public sealed class WebhookEndpointConfig
     public string HmacHeader { get; set; } = "X-Hub-Signature-256";
     public string? SessionId { get; set; }
     public string PromptTemplate { get; set; } = "Webhook received:\n\n{body}";
+
+    /// <summary>Maximum webhook body length in characters before truncation. Limits prompt injection surface.</summary>
+    public int MaxBodyLength { get; set; } = 10_240;
 }

@@ -56,7 +56,7 @@ public static class GatewayWorkers
                     var now = DateTimeOffset.UtcNow;
                     var orphanThreshold = TimeSpan.FromHours(2);
                     
-                    foreach (var kvp in sessionLocks.ToArray())
+                    foreach (var kvp in sessionLocks)
                     {
                         var sessionKey = kvp.Key;
                         var semaphore = kvp.Value;
