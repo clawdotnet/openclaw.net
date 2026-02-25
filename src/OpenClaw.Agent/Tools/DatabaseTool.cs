@@ -182,11 +182,17 @@ public sealed class DatabaseTool : ITool, IDisposable
 
         if (provider == "sqlite")
         {
-            cmd.CommandText = $"PRAGMA table_info('{table}')";
+            // PRAGMA does not support parameterized queries. IsValidIdentifier (above)
+            // restricts to [a-zA-Z0-9_.-]; defense-in-depth: escape single quotes.
+            var escapedTable = table.Replace("'", "''");
+            cmd.CommandText = $"PRAGMA table_info('{escapedTable}')";
         }
         else if (provider == "mysql")
         {
-            cmd.CommandText = $"DESCRIBE `{table}`";
+            // DESCRIBE does not support parameterized queries. IsValidIdentifier (above)
+            // restricts to [a-zA-Z0-9_.-]; defense-in-depth: escape backticks.
+            var escapedTable = table.Replace("`", "``");
+            cmd.CommandText = $"DESCRIBE `{escapedTable}`";
         }
         else
         {

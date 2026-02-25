@@ -132,10 +132,7 @@ public sealed class EmailTool : ITool, IDisposable
 
         return await ExecuteImapAsync(async (stream, reader, writer, cancellation) =>
         {
-            await ImapSelectAsync(writer, reader, folder, cancellation);
-
-            // Get total message count
-            var total = await ImapGetMessageCountAsync(writer, reader, cancellation);
+            var total = await ImapSelectAsync(writer, reader, folder, cancellation);
             if (total == 0) return "No messages in folder.";
 
             var startMsg = Math.Max(1, total - count + 1);
@@ -264,7 +261,7 @@ public sealed class EmailTool : ITool, IDisposable
             await reader.ReadLineAsync(ct);
 
             // Login
-            await writer.WriteLineAsync($"A1 LOGIN {_config.Username} {password}".AsMemory(), ct);
+            await writer.WriteLineAsync($"A1 LOGIN {ImapQuote(_config.Username!)} {ImapQuote(password)}".AsMemory(), ct);
             await writer.FlushAsync(ct);
             var loginResp = await ReadUntilTagAsync(reader, "A1", ct);
             if (!loginResp.Contains("OK", StringComparison.OrdinalIgnoreCase))
@@ -284,33 +281,26 @@ public sealed class EmailTool : ITool, IDisposable
         }
     }
 
-    private static async Task ImapSelectAsync(StreamWriter writer, StreamReader reader, string folder, CancellationToken ct)
+    /// <summary>
+    /// Selects the given IMAP folder and returns the message count from the EXISTS response.
+    /// </summary>
+    private static async Task<int> ImapSelectAsync(StreamWriter writer, StreamReader reader, string folder, CancellationToken ct)
     {
         await writer.WriteLineAsync($"A2 SELECT {folder}".AsMemory(), ct);
-        await writer.FlushAsync(ct);
-        await ReadUntilTagAsync(reader, "A2", ct);
-    }
-
-    private static async Task<int> ImapGetMessageCountAsync(StreamWriter writer, StreamReader reader, CancellationToken ct)
-    {
-        await writer.WriteLineAsync("A3 STATUS INBOX (MESSAGES)".AsMemory(), ct);
         await writer.FlushAsync(ct);
 
         var count = 0;
         string? line;
         while ((line = await reader.ReadLineAsync(ct)) is not null)
         {
-            if (line.Contains("MESSAGES", StringComparison.OrdinalIgnoreCase))
+            // Parse "* N EXISTS" response from SELECT
+            if (line.EndsWith("EXISTS", StringComparison.OrdinalIgnoreCase))
             {
-                var idx = line.IndexOf("MESSAGES", StringComparison.OrdinalIgnoreCase);
-                var numStart = idx + 8;
-                while (numStart < line.Length && !char.IsDigit(line[numStart])) numStart++;
-                var numEnd = numStart;
-                while (numEnd < line.Length && char.IsDigit(line[numEnd])) numEnd++;
-                if (numEnd > numStart)
-                    int.TryParse(line.AsSpan(numStart, numEnd - numStart), out count);
+                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2 && int.TryParse(parts[1], out var exists))
+                    count = exists;
             }
-            if (line.StartsWith("A3 ", StringComparison.Ordinal)) break;
+            if (line.StartsWith("A2 ", StringComparison.Ordinal)) break;
         }
 
         return count;
@@ -388,6 +378,13 @@ public sealed class EmailTool : ITool, IDisposable
         }
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Quotes a string for use in an IMAP command (RFC 3501 quoted string).
+    /// Wraps in double quotes and escapes internal backslashes and double-quotes.
+    /// </summary>
+    private static string ImapQuote(string value)
+        => "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
     private static string? ResolveSecret(string? secretRef) => SecretResolver.Resolve(secretRef);
 

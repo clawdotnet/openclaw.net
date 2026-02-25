@@ -474,7 +474,38 @@
 
             if (isError) {
                 div.className = 'message system error';
-                div.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> ${text}`;
+                const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                icon.setAttribute('width', '14');
+                icon.setAttribute('height', '14');
+                icon.setAttribute('viewBox', '0 0 24 24');
+                icon.setAttribute('fill', 'none');
+                icon.setAttribute('stroke', 'currentColor');
+                icon.setAttribute('stroke-width', '2');
+
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', '12');
+                circle.setAttribute('cy', '12');
+                circle.setAttribute('r', '10');
+
+                const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line1.setAttribute('x1', '12');
+                line1.setAttribute('y1', '8');
+                line1.setAttribute('x2', '12');
+                line1.setAttribute('y2', '12');
+
+                const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line2.setAttribute('x1', '12');
+                line2.setAttribute('y1', '16');
+                line2.setAttribute('x2', '12.01');
+                line2.setAttribute('y2', '16');
+
+                icon.appendChild(circle);
+                icon.appendChild(line1);
+                icon.appendChild(line2);
+
+                const textNode = document.createTextNode(` ${text}`);
+                div.appendChild(icon);
+                div.appendChild(textNode);
             } else {
                 div.className = 'message system';
                 div.textContent = text;
@@ -499,22 +530,22 @@
         function connect() {
             appendSystem('Connecting to Gateway endpoint...');
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            const baseWsUrl = `${protocol}//${window.location.host}/ws`;
+            const token = tokenInput.value || localStorage.getItem('openclaw_token') || '';
+            const wsUrl = token
+                ? `${baseWsUrl}?token=${encodeURIComponent(token)}`
+                : baseWsUrl;
+
+            if (tokenInput.value) {
+                localStorage.setItem('openclaw_token', tokenInput.value);
+            }
 
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
-                appendSystem('Connected securely. Handshake complete.');
+                appendSystem('Connected.');
                 messageInput.disabled = false;
                 sendButton.disabled = false;
-
-                // Auth handshake
-                const token = tokenInput.value || localStorage.getItem('openclaw_token') || 'bypass';
-                ws.send(JSON.stringify({
-                    type: "auth",
-                    token: token,
-                    envelope_mode: true
-                }));
             };
 
             ws.onmessage = (event) => {
@@ -522,16 +553,6 @@
                     const env = JSON.parse(event.data);
 
                     switch (env.type) {
-                        case 'auth_success':
-                            if (tokenInput.value) {
-                                localStorage.setItem('openclaw_token', tokenInput.value);
-                            }
-                            break;
-
-                        case 'auth_challenge':
-                            appendSystem('Authentication failed. Please provide a valid Auth Token.', true);
-                            break;
-
                         case 'typing_start':
                             typingRow.style.display = 'flex';
                             scrollToBottom();
@@ -550,7 +571,8 @@
                             break;
 
                         case 'assistant_message':
-                        case 'text_delta':
+                        case 'assistant_chunk':
+                        case 'text_delta': // backwards compatibility
                             if (!activeResponseDiv) {
                                 const row = createRow('assistant');
                                 activeResponseDiv = document.createElement('div');
@@ -559,18 +581,28 @@
                                 chatContainer.insertBefore(row, typingRow);
                             }
 
-                            activeRawContent += env.content;
+                            activeRawContent += (env.text ?? env.content ?? "");
                             // Fast approximate render while streaming (can be glitchy for code blocks, but better than plaintext)
                             activeResponseDiv.innerHTML = DOMPurify.sanitize(marked.parse(activeRawContent));
                             scrollToBottom();
                             break;
 
+                        case 'assistant_done':
+                            typingRow.style.display = 'none';
+                            if (activeResponseDiv && activeRawContent) {
+                                activeResponseDiv.innerHTML = DOMPurify.sanitize(marked.parse(activeRawContent));
+                            }
+                            activeResponseDiv = null;
+                            activeRawContent = "";
+                            scrollToBottom();
+                            break;
+
                         case 'error':
-                            appendSystem(env.content, true);
+                            appendSystem(env.text ?? env.content ?? 'An unknown error occurred.', true);
                             break;
 
                         case 'tool_start':
-                            appendToolPill(env.content);
+                            appendToolPill(env.text ?? env.content ?? 'tool');
                             break;
 
                         case 'tool_result':
@@ -621,7 +653,7 @@
             // Envelope mode send
             ws.send(JSON.stringify({
                 type: "user_message",
-                content: text
+                text: text
             }));
 
             messageInput.value = '';
