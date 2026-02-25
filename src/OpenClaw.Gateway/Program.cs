@@ -2,7 +2,9 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Net.Http.Headers;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.AI;
 using OpenClaw.Gateway;
 using OpenClaw.Agent;
@@ -119,13 +121,26 @@ if (config.Channels.WhatsApp.Enabled)
     builder.Services.AddSingleton(config.Channels.WhatsApp);
     builder.Services.AddSingleton<WhatsAppWebhookHandler>();
     if (config.Channels.WhatsApp.Type == "bridge")
-        builder.Services.AddSingleton<WhatsAppBridgeChannel>();
+    {
+        builder.Services.AddSingleton<WhatsAppBridgeChannel>(sp =>
+            new WhatsAppBridgeChannel(
+                config.Channels.WhatsApp,
+                OpenClaw.Core.Http.HttpClientFactory.Create(),
+                sp.GetRequiredService<ILogger<WhatsAppBridgeChannel>>()));
+    }
     else
-        builder.Services.AddSingleton<WhatsAppChannel>();
+    {
+        builder.Services.AddSingleton<WhatsAppChannel>(sp =>
+            new WhatsAppChannel(
+                config.Channels.WhatsApp,
+                OpenClaw.Core.Http.HttpClientFactory.Create(),
+                sp.GetRequiredService<ILogger<WhatsAppChannel>>()));
+    }
 }
 
 if (config.Channels.Telegram.Enabled)
 {
+    builder.Services.AddSingleton(config.Channels.Telegram);
     builder.Services.AddSingleton<TelegramChannel>();
 }
 
@@ -215,6 +230,18 @@ var hooks = new List<IToolHook>();
 var auditLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AuditLog");
 hooks.Add(new AuditLogHook(auditLogger));
 
+// ── Multi-Agent Delegation ─────────────────────────────────────────────
+if (config.Delegation.Enabled && config.Delegation.Profiles.Count > 0)
+{
+    var delegateLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("DelegateTool");
+    var delegateTool = new DelegateTool(
+        chatClient, tools, memoryStore, config.Llm, config.Delegation,
+        currentDepth: 0, metrics: runtimeMetrics, logger: delegateLogger);
+
+    tools = [.. tools, delegateTool];
+}
+
+// Construct AgentRuntime once with the final tools list (including DelegateTool if enabled)
 var agentRuntime = new AgentRuntime(chatClient, tools, memoryStore, config.Llm, config.Memory.MaxHistoryTurns, skills,
     logger: agentLogger, toolTimeoutSeconds: config.Tooling.ToolTimeoutSeconds, metrics: runtimeMetrics,
     parallelToolExecution: config.Tooling.ParallelToolExecution,
@@ -225,30 +252,6 @@ var agentRuntime = new AgentRuntime(chatClient, tools, memoryStore, config.Llm, 
     approvalRequiredTools: config.Tooling.ApprovalRequiredTools,
     hooks: hooks,
     sessionTokenBudget: config.SessionTokenBudget);
-
-// ── Multi-Agent Delegation ─────────────────────────────────────────────
-if (config.Delegation.Enabled && config.Delegation.Profiles.Count > 0)
-{
-    var delegateLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("DelegateTool");
-    var delegateTool = new DelegateTool(
-        chatClient, tools, memoryStore, config.Llm, config.Delegation,
-        currentDepth: 0, metrics: runtimeMetrics, logger: delegateLogger);
-
-    // Re-create tools list with delegate tool appended
-    tools = [.. tools, delegateTool];
-
-    // Rebuild agent runtime with delegation-enabled toolset
-    agentRuntime = new AgentRuntime(chatClient, tools, memoryStore, config.Llm, config.Memory.MaxHistoryTurns, skills,
-        logger: agentLogger, toolTimeoutSeconds: config.Tooling.ToolTimeoutSeconds, metrics: runtimeMetrics,
-        parallelToolExecution: config.Tooling.ParallelToolExecution,
-        enableCompaction: config.Memory.EnableCompaction,
-        compactionThreshold: config.Memory.CompactionThreshold,
-        compactionKeepRecent: config.Memory.CompactionKeepRecent,
-        requireToolApproval: config.Tooling.RequireToolApproval,
-        approvalRequiredTools: config.Tooling.ApprovalRequiredTools,
-        hooks: hooks,
-        sessionTokenBudget: config.SessionTokenBudget);
-}
 
 // ── Middleware Pipeline ────────────────────────────────────────────────
 var middlewareList = new List<IMessageMiddleware>();
@@ -282,9 +285,13 @@ if (config.Security.TrustForwardedHeaders)
 }
 
 // CORS — when AllowedOrigins is configured, add preflight + header support for HTTP endpoints
-if (config.Security.AllowedOrigins.Length > 0)
+// Shared set used by both CORS middleware and WebSocket origin check
+var allowedOriginsSet = config.Security.AllowedOrigins.Length > 0
+    ? new HashSet<string>(config.Security.AllowedOrigins, StringComparer.Ordinal)
+    : null;
+
+if (allowedOriginsSet is not null)
 {
-    var allowedOriginsSet = new HashSet<string>(config.Security.AllowedOrigins, StringComparer.Ordinal);
     app.Use(async (ctx, next) =>
     {
         if (ctx.Request.Headers.TryGetValue("Origin", out var origin))
@@ -315,15 +322,57 @@ app.UseWebSockets(new WebSocketOptions
     KeepAliveInterval = TimeSpan.FromSeconds(30)
 });
 
+static bool IsAuthorizedRequest(HttpContext ctx, bool nonLoopbackBind, GatewayConfig gatewayConfig)
+{
+    if (!nonLoopbackBind)
+        return true;
+
+    var token = GatewaySecurity.GetToken(ctx, gatewayConfig.Security.AllowQueryStringToken);
+    return GatewaySecurity.IsTokenValid(token, gatewayConfig.AuthToken!);
+}
+
+static bool TrySetMaxRequestBodySize(HttpContext ctx, long maxBytes)
+{
+    var feature = ctx.Features.Get<IHttpMaxRequestBodySizeFeature>();
+    if (feature is { IsReadOnly: false })
+    {
+        feature.MaxRequestBodySize = maxBytes;
+        return true;
+    }
+
+    return false;
+}
+
+static async Task<(bool Success, string Text)> TryReadBodyTextAsync(HttpContext ctx, long maxBytes, CancellationToken ct)
+{
+    var contentLength = ctx.Request.ContentLength;
+    if (contentLength.HasValue && contentLength.Value > maxBytes)
+        return (false, "");
+
+    TrySetMaxRequestBodySize(ctx, maxBytes);
+
+    var buffer = new byte[8 * 1024];
+    await using var ms = new MemoryStream();
+    while (true)
+    {
+        var read = await ctx.Request.Body.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
+        if (read == 0)
+            break;
+
+        if (ms.Length + read > maxBytes)
+            return (false, "");
+
+        ms.Write(buffer, 0, read);
+    }
+
+    return (true, Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length));
+}
+
 // Health check — useful for monitoring
 app.MapGet("/health", (HttpContext ctx) =>
 {
-    if (isNonLoopbackBind)
-    {
-        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
-        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
-            return Results.Unauthorized();
-    }
+    if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
+        return Results.Unauthorized();
 
     return Results.Ok(new { status = "ok", uptime = Environment.TickCount64 });
 });
@@ -331,12 +380,8 @@ app.MapGet("/health", (HttpContext ctx) =>
 // Detailed metrics endpoint — same auth as health
 app.MapGet("/metrics", (HttpContext ctx) =>
 {
-    if (isNonLoopbackBind)
-    {
-        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
-        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
-            return Results.Unauthorized();
-    }
+    if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
+        return Results.Unauthorized();
 
     runtimeMetrics.SetActiveSessions(sessionManager.ActiveCount);
     runtimeMetrics.SetCircuitBreakerState((int)agentRuntime.CircuitBreakerState);
@@ -389,21 +434,34 @@ app.MapGet("/chat", async (HttpContext ctx) =>
     }
 });
 
-app.MapPost("/pairing/approve", (string channelId, string senderId, string code) =>
+app.MapPost("/pairing/approve", (HttpContext ctx, string channelId, string senderId, string code) =>
 {
-    if (pairingManager.TryApprove(channelId, senderId, code))
-        return Results.Ok(new { success = true, error = "Approved successfully." }); // Actually returning success
-    return Results.BadRequest(new { success = false, error = "Invalid code or no pairing request found." });
+    if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
+        return Results.Unauthorized();
+
+    if (pairingManager.TryApprove(channelId, senderId, code, out var error))
+        return Results.Ok(new { success = true, message = "Approved successfully." });
+
+    if (error.Contains("Too many invalid attempts", StringComparison.Ordinal))
+        return Results.Json(new { success = false, error }, statusCode: StatusCodes.Status429TooManyRequests);
+
+    return Results.BadRequest(new { success = false, error });
 });
 
-app.MapPost("/pairing/revoke", (string channelId, string senderId) =>
+app.MapPost("/pairing/revoke", (HttpContext ctx, string channelId, string senderId) =>
 {
+    if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
+        return Results.Unauthorized();
+
     pairingManager.Revoke(channelId, senderId);
     return Results.Ok(new { success = true });
 });
 
-app.MapGet("/pairing/list", () =>
+app.MapGet("/pairing/list", (HttpContext ctx) =>
 {
+    if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
+        return Results.Unauthorized();
+
     return Results.Ok(pairingManager.GetApprovedList());
 });
 
@@ -416,10 +474,9 @@ app.Map("/ws", async (HttpContext ctx) =>
         return;
     }
 
-    if (config.Security.AllowedOrigins.Length > 0 && ctx.Request.Headers.TryGetValue("Origin", out var origin))
+    if (allowedOriginsSet is not null && ctx.Request.Headers.TryGetValue("Origin", out var origin))
     {
-        var originsSetForWs = new HashSet<string>(config.Security.AllowedOrigins, StringComparer.Ordinal);
-        if (!originsSetForWs.Contains(origin.ToString()))
+        if (!allowedOriginsSet.Contains(origin.ToString()))
         {
             ctx.Response.StatusCode = 403;
             return;
@@ -428,8 +485,7 @@ app.Map("/ws", async (HttpContext ctx) =>
 
     if (isNonLoopbackBind)
     {
-        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
-        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
+        if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
         {
             ctx.Response.StatusCode = 401;
             return;
@@ -460,14 +516,7 @@ if (smsChannel is not null && smsWebhookHandler is not null)
 {
     app.MapPost(config.Channels.Sms.Twilio.WebhookPath, async (HttpContext ctx) =>
     {
-        // Enforce request size limit (Twilio webhooks are typically < 10KB)
-        const long MaxRequestSize = 64 * 1024; // 64KB safety margin
-        if (ctx.Request.ContentLength > MaxRequestSize)
-        {
-            ctx.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
-            await ctx.Response.WriteAsync("Request too large.", ctx.RequestAborted);
-            return;
-        }
+        var maxRequestSize = Math.Max(4 * 1024, config.Channels.Sms.Twilio.MaxRequestBytes);
 
         if (!ctx.Request.HasFormContentType)
         {
@@ -476,9 +525,17 @@ if (smsChannel is not null && smsWebhookHandler is not null)
             return;
         }
 
-        var form = await ctx.Request.ReadFormAsync(ctx.RequestAborted);
+        var (bodyOk, bodyText) = await TryReadBodyTextAsync(ctx, maxRequestSize, ctx.RequestAborted);
+        if (!bodyOk)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            await ctx.Response.WriteAsync("Request too large.", ctx.RequestAborted);
+            return;
+        }
+
+        var parsed = QueryHelpers.ParseQuery(bodyText);
         var dict = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var kvp in form)
+        foreach (var kvp in parsed)
             dict[kvp.Key] = kvp.Value.ToString();
 
         var sig = ctx.Request.Headers["X-Twilio-Signature"].ToString();
@@ -499,20 +556,59 @@ if (smsChannel is not null && smsWebhookHandler is not null)
 }
 if (config.Channels.Telegram.Enabled)
 {
+    // Resolve the Telegram webhook secret token once at startup
+    byte[]? telegramSecretBytes = null;
+    if (config.Channels.Telegram.ValidateSignature)
+    {
+        var telegramSecret = config.Channels.Telegram.WebhookSecretToken
+            ?? SecretResolver.Resolve(config.Channels.Telegram.WebhookSecretTokenRef);
+        if (string.IsNullOrWhiteSpace(telegramSecret))
+            throw new InvalidOperationException(
+                "Telegram ValidateSignature is true but WebhookSecretToken/WebhookSecretTokenRef could not be resolved. " +
+                "Set TELEGRAM_WEBHOOK_SECRET or disable ValidateSignature.");
+        telegramSecretBytes = Encoding.UTF8.GetBytes(telegramSecret);
+    }
+
     app.MapPost(config.Channels.Telegram.WebhookPath, async (HttpContext ctx) =>
     {
-        using var document = await JsonDocument.ParseAsync(ctx.Request.Body, cancellationToken: ctx.RequestAborted);
+        // Validate X-Telegram-Bot-Api-Secret-Token header
+        if (telegramSecretBytes is not null)
+        {
+            var provided = ctx.Request.Headers["X-Telegram-Bot-Api-Secret-Token"].ToString();
+            var providedBytes = Encoding.UTF8.GetBytes(provided ?? "");
+            if (providedBytes.Length != telegramSecretBytes.Length ||
+                !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                    providedBytes, telegramSecretBytes))
+            {
+                ctx.Response.StatusCode = 401;
+                return;
+            }
+        }
+
+        var maxRequestSize = Math.Max(4 * 1024, config.Channels.Telegram.MaxRequestBytes);
+        var (bodyOk, bodyText) = await TryReadBodyTextAsync(ctx, maxRequestSize, ctx.RequestAborted);
+        if (!bodyOk)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            await ctx.Response.WriteAsync("Request too large.", ctx.RequestAborted);
+            return;
+        }
+
+        using var document = JsonDocument.Parse(bodyText,
+            new JsonDocumentOptions { MaxDepth = 64 });
         var root = document.RootElement;
-        
+
         if (root.TryGetProperty("message", out var message) &&
             message.TryGetProperty("text", out var textNode) &&
             message.TryGetProperty("chat", out var chat) &&
             chat.TryGetProperty("id", out var chatId))
         {
             var text = textNode.GetString() ?? "";
+            if (text.Length > config.Channels.Telegram.MaxInboundChars)
+                text = text[..config.Channels.Telegram.MaxInboundChars];
             var senderIdStr = chatId.GetRawText();
-            
-            if (config.Channels.Telegram.AllowedFromUserIds.Length > 0 && 
+
+            if (config.Channels.Telegram.AllowedFromUserIds.Length > 0 &&
                 !config.Channels.Telegram.AllowedFromUserIds.Contains(senderIdStr))
             {
                 ctx.Response.StatusCode = 403;
@@ -528,7 +624,7 @@ if (config.Channels.Telegram.Enabled)
 
             await pipeline.InboundWriter.WriteAsync(msg, ctx.RequestAborted);
         }
-        
+
         ctx.Response.StatusCode = 200;
         await ctx.Response.WriteAsync("OK");
     });
@@ -537,28 +633,13 @@ if (config.Channels.Telegram.Enabled)
 if (config.Channels.WhatsApp.Enabled)
 {
     var whatsappWebhookHandler = app.Services.GetRequiredService<WhatsAppWebhookHandler>();
-    app.MapGet(config.Channels.WhatsApp.WebhookPath, async (HttpContext ctx) =>
+    app.MapMethods(config.Channels.WhatsApp.WebhookPath, ["GET", "POST"], async (HttpContext ctx) =>
     {
         var res = await whatsappWebhookHandler.HandleAsync(
-            ctx, 
-            (msg, ct) => pipeline.InboundWriter.WriteAsync(msg, ct), 
+            ctx,
+            (msg, ct) => pipeline.InboundWriter.WriteAsync(msg, ct),
             ctx.RequestAborted);
-        
-        ctx.Response.StatusCode = res.StatusCode;
-        if (res.Body is not null)
-        {
-            ctx.Response.ContentType = res.ContentType;
-            await ctx.Response.WriteAsync(res.Body, ctx.RequestAborted);
-        }
-    });
 
-    app.MapPost(config.Channels.WhatsApp.WebhookPath, async (HttpContext ctx) =>
-    {
-        var res = await whatsappWebhookHandler.HandleAsync(
-            ctx, 
-            (msg, ct) => pipeline.InboundWriter.WriteAsync(msg, ct), 
-            ctx.RequestAborted);
-        
         ctx.Response.StatusCode = res.StatusCode;
         if (res.Body is not null)
         {
@@ -578,8 +659,18 @@ if (config.Webhooks.Enabled)
             return;
         }
 
-        using var sr = new StreamReader(ctx.Request.Body);
-        var body = await sr.ReadToEndAsync(ctx.RequestAborted);
+        var maxRequestSize = Math.Max(4 * 1024, hookCfg.MaxRequestBytes);
+        var (bodyOk, body) = await TryReadBodyTextAsync(ctx, maxRequestSize, ctx.RequestAborted);
+        if (!bodyOk)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            await ctx.Response.WriteAsync("Request too large.", ctx.RequestAborted);
+            return;
+        }
+
+        // Truncate body to limit prompt injection surface
+        if (body.Length > hookCfg.MaxBodyLength)
+            body = body[..hookCfg.MaxBodyLength];
 
         if (hookCfg.ValidateHmac && !string.IsNullOrWhiteSpace(hookCfg.Secret))
         {
@@ -650,6 +741,8 @@ app.Lifetime.ApplicationStopping.Register(() =>
         app.Logger.LogInformation("Drain complete — shutting down");
     }
 
+    // Known sync-over-async: ApplicationStopping callback does not support async delegates.
+    // Acceptable during process teardown — the brief thread-pool block has no practical impact.
     if (pluginHost is not null)
         pluginHost.DisposeAsync().AsTask().GetAwaiter().GetResult();
     nativeRegistry.Dispose();

@@ -258,7 +258,7 @@ public sealed class FileMemoryStore : IMemoryStore
         }
     }
 
-    public ValueTask<IReadOnlyList<SessionBranch>> ListBranchesAsync(string sessionId, CancellationToken ct)
+    public async ValueTask<IReadOnlyList<SessionBranch>> ListBranchesAsync(string sessionId, CancellationToken ct)
     {
         var results = new List<SessionBranch>();
 
@@ -269,9 +269,9 @@ public sealed class FileMemoryStore : IMemoryStore
             {
                 try
                 {
-                    var json = File.ReadAllText(file);
+                    var json = await File.ReadAllTextAsync(file, ct);
                     var branch = JsonSerializer.Deserialize(json, CoreJsonContext.Default.SessionBranch);
-                    
+
                     if (branch is not null && branch.SessionId == sessionId)
                         results.Add(branch);
                 }
@@ -286,7 +286,7 @@ public sealed class FileMemoryStore : IMemoryStore
             // Return empty list on error
         }
 
-        return ValueTask.FromResult<IReadOnlyList<SessionBranch>>(results);
+        return results;
     }
 
     public ValueTask DeleteBranchAsync(string branchId, CancellationToken ct)

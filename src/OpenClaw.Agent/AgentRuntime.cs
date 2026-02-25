@@ -189,7 +189,7 @@ public sealed class AgentRuntime
                 
                 // Attempt Failover logic if configured
                 var currentModel = chatOptions.ModelId ?? _config.Model;
-                var fallbacksTried = false;
+                var fallbackSucceeded = false;
 
                 if (_config.FallbackModels is not null && _config.FallbackModels.Length > 0)
                 {
@@ -197,17 +197,17 @@ public sealed class AgentRuntime
                     {
                         if (string.Equals(fallback, currentModel, StringComparison.OrdinalIgnoreCase))
                             continue;
-                            
+
                         _logger?.LogWarning("[{CorrelationId}] Primary model '{Model}' failed. Retrying with fallback '{Fallback}'", turnCtx.CorrelationId, currentModel, fallback);
-                        
-                        try 
+
+                        try
                         {
                             chatOptions.ModelId = fallback;
                             response = await CallLlmWithResilienceAsync(messages, chatOptions, turnCtx, ct);
-                            fallbacksTried = true;
-                            // Reset modelid if successful
-                            chatOptions.ModelId = currentModel; 
-                            break; 
+                            fallbackSucceeded = true;
+                            // Do NOT reset ModelId — let the working fallback persist for
+                            // remaining iterations of this turn's tool-use loop.
+                            break;
                         }
                         catch (Exception innerEx)
                         {
@@ -216,8 +216,8 @@ public sealed class AgentRuntime
                         }
                     }
                 }
-                
-                if (!fallbacksTried)
+
+                if (!fallbackSucceeded)
                 {
                     _logger?.LogError(ex, "[{CorrelationId}] LLM call failed after all retries and fallbacks", turnCtx.CorrelationId);
                     LogTurnComplete(turnCtx);
@@ -321,6 +321,7 @@ public sealed class AgentRuntime
         var messages = BuildMessages(session);
         var chatOptions = new ChatOptions
         {
+            ModelId = session.ModelOverride ?? _config.Model,
             MaxOutputTokens = _maxTokens,
             Temperature = _temperature,
             Tools = _cachedToolDeclarations
@@ -442,6 +443,15 @@ public sealed class AgentRuntime
                 {
                     if (content is FunctionCallContent fc)
                         result.ToolCalls.Add(fc);
+
+                    // Collect actual token usage when the provider reports it (typically in the final chunk)
+                    if (content is UsageContent usage)
+                    {
+                        if (usage.Details.InputTokenCount is > 0)
+                            result.InputTokens = (int)usage.Details.InputTokenCount.Value;
+                        if (usage.Details.OutputTokenCount is > 0)
+                            result.OutputTokens = (int)usage.Details.OutputTokenCount.Value;
+                    }
                 }
             }
         }
@@ -459,8 +469,13 @@ public sealed class AgentRuntime
         }
 
         llmSw.Stop();
-        result.InputTokens = EstimateInputTokens(messages);
-        result.OutputTokens = EstimateTokenCount(result.FullText.Length);
+
+        // Use actual provider-reported usage when available; fall back to estimation
+        if (result.InputTokens == 0)
+            result.InputTokens = EstimateInputTokens(messages);
+        if (result.OutputTokens == 0)
+            result.OutputTokens = EstimateTokenCount(result.FullText.Length);
+
         turnCtx.RecordLlmCall(llmSw.Elapsed, result.InputTokens, result.OutputTokens);
         _metrics?.IncrementLlmCalls();
         _metrics?.AddInputTokens(result.InputTokens);
@@ -817,7 +832,7 @@ public sealed class AgentRuntime
             // Previous summary will be included in what gets re-summarized
         }
 
-        var turnsToSummarize = session.History.Take(toSummarizeCount).ToList();
+        var turnsToSummarize = session.History.GetRange(0, toSummarizeCount);
         var conversationText = new StringBuilder();
         foreach (var turn in turnsToSummarize)
         {
@@ -923,6 +938,11 @@ public sealed class AgentRuntime
         return messages;
     }
 
+    /// <summary>
+    /// Builds the system prompt once at construction time. AGENTS.md and SOUL.md are read
+    /// from disk and cached for the lifetime of this AgentRuntime instance.
+    /// Changes to those files require a gateway restart to take effect.
+    /// </summary>
     private static string BuildSystemPrompt(IReadOnlyList<SkillDefinition> skills, bool requireApproval)
     {
         const int PromptFileMaxChars = 20_000;

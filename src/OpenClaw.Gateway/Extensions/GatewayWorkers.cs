@@ -56,7 +56,7 @@ public static class GatewayWorkers
                     var now = DateTimeOffset.UtcNow;
                     var orphanThreshold = TimeSpan.FromHours(2);
                     
-                    foreach (var kvp in sessionLocks.ToArray())
+                    foreach (var kvp in sessionLocks)
                     {
                         var sessionKey = kvp.Key;
                         var semaphore = kvp.Value;
@@ -138,6 +138,7 @@ public static class GatewayWorkers
                             var policy = "open";
                             if (msg.ChannelId == "sms") policy = config.Channels.Sms.DmPolicy;
                             if (msg.ChannelId == "telegram") policy = config.Channels.Telegram.DmPolicy;
+                            if (msg.ChannelId == "whatsapp") policy = config.Channels.WhatsApp.DmPolicy;
 
                             if (policy is "closed")
                                 continue; // Silently drop all inbound messages

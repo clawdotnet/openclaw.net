@@ -8,6 +8,7 @@ public sealed record WsClientEnvelope
 {
     public required string Type { get; init; }
     public string? Text { get; init; }
+    public string? Content { get; init; }
     public string? MessageId { get; init; }
     public string? ReplyToMessageId { get; init; }
 }
@@ -21,4 +22,3 @@ public sealed record WsServerEnvelope
     public string? Text { get; init; }
     public string? InReplyToMessageId { get; init; }
 }
-
