@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using OpenClaw.Core.Contacts;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Pipeline;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Gateway;
 
@@ -9,6 +11,9 @@ internal sealed class TwilioSmsWebhookHandler
     private readonly TwilioSmsConfig _config;
     private readonly string _twilioAuthToken;
     private readonly IContactStore _contacts;
+    private readonly AllowlistManager _allowlists;
+    private readonly RecentSendersStore _recentSenders;
+    private readonly AllowlistSemantics _allowlistSemantics;
     private readonly ConcurrentDictionary<string, RateWindow> _rate = new(StringComparer.Ordinal);
 
     private sealed class RateWindow
@@ -37,11 +42,20 @@ internal sealed class TwilioSmsWebhookHandler
         }
     }
 
-    public TwilioSmsWebhookHandler(TwilioSmsConfig config, string twilioAuthToken, IContactStore contacts)
+    public TwilioSmsWebhookHandler(
+        TwilioSmsConfig config,
+        string twilioAuthToken,
+        IContactStore contacts,
+        AllowlistManager allowlists,
+        RecentSendersStore recentSenders,
+        AllowlistSemantics allowlistSemantics)
     {
         _config = config;
         _twilioAuthToken = twilioAuthToken;
         _contacts = contacts;
+        _allowlists = allowlists;
+        _recentSenders = recentSenders;
+        _allowlistSemantics = allowlistSemantics;
     }
 
     public string PublicWebhookUrl
@@ -70,6 +84,8 @@ internal sealed class TwilioSmsWebhookHandler
 
         if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
             return WebhookResult.BadRequest("Missing From/To.");
+
+        await _recentSenders.RecordAsync("sms", from, senderName: null, ct);
 
         body ??= "";
         if (body.Length > _config.MaxInboundChars)
@@ -131,11 +147,40 @@ internal sealed class TwilioSmsWebhookHandler
 
     private bool IsAllowedInbound(string fromE164, string toE164)
     {
-        if (_config.AllowedFromNumbers.Length == 0 || _config.AllowedToNumbers.Length == 0)
+        var dyn = _allowlists.TryGetDynamic("sms");
+        var allowedFrom = dyn is { AllowedFrom.Length: > 0 } ? dyn.AllowedFrom : _config.AllowedFromNumbers;
+        var allowedTo = dyn is { AllowedTo.Length: > 0 } ? dyn.AllowedTo : _config.AllowedToNumbers;
+
+        if (_allowlistSemantics == AllowlistSemantics.Strict)
+        {
+            return AllowlistPolicy.IsAllowed(allowedFrom, fromE164, AllowlistSemantics.Strict)
+                   && AllowlistPolicy.IsAllowed(allowedTo, toE164, AllowlistSemantics.Strict);
+        }
+
+        // Legacy SMS behavior: empty lists deny; exact match or wildcard allow.
+        return IsAllowedLegacyExactOrWildcard(allowedFrom, fromE164)
+               && IsAllowedLegacyExactOrWildcard(allowedTo, toE164);
+    }
+
+    private static bool IsAllowedLegacyExactOrWildcard(string[] allowlist, string value)
+    {
+        if (allowlist.Length == 0)
             return false;
 
-        return _config.AllowedFromNumbers.Contains(fromE164, StringComparer.Ordinal)
-            && _config.AllowedToNumbers.Contains(toE164, StringComparer.Ordinal);
+        foreach (var entry in allowlist)
+        {
+            if (string.IsNullOrWhiteSpace(entry))
+                continue;
+
+            var pat = entry.Trim();
+            if (pat == "*")
+                return true;
+
+            if (string.Equals(pat, value, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
     private static bool IsStopKeyword(string keyword) =>

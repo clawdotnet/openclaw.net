@@ -50,6 +50,7 @@ public sealed class AgentRuntime
     private readonly RuntimeMetrics? _metrics;
     private readonly long _sessionTokenBudget;
     private readonly LlmProviderConfig _config;
+    private readonly MemoryRecallConfig? _recall;
 
     public AgentRuntime(
         IChatClient chatClient,
@@ -69,7 +70,8 @@ public sealed class AgentRuntime
         string[]? approvalRequiredTools = null,
         int maxIterations = 10,
         IReadOnlyList<IToolHook>? hooks = null,
-        long sessionTokenBudget = 0)
+        long sessionTokenBudget = 0,
+        MemoryRecallConfig? recall = null)
     {
         _chatClient = chatClient;
         _tools = tools;
@@ -101,6 +103,7 @@ public sealed class AgentRuntime
         // Cache tool declarations — ParameterSchema is static, no need to re-parse per iteration
         _cachedToolDeclarations = _tools.Select(CacheDeclarationTool).Cast<AITool>().ToList();
         _sessionTokenBudget = sessionTokenBudget;
+        _recall = recall;
     }
 
     /// <summary>
@@ -142,6 +145,7 @@ public sealed class AgentRuntime
 
         // Build conversation for LLM
         var messages = BuildMessages(session);
+        await TryInjectRecallAsync(messages, userMessage, ct);
 
         // Build tool definitions for the LLM (use pre-cached declarations)
         var chatOptions = new ChatOptions
@@ -319,6 +323,7 @@ public sealed class AgentRuntime
             TrimHistory(session);
 
         var messages = BuildMessages(session);
+        await TryInjectRecallAsync(messages, userMessage, ct);
         var chatOptions = new ChatOptions
         {
             ModelId = session.ModelOverride ?? _config.Model,
@@ -388,6 +393,71 @@ public sealed class AgentRuntime
             "I've reached the maximum number of tool iterations. Please try a simpler request.");
         yield return AgentStreamEvent.Complete();
         LogTurnComplete(turnCtx);
+    }
+
+    private async ValueTask TryInjectRecallAsync(List<ChatMessage> messages, string userMessage, CancellationToken ct)
+    {
+        if (_recall is null || !_recall.Enabled)
+            return;
+
+        if (string.IsNullOrWhiteSpace(userMessage))
+            return;
+
+        if (_memory is not IMemoryNoteSearch search)
+            return;
+
+        try
+        {
+            var limit = Math.Clamp(_recall.MaxNotes, 1, 32);
+            var hits = await search.SearchNotesAsync(userMessage, prefix: null, limit, ct);
+            if (hits.Count == 0)
+                return;
+
+            var maxChars = Math.Clamp(_recall.MaxChars, 256, 100_000);
+
+            var sb = new StringBuilder();
+            sb.AppendLine("[Relevant memory]");
+            foreach (var hit in hits)
+            {
+                if (sb.Length >= maxChars)
+                    break;
+
+                var updated = hit.UpdatedAt == default ? "" : $" updated={hit.UpdatedAt:O}";
+                var header = string.IsNullOrWhiteSpace(hit.Key) ? "- (note)" : $"- {hit.Key}";
+                sb.Append(header);
+                sb.Append(updated);
+                sb.AppendLine();
+
+                var content = hit.Content ?? "";
+                content = content.Replace("\r\n", "\n", StringComparison.Ordinal);
+                if (content.Length > 2000)
+                    content = content[..2000] + "…";
+
+                sb.AppendLine(Indent(content, "  "));
+            }
+
+            var text = sb.ToString().TrimEnd();
+            if (text.Length > maxChars)
+                text = text[..maxChars] + "…";
+
+            // Insert after the base system prompt so it acts like additional context.
+            messages.Insert(Math.Min(1, messages.Count), new ChatMessage(ChatRole.System, text));
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Memory recall injection failed; continuing without recall.");
+        }
+    }
+
+    private static string Indent(string value, string prefix)
+    {
+        if (string.IsNullOrEmpty(value))
+            return prefix;
+
+        var lines = value.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+            lines[i] = prefix + lines[i];
+        return string.Join('\n', lines);
     }
 
     /// <summary>
@@ -571,7 +641,33 @@ public sealed class AgentRuntime
             ? JsonSerializer.Serialize(call.Arguments, CoreJsonContext.Default.IDictionaryStringObject)
             : "{}";
 
-        // Tool approval check
+        // Run pre-hooks
+        foreach (var hook in _hooks)
+        {
+            try
+            {
+                var allowed = await hook.BeforeExecuteAsync(tool.Name, argsJson, ct);
+                if (!allowed)
+                {
+                    var msg = $"Tool execution denied by hook: {hook.Name}";
+                    _logger?.LogInformation("[{CorrelationId}] {Message}", turnCtx.CorrelationId, msg);
+                    var hookInv = new ToolInvocation
+                    {
+                        ToolName = call.Name,
+                        Arguments = argsJson,
+                        Result = msg,
+                        Duration = TimeSpan.Zero
+                    };
+                    return (hookInv, new FunctionResultContent(call.CallId, msg));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "[{CorrelationId}] Hook {Hook} BeforeExecute threw", turnCtx.CorrelationId, hook.Name);
+            }
+        }
+
+        // Tool approval check (after hooks so hard-deny policies don't prompt)
         if (_requireToolApproval && _approvalRequiredTools.Contains(NormalizeApprovalToolName(tool.Name)))
         {
             if (approvalCallback is not null)
@@ -604,32 +700,6 @@ public sealed class AgentRuntime
                     Duration = TimeSpan.Zero
                 };
                 return (noCallbackInv, new FunctionResultContent(call.CallId, noCallbackInv.Result));
-            }
-        }
-
-        // Run pre-hooks
-        foreach (var hook in _hooks)
-        {
-            try
-            {
-                var allowed = await hook.BeforeExecuteAsync(tool.Name, argsJson, ct);
-                if (!allowed)
-                {
-                    var msg = $"Tool execution denied by hook: {hook.Name}";
-                    _logger?.LogInformation("[{CorrelationId}] {Message}", turnCtx.CorrelationId, msg);
-                    var hookInv = new ToolInvocation
-                    {
-                        ToolName = call.Name,
-                        Arguments = argsJson,
-                        Result = msg,
-                        Duration = TimeSpan.Zero
-                    };
-                    return (hookInv, new FunctionResultContent(call.CallId, msg));
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex, "[{CorrelationId}] Hook {Hook} BeforeExecute threw", turnCtx.CorrelationId, hook.Name);
             }
         }
 

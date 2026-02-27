@@ -4,10 +4,14 @@
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="OpenClaw.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.Playwright" Version="1.58.0" />
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.3.0" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.3.0" />
+    <PackageReference Include="MQTTnet" Version="5.1.0.1559" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Plugins/plugin-bridge.mjs" CopyToOutputDirectory="PreserveNewest" />

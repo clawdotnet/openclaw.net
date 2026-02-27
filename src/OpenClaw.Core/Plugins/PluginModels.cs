@@ -120,6 +120,110 @@ public sealed class NativePluginsConfig
     public EmailConfig Email { get; set; } = new();
     public DatabaseConfig Database { get; set; } = new();
     public InboxZeroConfig InboxZero { get; set; } = new();
+    public HomeAssistantConfig HomeAssistant { get; set; } = new();
+    public MqttConfig Mqtt { get; set; } = new();
+}
+
+public sealed class HomeAssistantConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string BaseUrl { get; set; } = "http://homeassistant.local:8123";
+    public string TokenRef { get; set; } = "env:HOME_ASSISTANT_TOKEN";
+    public int TimeoutSeconds { get; set; } = 15;
+    public bool VerifyTls { get; set; } = true;
+    public int MaxOutputChars { get; set; } = 60_000;
+    public int MaxEntities { get; set; } = 200;
+
+    public HomeAssistantPolicyConfig Policy { get; set; } = new();
+    public HomeAssistantEventsConfig Events { get; set; } = new();
+}
+
+public sealed class HomeAssistantPolicyConfig
+{
+    public string[] AllowEntityIdGlobs { get; set; } = ["*"];
+    public string[] DenyEntityIdGlobs { get; set; } = [];
+    public string[] AllowServiceGlobs { get; set; } = ["*"];
+    public string[] DenyServiceGlobs { get; set; } = [];
+}
+
+public sealed class HomeAssistantEventsConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string ChannelId { get; set; } = "homeassistant";
+    public string SessionId { get; set; } = "homeassistant:events";
+    public string[] SubscribeEventTypes { get; set; } = ["state_changed"];
+    public bool EmitAllMatchingEvents { get; set; } = true;
+    public int GlobalCooldownSeconds { get; set; } = 2;
+    public string[] AllowEntityIdGlobs { get; set; } = ["*"];
+    public string[] DenyEntityIdGlobs { get; set; } = [];
+    public string PromptTemplate { get; set; } =
+        "Home Assistant event: {event_type} entity={entity_id} from={from_state} to={to_state} (name={friendly_name})";
+    public List<HomeAssistantEventRule> Rules { get; set; } = [];
+}
+
+public sealed class HomeAssistantEventRule
+{
+    public string Name { get; set; } = "";
+    public string[] EntityIdGlobs { get; set; } = ["*"];
+    public string? FromState { get; set; }
+    public string? ToState { get; set; }
+
+    /// <summary>
+    /// Local-time window in HH:mm format, e.g. "22:00".
+    /// When both set, the rule only matches within this window.
+    /// Supports overnight windows (e.g. 22:00–06:00).
+    /// </summary>
+    public string? BetweenLocalStart { get; set; }
+    public string? BetweenLocalEnd { get; set; }
+
+    /// <summary>
+    /// Days of week allowed for this rule. Empty = all days.
+    /// Values: "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun".
+    /// </summary>
+    public string[] DaysOfWeek { get; set; } = [];
+
+    public string PromptTemplate { get; set; } = "";
+    public int CooldownSeconds { get; set; } = 2;
+}
+
+public sealed class MqttConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string Host { get; set; } = "127.0.0.1";
+    public int Port { get; set; } = 1883;
+    public bool UseTls { get; set; } = false;
+    public string? UsernameRef { get; set; }
+    public string? PasswordRef { get; set; }
+    public string ClientId { get; set; } = "openclaw";
+    public int TimeoutSeconds { get; set; } = 10;
+    public int MaxPayloadBytes { get; set; } = 262_144;
+
+    public MqttPolicyConfig Policy { get; set; } = new();
+    public MqttEventsConfig Events { get; set; } = new();
+}
+
+public sealed class MqttPolicyConfig
+{
+    public string[] AllowPublishTopicGlobs { get; set; } = ["*"];
+    public string[] DenyPublishTopicGlobs { get; set; } = [];
+    public string[] AllowSubscribeTopicGlobs { get; set; } = ["*"];
+    public string[] DenySubscribeTopicGlobs { get; set; } = [];
+}
+
+public sealed class MqttEventsConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string ChannelId { get; set; } = "mqtt";
+    public string SessionId { get; set; } = "mqtt:events";
+    public List<MqttSubscriptionConfig> Subscriptions { get; set; } = [];
+}
+
+public sealed class MqttSubscriptionConfig
+{
+    public string Topic { get; set; } = "";
+    public int Qos { get; set; } = 0;
+    public string PromptTemplate { get; set; } = "MQTT message on {topic}: {payload}";
+    public int CooldownSeconds { get; set; } = 1;
 }
 
 public sealed class WebSearchConfig

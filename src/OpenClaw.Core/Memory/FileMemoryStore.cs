@@ -13,7 +13,7 @@ namespace OpenClaw.Core.Memory;
 /// Sessions and notes are stored as JSON files with URL-safe base64 encoded filenames
 /// to prevent path traversal attacks. Includes in-memory LRU cache for sessions.
 /// </summary>
-public sealed class FileMemoryStore : IMemoryStore
+public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch
 {
     private readonly string _basePath;
     private readonly string _sessionsPath;
@@ -208,6 +208,65 @@ public sealed class FileMemoryStore : IMemoryStore
         }
 
         return ValueTask.FromResult<IReadOnlyList<string>>(results);
+    }
+
+    public async ValueTask<IReadOnlyList<MemoryNoteHit>> SearchNotesAsync(string query, string? prefix, int limit, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(query) || limit <= 0)
+            return [];
+
+        limit = Math.Clamp(limit, 1, 50);
+        prefix ??= "";
+
+        var hits = new List<MemoryNoteHit>(capacity: Math.Min(limit, 16));
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(_notesPath, "*.md"))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var encodedKey = Path.GetFileNameWithoutExtension(file);
+                var key = DecodeKey(encodedKey);
+
+                if (!string.IsNullOrEmpty(prefix) && !key.StartsWith(prefix, StringComparison.Ordinal))
+                    continue;
+
+                string content;
+                try
+                {
+                    content = await File.ReadAllTextAsync(file, ct);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (content.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0 &&
+                    key.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                var updatedAt = File.GetLastWriteTimeUtc(file);
+
+                hits.Add(new MemoryNoteHit
+                {
+                    Key = key,
+                    Content = content,
+                    UpdatedAt = new DateTimeOffset(updatedAt, TimeSpan.Zero),
+                    Score = 1.0f
+                });
+
+                if (hits.Count >= limit)
+                    break;
+            }
+        }
+        catch
+        {
+            return [];
+        }
+
+        return hits;
     }
 
     public async ValueTask SaveBranchAsync(SessionBranch branch, CancellationToken ct)

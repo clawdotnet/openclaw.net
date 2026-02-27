@@ -227,7 +227,11 @@ public class SkillLoaderTests
     [Fact]
     public void LoadAll_NoDirectories_ReturnsEmpty()
     {
-        var config = new SkillsConfig { Enabled = true };
+        var config = new SkillsConfig
+        {
+            Enabled = true,
+            Load = new SkillLoadConfig { IncludeBundled = false, IncludeManaged = false }
+        };
         var logger = new TestLogger();
 
         var skills = SkillLoader.LoadAll(config, "/nonexistent/workspace", logger);
@@ -253,7 +257,11 @@ public class SkillLoaderTests
                 Test instructions here.
                 """);
 
-            var config = new SkillsConfig { Enabled = true };
+            var config = new SkillsConfig
+            {
+                Enabled = true,
+                Load = new SkillLoadConfig { IncludeBundled = false, IncludeManaged = false }
+            };
             var logger = new TestLogger();
 
             // Use tempDir as workspace skills
@@ -289,6 +297,7 @@ public class SkillLoaderTests
             var config = new SkillsConfig
             {
                 Enabled = true,
+                Load = new SkillLoadConfig { IncludeBundled = false, IncludeManaged = false },
                 Entries = new(StringComparer.OrdinalIgnoreCase)
                 {
                     ["disabled-skill"] = new SkillEntryConfig { Enabled = false }
@@ -339,7 +348,7 @@ public class SkillLoaderTests
             var config = new SkillsConfig
             {
                 Enabled = true,
-                Load = new SkillLoadConfig { ExtraDirs = [extraDir] }
+                Load = new SkillLoadConfig { ExtraDirs = [extraDir], IncludeBundled = false, IncludeManaged = false }
             };
             var logger = new TestLogger();
 

@@ -13,7 +13,7 @@ Only the most recent stable release of OpenClaw is officially supported with sec
 
 We take security seriously. If you discover a security vulnerability in OpenClaw, please **do not open a public issue**. Instead:
 
-1. Email your findings to `security@openclaw.net` (or specific address if desired).
+1. Email your findings to `tellikoroma@gmail.com` (or specific address if desired).
 2. Include a description of the vulnerability, steps to reproduce, and potential impact.
 3. We will acknowledge receipt within 48 hours.
 4. We will coordinate a fix and release timeline with you.

@@ -28,6 +28,15 @@ public sealed class SkillLoadConfig
     /// <summary>Additional skill directories (lowest precedence).</summary>
     public string[] ExtraDirs { get; set; } = [];
 
+    /// <summary>Load bundled skills shipped with the gateway.</summary>
+    public bool IncludeBundled { get; set; } = true;
+
+    /// <summary>Load managed/local skills from ~/.openclaw/skills.</summary>
+    public bool IncludeManaged { get; set; } = true;
+
+    /// <summary>Load workspace skills from $OPENCLAW_WORKSPACE/skills.</summary>
+    public bool IncludeWorkspace { get; set; } = true;
+
     /// <summary>Enable file-system watching for hot reload.</summary>
     public bool Watch { get; set; } = false;
 

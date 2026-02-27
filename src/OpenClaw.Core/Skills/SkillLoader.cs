@@ -35,19 +35,25 @@ public static class SkillLoader
         }
 
         // 2. Bundled skills
-        var bundledDir = Path.Combine(AppContext.BaseDirectory, "skills");
-        if (Directory.Exists(bundledDir))
-            ScanDirectory(bundledDir, SkillSource.Bundled, allSkills, logger);
+        if (config.Load.IncludeBundled)
+        {
+            var bundledDir = Path.Combine(AppContext.BaseDirectory, "skills");
+            if (Directory.Exists(bundledDir))
+                ScanDirectory(bundledDir, SkillSource.Bundled, allSkills, logger);
+        }
 
         // 3. Managed/local skills
-        var managedDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".openclaw", "skills");
-        if (Directory.Exists(managedDir))
-            ScanDirectory(managedDir, SkillSource.Managed, allSkills, logger);
+        if (config.Load.IncludeManaged)
+        {
+            var managedDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".openclaw", "skills");
+            if (Directory.Exists(managedDir))
+                ScanDirectory(managedDir, SkillSource.Managed, allSkills, logger);
+        }
 
         // 4. Workspace skills (highest precedence)
-        if (!string.IsNullOrWhiteSpace(workspacePath))
+        if (config.Load.IncludeWorkspace && !string.IsNullOrWhiteSpace(workspacePath))
         {
             var wsSkillsDir = Path.Combine(workspacePath, "skills");
             if (Directory.Exists(wsSkillsDir))

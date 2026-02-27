@@ -1,9 +1,12 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Channels;
 using OpenClaw.Core.Contacts;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Pipeline;
+using OpenClaw.Core.Security;
 using OpenClaw.Gateway;
 using Xunit;
 
@@ -27,7 +30,9 @@ public sealed class TwilioSmsTests
             AllowedToNumbers = ["+15557654321"]
         };
 
-        var handler = new TwilioSmsWebhookHandler(config, "token", contacts);
+        var allowlists = new AllowlistManager(temp, NullLogger<AllowlistManager>.Instance);
+        var recent = new RecentSendersStore(temp, NullLogger<RecentSendersStore>.Instance);
+        var handler = new TwilioSmsWebhookHandler(config, "token", contacts, allowlists, recent, AllowlistSemantics.Strict);
         var form = new Dictionary<string, string>
         {
             ["From"] = "+15551234567",
@@ -73,7 +78,9 @@ public sealed class TwilioSmsTests
             AllowedToNumbers = ["+15557654321"]
         };
 
-        var handler = new TwilioSmsWebhookHandler(config, "token", contacts);
+        var allowlists = new AllowlistManager(temp, NullLogger<AllowlistManager>.Instance);
+        var recent = new RecentSendersStore(temp, NullLogger<RecentSendersStore>.Instance);
+        var handler = new TwilioSmsWebhookHandler(config, "token", contacts, allowlists, recent, AllowlistSemantics.Strict);
         var form = new Dictionary<string, string>
         {
             ["From"] = "+15551234567",
@@ -100,7 +107,9 @@ public sealed class TwilioSmsTests
             AutoReplyForBlocked = false
         };
 
-        var handler = new TwilioSmsWebhookHandler(config, "token", contacts);
+        var allowlists = new AllowlistManager(temp, NullLogger<AllowlistManager>.Instance);
+        var recent = new RecentSendersStore(temp, NullLogger<RecentSendersStore>.Instance);
+        var handler = new TwilioSmsWebhookHandler(config, "token", contacts, allowlists, recent, AllowlistSemantics.Strict);
         var form = new Dictionary<string, string>
         {
             ["From"] = "+19999999999",
@@ -127,7 +136,9 @@ public sealed class TwilioSmsTests
             RateLimitPerFromPerMinute = 1
         };
 
-        var handler = new TwilioSmsWebhookHandler(config, "token", contacts);
+        var allowlists = new AllowlistManager(temp, NullLogger<AllowlistManager>.Instance);
+        var recent = new RecentSendersStore(temp, NullLogger<RecentSendersStore>.Instance);
+        var handler = new TwilioSmsWebhookHandler(config, "token", contacts, allowlists, recent, AllowlistSemantics.Strict);
         var form = new Dictionary<string, string>
         {
             ["From"] = "+15551234567",
@@ -157,7 +168,9 @@ public sealed class TwilioSmsTests
             HelpText = "help"
         };
 
-        var handler = new TwilioSmsWebhookHandler(config, "token", contacts);
+        var allowlists = new AllowlistManager(temp, NullLogger<AllowlistManager>.Instance);
+        var recent = new RecentSendersStore(temp, NullLogger<RecentSendersStore>.Instance);
+        var handler = new TwilioSmsWebhookHandler(config, "token", contacts, allowlists, recent, AllowlistSemantics.Strict);
 
         var stop = new Dictionary<string, string> { ["From"] = "+15551234567", ["To"] = "+15557654321", ["Body"] = "STOP" };
         var help = new Dictionary<string, string> { ["From"] = "+15551234567", ["To"] = "+15557654321", ["Body"] = "HELP" };
