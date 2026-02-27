@@ -49,6 +49,18 @@ public sealed class NativePluginRegistry : IDisposable
 
         if (config.InboxZero.Enabled)
             RegisterTool(new InboxZeroTool(config.InboxZero, config.Email), "inbox-zero");
+
+        if (config.HomeAssistant.Enabled)
+        {
+            RegisterTool(new HomeAssistantTool(config.HomeAssistant), "home-assistant");
+            RegisterTool(new HomeAssistantWriteTool(config.HomeAssistant), "home-assistant");
+        }
+
+        if (config.Mqtt.Enabled)
+        {
+            RegisterTool(new MqttTool(config.Mqtt), "mqtt");
+            RegisterTool(new MqttPublishTool(config.Mqtt), "mqtt");
+        }
     }
 
     private void RegisterTool(ITool tool, string pluginId, string? detail = null)

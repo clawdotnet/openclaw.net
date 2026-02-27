@@ -73,6 +73,12 @@
             -webkit-text-fill-color: transparent;
         }
 
+        #header .header-right {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
         #token-input {
             background: rgba(0, 0, 0, 0.2);
             border: 1px solid var(--border);
@@ -89,6 +95,22 @@
             outline: none;
             border-color: var(--primary);
             box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+        }
+
+        #doctor-button {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.5rem 0.75rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        #doctor-button:hover {
+            background: rgba(0, 0, 0, 0.35);
+            border-color: rgba(129, 140, 248, 0.35);
         }
 
         /* Chat Stream Container */
@@ -404,7 +426,10 @@
 <body>
     <div id="header">
         <h2>OpenClaw WebChat</h2>
-        <input type="password" id="token-input" placeholder="Auth Token (optional)">
+        <div class="header-right">
+            <button id="doctor-button" title="Fetch /doctor/text">Doctor</button>
+            <input type="password" id="token-input" placeholder="Auth Token (optional)">
+        </div>
     </div>
 
     <div id="chat-container">
@@ -449,11 +474,44 @@
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
         const tokenInput = document.getElementById('token-input');
+        const doctorButton = document.getElementById('doctor-button');
         const typingRow = document.getElementById('typing-row');
 
         let ws = null;
         let activeResponseDiv = null;
         let activeRawContent = ""; // Store raw markdown until streaming completes
+
+        function preprocessMediaMarkers(raw) {
+            const lines = (raw || "").split('\n');
+            const out = [];
+            for (const line of lines) {
+                const trimmed = line.trim();
+                const mImgUrl = trimmed.match(/^\[IMAGE_URL:(.+)\]$/);
+                if (mImgUrl) {
+                    const url = mImgUrl[1].trim();
+                    out.push(`![](${url})`);
+                    continue;
+                }
+                const mFileUrl = trimmed.match(/^\[FILE_URL:(.+)\]$/);
+                if (mFileUrl) {
+                    const url = mFileUrl[1].trim();
+                    out.push(`[file](${url})`);
+                    continue;
+                }
+                out.push(line);
+            }
+            return out.join('\n');
+        }
+
+        function appendAssistantMarkdown(md) {
+            const row = createRow('assistant');
+            const div = document.createElement('div');
+            div.className = 'message assistant';
+            div.innerHTML = DOMPurify.sanitize(marked.parse(preprocessMediaMarkers(md)));
+            row.appendChild(div);
+            chatContainer.insertBefore(row, typingRow);
+            scrollToBottom();
+        }
 
         function scrollToBottom() {
             chatContainer.scrollTo({
@@ -562,7 +620,7 @@
                             typingRow.style.display = 'none';
                             // Finalize Markdown render on stop
                             if (activeResponseDiv && activeRawContent) {
-                                const renderHtml = DOMPurify.sanitize(marked.parse(activeRawContent));
+                                const renderHtml = DOMPurify.sanitize(marked.parse(preprocessMediaMarkers(activeRawContent)));
                                 activeResponseDiv.innerHTML = renderHtml;
                             }
                             activeResponseDiv = null;
@@ -583,7 +641,7 @@
 
                             activeRawContent += (env.text ?? env.content ?? "");
                             // Fast approximate render while streaming (can be glitchy for code blocks, but better than plaintext)
-                            activeResponseDiv.innerHTML = DOMPurify.sanitize(marked.parse(activeRawContent));
+                            activeResponseDiv.innerHTML = DOMPurify.sanitize(marked.parse(preprocessMediaMarkers(activeRawContent)));
                             scrollToBottom();
                             break;
 
@@ -608,6 +666,21 @@
                         case 'tool_result':
                             // Result attached silently.
                             break;
+
+                        case 'tool_approval_required': {
+                            const toolName = env.toolName || 'unknown';
+                            const approvalId = env.approvalId || '';
+                            const argsPreview = env.argumentsPreview || '';
+                            const prompt = `Tool approval required:\\n\\nTool: ${toolName}\\nApprovalId: ${approvalId}\\n\\nArgs:\\n${argsPreview}\\n\\nApprove?`;
+                            const approved = window.confirm(prompt);
+                            appendSystem(`Tool approval ${approved ? 'approved' : 'denied'}: ${toolName}`);
+                            ws.send(JSON.stringify({
+                                type: "tool_approval_decision",
+                                approvalId: approvalId,
+                                approved: approved
+                            }));
+                            break;
+                        }
                     }
                 } catch (e) {
                     // Fallback for non-envelope text
@@ -619,7 +692,7 @@
                         chatContainer.insertBefore(row, typingRow);
                     }
                     activeRawContent += event.data;
-                    activeResponseDiv.innerHTML = DOMPurify.sanitize(marked.parse(activeRawContent));
+                    activeResponseDiv.innerHTML = DOMPurify.sanitize(marked.parse(preprocessMediaMarkers(activeRawContent)));
                     scrollToBottom();
                 }
             };
@@ -691,6 +764,25 @@
         if (localStorage.getItem('openclaw_token')) {
             tokenInput.value = localStorage.getItem('openclaw_token');
         }
+
+        doctorButton.addEventListener('click', async () => {
+            try {
+                const token = tokenInput.value || localStorage.getItem('openclaw_token') || '';
+                const headers = {};
+                if (token && token !== 'bypass') {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+                const resp = await fetch('/doctor/text', { method: 'GET', headers: headers });
+                if (!resp.ok) {
+                    appendSystem(`Doctor request failed (${resp.status}).`, true);
+                    return;
+                }
+                const text = await resp.text();
+                appendAssistantMarkdown("```\\n" + text + "\\n```");
+            } catch (e) {
+                appendSystem('Doctor request failed.', true);
+            }
+        });
 
         // Initialize connection
         connect();

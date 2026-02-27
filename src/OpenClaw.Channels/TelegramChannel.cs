@@ -52,23 +52,66 @@ public sealed class TelegramChannel : IChannelAdapter
             return;
         }
 
-        var url = $"https://api.telegram.org/bot{_botToken}/sendMessage";
-        var payload = new TelegramPayload
-        {
-            ChatId = chatId,
-            Text = outbound.Text
-        };
-
         try
         {
-            var response = await _http.PostAsJsonAsync(url, payload, TelegramJsonContext.Default.TelegramPayload, ct);
-            response.EnsureSuccessStatusCode();
-            _logger.LogInformation("Sent Telegram message to {ChatId}", chatId);
+            var (markers, remaining) = MediaMarkerProtocol.Extract(outbound.Text);
+            var images = markers.Where(m => m.Kind is MediaMarkerKind.ImageUrl or MediaMarkerKind.TelegramImageFileId).ToList();
+
+            if (images.Count == 0)
+            {
+                await SendMessageAsync(chatId, outbound.Text, ct);
+                return;
+            }
+
+            const int MaxCaptionChars = 1024;
+            var caption = string.IsNullOrWhiteSpace(remaining) ? null : remaining;
+            var captionForPhoto = caption is not null && caption.Length > MaxCaptionChars
+                ? caption[..MaxCaptionChars] + "…"
+                : caption;
+
+            for (var i = 0; i < images.Count; i++)
+            {
+                var marker = images[i];
+                var photo = marker.Value;
+                var cap = i == 0 ? captionForPhoto : null;
+                await SendPhotoAsync(chatId, photo, cap, ct);
+            }
+
+            // If caption was truncated, send remainder as a follow-up message.
+            if (caption is not null && caption.Length > MaxCaptionChars)
+            {
+                var rest = caption[MaxCaptionChars..].Trim();
+                if (!string.IsNullOrWhiteSpace(rest))
+                    await SendMessageAsync(chatId, rest, ct);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send Telegram message to {ChatId}", chatId);
         }
+    }
+
+    private async Task SendMessageAsync(long chatId, string text, CancellationToken ct)
+    {
+        var url = $"https://api.telegram.org/bot{_botToken}/sendMessage";
+        var payload = new TelegramMessagePayload { ChatId = chatId, Text = text };
+        var response = await _http.PostAsJsonAsync(url, payload, TelegramJsonContext.Default.TelegramMessagePayload, ct);
+        response.EnsureSuccessStatusCode();
+        _logger.LogInformation("Sent Telegram message to {ChatId}", chatId);
+    }
+
+    private async Task SendPhotoAsync(long chatId, string photo, string? caption, CancellationToken ct)
+    {
+        var url = $"https://api.telegram.org/bot{_botToken}/sendPhoto";
+        var payload = new TelegramPhotoPayload
+        {
+            ChatId = chatId,
+            Photo = photo,
+            Caption = string.IsNullOrWhiteSpace(caption) ? null : caption
+        };
+        var response = await _http.PostAsJsonAsync(url, payload, TelegramJsonContext.Default.TelegramPhotoPayload, ct);
+        response.EnsureSuccessStatusCode();
+        _logger.LogInformation("Sent Telegram photo to {ChatId}", chatId);
     }
 
     public ValueTask DisposeAsync()
@@ -78,7 +121,7 @@ public sealed class TelegramChannel : IChannelAdapter
     }
 }
 
-public sealed class TelegramPayload
+public sealed class TelegramMessagePayload
 {
     [JsonPropertyName("chat_id")]
     public required long ChatId { get; set; }
@@ -87,6 +130,19 @@ public sealed class TelegramPayload
     public required string Text { get; set; }
 }
 
-[JsonSerializable(typeof(TelegramPayload))]
+[JsonSerializable(typeof(TelegramMessagePayload))]
+[JsonSerializable(typeof(TelegramPhotoPayload))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 public partial class TelegramJsonContext : JsonSerializerContext;
+
+public sealed class TelegramPhotoPayload
+{
+    [JsonPropertyName("chat_id")]
+    public required long ChatId { get; set; }
+
+    [JsonPropertyName("photo")]
+    public required string Photo { get; set; }
+
+    [JsonPropertyName("caption")]
+    public string? Caption { get; set; }
+}

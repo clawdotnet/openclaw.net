@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.AI;
 using OpenClaw.Gateway;
 using OpenClaw.Agent;
+using OpenClaw.Agent.Integrations;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Agent.Tools;
 using OpenClaw.Channels;
@@ -31,6 +32,58 @@ builder.AddGatewayTelemetry();
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 
+static string? FindArgValue(string[] argv, string name)
+{
+    for (var i = 0; i < argv.Length; i++)
+    {
+        var a = argv[i];
+        if (a.Equals(name, StringComparison.Ordinal) && i + 1 < argv.Length)
+            return argv[i + 1];
+
+        var prefix = name + "=";
+        if (a.StartsWith(prefix, StringComparison.Ordinal))
+            return a[prefix.Length..];
+    }
+
+    return null;
+}
+
+static string ExpandPath(string path)
+{
+    var expanded = Environment.ExpandEnvironmentVariables(path);
+    if (expanded.StartsWith('~'))
+    {
+        expanded = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            expanded[1..].TrimStart('/').TrimStart('\\'));
+    }
+
+    return expanded;
+}
+
+var extraConfigPath = FindArgValue(args, "--config")
+    ?? Environment.GetEnvironmentVariable("OPENCLAW_CONFIG_PATH");
+if (!string.IsNullOrWhiteSpace(extraConfigPath))
+{
+    var fullPath = Path.GetFullPath(ExpandPath(extraConfigPath));
+    builder.Configuration.AddJsonFile(fullPath, optional: false, reloadOnChange: true);
+}
+
+static string? ResolveSecretRefOrNull(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+        return null;
+
+    // Only resolve explicit refs to avoid surprising behavior for literal strings.
+    if (value.StartsWith("env:", StringComparison.OrdinalIgnoreCase) ||
+        value.StartsWith("raw:", StringComparison.OrdinalIgnoreCase))
+    {
+        return SecretResolver.Resolve(value);
+    }
+
+    return value;
+}
+
 // AOT-compatible JSON
 builder.Services.ConfigureHttpJsonOptions(opts =>
     opts.SerializerOptions.TypeInfoResolverChain.Add(CoreJsonContext.Default));
@@ -39,12 +92,13 @@ builder.Services.ConfigureHttpJsonOptions(opts =>
 var config = builder.Configuration.GetSection("OpenClaw").Get<GatewayConfig>() ?? new GatewayConfig();
 
 // Override from environment (12-factor friendly)
-config.Llm.ApiKey ??= Environment.GetEnvironmentVariable("MODEL_PROVIDER_KEY");
+config.Llm.ApiKey = ResolveSecretRefOrNull(config.Llm.ApiKey) ?? Environment.GetEnvironmentVariable("MODEL_PROVIDER_KEY");
 config.Llm.Model = Environment.GetEnvironmentVariable("MODEL_PROVIDER_MODEL") ?? config.Llm.Model;
-config.Llm.Endpoint ??= Environment.GetEnvironmentVariable("MODEL_PROVIDER_ENDPOINT");
+config.Llm.Endpoint = ResolveSecretRefOrNull(config.Llm.Endpoint) ?? Environment.GetEnvironmentVariable("MODEL_PROVIDER_ENDPOINT");
 config.AuthToken ??= Environment.GetEnvironmentVariable("OPENCLAW_AUTH_TOKEN");
 
 var isNonLoopbackBind = !GatewaySecurity.IsLoopbackBind(config.BindAddress);
+var isDoctorMode = args.Any(a => string.Equals(a, "--doctor", StringComparison.Ordinal));
 
 // Healthcheck mode for minimal/distroless containers (no curl/wget).
 // Exits 0 if the running gateway reports healthy, else non-zero.
@@ -70,7 +124,17 @@ if (args.Any(a => string.Equals(a, "--health-check", StringComparison.Ordinal)))
 }
 
 if (isNonLoopbackBind && string.IsNullOrWhiteSpace(config.AuthToken))
-    throw new InvalidOperationException("OPENCLAW_AUTH_TOKEN must be set when binding to a non-loopback address.");
+{
+    var msg = "OPENCLAW_AUTH_TOKEN must be set when binding to a non-loopback address.";
+    if (isDoctorMode)
+    {
+        Console.Error.WriteLine(msg);
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    throw new InvalidOperationException(msg);
+}
 
 // ── Configuration Validation ───────────────────────────────────────────
 var configErrors = ConfigValidator.Validate(config);
@@ -78,34 +142,72 @@ if (configErrors.Count > 0)
 {
     foreach (var err in configErrors)
         Console.Error.WriteLine($"Configuration error: {err}");
-    throw new InvalidOperationException(
-        $"Gateway configuration has {configErrors.Count} error(s). See above for details.");
+
+    if (isDoctorMode)
+    {
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    throw new InvalidOperationException($"Gateway configuration has {configErrors.Count} error(s). See above for details.");
+}
+
+if (isDoctorMode)
+{
+    var ok = await DoctorCheck.RunAsync(config);
+    Environment.ExitCode = ok ? 0 : 1;
+    return;
 }
 
 GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind);
 
 // ── Services ───────────────────────────────────────────────────────────
-var memoryStore = new FileMemoryStore(
-    config.Memory.StoragePath,
-    config.Memory.MaxCachedSessions ?? config.MaxConcurrentSessions);
+builder.Services.AddSingleton(typeof(AllowlistSemantics), AllowlistPolicy.ParseSemantics(config.Channels.AllowlistSemantics));
+
+builder.Services.AddSingleton(sp =>
+    new RecentSendersStore(config.Memory.StoragePath, sp.GetRequiredService<ILogger<RecentSendersStore>>()));
+builder.Services.AddSingleton(sp =>
+    new AllowlistManager(config.Memory.StoragePath, sp.GetRequiredService<ILogger<AllowlistManager>>()));
+
+IMemoryStore memoryStore;
+if (string.Equals(config.Memory.Provider, "sqlite", StringComparison.OrdinalIgnoreCase))
+{
+    var dbPath = config.Memory.Sqlite.DbPath;
+    if (!Path.IsPathRooted(dbPath))
+    {
+        if (dbPath.Contains(Path.DirectorySeparatorChar) || dbPath.Contains(Path.AltDirectorySeparatorChar))
+            dbPath = Path.Combine(Directory.GetCurrentDirectory(), dbPath);
+        else
+            dbPath = Path.Combine(config.Memory.StoragePath, dbPath);
+    }
+
+    memoryStore = new SqliteMemoryStore(Path.GetFullPath(dbPath), config.Memory.Sqlite.EnableFts);
+}
+else
+{
+    memoryStore = new FileMemoryStore(
+        config.Memory.StoragePath,
+        config.Memory.MaxCachedSessions ?? config.MaxConcurrentSessions);
+}
 var runtimeMetrics = new RuntimeMetrics();
 var pipeline = new MessagePipeline();
 var wsChannel = new WebSocketChannel(config.WebSocket);
 
 TwilioSmsChannel? smsChannel = null;
 TwilioSmsWebhookHandler? smsWebhookHandler = null;
+IContactStore? smsContacts = null;
+string? twilioAuthToken = null;
 if (config.Channels.Sms.Twilio.Enabled)
 {
     if (config.Channels.Sms.Twilio.ValidateSignature && string.IsNullOrWhiteSpace(config.Channels.Sms.Twilio.WebhookPublicBaseUrl))
         throw new InvalidOperationException("OpenClaw:Channels:Sms:Twilio:WebhookPublicBaseUrl must be set when ValidateSignature is true.");
 
-    var twilioAuthToken = SecretResolver.Resolve(config.Channels.Sms.Twilio.AuthTokenRef)
+    twilioAuthToken = SecretResolver.Resolve(config.Channels.Sms.Twilio.AuthTokenRef)
         ?? throw new InvalidOperationException("Twilio AuthTokenRef is not configured or could not be resolved.");
 
-    var contacts = new FileContactStore(config.Memory.StoragePath);
+    smsContacts = new FileContactStore(config.Memory.StoragePath);
     var httpClient = OpenClaw.Core.Http.HttpClientFactory.Create();
-    smsChannel = new TwilioSmsChannel(config.Channels.Sms.Twilio, twilioAuthToken, contacts, httpClient);
-    smsWebhookHandler = new TwilioSmsWebhookHandler(config.Channels.Sms.Twilio, twilioAuthToken, contacts);
+    smsChannel = new TwilioSmsChannel(config.Channels.Sms.Twilio, twilioAuthToken, smsContacts, httpClient);
 }
 
 var channelAdapters = new Dictionary<string, IChannelAdapter>(StringComparer.Ordinal)
@@ -158,11 +260,27 @@ var builtInTools = new List<ITool>
     new FileReadTool(config.Tooling),
     new FileWriteTool(config.Tooling),
     new MemoryNoteTool(memoryStore),
+    new MemorySearchTool((IMemoryNoteSearch)memoryStore),
     new ProjectMemoryTool(memoryStore, projectId)
 };
 
 // ── App ────────────────────────────────────────────────────────────────
 var app = builder.Build();
+
+var allowlistSemantics = app.Services.GetRequiredService<AllowlistSemantics>();
+var allowlists = app.Services.GetRequiredService<AllowlistManager>();
+var recentSenders = app.Services.GetRequiredService<RecentSendersStore>();
+
+if (smsChannel is not null && smsContacts is not null && twilioAuthToken is not null)
+{
+    smsWebhookHandler = new TwilioSmsWebhookHandler(
+        config.Channels.Sms.Twilio,
+        twilioAuthToken,
+        smsContacts,
+        allowlists,
+        recentSenders,
+        allowlistSemantics);
+}
 
 // Retrieve TelegramChannel from DI and add it to the active channels dictionary
 if (config.Channels.Telegram.Enabled)
@@ -178,12 +296,23 @@ if (config.Channels.WhatsApp.Enabled)
         channelAdapters["whatsapp"] = app.Services.GetRequiredService<WhatsAppChannel>();
 }
 
+if (config.Plugins.Native.Email.Enabled)
+{
+    channelAdapters["email"] = new EmailChannel(config.Plugins.Native.Email);
+}
+
+// Default cron delivery sink (for jobs that do not specify ChannelId / RecipientId)
+channelAdapters["cron"] = new CronChannel(
+    config.Memory.StoragePath,
+    app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<CronChannel>());
+
 var sessionLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SessionManager");
 var sessionManager = new SessionManager(memoryStore, config, sessionLogger);
 
 var pairingLogger = app.Services.GetRequiredService<ILogger<PairingManager>>();
 var pairingManager = new PairingManager(config.Memory.StoragePath, pairingLogger);
 var commandProcessor = new ChatCommandProcessor(sessionManager);
+var toolApprovalService = new ToolApprovalService();
 
 builtInTools.Add(new SessionsTool(sessionManager, pipeline.InboundWriter));
 
@@ -230,28 +359,63 @@ var hooks = new List<IToolHook>();
 var auditLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AuditLog");
 hooks.Add(new AuditLogHook(auditLogger));
 
-// ── Multi-Agent Delegation ─────────────────────────────────────────────
-if (config.Delegation.Enabled && config.Delegation.Profiles.Count > 0)
-{
-    var delegateLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("DelegateTool");
-    var delegateTool = new DelegateTool(
-        chatClient, tools, memoryStore, config.Llm, config.Delegation,
-        currentDepth: 0, metrics: runtimeMetrics, logger: delegateLogger);
+var autonomyLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AutonomyHook");
+hooks.Add(new AutonomyHook(config.Tooling, autonomyLogger));
 
-    tools = [.. tools, delegateTool];
+// Autonomy mode can elevate tool approvals in supervised mode.
+var autonomyMode = (config.Tooling.AutonomyMode ?? "full").Trim().ToLowerInvariant();
+var effectiveRequireToolApproval = config.Tooling.RequireToolApproval || autonomyMode == "supervised";
+var effectiveApprovalRequiredTools = config.Tooling.ApprovalRequiredTools;
+if (autonomyMode == "supervised")
+{
+    var defaults = new[]
+    {
+        "shell", "write_file", "code_exec", "git", "home_assistant_write", "mqtt_publish",
+        "database", "email", "inbox_zero", "calendar", "delegate_agent"
+    };
+
+    effectiveApprovalRequiredTools = effectiveApprovalRequiredTools
+        .Concat(defaults)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
 }
 
-// Construct AgentRuntime once with the final tools list (including DelegateTool if enabled)
 var agentRuntime = new AgentRuntime(chatClient, tools, memoryStore, config.Llm, config.Memory.MaxHistoryTurns, skills,
     logger: agentLogger, toolTimeoutSeconds: config.Tooling.ToolTimeoutSeconds, metrics: runtimeMetrics,
     parallelToolExecution: config.Tooling.ParallelToolExecution,
     enableCompaction: config.Memory.EnableCompaction,
     compactionThreshold: config.Memory.CompactionThreshold,
     compactionKeepRecent: config.Memory.CompactionKeepRecent,
-    requireToolApproval: config.Tooling.RequireToolApproval,
-    approvalRequiredTools: config.Tooling.ApprovalRequiredTools,
+    requireToolApproval: effectiveRequireToolApproval,
+    approvalRequiredTools: effectiveApprovalRequiredTools,
     hooks: hooks,
-    sessionTokenBudget: config.SessionTokenBudget);
+    sessionTokenBudget: config.SessionTokenBudget,
+    recall: config.Memory.Recall);
+
+// ── Multi-Agent Delegation ─────────────────────────────────────────────
+if (config.Delegation.Enabled && config.Delegation.Profiles.Count > 0)
+{
+    var delegateLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("DelegateTool");
+    var delegateTool = new DelegateTool(
+        chatClient, tools, memoryStore, config.Llm, config.Delegation,
+        currentDepth: 0, metrics: runtimeMetrics, logger: delegateLogger, recall: config.Memory.Recall);
+
+    // Re-create tools list with delegate tool appended
+    tools = [.. tools, delegateTool];
+
+    // Rebuild agent runtime with delegation-enabled toolset
+    agentRuntime = new AgentRuntime(chatClient, tools, memoryStore, config.Llm, config.Memory.MaxHistoryTurns, skills,
+        logger: agentLogger, toolTimeoutSeconds: config.Tooling.ToolTimeoutSeconds, metrics: runtimeMetrics,
+        parallelToolExecution: config.Tooling.ParallelToolExecution,
+        enableCompaction: config.Memory.EnableCompaction,
+        compactionThreshold: config.Memory.CompactionThreshold,
+        compactionKeepRecent: config.Memory.CompactionKeepRecent,
+        requireToolApproval: effectiveRequireToolApproval,
+        approvalRequiredTools: effectiveApprovalRequiredTools,
+        hooks: hooks,
+        sessionTokenBudget: config.SessionTokenBudget,
+        recall: config.Memory.Recall);
+}
 
 // ── Middleware Pipeline ────────────────────────────────────────────────
 var middlewareList = new List<IMessageMiddleware>();
@@ -374,7 +538,7 @@ app.MapGet("/health", (HttpContext ctx) =>
     if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
         return Results.Unauthorized();
 
-    return Results.Ok(new { status = "ok", uptime = Environment.TickCount64 });
+    return Results.Json(new HealthResponse { Status = "ok", Uptime = Environment.TickCount64 }, CoreJsonContext.Default.HealthResponse);
 });
 
 // Detailed metrics endpoint — same auth as health
@@ -386,6 +550,223 @@ app.MapGet("/metrics", (HttpContext ctx) =>
     runtimeMetrics.SetActiveSessions(sessionManager.ActiveCount);
     runtimeMetrics.SetCircuitBreakerState((int)agentRuntime.CircuitBreakerState);
     return Results.Json(runtimeMetrics.Snapshot(), CoreJsonContext.Default.MetricsSnapshot);
+});
+
+// ── OpenAI-Compatible HTTP Surface ─────────────────────────────────────
+// POST /v1/chat/completions — drop-in for any OpenAI-SDK client
+app.MapPost("/v1/chat/completions", async (HttpContext ctx) =>
+{
+    if (isNonLoopbackBind)
+    {
+        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
+        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
+        {
+            ctx.Response.StatusCode = 401;
+            return;
+        }
+    }
+
+    OpenAiChatCompletionRequest? req;
+    try
+    {
+        req = await JsonSerializer.DeserializeAsync(ctx.Request.Body,
+            CoreJsonContext.Default.OpenAiChatCompletionRequest, ctx.RequestAborted);
+    }
+    catch
+    {
+        ctx.Response.StatusCode = 400;
+        await ctx.Response.WriteAsync("Invalid JSON request body.", ctx.RequestAborted);
+        return;
+    }
+
+    if (req is null || req.Messages.Count == 0)
+    {
+        ctx.Response.StatusCode = 400;
+        await ctx.Response.WriteAsync("Request must include at least one message.", ctx.RequestAborted);
+        return;
+    }
+
+    // Extract the last user message as input
+    var lastUserMsg = req.Messages.FindLast(m =>
+        string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase));
+    var userText = lastUserMsg?.Content ?? req.Messages[^1].Content;
+
+    // Ephemeral session scoped to this HTTP request
+    var requestId = $"oai-http:{Guid.NewGuid():N}";
+    var session = await sessionManager.GetOrCreateAsync("openai-http", requestId, ctx.RequestAborted);
+    if (req.Model is not null)
+        session.ModelOverride = req.Model;
+
+    // Inject prior messages as conversation context (everything except the last user turn we extracted as userText).
+    // OpenAI clients resend full transcript each request; the gateway creates an ephemeral session per HTTP request.
+    var lastUserIndex = req.Messages.FindLastIndex(m =>
+        string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase));
+    var excludeIndex = lastUserIndex >= 0 ? lastUserIndex : req.Messages.Count - 1;
+
+    for (var i = 0; i < req.Messages.Count; i++)
+    {
+        if (i == excludeIndex)
+            continue;
+
+        var m = req.Messages[i];
+        if (string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase))
+        {
+            session.History.Add(new ChatTurn { Role = m.Role.ToLowerInvariant(), Content = m.Content });
+        }
+    }
+
+    var completionId = $"chatcmpl-{Guid.NewGuid():N}"[..29];
+    var created = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    var model = req.Model ?? config.Llm.Model;
+
+    if (req.Stream)
+    {
+        // SSE streaming
+        ctx.Response.ContentType = "text/event-stream";
+        ctx.Response.Headers.CacheControl = "no-cache";
+        ctx.Response.Headers.Connection = "keep-alive";
+
+        // Send initial role chunk
+        var roleChunk = new OpenAiStreamChunk
+        {
+            Id = completionId, Created = created, Model = model,
+            Choices = [new OpenAiStreamChoice { Index = 0, Delta = new OpenAiDelta { Role = "assistant" } }]
+        };
+        var roleJson = JsonSerializer.Serialize(roleChunk, CoreJsonContext.Default.OpenAiStreamChunk);
+        await ctx.Response.WriteAsync($"data: {roleJson}\n\n", ctx.RequestAborted);
+        await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+
+        await foreach (var evt in agentRuntime.RunStreamingAsync(session, userText, ctx.RequestAborted))
+        {
+            if (evt.Type == AgentStreamEventType.TextDelta && !string.IsNullOrEmpty(evt.Content))
+            {
+                var chunk = new OpenAiStreamChunk
+                {
+                    Id = completionId, Created = created, Model = model,
+                    Choices = [new OpenAiStreamChoice { Index = 0, Delta = new OpenAiDelta { Content = evt.Content } }]
+                };
+                var json = JsonSerializer.Serialize(chunk, CoreJsonContext.Default.OpenAiStreamChunk);
+                await ctx.Response.WriteAsync($"data: {json}\n\n", ctx.RequestAborted);
+                await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+            }
+            else if (evt.Type == AgentStreamEventType.Done)
+            {
+                var doneChunk = new OpenAiStreamChunk
+                {
+                    Id = completionId, Created = created, Model = model,
+                    Choices = [new OpenAiStreamChoice { Index = 0, Delta = new OpenAiDelta(), FinishReason = "stop" }]
+                };
+                var doneJson = JsonSerializer.Serialize(doneChunk, CoreJsonContext.Default.OpenAiStreamChunk);
+                await ctx.Response.WriteAsync($"data: {doneJson}\n\n", ctx.RequestAborted);
+                await ctx.Response.WriteAsync("data: [DONE]\n\n", ctx.RequestAborted);
+                await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+            }
+        }
+    }
+    else
+    {
+        // Non-streaming
+        var result = await agentRuntime.RunAsync(session, userText, ctx.RequestAborted);
+
+        var response = new OpenAiChatCompletionResponse
+        {
+            Id = completionId,
+            Created = created,
+            Model = model,
+            Choices =
+            [
+                new OpenAiChoice
+                {
+                    Index = 0,
+                    Message = new OpenAiResponseMessage { Role = "assistant", Content = result },
+                    FinishReason = "stop"
+                }
+            ],
+            Usage = new OpenAiUsage
+            {
+                PromptTokens = (int)session.TotalInputTokens,
+                CompletionTokens = (int)session.TotalOutputTokens,
+                TotalTokens = (int)(session.TotalInputTokens + session.TotalOutputTokens)
+            }
+        };
+
+        ctx.Response.ContentType = "application/json";
+        await ctx.Response.WriteAsync(
+            JsonSerializer.Serialize(response, CoreJsonContext.Default.OpenAiChatCompletionResponse),
+            ctx.RequestAborted);
+    }
+});
+
+// POST /v1/responses — OpenAI Responses API compatibility
+app.MapPost("/v1/responses", async (HttpContext ctx) =>
+{
+    if (isNonLoopbackBind)
+    {
+        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
+        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
+        {
+            ctx.Response.StatusCode = 401;
+            return;
+        }
+    }
+
+    OpenAiResponseRequest? req;
+    try
+    {
+        req = await JsonSerializer.DeserializeAsync(ctx.Request.Body,
+            CoreJsonContext.Default.OpenAiResponseRequest, ctx.RequestAborted);
+    }
+    catch
+    {
+        ctx.Response.StatusCode = 400;
+        await ctx.Response.WriteAsync("Invalid JSON request body.", ctx.RequestAborted);
+        return;
+    }
+
+    if (req is null || string.IsNullOrWhiteSpace(req.Input))
+    {
+        ctx.Response.StatusCode = 400;
+        await ctx.Response.WriteAsync("Request must include an 'input' field.", ctx.RequestAborted);
+        return;
+    }
+
+    var requestId = $"oai-resp:{Guid.NewGuid():N}";
+    var session = await sessionManager.GetOrCreateAsync("openai-responses", requestId, ctx.RequestAborted);
+    if (req.Model is not null)
+        session.ModelOverride = req.Model;
+
+    var result = await agentRuntime.RunAsync(session, req.Input, ctx.RequestAborted);
+
+    var responseId = $"resp-{Guid.NewGuid():N}"[..24];
+    var msgId = $"msg-{Guid.NewGuid():N}"[..23];
+
+    var response = new OpenAiResponseResponse
+    {
+        Id = responseId,
+        Status = "completed",
+        Output =
+        [
+            new OpenAiResponseOutput
+            {
+                Id = msgId,
+                Role = "assistant",
+                Content = [new OpenAiResponseContent { Text = result }]
+            }
+        ],
+        Usage = new OpenAiUsage
+        {
+            PromptTokens = (int)session.TotalInputTokens,
+            CompletionTokens = (int)session.TotalOutputTokens,
+            TotalTokens = (int)(session.TotalInputTokens + session.TotalOutputTokens)
+        }
+    };
+
+    ctx.Response.ContentType = "application/json";
+    await ctx.Response.WriteAsync(
+        JsonSerializer.Serialize(response, CoreJsonContext.Default.OpenAiResponseResponse),
+        ctx.RequestAborted);
 });
 
 var sessionLocks = new System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>();
@@ -402,6 +783,20 @@ if (config.Cron.Enabled)
     _ = cronTask.StartAsync(app.Lifetime.ApplicationStopping);
 }
 
+if (config.Plugins.Native.HomeAssistant.Enabled && config.Plugins.Native.HomeAssistant.Events.Enabled)
+{
+    var haLogger = app.Services.GetRequiredService<ILogger<HomeAssistantEventBridge>>();
+    var haBridge = new HomeAssistantEventBridge(config.Plugins.Native.HomeAssistant, haLogger, pipeline.InboundWriter);
+    _ = haBridge.StartAsync(app.Lifetime.ApplicationStopping);
+}
+
+if (config.Plugins.Native.Mqtt.Enabled && config.Plugins.Native.Mqtt.Events.Enabled)
+{
+    var mqttLogger = app.Services.GetRequiredService<ILogger<MqttEventBridge>>();
+    var mqttBridge = new MqttEventBridge(config.Plugins.Native.Mqtt, mqttLogger, pipeline.InboundWriter);
+    _ = mqttBridge.StartAsync(app.Lifetime.ApplicationStopping);
+}
+
 GatewayWorkers.Start(
     app.Lifetime,
     programLogger,
@@ -415,6 +810,7 @@ GatewayWorkers.Start(
     agentRuntime,
     channelAdapters,
     config,
+    toolApprovalService,
     pairingManager,
     commandProcessor);
 
@@ -429,8 +825,20 @@ app.MapGet("/chat", async (HttpContext ctx) =>
     }
     else
     {
-        ctx.Response.StatusCode = 404;
-        await ctx.Response.WriteAsync("WebChat UI not found.");
+        // Embedded fallback when webchat.html is not packaged
+        ctx.Response.ContentType = "text/html";
+        await ctx.Response.WriteAsync("""
+            <!DOCTYPE html>
+            <html lang="en"><head><meta charset="utf-8"><title>OpenClaw.NET</title>
+            <style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f172a;color:#e2e8f0;}
+            .card{text-align:center;max-width:420px;padding:2rem;border:1px solid #334155;border-radius:12px;background:#1e293b;}
+            code{background:#334155;padding:2px 6px;border-radius:4px;font-size:0.9em;}
+            a{color:#38bdf8;}</style></head>
+            <body><div class="card">
+            <h1>&#128062; OpenClaw.NET Gateway</h1>
+            <p>The WebChat UI is not bundled. Connect via WebSocket at <code>ws://HOST:PORT/ws</code> or use the <a href="https://github.com/openclaw/openclaw.net">Companion app</a>.</p>
+            </div></body></html>
+            """);
     }
 });
 
@@ -463,6 +871,287 @@ app.MapGet("/pairing/list", (HttpContext ctx) =>
         return Results.Unauthorized();
 
     return Results.Ok(pairingManager.GetApprovedList());
+});
+
+static ChannelAllowlistFile GetConfigAllowlist(GatewayConfig config, string channelId)
+{
+    return channelId switch
+    {
+        "telegram" => new ChannelAllowlistFile { AllowedFrom = config.Channels.Telegram.AllowedFromUserIds },
+        "whatsapp" => new ChannelAllowlistFile { AllowedFrom = config.Channels.WhatsApp.AllowedFromIds },
+        "sms" => new ChannelAllowlistFile
+        {
+            AllowedFrom = config.Channels.Sms.Twilio.AllowedFromNumbers,
+            AllowedTo = config.Channels.Sms.Twilio.AllowedToNumbers
+        },
+        _ => new ChannelAllowlistFile()
+    };
+}
+
+app.MapGet("/allowlists/{channelId}", (HttpContext ctx, string channelId) =>
+{
+    if (isNonLoopbackBind)
+    {
+        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
+        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
+            return Results.Unauthorized();
+    }
+
+    var cfg = GetConfigAllowlist(config, channelId);
+    var dyn = allowlists.TryGetDynamic(channelId);
+    var effective = allowlists.GetEffective(channelId, cfg);
+    return Results.Ok(new
+    {
+        channelId,
+        semantics = allowlistSemantics.ToString().ToLowerInvariant(),
+        config = cfg,
+        dynamic = dyn,
+        effective
+    });
+});
+
+app.MapPost("/allowlists/{channelId}/add_latest", (HttpContext ctx, string channelId) =>
+{
+    if (isNonLoopbackBind)
+    {
+        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
+        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
+            return Results.Unauthorized();
+    }
+
+    var latest = recentSenders.TryGetLatest(channelId);
+    if (latest is null)
+        return Results.NotFound(new { success = false, error = "No recent sender found for that channel." });
+
+    allowlists.AddAllowedFrom(channelId, latest.SenderId);
+    return Results.Ok(new { success = true, senderId = latest.SenderId });
+});
+
+app.MapPost("/allowlists/{channelId}/tighten", (HttpContext ctx, string channelId) =>
+{
+    if (isNonLoopbackBind)
+    {
+        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
+        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
+            return Results.Unauthorized();
+    }
+
+    var paired = pairingManager.GetApprovedList()
+        .Select(s =>
+        {
+            var idx = s.IndexOf(':', StringComparison.Ordinal);
+            if (idx <= 0 || idx + 1 >= s.Length) return (Channel: "", Sender: "");
+            return (Channel: s[..idx], Sender: s[(idx + 1)..]);
+        })
+        .Where(t => string.Equals(t.Channel, channelId, StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(t.Sender))
+        .Select(t => t.Sender)
+        .Distinct(StringComparer.Ordinal)
+        .ToArray();
+
+    if (paired.Length == 0)
+        return Results.BadRequest(new { success = false, error = "No paired senders found for that channel." });
+
+    allowlists.SetAllowedFrom(channelId, paired);
+    return Results.Ok(new { success = true, count = paired.Length });
+});
+
+static string ResolveWorkspaceRoot(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+        return "";
+
+    if (value.StartsWith("env:", StringComparison.OrdinalIgnoreCase))
+    {
+        var env = value[4..];
+        return Environment.GetEnvironmentVariable(env) ?? "";
+    }
+
+    return value;
+}
+
+static string ToBoolEmoji(bool value) => value ? "yes" : "no";
+
+app.MapGet("/doctor", (HttpContext ctx) =>
+{
+    if (isNonLoopbackBind)
+    {
+        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
+        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
+            return Results.Unauthorized();
+    }
+
+    var wsRoot = ResolveWorkspaceRoot(config.Tooling.WorkspaceRoot);
+    var wsExists = !string.IsNullOrWhiteSpace(wsRoot) && Directory.Exists(wsRoot);
+
+    var report = new
+    {
+        nowUtc = DateTimeOffset.UtcNow,
+        bind = new
+        {
+            config.BindAddress,
+            config.Port,
+            isNonLoopbackBind,
+            authEnabled = isNonLoopbackBind,
+            authTokenConfigured = !string.IsNullOrWhiteSpace(config.AuthToken)
+        },
+        tooling = new
+        {
+            autonomyMode = (config.Tooling.AutonomyMode ?? "full").Trim().ToLowerInvariant(),
+            workspaceOnly = config.Tooling.WorkspaceOnly,
+            workspaceRoot = wsRoot,
+            workspaceRootExists = wsExists,
+            forbiddenPathGlobs = config.Tooling.ForbiddenPathGlobs,
+            allowedShellCommandGlobs = config.Tooling.AllowedShellCommandGlobs,
+            effectiveRequireToolApproval,
+            effectiveApprovalRequiredTools,
+            toolApprovalTimeoutSeconds = config.Tooling.ToolApprovalTimeoutSeconds
+        },
+        channels = new
+        {
+            allowlistSemantics = config.Channels.AllowlistSemantics,
+            sms = new { enabled = config.Channels.Sms.Twilio.Enabled, dmPolicy = config.Channels.Sms.DmPolicy },
+            telegram = new { enabled = config.Channels.Telegram.Enabled, dmPolicy = config.Channels.Telegram.DmPolicy },
+            whatsapp = new { enabled = config.Channels.WhatsApp.Enabled, dmPolicy = config.Channels.WhatsApp.DmPolicy }
+        },
+        allowlists = new
+        {
+            sms = new { dynamic = allowlists.TryGetDynamic("sms"), effective = allowlists.GetEffective("sms", GetConfigAllowlist(config, "sms")) },
+            telegram = new { dynamic = allowlists.TryGetDynamic("telegram"), effective = allowlists.GetEffective("telegram", GetConfigAllowlist(config, "telegram")) },
+            whatsapp = new { dynamic = allowlists.TryGetDynamic("whatsapp"), effective = allowlists.GetEffective("whatsapp", GetConfigAllowlist(config, "whatsapp")) }
+        },
+        recentSenders = new
+        {
+            sms = recentSenders.GetSnapshot("sms").Senders.Take(10).ToArray(),
+            telegram = recentSenders.GetSnapshot("telegram").Senders.Take(10).ToArray(),
+            whatsapp = recentSenders.GetSnapshot("whatsapp").Senders.Take(10).ToArray()
+        },
+        pairing = new
+        {
+            approved = pairingManager.GetApprovedList().ToArray()
+        },
+        memory = new
+        {
+            provider = config.Memory.Provider,
+            storagePath = config.Memory.StoragePath,
+            sqlite = new { config.Memory.Sqlite.DbPath, config.Memory.Sqlite.EnableFts, config.Memory.Sqlite.EnableVectors },
+            recall = new { config.Memory.Recall.Enabled, config.Memory.Recall.MaxNotes, config.Memory.Recall.MaxChars }
+        },
+        cron = new
+        {
+            enabled = config.Cron.Enabled,
+            jobs = config.Cron.Jobs.Select(j => new { j.Name, j.CronExpression, j.ChannelId, j.SessionId, j.RunOnStartup }).ToArray()
+        },
+        runtime = new
+        {
+            circuitBreaker = agentRuntime.CircuitBreakerState.ToString(),
+            activeSessions = sessionManager.ActiveCount
+        },
+        skills = new
+        {
+            count = skills.Count,
+            names = skills.Select(s => s.Name).ToArray()
+        }
+    };
+
+    return Results.Ok(report);
+});
+
+app.MapGet("/doctor/text", (HttpContext ctx) =>
+{
+    if (isNonLoopbackBind)
+    {
+        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
+        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
+            return Results.Unauthorized();
+    }
+
+    var wsRoot = ResolveWorkspaceRoot(config.Tooling.WorkspaceRoot);
+    var wsExists = !string.IsNullOrWhiteSpace(wsRoot) && Directory.Exists(wsRoot);
+
+    var sb = new StringBuilder();
+    sb.AppendLine("OpenClaw.NET Doctor");
+    sb.AppendLine($"- time_utc: {DateTimeOffset.UtcNow:O}");
+    sb.AppendLine($"- bind: {config.BindAddress}:{config.Port} non_loopback={ToBoolEmoji(isNonLoopbackBind)} auth_token_set={ToBoolEmoji(!string.IsNullOrWhiteSpace(config.AuthToken))}");
+    sb.AppendLine();
+
+    var autonomyMode = (config.Tooling.AutonomyMode ?? "full").Trim().ToLowerInvariant();
+    sb.AppendLine("Tooling");
+    sb.AppendLine($"- autonomy_mode: {autonomyMode}");
+    sb.AppendLine($"- workspace_only: {ToBoolEmoji(config.Tooling.WorkspaceOnly)}");
+    sb.AppendLine($"- workspace_root: {wsRoot} exists={ToBoolEmoji(wsExists)}");
+    sb.AppendLine($"- approvals_required_effective: {ToBoolEmoji(effectiveRequireToolApproval)}");
+    sb.AppendLine($"- approval_timeout_seconds: {config.Tooling.ToolApprovalTimeoutSeconds}");
+    sb.AppendLine();
+
+    sb.AppendLine("Allowlists");
+    sb.AppendLine($"- semantics: {config.Channels.AllowlistSemantics}");
+    foreach (var ch in new[] { "telegram", "sms", "whatsapp" })
+    {
+        var dyn = allowlists.TryGetDynamic(ch);
+        var eff = allowlists.GetEffective(ch, GetConfigAllowlist(config, ch));
+        sb.AppendLine($"- {ch}: dynamic_file={ToBoolEmoji(dyn is not null)} allowed_from={eff.AllowedFrom.Length} allowed_to={eff.AllowedTo.Length}");
+        var latest = recentSenders.TryGetLatest(ch);
+        if (latest is not null)
+            sb.AppendLine($"  latest_sender: {latest.SenderId} last_seen_utc={latest.LastSeenUtc:O}");
+    }
+    sb.AppendLine();
+
+    sb.AppendLine("Pairing");
+    var approved = pairingManager.GetApprovedList().ToArray();
+    sb.AppendLine($"- approved_pairs: {approved.Length}");
+    if (approved.Length > 0)
+        sb.AppendLine($"- approved: {string.Join(", ", approved.Take(20))}{(approved.Length > 20 ? ", …" : "")}");
+    sb.AppendLine();
+
+    sb.AppendLine("Memory");
+    sb.AppendLine($"- provider: {config.Memory.Provider}");
+    sb.AppendLine($"- sqlite_fts: {ToBoolEmoji(config.Memory.Sqlite.EnableFts)}");
+    sb.AppendLine($"- recall_enabled: {ToBoolEmoji(config.Memory.Recall.Enabled)} max_notes={config.Memory.Recall.MaxNotes} max_chars={config.Memory.Recall.MaxChars}");
+    sb.AppendLine();
+
+    sb.AppendLine("Cron");
+    sb.AppendLine($"- enabled: {ToBoolEmoji(config.Cron.Enabled)} jobs={config.Cron.Jobs.Count}");
+    foreach (var job in config.Cron.Jobs.Take(20))
+        sb.AppendLine($"  - {job.Name} cron={job.CronExpression} run_on_startup={ToBoolEmoji(job.RunOnStartup)} session={job.SessionId}");
+    if (config.Cron.Jobs.Count > 20)
+        sb.AppendLine("  - …");
+    sb.AppendLine();
+
+    sb.AppendLine("Skills");
+    sb.AppendLine($"- loaded: {skills.Count}");
+    if (skills.Count > 0)
+        sb.AppendLine($"- names: {string.Join(", ", skills.Select(s => s.Name))}");
+    sb.AppendLine();
+
+    sb.AppendLine("Suggested next steps");
+    if (config.Channels.AllowlistSemantics.Equals("strict", StringComparison.OrdinalIgnoreCase))
+        sb.AppendLine("- If a sender is blocked, run: POST /allowlists/{channel}/add_latest then retry.");
+    else
+        sb.AppendLine("- Consider setting OpenClaw:Channels:AllowlistSemantics=strict for safer defaults.");
+    if (autonomyMode == "supervised")
+        sb.AppendLine("- Approvals: when prompted, reply with `/approve <approvalId> yes` (or use POST /tools/approve).");
+    if (config.Memory.Provider.Equals("file", StringComparison.OrdinalIgnoreCase))
+        sb.AppendLine("- Consider Memory.Provider=sqlite and Memory.Sqlite.EnableFts=true for faster recall.");
+
+    return Results.Text(sb.ToString(), "text/plain; charset=utf-8");
+});
+
+app.MapPost("/tools/approve", (HttpContext ctx, string approvalId, bool approved) =>
+{
+    if (isNonLoopbackBind)
+    {
+        var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
+        if (!GatewaySecurity.IsTokenValid(token, config.AuthToken!))
+            return Results.Unauthorized();
+    }
+
+    if (string.IsNullOrWhiteSpace(approvalId))
+        return Results.BadRequest(new { success = false, error = "approvalId is required." });
+
+    var ok = toolApprovalService.TrySetDecision(approvalId, approved);
+    return ok
+        ? Results.Ok(new { success = true })
+        : Results.NotFound(new { success = false, error = "No pending approval found for that id." });
 });
 
 // WebSocket endpoint — the primary control plane
@@ -500,6 +1189,7 @@ app.Map("/ws", async (HttpContext ctx) =>
 // Wire up the message flow: channel → agent → channel
 wsChannel.OnMessageReceived += async (msg, ct) =>
 {
+    await recentSenders.RecordAsync(msg.ChannelId, msg.SenderId, msg.SenderName, ct);
     if (!pipeline.InboundWriter.TryWrite(msg))
     {
         await wsChannel.SendAsync(new OutboundMessage
@@ -599,19 +1289,55 @@ if (config.Channels.Telegram.Enabled)
         var root = document.RootElement;
 
         if (root.TryGetProperty("message", out var message) &&
-            message.TryGetProperty("text", out var textNode) &&
             message.TryGetProperty("chat", out var chat) &&
             chat.TryGetProperty("id", out var chatId))
         {
-            var text = textNode.GetString() ?? "";
-            if (text.Length > config.Channels.Telegram.MaxInboundChars)
-                text = text[..config.Channels.Telegram.MaxInboundChars];
             var senderIdStr = chatId.GetRawText();
 
-            if (config.Channels.Telegram.AllowedFromUserIds.Length > 0 &&
-                !config.Channels.Telegram.AllowedFromUserIds.Contains(senderIdStr))
+            await recentSenders.RecordAsync("telegram", senderIdStr, senderName: null, ctx.RequestAborted);
+
+            var effective = allowlists.GetEffective("telegram", new ChannelAllowlistFile
+            {
+                AllowedFrom = config.Channels.Telegram.AllowedFromUserIds
+            });
+            
+            if (!AllowlistPolicy.IsAllowed(effective.AllowedFrom, senderIdStr, allowlistSemantics))
             {
                 ctx.Response.StatusCode = 403;
+                return;
+            }
+
+            string? text = null;
+            if (message.TryGetProperty("text", out var textNode))
+                text = textNode.GetString();
+
+            string? marker = null;
+            if (message.TryGetProperty("photo", out var photoNode) && photoNode.ValueKind == JsonValueKind.Array)
+            {
+                string? fileId = null;
+                foreach (var p in photoNode.EnumerateArray())
+                {
+                    if (p.TryGetProperty("file_id", out var idNode))
+                        fileId = idNode.GetString();
+                }
+
+                if (!string.IsNullOrWhiteSpace(fileId))
+                    marker = $"[IMAGE:telegram:file_id={fileId}]";
+            }
+
+            if (!string.IsNullOrWhiteSpace(marker))
+            {
+                var caption = message.TryGetProperty("caption", out var capNode) ? capNode.GetString() : null;
+                text = string.IsNullOrWhiteSpace(caption) ? marker : marker + "\n" + caption;
+            }
+
+            if (!string.IsNullOrWhiteSpace(text) && text.Length > config.Channels.Telegram.MaxInboundChars)
+                text = text[..config.Channels.Telegram.MaxInboundChars];
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                ctx.Response.StatusCode = 200;
+                await ctx.Response.WriteAsync("OK");
                 return;
             }
 

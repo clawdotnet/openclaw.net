@@ -11,6 +11,10 @@ public sealed record WsClientEnvelope
     public string? Content { get; init; }
     public string? MessageId { get; init; }
     public string? ReplyToMessageId { get; init; }
+
+    // Tool approval decision (client -> server)
+    public string? ApprovalId { get; init; }
+    public bool? Approved { get; init; }
 }
 
 /// <summary>
@@ -21,4 +25,10 @@ public sealed record WsServerEnvelope
     public required string Type { get; init; }
     public string? Text { get; init; }
     public string? InReplyToMessageId { get; init; }
+
+    // Tool approval request/status (server -> client)
+    public string? ApprovalId { get; init; }
+    public string? ToolName { get; init; }
+    public string? ArgumentsPreview { get; init; }
+    public bool? Approved { get; init; }
 }

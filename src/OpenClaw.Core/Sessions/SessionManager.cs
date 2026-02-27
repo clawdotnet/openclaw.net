@@ -33,6 +33,19 @@ public sealed class SessionManager
     public async ValueTask<Session> GetOrCreateAsync(string channelId, string senderId, CancellationToken ct)
     {
         var key = string.Concat(channelId, ":", senderId);
+        return await GetOrCreateByIdAsync(key, channelId, senderId, ct);
+    }
+
+    /// <summary>
+    /// Get or create a session for an explicit session id. Useful for cron jobs and webhooks
+    /// that want stable, named sessions independent of channel+sender.
+    /// </summary>
+    public async ValueTask<Session> GetOrCreateByIdAsync(string sessionId, string channelId, string senderId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            throw new ArgumentException("sessionId must be set.", nameof(sessionId));
+
+        var key = sessionId;
         var now = DateTimeOffset.UtcNow;
 
         if (_active.TryGetValue(key, out var session))

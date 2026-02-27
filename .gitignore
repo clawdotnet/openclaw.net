@@ -29,3 +29,5 @@ appsettings.Local.json
 
 # Playwright
 .playwright/
+.claude/
+
