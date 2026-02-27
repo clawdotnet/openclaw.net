@@ -206,7 +206,6 @@ public sealed class WhatsAppChannelConfig
     public string BridgeTokenRef { get; set; } = "env:WHATSAPP_BRIDGE_TOKEN";
 
     public int MaxInboundChars { get; set; } = 4096;
-    public int MaxRequestBytes { get; set; } = 64 * 1024;
 
     /// <summary>Max inbound webhook request size in bytes.</summary>
     public int MaxRequestBytes { get; set; } = 64 * 1024;
