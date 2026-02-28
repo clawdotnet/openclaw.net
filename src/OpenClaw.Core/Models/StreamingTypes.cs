@@ -11,6 +11,9 @@ public enum AgentStreamEventType : byte
     /// <summary>A tool execution is starting.</summary>
     ToolStart,
 
+    /// <summary>Incremental output produced by a streaming tool.</summary>
+    ToolDelta,
+
     /// <summary>A tool execution completed (Content = result).</summary>
     ToolResult,
 
@@ -37,6 +40,9 @@ public readonly record struct AgentStreamEvent
     public static AgentStreamEvent ToolStarted(string toolName) =>
         new() { Type = AgentStreamEventType.ToolStart, Content = toolName, ToolName = toolName };
 
+    public static AgentStreamEvent ToolDelta(string toolName, string chunk) =>
+        new() { Type = AgentStreamEventType.ToolDelta, Content = chunk, ToolName = toolName };
+
     public static AgentStreamEvent ToolCompleted(string toolName, string result) =>
         new() { Type = AgentStreamEventType.ToolResult, Content = result, ToolName = toolName };
 
@@ -51,6 +57,7 @@ public readonly record struct AgentStreamEvent
     {
         AgentStreamEventType.TextDelta => "assistant_chunk",
         AgentStreamEventType.ToolStart => "tool_start",
+        AgentStreamEventType.ToolDelta => "tool_chunk",
         AgentStreamEventType.ToolResult => "tool_result",
         AgentStreamEventType.Error => "error",
         AgentStreamEventType.Done => "assistant_done",

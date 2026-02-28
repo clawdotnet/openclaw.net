@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
@@ -264,7 +265,7 @@ public sealed class AgentRuntime
 
             // Execute tool calls (parallel or sequential based on config)
             var (invocations, toolResults) = await ExecuteToolCallsAsync(
-                toolCalls, turnCtx, approvalCallback, ct);
+                toolCalls, session, turnCtx, isStreaming: false, approvalCallback, ct);
 
             // Feed all tool calls as a single assistant message, then all results as a single tool message
             messages.Add(new ChatMessage(ChatRole.Assistant, toolCalls.Cast<AIContent>().ToList()));
@@ -365,14 +366,66 @@ public sealed class AgentRuntime
                 yield break;
             }
 
-            // Execute tool calls
-            var (invocations, toolResults) = await ExecuteToolCallsAsync(
-                toolCalls, turnCtx, approvalCallback, ct);
+            // Execute tool calls.
+            // If any tool supports streaming output, force sequential execution so we can emit tool chunks.
+            var hasStreamingTool = toolCalls.Any(c =>
+                _toolsByName.TryGetValue(c.Name, out var t) && t is IStreamingTool);
 
-            foreach (var inv in invocations)
+            List<ToolInvocation> invocations;
+            List<FunctionResultContent> toolResults;
+
+            if (hasStreamingTool)
             {
-                yield return AgentStreamEvent.ToolStarted(inv.ToolName);
-                yield return AgentStreamEvent.ToolCompleted(inv.ToolName, inv.Result ?? "");
+                invocations = new List<ToolInvocation>(toolCalls.Count);
+                toolResults = new List<FunctionResultContent>(toolCalls.Count);
+
+                foreach (var call in toolCalls)
+                {
+                    yield return AgentStreamEvent.ToolStarted(call.Name);
+
+                    var channel = Channel.CreateBounded<string>(new BoundedChannelOptions(256)
+                    {
+                        SingleReader = true,
+                        SingleWriter = true,
+                        FullMode = BoundedChannelFullMode.Wait
+                    });
+
+                    async Task<(ToolInvocation, FunctionResultContent)> RunToolAsync()
+                    {
+                        try
+                        {
+                            return await ExecuteSingleToolCallAsync(
+                                call, session, turnCtx, isStreaming: true, approvalCallback, ct,
+                                onDelta: async chunk => await channel.Writer.WriteAsync(chunk, ct));
+                        }
+                        finally
+                        {
+                            channel.Writer.TryComplete();
+                        }
+                    }
+
+                    var task = RunToolAsync();
+
+                    await foreach (var chunk in channel.Reader.ReadAllAsync(ct))
+                        yield return AgentStreamEvent.ToolDelta(call.Name, chunk);
+
+                    var (inv, res) = await task;
+                    invocations.Add(inv);
+                    toolResults.Add(res);
+
+                    yield return AgentStreamEvent.ToolCompleted(inv.ToolName, inv.Result ?? "");
+                }
+            }
+            else
+            {
+                (invocations, toolResults) = await ExecuteToolCallsAsync(
+                    toolCalls, session, turnCtx, isStreaming: true, approvalCallback, ct);
+
+                foreach (var inv in invocations)
+                {
+                    yield return AgentStreamEvent.ToolStarted(inv.ToolName);
+                    yield return AgentStreamEvent.ToolCompleted(inv.ToolName, inv.Result ?? "");
+                }
             }
 
             messages.Add(new ChatMessage(ChatRole.Assistant, toolCalls.Cast<AIContent>().ToList()));
@@ -564,7 +617,9 @@ public sealed class AgentRuntime
     /// </summary>
     private async Task<(List<ToolInvocation> Invocations, List<FunctionResultContent> Results)> ExecuteToolCallsAsync(
         List<FunctionCallContent> toolCalls,
+        Session session,
         TurnContext turnCtx,
+        bool isStreaming,
         ToolApprovalCallback? approvalCallback,
         CancellationToken ct,
         Action<string>? onToolStart = null,
@@ -572,15 +627,17 @@ public sealed class AgentRuntime
     {
         if (_parallelToolExecution && toolCalls.Count > 1)
         {
-            return await ExecuteToolCallsParallelAsync(toolCalls, turnCtx, approvalCallback, ct);
+            return await ExecuteToolCallsParallelAsync(toolCalls, session, turnCtx, isStreaming, approvalCallback, ct);
         }
 
-        return await ExecuteToolCallsSequentialAsync(toolCalls, turnCtx, approvalCallback, ct);
+        return await ExecuteToolCallsSequentialAsync(toolCalls, session, turnCtx, isStreaming, approvalCallback, ct);
     }
 
     private async Task<(List<ToolInvocation>, List<FunctionResultContent>)> ExecuteToolCallsSequentialAsync(
         List<FunctionCallContent> toolCalls,
+        Session session,
         TurnContext turnCtx,
+        bool isStreaming,
         ToolApprovalCallback? approvalCallback,
         CancellationToken ct)
     {
@@ -589,7 +646,7 @@ public sealed class AgentRuntime
 
         foreach (var call in toolCalls)
         {
-            var (invocation, result) = await ExecuteSingleToolCallAsync(call, turnCtx, approvalCallback, ct);
+            var (invocation, result) = await ExecuteSingleToolCallAsync(call, session, turnCtx, isStreaming, approvalCallback, ct, onDelta: null);
             invocations.Add(invocation);
             toolResults.Add(result);
         }
@@ -599,12 +656,14 @@ public sealed class AgentRuntime
 
     private async Task<(List<ToolInvocation>, List<FunctionResultContent>)> ExecuteToolCallsParallelAsync(
         List<FunctionCallContent> toolCalls,
+        Session session,
         TurnContext turnCtx,
+        bool isStreaming,
         ToolApprovalCallback? approvalCallback,
         CancellationToken ct)
     {
         var tasks = toolCalls
-            .Select(call => ExecuteSingleToolCallAsync(call, turnCtx, approvalCallback, ct))
+            .Select(call => ExecuteSingleToolCallAsync(call, session, turnCtx, isStreaming, approvalCallback, ct, onDelta: null))
             .ToArray();
 
         var results = await Task.WhenAll(tasks);
@@ -623,9 +682,12 @@ public sealed class AgentRuntime
 
     private async Task<(ToolInvocation, FunctionResultContent)> ExecuteSingleToolCallAsync(
         FunctionCallContent call,
+        Session session,
         TurnContext turnCtx,
+        bool isStreaming,
         ToolApprovalCallback? approvalCallback,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<string, ValueTask>? onDelta)
     {
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.ExecuteTool");
         activity?.SetTag("tool.name", call.Name);
@@ -646,12 +708,25 @@ public sealed class AgentRuntime
             ? JsonSerializer.Serialize(call.Arguments, CoreJsonContext.Default.IDictionaryStringObject)
             : "{}";
 
+        var hookCtx = new ToolHookContext
+        {
+            SessionId = session.Id,
+            ChannelId = session.ChannelId,
+            SenderId = session.SenderId,
+            CorrelationId = turnCtx.CorrelationId,
+            ToolName = tool.Name,
+            ArgumentsJson = argsJson,
+            IsStreaming = isStreaming
+        };
+
         // Run pre-hooks
         foreach (var hook in _hooks)
         {
             try
             {
-                var allowed = await hook.BeforeExecuteAsync(tool.Name, argsJson, ct);
+                var allowed = hook is IToolHookWithContext ctxHook
+                    ? await ctxHook.BeforeExecuteAsync(hookCtx, ct)
+                    : await hook.BeforeExecuteAsync(tool.Name, argsJson, ct);
                 if (!allowed)
                 {
                     var msg = $"Tool execution denied by hook: {hook.Name}";
@@ -714,7 +789,10 @@ public sealed class AgentRuntime
         var toolTimedOut = false;
         try
         {
-            result = await ExecuteToolWithTimeoutAsync(tool, argsJson, ct);
+            if (onDelta is not null && tool is IStreamingTool streamingTool)
+                result = await ExecuteStreamingToolCollectAsync(streamingTool, argsJson, onDelta, ct);
+            else
+                result = await ExecuteToolWithTimeoutAsync(tool, argsJson, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -748,7 +826,10 @@ public sealed class AgentRuntime
         {
             try
             {
-                await hook.AfterExecuteAsync(tool.Name, argsJson, result, sw.Elapsed, toolFailed, ct);
+                if (hook is IToolHookWithContext ctxHook)
+                    await ctxHook.AfterExecuteAsync(hookCtx, result, sw.Elapsed, toolFailed, ct);
+                else
+                    await hook.AfterExecuteAsync(tool.Name, argsJson, result, sw.Elapsed, toolFailed, ct);
             }
             catch (Exception ex)
             {
@@ -765,6 +846,41 @@ public sealed class AgentRuntime
         };
 
         return (invocation, new FunctionResultContent(call.CallId, result));
+    }
+
+    private async Task<string> ExecuteStreamingToolCollectAsync(
+        IStreamingTool tool,
+        string argsJson,
+        Func<string, ValueTask> onDelta,
+        CancellationToken ct)
+    {
+        using var timeoutCts = _toolTimeoutSeconds > 0
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+            : null;
+        timeoutCts?.CancelAfter(TimeSpan.FromSeconds(_toolTimeoutSeconds));
+        var effectiveCt = timeoutCts?.Token ?? ct;
+
+        const int MaxChars = 1_000_000;
+        var sb = new StringBuilder();
+
+        await foreach (var chunk in tool.ExecuteStreamingAsync(argsJson, effectiveCt).WithCancellation(effectiveCt))
+        {
+            if (chunk is null)
+                continue;
+
+            await onDelta(chunk);
+
+            if (sb.Length < MaxChars)
+            {
+                var remaining = MaxChars - sb.Length;
+                sb.Append(chunk.Length <= remaining ? chunk : chunk[..remaining]);
+            }
+        }
+
+        if (sb.Length >= MaxChars)
+            sb.Append("…");
+
+        return sb.ToString();
     }
 
     /// <summary>

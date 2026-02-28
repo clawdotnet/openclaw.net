@@ -23,10 +23,16 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore src/OpenClaw.Gateway && dotnet restore src/OpenClaw.Tests
+        run: |
+          dotnet restore src/OpenClaw.Gateway && dotnet restore src/OpenClaw.Tests
+          dotnet restore src/OpenClaw.SemanticKernelAdapter
+          dotnet restore samples/OpenClaw.SemanticKernelInteropHost
 
       - name: Build
-        run: dotnet build --no-restore -c Release src/OpenClaw.Gateway && dotnet build --no-restore -c Release src/OpenClaw.Tests
+        run: |
+          dotnet build --no-restore -c Release src/OpenClaw.Gateway && dotnet build --no-restore -c Release src/OpenClaw.Tests
+          dotnet build --no-restore -c Release src/OpenClaw.SemanticKernelAdapter
+          dotnet build --no-restore -c Release samples/OpenClaw.SemanticKernelInteropHost
 
       - name: Test
         run: dotnet test --no-build -c Release --verbosity normal --logger "trx;LogFileName=results.trx" src/OpenClaw.Tests

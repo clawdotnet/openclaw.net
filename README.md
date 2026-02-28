@@ -148,6 +148,8 @@ Supported integration patterns today:
 - **Wrap your SK orchestration as an OpenClaw tool**: keep SK in-process, expose a single "entrypoint" tool the OpenClaw agent can call.
 - **Host SK-based agents behind the OpenClaw gateway**: use OpenClaw for Internet-facing concerns (WebSocket, `/v1/*`, Telegram/Twilio/WhatsApp), while your SK logic stays in your app/tool layer.
 
+More details and AOT/trimming notes: see `SEMANTIC_KERNEL.md`.
+
 Conceptual example (tool wrapper):
 ```csharp
 // Your tool can instantiate and call Semantic Kernel. OpenClaw policies still apply
