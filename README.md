@@ -156,11 +156,13 @@ Conceptual example (tool wrapper):
 // to *when* this tool runs, who can call it, and how often.
 public sealed class SemanticKernelTool : ITool
 {
-    public async Task<ToolResult> ExecuteAsync(ToolContext context, CancellationToken ct)
+    public string Name => "sk_example";
+    public string Description => "Example SK-backed tool.";
+    public string ParameterSchema => "{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"]}";
+
+    public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
     {
-        // var kernel = new KernelBuilder()...Build(); (SK setup lives here)
-        // var result = await kernel.InvokePromptAsync(context.Input, cancellationToken: ct);
-        // return ToolResult.Success(result.ToString());
+        // Parse argsJson, then run SK here (Kernel builder + plugin invocation).
         throw new NotImplementedException();
     }
 }
@@ -169,8 +171,9 @@ public sealed class SemanticKernelTool : ITool
 Notes:
 - **NativeAOT**: Semantic Kernel usage may require additional trimming/reflection configuration. Keep SK interop optional so the core gateway/runtime remains NativeAOT-friendly.
 
-Roadmap:
-- A first-party adapter package (tentative name `OpenClaw.SemanticKernelAdapter`) to make wrapping SK functions/plugins as OpenClaw tools more ergonomic.
+Available:
+- `src/OpenClaw.SemanticKernelAdapter` — optional adapter library that exposes SK functions as OpenClaw tools.
+- `samples/OpenClaw.SemanticKernelInteropHost` — runnable sample host demonstrating `/v1/responses` without requiring external LLM access.
 
 ## Telegram Webhook channel
 
