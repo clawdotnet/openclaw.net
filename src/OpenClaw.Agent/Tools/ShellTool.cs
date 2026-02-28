@@ -26,7 +26,11 @@ public sealed class ShellTool : ITool
             return "Error: Shell execution is disabled by configuration.";
 
         using var args = System.Text.Json.JsonDocument.Parse(argumentsJson);
-        var command = args.RootElement.GetProperty("command").GetString()!;
+        if (!args.RootElement.TryGetProperty("command", out var commandEl) || commandEl.ValueKind != System.Text.Json.JsonValueKind.String)
+            return "Error: 'command' is required.";
+        var command = commandEl.GetString();
+        if (string.IsNullOrWhiteSpace(command))
+            return "Error: 'command' is required.";
         var timeoutSec = args.RootElement.TryGetProperty("timeout_seconds", out var t) ? t.GetInt32() : 30;
         timeoutSec = Math.Clamp(timeoutSec, 1, 600);
 

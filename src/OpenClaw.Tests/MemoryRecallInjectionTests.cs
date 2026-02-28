@@ -7,11 +7,11 @@ using Xunit;
 
 namespace OpenClaw.Tests;
 
-public sealed class MemoryRecallInjectionTests
-{
-    [Fact]
-    public async Task RunAsync_InsertsRelevantMemorySystemMessage_WhenEnabled()
+    public sealed class MemoryRecallInjectionTests
     {
+        [Fact]
+        public async Task RunAsync_InsertsRelevantMemoryUserMessage_WhenEnabled()
+        {
         var chatClient = Substitute.For<IChatClient>();
 
         IList<ChatMessage>? captured = null;
@@ -38,9 +38,12 @@ public sealed class MemoryRecallInjectionTests
             recall: new MemoryRecallConfig { Enabled = true, MaxNotes = 5, MaxChars = 4000 });
 
         var session = new Session { Id = "s1", ChannelId = "test", SenderId = "u1" };
-        _ = await agent.RunAsync(session, "what should I remember?", CancellationToken.None);
+            _ = await agent.RunAsync(session, "what should I remember?", CancellationToken.None);
 
-        Assert.NotNull(captured);
-        Assert.Contains(captured!, m => m.Role == ChatRole.System && (m.Text ?? "").Contains("[Relevant memory]", StringComparison.Ordinal));
+            Assert.NotNull(captured);
+            Assert.Contains(captured!, m =>
+                m.Role == ChatRole.User &&
+                (m.Text ?? "").Contains("[Relevant memory]", StringComparison.Ordinal) &&
+                (m.Text ?? "").Contains("untrusted", StringComparison.OrdinalIgnoreCase));
+        }
     }
-}

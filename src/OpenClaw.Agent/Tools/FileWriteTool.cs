@@ -19,8 +19,15 @@ public sealed class FileWriteTool : ITool
     public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
     {
         using var args = System.Text.Json.JsonDocument.Parse(argumentsJson);
-        var path = args.RootElement.GetProperty("path").GetString()!;
-        var content = args.RootElement.GetProperty("content").GetString()!;
+        if (!args.RootElement.TryGetProperty("path", out var pathEl) || pathEl.ValueKind != System.Text.Json.JsonValueKind.String)
+            return "Error: 'path' is required.";
+        var path = pathEl.GetString();
+        if (string.IsNullOrWhiteSpace(path))
+            return "Error: 'path' is required.";
+
+        if (!args.RootElement.TryGetProperty("content", out var contentEl) || contentEl.ValueKind != System.Text.Json.JsonValueKind.String)
+            return "Error: 'content' is required.";
+        var content = contentEl.GetString() ?? "";
 
         if (!ToolPathPolicy.IsWriteAllowed(_config, path))
             return $"Error: Write access denied for path: {path}";

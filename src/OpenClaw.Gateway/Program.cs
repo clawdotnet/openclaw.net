@@ -507,6 +507,21 @@ static bool TrySetMaxRequestBodySize(HttpContext ctx, long maxBytes)
     return false;
 }
 
+static string GetHttpRateLimitKey(HttpContext ctx, GatewayConfig gatewayConfig)
+{
+    var token = GatewaySecurity.GetToken(ctx, gatewayConfig.Security.AllowQueryStringToken);
+    if (!string.IsNullOrWhiteSpace(token))
+    {
+        // Avoid storing raw tokens in-memory. Use a short, stable hash prefix.
+        var bytes = Encoding.UTF8.GetBytes(token);
+        var hash = System.Security.Cryptography.SHA256.HashData(bytes);
+        return "token:" + Convert.ToHexString(hash.AsSpan(0, 8));
+    }
+
+    var ip = ctx.Connection.RemoteIpAddress?.ToString();
+    return "ip:" + (string.IsNullOrWhiteSpace(ip) ? "unknown" : ip);
+}
+
 static async Task<(bool Success, string Text)> TryReadBodyTextAsync(HttpContext ctx, long maxBytes, CancellationToken ct)
 {
     var contentLength = ctx.Request.ContentLength;
@@ -589,7 +604,25 @@ app.MapPost("/v1/chat/completions", async (HttpContext ctx) =>
     // Extract the last user message as input
     var lastUserMsg = req.Messages.FindLast(m =>
         string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase));
-    var userText = lastUserMsg?.Content ?? req.Messages[^1].Content;
+    var userText = lastUserMsg?.Content ?? req.Messages[^1].Content ?? "";
+
+    // Apply the same middleware pipeline used by message channels (rate limits, token budget, etc.).
+    // For HTTP OpenAI-compat endpoints we key rate limiting by token hash (if present) or remote IP.
+    var httpMwCtx = new MessageContext
+    {
+        ChannelId = "openai-http",
+        SenderId = GetHttpRateLimitKey(ctx, config),
+        Text = userText ?? "",
+        SessionInputTokens = 0,
+        SessionOutputTokens = 0
+    };
+    var allow = await middlewarePipeline.ExecuteAsync(httpMwCtx, ctx.RequestAborted);
+    if (!allow)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await ctx.Response.WriteAsync(httpMwCtx.ShortCircuitResponse ?? "Request blocked.", ctx.RequestAborted);
+        return;
+    }
 
     // Ephemeral session scoped to this HTTP request
     var requestId = $"oai-http:{Guid.NewGuid():N}";
@@ -638,7 +671,7 @@ app.MapPost("/v1/chat/completions", async (HttpContext ctx) =>
         await ctx.Response.WriteAsync($"data: {roleJson}\n\n", ctx.RequestAborted);
         await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 
-        await foreach (var evt in agentRuntime.RunStreamingAsync(session, userText, ctx.RequestAborted))
+        await foreach (var evt in agentRuntime.RunStreamingAsync(session, userText ?? "", ctx.RequestAborted))
         {
             if (evt.Type == AgentStreamEventType.TextDelta && !string.IsNullOrEmpty(evt.Content))
             {
@@ -668,7 +701,7 @@ app.MapPost("/v1/chat/completions", async (HttpContext ctx) =>
     else
     {
         // Non-streaming
-        var result = await agentRuntime.RunAsync(session, userText, ctx.RequestAborted);
+        var result = await agentRuntime.RunAsync(session, userText ?? "", ctx.RequestAborted);
 
         var response = new OpenAiChatCompletionResponse
         {
@@ -729,6 +762,22 @@ app.MapPost("/v1/responses", async (HttpContext ctx) =>
     {
         ctx.Response.StatusCode = 400;
         await ctx.Response.WriteAsync("Request must include an 'input' field.", ctx.RequestAborted);
+        return;
+    }
+
+    var httpMwCtx = new MessageContext
+    {
+        ChannelId = "openai-http",
+        SenderId = GetHttpRateLimitKey(ctx, config),
+        Text = req.Input,
+        SessionInputTokens = 0,
+        SessionOutputTokens = 0
+    };
+    var allow = await middlewarePipeline.ExecuteAsync(httpMwCtx, ctx.RequestAborted);
+    if (!allow)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await ctx.Response.WriteAsync(httpMwCtx.ShortCircuitResponse ?? "Request blocked.", ctx.RequestAborted);
         return;
     }
 
@@ -1163,12 +1212,53 @@ app.Map("/ws", async (HttpContext ctx) =>
         return;
     }
 
-    if (allowedOriginsSet is not null && ctx.Request.Headers.TryGetValue("Origin", out var origin))
+    if (ctx.Request.Headers.TryGetValue("Origin", out var origin))
     {
-        if (!allowedOriginsSet.Contains(origin.ToString()))
+        var originStr = origin.ToString();
+        if (!string.IsNullOrWhiteSpace(originStr))
         {
-            ctx.Response.StatusCode = 403;
-            return;
+            if (allowedOriginsSet is not null)
+            {
+                if (!allowedOriginsSet.Contains(originStr))
+                {
+                    ctx.Response.StatusCode = 403;
+                    return;
+                }
+            }
+            else
+            {
+                // Secure default: if Origin is present but no allowlist is configured, require same-origin.
+                if (!Uri.TryCreate(originStr, UriKind.Absolute, out var originUri))
+                {
+                    ctx.Response.StatusCode = 403;
+                    return;
+                }
+
+                var host = ctx.Request.Host;
+                if (!host.HasValue)
+                {
+                    ctx.Response.StatusCode = 403;
+                    return;
+                }
+
+                var expectedScheme = ctx.Request.Scheme;
+                var expectedHost = host.Host;
+                var expectedPort = host.Port ?? (string.Equals(expectedScheme, "https", StringComparison.OrdinalIgnoreCase) ? 443 : 80);
+                var originPort = originUri.IsDefaultPort
+                    ? (string.Equals(originUri.Scheme, "https", StringComparison.OrdinalIgnoreCase) ? 443 : 80)
+                    : originUri.Port;
+
+                var sameOrigin =
+                    string.Equals(originUri.Scheme, expectedScheme, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(originUri.Host, expectedHost, StringComparison.OrdinalIgnoreCase) &&
+                    originPort == expectedPort;
+
+                if (!sameOrigin)
+                {
+                    ctx.Response.StatusCode = 403;
+                    return;
+                }
+            }
         }
     }
 

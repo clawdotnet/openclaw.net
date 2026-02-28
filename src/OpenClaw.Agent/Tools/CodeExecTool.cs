@@ -49,8 +49,16 @@ public sealed class CodeExecTool : ITool
     public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
     {
         using var args = JsonDocument.Parse(argumentsJson);
-        var language = args.RootElement.GetProperty("language").GetString()!.ToLowerInvariant();
-        var code = args.RootElement.GetProperty("code").GetString()!;
+        if (!args.RootElement.TryGetProperty("language", out var languageEl) || languageEl.ValueKind != JsonValueKind.String)
+            return "Error: 'language' is required.";
+        var languageRaw = languageEl.GetString();
+        if (string.IsNullOrWhiteSpace(languageRaw))
+            return "Error: 'language' is required.";
+        var language = languageRaw.ToLowerInvariant();
+
+        if (!args.RootElement.TryGetProperty("code", out var codeEl) || codeEl.ValueKind != JsonValueKind.String)
+            return "Error: 'code' is required.";
+        var code = codeEl.GetString() ?? "";
         var timeoutSec = args.RootElement.TryGetProperty("timeout_seconds", out var t)
             ? t.GetInt32()
             : _config.TimeoutSeconds;
