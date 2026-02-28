@@ -38,41 +38,46 @@ public sealed class SemanticKernelEntrypointTool : ITool
 
     public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
     {
-        using var doc = JsonDocument.Parse(argumentsJson);
-        var root = doc.RootElement;
-
-        if (!root.TryGetProperty("plugin", out var pluginEl) || pluginEl.ValueKind != JsonValueKind.String)
-            return "Error: 'plugin' is required.";
-        if (!root.TryGetProperty("function", out var fnEl) || fnEl.ValueKind != JsonValueKind.String)
-            return "Error: 'function' is required.";
-
-        var plugin = pluginEl.GetString() ?? "";
-        var function = fnEl.GetString() ?? "";
-        if (string.IsNullOrWhiteSpace(plugin) || string.IsNullOrWhiteSpace(function))
-            return "Error: 'plugin' and 'function' are required.";
-
-        var format = root.TryGetProperty("format", out var fmtEl) && fmtEl.ValueKind == JsonValueKind.String
-            ? (fmtEl.GetString() ?? "text")
-            : "text";
-
-        var timeoutSec = root.TryGetProperty("timeout_seconds", out var tEl) && tEl.ValueKind == JsonValueKind.Number
-            ? tEl.GetInt32()
-            : 0;
-
-        using var timeoutCts = timeoutSec > 0
-            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
-            : null;
-        if (timeoutCts is not null)
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(timeoutSec, 1, 600)));
-        var effectiveCt = timeoutCts?.Token ?? ct;
-
         using var activity = Telemetry.ActivitySource.StartActivity("Tool.SemanticKernel.Invoke");
-        activity?.SetTag("sk.plugin", plugin);
-        activity?.SetTag("sk.function", function);
         activity?.SetTag("sk.tool_name", Name);
+
+        var plugin = "";
+        var function = "";
+        var format = "text";
 
         try
         {
+            using var doc = JsonDocument.Parse(argumentsJson);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("plugin", out var pluginEl) || pluginEl.ValueKind != JsonValueKind.String)
+                return "Error: 'plugin' is required.";
+            if (!root.TryGetProperty("function", out var fnEl) || fnEl.ValueKind != JsonValueKind.String)
+                return "Error: 'function' is required.";
+
+            plugin = pluginEl.GetString() ?? "";
+            function = fnEl.GetString() ?? "";
+            if (string.IsNullOrWhiteSpace(plugin) || string.IsNullOrWhiteSpace(function))
+                return "Error: 'plugin' and 'function' are required.";
+
+            format = root.TryGetProperty("format", out var fmtEl) && fmtEl.ValueKind == JsonValueKind.String
+                ? (fmtEl.GetString() ?? "text")
+                : "text";
+
+            var timeoutSec = root.TryGetProperty("timeout_seconds", out var tEl) && tEl.ValueKind == JsonValueKind.Number
+                ? tEl.GetInt32()
+                : 0;
+
+            using var timeoutCts = timeoutSec > 0
+                ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+                : null;
+            if (timeoutCts is not null)
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(timeoutSec, 1, 600)));
+            var effectiveCt = timeoutCts?.Token ?? ct;
+
+            activity?.SetTag("sk.plugin", plugin);
+            activity?.SetTag("sk.function", function);
+
             var kernel = await _kernelFactory(effectiveCt);
 
             // Resolve the function by name.

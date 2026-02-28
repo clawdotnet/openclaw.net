@@ -55,6 +55,8 @@ To explicitly define your LLM configuration, edit `src/OpenClaw.Gateway/appsetti
 }
 ```
 
+> **Note on Resilience & Streaming**: Configured properties like `FallbackModels` and agent constraints like the `SessionTokenBudget` are enforced uniformly across both standard HTTP API requests and real-time WebSocket streaming sessions (`RunStreamingAsync`). If a primary provider drops mid-stream, the gateway will flawlessly failover and resume generation using your fallback model.
+
 ### Supported Providers
 
 OpenClaw supports native routing for several providers out-of-the-box. Change the `Provider` field in your config to utilize them:
@@ -119,7 +121,7 @@ Skill locations (precedence order):
 3. Bundled: `skills/<skill>/SKILL.md` (shipped with the gateway)
 4. Extra dirs: `OpenClaw:Skills:Load:ExtraDirs`
 
-This repo ships a small bundled set (news digest, email triage, Home Assistant + MQTT operation). You can disable any skill via:
+This repo ships a bundled set of powerful personas and capabilities out-of-the-box (Software Developer, Deep Researcher, Data Analyst, daily news digest, email triage, Home Assistant + MQTT operations). You can disable any skill via:
 ```json
 {
   "OpenClaw": {

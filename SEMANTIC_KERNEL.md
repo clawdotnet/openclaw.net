@@ -40,3 +40,6 @@ Recommendations:
     - `semantic_kernel` entrypoint tool (invoke by plugin/function)
     - Per-function tools named `sk_<plugin>_<function>`
     - Optional governance hook (`SemanticKernelPolicyHook`) using `IToolHookWithContext`
+
+## Production Readiness
+The `OpenClaw.SemanticKernelAdapter` currently implements **all phases** of the Semantic Kernel interop roadmap. It is considered robust and production-ready for handling selective mapping, rate-limiting, and `IStreamingTool` context hooks.

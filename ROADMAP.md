@@ -33,7 +33,7 @@ Principles:
 ### Phase 0 (Done): Documentation
 - README section describing supported integration patterns (wrap SK as a tool; host SK behind the gateway).
 
-### Phase 1: Minimal Adapter Package + Sample (High ROI)
+### Phase 1 (Done): Minimal Adapter Package + Sample (High ROI)
 - Add a new optional NuGet package (tentative): `OpenClaw.SemanticKernelAdapter`.
 - Provide `IServiceCollection` extensions to register an SK-backed tool.
 - Define a small, explicit request/response contract:
@@ -43,7 +43,7 @@ Principles:
   - Demonstrate: OpenClaw tool call -> SK function -> result -> returned via `/v1/responses`
   - Include OpenTelemetry correlation (same trace/span across gateway -> tool -> SK call).
 
-### Phase 2: "Load SK Plugins as Tools" (Selective Mapping)
+### Phase 2 (Done): "Load SK Plugins as Tools" (Selective Mapping)
 - Optional startup mapping:
   - Load a configured set of SK plugins/functions and expose each as an OpenClaw tool.
   - Preserve OpenClaw tool naming rules and add predictable name mapping (e.g. `sk.<plugin>.<function>`).
@@ -51,14 +51,14 @@ Principles:
   - Per-tool allow/deny lists and per-tool rate limits (in OpenClaw config, not inside SK).
   - Explicit secrets boundary: SK connectors should use the same secret ref system (`env:`, etc).
 
-### Phase 3: Streaming + Observability Polish
+### Phase 3 (Done): Streaming + Observability Polish
 - If SK invocation supports streaming in your chosen integration surface:
   - Surface streaming responses through OpenClaw without bypassing message/token accounting.
 - Bridge OTEL activities:
   - Tag tool spans with `sk.plugin`, `sk.function`, duration, and error metadata.
   - Ensure errors propagate as structured tool failures (not raw exceptions).
 
-### Phase 4: NativeAOT/Trimming Guidance (Documentation + Constraints)
+### Phase 4 (Done): NativeAOT/Trimming Guidance (Documentation + Constraints)
 - Document a supported/known-good configuration:
   - Which SK features are compatible with trimming/AOT and which are not.
 - Add sample trimming config / annotations if required (only in the adapter/sample).

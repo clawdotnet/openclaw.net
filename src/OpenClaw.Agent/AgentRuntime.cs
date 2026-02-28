@@ -335,6 +335,17 @@ public sealed class AgentRuntime
 
         for (var i = 0; i < _maxIterations; i++)
         {
+            // Mid-turn budget check: stop if token budget is exceeded
+            if (_sessionTokenBudget > 0 && (session.TotalInputTokens + session.TotalOutputTokens) >= _sessionTokenBudget)
+            {
+                _logger?.LogInformation("[{CorrelationId}] Streaming session token budget exceeded mid-turn ({Used}/{Budget})",
+                    turnCtx.CorrelationId, session.TotalInputTokens + session.TotalOutputTokens, _sessionTokenBudget);
+                yield return AgentStreamEvent.ErrorOccurred("You've reached the token limit for this session. Please start a new conversation.");
+                yield return AgentStreamEvent.Complete();
+                LogTurnComplete(turnCtx);
+                yield break;
+            }
+
             // Stream the LLM response, collecting chunks and tool calls.
             // We buffer events because C# doesn't allow yield in try/catch.
             var streamResult = await StreamLlmCollectAsync(messages, chatOptions, turnCtx, ct);
@@ -548,49 +559,81 @@ public sealed class AgentRuntime
         timeoutCts?.CancelAfter(TimeSpan.FromSeconds(_llmTimeoutSeconds));
         var effectiveCt = timeoutCts?.Token ?? ct;
 
-        IAsyncEnumerable<ChatResponseUpdate> stream;
-        try
+        // Start fallback logic
+        var currentModel = options.ModelId ?? _config.Model;
+        var modelsToTry = new List<string> { currentModel };
+        if (_config.FallbackModels is { Length: > 0 })
         {
-            stream = StreamLlmAsync(messages, options, effectiveCt);
-        }
-        catch (CircuitOpenException coe)
-        {
-            result.Error = coe.Message;
-            LogTurnComplete(turnCtx);
-            return result;
-        }
-
-        try
-        {
-            await foreach (var update in stream.WithCancellation(effectiveCt))
+            foreach (var fallback in _config.FallbackModels)
             {
-                if (!string.IsNullOrEmpty(update.Text))
-                    result.TextDeltas.Add(update.Text);
-
-                foreach (var content in update.Contents)
-                {
-                    if (content is FunctionCallContent fc)
-                        result.ToolCalls.Add(fc);
-
-                    // Collect actual token usage when the provider reports it (typically in the final chunk)
-                    if (content is UsageContent usage)
-                    {
-                        if (usage.Details.InputTokenCount is > 0)
-                            result.InputTokens = (int)usage.Details.InputTokenCount.Value;
-                        if (usage.Details.OutputTokenCount is > 0)
-                            result.OutputTokens = (int)usage.Details.OutputTokenCount.Value;
-                    }
-                }
+                if (!string.Equals(fallback, currentModel, StringComparison.OrdinalIgnoreCase))
+                    modelsToTry.Add(fallback);
             }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+
+        Exception? lastException = null;
+
+        foreach (var model in modelsToTry)
         {
-            throw;
+            if (model != currentModel)
+            {
+                options.ModelId = model;
+                _logger?.LogWarning("[{CorrelationId}] Retrying streaming with fallback model '{Fallback}'", turnCtx.CorrelationId, model);
+            }
+
+            try
+            {
+                IAsyncEnumerable<ChatResponseUpdate> stream = StreamLlmAsync(messages, options, effectiveCt);
+
+                await foreach (var update in stream.WithCancellation(effectiveCt))
+                {
+                    if (!string.IsNullOrEmpty(update.Text))
+                        result.TextDeltas.Add(update.Text);
+
+                    foreach (var content in update.Contents)
+                    {
+                        if (content is FunctionCallContent fc)
+                            result.ToolCalls.Add(fc);
+
+                        // Collect actual token usage when the provider reports it
+                        if (content is UsageContent usage)
+                        {
+                            if (usage.Details.InputTokenCount is > 0)
+                                result.InputTokens = (int)usage.Details.InputTokenCount.Value;
+                            if (usage.Details.OutputTokenCount is > 0)
+                                result.OutputTokens = (int)usage.Details.OutputTokenCount.Value;
+                        }
+                    }
+                }
+
+                // If we get here, the stream finished without throwing.
+                lastException = null;
+                break; // Break out of the fallback loop!
+            }
+            catch (CircuitOpenException coe)
+            {
+                result.Error = coe.Message;
+                LogTurnComplete(turnCtx);
+                return result; // Don't try fallbacks if the circuit is entirely open
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw; // External cancellation, propagate immediately
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+                _logger?.LogWarning(ex, "[{CorrelationId}] Streaming LLM call failed for model '{Model}'", turnCtx.CorrelationId, model);
+                // Clear any partial results from the failed stream before trying the next model
+                result.TextDeltas.Clear();
+                result.ToolCalls.Clear();
+            }
         }
-        catch (Exception ex)
+
+        if (lastException is not null)
         {
             _metrics?.IncrementLlmErrors();
-            _logger?.LogError(ex, "[{CorrelationId}] Streaming LLM call failed", turnCtx.CorrelationId);
+            _logger?.LogError(lastException, "[{CorrelationId}] Streaming LLM call failed after all retries and fallbacks", turnCtx.CorrelationId);
             result.Error = "Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly.";
             LogTurnComplete(turnCtx);
             return result;
@@ -662,11 +705,34 @@ public sealed class AgentRuntime
         ToolApprovalCallback? approvalCallback,
         CancellationToken ct)
     {
-        var tasks = toolCalls
-            .Select(call => ExecuteSingleToolCallAsync(call, session, turnCtx, isStreaming, approvalCallback, ct, onDelta: null))
-            .ToArray();
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-        var results = await Task.WhenAll(tasks);
+        var tasks = toolCalls.Select(async call =>
+        {
+            try
+            {
+                return await ExecuteSingleToolCallAsync(call, session, turnCtx, isStreaming, approvalCallback, linkedCts.Token, onDelta: null);
+            }
+            catch (Exception)
+            {
+                // If any tool inherently crashes (outside its internal timeout/catch block),
+                // cancel the siblings to save resources.
+                linkedCts.Cancel();
+                throw;
+            }
+        }).ToArray();
+
+        (ToolInvocation, FunctionResultContent)[] results;
+        try
+        {
+            results = await Task.WhenAll(tasks);
+        }
+        catch (OperationCanceledException) when (linkedCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            // The linked token was canceled because one of the siblings failed early
+            // Wait for remaining tasks to surface the original error
+            results = await Task.WhenAll(tasks);
+        }
 
         var invocations = new List<ToolInvocation>(results.Length);
         var toolResults = new List<FunctionResultContent>(results.Length);
