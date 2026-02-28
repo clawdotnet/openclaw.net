@@ -33,6 +33,43 @@ public class NativePluginRegistryTests
     }
 
     [Fact]
+    public void Constructor_HomeAssistantEnabled_RegistersReadAndWriteTools()
+    {
+        var config = new NativePluginsConfig
+        {
+            HomeAssistant = new HomeAssistantConfig
+            {
+                Enabled = true,
+                BaseUrl = "http://localhost:8123",
+                TokenRef = "raw:test-token"
+            }
+        };
+
+        var registry = new NativePluginRegistry(config, NullLogger.Instance);
+
+        Assert.Contains(registry.Tools, t => t.Name == "home_assistant");
+        Assert.Contains(registry.Tools, t => t.Name == "home_assistant_write");
+    }
+
+    [Fact]
+    public void Constructor_MqttEnabled_RegistersReadAndWriteTools()
+    {
+        var config = new NativePluginsConfig
+        {
+            Mqtt = new MqttConfig
+            {
+                Enabled = true,
+                Host = "127.0.0.1"
+            }
+        };
+
+        var registry = new NativePluginRegistry(config, NullLogger.Instance);
+
+        Assert.Contains(registry.Tools, t => t.Name == "mqtt");
+        Assert.Contains(registry.Tools, t => t.Name == "mqtt_publish");
+    }
+
+    [Fact]
     public void Constructor_AllEnabled_RegistersAllTools()
     {
         var config = new NativePluginsConfig

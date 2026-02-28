@@ -15,6 +15,8 @@ public static class DoctorCheck
         AnsiConsole.MarkupLine("\n[bold cyan]OpenClaw.NET Doctor Mode[/]\n");
         var allPassed = true;
 
+        // Note: by the time Doctor runs, the Gateway has already applied env var overrides
+        // (MODEL_PROVIDER_KEY, etc.). So this should reflect the effective configuration.
         allPassed &= Check("LLM API Key configured", () => !string.IsNullOrWhiteSpace(config.Llm.ApiKey));
         
         allPassed &= Check("LLM max tokens > 0", () => config.Llm.MaxTokens > 0);

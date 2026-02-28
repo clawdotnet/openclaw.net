@@ -31,11 +31,12 @@ public static class GatewayWorkers
         AgentRuntime agentRuntime,
         IReadOnlyDictionary<string, IChannelAdapter> channelAdapters,
         GatewayConfig config,
+        ToolApprovalService toolApprovalService,
         PairingManager pairingManager,
         ChatCommandProcessor commandProcessor)
     {
         StartSessionCleanup(lifetime, logger, sessionManager, sessionLocks, lockLastUsed);
-        StartInboundWorkers(lifetime, logger, workerCount, sessionManager, sessionLocks, lockLastUsed, pipeline, middlewarePipeline, wsChannel, agentRuntime, config, pairingManager, commandProcessor);
+        StartInboundWorkers(lifetime, logger, workerCount, sessionManager, sessionLocks, lockLastUsed, pipeline, middlewarePipeline, wsChannel, agentRuntime, config, toolApprovalService, pairingManager, commandProcessor);
         StartOutboundWorkers(lifetime, logger, workerCount, pipeline, channelAdapters);
     }
 
@@ -118,6 +119,7 @@ public static class GatewayWorkers
         WebSocketChannel wsChannel,
         AgentRuntime agentRuntime,
         GatewayConfig config,
+        ToolApprovalService toolApprovalService,
         PairingManager pairingManager,
         ChatCommandProcessor commandProcessor)
     {
@@ -134,6 +136,64 @@ public static class GatewayWorkers
                         var lockAcquired = false;
                         try
                         {
+                            // ── Tool Approval Decision Short-Circuit ────────────
+                            if (string.Equals(msg.Type, "tool_approval_decision", StringComparison.Ordinal) &&
+                                !string.IsNullOrWhiteSpace(msg.ApprovalId) &&
+                                msg.Approved is not null)
+                            {
+                                var ok = toolApprovalService.TrySetDecision(msg.ApprovalId, msg.Approved.Value);
+                                var ack = ok
+                                    ? $"Tool approval recorded: {msg.ApprovalId} = {(msg.Approved.Value ? "approved" : "denied")}"
+                                    : $"No pending approval found for id: {msg.ApprovalId}";
+
+                                await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
+                                {
+                                    ChannelId = msg.ChannelId,
+                                    RecipientId = msg.SenderId,
+                                    Text = ack,
+                                    ReplyToMessageId = msg.MessageId
+                                }, lifetime.ApplicationStopping);
+
+                                continue;
+                            }
+
+                            // Text fallback: "/approve <approvalId> yes|no"
+                            if (!string.IsNullOrWhiteSpace(msg.Text) && msg.Text.StartsWith("/approve ", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var parts = msg.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                                if (parts.Length >= 3)
+                                {
+                                    var approvalId = parts[1];
+                                    var decision = parts[2];
+                                    var approved = decision.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                                                   || decision.Equals("y", StringComparison.OrdinalIgnoreCase)
+                                                   || decision.Equals("approve", StringComparison.OrdinalIgnoreCase)
+                                                   || decision.Equals("true", StringComparison.OrdinalIgnoreCase);
+                                    var denied = decision.Equals("no", StringComparison.OrdinalIgnoreCase)
+                                                 || decision.Equals("n", StringComparison.OrdinalIgnoreCase)
+                                                 || decision.Equals("deny", StringComparison.OrdinalIgnoreCase)
+                                                 || decision.Equals("false", StringComparison.OrdinalIgnoreCase);
+
+                                    if (approved || denied)
+                                    {
+                                        var ok = toolApprovalService.TrySetDecision(approvalId, approved);
+                                        var ack = ok
+                                            ? $"Tool approval recorded: {approvalId} = {(approved ? "approved" : "denied")}"
+                                            : $"No pending approval found for id: {approvalId}";
+
+                                        await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
+                                        {
+                                            ChannelId = msg.ChannelId,
+                                            RecipientId = msg.SenderId,
+                                            Text = ack,
+                                            ReplyToMessageId = msg.MessageId
+                                        }, lifetime.ApplicationStopping);
+
+                                        continue;
+                                    }
+                                }
+                            }
+
                             // ── DM Pairing Check ─────────────────────────────────
                             var policy = "open";
                             if (msg.ChannelId == "sms") policy = config.Channels.Sms.DmPolicy;
@@ -143,7 +203,7 @@ public static class GatewayWorkers
                             if (policy is "closed")
                                 continue; // Silently drop all inbound messages
 
-                            if (policy is "pairing" && !pairingManager.IsApproved(msg.ChannelId, msg.SenderId))
+                            if (!msg.IsSystem && policy is "pairing" && !pairingManager.IsApproved(msg.ChannelId, msg.SenderId))
                             {
                                 var code = pairingManager.GeneratePairingCode(msg.ChannelId, msg.SenderId);
                                 var pairingMsg = $"Welcome to OpenClaw. Your pairing code is {code}. Your messages will be ignored until an admin approves this pair.";
@@ -159,7 +219,9 @@ public static class GatewayWorkers
                                 continue; // Drop the inbound request after sending pairing code
                             }
 
-                            session = await sessionManager.GetOrCreateAsync(msg.ChannelId, msg.SenderId, lifetime.ApplicationStopping);
+                            session = msg.SessionId is not null
+                                ? await sessionManager.GetOrCreateByIdAsync(msg.SessionId, msg.ChannelId, msg.SenderId, lifetime.ApplicationStopping)
+                                : await sessionManager.GetOrCreateAsync(msg.ChannelId, msg.SenderId, lifetime.ApplicationStopping);
                             if (session is null)
                                 throw new InvalidOperationException("Session manager returned null session.");
 
@@ -178,6 +240,7 @@ public static class GatewayWorkers
                                         ChannelId = msg.ChannelId,
                                         RecipientId = msg.SenderId,
                                         Text = cmdResponse,
+                                        Subject = msg.Subject,
                                         ReplyToMessageId = msg.MessageId
                                     }, lifetime.ApplicationStopping);
                                 }
@@ -211,6 +274,7 @@ public static class GatewayWorkers
                                         ChannelId = msg.ChannelId,
                                         RecipientId = msg.SenderId,
                                         Text = shortCircuitText,
+                                        Subject = msg.Subject,
                                         ReplyToMessageId = msg.MessageId
                                     }, lifetime.ApplicationStopping);
                                 }
@@ -220,12 +284,51 @@ public static class GatewayWorkers
                             var messageText = mwContext.Text;
                             var useStreaming = msg.ChannelId == "websocket" && wsChannel.IsClientUsingEnvelopes(msg.SenderId);
 
+                            var approvalTimeout = TimeSpan.FromSeconds(Math.Clamp(config.Tooling.ToolApprovalTimeoutSeconds, 5, 3600));
+                            async ValueTask<bool> ApprovalCallback(string toolName, string argsJson, CancellationToken ct)
+                            {
+                                var req = toolApprovalService.Create(session.Id, msg.ChannelId, msg.SenderId, toolName, argsJson, approvalTimeout);
+
+                                var preview = argsJson.Length <= 800 ? argsJson : argsJson[..800] + "…";
+
+                                if (msg.ChannelId == "websocket" && wsChannel.IsClientUsingEnvelopes(msg.SenderId))
+                                {
+                                    await wsChannel.SendEnvelopeAsync(msg.SenderId, new WsServerEnvelope
+                                    {
+                                        Type = "tool_approval_required",
+                                        ApprovalId = req.ApprovalId,
+                                        ToolName = toolName,
+                                        ArgumentsPreview = preview,
+                                        InReplyToMessageId = msg.MessageId,
+                                        Text = "Tool approval required."
+                                    }, ct);
+                                }
+                                else
+                                {
+                                    var prompt = $"Tool approval required.\n" +
+                                                 $"- id: {req.ApprovalId}\n" +
+                                                 $"- tool: {toolName}\n" +
+                                                 $"- args: {preview}\n\n" +
+                                                 $"Reply with: /approve {req.ApprovalId} yes|no";
+
+                                    await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
+                                    {
+                                        ChannelId = msg.ChannelId,
+                                        RecipientId = msg.SenderId,
+                                        Text = prompt,
+                                        ReplyToMessageId = msg.MessageId
+                                    }, ct);
+                                }
+
+                                return await toolApprovalService.WaitForDecisionAsync(req.ApprovalId, approvalTimeout, ct);
+                            }
+
                             if (useStreaming)
                             {
                                 await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_start", "", msg.MessageId, lifetime.ApplicationStopping);
 
                                 await foreach (var evt in agentRuntime.RunStreamingAsync(
-                                    session, messageText, lifetime.ApplicationStopping))
+                                    session, messageText, lifetime.ApplicationStopping, approvalCallback: ApprovalCallback))
                                 {
                                     await wsChannel.SendStreamEventAsync(
                                         msg.SenderId, evt.EnvelopeType, evt.Content, msg.MessageId,
@@ -237,7 +340,7 @@ public static class GatewayWorkers
                             }
                             else
                             {
-                                var responseText = await agentRuntime.RunAsync(session, messageText, lifetime.ApplicationStopping);
+                                var responseText = await agentRuntime.RunAsync(session, messageText, lifetime.ApplicationStopping, approvalCallback: ApprovalCallback);
                                 await sessionManager.PersistAsync(session, lifetime.ApplicationStopping);
 
                                 // Append Usage Tracking string if configured
@@ -249,6 +352,7 @@ public static class GatewayWorkers
                                     ChannelId = msg.ChannelId,
                                     RecipientId = msg.SenderId,
                                     Text = responseText,
+                                    Subject = msg.Subject,
                                     ReplyToMessageId = msg.MessageId
                                 }, lifetime.ApplicationStopping);
                             }
@@ -289,6 +393,7 @@ public static class GatewayWorkers
                                         ChannelId = msg.ChannelId,
                                         RecipientId = msg.SenderId,
                                         Text = errorText,
+                                        Subject = msg.Subject,
                                         ReplyToMessageId = msg.MessageId
                                     }, lifetime.ApplicationStopping);
                                 }

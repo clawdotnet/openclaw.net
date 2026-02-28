@@ -35,6 +35,24 @@ public sealed class CronScheduler : BackgroundService
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
         _logger.LogInformation("Cron Scheduler started. Monitoring {Count} jobs.", _config.Cron.Jobs.Count);
 
+        // Optional: run selected jobs immediately once on startup (useful for testing / boot-time reports)
+        foreach (var job in _config.Cron.Jobs)
+        {
+            if (!job.RunOnStartup)
+                continue;
+
+            try
+            {
+                var now = DateTimeOffset.UtcNow;
+                _logger.LogInformation("Triggering cron job '{JobName}' on startup at {Time}", job.Name, now);
+                await EnqueueJobAsync(job, stoppingToken);
+            }
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex, "Failed to run cron job '{JobName}' on startup", job.Name);
+            }
+        }
+
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
             var utcNow = DateTimeOffset.UtcNow;
@@ -61,19 +79,32 @@ public sealed class CronScheduler : BackgroundService
                 if (IsTime(job.CronExpression, now))
                 {
                     _logger.LogInformation("Triggering cron job '{JobName}' at {Time}", job.Name, now);
-                    
-                    var msg = new InboundMessage
-                    {
-                        SessionId = job.SessionId ?? $"cron:{job.Name}",
-                        ChannelId = job.ChannelId ?? "cron",
-                        SenderId = "system",
-                        Text = job.Prompt
-                    };
-
-                    await _pipelineChannel.WriteAsync(msg, stoppingToken);
+                    await EnqueueJobAsync(job, stoppingToken);
                 }
             }
         }
+    }
+
+    private async ValueTask EnqueueJobAsync(CronJobConfig job, CancellationToken ct)
+    {
+        var sessionId = job.SessionId ?? $"cron:{job.Name}";
+        var channelId = job.ChannelId ?? "cron";
+
+        // If a delivery RecipientId is explicitly set, send responses to that recipient.
+        // Otherwise, set a stable "pseudo recipient" so the cron channel can bucket outputs per job/session.
+        var senderId = job.RecipientId ?? sessionId ?? job.Name ?? "system";
+
+        var msg = new InboundMessage
+        {
+            IsSystem = true,
+            SessionId = sessionId,
+            ChannelId = channelId,
+            SenderId = senderId,
+            Subject = job.Subject ?? (string.IsNullOrWhiteSpace(job.Name) ? null : $"OpenClaw Cron: {job.Name}"),
+            Text = job.Prompt
+        };
+
+        await _pipelineChannel.WriteAsync(msg, ct);
     }
 
     /// <summary>

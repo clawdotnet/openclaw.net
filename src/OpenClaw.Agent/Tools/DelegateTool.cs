@@ -17,6 +17,7 @@ public sealed class DelegateTool : ITool
     private readonly IChatClient _chatClient;
     private readonly IReadOnlyList<ITool> _allTools;
     private readonly IMemoryStore _memory;
+    private readonly MemoryRecallConfig? _recall;
     private readonly LlmProviderConfig _llmConfig;
     private readonly DelegationConfig _delegationConfig;
     private readonly int _currentDepth;
@@ -56,7 +57,8 @@ public sealed class DelegateTool : ITool
         DelegationConfig delegationConfig,
         int currentDepth = 0,
         RuntimeMetrics? metrics = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        MemoryRecallConfig? recall = null)
     {
         _chatClient = chatClient;
         _allTools = allTools;
@@ -66,6 +68,7 @@ public sealed class DelegateTool : ITool
         _currentDepth = currentDepth;
         _metrics = metrics;
         _logger = logger;
+        _recall = recall;
     }
 
     public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
@@ -100,7 +103,7 @@ public sealed class DelegateTool : ITool
         {
             var childDelegate = new DelegateTool(
                 _chatClient, _allTools, _memory, _llmConfig, _delegationConfig,
-                _currentDepth + 1, _metrics, _logger);
+                _currentDepth + 1, _metrics, _logger, _recall);
             toolSubset = [.. toolSubset, childDelegate];
         }
 
@@ -127,7 +130,8 @@ public sealed class DelegateTool : ITool
             profile.MaxHistoryTurns,
             logger: _logger,
             metrics: _metrics,
-            maxIterations: profile.MaxIterations);
+            maxIterations: profile.MaxIterations,
+            recall: _recall);
 
         // Create an ephemeral session for the sub-agent
         var subSession = new Session

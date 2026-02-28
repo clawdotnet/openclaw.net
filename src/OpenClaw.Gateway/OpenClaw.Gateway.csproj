@@ -33,4 +33,11 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="skills\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
 </Project>

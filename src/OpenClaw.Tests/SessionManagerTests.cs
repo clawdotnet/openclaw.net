@@ -42,6 +42,24 @@ public sealed class SessionManagerTests
         Assert.False(manager.IsActive("websocket:nobody"));
     }
 
+    [Fact]
+    public async Task GetOrCreateByIdAsync_UsesExplicitSessionId()
+    {
+        var store = new InMemoryStore();
+        var manager = new SessionManager(store, new GatewayConfig
+        {
+            MaxConcurrentSessions = 8,
+            SessionTimeoutMinutes = 30
+        });
+
+        var s1 = await manager.GetOrCreateByIdAsync("cron:daily-news", "cron", "system", CancellationToken.None);
+        var s2 = await manager.GetOrCreateByIdAsync("cron:daily-news", "cron", "system", CancellationToken.None);
+
+        Assert.Same(s1, s2);
+        Assert.True(manager.IsActive("cron:daily-news"));
+        Assert.Equal("cron:daily-news", s1.Id);
+    }
+
     private sealed class BarrierMemoryStore : IMemoryStore
     {
         private readonly Barrier _barrier;

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Channels;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Security;
 
 namespace OpenClaw.Gateway;
@@ -9,11 +10,22 @@ namespace OpenClaw.Gateway;
 internal sealed class WhatsAppWebhookHandler
 {
     private readonly WhatsAppChannelConfig _config;
+    private readonly AllowlistManager _allowlists;
+    private readonly RecentSendersStore _recentSenders;
+    private readonly AllowlistSemantics _allowlistSemantics;
     private readonly ILogger<WhatsAppWebhookHandler> _logger;
 
-    public WhatsAppWebhookHandler(WhatsAppChannelConfig config, ILogger<WhatsAppWebhookHandler> logger)
+    public WhatsAppWebhookHandler(
+        WhatsAppChannelConfig config,
+        AllowlistManager allowlists,
+        RecentSendersStore recentSenders,
+        AllowlistSemantics allowlistSemantics,
+        ILogger<WhatsAppWebhookHandler> logger)
     {
         _config = config;
+        _allowlists = allowlists;
+        _recentSenders = recentSenders;
+        _allowlistSemantics = allowlistSemantics;
         _logger = logger;
     }
 
@@ -94,6 +106,18 @@ internal sealed class WhatsAppWebhookHandler
                         if (message.Type != "text" || message.Text is null || string.IsNullOrWhiteSpace(message.From))
                             continue;
 
+                        await _recentSenders.RecordAsync("whatsapp", message.From, senderName: null, ct);
+
+                        var effective = _allowlists.GetEffective("whatsapp", new ChannelAllowlistFile
+                        {
+                            AllowedFrom = _config.AllowedFromIds
+                        });
+                        if (!AllowlistPolicy.IsAllowed(effective.AllowedFrom, message.From, _allowlistSemantics))
+                        {
+                            _logger.LogInformation("Ignoring WhatsApp inbound message from blocked sender={Sender}.", message.From);
+                            continue;
+                        }
+
                         string? senderName = null;
                         if (contacts is not null)
                         {
@@ -154,6 +178,15 @@ internal sealed class WhatsAppWebhookHandler
 
             if (payload is null || string.IsNullOrWhiteSpace(payload.From))
                 return WebhookResult.BadRequest("Missing From");
+
+            await _recentSenders.RecordAsync("whatsapp", payload.From, payload.SenderName, ct);
+
+            var effective = _allowlists.GetEffective("whatsapp", new ChannelAllowlistFile
+            {
+                AllowedFrom = _config.AllowedFromIds
+            });
+            if (!AllowlistPolicy.IsAllowed(effective.AllowedFrom, payload.From, _allowlistSemantics))
+                return WebhookResult.Unauthorized();
 
             var text = payload.Text ?? "";
             if (text.Length > _config.MaxInboundChars)

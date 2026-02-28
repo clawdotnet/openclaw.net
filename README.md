@@ -50,8 +50,17 @@ Typical local layout:
    - *For advanced LLM provider setup (Ollama, Anthropic, Azure) see the [User Guide](USER_GUIDE.md).*
 2. Run the gateway:
    - `dotnet run --project src/OpenClaw.Gateway -c Release`
+   - Optional config file: `dotnet run --project src/OpenClaw.Gateway -c Release -- --config ~/.openclaw/config.json`
+   - Doctor mode: `dotnet run --project src/OpenClaw.Gateway -c Release -- --doctor`
 3. Connect a WebSocket client:
    - `ws://127.0.0.1:18789/ws`
+4. (Optional) Use the CLI (OpenAI-compatible `/v1/chat/completions`):
+   - `dotnet run --project src/OpenClaw.Cli -c Release -- run "summarize this README" --file ./README.md`
+    - `dotnet run --project src/OpenClaw.Cli -c Release -- chat`
+
+Environment variables for the CLI:
+- `OPENCLAW_BASE_URL` (default `http://127.0.0.1:18789`)
+- `OPENCLAW_AUTH_TOKEN` (only required when the gateway enforces auth)
 
 ## Companion app (Avalonia)
 
@@ -145,7 +154,11 @@ For full details, feature matrices, and TypeScript requirements (like `jiti`), p
 
 ### Webhook
 Register your public webhook URL directly with Telegram's API:
-- `POST https://api.telegram.org/bot<your-bot-token>/setWebhook?url=https://<your-public-host>/.openclaw/telegram/webhook`
+- `POST https://api.telegram.org/bot<your-bot-token>/setWebhook?url=https://<your-public-host>/telegram/inbound`
+
+Notes:
+- The inbound webhook path is configurable via `OpenClaw:Channels:Telegram:WebhookPath` (default: `/telegram/inbound`).
+- `AllowedFromUserIds` currently checks the numeric `chat.id` value from Telegram updates (not the `from.id` user id).
 
 ## Twilio SMS channel
 

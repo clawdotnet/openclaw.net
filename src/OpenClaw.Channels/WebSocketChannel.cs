@@ -90,17 +90,20 @@ public sealed class WebSocketChannel : IChannelAdapter
                     break;
                 }
 
-                var (userText, messageId, replyToMessageId, isEnvelope) = TryParseUserMessage(text);
-                if (isEnvelope)
+                var parsed = TryParseClientEnvelope(text);
+                if (parsed.IsEnvelope)
                     state.UseJsonEnvelope = true;
 
                 var msg = new InboundMessage
                 {
                     ChannelId = ChannelId,
                     SenderId = clientId,
-                    Text = userText,
-                    MessageId = messageId,
-                    ReplyToMessageId = replyToMessageId
+                    Type = parsed.Type,
+                    Text = parsed.Text ?? "",
+                    MessageId = parsed.MessageId,
+                    ReplyToMessageId = parsed.ReplyToMessageId,
+                    ApprovalId = parsed.ApprovalId,
+                    Approved = parsed.Approved
                 };
 
                 if (OnMessageReceived is not null)
@@ -128,6 +131,40 @@ public sealed class WebSocketChannel : IChannelAdapter
                 },
                 CoreJsonContext.Default.WsServerEnvelope)
             : Encoding.UTF8.GetBytes(message.Text);
+
+        await state.SendLock.WaitAsync(ct);
+        try
+        {
+            if (state.Socket.State == WebSocketState.Open)
+                await state.Socket.SendAsync(payload.AsMemory(), WebSocketMessageType.Text, endOfMessage: true, cancellationToken: ct);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Client disconnected mid-send.
+        }
+        catch (WebSocketException)
+        {
+            // Client disconnected mid-send.
+        }
+        catch (InvalidOperationException)
+        {
+            // Socket is no longer usable.
+        }
+        finally
+        {
+            state.SendLock.Release();
+        }
+    }
+
+    public async ValueTask SendEnvelopeAsync(string recipientId, WsServerEnvelope envelope, CancellationToken ct)
+    {
+        if (!_connections.TryGetValue(recipientId, out var state))
+            return;
+
+        if (!state.UseJsonEnvelope)
+            return;
+
+        var payload = JsonSerializer.SerializeToUtf8Bytes(envelope, CoreJsonContext.Default.WsServerEnvelope);
 
         await state.SendLock.WaitAsync(ct);
         try
@@ -327,7 +364,16 @@ public sealed class WebSocketChannel : IChannelAdapter
         }
     }
 
-    private static (string Text, string? MessageId, string? ReplyToMessageId, bool IsEnvelope) TryParseUserMessage(string payload)
+    private sealed record ParsedWsInbound(
+        bool IsEnvelope,
+        string? Type,
+        string? Text,
+        string? MessageId,
+        string? ReplyToMessageId,
+        string? ApprovalId,
+        bool? Approved);
+
+    private static ParsedWsInbound TryParseClientEnvelope(string payload)
     {
         const int MaxExtractedTextLength = 1_000_000; // 1MB text limit after JSON parsing
 
@@ -337,7 +383,7 @@ public sealed class WebSocketChannel : IChannelAdapter
             i++;
 
         if (i >= span.Length || span[i] != '{')
-            return (payload, null, null, false);
+            return new ParsedWsInbound(false, null, payload, null, null, null, null);
 
         try
         {
@@ -345,14 +391,18 @@ public sealed class WebSocketChannel : IChannelAdapter
             if (env is { Type: "user_message" })
             {
                 var extractedText = env.Text ?? env.Content;
-                if (extractedText is null)
-                    return (payload, null, null, false);
+                extractedText ??= "";
 
                 // Validate extracted text length to prevent memory pressure
                 if (extractedText.Length > MaxExtractedTextLength)
-                    return (extractedText[..MaxExtractedTextLength], env.MessageId, env.ReplyToMessageId, true);
+                    extractedText = extractedText[..MaxExtractedTextLength];
 
-                return (extractedText, env.MessageId, env.ReplyToMessageId, true);
+                return new ParsedWsInbound(true, env.Type, extractedText, env.MessageId, env.ReplyToMessageId, null, null);
+            }
+
+            if (env is { Type: "tool_approval_decision", ApprovalId: not null, Approved: not null })
+            {
+                return new ParsedWsInbound(true, env.Type, "", env.MessageId, env.ReplyToMessageId, env.ApprovalId, env.Approved);
             }
         }
         catch
@@ -360,7 +410,7 @@ public sealed class WebSocketChannel : IChannelAdapter
             // fall through to raw
         }
 
-        return (payload, null, null, false);
+        return new ParsedWsInbound(false, null, payload, null, null, null, null);
     }
 
     private static ValueTask CloseIfOpenAsync(WebSocket ws, WebSocketCloseStatus status, string description, CancellationToken ct)

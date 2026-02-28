@@ -62,9 +62,15 @@ public sealed class LlmProviderConfig
 
 public sealed class MemoryConfig
 {
+    /// <summary>Memory backend provider: "file" (default) or "sqlite".</summary>
+    public string Provider { get; set; } = "file";
+
     public string StoragePath { get; set; } = "./memory";
     public int MaxHistoryTurns { get; set; } = 50;
     public int? MaxCachedSessions { get; set; }
+
+    public MemorySqliteConfig Sqlite { get; set; } = new();
+    public MemoryRecallConfig Recall { get; set; } = new();
 
     /// <summary>When true, old history turns are summarized by the LLM instead of dropped.</summary>
     public bool EnableCompaction { get; set; } = false;
@@ -77,6 +83,20 @@ public sealed class MemoryConfig
 
     /// <summary>Identifier for project-level memory scoping. Defaults to OPENCLAW_PROJECT env var.</summary>
     public string? ProjectId { get; set; }
+}
+
+public sealed class MemorySqliteConfig
+{
+    public string DbPath { get; set; } = "./memory/openclaw.db";
+    public bool EnableFts { get; set; } = true;
+    public bool EnableVectors { get; set; } = false; // reserved for future use
+}
+
+public sealed class MemoryRecallConfig
+{
+    public bool Enabled { get; set; } = false;
+    public int MaxNotes { get; set; } = 8;
+    public int MaxChars { get; set; } = 8000;
 }
 
 public sealed class SecurityConfig
@@ -116,6 +136,21 @@ public sealed class WebSocketConfig
 
 public sealed class ToolingConfig
 {
+    /// <summary>Autonomy mode: "readonly", "supervised", or "full".</summary>
+    public string AutonomyMode { get; set; } = "supervised";
+
+    /// <summary>Workspace root used when WorkspaceOnly=true. Supports env:OPENCLAW_WORKSPACE.</summary>
+    public string? WorkspaceRoot { get; set; } = "env:OPENCLAW_WORKSPACE";
+
+    /// <summary>When true, file paths must be within WorkspaceRoot.</summary>
+    public bool WorkspaceOnly { get; set; } = false;
+
+    /// <summary>Shell commands are allowed only if they match one of these globs. ["*"] allows all.</summary>
+    public string[] AllowedShellCommandGlobs { get; set; } = ["*"];
+
+    /// <summary>Forbidden path globs (deny wins). Applied to file-based tools and as a heuristic for shell.</summary>
+    public string[] ForbiddenPathGlobs { get; set; } = [];
+
     public bool AllowShell { get; set; } = true;
     public string[] AllowedReadRoots { get; set; } = ["*"];
     public string[] AllowedWriteRoots { get; set; } = ["*"];
@@ -132,6 +167,9 @@ public sealed class ToolingConfig
     /// <summary>Tool names that require user approval when RequireToolApproval is true.</summary>
     public string[] ApprovalRequiredTools { get; set; } = ["shell", "write_file"];
 
+    /// <summary>Seconds to wait for a tool approval decision before denying. Default: 300 (5 minutes).</summary>
+    public int ToolApprovalTimeoutSeconds { get; set; } = 300;
+
     public bool EnableBrowserTool { get; set; } = true;
     public bool BrowserHeadless { get; set; } = true;
     public int BrowserTimeoutSeconds { get; set; } = 30;
@@ -139,6 +177,8 @@ public sealed class ToolingConfig
 
 public sealed class ChannelsConfig
 {
+    /// <summary>Allowlist semantics: "legacy" (backward-compatible) or "strict" ([]=deny, ["*"]=allow-all).</summary>
+    public string AllowlistSemantics { get; set; } = "legacy";
     public SmsChannelConfig Sms { get; set; } = new();
     public TelegramChannelConfig Telegram { get; set; } = new();
     public WhatsAppChannelConfig WhatsApp { get; set; } = new();
@@ -166,7 +206,12 @@ public sealed class WhatsAppChannelConfig
     public string BridgeTokenRef { get; set; } = "env:WHATSAPP_BRIDGE_TOKEN";
 
     public int MaxInboundChars { get; set; } = 4096;
+
+    /// <summary>Max inbound webhook request size in bytes.</summary>
     public int MaxRequestBytes { get; set; } = 64 * 1024;
+
+    /// <summary>Optional allowlist for inbound senders (wa_id / from). Interpreted using Channels.AllowlistSemantics.</summary>
+    public string[] AllowedFromIds { get; set; } = [];
 }
 
 public sealed class SmsChannelConfig
@@ -227,8 +272,11 @@ public sealed class CronJobConfig
     public string Name { get; set; } = "";
     public string CronExpression { get; set; } = "";
     public string Prompt { get; set; } = "";
+    public bool RunOnStartup { get; set; } = false;
     public string? SessionId { get; set; }
     public string? ChannelId { get; set; }
+    public string? RecipientId { get; set; }
+    public string? Subject { get; set; }
 
     /// <summary>IANA timezone ID (e.g. "America/New_York"). Null defaults to UTC.</summary>
     public string? Timezone { get; set; }
