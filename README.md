@@ -140,6 +140,36 @@ Simply drop any standard OpenClaw `.ts` or `.js` plugin into your `.openclaw/ext
 
 For full details, feature matrices, and TypeScript requirements (like `jiti`), please see the **[Plugin Compatibility Guide](COMPATIBILITY.md)**.
 
+## Semantic Kernel interop (optional)
+
+OpenClaw.NET is not a replacement for Semantic Kernel. If you're already using `Microsoft.SemanticKernel`, OpenClaw can act as the **production gateway/runtime host** (auth, rate limits, channels, OTEL, policy) around your SK code.
+
+Supported integration patterns today:
+- **Wrap your SK orchestration as an OpenClaw tool**: keep SK in-process, expose a single "entrypoint" tool the OpenClaw agent can call.
+- **Host SK-based agents behind the OpenClaw gateway**: use OpenClaw for Internet-facing concerns (WebSocket, `/v1/*`, Telegram/Twilio/WhatsApp), while your SK logic stays in your app/tool layer.
+
+Conceptual example (tool wrapper):
+```csharp
+// Your tool can instantiate and call Semantic Kernel. OpenClaw policies still apply
+// to *when* this tool runs, who can call it, and how often.
+public sealed class SemanticKernelTool : ITool
+{
+    public async Task<ToolResult> ExecuteAsync(ToolContext context, CancellationToken ct)
+    {
+        // var kernel = new KernelBuilder()...Build(); (SK setup lives here)
+        // var result = await kernel.InvokePromptAsync(context.Input, cancellationToken: ct);
+        // return ToolResult.Success(result.ToString());
+        throw new NotImplementedException();
+    }
+}
+```
+
+Notes:
+- **NativeAOT**: Semantic Kernel usage may require additional trimming/reflection configuration. Keep SK interop optional so the core gateway/runtime remains NativeAOT-friendly.
+
+Roadmap:
+- A first-party adapter package (tentative name `OpenClaw.SemanticKernelAdapter`) to make wrapping SK functions/plugins as OpenClaw tools more ergonomic.
+
 ## Telegram Webhook channel
 
 ### Setup
@@ -345,3 +375,16 @@ Set log levels in config:
 GitHub Actions workflow (`.github/workflows/ci.yml`):
 - **On push/PR to main**: build + test
 - **On push to main**: publish NativeAOT binary artifact + Docker image to GitHub Container Registry
+
+## Contributing
+
+Looking for:
+
+- Security review
+- NativeAOT trimming improvements
+- Tool sandboxing ideas
+- Performance benchmarks
+
+If this aligns with your interests, open an issue.
+
+⭐ If this project helps your .NET AI work, consider starring it.
