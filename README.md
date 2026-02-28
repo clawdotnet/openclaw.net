@@ -27,17 +27,10 @@ graph TD
         Bridge <--> TSPlugins[OpenClaw TS/JS Plugins]
     end
     
-    Agent <-->|REST API| LLM{LLM Provider}
+	    Agent <-->|REST API| LLM{LLM Provider}
 ```
 
-## Editions
-
-- **Community Edition (this repo)**: fully open source (see `LICENSE`).
-- **Enterprise Edition**: source-available add-ons in a separate repo/directory (`openclaw.net-enterprise`).
-
-Typical local layout:
-- `openclaw.net/` (Community)
-- `openclaw.net-enterprise/` (Enterprise)
+## Docs
 
 - [Tool Guide](TOOLS_GUIDE.md) — Detailed setup for all 18+ native tools.
 - [User Guide](USER_GUIDE.md) — Core concepts and architecture.
@@ -56,7 +49,7 @@ Typical local layout:
    - `ws://127.0.0.1:18789/ws`
 4. (Optional) Use the CLI (OpenAI-compatible `/v1/chat/completions`):
    - `dotnet run --project src/OpenClaw.Cli -c Release -- run "summarize this README" --file ./README.md`
-    - `dotnet run --project src/OpenClaw.Cli -c Release -- chat`
+   - `dotnet run --project src/OpenClaw.Cli -c Release -- chat`
 
 Environment variables for the CLI:
 - `OPENCLAW_BASE_URL` (default `http://127.0.0.1:18789`)
@@ -131,6 +124,12 @@ To override (not recommended), set:
 This project includes local tools (`shell`, `read_file`, `write_file`). If you expose the gateway publicly, strongly consider restricting:
 - `OpenClaw:Tooling:AllowShell=false`
 - `OpenClaw:Tooling:AllowedReadRoots` / `AllowedWriteRoots` to specific directories
+
+### WebSocket origin
+If you are connecting from a browser-based client hosted on a different origin, configure:
+- `OpenClaw:Security:AllowedOrigins=["https://your-ui-host"]`
+
+If `AllowedOrigins` is not configured and the client sends an `Origin` header, the gateway requires same-origin.
 
 ## Plugin Ecosystem Compatibility 🔌
 
@@ -258,6 +257,7 @@ The Dockerfile uses a multi-stage build:
 - [ ] Set `AllowedOrigins` if serving a web frontend
 - [ ] Set `TrustForwardedHeaders=true` + `KnownProxies` if behind a proxy
 - [ ] Set `MaxConnectionsPerIp` and `MessagesPerMinutePerConnection` for rate limiting
+- [ ] Set `OpenClaw:SessionRateLimitPerMinute` to rate limit inbound messages (also applies to `/v1/*` OpenAI-compatible endpoints)
 - [ ] Monitor `/health` and `/metrics` endpoints
 - [ ] Pin a specific Docker image tag (not `:latest`) in production
 
