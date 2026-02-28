@@ -286,7 +286,7 @@ public sealed class EmailTool : ITool, IDisposable
     /// </summary>
     private static async Task<int> ImapSelectAsync(StreamWriter writer, StreamReader reader, string folder, CancellationToken ct)
     {
-        await writer.WriteLineAsync($"A2 SELECT {folder}".AsMemory(), ct);
+        await writer.WriteLineAsync($"A2 SELECT {ImapQuote(folder)}".AsMemory(), ct);
         await writer.FlushAsync(ct);
 
         var count = 0;

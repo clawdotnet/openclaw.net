@@ -26,6 +26,8 @@ public sealed class WhatsAppChannel : IChannelAdapter
 
         var resolvedToken = SecretResolver.Resolve(config.CloudApiTokenRef) ?? config.CloudApiToken;
         _apiToken = resolvedToken ?? "";
+        if (string.IsNullOrWhiteSpace(_apiToken))
+            throw new InvalidOperationException("WhatsApp Cloud API token not configured. Set Channels.WhatsApp.CloudApiToken or Channels.WhatsApp.CloudApiTokenRef.");
     }
 
     public string ChannelType => "whatsapp";
