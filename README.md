@@ -1,10 +1,14 @@
+<div align="center">
+  <img src="src/OpenClaw.Gateway/wwwroot/image.png" alt="OpenClaw.NET Logo" width="180" />
+</div>
+
 # OpenClaw.NET
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 > **Disclaimer**: This project is not affiliated with, endorsed by, or associated with [OpenClaw](https://github.com/openclaw/openclaw). It is an independent .NET implementation inspired by their excellent work.
 
-Self-hosted OpenClaw gateway + agent runtime in .NET (NativeAOT-friendly).
+Self-hosted OpenClaw.NET gateway + agent runtime in .NET (NativeAOT-friendly).
 
 ## Architecture
 

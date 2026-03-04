@@ -4,31 +4,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenClaw WebChat</title>
+    <title>OpenClaw.NET WebChat</title>
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <!-- Highlight.js for Code Blocks -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 
     <style>
         :root {
-            --bg: #09090b;
-            --surface-glass: rgba(24, 24, 27, 0.65);
-            --surface: #18181b;
-            --surface-hover: #27272a;
-            --primary: #818cf8;
-            --primary-hover: #6366f1;
-            --secondary: #2dd4bf;
-            --error: #f87171;
-            --text: #f4f4f5;
+            --bg: #050505;
+            --surface-glass: rgba(15, 15, 17, 0.7);
+            --surface: rgba(24, 24, 27, 0.6);
+            --surface-hover: rgba(39, 39, 42, 0.8);
+            --primary: #6366f1;
+            --primary-gradient: linear-gradient(135deg, #6366f1, #d946ef);
+            --secondary: #14b8a6;
+            --error: #ef4444;
+            --text: #fafafa;
             --text-secondary: #a1a1aa;
             --border: rgba(255, 255, 255, 0.08);
-            --radius-lg: 12px;
-            --radius-message: 16px;
+            --radius-lg: 16px;
+            --radius-message: 20px;
         }
 
         * {
@@ -38,11 +38,12 @@
         }
 
         body {
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            font-family: 'Outfit', system-ui, -apple-system, sans-serif;
             background-color: var(--bg);
             background-image:
-                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
-                radial-gradient(at 100% 100%, rgba(45, 212, 191, 0.1) 0px, transparent 50%);
+                radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 85% 30%, rgba(217, 70, 239, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 50% 100%, rgba(20, 184, 166, 0.05) 0%, transparent 50%);
             background-attachment: fixed;
             color: var(--text);
             height: 100vh;
@@ -52,23 +53,81 @@
             -webkit-font-smoothing: antialiased;
         }
 
+        /* Ambient animated blobs */
+        .ambient-blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.5;
+            z-index: -1;
+            animation: float 20s infinite alternate cubic-bezier(0.45, 0.05, 0.55, 0.95);
+            pointer-events: none;
+        }
+
+        .blob-1 {
+            background: rgba(99, 102, 241, 0.2);
+            width: 400px;
+            height: 400px;
+            top: -100px;
+            left: -100px;
+        }
+
+        .blob-2 {
+            background: rgba(217, 70, 239, 0.15);
+            width: 300px;
+            height: 300px;
+            bottom: -50px;
+            right: -50px;
+            animation-delay: -5s;
+        }
+
+        @keyframes float {
+            0% {
+                transform: translate(0, 0) scale(1);
+            }
+
+            100% {
+                transform: translate(50px, 30px) scale(1.1);
+            }
+        }
+
         /* Glass Header */
         #header {
             background-color: var(--surface-glass);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            padding: 1rem 1.5rem;
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            padding: 1rem 2rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
             border-bottom: 1px solid var(--border);
             z-index: 10;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .header-brand img {
+            width: 38px;
+            height: 38px;
+            object-fit: contain;
+            filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.1));
+            transition: transform 0.3s ease;
+        }
+
+        .header-brand:hover img {
+            transform: scale(1.05) rotate(5deg);
         }
 
         #header h2 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            background: linear-gradient(to right, #818cf8, #2dd4bf);
+            font-size: 1.6rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: var(--primary-gradient);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -76,62 +135,83 @@
         #header .header-right {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
+            gap: 1rem;
+        }
+
+        #token-input,
+        #doctor-button {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.6rem 1.2rem;
+            border-radius: 99px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
         }
 
         #token-input {
-            background: rgba(0, 0, 0, 0.2);
-            border: 1px solid var(--border);
-            color: var(--text);
-            padding: 0.5rem 1rem;
-            border-radius: 8px;
+            width: 240px;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.85rem;
-            transition: all 0.2s ease;
-            width: 200px;
+            font-size: 0.9rem;
         }
 
-        #token-input:focus {
+        #token-input:focus,
+        #doctor-button:hover {
             outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+            border-color: rgba(168, 85, 247, 0.5);
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.15);
         }
 
         #doctor-button {
-            background: rgba(0, 0, 0, 0.2);
-            border: 1px solid var(--border);
-            color: var(--text);
-            padding: 0.5rem 0.75rem;
-            border-radius: 8px;
-            font-size: 0.85rem;
             cursor: pointer;
-            transition: all 0.2s ease;
+            font-weight: 500;
         }
 
-        #doctor-button:hover {
-            background: rgba(0, 0, 0, 0.35);
-            border-color: rgba(129, 140, 248, 0.35);
+        #doctor-button:active {
+            transform: scale(0.95);
         }
 
         /* Chat Stream Container */
-        #chat-container {
+        #chat-wrapper {
             flex-grow: 1;
             overflow-y: auto;
-            padding: 1.5rem;
+            display: flex;
+            justify-content: center;
+            scroll-behavior: smooth;
+        }
+
+        #chat-container {
+            width: 100%;
+            max-width: 900px;
+            padding: 2rem 1.5rem;
             display: flex;
             flex-direction: column;
             gap: 1.5rem;
-            scroll-behavior: smooth;
         }
 
         /* Message Bubbles */
         .message-row {
             display: flex;
             width: 100%;
+            gap: 1rem;
+            align-items: flex-end;
+            animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        @keyframes slideUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .message-row.user-row {
-            justify-content: flex-end;
+            justify-content: flex-start;
+            flex-direction: row-reverse;
         }
 
         .message-row.assistant-row {
@@ -142,47 +222,72 @@
             justify-content: center;
         }
 
+        .agent-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            margin-bottom: 0.2rem;
+        }
+
+        .agent-avatar img {
+            width: 26px;
+            height: 26px;
+            object-fit: contain;
+        }
+
+        .user-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: var(--primary-gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-weight: 600;
+            font-size: 1.2rem;
+            color: #fff;
+            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.3);
+            margin-bottom: 0.2rem;
+        }
+
         .message {
-            max-width: 75%;
-            padding: 1rem 1.25rem;
+            max-width: 80%;
+            padding: 1.2rem 1.6rem;
             border-radius: var(--radius-message);
             line-height: 1.6;
             word-wrap: break-word;
-            font-size: 0.95rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            animation: fadeIn 0.3s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            font-size: 1.05rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
         }
 
         .message.user {
-            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+            background: var(--primary-gradient);
             color: #ffffff;
-            border-bottom-right-radius: 4px;
+            border-bottom-right-radius: 6px;
         }
 
         .message.assistant {
             background-color: var(--surface);
             border: 1px solid var(--border);
-            border-bottom-left-radius: 4px;
+            border-bottom-left-radius: 6px;
             color: var(--text);
+            backdrop-filter: blur(12px);
         }
 
         .message.system {
             background-color: transparent;
             box-shadow: none;
             color: var(--text-secondary);
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             text-align: center;
             padding: 0.5rem 1rem;
             display: flex;
@@ -192,79 +297,99 @@
 
         .message.system.error {
             color: var(--error);
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 99px;
+            padding: 0.4rem 1rem;
         }
 
         /* Tool Pills */
         .tool-pill {
-            background: rgba(45, 212, 191, 0.1);
-            border: 1px solid rgba(45, 212, 191, 0.2);
+            background: rgba(20, 184, 166, 0.1);
+            border: 1px solid rgba(20, 184, 166, 0.25);
             color: var(--secondary);
-            padding: 0.25rem 0.75rem;
+            padding: 0.4rem 1.2rem;
             border-radius: 999px;
-            font-size: 0.75rem;
+            font-size: 0.85rem;
             font-weight: 500;
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.6rem;
             margin: 0.5rem auto;
             align-self: center;
+            backdrop-filter: blur(8px);
+            transition: all 0.3s ease;
+        }
+
+        .tool-pill:hover {
+            background: rgba(20, 184, 166, 0.2);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(20, 184, 166, 0.2);
         }
 
         .tool-pill::before {
             content: '';
             display: inline-block;
-            width: 6px;
-            height: 6px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             background-color: var(--secondary);
-            box-shadow: 0 0 6px var(--secondary);
-            animation: pulse 2s infinite;
+            box-shadow: 0 0 8px var(--secondary);
+            animation: pulse-dot 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
         }
 
-        /* Markdown Styles within Assistant Messages */
+        /* Markdown Styles */
         .message.assistant p:not(:last-child) {
-            margin-bottom: 0.75rem;
+            margin-bottom: 1rem;
         }
 
         .message.assistant a {
-            color: var(--primary);
+            color: #a5b4fc;
             text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s;
         }
 
         .message.assistant a:hover {
-            text-decoration: underline;
+            border-color: #a5b4fc;
         }
 
         .message.assistant code:not(pre code) {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 0.2em 0.4em;
-            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 0.2em 0.5em;
+            border-radius: 6px;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.85em;
+            font-size: 0.9em;
+            color: #d8b4fe;
         }
 
         .message.assistant pre {
-            background: #0d1117;
-            /* GitHub Dark bg */
-            border-radius: 8px;
-            padding: 1rem;
-            margin: 0.75rem 0;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 12px;
+            padding: 1.2rem;
+            margin: 1.2rem 0;
             overflow-x: auto;
             border: 1px solid var(--border);
+            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.3);
         }
 
         .message.assistant pre code {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             line-height: 1.5;
             padding: 0;
             background: transparent;
+            color: #e4e4e7;
         }
 
         .message.assistant ul,
         .message.assistant ol {
             padding-left: 1.5rem;
-            margin-bottom: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .message.assistant li {
+            margin-bottom: 0.3rem;
         }
 
         /* Typing Indicator */
@@ -278,17 +403,18 @@
         .typing-indicator {
             background-color: var(--surface);
             border: 1px solid var(--border);
-            padding: 0.8rem 1rem;
+            padding: 1.2rem 1.6rem;
             border-radius: var(--radius-message);
-            border-bottom-left-radius: 4px;
+            border-bottom-left-radius: 6px;
             display: flex;
-            gap: 0.3rem;
+            gap: 0.5rem;
             align-items: center;
+            backdrop-filter: blur(12px);
         }
 
         .dot {
-            width: 6px;
-            height: 6px;
+            width: 8px;
+            height: 8px;
             background-color: var(--text-secondary);
             border-radius: 50%;
             animation: bounce 1.4s infinite ease-in-out both;
@@ -296,10 +422,16 @@
 
         .dot:nth-child(1) {
             animation-delay: -0.32s;
+            background: #6366f1;
         }
 
         .dot:nth-child(2) {
             animation-delay: -0.16s;
+            background: #a855f7;
+        }
+
+        .dot:nth-child(3) {
+            background: #ec4899;
         }
 
         @keyframes bounce {
@@ -317,51 +449,66 @@
             }
         }
 
-        @keyframes pulse {
-            0% {
-                opacity: 0.6;
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
             }
 
             50% {
-                opacity: 1;
-            }
-
-            100% {
-                opacity: 0.6;
+                opacity: .5;
+                transform: scale(0.8);
             }
         }
 
         /* Glass Input Container */
-        #input-container {
-            background-color: var(--surface-glass);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            padding: 1rem 1.5rem;
-            display: flex;
-            gap: 0.75rem;
+        #input-wrapper {
+            background-color: rgba(15, 15, 17, 0.85);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
             border-top: 1px solid var(--border);
+            padding: 1.5rem 0;
+            display: flex;
+            justify-content: center;
             z-index: 10;
+        }
+
+        #input-container {
+            width: 100%;
+            max-width: 900px;
+            padding: 0 1.5rem;
+            display: flex;
+            gap: 1rem;
+            align-items: flex-end;
         }
 
         #message-input {
             flex-grow: 1;
-            background: var(--bg);
+            background: rgba(255, 255, 255, 0.04);
             border: 1px solid var(--border);
             color: var(--text);
-            padding: 0.8rem 1rem;
-            border-radius: var(--radius-lg);
-            font-family: 'Inter', sans-serif;
-            font-size: 0.95rem;
+            padding: 1rem 1.4rem;
+            border-radius: var(--radius-message);
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.05rem;
             resize: none;
-            min-height: 44px;
-            max-height: 150px;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            min-height: 56px;
+            max-height: 200px;
+            transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         #message-input:focus {
             outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+            border-color: rgba(168, 85, 247, 0.5);
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.1), inset 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        #message-input::placeholder {
+            color: rgba(255, 255, 255, 0.4);
         }
 
         #message-input:disabled {
@@ -370,34 +517,41 @@
         }
 
         #send-button {
-            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+            background: var(--primary-gradient);
             color: #ffffff;
             border: none;
-            padding: 0 1.5rem;
-            border-radius: var(--radius-lg);
-            font-weight: 600;
-            font-size: 0.95rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2);
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.3);
+            flex-shrink: 0;
+        }
+
+        #send-button svg {
+            transition: transform 0.3s ease;
         }
 
         #send-button:hover:not(:disabled) {
-            transform: translateY(-1px);
-            box-shadow: 0 6px 8px -1px rgba(99, 102, 241, 0.3);
+            transform: scale(1.08) translateY(-2px);
+            box-shadow: 0 8px 25px rgba(168, 85, 247, 0.5);
+        }
+
+        #send-button:hover:not(:disabled) svg {
+            transform: translate(2px, -2px);
         }
 
         #send-button:active:not(:disabled) {
-            transform: translateY(1px);
-            box-shadow: 0 2px 4px -1px rgba(99, 102, 241, 0.2);
+            transform: scale(0.95);
         }
 
         #send-button:disabled {
-            background: var(--surface-hover);
-            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.3);
             box-shadow: none;
             cursor: not-allowed;
             transform: none;
@@ -413,46 +567,77 @@
         }
 
         ::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 10px;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        /* Media Queries for responsiveness */
+        @media (max-width: 768px) {
+            #header {
+                padding: 1rem;
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            #header h2 {
+                font-size: 1.4rem;
+            }
+
+            #chat-container {
+                padding: 1.5rem 1rem;
+            }
+
+            .message {
+                max-width: 90%;
+            }
         }
     </style>
 </head>
 
 <body>
+    <div class="ambient-blob blob-1"></div>
+    <div class="ambient-blob blob-2"></div>
+
     <div id="header">
-        <h2>OpenClaw WebChat</h2>
+        <div class="header-brand">
+            <img src="image.png" alt="OpenClaw.NET Logo">
+            <h2>OpenClaw.NET</h2>
+        </div>
         <div class="header-right">
             <button id="doctor-button" title="Fetch /doctor/text">Doctor</button>
             <input type="password" id="token-input" placeholder="Auth Token (optional)">
         </div>
     </div>
 
-    <div id="chat-container">
-        <!-- Messages will render here -->
-        <div class="typing-row" id="typing-row">
-            <div class="typing-indicator">
-                <div class="dot"></div>
-                <div class="dot"></div>
-                <div class="dot"></div>
+    <div id="chat-wrapper">
+        <div id="chat-container">
+            <!-- Messages will render here -->
+            <div class="message-row typing-row" id="typing-row">
+                <div class="agent-avatar"><img src="image.png" alt="Agent" /></div>
+                <div class="typing-indicator">
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                </div>
             </div>
         </div>
     </div>
 
-    <div id="input-container">
-        <textarea id="message-input" rows="1" placeholder="Message the Agent (or type /help)..." disabled></textarea>
-        <button id="send-button" disabled>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
-                <line x1="22" y1="2" x2="11" y2="13"></line>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-            </svg>
-            Send
-        </button>
+    <div id="input-wrapper">
+        <div id="input-container">
+            <textarea id="message-input" rows="1" placeholder="Message OpenClaw.NET..." disabled></textarea>
+            <button id="send-button" disabled title="Send Message">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+            </button>
+        </div>
     </div>
 
     <!-- Scripts for Markdown parsing and Syntax Highlighting -->
@@ -470,6 +655,7 @@
             langPrefix: 'hljs language-'
         });
 
+        const chatWrapper = document.getElementById('chat-wrapper');
         const chatContainer = document.getElementById('chat-container');
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
@@ -479,7 +665,7 @@
 
         let ws = null;
         let activeResponseDiv = null;
-        let activeRawContent = ""; // Store raw markdown until streaming completes
+        let activeRawContent = "";
 
         function preprocessMediaMarkers(raw) {
             const lines = (raw || "").split('\n');
@@ -514,8 +700,8 @@
         }
 
         function scrollToBottom() {
-            chatContainer.scrollTo({
-                top: chatContainer.scrollHeight,
+            chatWrapper.scrollTo({
+                top: chatWrapper.scrollHeight,
                 behavior: 'smooth'
             });
         }
@@ -523,6 +709,19 @@
         function createRow(type) {
             const row = document.createElement('div');
             row.className = `message-row ${type}-row`;
+            
+            if (type === 'assistant') {
+                const avatar = document.createElement('div');
+                avatar.className = 'agent-avatar';
+                avatar.innerHTML = '<img src="image.png" alt="Agent" />';
+                row.appendChild(avatar);
+            } else if (type === 'user') {
+                const avatar = document.createElement('div');
+                avatar.className = 'user-avatar';
+                avatar.innerHTML = 'U';
+                row.appendChild(avatar);
+            }
+
             return row;
         }
 
@@ -533,8 +732,8 @@
             if (isError) {
                 div.className = 'message system error';
                 const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                icon.setAttribute('width', '14');
-                icon.setAttribute('height', '14');
+                icon.setAttribute('width', '16');
+                icon.setAttribute('height', '16');
                 icon.setAttribute('viewBox', '0 0 24 24');
                 icon.setAttribute('fill', 'none');
                 icon.setAttribute('stroke', 'currentColor');
@@ -570,12 +769,14 @@
             }
 
             row.appendChild(div);
+
             chatContainer.insertBefore(row, typingRow);
             scrollToBottom();
         }
 
         function appendToolPill(toolName) {
-            const row = createRow('system');
+            const row = document.createElement('div');
+            row.className = 'message-row system-row';
             const pill = document.createElement('div');
             pill.className = 'tool-pill';
             pill.textContent = `Agent invoked tool: ${toolName}`;
@@ -586,7 +787,7 @@
         }
 
         function connect() {
-            appendSystem('Connecting to Gateway endpoint...');
+            appendSystem('Connecting to OpenClaw.NET Gateway...');
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const baseWsUrl = `${protocol}//${window.location.host}/ws`;
             const token = tokenInput.value || localStorage.getItem('openclaw_token') || '';
@@ -601,9 +802,10 @@
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
-                appendSystem('Connected.');
+                appendSystem('Connected successfully.');
                 messageInput.disabled = false;
                 sendButton.disabled = false;
+                messageInput.focus();
             };
 
             ws.onmessage = (event) => {
@@ -618,10 +820,13 @@
 
                         case 'typing_stop':
                             typingRow.style.display = 'none';
-                            // Finalize Markdown render on stop
                             if (activeResponseDiv && activeRawContent) {
                                 const renderHtml = DOMPurify.sanitize(marked.parse(preprocessMediaMarkers(activeRawContent)));
                                 activeResponseDiv.innerHTML = renderHtml;
+                                // Apply syntax highlighting to new code blocks
+                                activeResponseDiv.querySelectorAll('pre code').forEach((block) => {
+                                    hljs.highlightElement(block);
+                                });
                             }
                             activeResponseDiv = null;
                             activeRawContent = "";
@@ -630,7 +835,7 @@
 
                         case 'assistant_message':
                         case 'assistant_chunk':
-                        case 'text_delta': // backwards compatibility
+                        case 'text_delta':
                             if (!activeResponseDiv) {
                                 const row = createRow('assistant');
                                 activeResponseDiv = document.createElement('div');
@@ -640,7 +845,6 @@
                             }
 
                             activeRawContent += (env.text ?? env.content ?? "");
-                            // Fast approximate render while streaming (can be glitchy for code blocks, but better than plaintext)
                             activeResponseDiv.innerHTML = DOMPurify.sanitize(marked.parse(preprocessMediaMarkers(activeRawContent)));
                             scrollToBottom();
                             break;
@@ -649,6 +853,9 @@
                             typingRow.style.display = 'none';
                             if (activeResponseDiv && activeRawContent) {
                                 activeResponseDiv.innerHTML = DOMPurify.sanitize(marked.parse(activeRawContent));
+                                activeResponseDiv.querySelectorAll('pre code').forEach((block) => {
+                                    hljs.highlightElement(block);
+                                });
                             }
                             activeResponseDiv = null;
                             activeRawContent = "";
@@ -664,14 +871,13 @@
                             break;
 
                         case 'tool_result':
-                            // Result attached silently.
                             break;
 
                         case 'tool_approval_required': {
                             const toolName = env.toolName || 'unknown';
                             const approvalId = env.approvalId || '';
                             const argsPreview = env.argumentsPreview || '';
-                            const prompt = `Tool approval required:\\n\\nTool: ${toolName}\\nApprovalId: ${approvalId}\\n\\nArgs:\\n${argsPreview}\\n\\nApprove?`;
+                            const prompt = `Tool approval required:\n\nTool: ${toolName}\nApprovalId: ${approvalId}\n\nArgs:\n${argsPreview}\n\nApprove?`;
                             const approved = window.confirm(prompt);
                             appendSystem(`Tool approval ${approved ? 'approved' : 'denied'}: ${toolName}`);
                             ws.send(JSON.stringify({
@@ -683,7 +889,6 @@
                         }
                     }
                 } catch (e) {
-                    // Fallback for non-envelope text
                     if (!activeResponseDiv) {
                         const row = createRow('assistant');
                         activeResponseDiv = document.createElement('div');
@@ -714,43 +919,44 @@
             const text = messageInput.value.trim();
             if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
 
-            // Render User Message
             const row = createRow('user');
             const div = document.createElement('div');
             div.className = 'message user';
-            div.textContent = text; // User input is safe textContent
+            div.textContent = text;
             row.appendChild(div);
 
             chatContainer.insertBefore(row, typingRow);
 
-            // Envelope mode send
             ws.send(JSON.stringify({
                 type: "user_message",
                 text: text
             }));
 
             messageInput.value = '';
-            messageInput.style.height = 'auto'; // Reset height
+            messageInput.style.height = 'auto';
+            sendButton.style.opacity = '0.7';
             activeResponseDiv = null;
             activeRawContent = "";
             scrollToBottom();
+            
+            // Re-focus input after send (optional but good UX for desktop)
+            messageInput.focus();
         }
 
-        // Auto-resize textarea logic
         messageInput.addEventListener('input', function () {
             this.style.height = 'auto';
-            this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
             if (this.value === '') this.style.height = 'auto';
 
-            // Toggle send button visual state
             if (this.value.trim().length > 0) {
                 sendButton.style.opacity = '1';
+                sendButton.style.transform = 'scale(1)';
             } else {
                 sendButton.style.opacity = '0.7';
+                sendButton.style.transform = 'scale(0.95)';
             }
         });
 
-        // Enter to send (Shift+Enter for newline)
         messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -760,7 +966,6 @@
 
         sendButton.addEventListener('click', sendMessage);
 
-        // Load saved token
         if (localStorage.getItem('openclaw_token')) {
             tokenInput.value = localStorage.getItem('openclaw_token');
         }
@@ -778,13 +983,12 @@
                     return;
                 }
                 const text = await resp.text();
-                appendAssistantMarkdown("```\\n" + text + "\\n```");
+                appendAssistantMarkdown("```\n" + text + "\n```");
             } catch (e) {
                 appendSystem('Doctor request failed.', true);
             }
         });
 
-        // Initialize connection
         connect();
     </script>
 </body>
