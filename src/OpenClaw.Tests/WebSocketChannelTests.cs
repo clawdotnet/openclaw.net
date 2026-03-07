@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.WebSockets;
 using System.Text.Json;
 using OpenClaw.Channels;
 using OpenClaw.Core.Models;
@@ -74,6 +75,26 @@ public sealed class WebSocketChannelTests
 
         Assert.NotNull(received);
         Assert.Equal("legacy", received!.Text);
+    }
+
+    [Fact]
+    public async Task HandleConnectionAsync_IgnoresPrematureRemoteCloseDuringReceive()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });
+        var ws = new TestWebSocket();
+
+        ws.QueueReceiveException(new WebSocketException(WebSocketError.ConnectionClosedPrematurely));
+
+        var observed = false;
+        channel.OnMessageReceived += (_, _) =>
+        {
+            observed = true;
+            return ValueTask.CompletedTask;
+        };
+
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+
+        Assert.False(observed);
     }
 
     [Fact]

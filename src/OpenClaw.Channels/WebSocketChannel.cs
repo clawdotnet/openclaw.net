@@ -334,7 +334,23 @@ public sealed class WebSocketChannel : IChannelAdapter
                 }
 
                 var memory = buffer.AsMemory(total, buffer.Length - total);
-                var result = await ws.ReceiveAsync(memory, ct);
+                ValueWebSocketReceiveResult result;
+                try
+                {
+                    result = await ws.ReceiveAsync(memory, ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    return null;
+                }
+                catch (ObjectDisposedException)
+                {
+                    return null;
+                }
+                catch (WebSocketException)
+                {
+                    return null;
+                }
 
                 if (result.MessageType == WebSocketMessageType.Close)
                     return null;
