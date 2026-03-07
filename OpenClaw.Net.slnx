@@ -1,0 +1,20 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/samples/">
+    <Project Path="samples/OpenClaw.SemanticKernelInteropHost/OpenClaw.SemanticKernelInteropHost.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/OpenClaw.Cli/OpenClaw.Cli.csproj" />
+    <Project Path="src/OpenClaw.Companion/OpenClaw.Companion.csproj" />
+    <Project Path="src/OpenClaw.SemanticKernelAdapter/OpenClaw.SemanticKernelAdapter.csproj" />
+  </Folder>
+  <Project Path="src/OpenClaw.Agent/OpenClaw.Agent.csproj" />
+  <Project Path="src/OpenClaw.Channels/OpenClaw.Channels.csproj" />
+  <Project Path="src/OpenClaw.Core/OpenClaw.Core.csproj" />
+  <Project Path="src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" />
+  <Project Path="src/OpenClaw.Tests/OpenClaw.Tests.csproj" />
+</Solution>
