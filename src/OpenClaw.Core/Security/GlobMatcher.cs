@@ -18,37 +18,45 @@ public static class GlobMatcher
         if (!pattern.Contains('*', StringComparison.Ordinal))
             return string.Equals(pattern, value, comparison);
 
-        // Split on '*' and ensure all segments occur in order.
-        var parts = pattern.Split('*');
-        var index = 0;
+        // Span-based matching — avoids the string[] allocation from Split('*').
+        var remaining = pattern.AsSpan();
+        var valueIndex = 0;
+        var isFirst = true;
 
-        // Leading segment must match prefix when pattern doesn't start with '*'
-        if (!pattern.StartsWith('*'))
+        while (remaining.Length > 0)
         {
-            var first = parts[0];
-            if (!value.StartsWith(first, comparison))
-                return false;
-            index = first.Length;
-        }
+            var starPos = remaining.IndexOf('*');
+            if (starPos < 0)
+            {
+                // No more wildcards — the rest of the pattern must match the suffix of value
+                return value.AsSpan(valueIndex).EndsWith(remaining, comparison);
+            }
 
-        // Middle segments must appear in order
-        for (var i = 1; i < parts.Length - 1; i++)
-        {
-            var part = parts[i];
-            if (part.Length == 0)
+            var segment = remaining[..starPos];
+            remaining = remaining[(starPos + 1)..];
+
+            if (segment.Length == 0)
+            {
+                isFirst = false;
                 continue;
+            }
 
-            var next = value.IndexOf(part, index, comparison);
-            if (next < 0)
-                return false;
-            index = next + part.Length;
-        }
-
-        // Trailing segment must match suffix when pattern doesn't end with '*'
-        if (!pattern.EndsWith('*'))
-        {
-            var last = parts[^1];
-            return value.AsSpan(index).EndsWith(last, comparison);
+            if (isFirst)
+            {
+                // First segment (pattern doesn't start with '*') must match prefix
+                if (!value.AsSpan(valueIndex).StartsWith(segment, comparison))
+                    return false;
+                valueIndex += segment.Length;
+                isFirst = false;
+            }
+            else
+            {
+                // Middle segment — find next occurrence in value
+                var found = value.AsSpan(valueIndex).IndexOf(segment, comparison);
+                if (found < 0)
+                    return false;
+                valueIndex += found + segment.Length;
+            }
         }
 
         return true;

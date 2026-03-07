@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace OpenClaw.Core.Security;
 
 /// <summary>
@@ -7,9 +9,13 @@ namespace OpenClaw.Core.Security;
 public static class InputSanitizer
 {
     /// <summary>
-    /// Characters that can be used for shell metacharacter injection.
+    /// SIMD-accelerated search values for shell metacharacter detection.
     /// </summary>
-    private static readonly char[] ShellMetaChars = [';', '|', '&', '`', '$', '(', ')', '{', '}', '<', '>', '\n', '\r'];
+    private static readonly SearchValues<char> ShellMetaChars =
+        SearchValues.Create(";|&`$(){}<>\n\r");
+
+    private static readonly SearchValues<char> CrLfChars =
+        SearchValues.Create("\r\n");
 
     /// <summary>
     /// Validate that a string is free of shell metacharacters.
@@ -29,8 +35,20 @@ public static class InputSanitizer
     /// to prevent command injection via line-breaking.
     /// </summary>
     public static string StripCrlf(string value)
-        => value.Replace("\r", "", StringComparison.Ordinal)
-                .Replace("\n", "", StringComparison.Ordinal);
+    {
+        if (value.AsSpan().IndexOfAny(CrLfChars) < 0)
+            return value;
+
+        return string.Create(value.Length - value.AsSpan().Count("\r") - value.AsSpan().Count("\n"), value, static (span, src) =>
+        {
+            var written = 0;
+            foreach (var c in src)
+            {
+                if (c is not '\r' and not '\n')
+                    span[written++] = c;
+            }
+        });
+    }
 
     /// <summary>
     /// Validate that a memory note key does not contain path traversal sequences.
