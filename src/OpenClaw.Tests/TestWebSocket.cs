@@ -8,6 +8,7 @@ internal sealed class TestWebSocket : WebSocket
     private readonly ConcurrentQueue<(byte[] Data, WebSocketMessageType Type, bool End)> _receive = new();
     private readonly ConcurrentQueue<byte[]> _sent = new();
     private readonly ConcurrentQueue<Exception> _receiveExceptions = new();
+    private bool _blockReceiveUntilCancelled;
 
     private WebSocketState _state = WebSocketState.Open;
 
@@ -24,6 +25,9 @@ internal sealed class TestWebSocket : WebSocket
 
     public void QueueReceiveException(Exception exception)
         => _receiveExceptions.Enqueue(exception);
+
+    public void BlockReceiveUntilCancelled()
+        => _blockReceiveUntilCancelled = true;
 
     public override WebSocketCloseStatus? CloseStatus { get; }
     public override string? CloseStatusDescription { get; }
@@ -50,6 +54,10 @@ internal sealed class TestWebSocket : WebSocket
     {
         if (_receiveExceptions.TryDequeue(out var exception))
             return Task.FromException<WebSocketReceiveResult>(exception);
+
+        if (_blockReceiveUntilCancelled)
+            return Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken)
+                .ContinueWith<WebSocketReceiveResult>(_ => throw new OperationCanceledException(cancellationToken), cancellationToken);
 
         if (!_receive.TryDequeue(out var next))
             return Task.FromResult(new WebSocketReceiveResult(0, WebSocketMessageType.Close, true));

@@ -28,6 +28,17 @@ public sealed class GatewaySecurityTests
     }
 
     [Fact]
+    public void GetBearerToken_RejectsWhitespaceBearerToken()
+    {
+        var ctx = new DefaultHttpContext();
+        ctx.Request.Headers["Authorization"] = "Bearer    ";
+
+        var token = GatewaySecurity.GetBearerToken(ctx);
+
+        Assert.Null(token);
+    }
+
+    [Fact]
     public void IsTokenValid_AcceptsExactMatch()
     {
         Assert.True(GatewaySecurity.IsTokenValid("abc", "abc"));

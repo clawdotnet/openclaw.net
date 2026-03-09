@@ -208,6 +208,7 @@ TwilioSmsChannel? smsChannel = null;
 TwilioSmsWebhookHandler? smsWebhookHandler = null;
 IContactStore? smsContacts = null;
 string? twilioAuthToken = null;
+EmailChannel? emailChannel = null;
 if (config.Channels.Sms.Twilio.Enabled)
 {
     if (config.Channels.Sms.Twilio.ValidateSignature && string.IsNullOrWhiteSpace(config.Channels.Sms.Twilio.WebhookPublicBaseUrl))
@@ -309,7 +310,10 @@ if (config.Channels.WhatsApp.Enabled)
 
 if (config.Plugins.Native.Email.Enabled)
 {
-    channelAdapters["email"] = new EmailChannel(config.Plugins.Native.Email);
+    emailChannel = new EmailChannel(
+        config.Plugins.Native.Email,
+        app.Services.GetRequiredService<ILogger<EmailChannel>>());
+    channelAdapters["email"] = emailChannel;
 }
 
 // Default cron delivery sink (for jobs that do not specify ChannelId / RecipientId)
@@ -392,6 +396,8 @@ if (autonomyMode == "supervised")
 }
 
 IAgentRuntime agentRuntime = new AgentRuntime(chatClient, tools, memoryStore, config.Llm, config.Memory.MaxHistoryTurns, skills,
+    skillsConfig: config.Skills,
+    skillWorkspacePath: workspacePathForSkills,
     logger: agentLogger, toolTimeoutSeconds: config.Tooling.ToolTimeoutSeconds, metrics: runtimeMetrics,
     parallelToolExecution: config.Tooling.ParallelToolExecution,
     enableCompaction: config.Memory.EnableCompaction,
@@ -416,6 +422,8 @@ if (config.Delegation.Enabled && config.Delegation.Profiles.Count > 0)
 
     // Rebuild agent runtime with delegation-enabled toolset
     agentRuntime = new AgentRuntime(chatClient, tools, memoryStore, config.Llm, config.Memory.MaxHistoryTurns, skills,
+        skillsConfig: config.Skills,
+        skillWorkspacePath: workspacePathForSkills,
         logger: agentLogger, toolTimeoutSeconds: config.Tooling.ToolTimeoutSeconds, metrics: runtimeMetrics,
         parallelToolExecution: config.Tooling.ParallelToolExecution,
         enableCompaction: config.Memory.EnableCompaction,
@@ -441,6 +449,9 @@ if (config.SessionTokenBudget > 0)
     middlewareList.Add(new TokenBudgetMiddleware(config.SessionTokenBudget, tbLogger));
 }
 var middlewarePipeline = new MiddlewarePipeline(middlewareList);
+var skillWatcherLogger = app.Services.GetRequiredService<ILogger<SkillWatcherService>>();
+var skillWatcher = new SkillWatcherService(config.Skills, workspacePathForSkills, pluginHost?.SkillRoots, agentRuntime, skillWatcherLogger);
+skillWatcher.Start(app.Lifetime.ApplicationStopping);
 
 if (config.Security.TrustForwardedHeaders)
 {
@@ -888,10 +899,11 @@ var lockLastUsed = new System.Collections.Concurrent.ConcurrentDictionary<string
 var programLogger = app.Services.GetRequiredService<ILogger<Program>>();
 var workerCount = Math.Max(1, Math.Min(Environment.ProcessorCount, 4));
 
+CronScheduler? cronTask = null;
 if (config.Cron.Enabled)
 {
     var cronLogger = app.Services.GetRequiredService<ILogger<CronScheduler>>();
-    var cronTask = new CronScheduler(config, cronLogger, pipeline.InboundWriter);
+    cronTask = new CronScheduler(config, cronLogger, pipeline.InboundWriter);
     _ = cronTask.StartAsync(app.Lifetime.ApplicationStopping);
 }
 
@@ -923,6 +935,7 @@ GatewayWorkers.Start(
     agentRuntime,
     channelAdapters,
     config,
+    cronTask,
     toolApprovalService,
     pairingManager,
     commandProcessor);
@@ -964,7 +977,10 @@ app.MapPost("/pairing/approve", (HttpContext ctx, string channelId, string sende
         return Results.Ok(new { success = true, message = "Approved successfully." });
 
     if (error.Contains("Too many invalid attempts", StringComparison.Ordinal))
-        return Results.Json(new { success = false, error }, statusCode: StatusCodes.Status429TooManyRequests);
+        return Results.Json(
+            new OperationStatusResponse { Success = false, Error = error },
+            CoreJsonContext.Default.OperationStatusResponse,
+            statusCode: StatusCodes.Status429TooManyRequests);
 
     return Results.BadRequest(new { success = false, error });
 });
@@ -1066,6 +1082,19 @@ app.MapPost("/allowlists/{channelId}/tighten", (HttpContext ctx, string channelI
 
     allowlists.SetAllowedFrom(channelId, paired);
     return Results.Ok(new { success = true, count = paired.Length });
+});
+
+app.MapPost("/admin/reload-skills", async (HttpContext ctx) =>
+{
+    if (!IsAuthorizedRequest(ctx, isNonLoopbackBind, config))
+        return Results.Unauthorized();
+
+    var loadedSkillNames = await agentRuntime.ReloadSkillsAsync(ctx.RequestAborted);
+    return Results.Ok(new
+    {
+        reloaded = loadedSkillNames.Count,
+        skills = loadedSkillNames
+    });
 });
 
 static string ResolveWorkspaceRoot(string? value)
@@ -1349,7 +1378,12 @@ app.MapPost("/tools/approve", (HttpContext ctx, string approvalId, bool approved
     {
         ToolApprovalDecisionResult.Recorded => Results.Ok(new { success = true, mode = "requester_match" }),
         ToolApprovalDecisionResult.Unauthorized => Results.Json(
-            new { success = false, error = "Requester does not match pending approval owner." },
+            new OperationStatusResponse
+            {
+                Success = false,
+                Error = "Requester does not match pending approval owner."
+            },
+            CoreJsonContext.Default.OperationStatusResponse,
             statusCode: StatusCodes.Status403Forbidden),
         _ => Results.NotFound(new { success = false, error = "No pending approval found for that id." })
     };
@@ -1429,20 +1463,47 @@ app.Map("/ws", async (HttpContext ctx) =>
 });
 
 // Wire up the message flow: channel → agent → channel
-wsChannel.OnMessageReceived += async (msg, ct) =>
+async ValueTask HandleInboundMessageAsync(IChannelAdapter replyAdapter, InboundMessage msg, CancellationToken ct)
 {
     await recentSenders.RecordAsync(msg.ChannelId, msg.SenderId, msg.SenderName, ct);
     if (!pipeline.InboundWriter.TryWrite(msg))
     {
-        await wsChannel.SendAsync(new OutboundMessage
+        try
         {
-            ChannelId = msg.ChannelId,
-            RecipientId = msg.SenderId,
-            Text = "Server is busy. Please retry.",
-            ReplyToMessageId = msg.MessageId
-        }, ct);
+            await replyAdapter.SendAsync(new OutboundMessage
+            {
+                ChannelId = msg.ChannelId,
+                RecipientId = msg.SenderId,
+                Text = "Server is busy. Please retry.",
+                ReplyToMessageId = msg.MessageId
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "Failed to send busy response on channel {ChannelId}", replyAdapter.ChannelId);
+        }
     }
-};
+}
+
+foreach (var adapter in channelAdapters.Values)
+{
+    adapter.OnMessageReceived += (msg, ct) => HandleInboundMessageAsync(adapter, msg, ct);
+
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            await adapter.StartAsync(app.Lifetime.ApplicationStopping);
+        }
+        catch (OperationCanceledException) when (app.Lifetime.ApplicationStopping.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogError(ex, "Channel adapter {ChannelId} stopped unexpectedly", adapter.ChannelId);
+        }
+    }, CancellationToken.None);
+}
 
 if (smsChannel is not null && smsWebhookHandler is not null)
 {

@@ -343,6 +343,9 @@ public sealed class EmailConfig
 {
     public bool Enabled { get; set; } = false;
 
+    /// <summary>Whether the email channel should poll IMAP and emit inbound messages.</summary>
+    public bool InboundEnabled { get; set; } = false;
+
     /// <summary>SMTP server host for sending.</summary>
     public string? SmtpHost { get; set; }
 
@@ -357,6 +360,21 @@ public sealed class EmailConfig
 
     /// <summary>IMAP server port.</summary>
     public int ImapPort { get; set; } = 993;
+
+    /// <summary>Whether to use TLS for IMAP.</summary>
+    public bool ImapUseTls { get; set; } = true;
+
+    /// <summary>IMAP folder to poll for inbound messages.</summary>
+    public string InboundFolder { get; set; } = "INBOX";
+
+    /// <summary>Polling interval in seconds for inbound IMAP checks.</summary>
+    public int InboundPollSeconds { get; set; } = 30;
+
+    /// <summary>Maximum number of unseen messages to process per poll.</summary>
+    public int InboundMaxMessagesPerPoll { get; set; } = 10;
+
+    /// <summary>Whether inbound messages should be marked as read after successful handoff.</summary>
+    public bool MarkInboundAsRead { get; set; } = true;
 
     /// <summary>Email account username.</summary>
     public string? Username { get; set; }
@@ -446,6 +464,42 @@ public sealed class PluginLoadConfig
 }
 
 /// <summary>
+/// Structured compatibility or validation diagnostic for plugin loading.
+/// </summary>
+public sealed class PluginCompatibilityDiagnostic
+{
+    public string Severity { get; init; } = "error";
+    public string Code { get; init; } = "";
+    public string Message { get; init; } = "";
+    public string? Surface { get; init; }
+    public string? Path { get; init; }
+}
+
+/// <summary>
+/// Result of plugin discovery: discovered plugins plus structured load reports for invalid entries.
+/// </summary>
+public sealed class PluginDiscoveryResult
+{
+    public List<DiscoveredPlugin> Plugins { get; } = [];
+    public List<PluginLoadReport> Reports { get; } = [];
+}
+
+/// <summary>
+/// Per-plugin load report for diagnostics and doctor/status surfaces.
+/// </summary>
+public sealed class PluginLoadReport
+{
+    public required string PluginId { get; init; }
+    public required string SourcePath { get; init; }
+    public string? EntryPath { get; init; }
+    public bool Loaded { get; init; }
+    public int ToolCount { get; init; }
+    public string[] SkillDirectories { get; init; } = [];
+    public PluginCompatibilityDiagnostic[] Diagnostics { get; init; } = [];
+    public string? Error { get; init; }
+}
+
+/// <summary>
 /// Tool registration from a plugin bridge — describes a tool the plugin exports.
 /// </summary>
 public sealed class PluginToolRegistration
@@ -487,6 +541,16 @@ public sealed class BridgeError
 {
     public int Code { get; init; }
     public string Message { get; init; } = "";
+}
+
+/// <summary>
+/// Result of initializing a plugin bridge process.
+/// </summary>
+public sealed class BridgeInitResult
+{
+    public PluginToolRegistration[] Tools { get; init; } = [];
+    public PluginCompatibilityDiagnostic[] Diagnostics { get; init; } = [];
+    public bool Compatible { get; init; } = true;
 }
 
 /// <summary>

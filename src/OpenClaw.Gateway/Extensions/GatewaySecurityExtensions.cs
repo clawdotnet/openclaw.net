@@ -1,6 +1,5 @@
 using System;
-using System.Collections;
-using System.Reflection;
+using System.Text.Json;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
 using OpenClaw.Gateway;
@@ -82,80 +81,49 @@ public static class GatewaySecurityExtensions
         }
     }
 
-    private static IReadOnlyList<string> FindRawSecretRefs(object root)
+    private static IReadOnlyList<string> FindRawSecretRefs(GatewayConfig root)
     {
         var hits = new List<string>(capacity: 8);
-        var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
-        VisitForRawRefs(root, "OpenClaw", hits, visited);
+        var json = JsonSerializer.SerializeToElement(root, CoreJsonContext.Default.GatewayConfig);
+        VisitForRawRefs(json, "OpenClaw", hits);
         return hits;
     }
 
-    private static void VisitForRawRefs(
-        object? value,
-        string path,
-        List<string> hits,
-        HashSet<object> visited)
+    private static void VisitForRawRefs(JsonElement value, string path, List<string> hits)
     {
-        if (value is null || hits.Count >= 8)
+        if (hits.Count >= 8)
             return;
 
-        if (value is string s)
+        switch (value.ValueKind)
         {
-            if (SecretResolver.IsRawRef(s) && LooksLikeSecretPath(path))
+            case JsonValueKind.String:
+                var s = value.GetString();
+                if (!string.IsNullOrWhiteSpace(s) && SecretResolver.IsRawRef(s) && LooksLikeSecretPath(path))
+                    hits.Add(path);
+                return;
+
+            case JsonValueKind.Object:
+                foreach (var prop in value.EnumerateObject())
+                {
+                    VisitForRawRefs(prop.Value, $"{path}:{prop.Name}", hits);
+                    if (hits.Count >= 8)
+                        return;
+                }
+                return;
+
+            case JsonValueKind.Array:
+                var idx = 0;
+                foreach (var item in value.EnumerateArray())
+                {
+                    VisitForRawRefs(item, $"{path}[{idx++}]", hits);
+                    if (hits.Count >= 8)
+                        return;
+                }
+                return;
+
+            default:
                 hits.Add(path);
-            return;
-        }
-
-        var type = value.GetType();
-        if (type.IsPrimitive || type.IsEnum || type == typeof(decimal) || type == typeof(DateTime) ||
-            type == typeof(DateTimeOffset) || type == typeof(TimeSpan) || type == typeof(Guid))
-        {
-            return;
-        }
-
-        if (!type.IsValueType && !visited.Add(value))
-            return;
-
-        if (value is IDictionary dictionary)
-        {
-            foreach (DictionaryEntry entry in dictionary)
-            {
-                VisitForRawRefs(entry.Value, $"{path}[{entry.Key}]", hits, visited);
-                if (hits.Count >= 8)
-                    return;
-            }
-            return;
-        }
-
-        if (value is IEnumerable sequence)
-        {
-            var idx = 0;
-            foreach (var item in sequence)
-            {
-                VisitForRawRefs(item, $"{path}[{idx++}]", hits, visited);
-                if (hits.Count >= 8)
-                    return;
-            }
-            return;
-        }
-
-        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        {
-            if (!prop.CanRead || prop.GetIndexParameters().Length != 0)
-                continue;
-
-            object? child;
-            try
-            {
-                child = prop.GetValue(value);
-            }
-            catch
-            {
-                continue;
-            }
-
-            VisitForRawRefs(child, $"{path}:{prop.Name}", hits, visited);
-            if (hits.Count >= 8)
+                hits.RemoveAt(hits.Count - 1);
                 return;
         }
     }

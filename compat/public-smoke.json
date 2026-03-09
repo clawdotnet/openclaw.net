@@ -1,0 +1,62 @@
+{
+  "version": 2,
+  "entries": [
+    {
+      "id": "peekaboo",
+      "category": "pure-skill",
+      "kind": "clawhub-skill",
+      "slug": "peekaboo",
+      "version": "1.0.0",
+      "expectedRelativePath": "skills/peekaboo/SKILL.md"
+    },
+    {
+      "id": "agentseo",
+      "category": "js-tool-plugin",
+      "kind": "npm-plugin",
+      "spec": "@agentseo/openclaw-plugin@0.1.4",
+      "packageName": "@agentseo/openclaw-plugin",
+      "pluginId": "openclaw-plugin",
+      "expectedStatus": "compatible",
+      "configJson": "{\"enabled\":true,\"apiKey\":\"agentseo_test_key\"}",
+      "expectedToolNames": ["agentseo_search", "agentseo_job_status"],
+      "expectedSkillNames": ["agentseo"]
+    },
+    {
+      "id": "openclaw-tavily",
+      "category": "ts-jiti-plugin",
+      "kind": "npm-plugin",
+      "spec": "openclaw-tavily@0.2.1",
+      "packageName": "openclaw-tavily",
+      "pluginId": "openclaw-tavily",
+      "installExtraPackages": ["jiti"],
+      "expectedStatus": "compatible",
+      "configJson": "{\"apiKey\":\"tvly_test_key\",\"includeAnswer\":\"advanced\",\"includeRawContent\":\"markdown\"}",
+      "expectedToolNames": ["tavily_search", "tavily_research"],
+      "expectedSkillNames": ["tavily-search"]
+    },
+    {
+      "id": "openclaw-tavily-invalid-config",
+      "category": "config-schema-plugin",
+      "kind": "npm-plugin",
+      "spec": "openclaw-tavily@0.2.1",
+      "packageName": "openclaw-tavily",
+      "pluginId": "openclaw-tavily",
+      "installExtraPackages": ["jiti"],
+      "expectedStatus": "incompatible",
+      "configJson": "{\"apiKey\":\"tvly_test_key\",\"includeAnswer\":42}",
+      "expectedDiagnosticCodes": ["config_one_of_mismatch"]
+    },
+    {
+      "id": "supermemory",
+      "category": "unsupported-surface-plugin",
+      "kind": "npm-plugin",
+      "spec": "@supermemory/openclaw-supermemory@2.0.2",
+      "packageName": "@supermemory/openclaw-supermemory",
+      "pluginId": "openclaw-supermemory",
+      "installExtraPackages": ["jiti"],
+      "expectedStatus": "incompatible",
+      "configJson": "{}",
+      "expectedDiagnosticCodes": ["unsupported_cli_registration"]
+    }
+  ]
+}

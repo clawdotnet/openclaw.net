@@ -763,7 +763,7 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
             SELECT json FROM sessions {where}
-            ORDER BY updated_at DESC
+            ORDER BY json_extract(json,'$.lastActiveAt') DESC, id ASC
             LIMIT $limit OFFSET $offset;
             """;
         if (!string.IsNullOrEmpty(query.ChannelId)) cmd.Parameters.AddWithValue("$channelId", query.ChannelId);

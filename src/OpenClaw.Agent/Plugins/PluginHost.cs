@@ -17,6 +17,8 @@ public sealed class PluginHost : IAsyncDisposable
     private readonly ILogger _logger;
     private readonly List<PluginBridgeProcess> _bridges = [];
     private readonly List<ITool> _pluginTools = [];
+    private readonly List<PluginLoadReport> _reports = [];
+    private readonly List<string> _skillRoots = [];
 
     public PluginHost(PluginsConfig config, string bridgeScriptPath, ILogger logger)
     {
@@ -31,6 +33,16 @@ public sealed class PluginHost : IAsyncDisposable
     public IReadOnlyList<ITool> Tools => _pluginTools;
 
     /// <summary>
+    /// Per-plugin reports for doctor/status surfaces.
+    /// </summary>
+    public IReadOnlyList<PluginLoadReport> Reports => _reports;
+
+    /// <summary>
+    /// Skill directories declared by successfully loaded plugins.
+    /// </summary>
+    public IReadOnlyList<string> SkillRoots => _skillRoots;
+
+    /// <summary>
     /// Discover, filter, and load all enabled plugins.
     /// Returns the list of tools registered by all plugins.
     /// </summary>
@@ -43,7 +55,11 @@ public sealed class PluginHost : IAsyncDisposable
         }
 
         // Discover
-        var discovered = PluginDiscovery.Discover(_config, workspacePath);
+        _reports.Clear();
+        _skillRoots.Clear();
+        var discovery = PluginDiscovery.DiscoverWithDiagnostics(_config, workspacePath);
+        var discovered = discovery.Plugins;
+        _reports.AddRange(discovery.Reports);
         _logger.LogInformation("Discovered {Count} plugin(s)", discovered.Count);
 
         // Filter by allow/deny/enabled/slots
@@ -59,6 +75,14 @@ public sealed class PluginHost : IAsyncDisposable
             }
             catch (Exception ex)
             {
+                _reports.Add(new PluginLoadReport
+                {
+                    PluginId = plugin.Manifest.Id,
+                    SourcePath = plugin.RootPath,
+                    EntryPath = plugin.EntryPath,
+                    Loaded = false,
+                    Error = ex.Message
+                });
                 _logger.LogError(ex, "Failed to load plugin '{PluginId}'", plugin.Manifest.Id);
             }
         }
@@ -74,24 +98,107 @@ public sealed class PluginHost : IAsyncDisposable
         var id = plugin.Manifest.Id;
         _logger.LogInformation("Loading plugin '{PluginId}' from {EntryPath}", id, plugin.EntryPath);
 
+        var configDiagnostics = PluginConfigValidator.Validate(plugin.Manifest, GetPluginConfig(id));
+        if (configDiagnostics.Count > 0)
+        {
+            _reports.Add(new PluginLoadReport
+            {
+                PluginId = id,
+                SourcePath = plugin.RootPath,
+                EntryPath = plugin.EntryPath,
+                Loaded = false,
+                Diagnostics = configDiagnostics.ToArray(),
+                Error = "Plugin config validation failed."
+            });
+            _logger.LogError("Plugin '{PluginId}' failed config validation: {Errors}",
+                id, string.Join(" | ", configDiagnostics.Select(d => d.Message)));
+            return;
+        }
+
         var bridge = new PluginBridgeProcess(_bridgeScriptPath, _logger);
-        var pluginConfig = _config.Entries.TryGetValue(id, out var entry) ? entry.Config : null;
+        var pluginConfig = GetPluginConfig(id);
 
-        var tools = await bridge.StartAsync(plugin.EntryPath, id, pluginConfig, ct);
+        var initResult = await bridge.StartAsync(plugin.EntryPath, id, pluginConfig, ct);
+        if (!initResult.Compatible)
+        {
+            _reports.Add(new PluginLoadReport
+            {
+                PluginId = id,
+                SourcePath = plugin.RootPath,
+                EntryPath = plugin.EntryPath,
+                Loaded = false,
+                Diagnostics = initResult.Diagnostics,
+                Error = "Plugin uses unsupported OpenClaw extension APIs."
+            });
+            _logger.LogError("Plugin '{PluginId}' is incompatible: {Errors}",
+                id, string.Join(" | ", initResult.Diagnostics.Select(d => d.Message)));
+            await bridge.DisposeAsync();
+            return;
+        }
+
         _bridges.Add(bridge);
+        var skillDirs = ResolveSkillDirectories(plugin).ToArray();
+        foreach (var skillDir in skillDirs)
+        {
+            if (!_skillRoots.Contains(skillDir, StringComparer.Ordinal))
+                _skillRoots.Add(skillDir);
+        }
 
-        foreach (var reg in tools)
+        var reportDiagnostics = new List<PluginCompatibilityDiagnostic>();
+        var registeredCount = 0;
+        foreach (var reg in initResult.Tools)
         {
             // Skip tools that clash with existing names
             if (_pluginTools.Any(t => t.Name == reg.Name))
             {
                 _logger.LogWarning("Plugin '{PluginId}' tool '{ToolName}' skipped — name already registered",
                     id, reg.Name);
+                reportDiagnostics.Add(new PluginCompatibilityDiagnostic
+                {
+                    Severity = "warning",
+                    Code = "duplicate_tool_name",
+                    Message = $"Tool '{reg.Name}' from plugin '{id}' was skipped because that tool name is already registered.",
+                    Surface = "registerTool",
+                    Path = reg.Name
+                });
                 continue;
             }
 
             _pluginTools.Add(new BridgedPluginTool(bridge, id, reg));
             _logger.LogInformation("  Registered tool '{ToolName}' from plugin '{PluginId}'", reg.Name, id);
+            registeredCount++;
+        }
+
+        _reports.Add(new PluginLoadReport
+        {
+            PluginId = id,
+            SourcePath = plugin.RootPath,
+            EntryPath = plugin.EntryPath,
+            Loaded = true,
+            ToolCount = registeredCount,
+            SkillDirectories = skillDirs,
+            Diagnostics = [.. initResult.Diagnostics, .. reportDiagnostics]
+        });
+    }
+
+    private JsonElement? GetPluginConfig(string pluginId)
+        => _config.Entries.TryGetValue(pluginId, out var entry) ? entry.Config : null;
+
+    private IEnumerable<string> ResolveSkillDirectories(DiscoveredPlugin plugin)
+    {
+        foreach (var skillDir in plugin.Manifest.Skills ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(skillDir))
+                continue;
+
+            var resolved = Path.GetFullPath(Path.Combine(plugin.RootPath, skillDir));
+            if (!Directory.Exists(resolved))
+            {
+                _logger.LogWarning("Plugin '{PluginId}' declared missing skill directory {Path}", plugin.Manifest.Id, resolved);
+                continue;
+            }
+
+            yield return resolved;
         }
     }
 
@@ -110,5 +217,7 @@ public sealed class PluginHost : IAsyncDisposable
         }
         _bridges.Clear();
         _pluginTools.Clear();
+        _reports.Clear();
+        _skillRoots.Clear();
     }
 }

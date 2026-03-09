@@ -28,8 +28,24 @@ const registeredTools = new Map();
 /** @type {Map<string, Function>} */
 const registeredServices = new Map();
 
-/** @type {Map<string, object>} */
-const registeredChannels = new Map();
+/** @type {Array<{severity: string, code: string, message: string, surface?: string, path?: string}>} */
+let compatibilityDiagnostics = [];
+
+function resetState() {
+  registeredTools.clear();
+  registeredServices.clear();
+  compatibilityDiagnostics = [];
+}
+
+function addDiagnostic(code, message, surface, path) {
+  compatibilityDiagnostics.push({
+    severity: "error",
+    code,
+    message,
+    surface,
+    path,
+  });
+}
 
 /**
  * Build the plugin API object that gets passed to the plugin's register function.
@@ -38,6 +54,7 @@ function createPluginApi(pluginId, pluginConfig, logger) {
   return {
     pluginId,
     config: pluginConfig ?? {},
+    pluginConfig: pluginConfig ?? {},
     logger,
     runtime: {
       // Stub — .NET gateway handles TTS natively if needed
@@ -75,27 +92,32 @@ function createPluginApi(pluginId, pluginConfig, logger) {
 
     registerChannel(channelDef) {
       const id = channelDef?.id ?? "unknown";
-      logger.warn(
-        `Plugin "${pluginId}" registered channel "${id}". Note: OpenClaw.NET bridge does not currently activate bridged channels. Use native .NET channels if possible.`
-      );
+      const message =
+        `Plugin "${pluginId}" registered channel "${id}", but bridged channels are not supported by OpenClaw.NET.`;
+      logger.error(message);
+      addDiagnostic("unsupported_channel_registration", message, "registerChannel", id);
     },
 
     registerGatewayMethod(name, _handler) {
-      logger.warn(
-        `Plugin "${pluginId}" tried to register gateway method "${name}". Custom gateway RPC methods are not currently supported via the .NET bridge.`
-      );
+      const message =
+        `Plugin "${pluginId}" tried to register gateway method "${name}", but custom gateway methods are not supported by OpenClaw.NET.`;
+      logger.error(message);
+      addDiagnostic("unsupported_gateway_method", message, "registerGatewayMethod", name);
     },
 
     registerCli(factory, opts) {
-      logger.warn(
-        `Plugin "${pluginId}" tried to register CLI command. CLI extensions are not supported via the .NET bridge.`
-      );
+      const message =
+        `Plugin "${pluginId}" tried to register a CLI command, but CLI extensions are not supported by OpenClaw.NET.`;
+      logger.error(message);
+      addDiagnostic("unsupported_cli_registration", message, "registerCli");
     },
 
     registerCommand(def) {
-      logger.warn(
-        `Plugin "${pluginId}" tried to register an auto-reply command. Auto-reply commands are not supported via the .NET bridge.`
-      );
+      const id = def?.name ?? def?.id ?? "unknown";
+      const message =
+        `Plugin "${pluginId}" tried to register command "${id}", but auto-reply commands are not supported by OpenClaw.NET.`;
+      logger.error(message);
+      addDiagnostic("unsupported_command_registration", message, "registerCommand", id);
     },
 
     registerService(def) {
@@ -105,9 +127,18 @@ function createPluginApi(pluginId, pluginConfig, logger) {
     },
 
     registerProvider(def) {
-      logger.warn(
-        `Plugin "${pluginId}" tried to register a model provider. Model provider authentication flows are not supported via the .NET bridge.`
-      );
+      const id = def?.id ?? "unknown";
+      const message =
+        `Plugin "${pluginId}" tried to register model provider "${id}", but model providers are not supported by OpenClaw.NET.`;
+      logger.error(message);
+      addDiagnostic("unsupported_provider_registration", message, "registerProvider", id);
+    },
+
+    on(eventName, _handler) {
+      const message =
+        `Plugin "${pluginId}" tried to register event hook "${eventName}", but bridge event hooks are not supported by OpenClaw.NET.`;
+      logger.error(message);
+      addDiagnostic("unsupported_event_hook", message, "on", eventName);
     },
   };
 }
@@ -130,16 +161,31 @@ async function loadPlugin(entryPath) {
   const ext = entryPath.split(".").pop()?.toLowerCase();
 
   if (ext === "ts") {
-    // Try loading via jiti for TypeScript support
+    const jitiPath = findJiti(entryPath);
+    if (!jitiPath) {
+      throw new Error(
+        `TypeScript plugin "${entryPath}" requires the 'jiti' package in the plugin dependency tree. Run 'npm install jiti' in the plugin directory.`
+      );
+    }
+
     try {
-      const jitiPath = findJiti(entryPath);
-      if (jitiPath) {
-        const { default: createJiti } = await import(jitiPath);
-        const jiti = createJiti(entryPath, { interopDefault: true });
-        return jiti(entryPath);
-      }
+      const { default: createJiti } = await import(jitiPath);
+      const jiti = createJiti(entryPath, { interopDefault: true });
+      return jiti(entryPath);
+    } catch (e) {
+      throw new Error(
+        `Failed to load TypeScript plugin "${entryPath}" via jiti: ${e?.message ?? "unknown error"}. Ensure 'jiti' is installed and the plugin is valid.`
+      );
+    }
+  }
+
+  if (ext === "js" || ext === "cjs") {
+    try {
+      const req = createRequire(pathToFileURL(entryPath));
+      const mod = req(entryPath);
+      return mod?.default ?? mod;
     } catch {
-      // Fall through to dynamic import
+      // Fall through to dynamic import for ESM-style .js packages.
     }
   }
 
@@ -150,20 +196,26 @@ async function loadPlugin(entryPath) {
 }
 
 function findJiti(entryPath) {
-  // Look for jiti in the plugin's node_modules, then global
+  // Look for jiti in the plugin's local node_modules, then walk up through
+  // shared node_modules layouts created by npm/yarn/pnpm workspaces.
   const dir = dirname(entryPath);
-  const candidates = [
-    join(dir, "node_modules", "jiti", "lib", "index.mjs"),
-    join(dir, "node_modules", "jiti", "dist", "jiti.mjs"),
-  ];
-
-  // Walk up directories looking for node_modules/jiti
   let current = dir;
   for (let i = 0; i < 10; i++) {
-    const candidate = join(current, "node_modules", "jiti", "lib", "index.mjs");
-    if (existsSync(candidate)) return candidate;
-    const candidate2 = join(current, "node_modules", "jiti", "dist", "jiti.mjs");
-    if (existsSync(candidate2)) return candidate2;
+    const candidates = [
+      join(current, "node_modules", "jiti", "lib", "index.mjs"),
+      join(current, "node_modules", "jiti", "lib", "jiti.mjs"),
+      join(current, "node_modules", "jiti", "lib", "jiti.cjs"),
+      join(current, "node_modules", "jiti", "dist", "jiti.mjs"),
+      join(current, "node_modules", "jiti", "dist", "jiti.cjs"),
+      join(current, "jiti", "lib", "index.mjs"),
+      join(current, "jiti", "lib", "jiti.mjs"),
+      join(current, "jiti", "lib", "jiti.cjs"),
+      join(current, "jiti", "dist", "jiti.mjs"),
+      join(current, "jiti", "dist", "jiti.cjs"),
+    ];
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate;
+    }
     const parent = dirname(current);
     if (parent === current) break;
     current = parent;
@@ -183,6 +235,7 @@ async function handleRequest(req) {
       const { entryPath, pluginId: pid, config } = req.params ?? {};
       pluginId = pid ?? "unknown";
       logger = createLogger(pluginId);
+      resetState();
 
       try {
         const pluginExport = await loadPlugin(entryPath);
@@ -193,7 +246,17 @@ async function handleRequest(req) {
         } else if (pluginExport && typeof pluginExport.register === "function") {
           await pluginExport.register(api);
         } else {
-          logger.warn("Plugin did not export a function or {register}");
+          const message = `Plugin "${pluginId}" did not export a function or { register } API.`;
+          logger.error(message);
+          addDiagnostic("invalid_plugin_export", message, "register");
+        }
+
+        if (compatibilityDiagnostics.length > 0) {
+          return {
+            tools: [],
+            compatible: false,
+            diagnostics: compatibilityDiagnostics,
+          };
         }
 
         // Start any registered services
@@ -215,7 +278,11 @@ async function handleRequest(req) {
           });
         }
 
-        return { tools };
+        return {
+          tools,
+          compatible: true,
+          diagnostics: compatibilityDiagnostics,
+        };
       } catch (e) {
         throw new Error(`Failed to load plugin "${pluginId}": ${e?.message}`);
       }

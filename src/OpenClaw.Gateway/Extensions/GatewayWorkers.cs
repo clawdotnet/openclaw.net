@@ -32,12 +32,13 @@ public static class GatewayWorkers
         IAgentRuntime agentRuntime,
         IReadOnlyDictionary<string, IChannelAdapter> channelAdapters,
         GatewayConfig config,
+        CronScheduler? cronScheduler,
         ToolApprovalService toolApprovalService,
         PairingManager pairingManager,
         ChatCommandProcessor commandProcessor)
     {
         StartSessionCleanup(lifetime, logger, sessionManager, sessionLocks, lockLastUsed);
-        StartInboundWorkers(lifetime, logger, workerCount, isNonLoopbackBind, sessionManager, sessionLocks, lockLastUsed, pipeline, middlewarePipeline, wsChannel, agentRuntime, config, toolApprovalService, pairingManager, commandProcessor);
+        StartInboundWorkers(lifetime, logger, workerCount, isNonLoopbackBind, sessionManager, sessionLocks, lockLastUsed, pipeline, middlewarePipeline, wsChannel, agentRuntime, config, cronScheduler, toolApprovalService, pairingManager, commandProcessor);
         StartOutboundWorkers(lifetime, logger, workerCount, pipeline, channelAdapters);
     }
 
@@ -125,6 +126,7 @@ public static class GatewayWorkers
         WebSocketChannel wsChannel,
         IAgentRuntime agentRuntime,
         GatewayConfig config,
+        CronScheduler? cronScheduler,
         ToolApprovalService toolApprovalService,
         PairingManager pairingManager,
         ChatCommandProcessor commandProcessor)
@@ -426,6 +428,8 @@ public static class GatewayWorkers
                         }
                         finally
                         {
+                            cronScheduler?.MarkJobCompleted(msg.CronJobName);
+
                             if (lockAcquired && lockObj is not null)
                             {
                                 try { lockObj.Release(); } catch { /* ignore */ }

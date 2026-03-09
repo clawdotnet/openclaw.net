@@ -18,9 +18,15 @@ public static class PluginDiscovery
     /// Follows OpenClaw precedence: config paths → workspace → global → bundled.
     /// </summary>
     public static List<DiscoveredPlugin> Discover(PluginsConfig pluginsConfig, string? workspacePath = null)
+        => DiscoverWithDiagnostics(pluginsConfig, workspacePath).Plugins;
+
+    /// <summary>
+    /// Discover plugins plus structured diagnostics for invalid plugin entries.
+    /// </summary>
+    public static PluginDiscoveryResult DiscoverWithDiagnostics(PluginsConfig pluginsConfig, string? workspacePath = null)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var result = new List<DiscoveredPlugin>();
+        var result = new PluginDiscoveryResult();
 
         // 1. Config paths
         foreach (var configPath in pluginsConfig.Load.Paths)
@@ -96,28 +102,33 @@ public static class PluginDiscovery
         return result;
     }
 
-    private static void ScanExtensionsDirectory(string extensionsDir, HashSet<string> seen, List<DiscoveredPlugin> result)
+    private static void ScanExtensionsDirectory(string extensionsDir, HashSet<string> seen, PluginDiscoveryResult result)
     {
-        // Scan for *.ts and *.js files directly in extensions/
+        // Scan for *.ts, *.js, and *.mjs files directly in extensions/
         foreach (var file in Directory.EnumerateFiles(extensionsDir, "*.ts"))
             TryAddPluginFromFile(file, seen, result);
         foreach (var file in Directory.EnumerateFiles(extensionsDir, "*.js"))
             TryAddPluginFromFile(file, seen, result);
+        foreach (var file in Directory.EnumerateFiles(extensionsDir, "*.mjs"))
+            TryAddPluginFromFile(file, seen, result);
 
-        // Scan for subdirectories with index.ts or index.js
+        // Scan for subdirectories with index.ts, index.js, or index.mjs
         foreach (var subDir in Directory.EnumerateDirectories(extensionsDir))
         {
             var indexTs = Path.Combine(subDir, "index.ts");
             var indexJs = Path.Combine(subDir, "index.js");
+            var indexMjs = Path.Combine(subDir, "index.mjs");
 
             if (File.Exists(indexTs))
                 TryAddPluginFromFile(indexTs, seen, result);
             else if (File.Exists(indexJs))
                 TryAddPluginFromFile(indexJs, seen, result);
+            else if (File.Exists(indexMjs))
+                TryAddPluginFromFile(indexMjs, seen, result);
         }
     }
 
-    private static void ScanDirectory(string dir, HashSet<string> seen, List<DiscoveredPlugin> result)
+    private static void ScanDirectory(string dir, HashSet<string> seen, PluginDiscoveryResult result)
     {
         // Check if this directory is itself a plugin (has manifest)
         var manifestPath = Path.Combine(dir, ManifestFileName);
@@ -140,7 +151,7 @@ public static class PluginDiscovery
             ScanDirectory(subDir, seen, result);
     }
 
-    private static void TryAddPluginFromFile(string filePath, HashSet<string> seen, List<DiscoveredPlugin> result)
+    private static void TryAddPluginFromFile(string filePath, HashSet<string> seen, PluginDiscoveryResult result)
     {
         var dir = Path.GetDirectoryName(filePath);
         if (string.IsNullOrEmpty(dir))
@@ -158,7 +169,7 @@ public static class PluginDiscovery
             if (!seen.Add(id))
                 return;
 
-            result.Add(new DiscoveredPlugin
+            result.Plugins.Add(new DiscoveredPlugin
             {
                 Manifest = new PluginManifest { Id = id },
                 RootPath = dir,
@@ -167,7 +178,7 @@ public static class PluginDiscovery
         }
     }
 
-    private static void TryAddPluginFromManifest(string pluginRoot, string manifestPath, HashSet<string> seen, List<DiscoveredPlugin> result)
+    private static void TryAddPluginFromManifest(string pluginRoot, string manifestPath, HashSet<string> seen, PluginDiscoveryResult result)
     {
         PluginManifest? manifest;
         try
@@ -177,18 +188,73 @@ public static class PluginDiscovery
         }
         catch
         {
+            result.Reports.Add(new PluginLoadReport
+            {
+                PluginId = Path.GetFileName(pluginRoot),
+                SourcePath = Path.GetFullPath(pluginRoot),
+                EntryPath = null,
+                Loaded = false,
+                Diagnostics =
+                [
+                    new PluginCompatibilityDiagnostic
+                    {
+                        Code = "invalid_manifest",
+                        Message = $"Failed to parse manifest '{manifestPath}'.",
+                        Path = Path.GetFullPath(manifestPath)
+                    }
+                ]
+            });
             return; // Skip broken manifests
         }
 
-        if (manifest is null || !seen.Add(manifest.Id))
+        if (manifest is null)
             return;
+
+        if (!seen.Add(manifest.Id))
+        {
+            result.Reports.Add(new PluginLoadReport
+            {
+                PluginId = manifest.Id,
+                SourcePath = Path.GetFullPath(pluginRoot),
+                EntryPath = null,
+                Loaded = false,
+                Diagnostics =
+                [
+                    new PluginCompatibilityDiagnostic
+                    {
+                        Code = "duplicate_plugin_id",
+                        Message = $"Plugin id '{manifest.Id}' was discovered more than once. Later entries are skipped.",
+                        Path = Path.GetFullPath(manifestPath)
+                    }
+                ]
+            });
+            return;
+        }
 
         // Find entry file
         var entryPath = FindEntryFile(pluginRoot);
         if (entryPath is null)
+        {
+            result.Reports.Add(new PluginLoadReport
+            {
+                PluginId = manifest.Id,
+                SourcePath = Path.GetFullPath(pluginRoot),
+                EntryPath = null,
+                Loaded = false,
+                Diagnostics =
+                [
+                    new PluginCompatibilityDiagnostic
+                    {
+                        Code = "entry_not_found",
+                        Message = $"No plugin entry file was found for '{manifest.Id}'. Expected index.ts, index.js, index.mjs, src/index.*, or a package.json openclaw.extensions entry.",
+                        Path = Path.GetFullPath(pluginRoot)
+                    }
+                ]
+            });
             return;
+        }
 
-        result.Add(new DiscoveredPlugin
+        result.Plugins.Add(new DiscoveredPlugin
         {
             Manifest = manifest,
             RootPath = Path.GetFullPath(pluginRoot),
@@ -196,7 +262,7 @@ public static class PluginDiscovery
         });
     }
 
-    private static void TryAddPluginPack(string dir, string packageJsonPath, HashSet<string> seen, List<DiscoveredPlugin> result)
+    private static void TryAddPluginPack(string dir, string packageJsonPath, HashSet<string> seen, PluginDiscoveryResult result)
     {
         try
         {
@@ -221,17 +287,53 @@ public static class PluginDiscovery
                 if (string.IsNullOrEmpty(relPath))
                     continue;
 
-                var entryPath = Path.GetFullPath(Path.Combine(dir, relPath));
-                if (!File.Exists(entryPath))
-                    continue;
-
                 var fileBase = Path.GetFileNameWithoutExtension(relPath);
                 var pluginId = extProp.GetArrayLength() > 1
                     ? $"{packName}/{fileBase}"
                     : packName;
 
-                if (!seen.Add(pluginId))
+                var entryPath = Path.GetFullPath(Path.Combine(dir, relPath));
+                if (!File.Exists(entryPath))
+                {
+                    result.Reports.Add(new PluginLoadReport
+                    {
+                        PluginId = pluginId,
+                        SourcePath = Path.GetFullPath(dir),
+                        EntryPath = entryPath,
+                        Loaded = false,
+                        Diagnostics =
+                        [
+                            new PluginCompatibilityDiagnostic
+                            {
+                                Code = "entry_not_found",
+                                Message = $"Package entry '{relPath}' for plugin '{pluginId}' does not exist.",
+                                Path = entryPath
+                            }
+                        ]
+                    });
                     continue;
+                }
+
+                if (!seen.Add(pluginId))
+                {
+                    result.Reports.Add(new PluginLoadReport
+                    {
+                        PluginId = pluginId,
+                        SourcePath = Path.GetFullPath(dir),
+                        EntryPath = entryPath,
+                        Loaded = false,
+                        Diagnostics =
+                        [
+                            new PluginCompatibilityDiagnostic
+                            {
+                                Code = "duplicate_plugin_id",
+                                Message = $"Plugin id '{pluginId}' was discovered more than once. Later entries are skipped.",
+                                Path = entryPath
+                            }
+                        ]
+                    });
+                    continue;
+                }
 
                 // Check for manifest in the entry's directory
                 var entryDir = Path.GetDirectoryName(entryPath) ?? dir;
@@ -256,7 +358,7 @@ public static class PluginDiscovery
                     manifest = new PluginManifest { Id = pluginId };
                 }
 
-                result.Add(new DiscoveredPlugin
+                result.Plugins.Add(new DiscoveredPlugin
                 {
                     Manifest = manifest,
                     RootPath = Path.GetFullPath(dir),
@@ -266,14 +368,33 @@ public static class PluginDiscovery
         }
         catch
         {
-            // Skip broken package.json
+            result.Reports.Add(new PluginLoadReport
+            {
+                PluginId = Path.GetFileName(dir),
+                SourcePath = Path.GetFullPath(dir),
+                EntryPath = null,
+                Loaded = false,
+                Diagnostics =
+                [
+                    new PluginCompatibilityDiagnostic
+                    {
+                        Code = "invalid_package_json",
+                        Message = $"Failed to parse package.json at '{packageJsonPath}'.",
+                        Path = Path.GetFullPath(packageJsonPath)
+                    }
+                ]
+            });
         }
     }
 
     private static string? FindEntryFile(string pluginRoot)
     {
         // Check common entry points
-        string[] candidates = ["index.ts", "index.js", "src/index.ts", "src/index.js"];
+        string[] candidates =
+        [
+            "index.ts", "index.js", "index.mjs",
+            "src/index.ts", "src/index.js", "src/index.mjs"
+        ];
 
         foreach (var candidate in candidates)
         {
@@ -314,8 +435,8 @@ public static class PluginDiscovery
             }
         }
 
-        // Fallback: any .ts or .js file in root
-        foreach (var ext in new[] { "*.ts", "*.js" })
+        // Fallback: any .ts, .js, or .mjs file in root
+        foreach (var ext in new[] { "*.ts", "*.js", "*.mjs" })
         {
             var files = Directory.GetFiles(pluginRoot, ext);
             if (files.Length == 1)

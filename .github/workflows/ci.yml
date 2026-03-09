@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8 * * *"
 
 env:
   DOTNET_VERSION: "10.0.x"
@@ -21,6 +24,12 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
 
       - name: Restore
         run: |
@@ -47,7 +56,7 @@ jobs:
   publish-aot:
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 
@@ -74,7 +83,7 @@ jobs:
   docker:
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       packages: write
     steps:
@@ -100,3 +109,40 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  public-compatibility-smoke:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 30
+    env:
+      OPENCLAW_PUBLIC_SMOKE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Restore
+        run: dotnet restore src/OpenClaw.Tests
+
+      - name: Build
+        run: dotnet build --no-restore -c Release src/OpenClaw.Tests
+
+      - name: Run Public Compatibility Smoke
+        run: dotnet test --no-build -c Release --filter "Category=PublicSmoke" --verbosity normal --logger "trx;LogFileName=public-smoke.trx" src/OpenClaw.Tests
+
+      - name: Upload smoke results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-smoke-results
+          path: "**/public-smoke.trx"

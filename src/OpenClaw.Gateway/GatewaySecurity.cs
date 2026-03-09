@@ -25,7 +25,8 @@ internal static class GatewaySecurity
         if (!value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             return null;
 
-        return value[prefix.Length..].Trim();
+        var token = value[prefix.Length..].Trim();
+        return string.IsNullOrWhiteSpace(token) ? null : token;
     }
 
     public static string? GetToken(HttpContext ctx, bool allowQueryStringToken)

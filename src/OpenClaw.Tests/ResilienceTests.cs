@@ -1,6 +1,7 @@
 using OpenClaw.Agent;
 using OpenClaw.Core.Http;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Pipeline;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -90,6 +91,10 @@ public sealed class ResilienceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("still broken"), CancellationToken.None));
         Assert.Equal(CircuitState.Open, cb.State);
+
+        var ex = await Assert.ThrowsAsync<CircuitOpenException>(() =>
+            cb.ExecuteAsync(_ => Task.FromResult(1), CancellationToken.None));
+        Assert.True(ex.RetryAfter > TimeSpan.FromMilliseconds(50));
     }
 
     [Fact]
@@ -127,6 +132,29 @@ public sealed class ResilienceTests
 
         // Should still be closed — cancellation is not a service failure
         Assert.Equal(CircuitState.Closed, cb.State);
+    }
+
+    [Theory]
+    [InlineData("@hourly", 0, 15, 1, 1, true)]
+    [InlineData("@daily", 0, 0, 1, 1, true)]
+    [InlineData("@weekly", 0, 0, 4, 1, true)]
+    [InlineData("@monthly", 0, 0, 1, 1, true)]
+    [InlineData("1-5/2 * * * *", 3, 9, 1, 1, true)]
+    [InlineData("1-5/2 * * * *", 4, 9, 1, 1, false)]
+    public void CronScheduler_IsTime_SupportsAliasesAndRangeSteps(string expression, int minute, int hour, int day, int month, bool expected)
+    {
+        var time = new DateTimeOffset(2026, month, day, hour, minute, 0, TimeSpan.Zero);
+        Assert.Equal(expected, CronScheduler.IsTime(expression, time));
+    }
+
+    [Fact]
+    public void CronScheduler_IsTime_SupportsLastDayOfMonth()
+    {
+        var matching = new DateTimeOffset(2026, 2, 28, 0, 0, 0, TimeSpan.Zero);
+        var notMatching = new DateTimeOffset(2026, 2, 27, 0, 0, 0, TimeSpan.Zero);
+
+        Assert.True(CronScheduler.IsTime("0 0 L * *", matching));
+        Assert.False(CronScheduler.IsTime("0 0 L * *", notMatching));
     }
 
     [Fact]

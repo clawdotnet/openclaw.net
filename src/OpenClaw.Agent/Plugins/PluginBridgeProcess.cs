@@ -20,6 +20,12 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
     private Task? _readLoop;
     private readonly string _bridgeScriptPath;
     private readonly ILogger _logger;
+    private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
+    private string? _entryPath;
+    private string? _pluginId;
+    private JsonElement? _pluginConfig;
+    private volatile bool _disposed;
+    private volatile bool _intentionalShutdown;
 
     public PluginBridgeProcess(string bridgeScriptPath, ILogger logger)
     {
@@ -28,92 +34,58 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
     }
 
     /// <summary>
+    /// Returns a best-effort memory snapshot for the current Node.js bridge process.
+    /// </summary>
+    public PluginBridgeMemorySnapshot? GetMemorySnapshot()
+    {
+        var process = _process;
+        if (process is null)
+            return null;
+
+        try
+        {
+            if (process.HasExited)
+                return null;
+
+            process.Refresh();
+            return new PluginBridgeMemorySnapshot
+            {
+                ProcessId = process.Id,
+                WorkingSetBytes = process.WorkingSet64,
+                PrivateMemoryBytes = process.PrivateMemorySize64
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Start the bridge process and initialize the plugin.
     /// Returns the list of tools the plugin registered.
     /// </summary>
-    public async Task<List<PluginToolRegistration>> StartAsync(
+    public async Task<BridgeInitResult> StartAsync(
         string entryPath,
         string pluginId,
         JsonElement? pluginConfig,
         CancellationToken ct)
     {
-        var nodeExe = FindNodeExecutable()
-            ?? throw new InvalidOperationException(
-                "Node.js is required for OpenClaw plugin support but was not found. " +
-                "Install Node.js 18+ and ensure 'node' is on your PATH.");
+        _entryPath = entryPath;
+        _pluginId = pluginId;
+        _pluginConfig = pluginConfig;
+        _intentionalShutdown = false;
 
-        var psi = new ProcessStartInfo
-        {
-            FileName = nodeExe,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        psi.ArgumentList.Add("--experimental-vm-modules");
-        psi.ArgumentList.Add(_bridgeScriptPath);
-
-        // Set working directory to the plugin's directory for proper module resolution
-        psi.WorkingDirectory = Path.GetDirectoryName(entryPath) ?? ".";
-
-        _process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start Node.js plugin bridge process.");
-
-        _process.ErrorDataReceived += (sender, e) =>
-        {
-            if (!string.IsNullOrWhiteSpace(e.Data))
-            {
-                _logger.LogInformation("[Node] {Output}", e.Data);
-            }
-        };
-        _process.BeginErrorReadLine();
-
-        // Start reading stdout for responses
-        _readLoop = Task.Run(() => ReadLoopAsync(_process), CancellationToken.None);
-
-        // Send init request
-        var initParams = new Dictionary<string, object?>
-        {
-            ["entryPath"] = entryPath,
-            ["pluginId"] = pluginId,
-            ["config"] = pluginConfig
-        };
-
-        var response = await SendRequestAsync("init", initParams, ct);
+        var response = await InitializeProcessAsync(ct);
 
         if (response.Error is not null)
             throw new InvalidOperationException($"Plugin init failed: {response.Error.Message}");
 
-        // Parse tool registrations from result
-        var tools = new List<PluginToolRegistration>();
+        if (response.Result is null)
+            return new BridgeInitResult();
 
-        if (response.Result is { } result && result.TryGetProperty("tools", out var toolsArray))
-        {
-            foreach (var toolEl in toolsArray.EnumerateArray())
-            {
-                var name = toolEl.GetProperty("name").GetString();
-                var desc = toolEl.TryGetProperty("description", out var descEl) ? descEl.GetString() : "";
-                var optional = toolEl.TryGetProperty("optional", out var optEl) && optEl.GetBoolean();
-                var parameters = toolEl.TryGetProperty("parameters", out var paramEl)
-                    ? paramEl.Clone()
-                    : JsonDocument.Parse("""{"type":"object","properties":{}}""").RootElement;
-
-                if (!string.IsNullOrEmpty(name))
-                {
-                    tools.Add(new PluginToolRegistration
-                    {
-                        Name = name,
-                        Description = desc ?? "",
-                        Parameters = parameters,
-                        Optional = optional
-                    });
-                }
-            }
-        }
-
-        return tools;
+        var init = JsonSerializer.Deserialize(response.Result.Value.GetRawText(), CoreJsonContext.Default.BridgeInitResult);
+        return init ?? new BridgeInitResult();
     }
 
     /// <summary>
@@ -121,6 +93,8 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
     /// </summary>
     public async Task<string> ExecuteToolAsync(string toolName, string argumentsJson, CancellationToken ct)
     {
+        await EnsureProcessRunningAsync(ct);
+
         if (_process is null || _process.HasExited)
             return "Error: Plugin bridge process is not running.";
 
@@ -157,6 +131,9 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        _disposed = true;
+        _intentionalShutdown = true;
+
         if (_process is null || _process.HasExited)
             return;
 
@@ -186,13 +163,7 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
 
         _process.Dispose();
         _process = null;
-
-        // Complete any pending requests with cancellation
-        foreach (var kvp in _pending)
-        {
-            kvp.Value.TrySetCanceled();
-        }
-        _pending.Clear();
+        CancelPendingRequests();
     }
 
     private async Task<BridgeResponse> SendRequestAsync(
@@ -255,9 +226,13 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
                         tcs.TrySetResult(response);
                     }
                 }
+                catch (JsonException ex)
+                {
+                    _logger.LogWarning(ex, "Plugin bridge emitted malformed JSON: {Line}", Truncate(line, 200));
+                }
                 catch
                 {
-                    // Ignore malformed output
+                    _logger.LogWarning("Plugin bridge emitted unreadable output: {Line}", Truncate(line, 200));
                 }
             }
         }
@@ -266,12 +241,159 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
             // Process exited or stream closed
         }
 
-        // Cancel all pending requests
-        foreach (var kvp in _pending)
+        CancelPendingRequests();
+
+        if (_disposed || _intentionalShutdown)
+            return;
+
+        _logger.LogWarning("Plugin bridge process for '{PluginId}' exited unexpectedly. Restarting.", _pluginId ?? "unknown");
+        _ = Task.Run(() => RestartAsync(CancellationToken.None));
+    }
+
+    private async Task EnsureProcessRunningAsync(CancellationToken ct)
+    {
+        if (_process is not null && !_process.HasExited)
+            return;
+
+        await RestartAsync(ct);
+    }
+
+    private async Task RestartAsync(CancellationToken ct)
+    {
+        if (_disposed)
+            return;
+
+        if (string.IsNullOrWhiteSpace(_entryPath) || string.IsNullOrWhiteSpace(_pluginId))
+            return;
+
+        await _lifecycleGate.WaitAsync(ct);
+        try
         {
-            kvp.Value.TrySetCanceled();
+            if (_disposed)
+                return;
+
+            if (_process is not null && !_process.HasExited)
+                return;
+
+            var delay = TimeSpan.FromSeconds(1);
+            Exception? lastError = null;
+            for (var attempt = 1; attempt <= 3; attempt++)
+            {
+                try
+                {
+                    CleanupProcess();
+                    _intentionalShutdown = false;
+                    await InitializeProcessAsync(ct);
+                    _logger.LogInformation("Plugin bridge for '{PluginId}' restarted on attempt {Attempt}.", _pluginId, attempt);
+                    return;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                    _logger.LogWarning(ex, "Failed to restart plugin bridge for '{PluginId}' on attempt {Attempt}.", _pluginId, attempt);
+                    CleanupProcess();
+                    if (attempt < 3)
+                        await Task.Delay(delay, ct);
+                    delay = TimeSpan.FromSeconds(delay.TotalSeconds * 2);
+                }
+            }
+
+            _logger.LogError(lastError, "Plugin bridge for '{PluginId}' could not be restarted.", _pluginId);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
         }
     }
+
+    private async Task<BridgeResponse> InitializeProcessAsync(CancellationToken ct)
+    {
+        StartProcess(_entryPath!);
+
+        var initParams = new Dictionary<string, object?>
+        {
+            ["entryPath"] = _entryPath,
+            ["pluginId"] = _pluginId,
+            ["config"] = _pluginConfig
+        };
+
+        return await SendRequestAsync("init", initParams, ct);
+    }
+
+    private void StartProcess(string entryPath)
+    {
+        var nodeExe = FindNodeExecutable()
+            ?? throw new InvalidOperationException(
+                "Node.js is required for OpenClaw plugin support but was not found. " +
+                "Install Node.js 18+ and ensure 'node' is on your PATH.");
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = nodeExe,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        psi.ArgumentList.Add("--experimental-vm-modules");
+        psi.ArgumentList.Add(_bridgeScriptPath);
+        psi.WorkingDirectory = Path.GetDirectoryName(entryPath) ?? ".";
+
+        var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start Node.js plugin bridge process.");
+
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Data))
+                _logger.LogInformation("[Node] {Output}", e.Data);
+        };
+        process.BeginErrorReadLine();
+
+        _process = process;
+        _readLoop = Task.Run(() => ReadLoopAsync(process), CancellationToken.None);
+    }
+
+    private void CleanupProcess()
+    {
+        if (_process is null)
+            return;
+
+        try
+        {
+            if (!_process.HasExited)
+                _process.Kill(entireProcessTree: true);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            _process.Dispose();
+        }
+        catch
+        {
+        }
+
+        _process = null;
+    }
+
+    private void CancelPendingRequests()
+    {
+        foreach (var kvp in _pending)
+            kvp.Value.TrySetCanceled();
+
+        _pending.Clear();
+    }
+
+    private static string Truncate(string value, int maxChars)
+        => value.Length <= maxChars ? value : value[..maxChars] + "...";
 
     private static string? FindNodeExecutable()
     {
@@ -386,4 +508,11 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
         using var doc = JsonDocument.Parse(ms);
         return doc.RootElement.Clone();
     }
+}
+
+public sealed class PluginBridgeMemorySnapshot
+{
+    public int ProcessId { get; init; }
+    public long WorkingSetBytes { get; init; }
+    public long PrivateMemoryBytes { get; init; }
 }

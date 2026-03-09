@@ -4,6 +4,7 @@ using OpenClaw.Agent;
 using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Skills;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -77,5 +78,54 @@ public class AgentRuntimeTests
         // So final count should be _maxHistoryTurns + 1.
         
         Assert.True(session.History.Count <= 6, $"Expected history <= 6 but was {session.History.Count}"); 
+    }
+
+    [Fact]
+    public async Task ReloadSkillsAsync_UpdatesLoadedSkillNames()
+    {
+        var workspaceDir = Path.Combine(Path.GetTempPath(), $"openclaw-skills-{Guid.NewGuid():N}");
+        var skillDir = Path.Combine(workspaceDir, "skills", "reloadable");
+        Directory.CreateDirectory(skillDir);
+
+        try
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(skillDir, "SKILL.md"),
+                """
+                ---
+                name: reloadable-skill
+                description: Hot reloaded during tests
+                ---
+                Use this skill after reload.
+                """);
+
+            var agent = new AgentRuntime(
+                _chatClient,
+                _tools,
+                _memory,
+                _config,
+                maxHistoryTurns: 5,
+                skillsConfig: new SkillsConfig
+                {
+                    Load = new SkillLoadConfig
+                    {
+                        IncludeBundled = false,
+                        IncludeManaged = false,
+                        IncludeWorkspace = true
+                    }
+                },
+                skillWorkspacePath: workspaceDir);
+
+            Assert.Empty(agent.LoadedSkillNames);
+
+            var loaded = await agent.ReloadSkillsAsync();
+
+            Assert.Single(loaded);
+            Assert.Contains("reloadable-skill", loaded);
+        }
+        finally
+        {
+            Directory.Delete(workspaceDir, recursive: true);
+        }
     }
 }

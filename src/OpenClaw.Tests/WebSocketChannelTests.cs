@@ -119,4 +119,51 @@ public sealed class WebSocketChannelTests
         Assert.Equal("hello", env.Text);
         Assert.Equal("m1", env.InReplyToMessageId);
     }
+
+    [Fact]
+    public async Task HandleConnectionAsync_SendsStructuredErrorBeforeClosingWhenRateLimited()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig
+        {
+            MaxMessageBytes = 1024,
+            MessagesPerMinutePerConnection = 1
+        });
+        var ws = new TestWebSocket();
+
+        ws.QueueReceiveText("""{"type":"user_message","text":"first"}""");
+        ws.QueueReceiveText("""{"type":"user_message","text":"second"}""");
+
+        var receivedCount = 0;
+        channel.OnMessageReceived += (_, _) =>
+        {
+            receivedCount++;
+            return ValueTask.CompletedTask;
+        };
+
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+
+        Assert.Equal(1, receivedCount);
+        Assert.NotEmpty(ws.Sent);
+
+        var payload = System.Text.Encoding.UTF8.GetString(ws.Sent.Last());
+        var env = JsonSerializer.Deserialize(payload, CoreJsonContext.Default.WsServerEnvelope);
+        Assert.Equal("error", env!.Type);
+        Assert.Equal("Rate limit exceeded", env.Text);
+    }
+
+    [Fact]
+    public async Task HandleConnectionAsync_ClosesOnReceiveTimeout()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig
+        {
+            MaxMessageBytes = 1024,
+            ReceiveTimeoutSeconds = 1
+        });
+        var ws = new TestWebSocket();
+        ws.BlockReceiveUntilCancelled();
+
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+
+        Assert.Equal(WebSocketState.Closed, ws.State);
+    }
 }

@@ -17,7 +17,8 @@ public static class SkillLoader
     public static List<SkillDefinition> LoadAll(
         SkillsConfig config,
         string? workspacePath,
-        ILogger logger)
+        ILogger logger,
+        IReadOnlyList<string>? pluginSkillDirs = null)
     {
         if (!config.Enabled)
         {
@@ -52,7 +53,17 @@ public static class SkillLoader
                 ScanDirectory(managedDir, SkillSource.Managed, allSkills, logger);
         }
 
-        // 4. Workspace skills (highest precedence)
+        // 4. Plugin-packaged skills
+        if (pluginSkillDirs is not null)
+        {
+            foreach (var pluginDir in pluginSkillDirs)
+            {
+                if (Directory.Exists(pluginDir))
+                    ScanDirectory(pluginDir, SkillSource.Plugin, allSkills, logger);
+            }
+        }
+
+        // 5. Workspace skills (highest precedence)
         if (config.Load.IncludeWorkspace && !string.IsNullOrWhiteSpace(workspacePath))
         {
             var wsSkillsDir = Path.Combine(workspacePath, "skills");
@@ -108,6 +119,21 @@ public static class SkillLoader
     {
         try
         {
+            var rootSkillFile = Path.Combine(rootDir, "SKILL.md");
+            if (File.Exists(rootSkillFile))
+            {
+                try
+                {
+                    var skill = ParseSkillFile(rootSkillFile, rootDir, source);
+                    if (skill is not null)
+                        results[skill.Name] = skill;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to parse skill at {Path}", rootSkillFile);
+                }
+            }
+
             foreach (var skillDir in Directory.GetDirectories(rootDir))
             {
                 var skillFile = Path.Combine(skillDir, "SKILL.md");

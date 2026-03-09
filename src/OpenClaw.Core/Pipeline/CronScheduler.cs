@@ -16,6 +16,7 @@ public sealed class CronScheduler : BackgroundService
     private readonly GatewayConfig _config;
     private readonly ILogger<CronScheduler> _logger;
     private readonly ChannelWriter<InboundMessage> _pipelineChannel;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _runningJobs = new(StringComparer.OrdinalIgnoreCase);
 
     public CronScheduler(GatewayConfig config, ILogger<CronScheduler> logger, ChannelWriter<InboundMessage> pipelineChannel)
     {
@@ -45,7 +46,7 @@ public sealed class CronScheduler : BackgroundService
             {
                 var now = DateTimeOffset.UtcNow;
                 _logger.LogInformation("Triggering cron job '{JobName}' on startup at {Time}", job.Name, now);
-                await EnqueueJobAsync(job, stoppingToken);
+                await EnqueueJobIfNotRunningAsync(job, stoppingToken);
             }
             catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
@@ -79,9 +80,37 @@ public sealed class CronScheduler : BackgroundService
                 if (IsTime(job.CronExpression, now))
                 {
                     _logger.LogInformation("Triggering cron job '{JobName}' at {Time}", job.Name, now);
-                    await EnqueueJobAsync(job, stoppingToken);
+                    await EnqueueJobIfNotRunningAsync(job, stoppingToken);
                 }
             }
+        }
+    }
+
+    public void MarkJobCompleted(string? jobName)
+    {
+        if (string.IsNullOrWhiteSpace(jobName))
+            return;
+
+        _runningJobs.TryRemove(jobName, out _);
+    }
+
+    private async ValueTask EnqueueJobIfNotRunningAsync(CronJobConfig job, CancellationToken ct)
+    {
+        var jobName = string.IsNullOrWhiteSpace(job.Name) ? "unnamed" : job.Name;
+        if (!_runningJobs.TryAdd(jobName, 0))
+        {
+            _logger.LogWarning("Skipping cron job '{JobName}' because a previous invocation is still running.", jobName);
+            return;
+        }
+
+        try
+        {
+            await EnqueueJobAsync(job, ct);
+        }
+        catch
+        {
+            _runningJobs.TryRemove(jobName, out _);
+            throw;
         }
     }
 
@@ -98,6 +127,7 @@ public sealed class CronScheduler : BackgroundService
         {
             IsSystem = true,
             SessionId = sessionId,
+            CronJobName = job.Name,
             ChannelId = channelId,
             SenderId = senderId,
             Subject = job.Subject ?? (string.IsNullOrWhiteSpace(job.Name) ? null : $"OpenClaw Cron: {job.Name}"),
@@ -111,57 +141,84 @@ public sealed class CronScheduler : BackgroundService
     /// Evaluates a standard 5-field cron expression against a given time.
     /// (Minutes, Hours, Day of Month, Month, Day of Week)
     /// </summary>
-    private static bool IsTime(string expression, DateTimeOffset time)
+    internal static bool IsTime(string expression, DateTimeOffset time)
     {
         if (string.IsNullOrWhiteSpace(expression)) return false;
+
+        expression = NormalizeExpression(expression);
 
         var parts = expression.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length != 5) return false;
 
-        var minMatch = MatchField(parts[0], time.Minute);
-        var hourMatch = MatchField(parts[1], time.Hour);
-        var domMatch = MatchField(parts[2], time.Day);
-        var monthMatch = MatchField(parts[3], time.Month);
-        var dowMatch = MatchField(parts[4], (int)time.DayOfWeek);
+        var minMatch = MatchField(parts[0], time.Minute, 0, 59, time);
+        var hourMatch = MatchField(parts[1], time.Hour, 0, 23, time);
+        var domMatch = MatchField(parts[2], time.Day, 1, 31, time);
+        var monthMatch = MatchField(parts[3], time.Month, 1, 12, time);
+        var dowMatch = MatchField(parts[4], (int)time.DayOfWeek, 0, 6, time);
 
         return minMatch && hourMatch && domMatch && monthMatch && dowMatch;
     }
 
-    private static bool MatchField(string field, int value)
+    private static string NormalizeExpression(string expression)
+    {
+        return expression.Trim().ToLowerInvariant() switch
+        {
+            "@hourly" => "0 * * * *",
+            "@daily" => "0 0 * * *",
+            "@weekly" => "0 0 * * 0",
+            "@monthly" => "0 0 1 * *",
+            _ => expression
+        };
+    }
+
+    private static bool MatchField(string field, int value, int minValue, int maxValue, DateTimeOffset time)
     {
         if (field == "*") return true;
+
+        if (field == "L")
+            return value == DateTime.DaysInMonth(time.Year, time.Month);
 
         if (int.TryParse(field, out var exact))
             return exact == value;
 
+        if (field.Contains(','))
+            return field.Split(',').Any(option => MatchField(option, value, minValue, maxValue, time));
+
         if (field.Contains('/'))
         {
             var stepParts = field.Split('/');
-            if (stepParts.Length == 2 && stepParts[0] == "*" && int.TryParse(stepParts[1], out var step))
-                return step > 0 && value % step == 0;
-        }
-
-        if (field.Contains(','))
-        {
-            var options = field.Split(',');
-            foreach (var opt in options)
+            if (stepParts.Length == 2 && int.TryParse(stepParts[1], out var step) && step > 0)
             {
-                if (int.TryParse(opt, out var parsed) && parsed == value)
-                    return true;
+                var range = stepParts[0];
+                if (range == "*")
+                    return (value - minValue) % step == 0;
+
+                if (TryParseRange(range, out var start, out var end))
+                {
+                    if (value < start || value > end)
+                        return false;
+
+                    return (value - start) % step == 0;
+                }
             }
         }
 
-        if (field.Contains('-'))
-        {
-            var rangeParts = field.Split('-');
-            if (rangeParts.Length == 2 && 
-                int.TryParse(rangeParts[0], out var start) && 
-                int.TryParse(rangeParts[1], out var end))
-            {
-                return value >= start && value <= end;
-            }
-        }
+        if (TryParseRange(field, out var rangeStart, out var rangeEnd))
+            return value >= rangeStart && value <= rangeEnd;
 
         return false;
+    }
+
+    private static bool TryParseRange(string field, out int start, out int end)
+    {
+        start = 0;
+        end = 0;
+        var rangeParts = field.Split('-');
+        if (rangeParts.Length != 2)
+            return false;
+
+        return int.TryParse(rangeParts[0], out start)
+            && int.TryParse(rangeParts[1], out end)
+            && start <= end;
     }
 }

@@ -122,6 +122,14 @@ public static class ConfigValidator
             if (string.IsNullOrWhiteSpace(appSecret))
                 errors.Add("Channels.WhatsApp.ValidateSignature is true but WebhookAppSecret/WebhookAppSecretRef is not configured.");
         }
+        if (!config.Channels.AllowlistSemantics.Equals("legacy", StringComparison.OrdinalIgnoreCase) &&
+            !config.Channels.AllowlistSemantics.Equals("strict", StringComparison.OrdinalIgnoreCase))
+        {
+            errors.Add("Channels.AllowlistSemantics must be 'legacy' or 'strict'.");
+        }
+        ValidateDmPolicy("Channels.Sms.DmPolicy", config.Channels.Sms.DmPolicy, errors);
+        ValidateDmPolicy("Channels.Telegram.DmPolicy", config.Channels.Telegram.DmPolicy, errors);
+        ValidateDmPolicy("Channels.WhatsApp.DmPolicy", config.Channels.WhatsApp.DmPolicy, errors);
 
         // Cron
         if (config.Cron.Enabled)
@@ -223,5 +231,21 @@ public static class ConfigValidator
         }
 
         return false;
+    }
+
+    private static void ValidateDmPolicy(string field, string? value, ICollection<string> errors)
+    {
+        if (value is null)
+        {
+            errors.Add($"{field} must be 'open', 'pairing', or 'closed'.");
+            return;
+        }
+
+        if (!value.Equals("open", StringComparison.OrdinalIgnoreCase) &&
+            !value.Equals("pairing", StringComparison.OrdinalIgnoreCase) &&
+            !value.Equals("closed", StringComparison.OrdinalIgnoreCase))
+        {
+            errors.Add($"{field} must be 'open', 'pairing', or 'closed'.");
+        }
     }
 }

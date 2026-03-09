@@ -84,15 +84,27 @@ public sealed class WebSocketChannel : IChannelAdapter
                 if (text is null)
                     break;
 
-                if (!state.Rate.TryConsume())
-                {
-                    await CloseIfOpenAsync(ws, WebSocketCloseStatus.PolicyViolation, "rate limit exceeded", ct);
-                    break;
-                }
-
                 var parsed = TryParseClientEnvelope(text);
                 if (parsed.IsEnvelope)
                     state.UseJsonEnvelope = true;
+
+                if (!state.Rate.TryConsume())
+                {
+                    if (state.UseJsonEnvelope)
+                    {
+                        await SendEnvelopeToStateAsync(
+                            state,
+                            new WsServerEnvelope
+                            {
+                                Type = "error",
+                                Text = "Rate limit exceeded"
+                            },
+                            ct);
+                    }
+
+                    await CloseIfOpenAsync(ws, WebSocketCloseStatus.PolicyViolation, "rate limit exceeded", ct);
+                    break;
+                }
 
                 var msg = new InboundMessage
                 {
@@ -166,6 +178,18 @@ public sealed class WebSocketChannel : IChannelAdapter
 
         var payload = JsonSerializer.SerializeToUtf8Bytes(envelope, CoreJsonContext.Default.WsServerEnvelope);
 
+        await SendPayloadAsync(state, payload, ct);
+    }
+
+    private async ValueTask SendEnvelopeToStateAsync(ConnectionState state, WsServerEnvelope envelope, CancellationToken ct)
+    {
+        var payload = JsonSerializer.SerializeToUtf8Bytes(envelope, CoreJsonContext.Default.WsServerEnvelope);
+
+        await SendPayloadAsync(state, payload, ct);
+    }
+
+    private static async ValueTask SendPayloadAsync(ConnectionState state, byte[] payload, CancellationToken ct)
+    {
         await state.SendLock.WaitAsync(ct);
         try
         {
@@ -335,12 +359,24 @@ public sealed class WebSocketChannel : IChannelAdapter
 
                 var memory = buffer.AsMemory(total, buffer.Length - total);
                 ValueWebSocketReceiveResult result;
+                using var timeoutCts = _config.ReceiveTimeoutSeconds > 0
+                    ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+                    : null;
+
+                if (timeoutCts is not null)
+                    timeoutCts.CancelAfter(TimeSpan.FromSeconds(_config.ReceiveTimeoutSeconds));
+
                 try
                 {
-                    result = await ws.ReceiveAsync(memory, ct);
+                    result = await ws.ReceiveAsync(memory, timeoutCts?.Token ?? ct);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
+                    return null;
+                }
+                catch (OperationCanceledException) when (timeoutCts?.IsCancellationRequested == true)
+                {
+                    await CloseIfOpenAsync(ws, WebSocketCloseStatus.PolicyViolation, "receive timeout", CancellationToken.None);
                     return null;
                 }
                 catch (ObjectDisposedException)

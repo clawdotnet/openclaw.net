@@ -12,7 +12,7 @@ Self-hosted OpenClaw.NET gateway + agent runtime in .NET (NativeAOT-friendly).
 
 ## Architecture
 
-OpenClaw.NET uses a decoupled architecture to achieve NativeAOT performance while retaining full compatibility with the massive JavaScript plugin ecosystem.
+OpenClaw.NET uses a decoupled architecture to achieve NativeAOT performance while preserving practical compatibility with the upstream tool-plugin ecosystem through a Node.js bridge.
 
 ```mermaid
 graph TD
@@ -142,12 +142,26 @@ If `AllowedOrigins` is not configured and the client sends an `Origin` header, t
 
 ## Plugin Ecosystem Compatibility 🔌
 
-OpenClaw.NET natively supports the original [OpenClaw TypeScript/JavaScript plugin ecosystem](https://github.com/openclaw/openclaw). You don't need to learn C# to extend your agent!
+OpenClaw.NET supports the upstream [OpenClaw TypeScript/JavaScript plugin format](https://github.com/openclaw/openclaw) for the plugin surfaces that are covered by the bridge and test suite.
 
-When you enable `OpenClaw:Plugins:Enabled=true`, the Gateway spawns a highly-optimized Node.js JSON-RPC bridge.
-Simply drop any standard OpenClaw `.ts` or `.js` plugin into your `.openclaw/extensions` folder (or configure `Plugins:Load:Paths`), and the .NET runtime will expose those tools to the AI seamlessly.
+When you enable `OpenClaw:Plugins:Enabled=true`, the Gateway spawns a Node.js JSON-RPC bridge. The tested support matrix today is:
 
-For full details, feature matrices, and TypeScript requirements (like `jiti`), please see the **[Plugin Compatibility Guide](COMPATIBILITY.md)**.
+- `registerTool()` and tool execution
+- `registerService()` lifecycle (`start` / `stop`)
+- plugin-packaged skills declared in `openclaw.plugin.json` `skills[]`
+- `.js`, `.mjs`, and `.ts` discovery in documented install locations
+- manifest config validation for the supported JSON Schema subset
+
+Unsupported extension-host APIs fail fast with explicit diagnostics instead of silently degrading:
+
+- `registerChannel`
+- `registerGatewayMethod`
+- `registerCli`
+- `registerCommand`
+- `registerProvider`
+- `api.on(...)`
+
+The `/doctor` report includes per-plugin load diagnostics, and the repo now includes hermetic bridge tests plus a pinned public smoke manifest for mainstream packages. For the exact matrix and TypeScript requirements such as `jiti`, see **[Plugin Compatibility Guide](COMPATIBILITY.md)**.
 
 ## Semantic Kernel interop (optional)
 

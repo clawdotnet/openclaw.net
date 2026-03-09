@@ -14,9 +14,8 @@
     <DebuggerSupport>false</DebuggerSupport>
     <MetricsSupport>true</MetricsSupport>
     <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
-    <!-- Playwright is not AOT-compatible (deep reflection usage). Suppress all trim/AOT analysis warnings. -->
-    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
-    <NoWarn>$(NoWarn);IL2104;IL3000;IL3002;IL3050;IL3053</NoWarn>
+    <!-- Playwright is not AOT-compatible (deep reflection usage); keep package-level warnings suppressed while surfacing project-owned trim diagnostics. -->
+    <NoWarn>$(NoWarn);IL2104;IL3000;IL3002;IL3053</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <TrimmerRootAssembly Include="Microsoft.Playwright" />

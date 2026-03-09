@@ -153,6 +153,7 @@ public sealed class WebSocketConfig
     public int MaxConnections { get; set; } = 1_000;
     public int MaxConnectionsPerIp { get; set; } = 50;
     public int MessagesPerMinutePerConnection { get; set; } = 120;
+    public int ReceiveTimeoutSeconds { get; set; } = 120;
 }
 
 public sealed class ToolingConfig

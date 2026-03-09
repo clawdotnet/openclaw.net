@@ -8,6 +8,7 @@ public sealed record InboundMessage
     public required string ChannelId { get; init; }
     public required string SenderId { get; init; }
     public string? SessionId { get; init; }
+    public string? CronJobName { get; init; }
     public string? Type { get; init; }
     public required string Text { get; init; }
     public string? SenderName { get; init; }

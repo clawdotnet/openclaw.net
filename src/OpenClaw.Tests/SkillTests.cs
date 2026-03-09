@@ -364,6 +364,44 @@ public class SkillLoaderTests
             Directory.Delete(tempDir, true);
         }
     }
+
+    [Fact]
+    public void LoadAll_ManagedSkill_IsDiscoveredFromDotOpenclaw()
+    {
+        var managedRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".openclaw",
+            "skills",
+            $"managed-skill-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(managedRoot);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(managedRoot, "SKILL.md"), """
+                ---
+                name: managed-skill
+                description: Managed skill
+                ---
+                Managed instructions.
+                """);
+
+            var config = new SkillsConfig
+            {
+                Enabled = true,
+                Load = new SkillLoadConfig { IncludeBundled = false, IncludeWorkspace = false }
+            };
+            var logger = new TestLogger();
+
+            var skills = SkillLoader.LoadAll(config, null, logger);
+
+            var skill = Assert.Single(skills, s => s.Name == "managed-skill");
+            Assert.Equal(SkillSource.Managed, skill.Source);
+        }
+        finally
+        {
+            Directory.Delete(managedRoot, true);
+        }
+    }
 }
 
 public class SkillPromptBuilderTests

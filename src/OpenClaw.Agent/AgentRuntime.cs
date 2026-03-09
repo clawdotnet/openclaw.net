@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
@@ -32,7 +33,7 @@ public sealed class AgentRuntime : IAgentRuntime
     private readonly List<AITool> _cachedToolDeclarations;
     private readonly IMemoryStore _memory;
     private readonly ILogger? _logger;
-    private readonly string _systemPrompt;
+    private string _systemPrompt = string.Empty;
     private readonly int _maxTokens;
     private readonly int _maxIterations;
     private readonly float _temperature;
@@ -52,6 +53,11 @@ public sealed class AgentRuntime : IAgentRuntime
     private readonly long _sessionTokenBudget;
     private readonly LlmProviderConfig _config;
     private readonly MemoryRecallConfig? _recall;
+    private readonly SkillsConfig? _skillsConfig;
+    private readonly string? _skillWorkspacePath;
+    private readonly IReadOnlyList<string> _pluginSkillDirs;
+    private readonly object _skillGate = new();
+    private string[] _loadedSkillNames = [];
 
     public AgentRuntime(
         IChatClient chatClient,
@@ -60,6 +66,9 @@ public sealed class AgentRuntime : IAgentRuntime
         LlmProviderConfig config,
         int maxHistoryTurns,
         IReadOnlyList<SkillDefinition>? skills = null,
+        SkillsConfig? skillsConfig = null,
+        string? skillWorkspacePath = null,
+        IReadOnlyList<string>? pluginSkillDirs = null,
         ILogger? logger = null,
         int toolTimeoutSeconds = 30,
         RuntimeMetrics? metrics = null,
@@ -95,7 +104,9 @@ public sealed class AgentRuntime : IAgentRuntime
         _approvalRequiredTools = NormalizeApprovalRequiredTools(approvalRequiredTools);
         _hooks = hooks ?? [];
         _metrics = metrics;
-        _systemPrompt = BuildSystemPrompt(skills ?? [], requireToolApproval);
+        _skillsConfig = skillsConfig;
+        _skillWorkspacePath = skillWorkspacePath;
+        _pluginSkillDirs = pluginSkillDirs ?? [];
         _circuitBreaker = new CircuitBreaker(
             config.CircuitBreakerThreshold,
             TimeSpan.FromSeconds(config.CircuitBreakerCooldownSeconds),
@@ -105,6 +116,37 @@ public sealed class AgentRuntime : IAgentRuntime
         _cachedToolDeclarations = _tools.Select(CacheDeclarationTool).Cast<AITool>().ToList();
         _sessionTokenBudget = sessionTokenBudget;
         _recall = recall;
+        ApplySkills(skills ?? []);
+    }
+
+    public IReadOnlyList<string> LoadedSkillNames
+    {
+        get
+        {
+            lock (_skillGate)
+            {
+                return _loadedSkillNames;
+            }
+        }
+    }
+
+    public Task<IReadOnlyList<string>> ReloadSkillsAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        if (_skillsConfig is null)
+            return Task.FromResult<IReadOnlyList<string>>(LoadedSkillNames);
+
+        var logger = _logger ?? NullLogger.Instance;
+        var skills = SkillLoader.LoadAll(_skillsConfig, _skillWorkspacePath, logger, _pluginSkillDirs);
+        ApplySkills(skills);
+
+        if (skills.Count > 0)
+            logger.LogInformation("{Summary}", SkillPromptBuilder.BuildSummary(skills));
+        else
+            logger.LogInformation("No skills loaded.");
+
+        return Task.FromResult<IReadOnlyList<string>>(LoadedSkillNames);
     }
 
     /// <summary>
@@ -1160,9 +1202,15 @@ public sealed class AgentRuntime : IAgentRuntime
 
     private List<ChatMessage> BuildMessages(Session session)
     {
+        string systemPrompt;
+        lock (_skillGate)
+        {
+            systemPrompt = _systemPrompt;
+        }
+
         var messages = new List<ChatMessage>
         {
-            new(ChatRole.System, _systemPrompt)
+            new(ChatRole.System, systemPrompt)
         };
 
         // Add history (bounded to avoid context overflow)
@@ -1192,6 +1240,18 @@ public sealed class AgentRuntime : IAgentRuntime
         }
 
         return messages;
+    }
+
+    private void ApplySkills(IReadOnlyList<SkillDefinition> skills)
+    {
+        lock (_skillGate)
+        {
+            _systemPrompt = BuildSystemPrompt(skills, _requireToolApproval);
+            _loadedSkillNames = skills
+                .Select(skill => skill.Name)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
     }
 
     /// <summary>

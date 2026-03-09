@@ -22,12 +22,15 @@ There are two primary ways to add new capabilities to your agent:
    Configure them in `src/OpenClaw.Gateway/appsettings.json`. Native tools (like `email`, `browser`, or `shell`) are built into the robust .NET runtime and offer the highest performance and AOT compatibility. See the Core and Native Plugin tool lists below.
 
 2. **Community Node.js Plugins (The Bridge)**
-   OpenClaw.NET is fully compatible with the massive ecosystem of original [OpenClaw](https://github.com/openclaw/openclaw) Node.js plugins!
+   OpenClaw.NET supports the upstream [OpenClaw](https://github.com/openclaw/openclaw) plugin format for the bridge surfaces that are currently implemented and tested.
    - Ensure Node.js 18+ is installed on your machine.
    - Download or clone a community plugin into your `.openclaw/extensions/` folder.
    - Run `npm install` inside that plugin's folder.
+   - For TypeScript plugins, also ensure `jiti` is present in the plugin dependency tree.
    - Restart the OpenClaw.NET gateway. The gateway will automatically detect, load, and bridge the plugin!
-   - *For in-depth details on bridging, see the [Compatibility Guide](COMPATIBILITY.md).*
+   - Supported today: `registerTool`, tool execution, `registerService`, plugin-packaged skills, `.js` / `.mjs` / `.ts` discovery, and the documented config-schema subset.
+   - Unsupported extension-host APIs fail fast with explicit diagnostics instead of partially loading.
+   - *For the exact matrix and current proof points, see the [Compatibility Guide](COMPATIBILITY.md).*
 
 ---
 
