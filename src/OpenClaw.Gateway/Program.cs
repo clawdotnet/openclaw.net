@@ -6,6 +6,9 @@ using OpenClaw.Gateway.Profiles;
 #if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using OpenClaw.MicrosoftAgentFrameworkAdapter;
 #endif
+#if OPENCLAW_ENABLE_OPENSANDBOX
+using OpenClawNet.Sandbox.OpenSandbox;
+#endif
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -27,6 +30,9 @@ builder.Services.AddOpenClawSecurityServices(startup);
 builder.Services.ApplyOpenClawRuntimeProfile(startup);
 #if OPENCLAW_ENABLE_MAF_EXPERIMENT
 builder.Services.AddMicrosoftAgentFrameworkExperiment(builder.Configuration);
+#endif
+#if OPENCLAW_ENABLE_OPENSANDBOX
+builder.Services.AddOpenSandboxIntegration(builder.Configuration);
 #endif
 
 var app = builder.Build();

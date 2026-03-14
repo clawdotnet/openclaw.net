@@ -17,6 +17,7 @@ public sealed class GatewayConfig
     public SecurityConfig Security { get; set; } = new();
     public WebSocketConfig WebSocket { get; set; } = new();
     public ToolingConfig Tooling { get; set; } = new();
+    public SandboxConfig Sandbox { get; set; } = new();
     public ChannelsConfig Channels { get; set; } = new();
     public PluginsConfig Plugins { get; set; } = new();
     public SkillsConfig Skills { get; set; } = new();

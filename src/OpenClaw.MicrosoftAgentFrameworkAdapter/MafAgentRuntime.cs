@@ -62,7 +62,9 @@ public sealed class MafAgentRuntime : IAgentRuntime
             context.ApprovalRequiredTools,
             context.Hooks,
             context.RuntimeMetrics,
-            logger);
+            logger,
+            config: context.Config,
+            toolSandbox: context.ToolSandbox);
         _options = options;
         _agentFactory = agentFactory;
         _sessionStateStore = sessionStateStore;

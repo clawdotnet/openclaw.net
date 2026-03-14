@@ -1,4 +1,5 @@
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Validation;
 using Xunit;
 
@@ -169,5 +170,68 @@ public sealed class ConfigValidatorTests
 
         var errors = ConfigValidator.Validate(config);
         Assert.Contains(errors, e => e.Contains("Runtime.Orchestrator", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_OpenSandboxProviderWithoutEndpoint_ReturnsError()
+    {
+        var config = new GatewayConfig
+        {
+            Tooling = new ToolingConfig
+            {
+                AllowShell = false,
+                EnableBrowserTool = false,
+                ReadOnlyMode = true
+            },
+            Plugins = new PluginsConfig
+            {
+                Native = new OpenClaw.Core.Plugins.NativePluginsConfig
+                {
+                    CodeExec = new OpenClaw.Core.Plugins.CodeExecConfig
+                    {
+                        Enabled = false
+                    }
+                }
+            },
+            Sandbox = new SandboxConfig
+            {
+                Provider = SandboxProviderNames.OpenSandbox,
+                Endpoint = null
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.Contains(errors, e => e.Contains("Sandbox.Endpoint", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_OpenSandboxMissingTemplateForDefaultSandboxedShell_ReturnsError()
+    {
+        var config = new GatewayConfig
+        {
+            Tooling = new ToolingConfig
+            {
+                AllowShell = true,
+                EnableBrowserTool = false
+            },
+            Plugins = new PluginsConfig
+            {
+                Native = new OpenClaw.Core.Plugins.NativePluginsConfig
+                {
+                    CodeExec = new OpenClaw.Core.Plugins.CodeExecConfig
+                    {
+                        Enabled = false
+                    }
+                }
+            },
+            Sandbox = new SandboxConfig
+            {
+                Provider = SandboxProviderNames.OpenSandbox,
+                Endpoint = "http://localhost:5000"
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.Contains(errors, e => e.Contains("Sandbox.Tools.shell.Template", StringComparison.Ordinal));
     }
 }

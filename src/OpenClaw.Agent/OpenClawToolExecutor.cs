@@ -28,6 +28,8 @@ public sealed class OpenClawToolExecutor
     private readonly IReadOnlyList<IToolHook> _hooks;
     private readonly RuntimeMetrics? _metrics;
     private readonly ILogger? _logger;
+    private readonly GatewayConfig _config;
+    private readonly IToolSandbox? _toolSandbox;
 
     public OpenClawToolExecutor(
         IReadOnlyList<ITool> tools,
@@ -36,7 +38,9 @@ public sealed class OpenClawToolExecutor
         IReadOnlyList<string> approvalRequiredTools,
         IReadOnlyList<IToolHook> hooks,
         RuntimeMetrics? metrics = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        GatewayConfig? config = null,
+        IToolSandbox? toolSandbox = null)
     {
         _toolsByName = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         _toolDeclarations = tools.Select(CreateDeclaration).Cast<AITool>().ToArray();
@@ -49,6 +53,16 @@ public sealed class OpenClawToolExecutor
         _hooks = hooks;
         _metrics = metrics;
         _logger = logger;
+        _config = config ?? new GatewayConfig
+        {
+            Tooling = new ToolingConfig
+            {
+                ToolTimeoutSeconds = toolTimeoutSeconds,
+                RequireToolApproval = requireToolApproval,
+                ApprovalRequiredTools = [.. approvalRequiredTools]
+            }
+        };
+        _toolSandbox = toolSandbox;
     }
 
     public IList<AITool> ToolDeclarations => _toolDeclarations;
@@ -167,7 +181,7 @@ public sealed class OpenClawToolExecutor
             if (onDelta is not null && tool is IStreamingTool streamingTool)
                 result = await ExecuteStreamingToolCollectAsync(streamingTool, argsJson, onDelta, ct);
             else
-                result = await ExecuteToolWithTimeoutAsync(tool, argsJson, ct);
+                result = await ExecuteToolWithRoutingAsync(tool, argsJson, session, turnCtx, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -180,6 +194,13 @@ public sealed class OpenClawToolExecutor
             toolTimedOut = true;
             _metrics?.IncrementToolTimeouts();
             _logger?.LogWarning("[{CorrelationId}] Tool {Tool} timed out after {Timeout}s", turnCtx.CorrelationId, tool.Name, _toolTimeoutSeconds);
+        }
+        catch (ToolSandboxException ex)
+        {
+            result = ex.Message;
+            toolFailed = true;
+            _metrics?.IncrementToolFailures();
+            _logger?.LogWarning(ex, "[{CorrelationId}] Tool {Tool} sandbox execution failed", turnCtx.CorrelationId, tool.Name);
         }
         catch (Exception ex)
         {
@@ -288,6 +309,92 @@ public sealed class OpenClawToolExecutor
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(_toolTimeoutSeconds));
         return await tool.ExecuteAsync(argsJson, timeoutCts.Token);
+    }
+
+    private async Task<SandboxResult> ExecuteSandboxWithTimeoutAsync(
+        SandboxExecutionRequest request,
+        CancellationToken ct)
+    {
+        if (_toolSandbox is null)
+            throw new ToolSandboxException("Error: Tool requires sandboxing but no sandbox provider is configured.");
+
+        if (_toolTimeoutSeconds <= 0)
+            return await _toolSandbox.ExecuteAsync(request, ct);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(_toolTimeoutSeconds));
+        return await _toolSandbox.ExecuteAsync(request, timeoutCts.Token);
+    }
+
+    private async Task<string> ExecuteToolWithRoutingAsync(
+        ITool tool,
+        string argsJson,
+        Session session,
+        TurnContext turnCtx,
+        CancellationToken ct)
+    {
+        if (tool is not ISandboxCapableTool sandboxCapableTool)
+            return await ExecuteToolWithTimeoutAsync(tool, argsJson, ct);
+
+        var mode = ToolSandboxPolicy.ResolveMode(_config, tool.Name, sandboxCapableTool.DefaultSandboxMode);
+        if (mode == ToolSandboxMode.None)
+            return await ExecuteToolWithTimeoutAsync(tool, argsJson, ct);
+
+        if (_toolSandbox is null)
+        {
+            if (mode == ToolSandboxMode.Require)
+            {
+                throw new ToolSandboxException(
+                    $"Error: Tool '{tool.Name}' requires sandboxing but no sandbox provider is configured.");
+            }
+
+            return await ExecuteToolWithTimeoutAsync(tool, argsJson, ct);
+        }
+
+        var template = ToolSandboxPolicy.ResolveTemplate(_config, tool.Name);
+        if (string.IsNullOrWhiteSpace(template))
+        {
+            if (mode == ToolSandboxMode.Require)
+            {
+                throw new ToolSandboxException(
+                    $"Error: Tool '{tool.Name}' requires sandboxing but no sandbox template is configured.");
+            }
+
+            _logger?.LogWarning(
+                "[{CorrelationId}] Sandbox template is missing for tool {Tool}; falling back to local execution",
+                turnCtx.CorrelationId,
+                tool.Name);
+            return await ExecuteToolWithTimeoutAsync(tool, argsJson, ct);
+        }
+
+        try
+        {
+            var request = sandboxCapableTool.CreateSandboxRequest(argsJson);
+            request.LeaseKey ??= $"{session.Id}:{tool.Name}";
+            request.Template ??= template;
+            request.TimeToLiveSeconds = ToolSandboxPolicy.ResolveTimeToLiveSeconds(
+                _config,
+                tool.Name,
+                request.TimeToLiveSeconds);
+
+            var sandboxResult = await ExecuteSandboxWithTimeoutAsync(request, ct);
+            return sandboxCapableTool.FormatSandboxResult(argsJson, sandboxResult);
+        }
+        catch (ToolSandboxUnavailableException ex) when (mode == ToolSandboxMode.Prefer)
+        {
+            _logger?.LogWarning(
+                ex,
+                "[{CorrelationId}] Sandbox provider unavailable for tool {Tool}; falling back to local execution",
+                turnCtx.CorrelationId,
+                tool.Name);
+            return await ExecuteToolWithTimeoutAsync(tool, argsJson, ct);
+        }
+        catch (ToolSandboxUnavailableException ex)
+        {
+            throw new ToolSandboxException(
+                $"Error: Tool '{tool.Name}' requires sandboxing but the sandbox provider is unavailable.",
+                ex);
+        }
     }
 
     internal static AIFunctionDeclaration CreateDeclaration(ITool tool)

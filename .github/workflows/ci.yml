@@ -45,6 +45,19 @@ jobs:
       - name: Test standard targets
         run: dotnet test --no-build -c Release --verbosity normal --logger "trx;LogFileName=results.trx" src/OpenClaw.Tests
 
+      - name: Restore sandbox-enabled targets
+        run: |
+          dotnet restore src/OpenClaw.Gateway -p:OpenClawEnableOpenSandbox=true
+          dotnet restore src/OpenClaw.Tests -p:OpenClawEnableOpenSandbox=true
+
+      - name: Build sandbox-enabled targets
+        run: |
+          dotnet build --no-restore -c Release -p:OpenClawEnableOpenSandbox=true src/OpenClaw.Gateway
+          dotnet build --no-restore -c Release -p:OpenClawEnableOpenSandbox=true src/OpenClaw.Tests
+
+      - name: Test sandbox-enabled targets
+        run: dotnet test --no-build -c Release -p:OpenClawEnableOpenSandbox=true --verbosity normal --logger "trx;LogFileName=results-sandbox.trx" src/OpenClaw.Tests
+
       - name: Restore MAF-enabled targets
         run: |
           dotnet restore src/OpenClaw.Gateway -p:OpenClawEnableMafExperiment=true

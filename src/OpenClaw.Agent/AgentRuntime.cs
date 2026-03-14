@@ -86,7 +86,9 @@ public sealed class AgentRuntime : IAgentRuntime
         int maxIterations = 10,
         IReadOnlyList<IToolHook>? hooks = null,
         long sessionTokenBudget = 0,
-        MemoryRecallConfig? recall = null)
+        MemoryRecallConfig? recall = null,
+        IToolSandbox? toolSandbox = null,
+        GatewayConfig? gatewayConfig = null)
     {
         _chatClient = chatClient;
         _tools = tools;
@@ -125,7 +127,9 @@ public sealed class AgentRuntime : IAgentRuntime
             [.. _approvalRequiredTools],
             _hooks,
             metrics,
-            logger);
+            logger,
+            config: gatewayConfig,
+            toolSandbox: toolSandbox);
         _cachedToolDeclarations = _toolExecutor.ToolDeclarations;
         _sessionTokenBudget = sessionTokenBudget;
         _recall = recall;

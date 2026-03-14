@@ -33,7 +33,9 @@ public sealed class NativeAgentRuntimeFactory : IAgentRuntimeFactory
             approvalRequiredTools: [.. context.ApprovalRequiredTools],
             hooks: context.Hooks,
             sessionTokenBudget: context.Config.SessionTokenBudget,
-            recall: context.Config.Memory.Recall);
+            recall: context.Config.Memory.Recall,
+            toolSandbox: context.ToolSandbox,
+            gatewayConfig: context.Config);
 
     public IAgentRuntime Create(AgentRuntimeFactoryContext context)
     {

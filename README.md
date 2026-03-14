@@ -69,6 +69,46 @@ In practice:
 - `auto` chooses between `aot` and `jit` based on runtime capabilities
 - `native` remains the default orchestrator even in MAF-enabled artifacts
 
+## Optional Sandbox Execution
+
+OpenClaw.NET can optionally route high-risk native tools through [OpenSandbox](https://github.com/AIDotNet/OpenSandbox) instead of executing them on the gateway host.
+
+Current scope:
+
+- `shell`
+- `code_exec`
+- `browser`
+
+Key points:
+
+- sandbox support is disabled by default
+- the standard runtime artifact does not include the OpenSandbox integration package
+- the sandbox-enabled build is produced with `-p:OpenClawEnableOpenSandbox=true`
+- `Prefer` mode falls back to local execution if the provider is unavailable
+- `Require` mode fails closed and is the recommended public-bind setting for `shell`
+
+Example:
+
+```json
+"OpenClaw": {
+  "Sandbox": {
+    "Provider": "OpenSandbox",
+    "Endpoint": "http://localhost:5000",
+    "ApiKey": "env:OPEN_SANDBOX_API_KEY",
+    "DefaultTTL": 300,
+    "Tools": {
+      "shell": {
+        "Mode": "Require",
+        "Template": "ghcr.io/your-org/opensandbox-shell:latest",
+        "TTL": 300
+      }
+    }
+  }
+}
+```
+
+See [docs/sandboxing.md](docs/sandboxing.md) for the architecture, build flag, and full config examples.
+
 ## Quick Links
 
 - [Quickstart Guide](QUICKSTART.md)
@@ -77,6 +117,7 @@ In practice:
 - [Security Guide](SECURITY.md)
 - [Plugin Compatibility Guide](COMPATIBILITY.md)
 - [Semantic Kernel Guide](SEMANTIC_KERNEL.md)
+- [Sandboxing Guide](docs/sandboxing.md)
 - [MAF Readiness Notes](docs/experiments/maf-aot-jit-readiness.md)
 - [Startup Architecture Notes](docs/architecture-startup-refactor.md)
 - [Changelog](CHANGELOG.md)
