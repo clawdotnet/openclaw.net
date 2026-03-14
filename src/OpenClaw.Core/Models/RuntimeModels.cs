@@ -12,6 +12,9 @@ public sealed class RuntimeConfig
 {
     /// <summary>"auto" (default), "aot", or "jit".</summary>
     public string Mode { get; set; } = "auto";
+
+    /// <summary>"native" (default) or "maf".</summary>
+    public string Orchestrator { get; set; } = RuntimeOrchestrator.Native;
 }
 
 public sealed class GatewayRuntimeState
@@ -53,4 +56,13 @@ public static class RuntimeModeResolver
 
     public static string Normalize(string? mode)
         => (mode ?? "auto").Trim().ToLowerInvariant();
+}
+
+public static class RuntimeOrchestrator
+{
+    public const string Native = "native";
+    public const string Maf = "maf";
+
+    public static string Normalize(string? orchestrator)
+        => (orchestrator ?? Native).Trim().ToLowerInvariant();
 }

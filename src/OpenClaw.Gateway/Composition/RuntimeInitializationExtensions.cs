@@ -41,11 +41,26 @@ internal static class RuntimeInitializationExtensions
         var pairingManager = app.Services.GetRequiredService<PairingManager>();
         var commandProcessor = app.Services.GetRequiredService<ChatCommandProcessor>();
         var toolApprovalService = app.Services.GetRequiredService<ToolApprovalService>();
+        var approvalAuditStore = app.Services.GetRequiredService<ApprovalAuditStore>();
         var runtimeMetrics = app.Services.GetRequiredService<RuntimeMetrics>();
+        var providerUsage = app.Services.GetRequiredService<ProviderUsageTracker>();
+        var providerRegistry = app.Services.GetRequiredService<LlmProviderRegistry>();
+        var providerPolicies = app.Services.GetRequiredService<ProviderPolicyService>();
+        var llmExecutionService = app.Services.GetRequiredService<GatewayLlmExecutionService>();
+        var runtimeEventStore = app.Services.GetRequiredService<RuntimeEventStore>();
+        var operatorAuditStore = app.Services.GetRequiredService<OperatorAuditStore>();
+        var approvalGrantStore = app.Services.GetRequiredService<ToolApprovalGrantStore>();
+        var webhookDeliveryStore = app.Services.GetRequiredService<WebhookDeliveryStore>();
+        var actorRateLimits = app.Services.GetRequiredService<ActorRateLimitService>();
+        var sessionMetadataStore = app.Services.GetRequiredService<SessionMetadataStore>();
+        var pluginHealth = app.Services.GetRequiredService<PluginHealthService>();
         var memoryStore = app.Services.GetRequiredService<IMemoryStore>();
         var pipeline = app.Services.GetRequiredService<MessagePipeline>();
         var wsChannel = app.Services.GetRequiredService<WebSocketChannel>();
         var nativeRegistry = app.Services.GetRequiredService<NativePluginRegistry>();
+        var runtimeDiagnostics = new Dictionary<string, List<PluginCompatibilityDiagnostic>>(StringComparer.Ordinal);
+        var dynamicProviderOwners = new HashSet<string>(StringComparer.Ordinal);
+        var blockedPluginIds = pluginHealth.GetBlockedPluginIds();
 
         var (smsChannel, smsWebhookHandler) = CreateTwilioResources(
             config,
@@ -84,6 +99,15 @@ internal static class RuntimeInitializationExtensions
             loggerFactory.CreateLogger<CronChannel>());
 
         var builtInTools = CreateBuiltInTools(config, memoryStore, sessionManager, pipeline, startup.WorkspacePath);
+        LlmClientFactory.ResetDynamicProviders();
+        try
+        {
+            providerRegistry.RegisterDefault(config.Llm, LlmClientFactory.CreateChatClient(config.Llm));
+        }
+        catch (InvalidOperationException)
+        {
+            // Dynamic/plugin-backed providers may become available after plugin loading.
+        }
 
         PluginHost? pluginHost = null;
         NativeDynamicPluginHost? nativeDynamicPluginHost = null;
@@ -97,25 +121,13 @@ internal static class RuntimeInitializationExtensions
                 config.Plugins,
                 bridgeScript,
                 loggerFactory.CreateLogger<PluginHost>(),
-                startup.RuntimeState);
+                startup.RuntimeState,
+                blockedPluginIds);
             bridgeTools = await pluginHost.LoadAsync(startup.WorkspacePath, app.Lifetime.ApplicationStopping);
 
-            foreach (var adapter in pluginHost.ChannelAdapters)
-            {
-                if (!channelAdapters.ContainsKey(adapter.ChannelId))
-                    channelAdapters[adapter.ChannelId] = adapter;
-            }
-
-            pluginHost.RegisterCommandsWith(commandProcessor);
-
-            foreach (var (providerId, _, bridge) in pluginHost.ProviderRegistrations)
-            {
-                var bridgedProvider = new BridgedLlmProvider(
-                    bridge,
-                    providerId,
-                    loggerFactory.CreateLogger<BridgedLlmProvider>());
-                LlmClientFactory.RegisterProvider(providerId, bridgedProvider);
-            }
+            RegisterBridgeChannels(channelAdapters, pluginHost, runtimeDiagnostics);
+            RegisterBridgeCommands(commandProcessor, pluginHost, runtimeDiagnostics);
+            RegisterBridgeProviders(loggerFactory, providerRegistry, pluginHost, runtimeDiagnostics, dynamicProviderOwners);
         }
 
         if (config.Plugins.DynamicNative.Enabled)
@@ -123,22 +135,24 @@ internal static class RuntimeInitializationExtensions
             nativeDynamicPluginHost = new NativeDynamicPluginHost(
                 config.Plugins.DynamicNative,
                 startup.RuntimeState,
-                loggerFactory.CreateLogger<NativeDynamicPluginHost>());
+                loggerFactory.CreateLogger<NativeDynamicPluginHost>(),
+                blockedPluginIds);
             nativeDynamicTools = await nativeDynamicPluginHost.LoadAsync(startup.WorkspacePath, app.Lifetime.ApplicationStopping);
 
-            foreach (var adapter in nativeDynamicPluginHost.ChannelAdapters)
-            {
-                if (!channelAdapters.ContainsKey(adapter.ChannelId))
-                    channelAdapters[adapter.ChannelId] = adapter;
-            }
-
-            nativeDynamicPluginHost.RegisterCommandsWith(commandProcessor);
-
-            foreach (var (providerId, _, client) in nativeDynamicPluginHost.ProviderRegistrations)
-                LlmClientFactory.RegisterProvider(providerId, client);
+            RegisterNativeDynamicChannels(channelAdapters, nativeDynamicPluginHost, runtimeDiagnostics);
+            RegisterNativeDynamicCommands(commandProcessor, nativeDynamicPluginHost, runtimeDiagnostics);
+            RegisterNativeDynamicProviders(providerRegistry, nativeDynamicPluginHost, runtimeDiagnostics, dynamicProviderOwners);
+        }
+        if (!providerRegistry.MarkDefault(config.Llm.Provider) && !providerRegistry.TryGet(config.Llm.Provider, out _))
+        {
+            throw new InvalidOperationException(
+                $"Configured provider '{config.Llm.Provider}' is not available. " +
+                "Register it as the built-in provider or via a compatible plugin.");
         }
 
-        IChatClient chatClient = LlmClientFactory.CreateChatClient(config.Llm);
+        var chatClient = providerRegistry.TryGet("default", out var defaultRegistration) && defaultRegistration is not null
+            ? defaultRegistration.Client
+            : LlmClientFactory.CreateChatClient(config.Llm);
 
         var resolveLogger = loggerFactory.CreateLogger("PluginResolver");
         IReadOnlyList<ITool> tools = NativePluginRegistry.ResolvePreference(
@@ -163,16 +177,23 @@ internal static class RuntimeInitializationExtensions
         var (effectiveRequireToolApproval, effectiveApprovalRequiredTools) = ResolveApprovalMode(config);
 
         var agentLogger = loggerFactory.CreateLogger("AgentRuntime");
+        var orchestratorId = RuntimeOrchestrator.Normalize(config.Runtime.Orchestrator);
         var agentRuntime = CreateAgentRuntime(
+            app.Services,
             config,
+            startup.RuntimeState,
             chatClient,
             tools,
             memoryStore,
             runtimeMetrics,
+            providerUsage,
+            llmExecutionService,
             skills,
+            config.Skills,
             agentLogger,
             hooks,
             startup.WorkspacePath,
+            combinedPluginSkillRoots,
             effectiveRequireToolApproval,
             effectiveApprovalRequiredTools);
 
@@ -189,9 +210,24 @@ internal static class RuntimeInitializationExtensions
         StartNativeEventBridges(config, loggerFactory, pipeline, app.Lifetime.ApplicationStopping);
 
         var profile = app.Services.GetRequiredService<IRuntimeProfile>();
+        var operations = new RuntimeOperationsState
+        {
+            ProviderPolicies = providerPolicies,
+            ProviderRegistry = providerRegistry,
+            LlmExecution = llmExecutionService,
+            PluginHealth = pluginHealth,
+            ApprovalGrants = approvalGrantStore,
+            RuntimeEvents = runtimeEventStore,
+            OperatorAudit = operatorAuditStore,
+            WebhookDeliveries = webhookDeliveryStore,
+            ActorRateLimits = actorRateLimits,
+            SessionMetadata = sessionMetadataStore
+        };
+
         var runtime = new GatewayAppRuntime
         {
             AgentRuntime = agentRuntime,
+            OrchestratorId = orchestratorId,
             Pipeline = pipeline,
             MiddlewarePipeline = middlewarePipeline,
             WebSocketChannel = wsChannel,
@@ -204,10 +240,12 @@ internal static class RuntimeInitializationExtensions
             RecentSenders = recentSenders,
             CommandProcessor = commandProcessor,
             ToolApprovalService = toolApprovalService,
+            ApprovalAuditStore = approvalAuditStore,
             RuntimeMetrics = runtimeMetrics,
+            ProviderUsage = providerUsage,
             SkillWatcher = skillWatcher,
-            PluginReports = GetCombinedPluginReports(pluginHost, nativeDynamicPluginHost),
-            Skills = skills,
+            PluginReports = GetCombinedPluginReports(pluginHost, nativeDynamicPluginHost, runtimeDiagnostics),
+            Operations = operations,
             EffectiveRequireToolApproval = effectiveRequireToolApproval,
             EffectiveApprovalRequiredTools = effectiveApprovalRequiredTools,
             NativeRegistry = nativeRegistry,
@@ -216,11 +254,14 @@ internal static class RuntimeInitializationExtensions
             AllowedOriginsSet = config.Security.AllowedOrigins.Length > 0
                 ? config.Security.AllowedOrigins.ToFrozenSet(StringComparer.Ordinal)
                 : null,
+            DynamicProviderOwners = dynamicProviderOwners.ToArray(),
             CronTask = cronTask,
             TwilioSmsWebhookHandler = smsWebhookHandler,
             PluginHost = pluginHost,
             NativeDynamicPluginHost = nativeDynamicPluginHost
         };
+
+        pluginHealth.SetRuntimeReports(runtime.PluginReports, pluginHost, nativeDynamicPluginHost);
 
         await profile.OnRuntimeInitializedAsync(app, startup, runtime);
         return runtime;
@@ -250,6 +291,9 @@ internal static class RuntimeInitializationExtensions
 
         if (config.Tooling.EnableBrowserTool)
             tools.Add(new BrowserTool(config.Tooling));
+
+        if (string.Equals(Environment.GetEnvironmentVariable("OPENCLAW_ENABLE_STREAMING_SMOKE_TOOL"), "1", StringComparison.Ordinal))
+            tools.Add(new StreamingSmokeEchoTool());
 
         return tools;
     }
@@ -298,76 +342,48 @@ internal static class RuntimeInitializationExtensions
     }
 
     private static IAgentRuntime CreateAgentRuntime(
+        IServiceProvider services,
         GatewayConfig config,
+        GatewayRuntimeState runtimeState,
         IChatClient chatClient,
         IReadOnlyList<ITool> tools,
         IMemoryStore memoryStore,
         RuntimeMetrics runtimeMetrics,
+        ProviderUsageTracker providerUsage,
+        ILlmExecutionService llmExecutionService,
         IReadOnlyList<SkillDefinition> skills,
+        SkillsConfig skillsConfig,
         ILogger logger,
         IReadOnlyList<IToolHook> hooks,
         string? workspacePath,
+        IReadOnlyList<string> pluginSkillDirs,
         bool requireToolApproval,
         IReadOnlyList<string> approvalRequiredTools)
     {
-        IAgentRuntime agentRuntime = new AgentRuntime(
-            chatClient,
-            tools,
-            memoryStore,
-            config.Llm,
-            config.Memory.MaxHistoryTurns,
-            skills,
-            skillsConfig: config.Skills,
-            skillWorkspacePath: workspacePath,
-            logger: logger,
-            toolTimeoutSeconds: config.Tooling.ToolTimeoutSeconds,
-            metrics: runtimeMetrics,
-            parallelToolExecution: config.Tooling.ParallelToolExecution,
-            enableCompaction: config.Memory.EnableCompaction,
-            compactionThreshold: config.Memory.CompactionThreshold,
-            compactionKeepRecent: config.Memory.CompactionKeepRecent,
-            requireToolApproval: requireToolApproval,
-            approvalRequiredTools: [.. approvalRequiredTools],
-            hooks: hooks,
-            sessionTokenBudget: config.SessionTokenBudget,
-            recall: config.Memory.Recall);
+        var factory = AgentRuntimeFactorySelector.Select(
+            services.GetServices<IAgentRuntimeFactory>(),
+            config.Runtime.Orchestrator);
 
-        if (!config.Delegation.Enabled || config.Delegation.Profiles.Count == 0)
-            return agentRuntime;
-
-        var delegateTool = new DelegateTool(
-            chatClient,
-            tools,
-            memoryStore,
-            config.Llm,
-            config.Delegation,
-            currentDepth: 0,
-            metrics: runtimeMetrics,
-            logger: logger,
-            recall: config.Memory.Recall);
-
-        tools = [.. tools, delegateTool];
-        return new AgentRuntime(
-            chatClient,
-            tools,
-            memoryStore,
-            config.Llm,
-            config.Memory.MaxHistoryTurns,
-            skills,
-            skillsConfig: config.Skills,
-            skillWorkspacePath: workspacePath,
-            logger: logger,
-            toolTimeoutSeconds: config.Tooling.ToolTimeoutSeconds,
-            metrics: runtimeMetrics,
-            parallelToolExecution: config.Tooling.ParallelToolExecution,
-            enableCompaction: config.Memory.EnableCompaction,
-            compactionThreshold: config.Memory.CompactionThreshold,
-            compactionKeepRecent: config.Memory.CompactionKeepRecent,
-            requireToolApproval: requireToolApproval,
-            approvalRequiredTools: [.. approvalRequiredTools],
-            hooks: hooks,
-            sessionTokenBudget: config.SessionTokenBudget,
-            recall: config.Memory.Recall);
+        return factory.Create(new AgentRuntimeFactoryContext
+        {
+            Services = services,
+            Config = config,
+            RuntimeState = runtimeState,
+            ChatClient = chatClient,
+            Tools = tools,
+            MemoryStore = memoryStore,
+            RuntimeMetrics = runtimeMetrics,
+            ProviderUsage = providerUsage,
+            LlmExecutionService = llmExecutionService,
+            Skills = skills,
+            SkillsConfig = skillsConfig,
+            WorkspacePath = workspacePath,
+            PluginSkillDirs = pluginSkillDirs,
+            Logger = logger,
+            Hooks = hooks,
+            RequireToolApproval = requireToolApproval,
+            ApprovalRequiredTools = approvalRequiredTools
+        });
     }
 
     private static MiddlewarePipeline CreateMiddlewarePipeline(GatewayConfig config, ILoggerFactory loggerFactory)
@@ -461,15 +477,242 @@ internal static class RuntimeInitializationExtensions
         return (smsChannel, handler);
     }
 
+    private static void RegisterBridgeChannels(
+        IDictionary<string, IChannelAdapter> channelAdapters,
+        PluginHost pluginHost,
+        IDictionary<string, List<PluginCompatibilityDiagnostic>> runtimeDiagnostics)
+    {
+        foreach (var (pluginId, channelId, adapter) in pluginHost.ChannelRegistrations)
+        {
+            if (channelAdapters.TryAdd(channelId, adapter))
+                continue;
+
+            AddDiagnostic(
+                runtimeDiagnostics,
+                pluginId,
+                "duplicate_channel_id",
+                $"Channel '{channelId}' from plugin '{pluginId}' was skipped because that channel id is already registered.",
+                "registerChannel",
+                channelId);
+        }
+    }
+
+    private static void RegisterNativeDynamicChannels(
+        IDictionary<string, IChannelAdapter> channelAdapters,
+        NativeDynamicPluginHost nativeDynamicPluginHost,
+        IDictionary<string, List<PluginCompatibilityDiagnostic>> runtimeDiagnostics)
+    {
+        foreach (var (pluginId, channelId, adapter) in nativeDynamicPluginHost.ChannelRegistrations)
+        {
+            if (channelAdapters.TryAdd(channelId, adapter))
+                continue;
+
+            AddDiagnostic(
+                runtimeDiagnostics,
+                pluginId,
+                "duplicate_channel_id",
+                $"Channel '{channelId}' from dynamic native plugin '{pluginId}' was skipped because that channel id is already registered.",
+                "registerChannel",
+                channelId);
+        }
+    }
+
+    private static void RegisterBridgeCommands(
+        ChatCommandProcessor commandProcessor,
+        PluginHost pluginHost,
+        IDictionary<string, List<PluginCompatibilityDiagnostic>> runtimeDiagnostics)
+    {
+        foreach (var (pluginId, name, _, bridge) in pluginHost.CommandRegistrations)
+        {
+            var result = commandProcessor.RegisterDynamic(name, async (args, ct) =>
+            {
+                var response = await bridge.SendAndWaitAsync(
+                    "command_execute",
+                    new BridgeCommandExecuteRequest
+                    {
+                        Name = name,
+                        Args = args,
+                    },
+                    CoreJsonContext.Default.BridgeCommandExecuteRequest,
+                    ct);
+
+                if (response.Error is not null)
+                    return $"Command error: {response.Error.Message}";
+
+                if (response.Result is { } value && value.TryGetProperty("result", out var resultValue))
+                    return resultValue.GetString() ?? "";
+
+                return response.Result?.GetRawText() ?? "";
+            });
+
+            AddCommandRegistrationDiagnostic(runtimeDiagnostics, pluginId, name, result);
+        }
+    }
+
+    private static void RegisterNativeDynamicCommands(
+        ChatCommandProcessor commandProcessor,
+        NativeDynamicPluginHost nativeDynamicPluginHost,
+        IDictionary<string, List<PluginCompatibilityDiagnostic>> runtimeDiagnostics)
+    {
+        foreach (var (pluginId, name, _, handler) in nativeDynamicPluginHost.CommandRegistrations)
+        {
+            var result = commandProcessor.RegisterDynamic(name, handler);
+            AddCommandRegistrationDiagnostic(runtimeDiagnostics, pluginId, name, result);
+        }
+    }
+
+    private static void AddCommandRegistrationDiagnostic(
+        IDictionary<string, List<PluginCompatibilityDiagnostic>> runtimeDiagnostics,
+        string pluginId,
+        string name,
+        DynamicCommandRegistrationResult result)
+    {
+        switch (result)
+        {
+            case DynamicCommandRegistrationResult.Registered:
+                return;
+            case DynamicCommandRegistrationResult.ReservedBuiltIn:
+                AddDiagnostic(
+                    runtimeDiagnostics,
+                    pluginId,
+                    "reserved_command_name",
+                    $"Command '/{name.TrimStart('/')}' from plugin '{pluginId}' was skipped because built-in commands are reserved.",
+                    "registerCommand",
+                    name);
+                return;
+            default:
+                AddDiagnostic(
+                    runtimeDiagnostics,
+                    pluginId,
+                    "duplicate_command_name",
+                    $"Command '/{name.TrimStart('/')}' from plugin '{pluginId}' was skipped because that command name is already registered.",
+                    "registerCommand",
+                    name);
+                return;
+        }
+    }
+
+    private static void RegisterBridgeProviders(
+        ILoggerFactory loggerFactory,
+        LlmProviderRegistry providerRegistry,
+        PluginHost pluginHost,
+        IDictionary<string, List<PluginCompatibilityDiagnostic>> runtimeDiagnostics,
+        ISet<string> dynamicProviderOwners)
+    {
+        foreach (var (pluginId, providerId, _, bridge) in pluginHost.ProviderRegistrationsDetailed)
+        {
+            var ownerId = $"bridge:{pluginId}";
+            var bridgedProvider = new BridgedLlmProvider(
+                bridge,
+                providerId,
+                loggerFactory.CreateLogger<BridgedLlmProvider>());
+
+            if (providerRegistry.TryRegisterDynamic(providerId, bridgedProvider, ownerId, []))
+            {
+                dynamicProviderOwners.Add(ownerId);
+                continue;
+            }
+
+            AddDiagnostic(
+                runtimeDiagnostics,
+                pluginId,
+                "duplicate_provider_id",
+                $"Provider '{providerId}' from plugin '{pluginId}' was skipped because that provider id is already registered.",
+                "registerProvider",
+                providerId);
+        }
+    }
+
+    private static void RegisterNativeDynamicProviders(
+        LlmProviderRegistry providerRegistry,
+        NativeDynamicPluginHost nativeDynamicPluginHost,
+        IDictionary<string, List<PluginCompatibilityDiagnostic>> runtimeDiagnostics,
+        ISet<string> dynamicProviderOwners)
+    {
+        foreach (var (pluginId, providerId, _, client) in nativeDynamicPluginHost.ProviderRegistrationsDetailed)
+        {
+            var ownerId = $"native_dynamic:{pluginId}";
+            if (providerRegistry.TryRegisterDynamic(providerId, client, ownerId, []))
+            {
+                dynamicProviderOwners.Add(ownerId);
+                continue;
+            }
+
+            AddDiagnostic(
+                runtimeDiagnostics,
+                pluginId,
+                "duplicate_provider_id",
+                $"Provider '{providerId}' from dynamic native plugin '{pluginId}' was skipped because that provider id is already registered.",
+                "registerProvider",
+                providerId);
+        }
+    }
+
+    private static void AddDiagnostic(
+        IDictionary<string, List<PluginCompatibilityDiagnostic>> runtimeDiagnostics,
+        string pluginId,
+        string code,
+        string message,
+        string surface,
+        string? path)
+    {
+        if (!runtimeDiagnostics.TryGetValue(pluginId, out var list))
+        {
+            list = [];
+            runtimeDiagnostics[pluginId] = list;
+        }
+
+        list.Add(new PluginCompatibilityDiagnostic
+        {
+            Severity = "warning",
+            Code = code,
+            Message = message,
+            Surface = surface,
+            Path = path
+        });
+    }
+
     private static IReadOnlyList<PluginLoadReport> GetCombinedPluginReports(
         PluginHost? pluginHost,
-        NativeDynamicPluginHost? nativeDynamicPluginHost)
+        NativeDynamicPluginHost? nativeDynamicPluginHost,
+        IReadOnlyDictionary<string, List<PluginCompatibilityDiagnostic>> runtimeDiagnostics)
     {
         var reports = new List<PluginLoadReport>();
         if (pluginHost is not null)
             reports.AddRange(pluginHost.Reports);
         if (nativeDynamicPluginHost is not null)
             reports.AddRange(nativeDynamicPluginHost.Reports);
-        return reports;
+
+        if (runtimeDiagnostics.Count == 0)
+            return reports;
+
+        return reports
+            .Select(report =>
+            {
+                if (!runtimeDiagnostics.TryGetValue(report.PluginId, out var diagnostics) || diagnostics.Count == 0)
+                    return report;
+
+                return new PluginLoadReport
+                {
+                    PluginId = report.PluginId,
+                    SourcePath = report.SourcePath,
+                    EntryPath = report.EntryPath,
+                    Origin = report.Origin,
+                    Loaded = report.Loaded,
+                    EffectiveRuntimeMode = report.EffectiveRuntimeMode,
+                    RequestedCapabilities = report.RequestedCapabilities,
+                    BlockedByRuntimeMode = report.BlockedByRuntimeMode,
+                    BlockedReason = report.BlockedReason,
+                    ToolCount = report.ToolCount,
+                    ChannelCount = report.ChannelCount,
+                    CommandCount = report.CommandCount,
+                    EventSubscriptionCount = report.EventSubscriptionCount,
+                    ProviderCount = report.ProviderCount,
+                    SkillDirectories = report.SkillDirectories,
+                    Diagnostics = [.. report.Diagnostics, .. diagnostics],
+                    Error = report.Error
+                };
+            })
+            .ToArray();
     }
 }

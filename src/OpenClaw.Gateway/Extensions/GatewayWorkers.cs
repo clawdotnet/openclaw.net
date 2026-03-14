@@ -13,10 +13,11 @@ using OpenClaw.Core.Models;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
+using OpenClaw.Gateway;
 
 namespace OpenClaw.Gateway.Extensions;
 
-public static class GatewayWorkers
+internal static class GatewayWorkers
 {
     public static void Start(
         IHostApplicationLifetime lifetime,
@@ -34,11 +35,13 @@ public static class GatewayWorkers
         GatewayConfig config,
         CronScheduler? cronScheduler,
         ToolApprovalService toolApprovalService,
+        ApprovalAuditStore approvalAuditStore,
         PairingManager pairingManager,
-        ChatCommandProcessor commandProcessor)
+        ChatCommandProcessor commandProcessor,
+        RuntimeOperationsState operations)
     {
         StartSessionCleanup(lifetime, logger, sessionManager, sessionLocks, lockLastUsed);
-        StartInboundWorkers(lifetime, logger, workerCount, isNonLoopbackBind, sessionManager, sessionLocks, lockLastUsed, pipeline, middlewarePipeline, wsChannel, agentRuntime, config, cronScheduler, toolApprovalService, pairingManager, commandProcessor);
+        StartInboundWorkers(lifetime, logger, workerCount, isNonLoopbackBind, sessionManager, sessionLocks, lockLastUsed, pipeline, middlewarePipeline, wsChannel, agentRuntime, config, cronScheduler, toolApprovalService, approvalAuditStore, pairingManager, commandProcessor, operations);
         StartOutboundWorkers(lifetime, logger, workerCount, pipeline, channelAdapters);
     }
 
@@ -128,8 +131,10 @@ public static class GatewayWorkers
         GatewayConfig config,
         CronScheduler? cronScheduler,
         ToolApprovalService toolApprovalService,
+        ApprovalAuditStore approvalAuditStore,
         PairingManager pairingManager,
-        ChatCommandProcessor commandProcessor)
+        ChatCommandProcessor commandProcessor,
+        RuntimeOperationsState operations)
     {
         for (var i = 0; i < workerCount; i++)
         {
@@ -144,19 +149,74 @@ public static class GatewayWorkers
                         var lockAcquired = false;
                         try
                         {
+                            if (!msg.IsSystem)
+                            {
+                                if (!operations.ActorRateLimits.TryConsume("channel_sender", $"{msg.ChannelId}:{msg.SenderId}", "inbound_chat", out _))
+                                {
+                                    await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
+                                    {
+                                        ChannelId = msg.ChannelId,
+                                        RecipientId = msg.SenderId,
+                                        Text = "Rate limit exceeded. Please slow down.",
+                                        ReplyToMessageId = msg.MessageId
+                                    }, lifetime.ApplicationStopping);
+                                    continue;
+                                }
+
+                                var effectiveSessionKey = msg.SessionId ?? $"{msg.ChannelId}:{msg.SenderId}";
+                                if (!operations.ActorRateLimits.TryConsume("session", effectiveSessionKey, "inbound_chat", out _))
+                                {
+                                    await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
+                                    {
+                                        ChannelId = msg.ChannelId,
+                                        RecipientId = msg.SenderId,
+                                        Text = "Session rate limit exceeded. Please retry shortly.",
+                                        ReplyToMessageId = msg.MessageId
+                                    }, lifetime.ApplicationStopping);
+                                    continue;
+                                }
+                            }
+
                             // ── Tool Approval Decision Short-Circuit ────────────
                             if (string.Equals(msg.Type, "tool_approval_decision", StringComparison.Ordinal) &&
                                 !string.IsNullOrWhiteSpace(msg.ApprovalId) &&
                                 msg.Approved is not null)
                             {
-                                var decisionResult = toolApprovalService.TrySetDecision(
+                                var decisionOutcome = toolApprovalService.TrySetDecisionWithRequest(
                                     msg.ApprovalId,
                                     msg.Approved.Value,
                                     msg.ChannelId,
                                     msg.SenderId,
-                                    requireRequesterMatch: isNonLoopbackBind);
+                                    requireRequesterMatch: true);
 
-                                var ack = decisionResult switch
+                                if (decisionOutcome.Result == ToolApprovalDecisionResult.Recorded && decisionOutcome.Request is not null)
+                                {
+                                    approvalAuditStore.RecordDecision(
+                                        decisionOutcome.Request,
+                                        msg.Approved.Value,
+                                        "chat",
+                                        msg.ChannelId,
+                                        msg.SenderId);
+                                    RecordApprovalDecisionEvent(
+                                        operations,
+                                        decisionOutcome.Request,
+                                        msg.Approved.Value,
+                                        "chat",
+                                        msg.ChannelId,
+                                        msg.SenderId);
+                                }
+                                else if (decisionOutcome.Result == ToolApprovalDecisionResult.Unauthorized)
+                                {
+                                    RecordApprovalDecisionRejectedEvent(
+                                        operations,
+                                        decisionOutcome.Request,
+                                        msg.ApprovalId,
+                                        "requester_mismatch",
+                                        msg.ChannelId,
+                                        msg.SenderId);
+                                }
+
+                                var ack = decisionOutcome.Result switch
                                 {
                                     ToolApprovalDecisionResult.Recorded => $"Tool approval recorded: {msg.ApprovalId} = {(msg.Approved.Value ? "approved" : "denied")}",
                                     ToolApprovalDecisionResult.Unauthorized => $"Approval id is not valid for this sender/channel: {msg.ApprovalId}",
@@ -193,14 +253,41 @@ public static class GatewayWorkers
 
                                     if (approved || denied)
                                     {
-                                        var decisionResult = toolApprovalService.TrySetDecision(
+                                        var decisionOutcome = toolApprovalService.TrySetDecisionWithRequest(
                                             approvalId,
                                             approved,
                                             msg.ChannelId,
                                             msg.SenderId,
-                                            requireRequesterMatch: isNonLoopbackBind);
+                                            requireRequesterMatch: true);
 
-                                        var ack = decisionResult switch
+                                        if (decisionOutcome.Result == ToolApprovalDecisionResult.Recorded && decisionOutcome.Request is not null)
+                                        {
+                                            approvalAuditStore.RecordDecision(
+                                                decisionOutcome.Request,
+                                                approved,
+                                                "chat",
+                                                msg.ChannelId,
+                                                msg.SenderId);
+                                            RecordApprovalDecisionEvent(
+                                                operations,
+                                                decisionOutcome.Request,
+                                                approved,
+                                                "chat",
+                                                msg.ChannelId,
+                                                msg.SenderId);
+                                        }
+                                        else if (decisionOutcome.Result == ToolApprovalDecisionResult.Unauthorized)
+                                        {
+                                            RecordApprovalDecisionRejectedEvent(
+                                                operations,
+                                                decisionOutcome.Request,
+                                                approvalId,
+                                                "requester_mismatch",
+                                                msg.ChannelId,
+                                                msg.SenderId);
+                                        }
+
+                                        var ack = decisionOutcome.Result switch
                                         {
                                             ToolApprovalDecisionResult.Recorded => $"Tool approval recorded: {approvalId} = {(approved ? "approved" : "denied")}",
                                             ToolApprovalDecisionResult.Unauthorized => $"Approval id is not valid for this sender/channel: {approvalId}",
@@ -313,7 +400,47 @@ public static class GatewayWorkers
                             var approvalTimeout = TimeSpan.FromSeconds(Math.Clamp(config.Tooling.ToolApprovalTimeoutSeconds, 5, 3600));
                             async ValueTask<bool> ApprovalCallback(string toolName, string argsJson, CancellationToken ct)
                             {
+                                var grant = operations.ApprovalGrants.TryConsume(session.Id, msg.ChannelId, msg.SenderId, toolName);
+                                if (grant is not null)
+                                {
+                                    operations.RuntimeEvents.Append(new RuntimeEventEntry
+                                    {
+                                        Id = $"evt_{Guid.NewGuid():N}"[..20],
+                                        SessionId = session.Id,
+                                        ChannelId = msg.ChannelId,
+                                        SenderId = msg.SenderId,
+                                        Component = "approval",
+                                        Action = "grant_consumed",
+                                        Severity = "info",
+                                        Summary = $"Reusable approval grant '{grant.Id}' applied for tool '{toolName}'.",
+                                        Metadata = new Dictionary<string, string>
+                                        {
+                                            ["toolName"] = toolName,
+                                            ["grantId"] = grant.Id,
+                                            ["scope"] = grant.Scope
+                                        }
+                                    });
+                                    return true;
+                                }
+
                                 var req = toolApprovalService.Create(session.Id, msg.ChannelId, msg.SenderId, toolName, argsJson, approvalTimeout);
+                                approvalAuditStore.RecordCreated(req);
+                                operations.RuntimeEvents.Append(new RuntimeEventEntry
+                                {
+                                    Id = $"evt_{Guid.NewGuid():N}"[..20],
+                                    SessionId = session.Id,
+                                    ChannelId = msg.ChannelId,
+                                    SenderId = msg.SenderId,
+                                    Component = "approval",
+                                    Action = "requested",
+                                    Severity = "info",
+                                    Summary = $"Tool approval requested for '{toolName}'.",
+                                    Metadata = new Dictionary<string, string>
+                                    {
+                                        ["toolName"] = toolName,
+                                        ["approvalId"] = req.ApprovalId
+                                    }
+                                });
 
                                 var preview = argsJson.Length <= 800 ? argsJson : argsJson[..800] + "…";
 
@@ -346,7 +473,19 @@ public static class GatewayWorkers
                                     }, ct);
                                 }
 
-                                return await toolApprovalService.WaitForDecisionAsync(req.ApprovalId, approvalTimeout, ct);
+                                var outcome = await toolApprovalService.WaitForDecisionOutcomeAsync(req.ApprovalId, approvalTimeout, ct);
+                                if (outcome.Result == ToolApprovalWaitResult.TimedOut && outcome.Request is not null)
+                                {
+                                    approvalAuditStore.RecordDecision(
+                                        outcome.Request,
+                                        approved: false,
+                                        "timeout",
+                                        actorChannelId: null,
+                                        actorSenderId: null);
+                                    RecordApprovalTimedOutEvent(operations, outcome.Request);
+                                }
+
+                                return outcome.Result == ToolApprovalWaitResult.Approved;
                             }
 
                             if (useStreaming)
@@ -360,9 +499,8 @@ public static class GatewayWorkers
                                         msg.SenderId, evt.EnvelopeType, evt.Content, msg.MessageId,
                                         lifetime.ApplicationStopping);
                                 }
-                                
-                                await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_stop", "", msg.MessageId, lifetime.ApplicationStopping);
                                 await sessionManager.PersistAsync(session, lifetime.ApplicationStopping);
+                                await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_stop", "", msg.MessageId, lifetime.ApplicationStopping);
                             }
                             else
                             {
@@ -494,5 +632,97 @@ public static class GatewayWorkers
                 }
             }, lifetime.ApplicationStopping);
         }
+    }
+
+    private static void RecordApprovalDecisionEvent(
+        RuntimeOperationsState operations,
+        ToolApprovalRequest request,
+        bool approved,
+        string decisionSource,
+        string? actorChannelId,
+        string? actorSenderId)
+    {
+        var metadata = new Dictionary<string, string>
+        {
+            ["approvalId"] = request.ApprovalId,
+            ["toolName"] = request.ToolName,
+            ["approved"] = approved ? "true" : "false",
+            ["decisionSource"] = decisionSource
+        };
+
+        if (!string.IsNullOrWhiteSpace(actorChannelId))
+            metadata["actorChannelId"] = actorChannelId;
+        if (!string.IsNullOrWhiteSpace(actorSenderId))
+            metadata["actorSenderId"] = actorSenderId;
+
+        operations.RuntimeEvents.Append(new RuntimeEventEntry
+        {
+            Id = $"evt_{Guid.NewGuid():N}"[..20],
+            SessionId = request.SessionId,
+            ChannelId = request.ChannelId,
+            SenderId = request.SenderId,
+            Component = "approval",
+            Action = "decision_recorded",
+            Severity = "info",
+            Summary = $"{decisionSource} {(approved ? "approved" : "denied")} tool approval '{request.ApprovalId}'.",
+            Metadata = metadata
+        });
+    }
+
+    private static void RecordApprovalDecisionRejectedEvent(
+        RuntimeOperationsState operations,
+        ToolApprovalRequest? request,
+        string approvalId,
+        string reason,
+        string? actorChannelId,
+        string? actorSenderId)
+    {
+        var metadata = new Dictionary<string, string>
+        {
+            ["approvalId"] = approvalId,
+            ["reason"] = reason
+        };
+
+        if (request is not null)
+            metadata["toolName"] = request.ToolName;
+        if (!string.IsNullOrWhiteSpace(actorChannelId))
+            metadata["actorChannelId"] = actorChannelId;
+        if (!string.IsNullOrWhiteSpace(actorSenderId))
+            metadata["actorSenderId"] = actorSenderId;
+
+        operations.RuntimeEvents.Append(new RuntimeEventEntry
+        {
+            Id = $"evt_{Guid.NewGuid():N}"[..20],
+            SessionId = request?.SessionId,
+            ChannelId = request?.ChannelId,
+            SenderId = request?.SenderId,
+            Component = "approval",
+            Action = "decision_rejected",
+            Severity = "warning",
+            Summary = $"Rejected approval decision attempt for '{approvalId}'.",
+            Metadata = metadata
+        });
+    }
+
+    private static void RecordApprovalTimedOutEvent(
+        RuntimeOperationsState operations,
+        ToolApprovalRequest request)
+    {
+        operations.RuntimeEvents.Append(new RuntimeEventEntry
+        {
+            Id = $"evt_{Guid.NewGuid():N}"[..20],
+            SessionId = request.SessionId,
+            ChannelId = request.ChannelId,
+            SenderId = request.SenderId,
+            Component = "approval",
+            Action = "timed_out",
+            Severity = "warning",
+            Summary = $"Tool approval timed out for '{request.ToolName}'.",
+            Metadata = new Dictionary<string, string>
+            {
+                ["approvalId"] = request.ApprovalId,
+                ["toolName"] = request.ToolName
+            }
+        });
     }
 }

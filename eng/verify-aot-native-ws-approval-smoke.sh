@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+APPROVAL_SMOKE_ARTIFACTS_DIR="${AOT_NATIVE_WS_APPROVAL_ARTIFACTS_DIR:-$ROOT_DIR/artifacts/aot-native-ws-approval}" \
+APPROVAL_SMOKE_RUNTIME_MODE="aot" \
+APPROVAL_SMOKE_ORCHESTRATOR="native" \
+APPROVAL_SMOKE_GATEWAY_PORT="${AOT_NATIVE_WS_APPROVAL_GATEWAY_PORT:-19999}" \
+APPROVAL_SMOKE_PROVIDER_PORT="${AOT_NATIVE_WS_APPROVAL_PROVIDER_PORT:-21999}" \
+APPROVAL_SMOKE_NOTE_KEY="aot-native-approval" \
+APPROVAL_SMOKE_NOTE_CONTENT="from native aot approval" \
+APPROVAL_SMOKE_PUBLISH_AOT="1" \
+APPROVAL_SMOKE_ENABLE_MAF="0" \
+bash "$ROOT_DIR/eng/verify-websocket-approval-smoke.sh"

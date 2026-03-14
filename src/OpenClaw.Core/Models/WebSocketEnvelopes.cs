@@ -9,6 +9,7 @@ public sealed record WsClientEnvelope
     public required string Type { get; init; }
     public string? Text { get; init; }
     public string? Content { get; init; }
+    public string? SessionId { get; init; }
     public string? MessageId { get; init; }
     public string? ReplyToMessageId { get; init; }
 

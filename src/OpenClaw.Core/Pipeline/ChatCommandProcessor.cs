@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Threading;
 using System.Threading.Tasks;
 using OpenClaw.Core.Abstractions;
@@ -7,8 +8,25 @@ using OpenClaw.Core.Sessions;
 
 namespace OpenClaw.Core.Pipeline;
 
+public enum DynamicCommandRegistrationResult
+{
+    Registered,
+    ReservedBuiltIn,
+    Duplicate
+}
+
 public sealed class ChatCommandProcessor
 {
+    private static readonly FrozenSet<string> BuiltInCommands = new[]
+    {
+        "/status",
+        "/new",
+        "/reset",
+        "/model",
+        "/usage",
+        "/help"
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     private readonly SessionManager _sessionManager;
     private readonly ConcurrentDictionary<string, Func<string, CancellationToken, Task<string>>> _dynamicCommands = new(StringComparer.OrdinalIgnoreCase);
 
@@ -20,10 +38,15 @@ public sealed class ChatCommandProcessor
     /// <summary>
     /// Registers a dynamic command handler (e.g. from a plugin).
     /// </summary>
-    public void RegisterDynamic(string command, Func<string, CancellationToken, Task<string>> handler)
+    public DynamicCommandRegistrationResult RegisterDynamic(string command, Func<string, CancellationToken, Task<string>> handler)
     {
         var key = command.StartsWith('/') ? command : "/" + command;
-        _dynamicCommands[key] = handler;
+        if (BuiltInCommands.Contains(key))
+            return DynamicCommandRegistrationResult.ReservedBuiltIn;
+
+        return _dynamicCommands.TryAdd(key, handler)
+            ? DynamicCommandRegistrationResult.Registered
+            : DynamicCommandRegistrationResult.Duplicate;
     }
 
     /// <summary>
@@ -39,13 +62,6 @@ public sealed class ChatCommandProcessor
         var parts = text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         var command = parts[0].ToLowerInvariant();
         var args = parts.Length > 1 ? parts[1].Trim() : "";
-
-        // Check dynamic commands first (plugin-registered)
-        if (_dynamicCommands.TryGetValue(command, out var dynamicHandler))
-        {
-            var dynamicResult = await dynamicHandler(args, ct);
-            return (true, dynamicResult);
-        }
 
         switch (command)
         {
@@ -83,6 +99,12 @@ public sealed class ChatCommandProcessor
                 return (true, "Available commands:\n/status - Show session details\n/new (or /reset) - Clear conversation history\n/model <name> - Override the LLM model for this session\n/model reset - Clear model override\n/usage - Show token counts\n/help - Show this message");
 
             default:
+                if (_dynamicCommands.TryGetValue(command, out var dynamicHandler))
+                {
+                    var dynamicResult = await dynamicHandler(args, ct);
+                    return (true, dynamicResult);
+                }
+
                 // Not a recognized command — assume it might be normal user text that just starts with a slash
                 return (false, null);
         }

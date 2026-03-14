@@ -78,6 +78,30 @@ public sealed class WebSocketChannelTests
     }
 
     [Fact]
+    public async Task HandleConnectionAsync_PreservesEnvelopeSessionId()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });
+        var ws = new TestWebSocket();
+
+        var payload = """{"type":"user_message","text":"hello","sessionId":"sess-restart"}""";
+        ws.QueueReceiveBytes(System.Text.Encoding.UTF8.GetBytes(payload), endOfMessage: true);
+        ws.QueueClose();
+
+        InboundMessage? received = null;
+        channel.OnMessageReceived += (msg, _) =>
+        {
+            received = msg;
+            return ValueTask.CompletedTask;
+        };
+
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+
+        Assert.NotNull(received);
+        Assert.Equal("sess-restart", received!.SessionId);
+        Assert.Equal("hello", received.Text);
+    }
+
+    [Fact]
     public async Task HandleConnectionAsync_IgnoresPrematureRemoteCloseDuringReceive()
     {
         var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });

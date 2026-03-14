@@ -16,21 +16,33 @@ public sealed class PluginHost : IAsyncDisposable
     private readonly string _bridgeScriptPath;
     private readonly ILogger _logger;
     private readonly GatewayRuntimeState _runtimeState;
+    private readonly HashSet<string> _blockedPluginIds;
     private readonly List<PluginBridgeProcess> _bridges = [];
+    private readonly Dictionary<string, PluginBridgeProcess> _bridgesByPluginId = new(StringComparer.Ordinal);
     private readonly List<ITool> _pluginTools = [];
     private readonly List<PluginLoadReport> _reports = [];
     private readonly List<string> _skillRoots = [];
     private readonly List<IChannelAdapter> _pluginChannels = [];
+    private readonly List<(string PluginId, string ChannelId, IChannelAdapter Adapter)> _pluginChannelRegistrations = [];
     private readonly List<IToolHook> _pluginHooks = [];
     private readonly List<(string PluginId, string CommandName, string Description, PluginBridgeProcess Bridge)> _pluginCommands = [];
     private readonly List<(string ProviderId, string[] Models, PluginBridgeProcess Bridge)> _pluginProviders = [];
+    private readonly List<(string PluginId, string ProviderId, string[] Models, PluginBridgeProcess Bridge)> _pluginProviderRegistrations = [];
 
-    public PluginHost(PluginsConfig config, string bridgeScriptPath, ILogger logger, GatewayRuntimeState? runtimeState = null)
+    public PluginHost(
+        PluginsConfig config,
+        string bridgeScriptPath,
+        ILogger logger,
+        GatewayRuntimeState? runtimeState = null,
+        IReadOnlyCollection<string>? blockedPluginIds = null)
     {
         _config = config;
         _bridgeScriptPath = bridgeScriptPath;
         _logger = logger;
         _runtimeState = runtimeState ?? RuntimeModeResolver.Resolve(new RuntimeConfig());
+        _blockedPluginIds = blockedPluginIds is { Count: > 0 }
+            ? new HashSet<string>(blockedPluginIds, StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -53,6 +65,8 @@ public sealed class PluginHost : IAsyncDisposable
     /// </summary>
     public IReadOnlyList<IChannelAdapter> ChannelAdapters => _pluginChannels;
 
+    public IReadOnlyList<(string PluginId, string ChannelId, IChannelAdapter Adapter)> ChannelRegistrations => _pluginChannelRegistrations;
+
     /// <summary>
     /// Tool hooks registered by plugins. Available after <see cref="LoadAsync"/>.
     /// </summary>
@@ -62,6 +76,10 @@ public sealed class PluginHost : IAsyncDisposable
     /// Plugin-registered provider info. Available after <see cref="LoadAsync"/>.
     /// </summary>
     public IReadOnlyList<(string ProviderId, string[] Models, PluginBridgeProcess Bridge)> ProviderRegistrations => _pluginProviders;
+
+    public IReadOnlyList<(string PluginId, string CommandName, string Description, PluginBridgeProcess Bridge)> CommandRegistrations => _pluginCommands;
+
+    public IReadOnlyList<(string PluginId, string ProviderId, string[] Models, PluginBridgeProcess Bridge)> ProviderRegistrationsDetailed => _pluginProviderRegistrations;
 
     /// <summary>
     /// Discover, filter, and load all enabled plugins.
@@ -78,6 +96,15 @@ public sealed class PluginHost : IAsyncDisposable
         // Discover
         _reports.Clear();
         _skillRoots.Clear();
+        _bridges.Clear();
+        _bridgesByPluginId.Clear();
+        _pluginTools.Clear();
+        _pluginChannels.Clear();
+        _pluginChannelRegistrations.Clear();
+        _pluginHooks.Clear();
+        _pluginCommands.Clear();
+        _pluginProviders.Clear();
+        _pluginProviderRegistrations.Clear();
         var discovery = PluginDiscovery.DiscoverWithDiagnostics(_config, workspacePath);
         var discovered = discovery.Plugins;
         _reports.AddRange(discovery.Reports);
@@ -90,6 +117,34 @@ public sealed class PluginHost : IAsyncDisposable
         // Load each plugin
         foreach (var plugin in enabled)
         {
+            if (_blockedPluginIds.Contains(plugin.Manifest.Id))
+            {
+                var message = $"Plugin '{plugin.Manifest.Id}' is disabled or quarantined by operator state.";
+                _reports.Add(new PluginLoadReport
+                {
+                    PluginId = plugin.Manifest.Id,
+                    SourcePath = plugin.RootPath,
+                    EntryPath = plugin.EntryPath,
+                    Origin = "bridge",
+                    EffectiveRuntimeMode = _runtimeState.EffectiveModeName,
+                    Loaded = false,
+                    BlockedReason = message,
+                    Error = message,
+                    Diagnostics =
+                    [
+                        new PluginCompatibilityDiagnostic
+                        {
+                            Severity = "warning",
+                            Code = "operator_blocked",
+                            Message = message,
+                            Surface = "operator_state",
+                            Path = plugin.Manifest.Id
+                        }
+                    ]
+                });
+                continue;
+            }
+
             try
             {
                 await LoadPluginAsync(plugin, ct);
@@ -205,6 +260,7 @@ public sealed class PluginHost : IAsyncDisposable
         }
 
         _bridges.Add(bridge);
+        _bridgesByPluginId[id] = bridge;
         foreach (var skillDir in skillDirs)
         {
             if (!_skillRoots.Contains(skillDir, StringComparer.Ordinal))
@@ -243,6 +299,7 @@ public sealed class PluginHost : IAsyncDisposable
             var adapter = new BridgedChannelAdapter(bridge, ch.Id, _logger);
             channelAdapters.Add(adapter);
             _pluginChannels.Add(adapter);
+            _pluginChannelRegistrations.Add((id, ch.Id, adapter));
             _logger.LogInformation("  Registered channel '{ChannelId}' from plugin '{PluginId}'", ch.Id, id);
         }
 
@@ -290,6 +347,7 @@ public sealed class PluginHost : IAsyncDisposable
         foreach (var prov in initResult.Providers)
         {
             _pluginProviders.Add((prov.Id, prov.Models, bridge));
+            _pluginProviderRegistrations.Add((id, prov.Id, prov.Models, bridge));
             _logger.LogInformation("  Registered provider '{ProviderId}' from plugin '{PluginId}'", prov.Id, id);
         }
 
@@ -336,7 +394,22 @@ public sealed class PluginHost : IAsyncDisposable
     }
 
     private JsonElement? GetPluginConfig(string pluginId)
-        => _config.Entries.TryGetValue(pluginId, out var entry) ? entry.Config : null;
+    {
+        if (!_config.Entries.TryGetValue(pluginId, out var entry))
+            return null;
+
+        return NormalizePluginConfig(entry.Config);
+    }
+
+    private static JsonElement? NormalizePluginConfig(JsonElement? config)
+    {
+        if (!config.HasValue)
+            return null;
+
+        return config.Value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+            ? null
+            : config;
+    }
 
     private IEnumerable<string> ResolveSkillDirectories(DiscoveredPlugin plugin)
     {
@@ -386,6 +459,18 @@ public sealed class PluginHost : IAsyncDisposable
         }
     }
 
+    public bool TryGetRestartCount(string pluginId, out int restartCount)
+    {
+        if (_bridgesByPluginId.TryGetValue(pluginId, out var bridge))
+        {
+            restartCount = bridge.RestartCount;
+            return true;
+        }
+
+        restartCount = 0;
+        return false;
+    }
+
     public async ValueTask DisposeAsync()
     {
         foreach (var bridge in _bridges)
@@ -400,11 +485,14 @@ public sealed class PluginHost : IAsyncDisposable
             }
         }
         _bridges.Clear();
+        _bridgesByPluginId.Clear();
         _pluginTools.Clear();
         _pluginChannels.Clear();
+        _pluginChannelRegistrations.Clear();
         _pluginHooks.Clear();
         _pluginCommands.Clear();
         _pluginProviders.Clear();
+        _pluginProviderRegistrations.Clear();
         _reports.Clear();
         _skillRoots.Clear();
     }

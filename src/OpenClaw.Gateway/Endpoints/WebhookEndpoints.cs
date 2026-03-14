@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
+using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
 
@@ -15,6 +16,8 @@ internal static class WebhookEndpoints
         GatewayStartupContext startup,
         GatewayAppRuntime runtime)
     {
+        var deliveries = runtime.Operations.WebhookDeliveries;
+
         if (runtime.TwilioSmsWebhookHandler is not null)
         {
             app.MapPost(startup.Config.Channels.Sms.Twilio.WebhookPath, async (HttpContext ctx) =>
@@ -41,19 +44,57 @@ internal static class WebhookEndpoints
                 foreach (var kvp in parsed)
                     dict[kvp.Key] = kvp.Value.ToString();
 
-                var sig = ctx.Request.Headers["X-Twilio-Signature"].ToString();
-
-                var response = await runtime.TwilioSmsWebhookHandler.HandleAsync(
-                    dict,
-                    sig,
-                    (msg, ct) => runtime.Pipeline.InboundWriter.WriteAsync(msg, ct),
-                    ctx.RequestAborted);
-
-                ctx.Response.StatusCode = response.StatusCode;
-                if (response.Body is not null)
+                var deliveryKey = dict.TryGetValue("MessageSid", out var messageSid) && !string.IsNullOrWhiteSpace(messageSid)
+                    ? messageSid
+                    : WebhookDeliveryStore.HashDeliveryKey(bodyText);
+                if (!deliveries.TryBegin("twilio", deliveryKey, TimeSpan.FromHours(6)))
                 {
-                    ctx.Response.ContentType = response.ContentType;
-                    await ctx.Response.WriteAsync(response.Body, ctx.RequestAborted);
+                    ctx.Response.StatusCode = StatusCodes.Status200OK;
+                    await ctx.Response.WriteAsync("Duplicate ignored.", ctx.RequestAborted);
+                    return;
+                }
+
+                var sig = ctx.Request.Headers["X-Twilio-Signature"].ToString();
+                InboundMessage? replayMessage = null;
+
+                try
+                {
+                    var response = await runtime.TwilioSmsWebhookHandler.HandleAsync(
+                        dict,
+                        sig,
+                        (msg, ct) =>
+                        {
+                            replayMessage = msg;
+                            return runtime.Pipeline.InboundWriter.WriteAsync(msg, ct);
+                        },
+                        ctx.RequestAborted);
+
+                    ctx.Response.StatusCode = response.StatusCode;
+                    if (response.Body is not null)
+                    {
+                        ctx.Response.ContentType = response.ContentType;
+                        await ctx.Response.WriteAsync(response.Body, ctx.RequestAborted);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    deliveries.RecordDeadLetter(new WebhookDeadLetterRecord
+                    {
+                        Entry = new WebhookDeadLetterEntry
+                        {
+                            Id = $"whdl_{Guid.NewGuid():N}"[..20],
+                            Source = "twilio",
+                            DeliveryKey = deliveryKey,
+                            ChannelId = "sms",
+                            SenderId = replayMessage?.SenderId ?? dict.GetValueOrDefault("From"),
+                            SessionId = replayMessage?.SessionId,
+                            Error = ex.Message,
+                            PayloadPreview = bodyText.Length <= 500 ? bodyText : bodyText[..500] + "…"
+                        },
+                        ReplayMessage = replayMessage
+                    });
+                    ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                    await ctx.Response.WriteAsync("Webhook processing failed.", ctx.RequestAborted);
                 }
             });
         }
@@ -100,72 +141,106 @@ internal static class WebhookEndpoints
 
                 using var document = JsonDocument.Parse(bodyText, new JsonDocumentOptions { MaxDepth = 64 });
                 var root = document.RootElement;
-
-                if (root.TryGetProperty("message", out var message) &&
-                    message.TryGetProperty("chat", out var chat) &&
-                    chat.TryGetProperty("id", out var chatId))
+                var deliveryKey = root.TryGetProperty("update_id", out var updateId)
+                    ? updateId.GetRawText()
+                    : WebhookDeliveryStore.HashDeliveryKey(bodyText);
+                if (!deliveries.TryBegin("telegram", deliveryKey, TimeSpan.FromHours(6)))
                 {
-                    var senderIdStr = chatId.GetRawText();
-
-                    await runtime.RecentSenders.RecordAsync("telegram", senderIdStr, senderName: null, ctx.RequestAborted);
-
-                    var effective = runtime.Allowlists.GetEffective("telegram", new ChannelAllowlistFile
-                    {
-                        AllowedFrom = startup.Config.Channels.Telegram.AllowedFromUserIds
-                    });
-
-                    if (!AllowlistPolicy.IsAllowed(effective.AllowedFrom, senderIdStr, runtime.AllowlistSemantics))
-                    {
-                        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
-                        return;
-                    }
-
-                    string? text = null;
-                    if (message.TryGetProperty("text", out var textNode))
-                        text = textNode.GetString();
-
-                    string? marker = null;
-                    if (message.TryGetProperty("photo", out var photoNode) && photoNode.ValueKind == JsonValueKind.Array)
-                    {
-                        string? fileId = null;
-                        foreach (var photo in photoNode.EnumerateArray())
-                        {
-                            if (photo.TryGetProperty("file_id", out var idNode))
-                                fileId = idNode.GetString();
-                        }
-
-                        if (!string.IsNullOrWhiteSpace(fileId))
-                            marker = $"[IMAGE:telegram:file_id={fileId}]";
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(marker))
-                    {
-                        var caption = message.TryGetProperty("caption", out var capNode) ? capNode.GetString() : null;
-                        text = string.IsNullOrWhiteSpace(caption) ? marker : marker + "\n" + caption;
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(text) && text.Length > startup.Config.Channels.Telegram.MaxInboundChars)
-                        text = text[..startup.Config.Channels.Telegram.MaxInboundChars];
-
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        ctx.Response.StatusCode = StatusCodes.Status200OK;
-                        await ctx.Response.WriteAsync("OK");
-                        return;
-                    }
-
-                    var inbound = new InboundMessage
-                    {
-                        ChannelId = "telegram",
-                        SenderId = senderIdStr,
-                        Text = text
-                    };
-
-                    await runtime.Pipeline.InboundWriter.WriteAsync(inbound, ctx.RequestAborted);
+                    ctx.Response.StatusCode = StatusCodes.Status200OK;
+                    await ctx.Response.WriteAsync("OK");
+                    return;
                 }
 
-                ctx.Response.StatusCode = StatusCodes.Status200OK;
-                await ctx.Response.WriteAsync("OK");
+                InboundMessage? replayMessage = null;
+
+                try
+                {
+                    if (root.TryGetProperty("message", out var message) &&
+                        message.TryGetProperty("chat", out var chat) &&
+                        chat.TryGetProperty("id", out var chatId))
+                    {
+                        var senderIdStr = chatId.GetRawText();
+
+                        await runtime.RecentSenders.RecordAsync("telegram", senderIdStr, senderName: null, ctx.RequestAborted);
+
+                        var effective = runtime.Allowlists.GetEffective("telegram", new ChannelAllowlistFile
+                        {
+                            AllowedFrom = startup.Config.Channels.Telegram.AllowedFromUserIds
+                        });
+
+                        if (!AllowlistPolicy.IsAllowed(effective.AllowedFrom, senderIdStr, runtime.AllowlistSemantics))
+                        {
+                            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                            return;
+                        }
+
+                        string? text = null;
+                        if (message.TryGetProperty("text", out var textNode))
+                            text = textNode.GetString();
+
+                        string? marker = null;
+                        if (message.TryGetProperty("photo", out var photoNode) && photoNode.ValueKind == JsonValueKind.Array)
+                        {
+                            string? fileId = null;
+                            foreach (var photo in photoNode.EnumerateArray())
+                            {
+                                if (photo.TryGetProperty("file_id", out var idNode))
+                                    fileId = idNode.GetString();
+                            }
+
+                            if (!string.IsNullOrWhiteSpace(fileId))
+                                marker = $"[IMAGE:telegram:file_id={fileId}]";
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(marker))
+                        {
+                            var caption = message.TryGetProperty("caption", out var capNode) ? capNode.GetString() : null;
+                            text = string.IsNullOrWhiteSpace(caption) ? marker : marker + "\n" + caption;
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(text) && text.Length > startup.Config.Channels.Telegram.MaxInboundChars)
+                            text = text[..startup.Config.Channels.Telegram.MaxInboundChars];
+
+                        if (string.IsNullOrWhiteSpace(text))
+                        {
+                            ctx.Response.StatusCode = StatusCodes.Status200OK;
+                            await ctx.Response.WriteAsync("OK");
+                            return;
+                        }
+
+                        replayMessage = new InboundMessage
+                        {
+                            ChannelId = "telegram",
+                            SenderId = senderIdStr,
+                            Text = text
+                        };
+
+                        await runtime.Pipeline.InboundWriter.WriteAsync(replayMessage, ctx.RequestAborted);
+                    }
+
+                    ctx.Response.StatusCode = StatusCodes.Status200OK;
+                    await ctx.Response.WriteAsync("OK");
+                }
+                catch (Exception ex)
+                {
+                    deliveries.RecordDeadLetter(new WebhookDeadLetterRecord
+                    {
+                        Entry = new WebhookDeadLetterEntry
+                        {
+                            Id = $"whdl_{Guid.NewGuid():N}"[..20],
+                            Source = "telegram",
+                            DeliveryKey = deliveryKey,
+                            ChannelId = "telegram",
+                            SenderId = replayMessage?.SenderId,
+                            SessionId = replayMessage?.SessionId,
+                            Error = ex.Message,
+                            PayloadPreview = bodyText.Length <= 500 ? bodyText : bodyText[..500] + "…"
+                        },
+                        ReplayMessage = replayMessage
+                    });
+                    ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                    await ctx.Response.WriteAsync("Webhook processing failed.", ctx.RequestAborted);
+                }
             });
         }
 
@@ -174,16 +249,62 @@ internal static class WebhookEndpoints
             var whatsappWebhookHandler = app.Services.GetRequiredService<WhatsAppWebhookHandler>();
             app.MapMethods(startup.Config.Channels.WhatsApp.WebhookPath, ["GET", "POST"], async (HttpContext ctx) =>
             {
-                var response = await whatsappWebhookHandler.HandleAsync(
-                    ctx,
-                    (msg, ct) => runtime.Pipeline.InboundWriter.WriteAsync(msg, ct),
-                    ctx.RequestAborted);
-
-                ctx.Response.StatusCode = response.StatusCode;
-                if (response.Body is not null)
+                ctx.Request.EnableBuffering();
+                var (bodyOk, bodyText) = await EndpointHelpers.TryReadBodyTextAsync(ctx, Math.Max(4 * 1024, startup.Config.Channels.WhatsApp.MaxRequestBytes), ctx.RequestAborted);
+                if (!bodyOk)
                 {
-                    ctx.Response.ContentType = response.ContentType;
-                    await ctx.Response.WriteAsync(response.Body, ctx.RequestAborted);
+                    ctx.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+                    await ctx.Response.WriteAsync("Request too large.", ctx.RequestAborted);
+                    return;
+                }
+
+                ctx.Request.Body.Position = 0;
+                var deliveryKey = TryResolveWhatsAppDeliveryKey(bodyText);
+                if (!deliveries.TryBegin("whatsapp", deliveryKey, TimeSpan.FromHours(6)))
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status200OK;
+                    await ctx.Response.WriteAsync("Duplicate ignored.", ctx.RequestAborted);
+                    return;
+                }
+
+                InboundMessage? replayMessage = null;
+                try
+                {
+                    var response = await whatsappWebhookHandler.HandleAsync(
+                        ctx,
+                        (msg, ct) =>
+                        {
+                            replayMessage = msg;
+                            return runtime.Pipeline.InboundWriter.WriteAsync(msg, ct);
+                        },
+                        ctx.RequestAborted);
+
+                    ctx.Response.StatusCode = response.StatusCode;
+                    if (response.Body is not null)
+                    {
+                        ctx.Response.ContentType = response.ContentType;
+                        await ctx.Response.WriteAsync(response.Body, ctx.RequestAborted);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    deliveries.RecordDeadLetter(new WebhookDeadLetterRecord
+                    {
+                        Entry = new WebhookDeadLetterEntry
+                        {
+                            Id = $"whdl_{Guid.NewGuid():N}"[..20],
+                            Source = "whatsapp",
+                            DeliveryKey = deliveryKey,
+                            ChannelId = "whatsapp",
+                            SenderId = replayMessage?.SenderId,
+                            SessionId = replayMessage?.SessionId,
+                            Error = ex.Message,
+                            PayloadPreview = bodyText.Length <= 500 ? bodyText : bodyText[..500] + "…"
+                        },
+                        ReplayMessage = replayMessage
+                    });
+                    ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                    await ctx.Response.WriteAsync("Webhook processing failed.", ctx.RequestAborted);
                 }
             });
         }
@@ -209,6 +330,19 @@ internal static class WebhookEndpoints
 
                 if (body.Length > hookCfg.MaxBodyLength)
                     body = body[..hookCfg.MaxBodyLength];
+
+                var headerKey = ctx.Request.Headers["Idempotency-Key"].ToString();
+                if (string.IsNullOrWhiteSpace(headerKey))
+                    headerKey = ctx.Request.Headers["X-OpenClaw-Delivery-Id"].ToString();
+                var deliveryKey = string.IsNullOrWhiteSpace(headerKey)
+                    ? WebhookDeliveryStore.HashDeliveryKey($"{name}:{body}")
+                    : headerKey;
+                if (!deliveries.TryBegin($"webhook:{name}", deliveryKey, TimeSpan.FromHours(6)))
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status202Accepted;
+                    await ctx.Response.WriteAsync("Webhook already processed.");
+                    return;
+                }
 
                 if (hookCfg.ValidateHmac)
                 {
@@ -236,10 +370,79 @@ internal static class WebhookEndpoints
                     Text = prompt
                 };
 
-                await runtime.Pipeline.InboundWriter.WriteAsync(msg, ctx.RequestAborted);
-                ctx.Response.StatusCode = StatusCodes.Status202Accepted;
-                await ctx.Response.WriteAsync("Webhook queued.");
+                try
+                {
+                    await runtime.Pipeline.InboundWriter.WriteAsync(msg, ctx.RequestAborted);
+                    ctx.Response.StatusCode = StatusCodes.Status202Accepted;
+                    await ctx.Response.WriteAsync("Webhook queued.");
+                }
+                catch (Exception ex)
+                {
+                    deliveries.RecordDeadLetter(new WebhookDeadLetterRecord
+                    {
+                        Entry = new WebhookDeadLetterEntry
+                        {
+                            Id = $"whdl_{Guid.NewGuid():N}"[..20],
+                            Source = $"webhook:{name}",
+                            DeliveryKey = deliveryKey,
+                            EndpointName = name,
+                            ChannelId = "webhook",
+                            SessionId = msg.SessionId,
+                            Error = ex.Message,
+                            PayloadPreview = body.Length <= 500 ? body : body[..500] + "…"
+                        },
+                        ReplayMessage = msg
+                    });
+                    ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                    await ctx.Response.WriteAsync("Webhook processing failed.", ctx.RequestAborted);
+                }
             });
         }
+    }
+
+    private static string TryResolveWhatsAppDeliveryKey(string bodyText)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(bodyText);
+            var root = document.RootElement;
+            if (root.TryGetProperty("entry", out var entries) && entries.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var entry in entries.EnumerateArray())
+                {
+                    if (!entry.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array)
+                        continue;
+
+                    foreach (var change in changes.EnumerateArray())
+                    {
+                        if (!change.TryGetProperty("value", out var value))
+                            continue;
+
+                        if (value.TryGetProperty("messages", out var messages) && messages.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var message in messages.EnumerateArray())
+                            {
+                                if (message.TryGetProperty("id", out var idNode))
+                                    return idNode.GetString() ?? WebhookDeliveryStore.HashDeliveryKey(bodyText);
+                            }
+                        }
+
+                        if (value.TryGetProperty("statuses", out var statuses) && statuses.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var status in statuses.EnumerateArray())
+                            {
+                                if (status.TryGetProperty("id", out var idNode))
+                                    return idNode.GetString() ?? WebhookDeliveryStore.HashDeliveryKey(bodyText);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return WebhookDeliveryStore.HashDeliveryKey(bodyText);
     }
 }

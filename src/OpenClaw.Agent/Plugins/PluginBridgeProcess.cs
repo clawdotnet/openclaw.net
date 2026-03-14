@@ -29,6 +29,8 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
     private volatile bool _intentionalShutdown;
     private Action<BridgeNotification>? _notificationHandler;
 
+    public int RestartCount { get; private set; }
+
     /// <summary>
     /// Sets a handler for unsolicited notifications from the plugin process.
     /// </summary>
@@ -223,6 +225,7 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
                     CleanupProcess();
                     _intentionalShutdown = false;
                     await InitializeProcessAsync(ct);
+                    RestartCount++;
                     _logger.LogInformation("Plugin bridge for '{PluginId}' restarted on attempt {Attempt}.", _pluginId, attempt);
                     return;
                 }

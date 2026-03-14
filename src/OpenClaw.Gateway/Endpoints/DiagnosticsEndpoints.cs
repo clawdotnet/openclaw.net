@@ -12,9 +12,11 @@ internal static class DiagnosticsEndpoints
         GatewayStartupContext startup,
         GatewayAppRuntime runtime)
     {
+        var browserSessions = app.Services.GetRequiredService<BrowserSessionAuthService>();
+
         app.MapGet("/health", (HttpContext ctx) =>
         {
-            if (!EndpointHelpers.IsAuthorizedRequest(ctx, startup.Config, startup.IsNonLoopbackBind))
+            if (!EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false).IsAuthorized)
                 return Results.Unauthorized();
 
             return Results.Json(
@@ -24,7 +26,7 @@ internal static class DiagnosticsEndpoints
 
         app.MapGet("/metrics", (HttpContext ctx) =>
         {
-            if (!EndpointHelpers.IsAuthorizedRequest(ctx, startup.Config, startup.IsNonLoopbackBind))
+            if (!EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false).IsAuthorized)
                 return Results.Unauthorized();
 
             runtime.RuntimeMetrics.SetActiveSessions(runtime.SessionManager.ActiveCount);
@@ -32,9 +34,17 @@ internal static class DiagnosticsEndpoints
             return Results.Json(runtime.RuntimeMetrics.Snapshot(), CoreJsonContext.Default.MetricsSnapshot);
         });
 
+        app.MapGet("/metrics/providers", (HttpContext ctx) =>
+        {
+            if (!EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false).IsAuthorized)
+                return Results.Unauthorized();
+
+            return Results.Json(runtime.ProviderUsage.Snapshot(), CoreJsonContext.Default.ListProviderUsageSnapshot);
+        });
+
         app.MapGet("/memory/retention/status", async (HttpContext ctx) =>
         {
-            if (!EndpointHelpers.IsAuthorizedRequest(ctx, startup.Config, startup.IsNonLoopbackBind))
+            if (!EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false).IsAuthorized)
                 return Results.Unauthorized();
 
             var status = await runtime.RetentionCoordinator.GetStatusAsync(ctx.RequestAborted);
@@ -47,7 +57,7 @@ internal static class DiagnosticsEndpoints
 
         app.MapPost("/memory/retention/sweep", async (HttpContext ctx, bool dryRun) =>
         {
-            if (!EndpointHelpers.IsAuthorizedRequest(ctx, startup.Config, startup.IsNonLoopbackBind))
+            if (!EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: true).IsAuthorized)
                 return Results.Unauthorized();
 
             try
@@ -72,13 +82,15 @@ internal static class DiagnosticsEndpoints
 
         app.MapGet("/doctor", async (HttpContext ctx) =>
         {
-            if (!EndpointHelpers.IsAuthorizedRequest(ctx, startup.Config, startup.IsNonLoopbackBind))
+            if (!EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false).IsAuthorized)
                 return Results.Unauthorized();
 
             var wsRoot = EndpointHelpers.ResolveWorkspaceRoot(startup.Config.Tooling.WorkspaceRoot);
             var wsExists = !string.IsNullOrWhiteSpace(wsRoot) && Directory.Exists(wsRoot);
             var retentionStatus = await runtime.RetentionCoordinator.GetStatusAsync(ctx.RequestAborted);
             var pluginReports = runtime.PluginReports;
+            var pluginHealth = runtime.Operations.PluginHealth.ListSnapshots();
+            var routeHealth = runtime.Operations.LlmExecution.SnapshotRoutes();
             const long retentionDisabledWarningThreshold = 2_000;
             string? retentionWarning = null;
             if (!startup.Config.Memory.Retention.Enabled && retentionStatus.StoreStats is not null)
@@ -188,6 +200,7 @@ internal static class DiagnosticsEndpoints
                 {
                     requestedMode = startup.RuntimeState.RequestedMode,
                     effectiveMode = startup.RuntimeState.EffectiveModeName,
+                    orchestrator = runtime.OrchestratorId,
                     dynamicCodeSupported = startup.RuntimeState.DynamicCodeSupported,
                     circuitBreaker = runtime.AgentRuntime.CircuitBreakerState.ToString(),
                     activeSessions = runtime.SessionManager.ActiveCount
@@ -196,12 +209,19 @@ internal static class DiagnosticsEndpoints
                 {
                     loaded = pluginReports.Count(r => r.Loaded),
                     blockedByMode = pluginReports.Count(r => r.BlockedByRuntimeMode),
-                    reports = pluginReports
+                    reports = pluginReports,
+                    health = pluginHealth
                 },
                 skills = new
                 {
-                    count = runtime.Skills.Count,
-                    names = runtime.Skills.Select(s => s.Name).ToArray()
+                    count = runtime.AgentRuntime.LoadedSkillNames.Count,
+                    names = runtime.AgentRuntime.LoadedSkillNames.ToArray()
+                },
+                usage = new
+                {
+                    providers = runtime.ProviderUsage.Snapshot(),
+                    routes = routeHealth,
+                    recentTurns = runtime.ProviderUsage.RecentTurns(limit: 25)
                 },
                 warnings = retentionWarning is null ? Array.Empty<string>() : [retentionWarning]
             };
@@ -211,13 +231,14 @@ internal static class DiagnosticsEndpoints
 
         app.MapGet("/doctor/text", async (HttpContext ctx) =>
         {
-            if (!EndpointHelpers.IsAuthorizedRequest(ctx, startup.Config, startup.IsNonLoopbackBind))
+            if (!EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false).IsAuthorized)
                 return Results.Unauthorized();
 
             var wsRoot = EndpointHelpers.ResolveWorkspaceRoot(startup.Config.Tooling.WorkspaceRoot);
             var wsExists = !string.IsNullOrWhiteSpace(wsRoot) && Directory.Exists(wsRoot);
             var retentionStatus = await runtime.RetentionCoordinator.GetStatusAsync(ctx.RequestAborted);
             var pluginReports = runtime.PluginReports;
+            var pluginHealth = runtime.Operations.PluginHealth.ListSnapshots();
             const long retentionDisabledWarningThreshold = 2_000;
             var persistedScopedItems = retentionStatus.StoreStats is null
                 ? 0
@@ -241,6 +262,7 @@ internal static class DiagnosticsEndpoints
             sb.AppendLine("Runtime");
             sb.AppendLine($"- requested_mode: {startup.RuntimeState.RequestedMode}");
             sb.AppendLine($"- effective_mode: {startup.RuntimeState.EffectiveModeName}");
+            sb.AppendLine($"- orchestrator: {runtime.OrchestratorId}");
             sb.AppendLine($"- dynamic_code_supported: {EndpointHelpers.ToBoolWord(startup.RuntimeState.DynamicCodeSupported)}");
             sb.AppendLine();
 
@@ -257,6 +279,28 @@ internal static class DiagnosticsEndpoints
                 else if (!string.IsNullOrWhiteSpace(report.Error))
                     sb.AppendLine($"  error: {report.Error}");
             }
+            if (pluginHealth.Count > 0)
+            {
+                sb.AppendLine("- health:");
+                foreach (var snapshot in pluginHealth.OrderBy(item => item.PluginId, StringComparer.Ordinal))
+                    sb.AppendLine($"  - {snapshot.PluginId}: disabled={EndpointHelpers.ToBoolWord(snapshot.Disabled)} quarantined={EndpointHelpers.ToBoolWord(snapshot.Quarantined)} restarts={snapshot.RestartCount}");
+            }
+            sb.AppendLine();
+
+            sb.AppendLine("Skills");
+            sb.AppendLine($"- loaded: {runtime.AgentRuntime.LoadedSkillNames.Count}");
+            if (runtime.AgentRuntime.LoadedSkillNames.Count > 0)
+                sb.AppendLine($"- names: {string.Join(", ", runtime.AgentRuntime.LoadedSkillNames)}");
+            sb.AppendLine();
+
+            sb.AppendLine("Provider Usage");
+            foreach (var item in runtime.ProviderUsage.Snapshot())
+            {
+                sb.AppendLine($"- {item.ProviderId}/{item.ModelId}: requests={item.Requests} retries={item.Retries} errors={item.Errors} tokens={item.InputTokens}in/{item.OutputTokens}out");
+            }
+            sb.AppendLine("- routes:");
+            foreach (var route in runtime.Operations.LlmExecution.SnapshotRoutes())
+                sb.AppendLine($"  - {route.ProviderId}/{route.ModelId}: circuit={route.CircuitState} requests={route.Requests} retries={route.Retries} errors={route.Errors}");
             sb.AppendLine();
 
             sb.AppendLine("Allowlists");
@@ -314,12 +358,6 @@ internal static class DiagnosticsEndpoints
                 sb.AppendLine($"  - {job.Name} cron={job.CronExpression} run_on_startup={EndpointHelpers.ToBoolWord(job.RunOnStartup)} session={job.SessionId}");
             if (startup.Config.Cron.Jobs.Count > 20)
                 sb.AppendLine("  - …");
-            sb.AppendLine();
-
-            sb.AppendLine("Skills");
-            sb.AppendLine($"- loaded: {runtime.Skills.Count}");
-            if (runtime.Skills.Count > 0)
-                sb.AppendLine($"- names: {string.Join(", ", runtime.Skills.Select(s => s.Name))}");
             sb.AppendLine();
 
             sb.AppendLine("Suggested next steps");

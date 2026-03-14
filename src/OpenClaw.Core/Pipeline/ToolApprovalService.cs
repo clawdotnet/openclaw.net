@@ -9,6 +9,26 @@ public enum ToolApprovalDecisionResult
     Unauthorized
 }
 
+public sealed record ToolApprovalDecisionOutcome
+{
+    public required ToolApprovalDecisionResult Result { get; init; }
+    public ToolApprovalRequest? Request { get; init; }
+}
+
+public enum ToolApprovalWaitResult
+{
+    Approved,
+    Denied,
+    TimedOut,
+    NotFound
+}
+
+public sealed record ToolApprovalWaitOutcome
+{
+    public required ToolApprovalWaitResult Result { get; init; }
+    public ToolApprovalRequest? Request { get; init; }
+}
+
 public sealed record ToolApprovalRequest
 {
     public required string ApprovalId { get; init; }
@@ -59,8 +79,8 @@ public sealed class ToolApprovalService
     }
 
     public bool TrySetDecision(string approvalId, bool approved)
-        => TrySetDecision(approvalId, approved, requesterChannelId: null, requesterSenderId: null, requireRequesterMatch: false)
-            is ToolApprovalDecisionResult.Recorded;
+        => TrySetDecisionWithRequest(approvalId, approved, requesterChannelId: null, requesterSenderId: null, requireRequesterMatch: false)
+            .Result is ToolApprovalDecisionResult.Recorded;
 
     public ToolApprovalDecisionResult TrySetDecision(
         string approvalId,
@@ -68,47 +88,97 @@ public sealed class ToolApprovalService
         string? requesterChannelId,
         string? requesterSenderId,
         bool requireRequesterMatch = true)
+        => TrySetDecisionWithRequest(approvalId, approved, requesterChannelId, requesterSenderId, requireRequesterMatch).Result;
+
+    public ToolApprovalDecisionOutcome TrySetDecisionWithRequest(
+        string approvalId,
+        bool approved,
+        string? requesterChannelId,
+        string? requesterSenderId,
+        bool requireRequesterMatch = true)
     {
         if (!_pending.TryGetValue(approvalId, out var pending))
-            return ToolApprovalDecisionResult.NotFound;
+            return new ToolApprovalDecisionOutcome { Result = ToolApprovalDecisionResult.NotFound };
 
         if (requireRequesterMatch)
         {
             if (string.IsNullOrWhiteSpace(requesterChannelId) || string.IsNullOrWhiteSpace(requesterSenderId))
-                return ToolApprovalDecisionResult.Unauthorized;
+                return new ToolApprovalDecisionOutcome
+                {
+                    Result = ToolApprovalDecisionResult.Unauthorized,
+                    Request = pending.Request
+                };
 
             if (!string.Equals(requesterChannelId, pending.Request.ChannelId, StringComparison.Ordinal) ||
                 !string.Equals(requesterSenderId, pending.Request.SenderId, StringComparison.Ordinal))
             {
-                return ToolApprovalDecisionResult.Unauthorized;
+                return new ToolApprovalDecisionOutcome
+                {
+                    Result = ToolApprovalDecisionResult.Unauthorized,
+                    Request = pending.Request
+                };
             }
         }
 
         if (!_pending.TryRemove(approvalId, out var p))
-            return ToolApprovalDecisionResult.NotFound;
+            return new ToolApprovalDecisionOutcome { Result = ToolApprovalDecisionResult.NotFound };
 
         p.Tcs.TrySetResult(approved);
-        return ToolApprovalDecisionResult.Recorded;
+        return new ToolApprovalDecisionOutcome
+        {
+            Result = ToolApprovalDecisionResult.Recorded,
+            Request = p.Request
+        };
     }
 
-    public async Task<bool> WaitForDecisionAsync(string approvalId, TimeSpan timeout, CancellationToken ct)
+    public async Task<ToolApprovalWaitOutcome> WaitForDecisionOutcomeAsync(string approvalId, TimeSpan timeout, CancellationToken ct)
     {
         if (!_pending.TryGetValue(approvalId, out var p))
-            return false;
+        {
+            return new ToolApprovalWaitOutcome
+            {
+                Result = ToolApprovalWaitResult.NotFound
+            };
+        }
 
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(timeout);
-            return await p.Tcs.Task.WaitAsync(cts.Token);
+            var approved = await p.Tcs.Task.WaitAsync(cts.Token);
+            return new ToolApprovalWaitOutcome
+            {
+                Result = approved ? ToolApprovalWaitResult.Approved : ToolApprovalWaitResult.Denied,
+                Request = p.Request
+            };
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (OperationCanceledException)
         {
-            // Timeout or shutdown => deny by default
+            if (p.Tcs.Task.IsCompletedSuccessfully)
+            {
+                return new ToolApprovalWaitOutcome
+                {
+                    Result = p.Tcs.Task.Result ? ToolApprovalWaitResult.Approved : ToolApprovalWaitResult.Denied,
+                    Request = p.Request
+                };
+            }
+
+            // Timeout => deny by default and drain the pending request.
             _pending.TryRemove(approvalId, out _);
-            return false;
+            return new ToolApprovalWaitOutcome
+            {
+                Result = ToolApprovalWaitResult.TimedOut,
+                Request = p.Request
+            };
         }
     }
+
+    public async Task<bool> WaitForDecisionAsync(string approvalId, TimeSpan timeout, CancellationToken ct)
+        => (await WaitForDecisionOutcomeAsync(approvalId, timeout, ct)).Result == ToolApprovalWaitResult.Approved;
 
     public IReadOnlyList<ToolApprovalRequest> ListPending(string? channelId = null, string? senderId = null)
     {
@@ -133,5 +203,19 @@ public sealed class ToolApprovalService
         }
 
         return result;
+    }
+
+    public ToolApprovalRequest? GetPending(string approvalId)
+    {
+        if (!_pending.TryGetValue(approvalId, out var pending))
+            return null;
+
+        if (pending.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            _pending.TryRemove(approvalId, out _);
+            return null;
+        }
+
+        return pending.Request;
     }
 }

@@ -3,6 +3,9 @@ using OpenClaw.Gateway.Composition;
 using OpenClaw.Gateway.Endpoints;
 using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.Profiles;
+#if OPENCLAW_ENABLE_MAF_EXPERIMENT
+using OpenClaw.MicrosoftAgentFrameworkAdapter;
+#endif
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -22,6 +25,9 @@ builder.Services.AddOpenClawChannelServices(startup);
 builder.Services.AddOpenClawToolServices(startup);
 builder.Services.AddOpenClawSecurityServices(startup);
 builder.Services.ApplyOpenClawRuntimeProfile(startup);
+#if OPENCLAW_ENABLE_MAF_EXPERIMENT
+builder.Services.AddMicrosoftAgentFrameworkExperiment(builder.Configuration);
+#endif
 
 var app = builder.Build();
 var runtime = await app.InitializeOpenClawRuntimeAsync(startup);

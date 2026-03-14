@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+APPROVAL_SMOKE_ARTIFACTS_DIR="${JIT_NATIVE_WS_APPROVAL_ARTIFACTS_DIR:-$ROOT_DIR/artifacts/jit-native-ws-approval}" \
+APPROVAL_SMOKE_RUNTIME_MODE="jit" \
+APPROVAL_SMOKE_ORCHESTRATOR="native" \
+APPROVAL_SMOKE_GATEWAY_PORT="${JIT_NATIVE_WS_APPROVAL_GATEWAY_PORT:-19979}" \
+APPROVAL_SMOKE_PROVIDER_PORT="${JIT_NATIVE_WS_APPROVAL_PROVIDER_PORT:-21979}" \
+APPROVAL_SMOKE_NOTE_KEY="jit-native-approval" \
+APPROVAL_SMOKE_NOTE_CONTENT="from native jit approval" \
+APPROVAL_SMOKE_PUBLISH_AOT="0" \
+APPROVAL_SMOKE_ENABLE_MAF="0" \
+bash "$ROOT_DIR/eng/verify-websocket-approval-smoke.sh"

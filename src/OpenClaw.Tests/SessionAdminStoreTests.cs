@@ -100,6 +100,31 @@ public sealed class SessionAdminStoreTests
         }
     }
 
+    [Fact]
+    public async Task SqliteMemoryStore_ListSessionsAsync_FiltersByState()
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            var dbPath = Path.Combine(root, "openclaw.db");
+            using var store = new SqliteMemoryStore(dbPath, enableFts: false);
+            await SeedSessionsAsync(store);
+
+            var page = await ((ISessionAdminStore)store).ListSessionsAsync(
+                page: 1,
+                pageSize: 10,
+                new SessionListQuery { State = SessionState.Paused },
+                CancellationToken.None);
+
+            Assert.Single(page.Items);
+            Assert.Equal("session-3", page.Items[0].Id);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static async Task SeedSessionsAsync(IMemoryStore store)
     {
         await store.SaveSessionAsync(new Session
@@ -123,7 +148,8 @@ public sealed class SessionAdminStoreTests
             Id = "session-3",
             ChannelId = "sms",
             SenderId = "carol",
-            LastActiveAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+            LastActiveAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            State = SessionState.Paused
         }, CancellationToken.None);
     }
 

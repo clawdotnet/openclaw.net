@@ -39,6 +39,21 @@ public sealed class CircuitBreaker
         get => (CircuitState)Volatile.Read(ref _state);
     }
 
+    public void RecordSuccess() => OnSuccess();
+
+    public void RecordFailure() => OnFailure();
+
+    public void Reset()
+    {
+        lock (_lock)
+        {
+            _consecutiveFailures = 0;
+            _probeFailures = 0;
+            _currentCooldown = _baseCooldown;
+            _state = (int)CircuitState.Closed;
+        }
+    }
+
     /// <summary>
     /// Throws <see cref="CircuitOpenException"/> if the circuit is currently open.
     /// Used for streaming paths where wrapping in ExecuteAsync is impractical.

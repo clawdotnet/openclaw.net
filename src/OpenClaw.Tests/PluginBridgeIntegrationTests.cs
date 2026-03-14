@@ -390,6 +390,45 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_UndefinedJsonElementConfig_IsTreatedAsMissing()
+    {
+        if (!HasNode()) return;
+
+        var pluginDir = CreatePlugin(
+            "undefined-config-plugin",
+            "index.js",
+            """
+            module.exports = function(api) {
+              api.registerTool({
+                name: "undefined_config_echo",
+                description: "Undefined config echo",
+                parameters: { type: "object", properties: {} },
+                execute: async () => String(api.config.mode ?? "unset")
+              });
+            };
+            """);
+
+        await using var host = CreateHost(new PluginsConfig
+        {
+            Enabled = true,
+            Load = new PluginLoadConfig { Paths = [pluginDir] },
+            Entries = new(StringComparer.Ordinal)
+            {
+                ["undefined-config-plugin"] = new PluginEntryConfig
+                {
+                    Config = default
+                }
+            }
+        });
+
+        var tools = await host.LoadAsync(null, CancellationToken.None);
+
+        var tool = Assert.Single(tools);
+        Assert.Equal("unset", await tool.ExecuteAsync("{}", CancellationToken.None));
+        Assert.Single(host.Reports, r => r.PluginId == "undefined-config-plugin" && r.Loaded);
+    }
+
+    [Fact]
     public async Task LoadAsync_ConfigSchemaOneOf_AndPluginConfigAlias_AreSupported()
     {
         if (!HasNode()) return;
@@ -1459,6 +1498,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
     [Fact]
     public void ProviderOrdering_PluginRegisteredProvider_IsResolvedByFactory()
     {
+        LlmClientFactory.ResetDynamicProviders();
         var providerName = $"test-provider-{Guid.NewGuid():N}";
         var mockClient = Substitute.For<IChatClient>();
 

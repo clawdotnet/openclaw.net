@@ -10,6 +10,19 @@ internal static class WebUiEndpoints
         GatewayStartupContext startup,
         GatewayAppRuntime runtime)
     {
+        app.MapGet("/admin", async (HttpContext ctx) =>
+        {
+            var htmlPath = Path.Combine(AppContext.BaseDirectory, "wwwroot", "admin.html");
+            if (File.Exists(htmlPath))
+            {
+                ctx.Response.ContentType = "text/html";
+                await ctx.Response.SendFileAsync(htmlPath);
+                return;
+            }
+
+            ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        });
+
         app.MapGet("/chat", async (HttpContext ctx) =>
         {
             var htmlPath = Path.Combine(AppContext.BaseDirectory, "wwwroot", "webchat.html");

@@ -114,6 +114,10 @@ public static class ConfigValidator
         if (runtimeMode is not ("auto" or "aot" or "jit"))
             errors.Add("Runtime.Mode must be 'auto', 'aot', or 'jit'.");
 
+        var runtimeOrchestrator = RuntimeOrchestrator.Normalize(config.Runtime.Orchestrator);
+        if (runtimeOrchestrator is not (RuntimeOrchestrator.Native or RuntimeOrchestrator.Maf))
+            errors.Add("Runtime.Orchestrator must be 'native' or 'maf'.");
+
         // Channels
         if (config.Channels.Sms.Twilio.MaxInboundChars < 1)
             errors.Add($"Channels.Sms.Twilio.MaxInboundChars must be >= 1 (got {config.Channels.Sms.Twilio.MaxInboundChars}).");

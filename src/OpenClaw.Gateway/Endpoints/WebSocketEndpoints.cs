@@ -73,6 +73,12 @@ internal static class WebSocketEndpoints
                 return;
             }
 
+            if (!runtime.Operations.ActorRateLimits.TryConsume("ip", EndpointHelpers.GetRemoteIpKey(ctx), "websocket", out _))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                return;
+            }
+
             var ws = await ctx.WebSockets.AcceptWebSocketAsync();
             var clientId = ctx.Connection.Id;
             await runtime.WebSocketChannel.HandleConnectionAsync(ws, clientId, ctx.Connection.RemoteIpAddress, ctx.RequestAborted);

@@ -1,6 +1,10 @@
 using System.Net.Http.Headers;
+using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Validation;
 using OpenClaw.Gateway.Extensions;
@@ -117,6 +121,7 @@ internal static class GatewayBootstrapExtensions
         var openClawSection = configuration.GetSection("OpenClaw");
         var config = openClawSection.Get<GatewayConfig>() ?? new GatewayConfig();
         ApplyConfiguredToolingOverrides(openClawSection, config);
+        HydratePluginEntryConfigJson(config, configuration);
         ApplyEnvironmentOverrides(config);
         return config;
     }
@@ -165,6 +170,94 @@ internal static class GatewayBootstrapExtensions
         config.Llm.Model = Environment.GetEnvironmentVariable("MODEL_PROVIDER_MODEL") ?? config.Llm.Model;
         config.Llm.Endpoint = ResolveSecretRefOrNull(config.Llm.Endpoint) ?? Environment.GetEnvironmentVariable("MODEL_PROVIDER_ENDPOINT");
         config.AuthToken ??= Environment.GetEnvironmentVariable("OPENCLAW_AUTH_TOKEN");
+    }
+
+    private static void HydratePluginEntryConfigJson(GatewayConfig config, IConfiguration configuration)
+    {
+        var entriesSection = configuration.GetSection("OpenClaw").GetSection("Plugins").GetSection("Entries");
+        foreach (var pluginSection in entriesSection.GetChildren())
+        {
+            if (!config.Plugins.Entries.TryGetValue(pluginSection.Key, out var entry))
+            {
+                entry = new PluginEntryConfig();
+                config.Plugins.Entries[pluginSection.Key] = entry;
+            }
+
+            var pluginConfigSection = pluginSection.GetSection("Config");
+            if (!pluginConfigSection.Exists())
+                continue;
+
+            entry.Config = BuildJsonElement(pluginConfigSection);
+        }
+    }
+
+    private static JsonElement? BuildJsonElement(IConfigurationSection section)
+    {
+        var node = BuildJsonNode(section);
+        if (node is null)
+            return null;
+
+        using var doc = JsonDocument.Parse(node.ToJsonString());
+        return doc.RootElement.Clone();
+    }
+
+    private static JsonNode? BuildJsonNode(IConfigurationSection section)
+    {
+        var children = section.GetChildren().ToArray();
+        if (children.Length == 0)
+            return BuildScalarNode(section.Value);
+
+        if (TryGetArrayChildren(children, out var orderedChildren))
+        {
+            var array = new JsonArray();
+            foreach (var child in orderedChildren)
+                array.Add(BuildJsonNode(child));
+            return array;
+        }
+
+        var obj = new JsonObject();
+        foreach (var child in children)
+            obj[child.Key] = BuildJsonNode(child);
+
+        return obj;
+    }
+
+    private static JsonNode? BuildScalarNode(string? value)
+    {
+        if (value is null)
+            return null;
+
+        if (bool.TryParse(value, out var boolValue))
+            return JsonValue.Create(boolValue);
+
+        if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
+            return JsonValue.Create(longValue);
+
+        if (decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var decimalValue))
+            return JsonValue.Create(decimalValue);
+
+        return JsonValue.Create(value);
+    }
+
+    private static bool TryGetArrayChildren(
+        IEnumerable<IConfigurationSection> children,
+        out IConfigurationSection[] orderedChildren)
+    {
+        var indexed = new List<(int Index, IConfigurationSection Section)>();
+        foreach (var child in children)
+        {
+            if (!int.TryParse(child.Key, NumberStyles.None, CultureInfo.InvariantCulture, out var index))
+            {
+                orderedChildren = [];
+                return false;
+            }
+
+            indexed.Add((index, child));
+        }
+
+        indexed.Sort(static (left, right) => left.Index.CompareTo(right.Index));
+        orderedChildren = indexed.Select(item => item.Section).ToArray();
+        return true;
     }
 
     private static void ApplyConfiguredToolingOverrides(IConfiguration section, GatewayConfig config)

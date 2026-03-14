@@ -186,6 +186,35 @@ public sealed class SessionManager
     public ValueTask<IReadOnlyList<SessionBranch>> ListBranchesAsync(string sessionId, CancellationToken ct)
         => _store.ListBranchesAsync(sessionId, ct);
 
+    public async ValueTask<SessionDiffResponse?> BuildBranchDiffAsync(
+        Session session,
+        string branchId,
+        SessionMetadataSnapshot? metadata,
+        CancellationToken ct)
+    {
+        var branch = await _store.LoadBranchAsync(branchId, ct);
+        if (branch is null || !string.Equals(branch.SessionId, session.Id, StringComparison.Ordinal))
+            return null;
+
+        var sharedPrefix = 0;
+        var maxPrefix = Math.Min(session.History.Count, branch.History.Count);
+        while (sharedPrefix < maxPrefix && TurnsEqual(session.History[sharedPrefix], branch.History[sharedPrefix]))
+            sharedPrefix++;
+
+        return new SessionDiffResponse
+        {
+            SessionId = session.Id,
+            BranchId = branch.BranchId,
+            BranchName = branch.Name,
+            SharedPrefixTurns = sharedPrefix,
+            CurrentTurnCount = session.History.Count,
+            BranchTurnCount = branch.History.Count,
+            CurrentOnlyTurnSummaries = session.History.Skip(sharedPrefix).Select(SummarizeTurn).ToArray(),
+            BranchOnlyTurnSummaries = branch.History.Skip(sharedPrefix).Select(SummarizeTurn).ToArray(),
+            Metadata = metadata
+        };
+    }
+
     /// <summary>
     /// Returns a list of all currently active sessions in memory.
     /// </summary>
@@ -258,6 +287,44 @@ public sealed class SessionManager
         }
 
         return removedCount;
+    }
+
+    private static bool TurnsEqual(ChatTurn left, ChatTurn right)
+    {
+        if (!string.Equals(left.Role, right.Role, StringComparison.Ordinal) ||
+            !string.Equals(left.Content, right.Content, StringComparison.Ordinal))
+            return false;
+
+        var leftCalls = left.ToolCalls;
+        var rightCalls = right.ToolCalls;
+        if (ReferenceEquals(leftCalls, rightCalls))
+            return true;
+        if (leftCalls is null || rightCalls is null || leftCalls.Count != rightCalls.Count)
+            return false;
+
+        for (var i = 0; i < leftCalls.Count; i++)
+        {
+            var l = leftCalls[i];
+            var r = rightCalls[i];
+            if (!string.Equals(l.ToolName, r.ToolName, StringComparison.Ordinal) ||
+                !string.Equals(l.Arguments, r.Arguments, StringComparison.Ordinal) ||
+                !string.Equals(l.Result, r.Result, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string SummarizeTurn(ChatTurn turn)
+    {
+        var content = string.IsNullOrWhiteSpace(turn.Content)
+            ? turn.Role
+            : turn.Content.Trim();
+        if (content.Length > 180)
+            content = content[..180] + "…";
+        return $"{turn.Role}: {content}";
     }
 
     private void EvictLeastRecentlyActive()

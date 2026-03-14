@@ -195,4 +195,23 @@ public sealed class ObservabilityTests
         Assert.Equal(4 * iterations, m.TotalToolCalls);
         Assert.Equal(4 * iterations, m.TotalInputTokens);
     }
+
+    [Fact]
+    public void ProviderUsageTracker_Snapshot_AccumulatesCounters()
+    {
+        var tracker = new ProviderUsageTracker();
+        tracker.RecordRequest("openai", "gpt-4o");
+        tracker.RecordRetry("openai", "gpt-4o");
+        tracker.RecordError("openai", "gpt-4o");
+        tracker.AddTokens("openai", "gpt-4o", 12, 34);
+
+        var snapshot = Assert.Single(tracker.Snapshot());
+        Assert.Equal("openai", snapshot.ProviderId);
+        Assert.Equal("gpt-4o", snapshot.ModelId);
+        Assert.Equal(1, snapshot.Requests);
+        Assert.Equal(1, snapshot.Retries);
+        Assert.Equal(1, snapshot.Errors);
+        Assert.Equal(12, snapshot.InputTokens);
+        Assert.Equal(34, snapshot.OutputTokens);
+    }
 }

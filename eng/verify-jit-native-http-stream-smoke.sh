@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export HTTP_STREAM_SMOKE_ARTIFACTS_DIR="${JIT_NATIVE_HTTP_STREAM_ARTIFACTS_DIR:-$ROOT_DIR/artifacts/jit-native-http-stream}"
+export HTTP_STREAM_SMOKE_RUNTIME_MODE="jit"
+export HTTP_STREAM_SMOKE_ORCHESTRATOR="native"
+export HTTP_STREAM_SMOKE_GATEWAY_PORT="${JIT_NATIVE_HTTP_STREAM_GATEWAY_PORT:-19989}"
+export HTTP_STREAM_SMOKE_PROVIDER_PORT="${JIT_NATIVE_HTTP_STREAM_PROVIDER_PORT:-21989}"
+export HTTP_STREAM_SMOKE_CHUNKS_JSON='["Hello ","streaming"]'
+export HTTP_STREAM_SMOKE_EXPECTED_TEXT="Hello streaming"
+export HTTP_STREAM_SMOKE_PUBLISH_AOT="0"
+export HTTP_STREAM_SMOKE_ENABLE_MAF="0"
+
+bash "$ROOT_DIR/eng/verify-http-stream-smoke.sh"

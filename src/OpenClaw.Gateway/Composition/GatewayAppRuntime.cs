@@ -20,6 +20,7 @@ namespace OpenClaw.Gateway.Composition;
 internal sealed class GatewayAppRuntime
 {
     public required IAgentRuntime AgentRuntime { get; init; }
+    public required string OrchestratorId { get; init; }
     public required MessagePipeline Pipeline { get; init; }
     public required MiddlewarePipeline MiddlewarePipeline { get; init; }
     public required WebSocketChannel WebSocketChannel { get; init; }
@@ -32,16 +33,19 @@ internal sealed class GatewayAppRuntime
     public required RecentSendersStore RecentSenders { get; init; }
     public required ChatCommandProcessor CommandProcessor { get; init; }
     public required ToolApprovalService ToolApprovalService { get; init; }
+    public required ApprovalAuditStore ApprovalAuditStore { get; init; }
     public required RuntimeMetrics RuntimeMetrics { get; init; }
+    public required ProviderUsageTracker ProviderUsage { get; init; }
     public required SkillWatcherService SkillWatcher { get; init; }
     public required IReadOnlyList<PluginLoadReport> PluginReports { get; init; }
-    public required IReadOnlyList<SkillDefinition> Skills { get; init; }
+    public required RuntimeOperationsState Operations { get; init; }
     public required bool EffectiveRequireToolApproval { get; init; }
     public required IReadOnlyList<string> EffectiveApprovalRequiredTools { get; init; }
     public required NativePluginRegistry NativeRegistry { get; init; }
     public required ConcurrentDictionary<string, SemaphoreSlim> SessionLocks { get; init; }
     public required ConcurrentDictionary<string, DateTimeOffset> LockLastUsed { get; init; }
     public required FrozenSet<string>? AllowedOriginsSet { get; init; }
+    public required IReadOnlyList<string> DynamicProviderOwners { get; init; }
     public required CronScheduler? CronTask { get; init; }
     public TwilioSmsWebhookHandler? TwilioSmsWebhookHandler { get; init; }
     public PluginHost? PluginHost { get; init; }

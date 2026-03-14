@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export HTTP_STREAM_SMOKE_ARTIFACTS_DIR="${AOT_MAF_HTTP_STREAM_ARTIFACTS_DIR:-$ROOT_DIR/artifacts/aot-maf-http-stream}"
+export HTTP_STREAM_SMOKE_RUNTIME_MODE="aot"
+export HTTP_STREAM_SMOKE_ORCHESTRATOR="maf"
+export HTTP_STREAM_SMOKE_GATEWAY_PORT="${AOT_MAF_HTTP_STREAM_GATEWAY_PORT:-20019}"
+export HTTP_STREAM_SMOKE_PROVIDER_PORT="${AOT_MAF_HTTP_STREAM_PROVIDER_PORT:-22019}"
+export HTTP_STREAM_SMOKE_CHUNKS_JSON='["Hello ","streaming"]'
+export HTTP_STREAM_SMOKE_EXPECTED_TEXT="Hello streaming"
+export HTTP_STREAM_SMOKE_PUBLISH_AOT="1"
+export HTTP_STREAM_SMOKE_ENABLE_MAF="1"
+
+bash "$ROOT_DIR/eng/verify-http-stream-smoke.sh"

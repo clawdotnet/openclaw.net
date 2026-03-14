@@ -4,6 +4,7 @@
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="OpenClaw.MicrosoftAgentFrameworkAdapter" />
     <InternalsVisibleTo Include="OpenClaw.Tests" />
   </ItemGroup>
   <ItemGroup>

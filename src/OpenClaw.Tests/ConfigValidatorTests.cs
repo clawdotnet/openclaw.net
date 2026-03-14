@@ -155,4 +155,19 @@ public sealed class ConfigValidatorTests
         var errors = ConfigValidator.Validate(config);
         Assert.Contains(errors, e => e.Contains("Runtime.Mode", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void Validate_InvalidRuntimeOrchestrator_ReturnsError()
+    {
+        var config = new GatewayConfig
+        {
+            Runtime = new RuntimeConfig
+            {
+                Orchestrator = "experimental"
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.Contains(errors, e => e.Contains("Runtime.Orchestrator", StringComparison.Ordinal));
+    }
 }

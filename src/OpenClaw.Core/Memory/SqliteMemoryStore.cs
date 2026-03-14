@@ -748,6 +748,12 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
             where.Append(" AND json_extract(json,'$.channelId') = $channelId");
         if (!string.IsNullOrEmpty(query.SenderId))
             where.Append(" AND json_extract(json,'$.senderId') = $senderId");
+        if (query.FromUtc is not null)
+            where.Append(" AND json_extract(json,'$.lastActiveAt') >= $fromUtc");
+        if (query.ToUtc is not null)
+            where.Append(" AND json_extract(json,'$.lastActiveAt') <= $toUtc");
+        if (query.State is not null)
+            where.Append(" AND (json_extract(json,'$.state') = $stateInt OR json_extract(json,'$.state') = $stateText)");
         if (!string.IsNullOrEmpty(query.Search))
             where.Append(" AND (id LIKE $search OR json_extract(json,'$.channelId') LIKE $search OR json_extract(json,'$.senderId') LIKE $search)");
 
@@ -755,6 +761,13 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         countCmd.CommandText = $"SELECT COUNT(*) FROM sessions {where}";
         if (!string.IsNullOrEmpty(query.ChannelId)) countCmd.Parameters.AddWithValue("$channelId", query.ChannelId);
         if (!string.IsNullOrEmpty(query.SenderId)) countCmd.Parameters.AddWithValue("$senderId", query.SenderId);
+        if (query.FromUtc is not null) countCmd.Parameters.AddWithValue("$fromUtc", query.FromUtc.Value.ToString("O"));
+        if (query.ToUtc is not null) countCmd.Parameters.AddWithValue("$toUtc", query.ToUtc.Value.ToString("O"));
+        if (query.State is not null)
+        {
+            countCmd.Parameters.AddWithValue("$stateInt", (int)query.State.Value);
+            countCmd.Parameters.AddWithValue("$stateText", query.State.Value.ToString());
+        }
         if (!string.IsNullOrEmpty(query.Search)) countCmd.Parameters.AddWithValue("$search", $"%{query.Search}%");
 
         var total = Convert.ToInt32(await countCmd.ExecuteScalarAsync(ct) ?? 0);
@@ -768,6 +781,13 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
             """;
         if (!string.IsNullOrEmpty(query.ChannelId)) cmd.Parameters.AddWithValue("$channelId", query.ChannelId);
         if (!string.IsNullOrEmpty(query.SenderId)) cmd.Parameters.AddWithValue("$senderId", query.SenderId);
+        if (query.FromUtc is not null) cmd.Parameters.AddWithValue("$fromUtc", query.FromUtc.Value.ToString("O"));
+        if (query.ToUtc is not null) cmd.Parameters.AddWithValue("$toUtc", query.ToUtc.Value.ToString("O"));
+        if (query.State is not null)
+        {
+            cmd.Parameters.AddWithValue("$stateInt", (int)query.State.Value);
+            cmd.Parameters.AddWithValue("$stateText", query.State.Value.ToString());
+        }
         if (!string.IsNullOrEmpty(query.Search)) cmd.Parameters.AddWithValue("$search", $"%{query.Search}%");
         cmd.Parameters.AddWithValue("$limit", pageSize);
         cmd.Parameters.AddWithValue("$offset", skip);

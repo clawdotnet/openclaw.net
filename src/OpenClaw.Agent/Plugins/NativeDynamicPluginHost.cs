@@ -22,26 +22,39 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
     private readonly NativeDynamicPluginsConfig _config;
     private readonly GatewayRuntimeState _runtimeState;
     private readonly ILogger _logger;
+    private readonly HashSet<string> _blockedPluginIds;
     private readonly List<ITool> _tools = [];
     private readonly List<IChannelAdapter> _channelAdapters = [];
+    private readonly List<(string PluginId, string ChannelId, IChannelAdapter Adapter)> _channelRegistrations = [];
     private readonly List<IToolHook> _toolHooks = [];
     private readonly List<(string PluginId, string Name, string Description, Func<string, CancellationToken, Task<string>> Handler)> _commands = [];
     private readonly List<(string ProviderId, string[] Models, IChatClient Client)> _providerRegistrations = [];
+    private readonly List<(string PluginId, string ProviderId, string[] Models, IChatClient Client)> _providerRegistrationsDetailed = [];
     private readonly List<string> _skillRoots = [];
     private readonly List<PluginLoadReport> _reports = [];
     private readonly List<LoadedNativePlugin> _loadedPlugins = [];
 
-    public NativeDynamicPluginHost(NativeDynamicPluginsConfig config, GatewayRuntimeState runtimeState, ILogger logger)
+    public NativeDynamicPluginHost(
+        NativeDynamicPluginsConfig config,
+        GatewayRuntimeState runtimeState,
+        ILogger logger,
+        IReadOnlyCollection<string>? blockedPluginIds = null)
     {
         _config = config;
         _runtimeState = runtimeState;
         _logger = logger;
+        _blockedPluginIds = blockedPluginIds is { Count: > 0 }
+            ? new HashSet<string>(blockedPluginIds, StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
     }
 
     public IReadOnlyList<ITool> Tools => _tools;
     public IReadOnlyList<IChannelAdapter> ChannelAdapters => _channelAdapters;
+    public IReadOnlyList<(string PluginId, string ChannelId, IChannelAdapter Adapter)> ChannelRegistrations => _channelRegistrations;
     public IReadOnlyList<IToolHook> ToolHooks => _toolHooks;
     public IReadOnlyList<(string ProviderId, string[] Models, IChatClient Client)> ProviderRegistrations => _providerRegistrations;
+    public IReadOnlyList<(string PluginId, string Name, string Description, Func<string, CancellationToken, Task<string>> Handler)> CommandRegistrations => _commands;
+    public IReadOnlyList<(string PluginId, string ProviderId, string[] Models, IChatClient Client)> ProviderRegistrationsDetailed => _providerRegistrationsDetailed;
     public IReadOnlyList<string> SkillRoots => _skillRoots;
     public IReadOnlyList<PluginLoadReport> Reports => _reports;
 
@@ -56,9 +69,11 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
         _reports.Clear();
         _tools.Clear();
         _channelAdapters.Clear();
+        _channelRegistrations.Clear();
         _toolHooks.Clear();
         _commands.Clear();
         _providerRegistrations.Clear();
+        _providerRegistrationsDetailed.Clear();
         _skillRoots.Clear();
 
         var discovery = DiscoverWithDiagnostics(workspacePath);
@@ -108,6 +123,34 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
         foreach (var plugin in enabled)
         {
             ct.ThrowIfCancellationRequested();
+            if (_blockedPluginIds.Contains(plugin.Manifest.Id))
+            {
+                var message = $"Dynamic native plugin '{plugin.Manifest.Id}' is disabled or quarantined by operator state.";
+                _reports.Add(new PluginLoadReport
+                {
+                    PluginId = plugin.Manifest.Id,
+                    SourcePath = plugin.RootPath,
+                    EntryPath = plugin.AssemblyPath,
+                    Origin = "native_dynamic",
+                    EffectiveRuntimeMode = _runtimeState.EffectiveModeName,
+                    Loaded = false,
+                    BlockedReason = message,
+                    Error = message,
+                    Diagnostics =
+                    [
+                        new PluginCompatibilityDiagnostic
+                        {
+                            Severity = "warning",
+                            Code = "operator_blocked",
+                            Message = message,
+                            Surface = "operator_state",
+                            Path = plugin.Manifest.Id
+                        }
+                    ]
+                });
+                continue;
+            }
+
             await LoadPluginAsync(plugin, ct);
         }
 
@@ -118,6 +161,12 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
     {
         foreach (var (_, name, _, handler) in _commands)
             processor.RegisterDynamic(name, handler);
+    }
+
+    public bool TryGetRestartCount(string pluginId, out int restartCount)
+    {
+        restartCount = 0;
+        return _loadedPlugins.Any(item => string.Equals(item.PluginId, pluginId, StringComparison.Ordinal));
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2026:RequiresUnreferencedCode", Justification = "Dynamic native plugins are JIT-only and blocked in AOT mode.")]
@@ -166,9 +215,11 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
             }
 
             _channelAdapters.AddRange(registrationContext.Channels);
+            _channelRegistrations.AddRange(registrationContext.Channels.Select(channel => (manifest.Id, channel.ChannelId, channel)));
             _toolHooks.AddRange(registrationContext.Hooks);
             _commands.AddRange(registrationContext.Commands.Select(cmd => (manifest.Id, cmd.Name, cmd.Description, cmd.Handler)));
             _providerRegistrations.AddRange(registrationContext.Providers);
+            _providerRegistrationsDetailed.AddRange(registrationContext.Providers.Select(provider => (manifest.Id, provider.ProviderId, provider.Models, provider.Client)));
 
             var skillDirs = ResolveSkillDirectories(plugin).ToArray();
             foreach (var skillDir in skillDirs)
@@ -177,7 +228,7 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
                     _skillRoots.Add(skillDir);
             }
 
-            _loadedPlugins.Add(new LoadedNativePlugin(loadContext, registrationContext.Services.ToArray()));
+            _loadedPlugins.Add(new LoadedNativePlugin(manifest.Id, loadContext, registrationContext.Services.ToArray()));
 
             _reports.Add(new PluginLoadReport
             {
@@ -215,7 +266,22 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
     }
 
     private JsonElement? GetPluginConfig(string pluginId)
-        => _config.Entries.TryGetValue(pluginId, out var entry) ? entry.Config : null;
+    {
+        if (!_config.Entries.TryGetValue(pluginId, out var entry))
+            return null;
+
+        return NormalizePluginConfig(entry.Config);
+    }
+
+    private static JsonElement? NormalizePluginConfig(JsonElement? config)
+    {
+        if (!config.HasValue)
+            return null;
+
+        return config.Value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+            ? null
+            : config;
+    }
 
     private IReadOnlyList<string> ResolveSkillDirectories(DiscoveredNativeDynamicPlugin plugin)
     {
@@ -451,9 +517,11 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
         _loadedPlugins.Clear();
         _tools.Clear();
         _channelAdapters.Clear();
+        _channelRegistrations.Clear();
         _toolHooks.Clear();
         _commands.Clear();
         _providerRegistrations.Clear();
+        _providerRegistrationsDetailed.Clear();
         _skillRoots.Clear();
         _reports.Clear();
     }
@@ -515,6 +583,7 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
     }
 
     private sealed record LoadedNativePlugin(
+        string PluginId,
         NativeDynamicPluginLoadContext LoadContext,
         INativeDynamicPluginService[] Services);
 

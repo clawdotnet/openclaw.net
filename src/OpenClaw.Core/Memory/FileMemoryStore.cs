@@ -765,6 +765,15 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
                     !string.Equals(session.SenderId, query.SenderId, StringComparison.OrdinalIgnoreCase))
                     continue;
 
+                if (query.FromUtc is { } fromUtc && session.LastActiveAt < fromUtc)
+                    continue;
+
+                if (query.ToUtc is { } toUtc && session.LastActiveAt > toUtc)
+                    continue;
+
+                if (query.State is { } state && session.State != state)
+                    continue;
+
                 if (!string.IsNullOrEmpty(query.Search))
                 {
                     var s = query.Search;

@@ -110,6 +110,7 @@ public sealed class WebSocketChannel : IChannelAdapter
                 {
                     ChannelId = ChannelId,
                     SenderId = clientId,
+                    SessionId = parsed.SessionId,
                     Type = parsed.Type,
                     Text = parsed.Text ?? "",
                     MessageId = parsed.MessageId,
@@ -420,6 +421,7 @@ public sealed class WebSocketChannel : IChannelAdapter
         bool IsEnvelope,
         string? Type,
         string? Text,
+        string? SessionId,
         string? MessageId,
         string? ReplyToMessageId,
         string? ApprovalId,
@@ -435,7 +437,7 @@ public sealed class WebSocketChannel : IChannelAdapter
             i++;
 
         if (i >= span.Length || span[i] != '{')
-            return new ParsedWsInbound(false, null, payload, null, null, null, null);
+            return new ParsedWsInbound(false, null, payload, null, null, null, null, null);
 
         try
         {
@@ -449,12 +451,12 @@ public sealed class WebSocketChannel : IChannelAdapter
                 if (extractedText.Length > MaxExtractedTextLength)
                     extractedText = extractedText[..MaxExtractedTextLength];
 
-                return new ParsedWsInbound(true, env.Type, extractedText, env.MessageId, env.ReplyToMessageId, null, null);
+                return new ParsedWsInbound(true, env.Type, extractedText, env.SessionId, env.MessageId, env.ReplyToMessageId, null, null);
             }
 
             if (env is { Type: "tool_approval_decision", ApprovalId: not null, Approved: not null })
             {
-                return new ParsedWsInbound(true, env.Type, "", env.MessageId, env.ReplyToMessageId, env.ApprovalId, env.Approved);
+                return new ParsedWsInbound(true, env.Type, "", env.SessionId, env.MessageId, env.ReplyToMessageId, env.ApprovalId, env.Approved);
             }
         }
         catch
@@ -462,7 +464,7 @@ public sealed class WebSocketChannel : IChannelAdapter
             // fall through to raw
         }
 
-        return new ParsedWsInbound(false, null, payload, null, null, null, null);
+        return new ParsedWsInbound(false, null, payload, null, null, null, null, null);
     }
 
     private static ValueTask CloseIfOpenAsync(WebSocket ws, WebSocketCloseStatus status, string description, CancellationToken ct)

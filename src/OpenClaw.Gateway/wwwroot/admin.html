@@ -316,6 +316,7 @@
 
     <nav class="section-nav">
         <a href="#overview-section">Overview</a>
+        <a href="#ops-section">Ops</a>
         <a href="#sessions-section">Sessions</a>
         <a href="#settings-section">Settings</a>
         <a href="#channels-section">Channels</a>
@@ -352,6 +353,60 @@
                     <button id="approvals-refresh-button" class="secondary">Reload Approvals</button>
                 </div>
                 <div id="approvals-output" class="muted">Loading…</div>
+                <h3 style="margin-top:1rem;">Recent Approval History</h3>
+                <div id="approvals-history-output" class="muted">Loading…</div>
+            </div>
+        </section>
+
+        <section id="ops-section" class="grid">
+            <div class="card">
+                <h2>Providers</h2>
+                <div class="actions">
+                    <button id="providers-refresh-button" class="secondary">Reload Providers</button>
+                </div>
+                <pre id="providers-output">Loading…</pre>
+            </div>
+            <div class="card">
+                <h2>Plugins</h2>
+                <div class="actions">
+                    <button id="plugins-refresh-button" class="secondary">Reload Plugins</button>
+                </div>
+                <div id="plugins-output" class="muted">Loading…</div>
+            </div>
+            <div class="card">
+                <h2>Approval Grants</h2>
+                <div class="actions">
+                    <button id="approval-grants-refresh-button" class="secondary">Reload Grants</button>
+                </div>
+                <div id="approval-grants-output" class="muted">Loading…</div>
+            </div>
+            <div class="card">
+                <h2>Runtime Events</h2>
+                <div class="actions">
+                    <button id="events-refresh-button" class="secondary">Reload Events</button>
+                </div>
+                <pre id="events-output">Loading…</pre>
+            </div>
+            <div class="card">
+                <h2>Operator Audit</h2>
+                <div class="actions">
+                    <button id="audit-refresh-button" class="secondary">Reload Audit</button>
+                </div>
+                <pre id="audit-output">Loading…</pre>
+            </div>
+            <div class="card">
+                <h2>Webhook Dead-Letter</h2>
+                <div class="actions">
+                    <button id="dead-letter-refresh-button" class="secondary">Reload Dead-Letter</button>
+                </div>
+                <div id="dead-letter-output" class="muted">Loading…</div>
+            </div>
+            <div class="card">
+                <h2>Rate Limits</h2>
+                <div class="actions">
+                    <button id="rate-limits-refresh-button" class="secondary">Reload Rate Limits</button>
+                </div>
+                <pre id="rate-limits-output">Loading…</pre>
             </div>
         </section>
 
@@ -379,8 +434,15 @@
             </div>
             <div class="card">
                 <h2>Session Detail</h2>
+                <div class="filters">
+                    <label><input id="session-starred-input" type="checkbox"> Starred</label>
+                    <input id="session-tags-input" type="text" placeholder="Tags (comma separated)">
+                    <button id="session-metadata-save-button" class="secondary">Save Metadata</button>
+                </div>
                 <pre id="session-detail-output">Select a session.</pre>
                 <div id="session-branches-output" class="muted"></div>
+                <h3 style="margin-top:1rem;">Timeline</h3>
+                <pre id="session-timeline-output">Select a session.</pre>
             </div>
         </section>
 
@@ -622,6 +684,14 @@
         const doctorOutput = document.getElementById('doctor-output');
         const retentionOutput = document.getElementById('retention-output');
         const approvalsOutput = document.getElementById('approvals-output');
+        const approvalsHistoryOutput = document.getElementById('approvals-history-output');
+        const providersOutput = document.getElementById('providers-output');
+        const pluginsOutput = document.getElementById('plugins-output');
+        const approvalGrantsOutput = document.getElementById('approval-grants-output');
+        const eventsOutput = document.getElementById('events-output');
+        const auditOutput = document.getElementById('audit-output');
+        const deadLetterOutput = document.getElementById('dead-letter-output');
+        const rateLimitsOutput = document.getElementById('rate-limits-output');
         const sessionsOutput = document.getElementById('sessions-output');
         const sessionSearchInput = document.getElementById('session-search-input');
         const sessionChannelInput = document.getElementById('session-channel-input');
@@ -630,6 +700,9 @@
         const sessionsPageLabel = document.getElementById('sessions-page-label');
         const sessionDetailOutput = document.getElementById('session-detail-output');
         const sessionBranchesOutput = document.getElementById('session-branches-output');
+        const sessionTimelineOutput = document.getElementById('session-timeline-output');
+        const sessionStarredInput = document.getElementById('session-starred-input');
+        const sessionTagsInput = document.getElementById('session-tags-input');
         const pairingOutput = document.getElementById('pairing-output');
         const allowlistsOutput = document.getElementById('allowlists-output');
         const settingsStatus = document.getElementById('settings-status');
@@ -685,7 +758,8 @@
             hasMore: false,
             search: '',
             channelId: '',
-            senderId: ''
+            senderId: '',
+            selectedSessionId: null
         };
         let settingsState = null;
         let approvalsPollTimer = null;
@@ -757,7 +831,7 @@
         }
 
         async function logout() {
-            await api('/auth/session', { method: 'DELETE' });
+            await mutate('/auth/session', { method: 'DELETE' });
             csrfToken = null;
             sessionStatus.textContent = 'Logged out';
         }
@@ -984,6 +1058,126 @@
             `).join('');
         }
 
+        async function loadApprovalHistory() {
+            const { resp, data } = await api('/tools/approvals/history?limit=12');
+            if (!resp.ok) {
+                approvalsHistoryOutput.textContent = `Approval history failed (${resp.status})`;
+                return;
+            }
+
+            if (!data.items.length) {
+                approvalsHistoryOutput.textContent = 'No approval history yet.';
+                return;
+            }
+
+            approvalsHistoryOutput.innerHTML = data.items.map(item => `
+                <div class="card" style="margin-top:0.75rem;">
+                    <strong>${item.eventType === 'decision' ? (item.approved ? 'Approved' : 'Denied') : 'Created'} · ${item.toolName}</strong>
+                    <div class="muted">${item.channelId}:${item.senderId} · ${item.approvalId}</div>
+                    <div class="muted">${item.decisionSource || 'pending'} · ${item.decisionAtUtc || item.timestampUtc}</div>
+                    <pre>${item.argumentsPreview}</pre>
+                </div>
+            `).join('');
+        }
+
+        async function loadProviders() {
+            const { resp, data } = await api('/admin/providers');
+            renderJson(providersOutput, resp.ok ? data : `Providers request failed (${resp.status})`);
+        }
+
+        async function loadPlugins() {
+            const { resp, data } = await api('/admin/plugins');
+            if (!resp.ok) {
+                pluginsOutput.textContent = `Plugins request failed (${resp.status})`;
+                return;
+            }
+
+            if (!data.items.length) {
+                pluginsOutput.textContent = 'No plugins reported.';
+                return;
+            }
+
+            pluginsOutput.innerHTML = data.items.map(item => `
+                <div class="card" style="margin-bottom:0.75rem;">
+                    <strong>${item.pluginId}</strong>
+                    <div class="muted">${item.origin} · loaded=${item.loaded} · disabled=${item.disabled} · quarantined=${item.quarantined}</div>
+                    <div class="muted">Capabilities: ${(item.requestedCapabilities || []).join(', ') || 'none'}</div>
+                    <div class="muted">${item.pendingReason || item.lastError || 'No outstanding issues.'}</div>
+                    <div class="actions" style="margin-top:0.5rem;">
+                        <button data-plugin-action="disable" data-plugin-id="${item.pluginId}">Disable</button>
+                        <button class="secondary" data-plugin-action="enable" data-plugin-id="${item.pluginId}">Enable</button>
+                        <button class="secondary" data-plugin-action="quarantine" data-plugin-id="${item.pluginId}">Quarantine</button>
+                        <button class="secondary" data-plugin-action="clear-quarantine" data-plugin-id="${item.pluginId}">Clear Quarantine</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadApprovalGrants() {
+            const { resp, data } = await api('/tools/approval-policies');
+            if (!resp.ok) {
+                approvalGrantsOutput.textContent = `Approval grants request failed (${resp.status})`;
+                return;
+            }
+
+            if (!data.items.length) {
+                approvalGrantsOutput.textContent = 'No reusable approval grants.';
+                return;
+            }
+
+            approvalGrantsOutput.innerHTML = data.items.map(item => `
+                <div class="card" style="margin-bottom:0.75rem;">
+                    <strong>${item.toolName}</strong>
+                    <div class="muted">${item.scope} · ${item.channelId || item.sessionId || 'global'}</div>
+                    <div class="muted">Granted by ${item.grantedBy} via ${item.grantSource}</div>
+                    <div class="actions" style="margin-top:0.5rem;">
+                        <button class="secondary" data-grant-delete="${item.id}">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadEvents() {
+            const { resp, data } = await api('/admin/events?limit=40');
+            renderJson(eventsOutput, resp.ok ? data : `Events request failed (${resp.status})`);
+        }
+
+        async function loadAudit() {
+            const { resp, data } = await api('/admin/audit?limit=40');
+            renderJson(auditOutput, resp.ok ? data : `Audit request failed (${resp.status})`);
+        }
+
+        async function loadDeadLetter() {
+            const { resp, data } = await api('/admin/webhooks/dead-letter');
+            if (!resp.ok) {
+                deadLetterOutput.textContent = `Dead-letter request failed (${resp.status})`;
+                return;
+            }
+
+            if (!data.items.length) {
+                deadLetterOutput.textContent = 'No dead-letter items.';
+                return;
+            }
+
+            deadLetterOutput.innerHTML = data.items.map(item => `
+                <div class="card" style="margin-bottom:0.75rem;">
+                    <strong>${item.source}</strong>
+                    <div class="muted">${item.deliveryKey}</div>
+                    <div class="muted">${item.error}</div>
+                    <pre>${item.payloadPreview}</pre>
+                    <div class="actions">
+                        <button data-dead-letter-action="replay" data-dead-letter-id="${item.id}">Replay</button>
+                        <button class="secondary" data-dead-letter-action="discard" data-dead-letter-id="${item.id}">Discard</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadRateLimits() {
+            const { resp, data } = await api('/admin/rate-limits');
+            renderJson(rateLimitsOutput, resp.ok ? data : `Rate-limit request failed (${resp.status})`);
+        }
+
         async function loadSessions() {
             sessionsState.pageSize = Number(sessionPageSize.value || '25');
             const params = new URLSearchParams({
@@ -1032,6 +1226,8 @@
                     ${data.filters.search ? `<span class="pill">Search: ${data.filters.search}</span>` : ''}
                     ${data.filters.channelId ? `<span class="pill">Channel: ${data.filters.channelId}</span>` : ''}
                     ${data.filters.senderId ? `<span class="pill">Sender: ${data.filters.senderId}</span>` : ''}
+                    ${data.filters.tag ? `<span class="pill">Tag: ${data.filters.tag}</span>` : ''}
+                    ${data.filters.starred !== null && data.filters.starred !== undefined ? `<span class="pill">Starred: ${data.filters.starred}</span>` : ''}
                     <span class="pill">Page size: ${data.persisted.pageSize}</span>
                 </div>
                 <h3>Active (${data.active.length})</h3>
@@ -1042,29 +1238,38 @@
         }
 
         async function loadSessionDetail(sessionId) {
+            sessionsState.selectedSessionId = sessionId;
             const detail = await api(`/admin/sessions/${encodeURIComponent(sessionId)}`);
-            renderJson(sessionDetailOutput, detail.resp.ok ? detail.data : `Session detail failed (${detail.resp.status})`);
+            if (detail.resp.ok) {
+                renderJson(sessionDetailOutput, detail.data);
+                sessionStarredInput.checked = Boolean(detail.data.metadata?.starred);
+                sessionTagsInput.value = Array.isArray(detail.data.metadata?.tags) ? detail.data.metadata.tags.join(', ') : '';
+            } else {
+                renderJson(sessionDetailOutput, `Session detail failed (${detail.resp.status})`);
+                sessionStarredInput.checked = false;
+                sessionTagsInput.value = '';
+            }
 
             const branches = await api(`/admin/sessions/${encodeURIComponent(sessionId)}/branches`);
             if (!branches.resp.ok) {
                 sessionBranchesOutput.textContent = `Branches request failed (${branches.resp.status})`;
-                return;
-            }
-
-            if (!branches.data.items.length) {
+            } else if (!branches.data.items.length) {
                 sessionBranchesOutput.textContent = 'No branches.';
-                return;
+            } else {
+                sessionBranchesOutput.innerHTML = branches.data.items.map(item => `
+                    <div class="card" style="margin-top:0.75rem;">
+                        <strong>${item.name}</strong>
+                        <div class="muted">${item.branchId}</div>
+                        <div class="actions" style="margin-top:0.5rem;">
+                            <button data-restore-branch="${item.branchId}">Restore</button>
+                            <button class="secondary" data-diff-branch="${item.branchId}" data-session="${sessionId}">Diff</button>
+                        </div>
+                    </div>
+                `).join('') + `<div class="actions" style="margin-top:0.75rem;"><a href="/admin/sessions/${encodeURIComponent(sessionId)}/export" target="_blank">Export transcript</a><a href="/admin/sessions/export?search=${encodeURIComponent(sessionId)}" target="_blank">Export filtered JSON</a></div>`;
             }
 
-            sessionBranchesOutput.innerHTML = branches.data.items.map(item => `
-                <div class="card" style="margin-top:0.75rem;">
-                    <strong>${item.name}</strong>
-                    <div class="muted">${item.branchId}</div>
-                    <div class="actions" style="margin-top:0.5rem;">
-                        <button data-restore-branch="${item.branchId}">Restore</button>
-                    </div>
-                </div>
-            `).join('') + `<div class="actions" style="margin-top:0.75rem;"><a href="/admin/sessions/${encodeURIComponent(sessionId)}/export" target="_blank">Export transcript</a></div>`;
+            const timeline = await api(`/admin/sessions/${encodeURIComponent(sessionId)}/timeline`);
+            renderJson(sessionTimelineOutput, timeline.resp.ok ? timeline.data : `Timeline request failed (${timeline.resp.status})`);
         }
 
         async function loadPairing() {
@@ -1113,6 +1318,7 @@
                 doctorOutput.textContent = 'Login required.';
                 retentionOutput.textContent = 'Login required.';
                 approvalsOutput.textContent = 'Login required.';
+                approvalsHistoryOutput.textContent = 'Login required.';
                 sessionsOutput.textContent = 'Login required.';
                 pairingOutput.textContent = 'Login required.';
                 allowlistsOutput.textContent = 'Login required.';
@@ -1133,6 +1339,14 @@
                 loadDoctor(),
                 loadRetention(),
                 loadApprovals(),
+                loadApprovalHistory(),
+                loadProviders(),
+                loadPlugins(),
+                loadApprovalGrants(),
+                loadEvents(),
+                loadAudit(),
+                loadDeadLetter(),
+                loadRateLimits(),
                 loadSessions(),
                 loadSettings(),
                 loadPairing(),
@@ -1142,6 +1356,7 @@
             if (!approvalsPollTimer) {
                 approvalsPollTimer = setInterval(() => {
                     loadApprovals();
+                    loadApprovalHistory();
                     loadSummary();
                 }, 15000);
             }
@@ -1176,7 +1391,17 @@
             renderJson(retentionOutput, resp.ok ? data : `Retention sweep failed (${resp.status})`);
             showFlash(resp.ok ? 'Retention sweep started.' : `Retention sweep failed (${resp.status}).`, resp.ok ? 'warn' : 'error');
         });
-        document.getElementById('approvals-refresh-button').addEventListener('click', loadApprovals);
+        document.getElementById('approvals-refresh-button').addEventListener('click', async () => {
+            await loadApprovals();
+            await loadApprovalHistory();
+        });
+        document.getElementById('providers-refresh-button').addEventListener('click', loadProviders);
+        document.getElementById('plugins-refresh-button').addEventListener('click', loadPlugins);
+        document.getElementById('approval-grants-refresh-button').addEventListener('click', loadApprovalGrants);
+        document.getElementById('events-refresh-button').addEventListener('click', loadEvents);
+        document.getElementById('audit-refresh-button').addEventListener('click', loadAudit);
+        document.getElementById('dead-letter-refresh-button').addEventListener('click', loadDeadLetter);
+        document.getElementById('rate-limits-refresh-button').addEventListener('click', loadRateLimits);
         document.getElementById('sessions-apply-button').addEventListener('click', async () => {
             sessionsState.page = 1;
             sessionsState.search = sessionSearchInput.value.trim();
@@ -1217,7 +1442,33 @@
             const approved = button.getAttribute('data-approved') === 'true';
             const { resp } = await mutate(`/tools/approve?approvalId=${encodeURIComponent(approvalId)}&approved=${approved}`, { method: 'POST' });
             await loadApprovals();
+            await loadApprovalHistory();
             showFlash(resp.ok ? `Approval ${approved ? 'granted' : 'denied'} for ${approvalId}.` : `Approval update failed (${resp.status}).`, resp.ok ? 'ok' : 'error');
+        });
+
+        pluginsOutput.addEventListener('click', async (event) => {
+            const button = event.target.closest('button[data-plugin-action]');
+            if (!button) return;
+
+            const pluginId = button.getAttribute('data-plugin-id');
+            const action = button.getAttribute('data-plugin-action');
+            const { resp } = await mutate(`/admin/plugins/${encodeURIComponent(pluginId)}/${action}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: 'updated from admin UI' })
+            });
+            await loadPlugins();
+            await loadSummary();
+            showFlash(resp.ok ? `Plugin action queued: ${pluginId} → ${action}` : `Plugin action failed (${resp.status}).`, resp.ok ? 'warn' : 'error');
+        });
+
+        approvalGrantsOutput.addEventListener('click', async (event) => {
+            const button = event.target.closest('button[data-grant-delete]');
+            if (!button) return;
+            const id = button.getAttribute('data-grant-delete');
+            const { resp } = await mutate(`/tools/approval-policies/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            await loadApprovalGrants();
+            showFlash(resp.ok ? `Approval grant deleted: ${id}` : `Approval grant delete failed (${resp.status}).`, resp.ok ? 'ok' : 'error');
         });
 
         sessionsOutput.addEventListener('click', async (event) => {
@@ -1228,12 +1479,45 @@
 
         sessionBranchesOutput.addEventListener('click', async (event) => {
             const button = event.target.closest('button[data-restore-branch]');
-            if (!button) return;
+            if (button) {
+                const branchId = button.getAttribute('data-restore-branch');
+                const { resp, data } = await mutate(`/admin/branches/${encodeURIComponent(branchId)}/restore`, { method: 'POST' });
+                renderJson(sessionDetailOutput, resp.ok ? data : `Branch restore failed (${resp.status})`);
+                showFlash(resp.ok ? `Branch restored: ${branchId}` : `Branch restore failed (${resp.status}).`, resp.ok ? 'ok' : 'error');
+                if (sessionsState.selectedSessionId) {
+                    await loadSessionDetail(sessionsState.selectedSessionId);
+                }
+                return;
+            }
 
-            const branchId = button.getAttribute('data-restore-branch');
-            const { resp, data } = await mutate(`/admin/branches/${encodeURIComponent(branchId)}/restore`, { method: 'POST' });
-            renderJson(sessionDetailOutput, resp.ok ? data : `Branch restore failed (${resp.status})`);
-            showFlash(resp.ok ? `Branch restored: ${branchId}` : `Branch restore failed (${resp.status}).`, resp.ok ? 'ok' : 'error');
+            const diffButton = event.target.closest('button[data-diff-branch]');
+            if (!diffButton) return;
+            const branchId = diffButton.getAttribute('data-diff-branch');
+            const sessionId = diffButton.getAttribute('data-session');
+            const { resp, data } = await api(`/admin/sessions/${encodeURIComponent(sessionId)}/diff?branchId=${encodeURIComponent(branchId)}`);
+            renderJson(sessionTimelineOutput, resp.ok ? data : `Branch diff failed (${resp.status})`);
+        });
+
+        document.getElementById('session-metadata-save-button').addEventListener('click', async () => {
+            if (!sessionsState.selectedSessionId) {
+                showFlash('Select a session first.', 'warn');
+                return;
+            }
+
+            const payload = {
+                starred: sessionStarredInput.checked,
+                tags: sessionTagsInput.value.split(',').map(value => value.trim()).filter(Boolean)
+            };
+            const { resp } = await mutate(`/admin/sessions/${encodeURIComponent(sessionsState.selectedSessionId)}/metadata`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            showFlash(resp.ok ? 'Session metadata saved.' : `Session metadata save failed (${resp.status}).`, resp.ok ? 'ok' : 'error');
+            if (resp.ok) {
+                await loadSessionDetail(sessionsState.selectedSessionId);
+                await loadSessions();
+            }
         });
 
         allowlistsOutput.addEventListener('click', async (event) => {
@@ -1251,6 +1535,17 @@
                 sessionStatus.textContent = `Allowlist updated for ${channel}: ${data.senderId}`;
                 showFlash(`Allowlist updated for ${channel}: ${data.senderId}`, 'ok');
             }
+        });
+
+        deadLetterOutput.addEventListener('click', async (event) => {
+            const button = event.target.closest('button[data-dead-letter-action]');
+            if (!button) return;
+
+            const id = button.getAttribute('data-dead-letter-id');
+            const action = button.getAttribute('data-dead-letter-action');
+            const { resp } = await mutate(`/admin/webhooks/dead-letter/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
+            await loadDeadLetter();
+            showFlash(resp.ok ? `Dead-letter item ${action} queued: ${id}` : `Dead-letter action failed (${resp.status}).`, resp.ok ? 'ok' : 'error');
         });
 
         document.getElementById('settings-reload-button').addEventListener('click', async () => {

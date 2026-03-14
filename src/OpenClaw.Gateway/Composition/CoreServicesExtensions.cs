@@ -1,4 +1,5 @@
 using OpenClaw.Channels;
+using OpenClaw.Agent;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Observability;
@@ -25,6 +26,20 @@ internal static class CoreServicesExtensions
 
         services.AddSingleton<IMemoryStore>(_ => CreateMemoryStore(config));
         services.AddSingleton<RuntimeMetrics>();
+        services.AddSingleton<ProviderUsageTracker>();
+        services.AddSingleton<LlmProviderRegistry>();
+        services.AddSingleton<ProviderPolicyService>(sp =>
+            new ProviderPolicyService(
+                config.Memory.StoragePath,
+                sp.GetRequiredService<ILogger<ProviderPolicyService>>()));
+        services.AddSingleton<SessionMetadataStore>(sp =>
+            new SessionMetadataStore(
+                config.Memory.StoragePath,
+                sp.GetRequiredService<ILogger<SessionMetadataStore>>()));
+        services.AddSingleton<ActorRateLimitService>(sp =>
+            new ActorRateLimitService(
+                config.Memory.StoragePath,
+                sp.GetRequiredService<ILogger<ActorRateLimitService>>()));
         services.AddSingleton(sp =>
             new SessionManager(
                 sp.GetRequiredService<IMemoryStore>(),
@@ -36,6 +51,8 @@ internal static class CoreServicesExtensions
         services.AddSingleton<MessagePipeline>();
         services.AddSingleton(new WebSocketChannel(config.WebSocket));
         services.AddSingleton<ChatCommandProcessor>();
+        services.AddSingleton<GatewayLlmExecutionService>();
+        services.AddSingleton<IAgentRuntimeFactory, NativeAgentRuntimeFactory>();
 
         return services;
     }
