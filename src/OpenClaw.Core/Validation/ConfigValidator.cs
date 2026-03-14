@@ -79,6 +79,54 @@ public static class ConfigValidator
         if (config.Tooling.ToolTimeoutSeconds < 0)
             errors.Add($"Tooling.ToolTimeoutSeconds must be >= 0 (got {config.Tooling.ToolTimeoutSeconds}).");
 
+        // Sandbox
+        var sandboxProvider = SandboxProviderNames.Normalize(config.Sandbox.Provider);
+        if (!sandboxProvider.Equals(SandboxProviderNames.None, StringComparison.OrdinalIgnoreCase) &&
+            !sandboxProvider.Equals(SandboxProviderNames.OpenSandbox, StringComparison.OrdinalIgnoreCase))
+        {
+            errors.Add("Sandbox.Provider must be 'None' or 'OpenSandbox'.");
+        }
+
+        if (config.Sandbox.DefaultTTL < 1)
+            errors.Add($"Sandbox.DefaultTTL must be >= 1 (got {config.Sandbox.DefaultTTL}).");
+
+        if (sandboxProvider.Equals(SandboxProviderNames.OpenSandbox, StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(config.Sandbox.Endpoint))
+        {
+            errors.Add("Sandbox.Endpoint must be set when Sandbox.Provider='OpenSandbox'.");
+        }
+
+        foreach (var (toolName, toolConfig) in config.Sandbox.Tools)
+        {
+            if (!string.IsNullOrWhiteSpace(toolConfig.Mode) &&
+                !ToolSandboxPolicy.TryParseMode(toolConfig.Mode, out _))
+            {
+                errors.Add($"Sandbox.Tools.{toolName}.Mode must be 'None', 'Prefer', or 'Require'.");
+            }
+
+            if (toolConfig.TTL is <= 0)
+                errors.Add($"Sandbox.Tools.{toolName}.TTL must be >= 1 when set (got {toolConfig.TTL}).");
+
+            if (sandboxProvider.Equals(SandboxProviderNames.OpenSandbox, StringComparison.OrdinalIgnoreCase) &&
+                ToolSandboxPolicy.ResolveMode(config, toolName, ToolSandboxMode.None) is not ToolSandboxMode.None &&
+                string.IsNullOrWhiteSpace(toolConfig.Template))
+            {
+                errors.Add($"Sandbox.Tools.{toolName}.Template must be set when sandboxing is enabled for that tool.");
+            }
+        }
+
+        if (sandboxProvider.Equals(SandboxProviderNames.OpenSandbox, StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var (toolName, defaultMode) in ToolSandboxPolicy.EnumerateBuiltInCandidates(config))
+            {
+                if (ToolSandboxPolicy.ResolveMode(config, toolName, defaultMode) is not ToolSandboxMode.None &&
+                    string.IsNullOrWhiteSpace(ToolSandboxPolicy.ResolveTemplate(config, toolName)))
+                {
+                    errors.Add($"Sandbox.Tools.{toolName}.Template must be set because {toolName} defaults to sandbox mode '{ToolSandboxPolicy.ResolveMode(config, toolName, defaultMode)}'.");
+                }
+            }
+        }
+
         // Delegation
         if (config.Delegation.Enabled)
         {

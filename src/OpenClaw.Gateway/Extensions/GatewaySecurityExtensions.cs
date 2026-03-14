@@ -13,8 +13,10 @@ public static class GatewaySecurityExtensions
         if (!isNonLoopbackBind)
             return;
 
+        var localShellEnabled = config.Tooling.AllowShell &&
+            !ToolSandboxPolicy.IsRequireSandboxed(config, "shell", ToolSandboxMode.Prefer);
         var toolingUnsafe =
-            config.Tooling.AllowShell ||
+            localShellEnabled ||
             config.Tooling.AllowedReadRoots.Contains("*", StringComparer.Ordinal) ||
             config.Tooling.AllowedWriteRoots.Contains("*", StringComparer.Ordinal);
 

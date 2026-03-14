@@ -12,8 +12,80 @@ namespace OpenClaw.Agent.Tools;
 /// A native interactive headless browser tool leveraging Microsoft.Playwright.
 /// Allows agents to query dynamic SPAs, fill forms, and click elements.
 /// </summary>
-public sealed class BrowserTool : ITool, IAsyncDisposable
+public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
 {
+    private const string SandboxProfileDir = "/tmp/openclaw-browser-profile";
+    private const string SandboxRunnerScript = """
+        const { chromium } = require('playwright');
+
+        (async () => {
+          const payload = JSON.parse(process.argv[1] || '{}');
+          let context;
+
+          try {
+            context = await chromium.launchPersistentContext(payload.userDataDir || '/tmp/openclaw-browser-profile', {
+              headless: payload.headless !== false,
+              timeout: payload.timeoutMs || 30000
+            });
+
+            const page = context.pages()[0] || await context.newPage();
+            let output = '';
+
+            switch (payload.action) {
+              case 'goto': {
+                await page.goto(payload.url, { waitUntil: 'load' });
+                const title = await page.title();
+                output = `Navigated to ${payload.url}. Title: '${title}'`;
+                break;
+              }
+
+              case 'click':
+                await page.click(payload.selector);
+                output = `Clicked selector: ${payload.selector}`;
+                break;
+
+              case 'fill':
+                await page.fill(payload.selector, payload.value ?? '');
+                output = `Filled ${payload.selector} with provided value.`;
+                break;
+
+              case 'get_text':
+                if (payload.selector) {
+                  output = await page.textContent(payload.selector) || 'No text found for selector.';
+                } else {
+                  output = await page.textContent('body') || 'Body is empty.';
+                }
+                break;
+
+              case 'evaluate': {
+                const value = await page.evaluate((source) => globalThis.eval(source), payload.script);
+                output = value == null ? '' : String(value);
+                break;
+              }
+
+              case 'screenshot': {
+                const bytes = await page.screenshot({ fullPage: true });
+                output = `Screenshot taken. Base64: ${bytes.toString('base64')}`;
+                break;
+              }
+
+              default:
+                throw new Error(`Unknown action '${payload.action}'`);
+            }
+
+            process.stdout.write(output);
+          } finally {
+            if (context) {
+              await context.close();
+            }
+          }
+        })().catch((error) => {
+          const message = error && error.message ? error.message : String(error);
+          process.stderr.write(message);
+          process.exit(1);
+        });
+        """;
+
     private readonly ToolingConfig _config;
     private IPlaywright? _playwright;
     private IBrowser? _browser;
@@ -32,6 +104,7 @@ public sealed class BrowserTool : ITool, IAsyncDisposable
     public string Description => 
         "An interactive headless browser. Enables navigation to JS-heavy sites, " +
         "clicking elements, filling inputs, taking screenshots, and extracting text or DOM data.";
+    public ToolSandboxMode DefaultSandboxMode => ToolSandboxMode.Prefer;
     
     public string ParameterSchema => """
         {
@@ -242,4 +315,103 @@ public sealed class BrowserTool : ITool, IAsyncDisposable
 
         throw new OperationCanceledException(ct);
     }
+
+    public SandboxExecutionRequest CreateSandboxRequest(string argumentsJson)
+    {
+        var payload = BuildSandboxPayload(argumentsJson);
+        var payloadJson = JsonSerializer.Serialize(payload, CoreJsonContext.Default.DictionaryStringObject);
+        return new SandboxExecutionRequest
+        {
+            Command = "node",
+            Arguments = ["-e", SandboxRunnerScript, payloadJson]
+        };
+    }
+
+    public string FormatSandboxResult(string argumentsJson, SandboxResult result)
+    {
+        if (result.ExitCode == 0)
+            return result.Stdout;
+
+        var message = !string.IsNullOrWhiteSpace(result.Stderr)
+            ? result.Stderr
+            : result.Stdout;
+
+        return string.IsNullOrWhiteSpace(message)
+            ? "Browser action failed: Unknown sandbox error."
+            : $"Browser action failed: {message}";
+    }
+
+    private Dictionary<string, object?> BuildSandboxPayload(string argumentsJson)
+    {
+        using var args = JsonDocument.Parse(argumentsJson);
+        if (!args.RootElement.TryGetProperty("action", out var actionEl) || actionEl.ValueKind != JsonValueKind.String)
+            throw new ToolSandboxException("Error: 'action' is required.");
+
+        var action = actionEl.GetString();
+        if (string.IsNullOrWhiteSpace(action))
+            throw new ToolSandboxException("Error: 'action' is required.");
+
+        if (string.Equals(action, "evaluate", StringComparison.Ordinal) && !_config.AllowBrowserEvaluate)
+        {
+            throw new ToolSandboxException(
+                "Error: Browser evaluate is disabled by configuration (Tooling.AllowBrowserEvaluate=false).");
+        }
+
+        var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["action"] = action,
+            ["headless"] = _config.BrowserHeadless,
+            ["timeoutMs"] = _config.BrowserTimeoutSeconds * 1000,
+            ["userDataDir"] = SandboxProfileDir
+        };
+
+        switch (action)
+        {
+            case "goto":
+                payload["url"] = ReadRequiredString(args.RootElement, "url");
+                break;
+
+            case "click":
+                payload["selector"] = ReadRequiredString(args.RootElement, "selector");
+                break;
+
+            case "fill":
+                payload["selector"] = ReadRequiredString(args.RootElement, "selector");
+                payload["value"] = ReadRequiredString(args.RootElement, "value");
+                break;
+
+            case "get_text":
+                payload["selector"] = ReadOptionalString(args.RootElement, "selector");
+                break;
+
+            case "evaluate":
+                payload["script"] = ReadRequiredString(args.RootElement, "script");
+                break;
+
+            case "screenshot":
+                break;
+
+            default:
+                throw new ToolSandboxException($"Error: Unknown action '{action}'");
+        }
+
+        return payload;
+    }
+
+    private static string ReadRequiredString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String)
+            throw new ToolSandboxException($"Error: '{propertyName}' is required.");
+
+        var value = property.GetString();
+        if (string.IsNullOrWhiteSpace(value))
+            throw new ToolSandboxException($"Error: '{propertyName}' is required.");
+
+        return value;
+    }
+
+    private static string? ReadOptionalString(JsonElement element, string propertyName)
+        => element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
 }

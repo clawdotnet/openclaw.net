@@ -68,6 +68,53 @@ public sealed class GatewaySecurityHardeningTests
         GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: false);
     }
 
+    [Fact]
+    public void EnforcePublicBindHardening_RequireSandboxedShell_IsAllowed()
+    {
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Tooling.AllowShell = true;
+        config.Sandbox = new SandboxConfig
+        {
+            Provider = SandboxProviderNames.OpenSandbox,
+            Endpoint = "http://localhost:5000",
+            Tools = new Dictionary<string, SandboxToolConfig>(StringComparer.Ordinal)
+            {
+                ["shell"] = new()
+                {
+                    Mode = nameof(ToolSandboxMode.Require),
+                    Template = "ghcr.io/example/shell:latest"
+                }
+            }
+        };
+
+        GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true);
+    }
+
+    [Fact]
+    public void EnforcePublicBindHardening_PreferSandboxedShell_StillThrows()
+    {
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Tooling.AllowShell = true;
+        config.Sandbox = new SandboxConfig
+        {
+            Provider = SandboxProviderNames.OpenSandbox,
+            Endpoint = "http://localhost:5000",
+            Tools = new Dictionary<string, SandboxToolConfig>(StringComparer.Ordinal)
+            {
+                ["shell"] = new()
+                {
+                    Mode = nameof(ToolSandboxMode.Prefer),
+                    Template = "ghcr.io/example/shell:latest"
+                }
+            }
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true));
+
+        Assert.Contains("unsafe tooling settings", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static GatewayConfig CreatePublicBindSafeBaseConfig()
     {
         var config = new GatewayConfig

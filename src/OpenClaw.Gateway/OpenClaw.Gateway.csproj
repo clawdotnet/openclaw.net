@@ -3,6 +3,7 @@
     <RootNamespace>OpenClaw.Gateway</RootNamespace>
     <OutputType>Exe</OutputType>
     <OpenClawEnableMafExperiment Condition="'$(OpenClawEnableMafExperiment)' == ''">false</OpenClawEnableMafExperiment>
+    <OpenClawEnableOpenSandbox Condition="'$(OpenClawEnableOpenSandbox)' == ''">false</OpenClawEnableOpenSandbox>
     <PublishAot>true</PublishAot>
     <StripSymbols>true</StripSymbols>
     <OptimizationPreference>Size</OptimizationPreference>
@@ -29,8 +30,14 @@
   <ItemGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">
     <ProjectReference Include="..\OpenClaw.MicrosoftAgentFrameworkAdapter\OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
   </ItemGroup>
+  <ItemGroup Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">
+    <ProjectReference Include="..\OpenClawNet.Sandbox.OpenSandbox\OpenClawNet.Sandbox.OpenSandbox.csproj" />
+  </ItemGroup>
   <PropertyGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_MAF_EXPERIMENT</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_OPENSANDBOX</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.0" />

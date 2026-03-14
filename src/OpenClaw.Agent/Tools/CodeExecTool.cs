@@ -13,7 +13,7 @@ namespace OpenClaw.Agent.Tools;
 /// Runs code snippets in an isolated environment (Docker container or local process).
 /// Supports Python, JavaScript (Node.js), and Bash.
 /// </summary>
-public sealed class CodeExecTool : ITool
+public sealed class CodeExecTool : ITool, ISandboxCapableTool
 {
     private readonly CodeExecConfig _config;
     private readonly ToolingConfig? _toolingConfig;
@@ -49,35 +49,14 @@ public sealed class CodeExecTool : ITool
           "required": ["language", "code"]
         }
         """;
+    public ToolSandboxMode DefaultSandboxMode => ToolSandboxMode.Prefer;
 
     private const int MaxOutputBytes = 64 * 1024;
 
     public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
     {
-        if (_toolingConfig?.ReadOnlyMode == true)
-            return "Error: code_exec is disabled because Tooling.ReadOnlyMode is enabled.";
-
-        using var args = JsonDocument.Parse(argumentsJson);
-        if (!args.RootElement.TryGetProperty("language", out var languageEl) || languageEl.ValueKind != JsonValueKind.String)
-            return "Error: 'language' is required.";
-        var languageRaw = languageEl.GetString();
-        if (string.IsNullOrWhiteSpace(languageRaw))
-            return "Error: 'language' is required.";
-        var language = languageRaw.ToLowerInvariant();
-
-        if (!args.RootElement.TryGetProperty("code", out var codeEl) || codeEl.ValueKind != JsonValueKind.String)
-            return "Error: 'code' is required.";
-        var code = codeEl.GetString() ?? "";
-        var timeoutSec = args.RootElement.TryGetProperty("timeout_seconds", out var t)
-            ? t.GetInt32()
-            : _config.TimeoutSeconds;
-        timeoutSec = Math.Clamp(timeoutSec, 1, 300);
-
-        if (_config.AllowedLanguages.Length > 0 &&
-            !_config.AllowedLanguages.Contains(language, StringComparer.OrdinalIgnoreCase))
-        {
-            return $"Error: Language '{language}' is not allowed. Allowed: {string.Join(", ", _config.AllowedLanguages)}";
-        }
+        if (!TryParseArguments(argumentsJson, out var language, out var code, out var timeoutSec, out var error))
+            return error!;
 
         return _config.Backend.ToLowerInvariant() switch
         {
@@ -85,6 +64,49 @@ public sealed class CodeExecTool : ITool
             "process" => await RunInProcessAsync(language, code, timeoutSec, ct),
             _ => $"Error: Unsupported backend '{_config.Backend}'. Use 'docker' or 'process'."
         };
+    }
+
+    public SandboxExecutionRequest CreateSandboxRequest(string argumentsJson)
+    {
+        if (!TryParseArguments(argumentsJson, out var language, out var code, out var timeoutSec, out var error))
+            throw new ToolSandboxException(error!);
+
+        var (interpreter, arguments) = GetSandboxCommand(language, code);
+        if (interpreter is null || arguments is null)
+            throw new ToolSandboxException($"Error: Unsupported language '{language}'.");
+
+        return new SandboxExecutionRequest
+        {
+            Command = "/bin/sh",
+            Arguments =
+            [
+                "-lc",
+                SandboxCommandLine.WrapWithTimeout(interpreter, arguments, timeoutSec)
+            ]
+        };
+    }
+
+    public string FormatSandboxResult(string argumentsJson, SandboxResult result)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Exit code: {result.ExitCode}");
+
+        if (!string.IsNullOrWhiteSpace(result.Stdout))
+        {
+            sb.AppendLine("--- stdout ---");
+            sb.Append(result.Stdout);
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Stderr))
+        {
+            if (sb.Length > 0 && sb[^1] != '\n')
+                sb.AppendLine();
+
+            sb.AppendLine("--- stderr ---");
+            sb.Append(result.Stderr);
+        }
+
+        return sb.ToString();
     }
 
     private async Task<string> RunInDockerAsync(string language, string code, int timeoutSec, CancellationToken ct)
@@ -231,6 +253,70 @@ public sealed class CodeExecTool : ITool
         "bash" => ("bash", ""),
         _ => (null, "")
     };
+
+    private static (string? Interpreter, string[]? Arguments) GetSandboxCommand(string language, string code) => language switch
+    {
+        "python" => ("python3", ["-c", code]),
+        "javascript" => ("node", ["-e", code]),
+        "bash" => ("bash", ["-lc", code]),
+        _ => (null, null)
+    };
+
+    private bool TryParseArguments(
+        string argumentsJson,
+        out string language,
+        out string code,
+        out int timeoutSec,
+        out string? error)
+    {
+        language = string.Empty;
+        code = string.Empty;
+        timeoutSec = _config.TimeoutSeconds;
+        error = null;
+
+        if (_toolingConfig?.ReadOnlyMode == true)
+        {
+            error = "Error: code_exec is disabled because Tooling.ReadOnlyMode is enabled.";
+            return false;
+        }
+
+        using var args = JsonDocument.Parse(argumentsJson);
+        if (!args.RootElement.TryGetProperty("language", out var languageEl) || languageEl.ValueKind != JsonValueKind.String)
+        {
+            error = "Error: 'language' is required.";
+            return false;
+        }
+
+        var languageRaw = languageEl.GetString();
+        if (string.IsNullOrWhiteSpace(languageRaw))
+        {
+            error = "Error: 'language' is required.";
+            return false;
+        }
+
+        language = languageRaw.ToLowerInvariant();
+
+        if (!args.RootElement.TryGetProperty("code", out var codeEl) || codeEl.ValueKind != JsonValueKind.String)
+        {
+            error = "Error: 'code' is required.";
+            return false;
+        }
+
+        code = codeEl.GetString() ?? string.Empty;
+        timeoutSec = args.RootElement.TryGetProperty("timeout_seconds", out var timeoutElement)
+            ? timeoutElement.GetInt32()
+            : _config.TimeoutSeconds;
+        timeoutSec = Math.Clamp(timeoutSec, 1, 300);
+
+        if (_config.AllowedLanguages.Length > 0 &&
+            !_config.AllowedLanguages.Contains(language, StringComparer.OrdinalIgnoreCase))
+        {
+            error = $"Error: Language '{language}' is not allowed. Allowed: {string.Join(", ", _config.AllowedLanguages)}";
+            return false;
+        }
+
+        return true;
+    }
 
     private static async Task<string> ReadLimitedAsync(System.IO.StreamReader reader, int maxBytes)
     {

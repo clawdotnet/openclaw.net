@@ -8,7 +8,7 @@ namespace OpenClaw.Agent.Tools;
 /// <summary>
 /// Executes shell commands locally. Sandboxed with timeout and output limits.
 /// </summary>
-public sealed class ShellTool : ITool
+public sealed class ShellTool : ITool, ISandboxCapableTool
 {
     private readonly ToolingConfig _config;
 
@@ -17,25 +17,14 @@ public sealed class ShellTool : ITool
     public string Name => "shell";
     public string Description => "Execute a shell command on the local machine. Use for file operations, system queries, and automation.";
     public string ParameterSchema => """{"type":"object","properties":{"command":{"type":"string","description":"The shell command to execute"},"timeout_seconds":{"type":"integer","default":30}},"required":["command"]}""";
+    public ToolSandboxMode DefaultSandboxMode => ToolSandboxMode.Prefer;
 
     private const int MaxOutputBytes = 64 * 1024; // 64KB output cap
 
     public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
     {
-        if (_config.ReadOnlyMode)
-            return "Error: shell is disabled because Tooling.ReadOnlyMode is enabled.";
-
-        if (!_config.AllowShell)
-            return "Error: Shell execution is disabled by configuration.";
-
-        using var args = System.Text.Json.JsonDocument.Parse(argumentsJson);
-        if (!args.RootElement.TryGetProperty("command", out var commandEl) || commandEl.ValueKind != System.Text.Json.JsonValueKind.String)
-            return "Error: 'command' is required.";
-        var command = commandEl.GetString();
-        if (string.IsNullOrWhiteSpace(command))
-            return "Error: 'command' is required.";
-        var timeoutSec = args.RootElement.TryGetProperty("timeout_seconds", out var t) ? t.GetInt32() : 30;
-        timeoutSec = Math.Clamp(timeoutSec, 1, 600);
+        if (!TryParseArguments(argumentsJson, out var command, out var timeoutSec, out var error))
+            return error!;
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(TimeSpan.FromSeconds(timeoutSec));
@@ -93,6 +82,78 @@ public sealed class ShellTool : ITool
             output += "\n[truncated]";
 
         return $"[exit: {process.ExitCode}]\n{output}";
+    }
+
+    public SandboxExecutionRequest CreateSandboxRequest(string argumentsJson)
+    {
+        if (!TryParseArguments(argumentsJson, out var command, out var timeoutSec, out var error))
+            throw new ToolSandboxException(error!);
+
+        return new SandboxExecutionRequest
+        {
+            Command = "/bin/sh",
+            Arguments =
+            [
+                "-lc",
+                SandboxCommandLine.WrapWithTimeout("/bin/sh", ["-lc", command], timeoutSec)
+            ]
+        };
+    }
+
+    public string FormatSandboxResult(string argumentsJson, SandboxResult result)
+    {
+        if (result.ExitCode == 124)
+            return "[exit: timeout]\n[truncated]";
+
+        var output = string.IsNullOrEmpty(result.Stderr)
+            ? result.Stdout
+            : $"{result.Stdout}\n[stderr]: {result.Stderr}";
+
+        return $"[exit: {result.ExitCode}]\n{output}";
+    }
+
+    private bool TryParseArguments(
+        string argumentsJson,
+        out string command,
+        out int timeoutSec,
+        out string? error)
+    {
+        command = string.Empty;
+        timeoutSec = 30;
+        error = null;
+
+        if (_config.ReadOnlyMode)
+        {
+            error = "Error: shell is disabled because Tooling.ReadOnlyMode is enabled.";
+            return false;
+        }
+
+        if (!_config.AllowShell)
+        {
+            error = "Error: Shell execution is disabled by configuration.";
+            return false;
+        }
+
+        using var args = System.Text.Json.JsonDocument.Parse(argumentsJson);
+        if (!args.RootElement.TryGetProperty("command", out var commandEl) ||
+            commandEl.ValueKind != System.Text.Json.JsonValueKind.String)
+        {
+            error = "Error: 'command' is required.";
+            return false;
+        }
+
+        command = commandEl.GetString() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            error = "Error: 'command' is required.";
+            return false;
+        }
+
+        timeoutSec = args.RootElement.TryGetProperty("timeout_seconds", out var timeoutElement)
+            ? timeoutElement.GetInt32()
+            : 30;
+        timeoutSec = Math.Clamp(timeoutSec, 1, 600);
+        return true;
     }
 
     private static async Task<(byte[] Bytes, bool Truncated)> ReadCappedAsync(Stream stream, int maxBytes, CancellationToken ct)

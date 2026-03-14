@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using Spectre.Console;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Core.Validation;
 
@@ -27,8 +28,10 @@ public static class DoctorCheck
         {
             allPassed &= Check("Public Bind: Auth Token is set", () => !string.IsNullOrWhiteSpace(config.AuthToken),
                 warnOnly: false, "Binding to 0.0.0.0 without an AuthToken is extremely dangerous.");
-                
-            allPassed &= Check("Public Bind: Unsafe Shell Tooling disabled", () => !config.Security.AllowUnsafeToolingOnPublicBind || !config.Tooling.AllowShell,
+
+            var localShellEnabled = config.Tooling.AllowShell &&
+                !ToolSandboxPolicy.IsRequireSandboxed(config, "shell", ToolSandboxMode.Prefer);
+            allPassed &= Check("Public Bind: Unsafe Shell Tooling disabled", () => !config.Security.AllowUnsafeToolingOnPublicBind || !localShellEnabled,
                 warnOnly: true, "Shell is enabled while bound to a public interface. This is a severe RCE risk unless behind a strict WAF.");
             
             allPassed &= Check("Public Bind: Wildcard read/write roots disabled", () => 
@@ -43,6 +46,20 @@ public static class DoctorCheck
                 () => runtimeState.EffectiveMode == GatewayRuntimeMode.Jit,
                 warnOnly: false,
                 detail: "Disable OpenClaw:Plugins:DynamicNative:Enabled or run a JIT-capable artifact / mode.");
+        }
+
+        if (ToolSandboxPolicy.IsOpenSandboxProviderConfigured(config))
+        {
+            allPassed &= Check(
+                "OpenSandbox endpoint configured",
+                () => Uri.TryCreate(config.Sandbox.Endpoint, UriKind.Absolute, out _),
+                warnOnly: false);
+
+            allPassed &= await CheckAsync(
+                "OpenSandbox endpoint reachable",
+                () => PingOpenSandboxAsync(config),
+                warnOnly: false,
+                detail: "Verify OpenClaw:Sandbox:Endpoint and the OpenSandbox service/API key.");
         }
 
         allPassed &= Check("Storage path exists and is writable", () =>
@@ -132,6 +149,44 @@ public static class DoctorCheck
         {
             AnsiConsole.MarkupLine($"[red]✖[/] {description} (Failed)");
             if (detail != null) AnsiConsole.MarkupLine($"    [grey]{detail}[/]");
+        }
+    }
+
+    private static async Task<bool> PingOpenSandboxAsync(GatewayConfig config)
+    {
+        if (string.IsNullOrWhiteSpace(config.Sandbox.Endpoint) ||
+            !Uri.TryCreate(config.Sandbox.Endpoint, UriKind.Absolute, out var endpoint))
+        {
+            return false;
+        }
+
+        var apiKey = config.Sandbox.ApiKey;
+        if (!string.IsNullOrWhiteSpace(apiKey) &&
+            (apiKey.StartsWith("env:", StringComparison.OrdinalIgnoreCase) ||
+             apiKey.StartsWith("raw:", StringComparison.OrdinalIgnoreCase)))
+        {
+            apiKey = SecretResolver.Resolve(apiKey);
+        }
+
+        var baseUri = endpoint.AbsoluteUri.TrimEnd('/');
+        if (!baseUri.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+            baseUri += "/v1";
+
+        var pingUri = new Uri(baseUri + "/ping", UriKind.Absolute);
+
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        using var request = new HttpRequestMessage(HttpMethod.Get, pingUri);
+        if (!string.IsNullOrWhiteSpace(apiKey))
+            request.Headers.TryAddWithoutValidation("OPEN-SANDBOX-API-KEY", apiKey);
+
+        try
+        {
+            using var response = await http.SendAsync(request);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
         }
     }
 }

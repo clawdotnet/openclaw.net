@@ -11,6 +11,7 @@
     <Project Path="src/OpenClaw.Cli/OpenClaw.Cli.csproj" />
     <Project Path="src/OpenClaw.Companion/OpenClaw.Companion.csproj" />
     <Project Path="src/OpenClaw.MicrosoftAgentFrameworkAdapter/OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
+    <Project Path="src/OpenClawNet.Sandbox.OpenSandbox/OpenClawNet.Sandbox.OpenSandbox.csproj" />
     <Project Path="src/OpenClaw.SemanticKernelAdapter/OpenClaw.SemanticKernelAdapter.csproj" />
   </Folder>
   <Project Path="src/OpenClaw.Agent/OpenClaw.Agent.csproj" />
