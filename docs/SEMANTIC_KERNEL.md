@@ -20,9 +20,9 @@ Instead, SK runs *inside* a tool call, so OpenClaw can still enforce:
 
 | Scenario | Supported | Notes |
 |---|---:|---|
-| OpenClaw gateway NativeAOT publish | Yes | No SK dependency in the gateway.
-| SK interop via adapter library | Yes | Intended for normal .NET apps (non-AOT).
-| Sample host (`samples/OpenClaw.SemanticKernelInteropHost`) | Yes | Self-contained demo; not intended for NativeAOT.
+| OpenClaw gateway NativeAOT publish | Yes | No SK dependency in the gateway. |
+| SK interop via adapter library | Yes | Intended for normal .NET apps (non-AOT). |
+| Sample host (`samples/OpenClaw.SemanticKernelInteropHost`) | Yes | Self-contained demo; not intended for NativeAOT. |
 
 ## NativeAOT / trimming guidance
 

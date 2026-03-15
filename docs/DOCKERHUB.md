@@ -108,4 +108,3 @@ volumes:
 
 WebChat connects to `/ws` with a query token (`?token=`). For non-loopback binds, enable legacy query tokens if you use the built-in WebChat:
 - `OpenClaw__Security__AllowQueryStringToken=true`
-

@@ -133,7 +133,7 @@ Additional support here includes:
 
 ## Next Docs
 
-- [README.md](README.md) for the high-level overview
+- [README.md](../README.md) for the high-level overview
 - [USER_GUIDE.md](USER_GUIDE.md) for provider, tools, skills, and channels
-- [SECURITY.md](SECURITY.md) before any public deployment
-- [docs/architecture-startup-refactor.md](docs/architecture-startup-refactor.md) for the current startup layout
+- [SECURITY.md](../SECURITY.md) before any public deployment
+- [architecture-startup-refactor.md](architecture-startup-refactor.md) for the current startup layout
