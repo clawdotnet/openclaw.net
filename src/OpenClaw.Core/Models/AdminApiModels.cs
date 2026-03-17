@@ -204,3 +204,30 @@ public sealed class AdminSummaryUsage
     public IReadOnlyList<ProviderRouteHealthSnapshot> Routes { get; init; } = [];
     public IReadOnlyList<ProviderTurnUsageEntry> RecentTurns { get; init; } = [];
 }
+
+public sealed class RetentionStatusResponse
+{
+    public required MemoryRetentionConfig Retention { get; init; }
+    public required RetentionRunStatus Status { get; init; }
+}
+
+public sealed class RetentionSweepResponse
+{
+    public bool Success { get; init; }
+    public bool DryRun { get; init; }
+    public RetentionSweepResult? Result { get; init; }
+}
+
+public sealed class RetentionSweepErrorResponse
+{
+    public bool Success { get; init; }
+    public required string Error { get; init; }
+}
+
+public sealed class BranchRestoreResponse
+{
+    public bool Success { get; init; }
+    public required string SessionId { get; init; }
+    public required string BranchId { get; init; }
+    public int TurnCount { get; init; }
+}

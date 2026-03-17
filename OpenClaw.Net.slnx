@@ -11,7 +11,9 @@
     <Project Path="src/OpenClaw.Cli/OpenClaw.Cli.csproj" />
     <Project Path="src/OpenClaw.Companion/OpenClaw.Companion.csproj" />
     <Project Path="src/OpenClaw.MicrosoftAgentFrameworkAdapter/OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
+    <Project Path="src/OpenClaw.PluginKit/OpenClaw.PluginKit.csproj" />
     <Project Path="src/OpenClaw.SemanticKernelAdapter/OpenClaw.SemanticKernelAdapter.csproj" />
+    <Project Path="src/OpenClaw.TestPluginFixtures/OpenClaw.TestPluginFixtures.csproj" />
   </Folder>
   <Project Path="src/OpenClaw.Agent/OpenClaw.Agent.csproj" />
   <Project Path="src/OpenClaw.Channels/OpenClaw.Channels.csproj" />

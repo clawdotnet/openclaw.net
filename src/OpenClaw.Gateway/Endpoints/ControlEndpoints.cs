@@ -70,7 +70,7 @@ internal static class ControlEndpoints
             if (!EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false).IsAuthorized)
                 return Results.Unauthorized();
 
-            return Results.Ok(runtime.PairingManager.GetApprovedList());
+            return Results.Json(runtime.PairingManager.GetApprovedList().ToList(), CoreJsonContext.Default.ListString);
         });
 
         app.MapGet("/allowlists/{channelId}", (HttpContext ctx, string channelId) =>

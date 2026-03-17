@@ -292,6 +292,10 @@ public sealed record ToolInvocation
 [JsonSerializable(typeof(ActorRateLimitStatus))]
 [JsonSerializable(typeof(List<ActorRateLimitStatus>))]
 [JsonSerializable(typeof(ActorRateLimitResponse))]
+[JsonSerializable(typeof(RetentionStatusResponse))]
+[JsonSerializable(typeof(RetentionSweepResponse))]
+[JsonSerializable(typeof(RetentionSweepErrorResponse))]
+[JsonSerializable(typeof(BranchRestoreResponse))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

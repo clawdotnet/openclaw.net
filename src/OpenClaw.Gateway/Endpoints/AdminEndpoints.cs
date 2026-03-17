@@ -303,13 +303,9 @@ internal static class AdminEndpoints
 
             await runtime.SessionManager.PersistAsync(session, ctx.RequestAborted);
             RecordOperatorAudit(ctx, operations, auth, "branch_restore", id, $"Restored branch '{id}' to session '{session.Id}'.", success: true, before: null, after: new { sessionId = session.Id, branchId = id, turnCount = session.History.Count });
-            return Results.Ok(new
-            {
-                success = true,
-                sessionId = session.Id,
-                branchId = id,
-                turnCount = session.History.Count
-            });
+            return Results.Json(
+                new BranchRestoreResponse { Success = true, SessionId = session.Id, BranchId = id, TurnCount = session.History.Count },
+                CoreJsonContext.Default.BranchRestoreResponse);
         });
 
         app.MapGet("/admin/settings", (HttpContext ctx) =>

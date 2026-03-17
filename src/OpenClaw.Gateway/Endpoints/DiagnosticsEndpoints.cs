@@ -48,11 +48,9 @@ internal static class DiagnosticsEndpoints
                 return Results.Unauthorized();
 
             var status = await runtime.RetentionCoordinator.GetStatusAsync(ctx.RequestAborted);
-            return Results.Ok(new
-            {
-                retention = startup.Config.Memory.Retention,
-                status
-            });
+            return Results.Json(
+                new RetentionStatusResponse { Retention = startup.Config.Memory.Retention, Status = status },
+                CoreJsonContext.Default.RetentionStatusResponse);
         });
 
         app.MapPost("/memory/retention/sweep", async (HttpContext ctx, bool dryRun) =>
@@ -63,20 +61,16 @@ internal static class DiagnosticsEndpoints
             try
             {
                 var result = await runtime.RetentionCoordinator.SweepNowAsync(dryRun, ctx.RequestAborted);
-                return Results.Ok(new
-                {
-                    success = true,
-                    dryRun,
-                    result
-                });
+                return Results.Json(
+                    new RetentionSweepResponse { Success = true, DryRun = dryRun, Result = result },
+                    CoreJsonContext.Default.RetentionSweepResponse);
             }
             catch (InvalidOperationException ex)
             {
-                return Results.Conflict(new
-                {
-                    success = false,
-                    error = ex.Message
-                });
+                return Results.Json(
+                    new RetentionSweepErrorResponse { Success = false, Error = ex.Message },
+                    CoreJsonContext.Default.RetentionSweepErrorResponse,
+                    statusCode: StatusCodes.Status409Conflict);
             }
         });
 
