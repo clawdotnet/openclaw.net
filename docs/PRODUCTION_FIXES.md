@@ -35,7 +35,7 @@ Created complete implementation at `src/OpenClaw.Core/Memory/FileMemoryStore.cs`
 
 **Issue**: Session locks could accumulate indefinitely if sessions stayed active for extended periods, causing memory leaks.
 
-**Solution**: 
+**Solution**:
 - Added `lockLastUsed` tracking dictionary
 - Implemented 2-hour orphan threshold for unused locks
 - Force-cleanup for orphaned locks even if held

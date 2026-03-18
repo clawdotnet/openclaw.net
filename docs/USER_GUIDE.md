@@ -241,7 +241,7 @@ Enable them under the `Channels` block in your config.
 - **Telegram**: Basic bot API support.
 - **Twilio SMS**: SMS support via Twilio.
 - **WhatsApp**: Official Cloud API or custom bridge support.
-- Setup walkthroughs: `README.md#telegram-webhook-channel` and `README.md#twilio-sms-channel`.
+- Setup walkthroughs: `../README.md#telegram-webhook-channel` and `../README.md#twilio-sms-channel`.
 
 ### Recipient IDs (Telegram / SMS / Email)
 Scheduled jobs (Cron) and outbound delivery require a `RecipientId` that is specific to each channel:
@@ -365,7 +365,7 @@ To enable the email tool, update the `OpenClaw:Plugins:Native` section in your `
 
 ### Authentication Security
 
-We strongly recommend using `env:VARIABLE_NAME` for the `PasswordRef` field. 
+We strongly recommend using `env:VARIABLE_NAME` for the `PasswordRef` field.
 
 **For PowerShell:**
 ```powershell

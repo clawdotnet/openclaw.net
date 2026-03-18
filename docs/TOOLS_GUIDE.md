@@ -7,7 +7,7 @@ This guide provides a comprehensive overview of the native tools available in Op
 ## 🚀 How to Use / Install Tools
 
 ### How the Agent Uses Tools
-You don't need to manually invoke tools! OpenClaw's cognitive architecture (the "ReAct" loop) analyzes your prompt, looks at the list of enabled tools, and decides which ones to use to accomplish your goal. 
+You don't need to manually invoke tools! OpenClaw's cognitive architecture (the "ReAct" loop) analyzes your prompt, looks at the list of enabled tools, and decides which ones to use to accomplish your goal.
 
 For example, if you say *"Email my weekly report to my boss,"* the agent will automatically formulate the `email` tool call, execute it, and tell you when it's done.
 
@@ -27,7 +27,7 @@ There are two primary ways to add new capabilities to your agent:
    - Download or clone a community plugin into your `.openclaw/extensions/` folder.
    - Run `npm install` inside that plugin's folder.
    - For TypeScript plugins, also ensure `jiti` is present in the plugin dependency tree.
-   - Restart the OpenClaw.NET gateway. The gateway will automatically detect, load, and bridge the plugin!
+   - Restart the OpenClaw.NET gateway. The gateway will automatically detect, load, and bridge the plugin.
    - `Runtime:Mode=aot`: supports `registerTool`, tool execution, `registerService`, plugin-packaged skills, `.js` / `.mjs` / `.ts` discovery, and the documented config-schema subset.
    - `Runtime:Mode=jit`: additionally supports `registerChannel`, `registerCommand`, `registerProvider`, and `api.on(...)`.
    - Unsupported extension-host APIs, or JIT-only capabilities in AOT mode, fail fast with explicit diagnostics instead of partially loading.
@@ -356,7 +356,7 @@ Cron job delivery fields:
 **RecipientId quick reference**
 - `ChannelId="email"` → `RecipientId="you@example.com"`
 - `ChannelId="sms"` → `RecipientId="+15551234567"` (must be in `AllowedToNumbers`)
-- `ChannelId="telegram"` → `RecipientId="<numeric chat id>"` (see “Telegram Webhook channel” in `README.md`)
+- `ChannelId="telegram"` → `RecipientId="<numeric chat id>"` (see “Telegram Webhook channel” in `../README.md`)
 - `ChannelId="whatsapp"` → `RecipientId="<phone number>"` (Meta Cloud API “to”; format depends on your WhatsApp setup)
 - `ChannelId="websocket"` → `RecipientId="<connection id>"` (only works while that client is connected)
 

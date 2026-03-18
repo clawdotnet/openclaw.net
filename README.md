@@ -54,7 +54,7 @@ OpenClaw.NET is focused on **practical compatibility**, especially around tools,
 
 The goal is not full upstream extension-host parity. The goal is a clear, dependable compatibility contract with honest failure modes.
 
-For the exact compatibility matrix, see [COMPATIBILITY.md](COMPATIBILITY.md).
+For the exact compatibility matrix, see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 ## Runtime Model
 
@@ -125,17 +125,19 @@ See [docs/sandboxing.md](docs/sandboxing.md) for the architecture, build flag, l
 
 ## Quick Links
 
-- [Quickstart Guide](QUICKSTART.md)
-- [User Guide](USER_GUIDE.md)
-- [Tool Guide](TOOLS_GUIDE.md)
+- [Quickstart Guide](docs/QUICKSTART.md)
+- [User Guide](docs/USER_GUIDE.md)
+- [Tool Guide](docs/TOOLS_GUIDE.md)
 - [Security Guide](SECURITY.md)
+- [Plugin Compatibility Guide](docs/COMPATIBILITY.md)
+- [Semantic Kernel Guide](docs/SEMANTIC_KERNEL.md)
 - [Plugin Compatibility Guide](COMPATIBILITY.md)
 - [Semantic Kernel Guide](SEMANTIC_KERNEL.md)
 - [Sandboxing Guide](docs/sandboxing.md)
 - [MAF Readiness Notes](docs/experiments/maf-aot-jit-readiness.md)
 - [Startup Architecture Notes](docs/architecture-startup-refactor.md)
 - [Changelog](CHANGELOG.md)
-- [Docker Image Notes](DOCKERHUB.md)
+- [Docker Image Notes](docs/DOCKERHUB.md)
 
 Published container images:
 
@@ -198,7 +200,7 @@ For the full startup-module breakdown, see [docs/architecture-startup-refactor.m
 
 ## Quickstart (local)
 
-See [QUICKSTART.md](QUICKSTART.md) for the fastest path from zero to a running gateway.
+See [docs/QUICKSTART.md](docs/QUICKSTART.md) for the fastest path from zero to a running gateway.
 
 The shortest local path is:
 
@@ -223,7 +225,7 @@ Environment variables for the CLI:
 - `OPENCLAW_BASE_URL` (default `http://127.0.0.1:18789`)
 - `OPENCLAW_AUTH_TOKEN` (only required when the gateway enforces auth)
 
-For advanced provider setup, webhook channels, and deployment hardening, see the [User Guide](USER_GUIDE.md) and [Security Guide](SECURITY.md).
+For advanced provider setup, webhook channels, and deployment hardening, see the [User Guide](docs/USER_GUIDE.md) and [Security Guide](SECURITY.md).
 
 ## Usage
 
@@ -387,7 +389,7 @@ Across both lanes, unsupported surfaces fail fast with explicit diagnostics inst
 - `registerCli()`
 - any JIT-only capability when the effective runtime mode is `aot`
 
-The `/doctor` report includes per-plugin load diagnostics, and the repo now includes hermetic bridge tests plus a pinned public smoke manifest for mainstream packages. For the exact matrix and TypeScript requirements such as `jiti`, see **[Plugin Compatibility Guide](COMPATIBILITY.md)**.
+The `/doctor` report includes per-plugin load diagnostics, and the repo now includes hermetic bridge tests plus a pinned public smoke manifest for mainstream packages. For the exact matrix and TypeScript requirements such as `jiti`, see **[Plugin Compatibility Guide](docs/COMPATIBILITY.md)**.
 
 ## Semantic Kernel interop (optional)
 
@@ -397,7 +399,7 @@ Supported integration patterns today:
 - **Wrap your SK orchestration as an OpenClaw tool**: keep SK in-process, expose a single "entrypoint" tool the OpenClaw agent can call.
 - **Host SK-based agents behind the OpenClaw gateway**: use OpenClaw for Internet-facing concerns (WebSocket, `/v1/*`, Telegram/Twilio/WhatsApp), while your SK logic stays in your app/tool layer.
 
-More details and AOT/trimming notes: see `SEMANTIC_KERNEL.md`.
+More details and AOT/trimming notes: see [docs/SEMANTIC_KERNEL.md](docs/SEMANTIC_KERNEL.md).
 
 Conceptual example (tool wrapper):
 ```csharp
