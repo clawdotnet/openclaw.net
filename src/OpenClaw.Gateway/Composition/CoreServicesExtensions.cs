@@ -9,6 +9,7 @@ using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
+using OpenClaw.Gateway.Mcp;
 
 namespace OpenClaw.Gateway.Composition;
 
@@ -57,6 +58,8 @@ internal static class CoreServicesExtensions
         services.AddSingleton<ChatCommandProcessor>();
         services.AddSingleton<GatewayLlmExecutionService>();
         services.AddSingleton<IAgentRuntimeFactory, NativeAgentRuntimeFactory>();
+
+        services.AddOpenClawMcpSdkServices(startup);
 
         return services;
     }
