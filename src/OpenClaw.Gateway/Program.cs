@@ -1,6 +1,7 @@
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
 using OpenClaw.Gateway.Endpoints;
+using OpenClaw.Gateway.Mcp;
 using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.Profiles;
 #if OPENCLAW_ENABLE_MAF_EXPERIMENT
@@ -39,8 +40,14 @@ builder.Services.AddOpenSandboxIntegration(builder.Configuration);
 var app = builder.Build();
 var runtime = await app.InitializeOpenClawRuntimeAsync(startup);
 
+// Populate the GatewayRuntimeHolder so MCP tools can access the runtime via DI.
+app.InitializeMcpRuntime(runtime);
+// Apply token-auth middleware for /mcp before route matching.
+app.UseOpenClawMcpAuth(startup);
+
 app.UseOpenClawPipeline(startup, runtime);
 app.MapOpenApi("/openapi/{documentName}.json");
 app.MapOpenClawEndpoints(startup, runtime);
+app.MapMcp("/mcp");
 
 app.Run($"http://{startup.Config.BindAddress}:{startup.Config.Port}");
