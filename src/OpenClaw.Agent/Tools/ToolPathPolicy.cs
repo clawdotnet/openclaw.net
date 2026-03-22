@@ -44,14 +44,12 @@ internal static class ToolPathPolicy
         // If the path exists, resolve symlinks based on actual entry type
         if (File.Exists(full))
         {
-            var resolved = File.ResolveLinkTarget(full, returnFinalTarget: true);
-            return resolved?.FullName ?? full;
+            return ResolveFileLinkOrSelf(full);
         }
 
         if (Directory.Exists(full))
         {
-            var resolved = Directory.ResolveLinkTarget(full, returnFinalTarget: true);
-            return resolved?.FullName ?? full;
+            return ResolveDirectoryLinkOrSelf(full);
         }
 
         // Path doesn't exist yet — resolve the deepest existing ancestor
@@ -68,12 +66,64 @@ internal static class ToolPathPolicy
 
         if (!string.IsNullOrEmpty(dir))
         {
-            var resolvedDir = Directory.ResolveLinkTarget(dir, returnFinalTarget: true);
-            var realDir = resolvedDir?.FullName ?? dir;
+            if (IsPathRoot(dir))
+                return Path.Combine(dir, tail);
+
+            var realDir = ResolveDirectoryLinkOrSelf(dir);
             return Path.Combine(realDir, tail);
         }
 
         return full;
+    }
+
+    private static string ResolveFileLinkOrSelf(string path)
+    {
+        try
+        {
+            var resolved = File.ResolveLinkTarget(path, returnFinalTarget: true);
+            return resolved?.FullName ?? path;
+        }
+        catch (IOException)
+        {
+            return path;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return path;
+        }
+    }
+
+    private static string ResolveDirectoryLinkOrSelf(string path)
+    {
+        try
+        {
+            var resolved = Directory.ResolveLinkTarget(path, returnFinalTarget: true);
+            return resolved?.FullName ?? path;
+        }
+        catch (IOException)
+        {
+            return path;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return path;
+        }
+    }
+
+    private static bool IsPathRoot(string path)
+    {
+        var root = Path.GetPathRoot(path);
+        if (string.IsNullOrEmpty(root))
+            return false;
+
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        return string.Equals(
+            Path.TrimEndingDirectorySeparator(path),
+            Path.TrimEndingDirectorySeparator(root),
+            comparison);
     }
 
     private static bool IsUnderRoot(string fullPath, string fullRoot)

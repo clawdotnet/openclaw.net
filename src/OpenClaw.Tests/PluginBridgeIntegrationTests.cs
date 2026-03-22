@@ -184,6 +184,75 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_TsPluginWithLocalJiti_PassesFileUrlToJiti()
+    {
+        if (!HasNode()) return;
+
+        var pluginDir = CreatePlugin(
+            "ts-tool-file-url",
+            "index.ts",
+            """
+            export default function(api) {
+              api.registerTool({
+                name: "ts_echo_file_url",
+                description: "TS echo requiring file URL",
+                parameters: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+                execute: async (_pluginId, params) => ({ text: `TSFILE:${params.text}` })
+              });
+            }
+            """);
+        CreateFakeJiti(pluginDir, requireFileUrl: true);
+
+        await using var host = CreateHost(new PluginsConfig
+        {
+            Enabled = true,
+            Load = new PluginLoadConfig { Paths = [pluginDir] }
+        });
+
+        var tools = await host.LoadAsync(null, CancellationToken.None);
+
+        var tool = Assert.Single(tools);
+        var result = await tool.ExecuteAsync("""{"text":"hello"}""", CancellationToken.None);
+        Assert.Equal("TSFILE:hello", result);
+    }
+
+    [Fact]
+    public async Task LoadAsync_TsPluginWithLocalJiti_WindowsAbsolutePath_LoadsSuccessfully()
+    {
+        if (!OperatingSystem.IsWindows() || !HasNode()) return;
+
+        var pluginDir = CreatePlugin(
+            "ts-tool-win-path",
+            "index.ts",
+            """
+            export default function(api) {
+              api.registerTool({
+                name: "ts_echo_win_path",
+                description: "TS echo on Windows absolute path",
+                parameters: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+                execute: async (_pluginId, params) => ({ text: `TSWIN:${params.text}` })
+              });
+            }
+            """);
+        CreateFakeJiti(pluginDir);
+
+        Assert.True(Path.IsPathFullyQualified(pluginDir));
+        Assert.Contains(":\\", pluginDir, StringComparison.Ordinal);
+
+        await using var host = CreateHost(new PluginsConfig
+        {
+            Enabled = true,
+            Load = new PluginLoadConfig { Paths = [pluginDir] }
+        });
+
+        var tools = await host.LoadAsync(null, CancellationToken.None);
+
+        var tool = Assert.Single(tools);
+        var result = await tool.ExecuteAsync("""{"text":"hello"}""", CancellationToken.None);
+        Assert.Equal("TSWIN:hello", result);
+    }
+
+    [Fact]
     public async Task LoadAsync_TsPluginWithoutJiti_FailsWithActionableError()
     {
         if (!HasNode()) return;
@@ -625,17 +694,29 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
         return pluginDir;
     }
 
-    private static void CreateFakeJiti(string pluginDir)
+    private static void CreateFakeJiti(string pluginDir, bool requireFileUrl = false)
     {
         var jitiDir = Path.Combine(pluginDir, "node_modules", "jiti", "dist");
         Directory.CreateDirectory(jitiDir);
         File.WriteAllText(Path.Combine(jitiDir, "jiti.mjs"),
-            """
+            $$"""
             import { readFileSync } from "node:fs";
+            import { fileURLToPath } from "node:url";
 
-            export default function createJiti() {
+            export default function createJiti(base) {
+              if ({{requireFileUrl.ToString().ToLowerInvariant()}} && (typeof base !== "string" || !base.startsWith("file://"))) {
+                throw new Error(`Expected file:// base URL but received ${base}`);
+              }
+
               return async function(file) {
-                const source = readFileSync(file, "utf8");
+                if ({{requireFileUrl.ToString().ToLowerInvariant()}} && (typeof file !== "string" || !file.startsWith("file://"))) {
+                  throw new Error(`Expected file:// plugin URL but received ${file}`);
+                }
+
+                const resolvedFile = typeof file === "string" && file.startsWith("file:")
+                  ? fileURLToPath(file)
+                  : file;
+                const source = readFileSync(resolvedFile, "utf8");
                 const encoded = Buffer.from(source, "utf8").toString("base64");
                 const mod = await import(`data:text/javascript;base64,${encoded}`);
                 return mod.default ?? mod;

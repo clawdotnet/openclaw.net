@@ -14,6 +14,7 @@ namespace OpenClaw.Agent.Tools;
 /// </summary>
 public sealed class DelegateTool : ITool
 {
+    private readonly Func<IReadOnlyList<ITool>, LlmProviderConfig, AgentProfile, IAgentRuntime> _runtimeFactory;
     private readonly IChatClient _chatClient;
     private readonly IReadOnlyList<ITool> _allTools;
     private readonly IMemoryStore _memory;
@@ -58,7 +59,8 @@ public sealed class DelegateTool : ITool
         int currentDepth = 0,
         RuntimeMetrics? metrics = null,
         ILogger? logger = null,
-        MemoryRecallConfig? recall = null)
+        MemoryRecallConfig? recall = null,
+        Func<IReadOnlyList<ITool>, LlmProviderConfig, AgentProfile, IAgentRuntime>? runtimeFactory = null)
     {
         _chatClient = chatClient;
         _allTools = allTools;
@@ -69,6 +71,16 @@ public sealed class DelegateTool : ITool
         _metrics = metrics;
         _logger = logger;
         _recall = recall;
+        _runtimeFactory = runtimeFactory ?? ((tools, subConfig, profile) => new AgentRuntime(
+            _chatClient,
+            tools,
+            _memory,
+            subConfig,
+            profile.MaxHistoryTurns,
+            logger: _logger,
+            metrics: _metrics,
+            maxIterations: profile.MaxIterations,
+            recall: _recall));
     }
 
     public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
@@ -103,7 +115,7 @@ public sealed class DelegateTool : ITool
         {
             var childDelegate = new DelegateTool(
                 _chatClient, _allTools, _memory, _llmConfig, _delegationConfig,
-                _currentDepth + 1, _metrics, _logger, _recall);
+                _currentDepth + 1, _metrics, _logger, _recall, _runtimeFactory);
             toolSubset = [.. toolSubset, childDelegate];
         }
 
@@ -122,16 +134,7 @@ public sealed class DelegateTool : ITool
             CircuitBreakerCooldownSeconds = _llmConfig.CircuitBreakerCooldownSeconds
         };
 
-        var subAgent = new AgentRuntime(
-            _chatClient,
-            toolSubset,
-            _memory,
-            subConfig,
-            profile.MaxHistoryTurns,
-            logger: _logger,
-            metrics: _metrics,
-            maxIterations: profile.MaxIterations,
-            recall: _recall);
+        var subAgent = _runtimeFactory(toolSubset, subConfig, profile);
 
         // Create an ephemeral session for the sub-agent
         var subSession = new Session
