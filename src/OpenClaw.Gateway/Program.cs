@@ -1,6 +1,8 @@
+using ModelContextProtocol.AspNetCore;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
 using OpenClaw.Gateway.Endpoints;
+using OpenClaw.Gateway.Mcp;
 using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.Profiles;
 #if OPENCLAW_ENABLE_MAF_EXPERIMENT
@@ -28,6 +30,7 @@ builder.Services.AddOpenClawCoreServices(startup);
 builder.Services.AddOpenClawChannelServices(startup);
 builder.Services.AddOpenClawToolServices(startup);
 builder.Services.AddOpenClawSecurityServices(startup);
+builder.Services.AddOpenClawMcpServices(startup);
 builder.Services.ApplyOpenClawRuntimeProfile(startup);
 #if OPENCLAW_ENABLE_MAF_EXPERIMENT
 builder.Services.AddMicrosoftAgentFrameworkExperiment(builder.Configuration);
@@ -39,8 +42,12 @@ builder.Services.AddOpenSandboxIntegration(builder.Configuration);
 var app = builder.Build();
 var runtime = await app.InitializeOpenClawRuntimeAsync(startup);
 
+app.InitializeMcpRuntime(runtime);
+app.UseOpenClawMcpAuth(startup, runtime);
+
 app.UseOpenClawPipeline(startup, runtime);
 app.MapOpenApi("/openapi/{documentName}.json");
 app.MapOpenClawEndpoints(startup, runtime);
+app.MapMcp("/mcp");
 
 app.Run($"http://{startup.Config.BindAddress}:{startup.Config.Port}");

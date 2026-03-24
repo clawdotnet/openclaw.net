@@ -25,6 +25,8 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _adminHeartbeatUri;
     private readonly Uri _adminHeartbeatPreviewUri;
     private readonly Uri _adminHeartbeatStatusUri;
+    private readonly Uri _adminWhatsAppSetupUri;
+    private readonly Uri _adminWhatsAppRestartUri;
     private long _mcpRequestId;
 
     public OpenClawHttpClient(string baseUrl, string? authToken, HttpClient? httpClient = null)
@@ -51,6 +53,8 @@ public sealed class OpenClawHttpClient : IDisposable
         _adminHeartbeatUri = new Uri(baseUri, "/admin/heartbeat");
         _adminHeartbeatPreviewUri = new Uri(baseUri, "/admin/heartbeat/preview");
         _adminHeartbeatStatusUri = new Uri(baseUri, "/admin/heartbeat/status");
+        _adminWhatsAppSetupUri = new Uri(baseUri, "/admin/channels/whatsapp/setup");
+        _adminWhatsAppRestartUri = new Uri(baseUri, "/admin/channels/whatsapp/restart");
 
         _http = httpClient ?? new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         _ownsHttpClient = httpClient is null;
@@ -129,16 +133,16 @@ public sealed class OpenClawHttpClient : IDisposable
     }
 
     public Task<McpInitializeResult> InitializeMcpAsync(McpInitializeRequest request, CancellationToken cancellationToken)
-        => SendMcpAsync("initialize", request, CoreJsonContext.Default.McpInitializeRequest, CoreJsonContext.Default.McpInitializeResult, cancellationToken);
+        => SendMcpAsync("initialize", request, McpJsonContext.Default.McpInitializeRequest, McpJsonContext.Default.McpInitializeResult, cancellationToken);
 
     public Task<McpToolListResult> ListMcpToolsAsync(CancellationToken cancellationToken)
-        => SendMcpWithoutParamsAsync("tools/list", CoreJsonContext.Default.McpToolListResult, cancellationToken);
+        => SendMcpWithoutParamsAsync("tools/list", McpJsonContext.Default.McpToolListResult, cancellationToken);
 
     public Task<McpResourceListResult> ListMcpResourcesAsync(CancellationToken cancellationToken)
-        => SendMcpWithoutParamsAsync("resources/list", CoreJsonContext.Default.McpResourceListResult, cancellationToken);
+        => SendMcpWithoutParamsAsync("resources/list", McpJsonContext.Default.McpResourceListResult, cancellationToken);
 
     public Task<McpResourceTemplateListResult> ListMcpResourceTemplatesAsync(CancellationToken cancellationToken)
-        => SendMcpWithoutParamsAsync("resources/templates/list", CoreJsonContext.Default.McpResourceTemplateListResult, cancellationToken);
+        => SendMcpWithoutParamsAsync("resources/templates/list", McpJsonContext.Default.McpResourceTemplateListResult, cancellationToken);
 
     public Task<McpReadResourceResult> ReadMcpResourceAsync(string uri, CancellationToken cancellationToken)
     {
@@ -148,13 +152,13 @@ public sealed class OpenClawHttpClient : IDisposable
         return SendMcpAsync(
             "resources/read",
             new McpReadResourceRequest { Uri = uri },
-            CoreJsonContext.Default.McpReadResourceRequest,
-            CoreJsonContext.Default.McpReadResourceResult,
+            McpJsonContext.Default.McpReadResourceRequest,
+            McpJsonContext.Default.McpReadResourceResult,
             cancellationToken);
     }
 
     public Task<McpPromptListResult> ListMcpPromptsAsync(CancellationToken cancellationToken)
-        => SendMcpWithoutParamsAsync("prompts/list", CoreJsonContext.Default.McpPromptListResult, cancellationToken);
+        => SendMcpWithoutParamsAsync("prompts/list", McpJsonContext.Default.McpPromptListResult, cancellationToken);
 
     public Task<McpGetPromptResult> GetMcpPromptAsync(string name, IReadOnlyDictionary<string, string>? arguments, CancellationToken cancellationToken)
     {
@@ -170,8 +174,8 @@ public sealed class OpenClawHttpClient : IDisposable
                     ? []
                     : new Dictionary<string, string>(arguments, StringComparer.Ordinal)
             },
-            CoreJsonContext.Default.McpGetPromptRequest,
-            CoreJsonContext.Default.McpGetPromptResult,
+            McpJsonContext.Default.McpGetPromptRequest,
+            McpJsonContext.Default.McpGetPromptResult,
             cancellationToken);
     }
 
@@ -183,8 +187,8 @@ public sealed class OpenClawHttpClient : IDisposable
         return SendMcpAsync(
             "tools/call",
             new McpCallToolRequest { Name = name, Arguments = arguments },
-            CoreJsonContext.Default.McpCallToolRequest,
-            CoreJsonContext.Default.McpCallToolResult,
+            McpJsonContext.Default.McpCallToolRequest,
+            McpJsonContext.Default.McpCallToolResult,
             cancellationToken);
     }
 
@@ -288,6 +292,65 @@ public sealed class OpenClawHttpClient : IDisposable
     public Task<HeartbeatStatusResponse> GetHeartbeatStatusAsync(CancellationToken cancellationToken)
         => GetAsync(_adminHeartbeatStatusUri, CoreJsonContext.Default.HeartbeatStatusResponse, cancellationToken);
 
+    public Task<WhatsAppSetupResponse> GetWhatsAppSetupAsync(CancellationToken cancellationToken)
+        => GetAsync(_adminWhatsAppSetupUri, CoreJsonContext.Default.WhatsAppSetupResponse, cancellationToken);
+
+    public async Task<WhatsAppSetupResponse> SaveWhatsAppSetupAsync(
+        WhatsAppSetupRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Put, _adminWhatsAppSetupUri)
+        {
+            Content = BuildJsonContent(request, CoreJsonContext.Default.WhatsAppSetupRequest)
+        };
+
+        return await SendAsync(req, CoreJsonContext.Default.WhatsAppSetupResponse, cancellationToken);
+    }
+
+    public async Task<WhatsAppSetupResponse> RestartWhatsAppAsync(CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, _adminWhatsAppRestartUri);
+        return await SendAsync(req, CoreJsonContext.Default.WhatsAppSetupResponse, cancellationToken);
+    }
+
+    public Task<ChannelAuthStatusResponse> GetChannelAuthAsync(string channelId, string? accountId, CancellationToken cancellationToken)
+        => GetAsync(BuildChannelAuthUri(channelId, accountId), CoreJsonContext.Default.ChannelAuthStatusResponse, cancellationToken);
+
+    public async Task StreamChannelAuthAsync(
+        string channelId,
+        string? accountId,
+        Action<ChannelAuthStatusItem> onEvent,
+        CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, BuildChannelAuthStreamUri(channelId, accountId));
+        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!resp.IsSuccessStatusCode)
+            throw await CreateHttpErrorAsync(resp, cancellationToken);
+
+        await using var stream = await resp.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 16 * 1024, leaveOpen: false);
+
+        while (true)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+                break;
+
+            if (!line.StartsWith("data:", StringComparison.Ordinal))
+                continue;
+
+            var data = line["data:".Length..].TrimStart();
+            if (data.Length == 0)
+                continue;
+
+            var item = JsonSerializer.Deserialize(data, CoreJsonContext.Default.ChannelAuthStatusItem);
+            if (item is not null)
+                onEvent(item);
+        }
+    }
+
     private async Task<T> GetAsync<T>(Uri uri, JsonTypeInfo<T> jsonTypeInfo, CancellationToken cancellationToken)
     {
         using var req = new HttpRequestMessage(HttpMethod.Get, uri);
@@ -330,13 +393,16 @@ public sealed class OpenClawHttpClient : IDisposable
             Content = new StreamContent(stream)
         };
         req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
         using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!resp.IsSuccessStatusCode)
             throw await CreateHttpErrorAsync(resp, cancellationToken);
 
-        await using var responseStream = await resp.Content.ReadAsStreamAsync(cancellationToken);
-        var envelope = await JsonSerializer.DeserializeAsync(responseStream, CoreJsonContext.Default.McpJsonRpcResponse, cancellationToken);
+        var jsonBody = await ExtractMcpResponseJsonAsync(resp, cancellationToken);
+
+        var envelope = JsonSerializer.Deserialize(jsonBody, McpJsonContext.Default.McpJsonRpcResponse);
         if (envelope is null)
             throw new InvalidOperationException("Empty MCP response body.");
         if (envelope.Error is not null)
@@ -347,6 +413,25 @@ public sealed class OpenClawHttpClient : IDisposable
             throw new InvalidOperationException("MCP response did not include a result payload.");
 
         return result;
+    }
+
+    private static async Task<string> ExtractMcpResponseJsonAsync(HttpResponseMessage resp, CancellationToken cancellationToken)
+    {
+        var contentType = resp.Content.Headers.ContentType?.MediaType;
+
+        if (string.Equals(contentType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
+        {
+            var body = await resp.Content.ReadAsStringAsync(cancellationToken);
+            foreach (var line in body.Split('\n'))
+            {
+                if (line.StartsWith("data:", StringComparison.Ordinal))
+                    return line["data:".Length..].TrimStart();
+            }
+
+            throw new InvalidOperationException("SSE response did not contain a data line.");
+        }
+
+        return await resp.Content.ReadAsStringAsync(cancellationToken);
     }
 
     private async Task<T> SendAsync<T>(HttpRequestMessage req, JsonTypeInfo<T> jsonTypeInfo, CancellationToken cancellationToken)
@@ -457,6 +542,27 @@ public sealed class OpenClawHttpClient : IDisposable
             pairs.Add($"action={Uri.EscapeDataString(query.Action)}");
 
         return new Uri($"{_integrationRuntimeEventsUri}?{string.Join("&", pairs)}", UriKind.RelativeOrAbsolute);
+    }
+
+    private Uri BuildChannelAuthUri(string channelId, string? accountId)
+    {
+        if (string.IsNullOrWhiteSpace(channelId))
+            throw new ArgumentException("Channel id is required.", nameof(channelId));
+
+        var baseUri = new Uri(_adminWhatsAppSetupUri, $"/admin/channels/{Uri.EscapeDataString(channelId)}/auth");
+        if (string.IsNullOrWhiteSpace(accountId))
+            return baseUri;
+
+        return new Uri($"{baseUri}?accountId={Uri.EscapeDataString(accountId)}", UriKind.Absolute);
+    }
+
+    private Uri BuildChannelAuthStreamUri(string channelId, string? accountId)
+    {
+        var baseUri = new Uri(_adminWhatsAppSetupUri, $"/admin/channels/{Uri.EscapeDataString(channelId)}/auth/stream");
+        if (string.IsNullOrWhiteSpace(accountId))
+            return baseUri;
+
+        return new Uri($"{baseUri}?accountId={Uri.EscapeDataString(accountId)}", UriKind.Absolute);
     }
 
     private static HttpContent BuildJsonContent<T>(T request, JsonTypeInfo<T> jsonTypeInfo)

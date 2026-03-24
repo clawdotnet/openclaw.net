@@ -11,6 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using OpenClaw.Client;
+using OpenClaw.Companion.Services;
+using OpenClaw.Companion.ViewModels;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Channels;
@@ -25,9 +27,11 @@ using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
+using ModelContextProtocol.AspNetCore;
 using OpenClaw.Gateway.Composition;
 using OpenClaw.Gateway.Endpoints;
 using OpenClaw.Gateway.Extensions;
+using OpenClaw.Gateway.Mcp;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -299,6 +303,59 @@ public sealed class GatewayAdminEndpointTests
         var response = await harness.Client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChatCompletions_RequestTooLarge_Returns413()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+
+        var oversizedPrompt = new string('x', 1024 * 1024);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        {
+            Content = JsonContent($$"""{"messages":[{"role":"user","content":"{{oversizedPrompt}}"}]}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+        Assert.Equal("Request too large.", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task GenericWebhook_HmacAndIdempotencyUseFullBody_WhenPromptBodyIsTruncated()
+    {
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configure: config =>
+            {
+                config.Webhooks.Enabled = true;
+                config.Webhooks.Endpoints["alerts"] = new WebhookEndpointConfig
+                {
+                    Secret = "raw:test-secret",
+                    ValidateHmac = true,
+                    MaxRequestBytes = 4096,
+                    MaxBodyLength = 20,
+                    PromptTemplate = "Webhook received:\n{body}"
+                };
+            });
+
+        const string body1 = """{"payload":"12345678901234567890AAAA"}""";
+        const string body2 = """{"payload":"12345678901234567890BBBB"}""";
+
+        var first = await PostWebhookAsync(harness.Client, "alerts", body1, "test-secret");
+        var second = await PostWebhookAsync(harness.Client, "alerts", body2, "test-secret");
+        var duplicate = await PostWebhookAsync(harness.Client, "alerts", body1, "test-secret");
+
+        Assert.Equal(HttpStatusCode.Accepted, first.StatusCode);
+        Assert.Equal("Webhook queued.", await first.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.Accepted, second.StatusCode);
+        Assert.Equal("Webhook queued.", await second.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.Accepted, duplicate.StatusCode);
+        Assert.Equal("Webhook already processed.", await duplicate.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -648,61 +705,59 @@ public sealed class GatewayAdminEndpointTests
         var anonymousResponse = await harness.Client.PostAsync("/mcp", JsonContent("{}"));
         Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
 
-        using var initializeRequest = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        HttpRequestMessage McpRequest(string json)
         {
-            Content = JsonContent("""
+            var req = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = JsonContent(json) };
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+            req.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+            req.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+            return req;
+        }
+
+        using var initializeRequest = McpRequest("""
                 {
                   "jsonrpc": "2.0",
                   "id": 1,
                   "method": "initialize",
-                  "params": { "protocolVersion": "2025-03-26" }
+                  "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": { "name": "test-client", "version": "1.0.0" }
+                  }
                 }
-                """)
-        };
-        initializeRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+                """);
         var initializeResponse = await harness.Client.SendAsync(initializeRequest);
         Assert.Equal(HttpStatusCode.OK, initializeResponse.StatusCode);
-        using var initializePayload = await ReadJsonAsync(initializeResponse);
+        using var initializePayload = await ReadMcpJsonAsync(initializeResponse);
         Assert.Equal("OpenClaw Gateway MCP", initializePayload.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString());
-        Assert.True(initializePayload.RootElement.GetProperty("result").GetProperty("capabilities").GetProperty("resources").GetProperty("supportsTemplates").GetBoolean());
 
-        using var toolsListRequest = new HttpRequestMessage(HttpMethod.Post, "/mcp")
-        {
-            Content = JsonContent("""
+        using var toolsListRequest = McpRequest("""
                 {
                   "jsonrpc": "2.0",
                   "id": 2,
                   "method": "tools/list",
                   "params": {}
                 }
-                """)
-        };
-        toolsListRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+                """);
         var toolsListResponse = await harness.Client.SendAsync(toolsListRequest);
         Assert.Equal(HttpStatusCode.OK, toolsListResponse.StatusCode);
-        using var toolsListPayload = await ReadJsonAsync(toolsListResponse);
+        using var toolsListPayload = await ReadMcpJsonAsync(toolsListResponse);
         Assert.Contains(toolsListPayload.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray().Select(item => item.GetProperty("name").GetString()), name => name == "openclaw.get_dashboard");
 
-        using var templatesListRequest = new HttpRequestMessage(HttpMethod.Post, "/mcp")
-        {
-            Content = JsonContent("""
+        using var templatesListRequest = McpRequest("""
                 {
                   "jsonrpc": "2.0",
                   "id": 22,
                   "method": "resources/templates/list",
                   "params": {}
                 }
-                """)
-        };
-        templatesListRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+                """);
         var templatesListResponse = await harness.Client.SendAsync(templatesListRequest);
         Assert.Equal(HttpStatusCode.OK, templatesListResponse.StatusCode);
-        using var templatesListPayload = await ReadJsonAsync(templatesListResponse);
+        using var templatesListPayload = await ReadMcpJsonAsync(templatesListResponse);
         Assert.Contains(templatesListPayload.RootElement.GetProperty("result").GetProperty("resourceTemplates").EnumerateArray().Select(item => item.GetProperty("uriTemplate").GetString()), template => template == "openclaw://sessions/{sessionId}");
 
-        using var callToolRequest = new HttpRequestMessage(HttpMethod.Post, "/mcp")
-        {
-            Content = JsonContent("""
+        using var callToolRequest = McpRequest("""
                 {
                   "jsonrpc": "2.0",
                   "id": 3,
@@ -712,18 +767,14 @@ public sealed class GatewayAdminEndpointTests
                     "arguments": {}
                   }
                 }
-                """)
-        };
-        callToolRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+                """);
         var callToolResponse = await harness.Client.SendAsync(callToolRequest);
         Assert.Equal(HttpStatusCode.OK, callToolResponse.StatusCode);
-        using var callToolPayload = await ReadJsonAsync(callToolResponse);
+        using var callToolPayload = await ReadMcpJsonAsync(callToolResponse);
         var statusText = callToolPayload.RootElement.GetProperty("result").GetProperty("content")[0].GetProperty("text").GetString();
         Assert.Contains("activeSessions", statusText);
 
-        using var resourceReadRequest = new HttpRequestMessage(HttpMethod.Post, "/mcp")
-        {
-            Content = JsonContent("""
+        using var resourceReadRequest = McpRequest("""
                 {
                   "jsonrpc": "2.0",
                   "id": 4,
@@ -732,18 +783,14 @@ public sealed class GatewayAdminEndpointTests
                     "uri": "openclaw://dashboard"
                   }
                 }
-                """)
-        };
-        resourceReadRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+                """);
         var resourceReadResponse = await harness.Client.SendAsync(resourceReadRequest);
         Assert.Equal(HttpStatusCode.OK, resourceReadResponse.StatusCode);
-        using var resourceReadPayload = await ReadJsonAsync(resourceReadResponse);
+        using var resourceReadPayload = await ReadMcpJsonAsync(resourceReadResponse);
         var dashboardText = resourceReadPayload.RootElement.GetProperty("result").GetProperty("contents")[0].GetProperty("text").GetString();
         Assert.Contains("status", dashboardText);
 
-        using var promptGetRequest = new HttpRequestMessage(HttpMethod.Post, "/mcp")
-        {
-            Content = JsonContent("""
+        using var promptGetRequest = McpRequest("""
                 {
                   "jsonrpc": "2.0",
                   "id": 23,
@@ -755,13 +802,11 @@ public sealed class GatewayAdminEndpointTests
                     }
                   }
                 }
-                """)
-        };
-        promptGetRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+                """);
         var promptGetResponse = await harness.Client.SendAsync(promptGetRequest);
         Assert.Equal(HttpStatusCode.OK, promptGetResponse.StatusCode);
-        using var promptGetPayload = await ReadJsonAsync(promptGetResponse);
-        var promptText = promptGetPayload.RootElement.GetProperty("result").GetProperty("messages")[0].GetProperty("content")[0].GetProperty("text").GetString();
+        using var promptGetPayload = await ReadMcpJsonAsync(promptGetResponse);
+        var promptText = promptGetPayload.RootElement.GetProperty("result").GetProperty("messages")[0].GetProperty("content").GetProperty("text").GetString();
         Assert.Contains("sess-dashboard", promptText);
     }
 
@@ -777,7 +822,7 @@ public sealed class GatewayAdminEndpointTests
         using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
 
         var initialize = await client.InitializeMcpAsync(new McpInitializeRequest { ProtocolVersion = "2025-03-26" }, CancellationToken.None);
-        Assert.True(initialize.Capabilities.Resources.SupportsTemplates);
+        Assert.NotNull(initialize.ServerInfo);
 
         var tools = await client.ListMcpToolsAsync(CancellationToken.None);
         Assert.Contains(tools.Tools, item => item.Name == "openclaw.get_dashboard");
@@ -789,7 +834,7 @@ public sealed class GatewayAdminEndpointTests
             "openclaw_session_summary",
             new Dictionary<string, string> { ["sessionId"] = session.Id },
             CancellationToken.None);
-        Assert.Contains(session.Id, prompt.Messages[0].Content[0].Text);
+        Assert.Contains(session.Id, prompt.Messages[0].Content.Text);
 
         var sessionResource = await client.ReadMcpResourceAsync($"openclaw://sessions/{Uri.EscapeDataString(session.Id)}", CancellationToken.None);
         Assert.Contains(session.Id, sessionResource.Contents[0].Text);
@@ -798,6 +843,236 @@ public sealed class GatewayAdminEndpointTests
         var toolResult = await client.CallMcpToolAsync("openclaw.get_status", emptyArguments.RootElement.Clone(), CancellationToken.None);
         Assert.False(toolResult.IsError);
         Assert.Contains("activeSessions", toolResult.Content[0].Text);
+    }
+
+    [Fact]
+    public async Task WhatsAppSetup_GetPut_AndClientSurface_Work()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Channels.WhatsApp.Enabled = true;
+            config.Channels.WhatsApp.Type = "official";
+            config.Channels.WhatsApp.DmPolicy = "pairing";
+            config.Channels.WhatsApp.WebhookPath = "/whatsapp/inbound";
+            config.Channels.WhatsApp.WebhookPublicBaseUrl = "https://example.test";
+            config.Channels.WhatsApp.WebhookVerifyToken = "verify-me";
+            config.Channels.WhatsApp.WebhookVerifyTokenRef = "env:WA_VERIFY";
+            config.Channels.WhatsApp.ValidateSignature = true;
+            config.Channels.WhatsApp.WebhookAppSecretRef = "env:WA_SECRET";
+            config.Channels.WhatsApp.CloudApiTokenRef = "env:WA_TOKEN";
+            config.Channels.WhatsApp.PhoneNumberId = "phone-1";
+            config.Channels.WhatsApp.BusinessAccountId = "biz-1";
+        });
+
+        using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
+
+        var initial = await client.GetWhatsAppSetupAsync(CancellationToken.None);
+        Assert.Equal("official", initial.ActiveBackend);
+        Assert.True(initial.Enabled);
+        Assert.Equal("phone-1", initial.PhoneNumberId);
+        Assert.Equal("https://example.test/whatsapp/inbound", initial.DerivedWebhookUrl);
+
+        var updated = await client.SaveWhatsAppSetupAsync(new WhatsAppSetupRequest
+        {
+            Enabled = true,
+            Type = "bridge",
+            DmPolicy = "open",
+            WebhookPath = "/wa/hook",
+            WebhookPublicBaseUrl = "https://example.test/root",
+            WebhookVerifyToken = "verify-2",
+            WebhookVerifyTokenRef = "env:WA_VERIFY_2",
+            ValidateSignature = false,
+            BridgeUrl = "http://127.0.0.1:3001",
+            BridgeToken = "bridge-token",
+            BridgeTokenRef = "env:WA_BRIDGE_TOKEN",
+            BridgeSuppressSendExceptions = true
+        }, CancellationToken.None);
+
+        Assert.Equal("bridge", updated.ConfiguredType);
+        Assert.Equal("http://127.0.0.1:3001", updated.BridgeUrl);
+        Assert.True(updated.BridgeSuppressSendExceptions);
+        Assert.True(updated.RestartRequired);
+
+        var reloaded = await client.GetWhatsAppSetupAsync(CancellationToken.None);
+        Assert.Equal("bridge", reloaded.ConfiguredType);
+        Assert.Equal("open", reloaded.DmPolicy);
+        Assert.Equal("/wa/hook", reloaded.WebhookPath);
+        Assert.Equal("https://example.test/root/wa/hook", reloaded.DerivedWebhookUrl);
+    }
+
+    [Fact]
+    public async Task WhatsAppAuthEndpoints_ReturnPerAccountState_AndSupportFiltering()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        harness.Runtime.ChannelAuthEvents.Record(new BridgeChannelAuthEvent
+        {
+            ChannelId = "whatsapp",
+            AccountId = "acc-1",
+            State = "qr_code",
+            Data = "qr-one",
+            UpdatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1)
+        });
+        harness.Runtime.ChannelAuthEvents.Record(new BridgeChannelAuthEvent
+        {
+            ChannelId = "whatsapp",
+            AccountId = "acc-2",
+            State = "connected",
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        });
+
+        using var allRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/channels/whatsapp/auth");
+        allRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var allResponse = await harness.Client.SendAsync(allRequest);
+        Assert.Equal(HttpStatusCode.OK, allResponse.StatusCode);
+        using var allPayload = await ReadJsonAsync(allResponse);
+        Assert.Equal(2, allPayload.RootElement.GetProperty("items").GetArrayLength());
+
+        using var filteredRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/channels/whatsapp/auth?accountId=acc-1");
+        filteredRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var filteredResponse = await harness.Client.SendAsync(filteredRequest);
+        Assert.Equal(HttpStatusCode.OK, filteredResponse.StatusCode);
+        using var filteredPayload = await ReadJsonAsync(filteredResponse);
+        var filteredItems = filteredPayload.RootElement.GetProperty("items");
+        Assert.Single(filteredItems.EnumerateArray());
+        Assert.Equal("acc-1", filteredItems[0].GetProperty("accountId").GetString());
+        Assert.Equal("qr_code", filteredItems[0].GetProperty("state").GetString());
+    }
+
+    [Fact]
+    public async Task WhatsAppSetup_PersistsFirstPartyWorkerConfigJson()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Channels.WhatsApp.Enabled = true;
+            config.Channels.WhatsApp.Type = "official";
+        });
+
+        using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
+        var updated = await client.SaveWhatsAppSetupAsync(new WhatsAppSetupRequest
+        {
+            Enabled = true,
+            Type = "first_party_worker",
+            DmPolicy = "pairing",
+            FirstPartyWorkerConfigJson =
+                """
+                {
+                  "driver": "simulated",
+                  "executablePath": "/tmp/OpenClaw.WhatsApp.BaileysWorker.dll",
+                  "accounts": [
+                    {
+                      "accountId": "primary",
+                      "sessionPath": "./session/primary",
+                      "pairingMode": "qr"
+                    }
+                  ]
+                }
+                """
+        }, CancellationToken.None);
+
+        Assert.Equal("first_party_worker", updated.ConfiguredType);
+        Assert.NotNull(updated.FirstPartyWorker);
+        Assert.Equal("simulated", updated.FirstPartyWorker!.Driver);
+        Assert.Contains("\"accountId\":\"primary\"", updated.FirstPartyWorkerConfigJson);
+        Assert.False(string.IsNullOrWhiteSpace(updated.FirstPartyWorkerConfigSchemaJson));
+
+        var reloaded = await client.GetWhatsAppSetupAsync(CancellationToken.None);
+        Assert.Equal("first_party_worker", reloaded.ConfiguredType);
+        Assert.Equal("simulated", reloaded.FirstPartyWorker?.Driver);
+    }
+
+    [Fact]
+    public async Task WhatsAppRestartEndpoint_RestartsAdapter_AndClearsAuthState()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var adapter = new RestartableTestChannelAdapter("whatsapp");
+        ((Dictionary<string, IChannelAdapter>)harness.Runtime.ChannelAdapters)["whatsapp"] = adapter;
+        harness.Runtime.ChannelAuthEvents.Record(new BridgeChannelAuthEvent
+        {
+            ChannelId = "whatsapp",
+            AccountId = "acc-1",
+            State = "qr_code",
+            Data = "qr-one",
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/admin/channels/whatsapp/restart");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        Assert.Equal(1, adapter.RestartCount);
+        Assert.Equal(0, payload.RootElement.GetProperty("authStates").GetArrayLength());
+        Assert.Empty(harness.Runtime.ChannelAuthEvents.GetAll("whatsapp"));
+    }
+
+    [Fact]
+    public async Task AdminUi_ContainsDedicatedWhatsAppSetupControls()
+    {
+        var adminHtmlPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/OpenClaw.Gateway/wwwroot/admin.html"));
+        var html = await File.ReadAllTextAsync(adminHtmlPath);
+
+        Assert.Contains("id=\"whatsapp-section\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"whatsapp-save-button\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"whatsapp-reload-button\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"whatsapp-restart-button\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"wa-plugin-config-json-input\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"wa-first-party-worker-config-json-input\"", html, StringComparison.Ordinal);
+        Assert.Contains("value=\"first_party_worker\"", html, StringComparison.Ordinal);
+        Assert.Contains("/admin/channels/whatsapp/setup", html, StringComparison.Ordinal);
+        Assert.Contains("/admin/channels/whatsapp/auth/stream", html, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("ws://127.0.0.1:18789/ws", "http://127.0.0.1:18789")]
+    [InlineData("wss://example.com/ws", "https://example.com")]
+    [InlineData("wss://example.com/root/ws?x=1", "https://example.com/root")]
+    public void GatewayEndpointResolver_MapsWebSocketUrlsToHttpBase(string input, string expected)
+    {
+        var success = GatewayEndpointResolver.TryResolveHttpBaseUrl(input, out var resolved);
+
+        Assert.True(success);
+        Assert.Equal(expected, resolved);
+    }
+
+    [Fact]
+    public async Task CompanionViewModel_LoadWhatsAppSetupCommand_PopulatesSetupState()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Channels.WhatsApp.Enabled = true;
+            config.Channels.WhatsApp.Type = "bridge";
+            config.Channels.WhatsApp.DmPolicy = "open";
+            config.Channels.WhatsApp.WebhookPublicBaseUrl = "https://example.test";
+            config.Channels.WhatsApp.WebhookPath = "/whatsapp/inbound";
+            config.Channels.WhatsApp.BridgeUrl = "http://127.0.0.1:3001";
+        });
+        harness.Runtime.ChannelAuthEvents.Record(new BridgeChannelAuthEvent
+        {
+            ChannelId = "whatsapp",
+            AccountId = "acc-1",
+            State = "qr_code",
+            Data = "qr-payload",
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        });
+
+        var settingsDir = Path.Combine(harness.StoragePath, "companion");
+        var viewModel = new MainWindowViewModel(
+            new SettingsStore(settingsDir),
+            new GatewayWebSocketClient(),
+            (_, token) => new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), token, harness.Client))
+        {
+            ServerUrl = "ws://127.0.0.1:18789/ws",
+            AuthToken = harness.AuthToken
+        };
+
+        await viewModel.LoadWhatsAppSetupCommand.ExecuteAsync(null);
+
+        Assert.Equal("bridge", viewModel.WhatsAppType);
+        Assert.Equal("http://127.0.0.1:3001", viewModel.WhatsAppBridgeUrl);
+        Assert.Equal("https://example.test/whatsapp/inbound", viewModel.WhatsAppDerivedWebhookUrl);
+        Assert.Equal("qr-payload", viewModel.WhatsAppQrData);
+        Assert.Contains("acc-1", viewModel.WhatsAppAuthSummary, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -841,7 +1116,7 @@ public sealed class GatewayAdminEndpointTests
             "/api/integration/sessions/{id}/timeline",
             "/api/integration/runtime-events",
             "/api/integration/messages",
-            "/mcp",
+            "/mcp/",
             "/admin",
             "/admin/summary",
             "/admin/providers",
@@ -873,6 +1148,14 @@ public sealed class GatewayAdminEndpointTests
             "/admin/heartbeat",
             "/admin/heartbeat/preview",
             "/admin/heartbeat/status",
+            "/admin/channels/auth",
+            "/admin/channels/{channelId}/auth",
+            "/admin/channels/{channelId}/auth/stream",
+            "/admin/channels/whatsapp/setup",
+            "/admin/channels/whatsapp/restart",
+            "/admin/channels/whatsapp/auth",
+            "/admin/channels/whatsapp/auth/stream",
+            "/admin/channels/whatsapp/auth/qr.svg",
             "/tools/approvals",
             "/tools/approvals/history",
             "/tools/approval-policies",
@@ -932,13 +1215,42 @@ public sealed class GatewayAdminEndpointTests
     private static StringContent JsonContent(string json)
         => new(json, Encoding.UTF8, "application/json");
 
+    private static async Task<HttpResponseMessage> PostWebhookAsync(HttpClient client, string name, string body, string secret)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/webhooks/{name}")
+        {
+            Content = JsonContent(body)
+        };
+        request.Headers.Add("X-Hub-Signature-256", $"sha256={GatewaySecurity.ComputeHmacSha256Hex(secret, body)}");
+        return await client.SendAsync(request);
+    }
+
     private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
     {
         var payload = await response.Content.ReadAsStringAsync();
         return JsonDocument.Parse(payload);
     }
 
-    private static async Task<GatewayTestHarness> CreateHarnessAsync(bool nonLoopbackBind)
+    private static async Task<JsonDocument> ReadMcpJsonAsync(HttpResponseMessage response)
+    {
+        var payload = await response.Content.ReadAsStringAsync();
+        var contentType = response.Content.Headers.ContentType?.MediaType;
+
+        if (string.Equals(contentType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var line in payload.Split('\n'))
+            {
+                if (line.StartsWith("data:", StringComparison.Ordinal))
+                    return JsonDocument.Parse(line["data:".Length..].TrimStart());
+            }
+
+            throw new InvalidOperationException("SSE response did not contain a data line.");
+        }
+
+        return JsonDocument.Parse(payload);
+    }
+
+    private static async Task<GatewayTestHarness> CreateHarnessAsync(bool nonLoopbackBind, Action<GatewayConfig>? configure = null)
     {
         var storagePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "openclaw-admin-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(storagePath);
@@ -969,6 +1281,7 @@ public sealed class GatewayAdminEndpointTests
                 Enabled = false
             }
         };
+        configure?.Invoke(config);
 
         var startup = new GatewayStartupContext
         {
@@ -994,6 +1307,15 @@ public sealed class GatewayAdminEndpointTests
             AdminSettingsService.CreateSnapshot(config),
             AdminSettingsService.GetSettingsPath(config),
             NullLogger<AdminSettingsService>.Instance));
+        builder.Services.AddSingleton(new PluginAdminSettingsService(
+            config,
+            NullLogger<PluginAdminSettingsService>.Instance));
+        builder.Services.AddSingleton(new WhatsAppWebhookHandler(
+            config.Channels.WhatsApp,
+            new AllowlistManager(storagePath, NullLogger<AllowlistManager>.Instance),
+            new RecentSendersStore(storagePath, NullLogger<RecentSendersStore>.Instance),
+            AllowlistPolicy.ParseSemantics(config.Channels.AllowlistSemantics),
+            NullLogger<WhatsAppWebhookHandler>.Instance));
         builder.Services.AddSingleton(new ProviderUsageTracker());
         builder.Services.AddSingleton(new ToolUsageTracker());
         builder.Services.AddSingleton(new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance));
@@ -1014,11 +1336,15 @@ public sealed class GatewayAdminEndpointTests
                 sp.GetRequiredService<ProviderUsageTracker>(),
                 NullLogger<ContractGovernanceService>.Instance);
         });
+        builder.Services.AddOpenClawMcpServices(startup);
 
         var app = builder.Build();
         var runtime = CreateRuntime(config, storagePath, memoryStore, sessionManager, heartbeatService);
+        app.InitializeMcpRuntime(runtime);
+        app.UseOpenClawMcpAuth(startup, runtime);
         app.MapOpenApi("/openapi/{documentName}.json");
         app.MapOpenClawEndpoints(startup, runtime);
+        app.MapMcp("/mcp");
         await app.StartAsync();
 
         return new GatewayTestHarness(app, app.GetTestClient(), runtime, config.AuthToken!, storagePath, memoryStore);
@@ -1123,7 +1449,8 @@ public sealed class GatewayAdminEndpointTests
             TwilioSmsWebhookHandler = null,
             PluginHost = null,
             NativeDynamicPluginHost = null,
-            RegisteredToolNames = System.Collections.Frozen.FrozenSet<string>.Empty
+            RegisteredToolNames = System.Collections.Frozen.FrozenSet<string>.Empty,
+            ChannelAuthEvents = new ChannelAuthEventStore()
         };
     }
 
@@ -1140,5 +1467,29 @@ public sealed class GatewayAdminEndpointTests
             Client.Dispose();
             await App.DisposeAsync();
         }
+    }
+
+    private sealed class RestartableTestChannelAdapter(string channelId) : IChannelAdapter, IRestartableChannelAdapter
+    {
+        public string ChannelId { get; } = channelId;
+        public int RestartCount { get; private set; }
+
+        public event Func<InboundMessage, CancellationToken, ValueTask> OnMessageReceived
+        {
+            add { }
+            remove { }
+        }
+
+        public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
+
+        public ValueTask SendAsync(OutboundMessage message, CancellationToken ct) => ValueTask.CompletedTask;
+
+        public Task RestartAsync(CancellationToken ct)
+        {
+            RestartCount++;
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

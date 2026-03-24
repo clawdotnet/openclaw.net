@@ -12,10 +12,12 @@
     <ProjectReference Include="..\OpenClaw.Agent\OpenClaw.Agent.csproj" />
     <ProjectReference Include="..\OpenClaw.Channels\OpenClaw.Channels.csproj" />
     <ProjectReference Include="..\OpenClaw.Cli\OpenClaw.Cli.csproj" />
+    <ProjectReference Include="..\OpenClaw.Companion\OpenClaw.Companion.csproj" />
     <ProjectReference Include="..\OpenClaw.Gateway\OpenClaw.Gateway.csproj" />
     <ProjectReference Include="..\OpenClaw.SemanticKernelAdapter\OpenClaw.SemanticKernelAdapter.csproj" />
     <ProjectReference Include="..\OpenClaw.PluginKit\OpenClaw.PluginKit.csproj" />
     <ProjectReference Include="..\OpenClaw.TestPluginFixtures\OpenClaw.TestPluginFixtures.csproj" />
+    <ProjectReference Include="..\OpenClaw.WhatsApp.BaileysWorker\OpenClaw.WhatsApp.BaileysWorker.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">
@@ -33,6 +35,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0-preview.3.25172.1" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />

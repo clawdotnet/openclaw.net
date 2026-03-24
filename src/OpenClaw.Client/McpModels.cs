@@ -1,6 +1,6 @@
 using System.Text.Json;
- 
-namespace OpenClaw.Core.Models;
+
+namespace OpenClaw.Client;
  
 public sealed class McpJsonRpcRequest
 {
@@ -27,6 +27,16 @@ public sealed class McpJsonRpcResponse
 public sealed class McpInitializeRequest
 {
     public string? ProtocolVersion { get; init; }
+    public McpClientCapabilities Capabilities { get; init; } = new();
+    public McpClientInfo ClientInfo { get; init; } = new() { Name = "openclaw-client", Version = "1.0.0" };
+}
+
+public sealed class McpClientCapabilities;
+
+public sealed class McpClientInfo
+{
+    public required string Name { get; init; }
+    public required string Version { get; init; }
 }
  
 public sealed class McpInitializeResult
@@ -166,7 +176,7 @@ public sealed class McpGetPromptRequest
 public sealed class McpPromptMessage
 {
     public string Role { get; init; } = "user";
-    public IReadOnlyList<McpTextContent> Content { get; init; } = [];
+    public McpTextContent Content { get; init; } = new() { Text = string.Empty };
 }
  
 public sealed class McpGetPromptResult
