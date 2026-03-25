@@ -164,7 +164,9 @@ public class SecurityTests
 
         try
         {
-            var result = await tool.ExecuteAsync($$"""{"path":"{{tmpFile}}"}""", CancellationToken.None);
+            var result = await tool.ExecuteAsync(
+                System.Text.Json.JsonSerializer.Serialize(new { path = tmpFile }),
+                CancellationToken.None);
             Assert.Contains("Read access denied", result);
         }
         finally

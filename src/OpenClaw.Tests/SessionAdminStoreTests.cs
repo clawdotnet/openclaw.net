@@ -35,14 +35,16 @@ public sealed class SessionAdminStoreTests
         try
         {
             var dbPath = Path.Combine(root, "openclaw.db");
-            using var store = new SqliteMemoryStore(dbPath, enableFts: false);
-            await SeedSessionsAsync(store);
+            using (var store = new SqliteMemoryStore(dbPath, enableFts: false))
+            {
+                await SeedSessionsAsync(store);
 
-            var page = await ((ISessionAdminStore)store).ListSessionsAsync(page: 1, pageSize: 1, new SessionListQuery(), CancellationToken.None);
+                var page = await ((ISessionAdminStore)store).ListSessionsAsync(page: 1, pageSize: 1, new SessionListQuery(), CancellationToken.None);
 
-            Assert.Single(page.Items);
-            Assert.True(page.HasMore);
-            Assert.Equal("session-2", page.Items[0].Id);
+                Assert.Single(page.Items);
+                Assert.True(page.HasMore);
+                Assert.Equal("session-2", page.Items[0].Id);
+            }
         }
         finally
         {
@@ -81,18 +83,20 @@ public sealed class SessionAdminStoreTests
         try
         {
             var dbPath = Path.Combine(root, "openclaw.db");
-            using var store = new SqliteMemoryStore(dbPath, enableFts: false);
-            await SeedSessionsAsync(store);
+            using (var store = new SqliteMemoryStore(dbPath, enableFts: false))
+            {
+                await SeedSessionsAsync(store);
 
-            var page = await ((ISessionAdminStore)store).ListSessionsAsync(
-                page: 1,
-                pageSize: 1,
-                new SessionListQuery { Search = "sms" },
-                CancellationToken.None);
+                var page = await ((ISessionAdminStore)store).ListSessionsAsync(
+                    page: 1,
+                    pageSize: 1,
+                    new SessionListQuery { Search = "sms" },
+                    CancellationToken.None);
 
-            Assert.Single(page.Items);
-            Assert.False(page.HasMore);
-            Assert.Equal("session-3", page.Items[0].Id);
+                Assert.Single(page.Items);
+                Assert.False(page.HasMore);
+                Assert.Equal("session-3", page.Items[0].Id);
+            }
         }
         finally
         {
@@ -107,17 +111,19 @@ public sealed class SessionAdminStoreTests
         try
         {
             var dbPath = Path.Combine(root, "openclaw.db");
-            using var store = new SqliteMemoryStore(dbPath, enableFts: false);
-            await SeedSessionsAsync(store);
+            using (var store = new SqliteMemoryStore(dbPath, enableFts: false))
+            {
+                await SeedSessionsAsync(store);
 
-            var page = await ((ISessionAdminStore)store).ListSessionsAsync(
-                page: 1,
-                pageSize: 10,
-                new SessionListQuery { State = SessionState.Paused },
-                CancellationToken.None);
+                var page = await ((ISessionAdminStore)store).ListSessionsAsync(
+                    page: 1,
+                    pageSize: 10,
+                    new SessionListQuery { State = SessionState.Paused },
+                    CancellationToken.None);
 
-            Assert.Single(page.Items);
-            Assert.Equal("session-3", page.Items[0].Id);
+                Assert.Single(page.Items);
+                Assert.Equal("session-3", page.Items[0].Id);
+            }
         }
         finally
         {

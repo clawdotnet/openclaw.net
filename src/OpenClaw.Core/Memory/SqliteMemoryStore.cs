@@ -940,7 +940,7 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
 
     public void Dispose()
     {
-        // No pooled resources at the moment; connections are per-call.
+        SqliteConnection.ClearAllPools();
     }
 
     // ── ISessionAdminStore ────────────────────────────────────────────────

@@ -5,6 +5,8 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using OpenClaw.Agent;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
 using OpenClaw.MicrosoftAgentFrameworkAdapter;
@@ -59,6 +61,88 @@ public sealed class MafAdapterTests
             var loadedState = NormalizeJson(await agent.SerializeSessionAsync(loadedSession, jsonSerializerOptions: null, CancellationToken.None));
 
             Assert.Equal(savedState, loadedState);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MafAgentRuntimeFactory_WithDelegationEnabled_AddsDelegateTool()
+    {
+        var services = new ServiceCollection().BuildServiceProvider();
+        var factory = new MafAgentRuntimeFactory(
+            new MafAgentFactory(Options.Create(new MafOptions()), NullLoggerFactory.Instance, services),
+            new MafSessionStateStore(
+                new GatewayConfig(),
+                Options.Create(new MafOptions()),
+                NullLogger<MafSessionStateStore>.Instance),
+            new MafTelemetryAdapter(),
+            Options.Create(new MafOptions()),
+            NullLoggerFactory.Instance);
+
+        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-maf-delegation-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var runtime = Assert.IsType<MafAgentRuntime>(factory.Create(new AgentRuntimeFactoryContext
+            {
+                Services = services,
+                Config = new GatewayConfig
+                {
+                    Memory = new MemoryConfig
+                    {
+                        StoragePath = storagePath
+                    },
+                    Llm = new LlmProviderConfig
+                    {
+                        Provider = "test-maf",
+                        Model = "maf-test-model"
+                    },
+                    Delegation = new DelegationConfig
+                    {
+                        Enabled = true,
+                        Profiles = new Dictionary<string, AgentProfile>(StringComparer.Ordinal)
+                        {
+                            ["reviewer"] = new()
+                            {
+                                Name = "reviewer",
+                                SystemPrompt = "Review code changes.",
+                                MaxIterations = 2,
+                                MaxHistoryTurns = 4
+                            }
+                        }
+                    }
+                },
+                RuntimeState = new GatewayRuntimeState
+                {
+                    RequestedMode = "jit",
+                    EffectiveMode = GatewayRuntimeMode.Jit,
+                    DynamicCodeSupported = true
+                },
+                ChatClient = new MafTestChatClient(),
+                Tools = [new TestTool()],
+                MemoryStore = new FileMemoryStore(storagePath, 4),
+                RuntimeMetrics = new RuntimeMetrics(),
+                ProviderUsage = new ProviderUsageTracker(),
+                LlmExecutionService = new TestLlmExecutionService(),
+                Skills = [],
+                SkillsConfig = new SkillsConfig(),
+                WorkspacePath = null,
+                PluginSkillDirs = [],
+                Logger = NullLogger.Instance,
+                Hooks = [],
+                RequireToolApproval = false,
+                ApprovalRequiredTools = []
+            }));
+
+            var mafToolsField = typeof(MafAgentRuntime).GetField("_mafTools", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.NotNull(mafToolsField);
+
+            var mafTools = Assert.IsAssignableFrom<IReadOnlyList<AITool>>(mafToolsField!.GetValue(runtime));
+            Assert.Contains(mafTools, tool => tool is AIFunction function && function.Name == "delegate_agent");
         }
         finally
         {
@@ -266,6 +350,71 @@ public sealed class MafAdapterTests
 
     private static string NormalizeJson(JsonElement element)
         => JsonSerializer.Serialize(element, new JsonSerializerOptions { WriteIndented = false });
+
+    private sealed class TestTool : ITool
+    {
+        public string Name => "echo_tool";
+
+        public string Description => "Echo test tool.";
+
+        public string ParameterSchema => """{"type":"object"}""";
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        {
+            _ = argumentsJson;
+            _ = ct;
+            return ValueTask.FromResult("ok");
+        }
+    }
+
+    private sealed class TestLlmExecutionService : ILlmExecutionService
+    {
+        public CircuitState DefaultCircuitState => CircuitState.Closed;
+
+        public Task<LlmExecutionResult> GetResponseAsync(
+            Session session,
+            IReadOnlyList<ChatMessage> messages,
+            ChatOptions options,
+            TurnContext turnContext,
+            LlmExecutionEstimate estimate,
+            CancellationToken ct)
+        {
+            _ = session;
+            _ = messages;
+            _ = options;
+            _ = turnContext;
+            _ = estimate;
+            _ = ct;
+            return Task.FromResult(new LlmExecutionResult
+            {
+                ProviderId = "test-maf",
+                ModelId = "maf-test-model",
+                Response = new ChatResponse([new ChatMessage(ChatRole.Assistant, "ok")])
+            });
+        }
+
+        public Task<LlmStreamingExecutionResult> StartStreamingAsync(
+            Session session,
+            IReadOnlyList<ChatMessage> messages,
+            ChatOptions options,
+            TurnContext turnContext,
+            LlmExecutionEstimate estimate,
+            CancellationToken ct)
+        {
+            _ = session;
+            _ = messages;
+            _ = options;
+            _ = turnContext;
+            _ = estimate;
+            _ = ct;
+            return Task.FromResult(new LlmStreamingExecutionResult
+            {
+                ProviderId = "test-maf",
+                ModelId = "maf-test-model",
+                Updates = AsyncEnumerable.Empty<ChatResponseUpdate>()
+            });
+        }
+    }
 
     private sealed class MafTestChatClient : IChatClient
     {

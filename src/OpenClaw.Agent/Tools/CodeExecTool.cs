@@ -17,6 +17,8 @@ public sealed class CodeExecTool : ITool, ISandboxCapableTool
 {
     private readonly CodeExecConfig _config;
     private readonly ToolingConfig? _toolingConfig;
+    private static readonly Lazy<ResolvedProcessCommand?> BashProcessCommand = new(ResolveBashProcessCommand);
+    private const int ShellProbeTimeoutMs = 10_000;
 
     public CodeExecTool(CodeExecConfig config, ToolingConfig? toolingConfig = null)
     {
@@ -153,6 +155,15 @@ public sealed class CodeExecTool : ITool, ISandboxCapableTool
 
     private async Task<string> RunInProcessAsync(string language, string code, int timeoutSec, CancellationToken ct)
     {
+        if (language == "bash")
+        {
+            var command = BashProcessCommand.Value;
+            if (command is null)
+                return "Error: Bash execution is not available on this host.";
+
+            return await RunProcessAsync(command.Executable, [.. command.PrefixArguments, code], timeoutSec, ct);
+        }
+
         var (interpreter, flags) = GetInterpreter(language);
         if (interpreter is null)
             return $"Error: Unsupported language '{language}'.";
@@ -253,6 +264,59 @@ public sealed class CodeExecTool : ITool, ISandboxCapableTool
         "bash" => ("bash", ""),
         _ => (null, "")
     };
+
+    private static ResolvedProcessCommand? ResolveBashProcessCommand()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            if (CanRunProcess("wsl.exe", ["-e", "sh", "-lc", "exit 0"]))
+                return new("wsl.exe", ["-e", "sh", "-lc"]);
+
+            if (CanRunProcess("bash", ["-lc", "exit 0"]))
+                return new("bash", ["-lc"]);
+
+            return null;
+        }
+
+        if (CanRunProcess("bash", ["-lc", "exit 0"]))
+            return new("bash", ["-lc"]);
+
+        return null;
+    }
+
+    private static bool CanRunProcess(string executable, IReadOnlyList<string> arguments)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = executable,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        foreach (var argument in arguments)
+            psi.ArgumentList.Add(argument);
+
+        try
+        {
+            using var process = Process.Start(psi);
+            if (process is null)
+                return false;
+
+            if (!process.WaitForExit(ShellProbeTimeoutMs))
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                return false;
+            }
+
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private static (string? Interpreter, string[]? Arguments) GetSandboxCommand(string language, string code) => language switch
     {
@@ -395,4 +459,6 @@ public sealed class CodeExecTool : ITool, ISandboxCapableTool
         if (currentToken.Length > 0)
             output.Add(currentToken.ToString());
     }
+
+    private sealed record ResolvedProcessCommand(string Executable, string[] PrefixArguments);
 }

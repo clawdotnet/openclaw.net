@@ -306,10 +306,14 @@ public sealed class ContractGovernanceTests
     [Fact]
     public async Task ContractScopeHook_PathOutsideScope_Denies()
     {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"openclaw-scope-{Guid.NewGuid():N}");
+        var allowedPath = Path.Combine(tempRoot, "allowed", "only");
+        var deniedPath = Path.Combine(tempRoot, "other", "path", "file.txt");
+
         var policy = new ContractPolicy
         {
             Id = "ctr_test",
-            ScopedCapabilities = [new ScopedCapability { ToolName = "file_read", AllowedPaths = ["/allowed/only"] }]
+            ScopedCapabilities = [new ScopedCapability { ToolName = "file_read", AllowedPaths = [allowedPath] }]
         };
         var hook = new ContractScopeHook(
             _ => policy,
@@ -320,7 +324,7 @@ public sealed class ContractGovernanceTests
         {
             SessionId = "s1", ChannelId = "ws", SenderId = "u1",
             CorrelationId = "c1", ToolName = "file_read",
-            ArgumentsJson = JsonSerializer.Serialize(new { path = "/other/path/file.txt" }),
+            ArgumentsJson = JsonSerializer.Serialize(new { path = deniedPath }),
             IsStreaming = false
         };
 
