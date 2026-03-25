@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
@@ -21,13 +20,15 @@ internal sealed class TeamsWebhookHandler
     private readonly AllowlistSemantics _allowlistSemantics;
     private readonly ILogger<TeamsWebhookHandler> _logger;
     private readonly string _appId;
+    private readonly ITeamsTokenValidator _tokenValidator;
 
     public TeamsWebhookHandler(
         TeamsChannelConfig config,
         AllowlistManager allowlists,
         RecentSendersStore recentSenders,
         AllowlistSemantics allowlistSemantics,
-        ILogger<TeamsWebhookHandler> logger)
+        ILogger<TeamsWebhookHandler> logger,
+        ITeamsTokenValidator? tokenValidator = null)
     {
         _config = config;
         _allowlists = allowlists;
@@ -35,6 +36,7 @@ internal sealed class TeamsWebhookHandler
         _allowlistSemantics = allowlistSemantics;
         _logger = logger;
         _appId = SecretResolver.Resolve(config.AppIdRef) ?? config.AppId ?? "";
+        _tokenValidator = tokenValidator ?? new BotFrameworkTokenValidator(_appId, logger: logger);
     }
 
     public async Task<WebhookResult> HandleAsync(
@@ -49,18 +51,6 @@ internal sealed class TeamsWebhookHandler
         if (!HttpMethods.IsPost(context.Request.Method))
             return WebhookResult.Status(405);
 
-        // JWT validation (skip in dev mode)
-        if (_config.ValidateToken)
-        {
-            var authHeader = context.Request.Headers.Authorization.ToString();
-            if (!ValidateAuthHeader(authHeader))
-            {
-                _logger.LogWarning("Teams webhook rejected: invalid or missing JWT token.");
-                return WebhookResult.Unauthorized();
-            }
-        }
-
-        // Read body
         var body = await ReadBodyAsync(context, _config.MaxRequestBytes, ct);
         if (body is null)
             return WebhookResult.Status(StatusCodes.Status413PayloadTooLarge);
@@ -70,6 +60,16 @@ internal sealed class TeamsWebhookHandler
             var activity = JsonSerializer.Deserialize(body, TeamsJsonContext.Default.TeamsInboundActivity);
             if (activity is null)
                 return WebhookResult.BadRequest("Invalid activity JSON");
+
+            if (_config.ValidateToken)
+            {
+                var authHeader = context.Request.Headers.Authorization.ToString();
+                if (!await _tokenValidator.ValidateAsync(authHeader, activity.ServiceUrl, activity.ActivityChannelId, ct))
+                {
+                    _logger.LogWarning("Teams webhook rejected: invalid or missing JWT token.");
+                    return WebhookResult.Unauthorized();
+                }
+            }
 
             // Store conversation reference for proactive messaging
             if (!string.IsNullOrWhiteSpace(activity.ServiceUrl) &&
@@ -145,9 +145,10 @@ internal sealed class TeamsWebhookHandler
                 if (_config.GroupPolicy is "allowlist" && activity.Conversation?.Id is not null)
                 {
                     var convId = activity.Conversation.Id;
+                    var teamId = TryGetTeamId(activity.ChannelData);
                     var allowed = _config.AllowedConversationIds.Contains(convId) ||
-                                  _config.AllowedTeamIds.Any(teamId =>
-                                      convId.Contains(teamId, StringComparison.OrdinalIgnoreCase));
+                                  (!string.IsNullOrWhiteSpace(teamId) &&
+                                   _config.AllowedTeamIds.Contains(teamId, StringComparer.OrdinalIgnoreCase));
                     if (!allowed)
                     {
                         _logger.LogInformation("Ignoring Teams group message from non-allowlisted conversation.");
@@ -186,87 +187,6 @@ internal sealed class TeamsWebhookHandler
         }
     }
 
-    private bool ValidateAuthHeader(string authHeader)
-    {
-        if (string.IsNullOrWhiteSpace(authHeader))
-            return false;
-
-        if (!authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        var token = authHeader["Bearer ".Length..].Trim();
-        if (string.IsNullOrWhiteSpace(token))
-            return false;
-
-        try
-        {
-            // Parse JWT payload without external dependencies (no signature verification —
-            // Azure Bot Framework handles transport-level security via HTTPS).
-            var parts = token.Split('.');
-            if (parts.Length != 3)
-                return false;
-
-            var payloadJson = Encoding.UTF8.GetString(Base64UrlDecode(parts[1]));
-            using var doc = JsonDocument.Parse(payloadJson);
-            var payload = doc.RootElement;
-
-            // Check audience matches our app ID
-            if (payload.TryGetProperty("aud", out var aud))
-            {
-                var audience = aud.GetString();
-                if (!string.Equals(audience, _appId, StringComparison.OrdinalIgnoreCase))
-                {
-                    _logger.LogWarning("Teams JWT audience '{Audience}' does not match app ID.", audience);
-                    return false;
-                }
-            }
-            else return false;
-
-            // Check token is not expired
-            if (payload.TryGetProperty("exp", out var exp))
-            {
-                var expiry = DateTimeOffset.FromUnixTimeSeconds(exp.GetInt64());
-                if (expiry < DateTimeOffset.UtcNow)
-                {
-                    _logger.LogWarning("Teams JWT token has expired.");
-                    return false;
-                }
-            }
-
-            // Check issuer is from Microsoft
-            if (payload.TryGetProperty("iss", out var iss))
-            {
-                var issuer = iss.GetString();
-                if (issuer is null ||
-                    (!issuer.StartsWith("https://sts.windows.net/", StringComparison.OrdinalIgnoreCase) &&
-                     !issuer.StartsWith("https://login.microsoftonline.com/", StringComparison.OrdinalIgnoreCase)))
-                {
-                    _logger.LogWarning("Teams JWT issuer '{Issuer}' is not a recognized Microsoft issuer.", issuer);
-                    return false;
-                }
-            }
-            else return false;
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Teams JWT validation failed.");
-            return false;
-        }
-    }
-
-    private static byte[] Base64UrlDecode(string input)
-    {
-        var padded = input.Replace('-', '+').Replace('_', '/');
-        switch (padded.Length % 4)
-        {
-            case 2: padded += "=="; break;
-            case 3: padded += "="; break;
-        }
-        return Convert.FromBase64String(padded);
-    }
-
     private static bool IsBotMentioned(TeamsInboundActivity activity, string appId)
     {
         if (activity.Entities is null) return false;
@@ -301,6 +221,35 @@ internal sealed class TeamsWebhookHandler
         text = Regex.Replace(text, @"<at[^>]*>.*?</at>", "", RegexOptions.IgnoreCase);
 
         return text.Trim();
+    }
+
+    private static string? TryGetTeamId(JsonElement? channelData)
+    {
+        if (channelData is not { ValueKind: JsonValueKind.Object } data)
+            return null;
+
+        if (!TryGetPropertyIgnoreCase(data, "team", out var teamNode) || teamNode.ValueKind != JsonValueKind.Object)
+            return null;
+
+        if (!TryGetPropertyIgnoreCase(teamNode, "id", out var idNode) || idNode.ValueKind != JsonValueKind.String)
+            return null;
+
+        return idNode.GetString();
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 
     private static async Task<byte[]?> ReadBodyAsync(HttpContext context, int maxBytes, CancellationToken ct)

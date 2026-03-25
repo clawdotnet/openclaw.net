@@ -981,6 +981,44 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task WhatsAppWebhookVerification_AllowsRepeatedGetChallenges()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Channels.WhatsApp.Enabled = true;
+            config.Channels.WhatsApp.Type = "official";
+            config.Channels.WhatsApp.WebhookPath = "/whatsapp/inbound";
+            config.Channels.WhatsApp.WebhookVerifyToken = "verify-me";
+            config.Channels.WhatsApp.WebhookVerifyTokenRef = "";
+        });
+
+        const string path = "/whatsapp/inbound?hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=challenge-123";
+
+        var firstResponse = await harness.Client.GetAsync(path);
+        var secondResponse = await harness.Client.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal("challenge-123", await firstResponse.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        Assert.Equal("challenge-123", await secondResponse.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task WhatsAppFirstPartyWorker_DoesNotRequireWebhookHandlerRegistration()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Channels.WhatsApp.Enabled = true;
+            config.Channels.WhatsApp.Type = "first_party_worker";
+            config.Channels.WhatsApp.WebhookPath = "/whatsapp/inbound";
+        });
+
+        var response = await harness.Client.GetAsync("/whatsapp/inbound");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task WhatsAppRestartEndpoint_RestartsAdapter_AndClearsAuthState()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -1310,12 +1348,15 @@ public sealed class GatewayAdminEndpointTests
         builder.Services.AddSingleton(new PluginAdminSettingsService(
             config,
             NullLogger<PluginAdminSettingsService>.Instance));
-        builder.Services.AddSingleton(new WhatsAppWebhookHandler(
-            config.Channels.WhatsApp,
-            new AllowlistManager(storagePath, NullLogger<AllowlistManager>.Instance),
-            new RecentSendersStore(storagePath, NullLogger<RecentSendersStore>.Instance),
-            AllowlistPolicy.ParseSemantics(config.Channels.AllowlistSemantics),
-            NullLogger<WhatsAppWebhookHandler>.Instance));
+        if (!string.Equals(config.Channels.WhatsApp.Type, "first_party_worker", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.Services.AddSingleton(new WhatsAppWebhookHandler(
+                config.Channels.WhatsApp,
+                new AllowlistManager(storagePath, NullLogger<AllowlistManager>.Instance),
+                new RecentSendersStore(storagePath, NullLogger<RecentSendersStore>.Instance),
+                AllowlistPolicy.ParseSemantics(config.Channels.AllowlistSemantics),
+                NullLogger<WhatsAppWebhookHandler>.Instance));
+        }
         builder.Services.AddSingleton(new ProviderUsageTracker());
         builder.Services.AddSingleton(new ToolUsageTracker());
         builder.Services.AddSingleton(new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance));

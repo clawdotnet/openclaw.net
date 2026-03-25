@@ -99,6 +99,53 @@ public sealed class ConfigValidatorTests
     }
 
     [Fact]
+    public void Validate_TeamsEnabledWithoutCredentials_ReturnsErrors()
+    {
+        var config = new GatewayConfig
+        {
+            Channels = new ChannelsConfig
+            {
+                Teams = new TeamsChannelConfig
+                {
+                    Enabled = true,
+                    AppIdRef = "",
+                    AppPasswordRef = "",
+                    TenantIdRef = ""
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.Contains(errors, e => e.Contains("Channels.Teams.AppId", StringComparison.Ordinal));
+        Assert.Contains(errors, e => e.Contains("Channels.Teams.AppPassword", StringComparison.Ordinal));
+        Assert.Contains(errors, e => e.Contains("Channels.Teams.TenantId", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_TeamsInvalidPolicies_ReturnsErrors()
+    {
+        var config = new GatewayConfig
+        {
+            Channels = new ChannelsConfig
+            {
+                Teams = new TeamsChannelConfig
+                {
+                    GroupPolicy = "custom",
+                    ReplyStyle = "reply",
+                    ChunkMode = "words",
+                    TextChunkLimit = 0
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.Contains(errors, e => e.Contains("Channels.Teams.GroupPolicy", StringComparison.Ordinal));
+        Assert.Contains(errors, e => e.Contains("Channels.Teams.ReplyStyle", StringComparison.Ordinal));
+        Assert.Contains(errors, e => e.Contains("Channels.Teams.ChunkMode", StringComparison.Ordinal));
+        Assert.Contains(errors, e => e.Contains("Channels.Teams.TextChunkLimit", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_RetentionLimitsBelowMinimum_ReturnsErrors()
     {
         var config = new GatewayConfig

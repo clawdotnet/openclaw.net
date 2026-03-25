@@ -47,14 +47,13 @@ internal sealed class WhatsAppWebhookHandler
 
         if (HttpMethods.IsPost(context.Request.Method))
         {
-            if (_config.Type == "official")
-            {
+            if (string.Equals(_config.Type, "official", StringComparison.OrdinalIgnoreCase))
                 return await HandleOfficialPostAsync(context, enqueue, ct);
-            }
-            else
-            {
+            if (string.Equals(_config.Type, "bridge", StringComparison.OrdinalIgnoreCase))
                 return await HandleBridgePostAsync(context, enqueue, ct);
-            }
+
+            _logger.LogWarning("WhatsApp webhook invoked for unsupported channel type '{Type}'.", _config.Type);
+            return WebhookResult.NotFound();
         }
 
         return WebhookResult.Status(405);

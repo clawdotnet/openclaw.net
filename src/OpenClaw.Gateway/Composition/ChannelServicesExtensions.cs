@@ -42,6 +42,9 @@ internal static class ChannelServicesExtensions
         if (config.Channels.Teams.Enabled)
         {
             services.AddSingleton(config.Channels.Teams);
+            services.AddSingleton<ITeamsTokenValidator>(_ =>
+                new BotFrameworkTokenValidator(
+                    OpenClaw.Core.Security.SecretResolver.Resolve(config.Channels.Teams.AppIdRef) ?? config.Channels.Teams.AppId ?? ""));
             services.AddSingleton<TeamsWebhookHandler>();
             services.AddSingleton<TeamsChannel>(sp =>
                 new TeamsChannel(
