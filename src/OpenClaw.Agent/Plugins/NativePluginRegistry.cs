@@ -74,7 +74,19 @@ public sealed class NativePluginRegistry : IDisposable
             foreach (var displaced in displacedTools)
             {
                 if (!ReferenceEquals(displaced, tool) && displaced is IDisposable disposable)
-                    disposable.Dispose();
+                {
+                    try
+                    {
+                        disposable.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex,
+                            "Failed to dispose displaced native tool '{ToolName}' while registering plugin '{PluginId}'",
+                            tool.Name,
+                            pluginId);
+                    }
+                }
             }
         }
 

@@ -132,6 +132,22 @@ public class NativePluginRegistryTests
         Assert.Single(registry.Tools);
         Assert.Same(second, registry.Tools[0]);
     }
+
+    [Fact]
+    public void RegisterExternalTool_NameCollision_DisposeFailureDoesNotAbortRegistration()
+    {
+        using var registry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance);
+        var first = new ThrowingDisposableFakeTool("dup_tool");
+        var second = new DisposableFakeTool("dup_tool");
+
+        registry.RegisterExternalTool(first, "mcp:first");
+        var ex = Record.Exception(() => registry.RegisterExternalTool(second, "mcp:second"));
+
+        Assert.Null(ex);
+        Assert.Equal(1, first.DisposeCalls);
+        Assert.Single(registry.Tools);
+        Assert.Same(second, registry.Tools[0]);
+    }
 }
 
 public class PluginPreferenceTests
@@ -797,6 +813,21 @@ file sealed class DisposableFakeTool(string name) : ITool, IDisposable
         => ValueTask.FromResult("ok");
     public void Dispose()
         => DisposeCalls++;
+}
+
+file sealed class ThrowingDisposableFakeTool(string name) : ITool, IDisposable
+{
+    public int DisposeCalls { get; private set; }
+    public string Name => name;
+    public string Description => "throwing-disposable-fake";
+    public string ParameterSchema => "{}";
+    public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        => ValueTask.FromResult("ok");
+    public void Dispose()
+    {
+        DisposeCalls++;
+        throw new InvalidOperationException("dispose failed");
+    }
 }
 
 /// <summary>Minimal ILogger for tests.</summary>
