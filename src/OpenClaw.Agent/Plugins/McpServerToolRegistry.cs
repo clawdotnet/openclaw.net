@@ -1,11 +1,10 @@
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
-using ModelContextProtocol.Protocol;
+using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Security;
@@ -23,6 +22,7 @@ public sealed class McpServerToolRegistry : IDisposable
     private readonly List<DiscoveredMcpTool> _tools = [];
     private readonly List<McpClient> _clients = [];
     private bool _loaded;
+    private int _registeredAsOwnedResource;
 
     /// <summary>
     /// Creates a registry for configured MCP servers.
@@ -39,7 +39,8 @@ public sealed class McpServerToolRegistry : IDisposable
     public async Task RegisterToolsAsync(NativePluginRegistry nativeRegistry, CancellationToken ct)
     {
         var tools = await LoadAsync(ct);
-        nativeRegistry.RegisterOwnedResource(this);
+        if (Interlocked.Exchange(ref _registeredAsOwnedResource, 1) == 0)
+            nativeRegistry.RegisterOwnedResource(this);
         foreach (var tool in tools)
             nativeRegistry.RegisterExternalTool(tool.Tool, tool.PluginId, tool.Detail);
     }
@@ -49,46 +50,62 @@ public sealed class McpServerToolRegistry : IDisposable
         if (_loaded)
             return _tools;
 
-        _loaded = true;
         if (!_config.Enabled)
-            return _tools;
-
-        foreach (var (serverId, serverConfig) in _config.Servers)
         {
-            if (!serverConfig.Enabled)
-                continue;
+            _loaded = true;
+            return _tools;
+        }
 
-            var transport = CreateTransport(serverId, serverConfig);
-            McpClient? client = null;
-            try
+        var discoveredTools = new List<DiscoveredMcpTool>();
+        var discoveredClients = new List<McpClient>();
+
+        try
+        {
+            foreach (var (serverId, serverConfig) in _config.Servers)
             {
+                if (!serverConfig.Enabled)
+                    continue;
+
+                var transport = CreateTransport(serverId, serverConfig);
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(serverConfig.StartupTimeoutSeconds));
-                client = await McpClient.CreateAsync(transport, cancellationToken: timeoutCts.Token);
-                _clients.Add(client);
+                var client = await McpClient.CreateAsync(transport, cancellationToken: timeoutCts.Token);
+                discoveredClients.Add(client);
 
                 var displayName = string.IsNullOrWhiteSpace(serverConfig.Name) ? serverId : serverConfig.Name!;
                 var pluginId = $"mcp:{serverId}";
 
-                var tools = await LoadToolsFromClientAsync(client, serverId, pluginId, displayName, serverConfig, timeoutCts.Token);
+                var tools = await LoadToolsFromClientAsync(client, serverId, pluginId, displayName, serverConfig, ct);
 
                 foreach (var tool in tools)
                 {
-                    _tools.Add(new DiscoveredMcpTool(
+                    discoveredTools.Add(new DiscoveredMcpTool(
                         pluginId,
                         new McpNativeTool(client, tool.LocalName, tool.RemoteName, tool.Description, tool.InputSchemaText),
                         displayName));
                 }
             }
-            catch
-            {
-                if (client is IDisposable disposable)
-                    disposable.Dispose();
-                throw;
-            }
-        }
 
-        return _tools;
+            _clients.AddRange(discoveredClients);
+            _tools.AddRange(discoveredTools);
+            _loaded = true;
+            return _tools;
+        }
+        catch
+        {
+            foreach (var client in discoveredClients)
+            {
+                try
+                {
+                    (client as IDisposable)?.Dispose();
+                    (client as IAsyncDisposable)?.DisposeAsync().GetAwaiter().GetResult();
+                }
+                catch
+                {
+                }
+            }
+            throw;
+        }
     }
 
     private async Task<IReadOnlyList<McpToolDescriptor>> LoadToolsFromClientAsync(
@@ -237,70 +254,5 @@ public sealed class McpServerToolRegistry : IDisposable
     }
 
     internal sealed record DiscoveredMcpTool(string PluginId, ITool Tool, string Detail);
-
-    private sealed class McpNativeTool(
-        McpClient client,
-        string localName,
-        string remoteName,
-        string description,
-        string parameterSchema) : ITool
-    {
-        public string Name => localName;
-        public string Description => description;
-        public string ParameterSchema => parameterSchema;
-
-        public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
-        {
-            try
-            {
-                using var argsDoc = JsonDocument.Parse(string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
-                var argsDict = new Dictionary<string, object?>(StringComparer.Ordinal);
-                foreach (var prop in argsDoc.RootElement.EnumerateObject())
-                {
-                    object? value = null;
-                    var v = prop.Value;
-                    switch (v.ValueKind)
-                    {
-                        case JsonValueKind.String:
-                            value = v.GetString();
-                            break;
-                        case JsonValueKind.Number:
-                            value = v.TryGetInt64(out var l) ? l : v.GetDouble();
-                            break;
-                        case JsonValueKind.True:
-                        case JsonValueKind.False:
-                            value = v.GetBoolean();
-                            break;
-                        case JsonValueKind.Null:
-                            value = null;
-                            break;
-                        default:
-                            value = v.Clone();
-                            break;
-                    }
-                    argsDict[prop.Name] = value;
-                }
-                var response = await client.CallToolAsync(remoteName, argsDict, progress: null, cancellationToken: ct);
-                var parts = new List<string>();
-                foreach (var item in response.Content)
-                {
-                    if (item is TextContentBlock t)
-                        parts.Add(t.Text ?? "");
-                }
-                var text = string.Join("\n\n", parts);
-                var isError = response.IsError ?? false;
-                return isError ? $"Error: {text}" : text;
-            }
-            catch (JsonException ex)
-            {
-                return $"Error: Invalid JSON arguments for MCP tool '{localName}': {ex.Message}";
-            }
-            catch (Exception ex)
-            {
-                return $"Error: MCP tool '{localName}' failed: {ex.Message}";
-            }
-        }
-    }
-
     private sealed record McpToolDescriptor(string LocalName, string RemoteName, string Description, string InputSchemaText);
 }
