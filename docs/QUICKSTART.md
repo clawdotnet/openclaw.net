@@ -50,6 +50,12 @@ dotnet run --project src/OpenClaw.Gateway -c Release -- --doctor
 dotnet run --project src/OpenClaw.Gateway -c Release
 ```
 
+6. Optional but recommended: inspect the live admin posture once the gateway is running:
+
+```bash
+dotnet run --project src/OpenClaw.Cli -c Release -- admin posture
+```
+
 Default local endpoints:
 
 - Web UI: `http://127.0.0.1:18789/chat`
@@ -149,6 +155,7 @@ Additional support here includes:
 4. Use the CLI for scripted or repeatable tasks
 5. Use `OpenClaw.Client` when you want stable typed access to `/api/integration/*` or `/mcp`
 6. Switch to `jit` only when you actually need expanded plugin compatibility
+7. On any non-loopback deployment, also check `openclaw admin posture` after the real proxy and TLS settings are in place
 
 ## Next Docs
 

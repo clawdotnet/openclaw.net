@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 using OpenClaw.Core.Security;
 
 namespace OpenClawNet.Sandbox.OpenSandbox;
@@ -40,7 +41,8 @@ public static class OpenSandboxServiceCollectionExtensions
             new OpenSandboxToolSandbox(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(OpenSandboxToolSandbox)),
                 sp.GetRequiredService<OpenSandboxOptions>(),
-                sp.GetService<Microsoft.Extensions.Logging.ILogger<OpenSandboxToolSandbox>>()));
+                sp.GetService<Microsoft.Extensions.Logging.ILogger<OpenSandboxToolSandbox>>(),
+                sp.GetService<RuntimeMetrics>()));
 
         return services;
     }

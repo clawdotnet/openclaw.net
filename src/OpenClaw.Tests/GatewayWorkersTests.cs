@@ -21,6 +21,51 @@ namespace OpenClaw.Tests;
 public sealed class GatewayWorkersTests
 {
     [Fact]
+    public void CleanupSessionLocksOnce_DisposesRemovedOrphanedSemaphore()
+    {
+        var sessionManager = new SessionManager(Substitute.For<IMemoryStore>(), new GatewayConfig());
+        var semaphore = new SemaphoreSlim(1, 1);
+        var sessionLocks = new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.Ordinal)
+        {
+            ["session-1"] = semaphore
+        };
+        var lastUsed = new ConcurrentDictionary<string, DateTimeOffset>(StringComparer.Ordinal)
+        {
+            ["session-1"] = DateTimeOffset.UtcNow.AddHours(-3)
+        };
+
+        GatewayWorkers.CleanupSessionLocksOnce(
+            sessionManager,
+            sessionLocks,
+            lastUsed,
+            DateTimeOffset.UtcNow,
+            TimeSpan.FromHours(2),
+            NullLogger.Instance);
+
+        Assert.Empty(sessionLocks);
+        Assert.Empty(lastUsed);
+        Assert.Throws<ObjectDisposedException>(() => semaphore.Release());
+    }
+
+    [Fact]
+    public void DisposeSessionLocks_DisposesAllRemainingSemaphores()
+    {
+        var first = new SemaphoreSlim(1, 1);
+        var second = new SemaphoreSlim(1, 1);
+        var sessionLocks = new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.Ordinal)
+        {
+            ["session-a"] = first,
+            ["session-b"] = second
+        };
+
+        GatewayWorkers.DisposeSessionLocks(sessionLocks, NullLogger.Instance);
+
+        Assert.Empty(sessionLocks);
+        Assert.Throws<ObjectDisposedException>(() => first.Release());
+        Assert.Throws<ObjectDisposedException>(() => second.Release());
+    }
+
+    [Fact]
     public async Task Start_LoopbackApprovalStillRequiresRequesterMatch()
     {
         var storagePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "openclaw-worker-tests", Guid.NewGuid().ToString("N"));

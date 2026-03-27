@@ -171,6 +171,7 @@ public sealed class NativePluginsConfig
     public InboxZeroConfig InboxZero { get; set; } = new();
     public HomeAssistantConfig HomeAssistant { get; set; } = new();
     public MqttConfig Mqtt { get; set; } = new();
+    public NotionConfig Notion { get; set; } = new();
 }
 
 public sealed class HomeAssistantConfig
@@ -273,6 +274,44 @@ public sealed class MqttSubscriptionConfig
     public int Qos { get; set; } = 0;
     public string PromptTemplate { get; set; } = "MQTT message on {topic}: {payload}";
     public int CooldownSeconds { get; set; } = 1;
+}
+
+public sealed class NotionConfig
+{
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>Notion integration token secret ref (env: or raw:).</summary>
+    public string ApiKeyRef { get; set; } = "env:NOTION_API_KEY";
+
+    /// <summary>Base URL for the Notion REST API.</summary>
+    public string BaseUrl { get; set; } = "https://api.notion.com/v1";
+
+    /// <summary>Pinned Notion-Version header value.</summary>
+    public string ApiVersion { get; set; } = "2022-06-28";
+
+    /// <summary>Default page for scratchpad-style read/append operations.</summary>
+    public string? DefaultPageId { get; set; }
+
+    /// <summary>Default database for note list/search/create operations.</summary>
+    public string? DefaultDatabaseId { get; set; }
+
+    /// <summary>Explicit page allowlist. DefaultPageId is implicitly allowed.</summary>
+    public string[] AllowedPageIds { get; set; } = [];
+
+    /// <summary>Explicit database allowlist. DefaultDatabaseId is implicitly allowed.</summary>
+    public string[] AllowedDatabaseIds { get; set; } = [];
+
+    /// <summary>Maximum results returned by search/list operations.</summary>
+    public int MaxSearchResults { get; set; } = 10;
+
+    /// <summary>When true, omit the write tool and deny write operations.</summary>
+    public bool ReadOnly { get; set; } = false;
+
+    /// <summary>
+    /// When true, notion_write is always added to the effective approval-required tool set.
+    /// This can force approval handling on even if approvals are otherwise disabled.
+    /// </summary>
+    public bool RequireApprovalForWrites { get; set; } = true;
 }
 
 public sealed class WebSearchConfig
@@ -673,6 +712,9 @@ public sealed class BridgeTransportRuntimeConfig
 {
     public string Mode { get; init; } = "stdio";
     public string? SocketPath { get; init; }
+    public string? SocketDirectory { get; init; }
+    public string? SocketAuthToken { get; init; }
+    public string SecurityMode { get; init; } = "legacy";
 }
 
 /// <summary>

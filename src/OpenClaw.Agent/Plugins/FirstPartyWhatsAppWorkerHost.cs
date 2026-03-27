@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 using OpenClaw.Core.Plugins;
 
 namespace OpenClaw.Agent.Plugins;
@@ -24,10 +25,12 @@ public sealed class FirstPartyWhatsAppWorkerHost : IAsyncDisposable
         string bridgeScriptPath,
         BridgeProcessLaunchSpec launchSpec,
         ILogger logger,
-        BridgeTransportConfig? transport = null)
+        BridgeTransportConfig? transport = null,
+        string? runtimeRoot = null,
+        RuntimeMetrics? metrics = null)
     {
         _logger = logger;
-        _bridge = new PluginBridgeProcess(bridgeScriptPath, logger, transport, launchSpec);
+        _bridge = new PluginBridgeProcess(bridgeScriptPath, logger, transport, launchSpec, runtimeRoot, metrics);
     }
 
     public async Task<IReadOnlyList<BridgedChannelAdapter>> LoadAsync(

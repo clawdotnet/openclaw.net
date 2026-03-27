@@ -154,4 +154,6 @@ For non-loopback/public binds, `shell` in `Require` mode with `Provider=OpenSand
 - The executor reuses sandbox leases by `sessionId:toolName`.
 - Browser automation uses a persistent profile directory inside the sandbox lease so multi-step browsing keeps state.
 - The gateway `--doctor` command checks OpenSandbox reachability when `Provider=OpenSandbox`.
+- Runtime metrics now expose sandbox lease create/reuse/recovery counters.
+- The admin incident export includes redacted sandbox execution and lease-lifecycle context for debugging.
 - The integration uses raw `HttpClient` plus source-generated `System.Text.Json` models. No OpenSandbox SDK dependency is added to the core runtime.

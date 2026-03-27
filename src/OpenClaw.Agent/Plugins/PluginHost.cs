@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 using OpenClaw.Core.Plugins;
 
 namespace OpenClaw.Agent.Plugins;
@@ -17,6 +18,8 @@ public sealed class PluginHost : IAsyncDisposable
     private readonly ILogger _logger;
     private readonly GatewayRuntimeState _runtimeState;
     private readonly HashSet<string> _blockedPluginIds;
+    private readonly string? _runtimeRoot;
+    private readonly RuntimeMetrics? _metrics;
     private readonly List<PluginBridgeProcess> _bridges = [];
     private readonly Dictionary<string, PluginBridgeProcess> _bridgesByPluginId = new(StringComparer.Ordinal);
     private readonly List<ITool> _pluginTools = [];
@@ -34,7 +37,9 @@ public sealed class PluginHost : IAsyncDisposable
         string bridgeScriptPath,
         ILogger logger,
         GatewayRuntimeState? runtimeState = null,
-        IReadOnlyCollection<string>? blockedPluginIds = null)
+        IReadOnlyCollection<string>? blockedPluginIds = null,
+        string? runtimeRoot = null,
+        RuntimeMetrics? metrics = null)
     {
         _config = config;
         _bridgeScriptPath = bridgeScriptPath;
@@ -43,6 +48,8 @@ public sealed class PluginHost : IAsyncDisposable
         _blockedPluginIds = blockedPluginIds is { Count: > 0 }
             ? new HashSet<string>(blockedPluginIds, StringComparer.Ordinal)
             : new HashSet<string>(StringComparer.Ordinal);
+        _runtimeRoot = runtimeRoot;
+        _metrics = metrics;
     }
 
     /// <summary>
@@ -195,7 +202,7 @@ public sealed class PluginHost : IAsyncDisposable
             return;
         }
 
-        var bridge = new PluginBridgeProcess(_bridgeScriptPath, _logger, _config.Transport);
+        var bridge = new PluginBridgeProcess(_bridgeScriptPath, _logger, _config.Transport, runtimeRoot: _runtimeRoot, metrics: _metrics);
         var pluginConfig = GetPluginConfig(id);
 
         var initResult = await bridge.StartAsync(plugin.EntryPath, id, pluginConfig, ct);

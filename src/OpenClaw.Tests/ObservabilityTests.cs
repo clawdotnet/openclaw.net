@@ -114,6 +114,18 @@ public sealed class ObservabilityTests
         Assert.Equal(0, m.TotalToolTimeouts);
         Assert.Equal(0, m.TotalLlmRetries);
         Assert.Equal(0, m.TotalLlmErrors);
+        Assert.Equal(0, m.ApprovalDecisionsRecorded);
+        Assert.Equal(0, m.ApprovalDecisionsRejected);
+        Assert.Equal(0, m.SessionEvictions);
+        Assert.Equal(0, m.SessionCapacityRejects);
+        Assert.Equal(0, m.EstimatedTokenAdmissionRejects);
+        Assert.Equal(0, m.BrowserCancellationResets);
+        Assert.Equal(0, m.PluginBridgeAuthFailures);
+        Assert.Equal(0, m.PluginBridgeRestartAttempts);
+        Assert.Equal(0, m.PluginBridgeRestartFailures);
+        Assert.Equal(0, m.SandboxLeaseCreates);
+        Assert.Equal(0, m.SandboxLeaseReuses);
+        Assert.Equal(0, m.SandboxLeaseRecoveries);
         Assert.Equal(0, m.ActiveSessions);
         Assert.Equal(0, m.CircuitBreakerState);
     }
@@ -132,6 +144,18 @@ public sealed class ObservabilityTests
         m.IncrementToolTimeouts();
         m.IncrementLlmRetries();
         m.IncrementLlmErrors();
+        m.IncrementApprovalDecisionsRecorded();
+        m.IncrementApprovalDecisionsRejected();
+        m.IncrementSessionEvictions();
+        m.IncrementSessionCapacityRejects();
+        m.IncrementEstimatedTokenAdmissionRejects();
+        m.IncrementBrowserCancellationResets();
+        m.IncrementPluginBridgeAuthFailures();
+        m.IncrementPluginBridgeRestartAttempts();
+        m.IncrementPluginBridgeRestartFailures();
+        m.IncrementSandboxLeaseCreates();
+        m.IncrementSandboxLeaseReuses();
+        m.IncrementSandboxLeaseRecoveries();
 
         Assert.Equal(2, m.TotalRequests);
         Assert.Equal(1, m.TotalLlmCalls);
@@ -142,6 +166,18 @@ public sealed class ObservabilityTests
         Assert.Equal(1, m.TotalToolTimeouts);
         Assert.Equal(1, m.TotalLlmRetries);
         Assert.Equal(1, m.TotalLlmErrors);
+        Assert.Equal(1, m.ApprovalDecisionsRecorded);
+        Assert.Equal(1, m.ApprovalDecisionsRejected);
+        Assert.Equal(1, m.SessionEvictions);
+        Assert.Equal(1, m.SessionCapacityRejects);
+        Assert.Equal(1, m.EstimatedTokenAdmissionRejects);
+        Assert.Equal(1, m.BrowserCancellationResets);
+        Assert.Equal(1, m.PluginBridgeAuthFailures);
+        Assert.Equal(1, m.PluginBridgeRestartAttempts);
+        Assert.Equal(1, m.PluginBridgeRestartFailures);
+        Assert.Equal(1, m.SandboxLeaseCreates);
+        Assert.Equal(1, m.SandboxLeaseReuses);
+        Assert.Equal(1, m.SandboxLeaseRecoveries);
     }
 
     [Fact]

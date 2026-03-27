@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using OpenClaw.Core.Observability;
 using OpenClaw.Core.Plugins;
 
 namespace OpenClaw.Agent.Plugins;
@@ -16,11 +17,17 @@ public sealed class HybridBridgeTransport : IBridgeTransport
     private Action<BridgeNotification>? _currentHandler;
     private volatile bool _useSocket;
 
-    public HybridBridgeTransport(string socketPath, ILogger logger)
+    public HybridBridgeTransport(
+        string socketPath,
+        string? socketDirectory,
+        bool ownsSocketDirectory,
+        string authToken,
+        ILogger logger,
+        RuntimeMetrics? metrics = null)
     {
         _logger = logger;
         _bootstrap = new StdioBridgeTransport(logger);
-        _socket = new SocketBridgeTransport(socketPath, logger);
+        _socket = new SocketBridgeTransport(socketPath, socketDirectory, ownsSocketDirectory, authToken, logger, metrics);
     }
 
     public Task PrepareAsync(CancellationToken ct)

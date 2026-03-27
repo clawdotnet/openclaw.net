@@ -24,6 +24,7 @@ public sealed class AutonomyHook : IToolHook
         "code_exec",
         "home_assistant_write",
         "mqtt_publish",
+        "notion_write",
         "inbox_zero",
         "email",
         "calendar",
@@ -260,4 +261,3 @@ public sealed class AutonomyHook : IToolHook
         return path;
     }
 }
-

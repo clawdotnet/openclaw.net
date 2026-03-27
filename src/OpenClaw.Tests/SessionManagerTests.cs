@@ -10,7 +10,7 @@ public sealed class SessionManagerTests
     [Fact]
     public async Task GetOrCreateAsync_ConcurrentCalls_ReturnCanonicalSessionInstance()
     {
-        var store = new BarrierMemoryStore(participants: 2);
+        var store = new DelayedMemoryStore();
         var manager = new SessionManager(store, new GatewayConfig
         {
             MaxConcurrentSessions = 8,
@@ -79,21 +79,49 @@ public sealed class SessionManagerTests
         Assert.False(manager.IsActive("websocket:charlie"));
     }
 
-    private sealed class BarrierMemoryStore : IMemoryStore
+    [Fact]
+    public async Task GetOrCreateByIdAsync_ConcurrentDistinctSessions_RespectsStrictCapacityCap()
     {
-        private readonly Barrier _barrier;
-
-        public BarrierMemoryStore(int participants)
+        var store = new InMemoryStore();
+        var manager = new SessionManager(store, new GatewayConfig
         {
-            _barrier = new Barrier(participants);
+            MaxConcurrentSessions = 2,
+            SessionTimeoutMinutes = 30
+        });
+
+        var tasks = new[]
+        {
+            CaptureAsync("session-a"),
+            CaptureAsync("session-b"),
+            CaptureAsync("session-c")
+        };
+
+        var results = await Task.WhenAll(tasks);
+
+        Assert.Equal(3, results.Count(static result => result.Session is not null));
+        Assert.Equal(0, results.Count(static result => result.Error is not null));
+        Assert.True(manager.ActiveCount <= 2);
+
+        async Task<(Session? Session, Exception? Error)> CaptureAsync(string sessionId)
+        {
+            try
+            {
+                var session = await manager.GetOrCreateByIdAsync(sessionId, "websocket", sessionId, CancellationToken.None);
+                return (session, null);
+            }
+            catch (Exception ex)
+            {
+                return (null, ex);
+            }
         }
+    }
 
-        public ValueTask<Session?> GetSessionAsync(string sessionId, CancellationToken ct)
+    private sealed class DelayedMemoryStore : IMemoryStore
+    {
+        public async ValueTask<Session?> GetSessionAsync(string sessionId, CancellationToken ct)
         {
-            if (!_barrier.SignalAndWait(TimeSpan.FromSeconds(2)))
-                throw new TimeoutException("Barrier timeout in test memory store.");
-
-            return ValueTask.FromResult<Session?>(null);
+            await Task.Delay(50, ct);
+            return null;
         }
 
         public ValueTask SaveSessionAsync(Session session, CancellationToken ct) => ValueTask.CompletedTask;

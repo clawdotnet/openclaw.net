@@ -25,8 +25,8 @@ OpenClaw.NET keeps plugin compatibility explicit by runtime mode. The goal is to
 | Plugin config validation | Supported subset | Validated before bridge startup against the supported JSON Schema subset below. |
 | Plugin diagnostics in `/doctor` | Supported | Discovery, load, config, and compatibility failures are reported explicitly. |
 | `Plugins:Transport:Mode=stdio` | Supported | JSON-RPC over child process stdin/stdout. |
-| `Plugins:Transport:Mode=socket` | Supported | JSON-RPC over local IPC: Unix domain sockets on Unix, named pipes on Windows. |
-| `Plugins:Transport:Mode=hybrid` | Supported | `init` over stdio, then runtime RPC/notifications over the local IPC socket transport. |
+| `Plugins:Transport:Mode=socket` | Supported | JSON-RPC over local IPC: Unix domain sockets on Unix, named pipes on Windows. Local IPC now uses an authenticated handshake and private runtime socket directories by default. |
+| `Plugins:Transport:Mode=hybrid` | Supported | `init` over stdio, then runtime RPC/notifications over the local IPC socket transport. Socket handoff uses the same authenticated local IPC path. |
 
 ## Unsupported Today
 
@@ -45,6 +45,17 @@ JIT mode also supports in-process native dynamic plugins through `OpenClaw:Plugi
 - Standard locations: configured `Plugins:DynamicNative:Load:Paths`, workspace `.openclaw/native-plugins`, global `~/.openclaw/native-plugins`
 - Capability model: `native_dynamic` plus the declared/registered surfaces (`tools`, `services`, `commands`, `channels`, `providers`, `hooks`, `skills`)
 - AOT behavior: fail fast before load with `jit_mode_required`
+- Assembly paths must resolve under the discovered plugin root; out-of-root paths fail with structured diagnostics.
+
+## Plugin Root Containment
+
+Discovered plugin manifests do not get to escape their plugin root.
+
+- package entry files must resolve under the discovered plugin directory
+- manifest entry files must resolve under the discovered plugin directory
+- native dynamic plugin assembly paths must resolve under the discovered plugin directory
+
+Out-of-root targets fail explicitly during discovery or load instead of being executed.
 
 ## TypeScript Requirements
 
@@ -85,6 +96,7 @@ Unsupported schema keywords are rejected with `unsupported_schema_keyword`.
 ## What Failure Looks Like
 
 - Discovery problems such as invalid manifests, duplicate plugin ids, or missing entry files produce structured plugin reports.
+- Out-of-root manifest or assembly paths fail with explicit diagnostics instead of silently resolving elsewhere on disk.
 - Config problems fail before Node startup with field-specific diagnostics.
 - Unsupported bridge APIs fail plugin initialization with explicit compatibility codes.
 - JIT-only capabilities in AOT mode fail before wiring with explicit runtime-mode diagnostics.

@@ -107,7 +107,8 @@ internal static class PipelineExtensions
             runtime.ApprovalAuditStore,
             runtime.PairingManager,
             runtime.CommandProcessor,
-            runtime.Operations);
+            runtime.Operations,
+            runtime.RuntimeMetrics);
     }
 
     private static void StartChannels(WebApplication app, GatewayAppRuntime runtime)
@@ -197,6 +198,7 @@ internal static class PipelineExtensions
                 app.Logger.LogInformation("Drain complete — shutting down");
             }
 
+            GatewayWorkers.DisposeSessionLocks(runtime.SessionLocks, app.Logger);
             DisposePluginHostWithTimeout(runtime.PluginHost, pluginDisposeTimeout, app.Logger);
             DisposePluginHostWithTimeout(runtime.NativeDynamicPluginHost, pluginDisposeTimeout, app.Logger);
             DisposePluginHostWithTimeout(runtime.WhatsAppWorkerHost, pluginDisposeTimeout, app.Logger);

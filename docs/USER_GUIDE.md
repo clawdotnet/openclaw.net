@@ -167,6 +167,22 @@ WebChat token details:
 - Enable the **Remember** checkbox to also store `openclaw_token` in `localStorage`.
 WebChat includes a **Doctor** button which fetches `GET /doctor/text` and prints a diagnostics report (helpful for onboarding and debugging).
 
+### Admin operator surfaces
+
+For operator workflows outside the chat UI, the gateway also exposes:
+
+- `GET /admin/posture`
+- `POST /admin/approvals/simulate`
+- `GET /admin/incident/export`
+
+CLI mirrors:
+
+- `openclaw admin posture`
+- `openclaw admin approvals simulate`
+- `openclaw admin incident export`
+
+These are useful for validating public-bind posture, approval-policy behavior, and exporting a redacted incident bundle during support/debugging.
+
 ### Memory Retention Sweeper (Sessions + Branches)
 Retention is opt-in and targets persisted sessions/branches only (not notes).
 
@@ -270,10 +286,14 @@ Once you’ve verified the right senders, you can tighten allowlists:
 ### Tool Approvals (Supervised Mode)
 If `OpenClaw:Tooling:AutonomyMode="supervised"`, the gateway will request approval before running write-capable tools (shell, write_file, etc.).
 - WebChat prompts via a confirmation dialog.
-- On non-loopback/public binds, `/approve` decisions are bound to the same channel+sender that received the approval request.
+- On non-loopback/public binds, requester-bound HTTP approval depends on `OpenClaw:Security:RequireRequesterMatchForHttpToolApproval`.
+  - `true`: the approver must match the original requester.
+  - `false`: any authenticated admin/operator can approve the pending request by id.
 - Fallbacks:
   - Reply: `/approve <approvalId> yes|no`
   - Admin API: `POST /tools/approve?approvalId=...&approved=true|false`
+
+Use `POST /admin/approvals/simulate` or `openclaw admin approvals simulate` to inspect the effective result for a tool/action without mutating the live approval queue.
 
 Webhook request size controls:
 - `OpenClaw:Channels:Sms:Twilio:MaxRequestBytes` (default `65536`)
@@ -287,6 +307,22 @@ If `ValidateHmac=true`, `Secret` is mandatory and validated at startup.
 Compaction note:
 - History compaction remains off by default.
 - If you enable `OpenClaw:Memory:EnableCompaction=true`, `CompactionThreshold` must be greater than `MaxHistoryTurns`.
+
+### Estimated token admission control
+
+OpenClaw can optionally reject a turn before the provider call when the next turn estimate would already exceed the session budget.
+
+Config:
+
+```json
+{
+  "OpenClaw": {
+    "EnableEstimatedTokenAdmissionControl": true
+  }
+}
+```
+
+This is off by default for compatibility with the existing post-admission budget behavior.
 
 ---
 
@@ -437,6 +473,53 @@ Matter support:
 Safety model:
 - Keep writes gated via tool approval by adding `home_assistant_write` and `mqtt_publish` to `OpenClaw:Tooling:ApprovalRequiredTools`.
 - Use allow/deny policies (`Policy.Allow*Globs` / `Policy.Deny*Globs`) to restrict entities, services, and MQTT topics.
+
+## Shared Scratchpads (Notion)
+
+OpenClaw.NET supports an optional native Notion integration for shared scratchpads and note databases:
+- `notion`: read/search/list operations
+- `notion_write`: append/create/update operations
+
+Recommended use:
+- shared project scratchpads
+- operator-visible runbooks
+- handoff notes across sessions or team members
+
+Design constraints:
+- Notion is not used for session memory, branch storage, or core retention.
+- Access is bounded by `AllowedPageIds` / `AllowedDatabaseIds` plus any configured defaults.
+- `DefaultPageId` is used for scratchpad-style reads/appends.
+- `DefaultDatabaseId` is used for list/search/create workflows.
+
+Recommended safety posture:
+- Keep `RequireApprovalForWrites=true` unless you intentionally want autonomous writes.
+- Set `ReadOnly=true` if the agent should only search/read Notion.
+- Share only the specific pages/databases the integration needs. The token may have broader workspace reach than the local allowlist, so the allowlist is part of the tool boundary.
+
+Minimal config example:
+
+```json
+"OpenClaw": {
+  "Plugins": {
+    "Native": {
+      "Notion": {
+        "Enabled": true,
+        "ApiKeyRef": "env:NOTION_API_KEY",
+        "DefaultPageId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        "DefaultDatabaseId": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy",
+        "AllowedPageIds": [
+          "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+        ],
+        "AllowedDatabaseIds": [
+          "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
+        ],
+        "ReadOnly": false,
+        "RequireApprovalForWrites": true
+      }
+    }
+  }
+}
+```
 
 ## Plugin Bridge (Ecosystem Compatibility)
 

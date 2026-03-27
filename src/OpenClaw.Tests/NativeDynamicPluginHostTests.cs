@@ -122,6 +122,41 @@ public sealed class NativeDynamicPluginHostTests : IDisposable
         Assert.Contains(PluginCapabilityPolicy.NativeDynamic, report.RequestedCapabilities);
     }
 
+    [Fact]
+    public async Task LoadAsync_AssemblyPathOutsideRoot_IsRejected()
+    {
+        var pluginDir = Path.Combine(_tempDir, "native-dynamic-escape");
+        Directory.CreateDirectory(pluginDir);
+        File.WriteAllText(
+            Path.Combine(pluginDir, "openclaw.native-plugin.json"),
+            $$"""
+            {
+              "id": "native-dynamic-escape",
+              "name": "native-dynamic-escape",
+              "version": "1.0.0",
+              "assemblyPath": "../outside.dll",
+              "typeName": {{JsonSerializer.Serialize(typeof(ToolAndCommandPlugin).FullName!)}}
+            }
+            """);
+
+        var config = new NativeDynamicPluginsConfig
+        {
+            Enabled = true,
+            Load = new PluginLoadConfig { Paths = [pluginDir] }
+        };
+
+        await using var host = new NativeDynamicPluginHost(
+            config,
+            RuntimeModeResolver.Resolve(new RuntimeConfig { Mode = "jit" }, dynamicCodeSupported: true),
+            new TestLogger());
+
+        var tools = await host.LoadAsync(null, CancellationToken.None);
+
+        Assert.Empty(tools);
+        var report = Assert.Single(host.Reports);
+        Assert.Contains(report.Diagnostics, diagnostic => diagnostic.Code == "assembly_outside_root");
+    }
+
     private string CreateNativePlugin(
         string id,
         string assemblyPath,
@@ -131,6 +166,9 @@ public sealed class NativeDynamicPluginHostTests : IDisposable
     {
         var pluginDir = Path.Combine(_tempDir, id);
         Directory.CreateDirectory(pluginDir);
+        var localAssemblyName = Path.GetFileName(assemblyPath);
+        var localAssemblyPath = Path.Combine(pluginDir, localAssemblyName);
+        File.Copy(assemblyPath, localAssemblyPath, overwrite: true);
 
         if (includeSkills)
         {
@@ -152,7 +190,7 @@ public sealed class NativeDynamicPluginHostTests : IDisposable
           "id": "{{id}}",
           "name": "{{id}}",
           "version": "1.0.0",
-          "assemblyPath": {{JsonSerializer.Serialize(assemblyPath)}},
+          "assemblyPath": {{JsonSerializer.Serialize(localAssemblyName)}},
           "typeName": {{JsonSerializer.Serialize(typeName)}},
           "capabilities": {{JsonSerializer.Serialize(capabilities)}}{{(includeSkills ? ",\n  \"skills\": [\"skills\"]" : "")}},
           "jitOnly": true

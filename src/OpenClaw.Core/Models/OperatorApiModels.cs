@@ -378,3 +378,59 @@ public sealed class ActorRateLimitResponse
     public IReadOnlyList<ActorRateLimitPolicy> Policies { get; init; } = [];
     public IReadOnlyList<ActorRateLimitStatus> Active { get; init; } = [];
 }
+
+public sealed class SecurityPostureResponse
+{
+    public bool PublicBind { get; init; }
+    public bool AuthTokenConfigured { get; init; }
+    public bool BrowserSessionCookieSecureEffective { get; init; }
+    public bool BrowserSessionsEnabled { get; init; }
+    public bool TrustForwardedHeaders { get; init; }
+    public bool RequireRequesterMatchForHttpToolApproval { get; init; }
+    public bool ToolApprovalRequired { get; init; }
+    public string AutonomyMode { get; init; } = "full";
+    public bool PluginBridgeEnabled { get; init; }
+    public string PluginBridgeTransportMode { get; init; } = "stdio";
+    public string PluginBridgeSecurityMode { get; init; } = "legacy";
+    public bool SandboxConfigured { get; init; }
+    public bool AllowsRawSecretRefsOnPublicBind { get; init; }
+    public IReadOnlyList<string> RiskFlags { get; init; } = [];
+    public IReadOnlyList<string> Recommendations { get; init; } = [];
+}
+
+public sealed class ApprovalSimulationRequest
+{
+    public string? ToolName { get; init; }
+    public string? ArgumentsJson { get; init; }
+    public string? ChannelId { get; init; }
+    public string? SenderId { get; init; }
+    public string? SessionId { get; init; }
+    public string? AutonomyMode { get; init; }
+    public bool? RequireToolApproval { get; init; }
+    public string[]? ApprovalRequiredTools { get; init; }
+}
+
+public sealed class ApprovalSimulationResponse
+{
+    public required string Decision { get; init; }
+    public required string Reason { get; init; }
+    public string ToolName { get; init; } = "";
+    public string AutonomyMode { get; init; } = "full";
+    public bool RequireToolApproval { get; init; }
+    public IReadOnlyList<string> ApprovalRequiredTools { get; init; } = [];
+}
+
+public sealed class IncidentBundleResponse
+{
+    public required DateTimeOffset GeneratedAtUtc { get; init; }
+    public required SecurityPostureResponse Posture { get; init; }
+    public required OpenClaw.Core.Observability.MetricsSnapshot Metrics { get; init; }
+    public required RetentionRunStatus Retention { get; init; }
+    public IReadOnlyList<ApprovalHistoryEntry> ApprovalHistory { get; init; } = [];
+    public IReadOnlyList<ProviderPolicyRule> ProviderPolicies { get; init; } = [];
+    public IReadOnlyList<ProviderRouteHealthSnapshot> ProviderRoutes { get; init; } = [];
+    public IReadOnlyList<ProviderUsageSnapshot> ProviderUsage { get; init; } = [];
+    public IReadOnlyList<RuntimeEventEntry> RuntimeEvents { get; init; } = [];
+    public IReadOnlyList<WebhookDeadLetterEntry> WebhookDeadLetters { get; init; } = [];
+    public IReadOnlyList<PluginHealthSnapshot> PluginHealth { get; init; } = [];
+}

@@ -391,4 +391,72 @@ public sealed class ConfigValidatorTests
         var errors = ConfigValidator.Validate(config);
         Assert.DoesNotContain(errors, error => error.Contains("Sandbox.", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void Validate_NotionEnabledWithoutToken_ReturnsError()
+    {
+        var config = new GatewayConfig
+        {
+            Plugins = new PluginsConfig
+            {
+                Native = new NativePluginsConfig
+                {
+                    Notion = new NotionConfig
+                    {
+                        Enabled = true,
+                        ApiKeyRef = "",
+                        DefaultPageId = "page-1"
+                    }
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.Contains(errors, error => error.Contains("Plugins.Native.Notion.ApiKeyRef", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_NotionEnabledWithoutTargets_ReturnsError()
+    {
+        var config = new GatewayConfig
+        {
+            Plugins = new PluginsConfig
+            {
+                Native = new NativePluginsConfig
+                {
+                    Notion = new NotionConfig
+                    {
+                        Enabled = true,
+                        ApiKeyRef = "raw:test-token"
+                    }
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.Contains(errors, error => error.Contains("at least one allowed/default page or database id", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_NotionDefaultTargets_AreSufficient()
+    {
+        var config = new GatewayConfig
+        {
+            Plugins = new PluginsConfig
+            {
+                Native = new NativePluginsConfig
+                {
+                    Notion = new NotionConfig
+                    {
+                        Enabled = true,
+                        ApiKeyRef = "raw:test-token",
+                        DefaultDatabaseId = "db-1"
+                    }
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.DoesNotContain(errors, error => error.Contains("Plugins.Native.Notion", StringComparison.Ordinal));
+    }
 }

@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Playwright;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 
 namespace OpenClaw.Agent.Tools;
 
@@ -90,13 +91,15 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
     private IPlaywright? _playwright;
     private IBrowser? _browser;
     private IPage? _page;
+    private readonly RuntimeMetrics? _metrics;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private bool _initialized;
     private bool _disposed;
 
-    public BrowserTool(ToolingConfig config)
+    public BrowserTool(ToolingConfig config, RuntimeMetrics? metrics = null)
     {
         _config = config;
+        _metrics = metrics;
     }
 
     public string Name => "browser";
@@ -170,7 +173,8 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
             if (_disposed)
                 return "Error: Browser tool is disposed.";
 
-            if (_page is null)
+            var page = await EnsureActivePageAsync(ct);
+            if (page is null)
                 return "Error: Browser not initialized.";
 
             using var args = JsonDocument.Parse(argumentsJson);
@@ -178,11 +182,13 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
 
             using var cancellationRegistration = ct.Register(() =>
             {
-                var page = _page;
-                if (page is not null)
-                {
-                    var ignoredTask = ClosePageBestEffortAsync(page);
-                }
+                var currentPage = _page;
+                if (!ReferenceEquals(currentPage, page))
+                    return;
+
+                _page = null;
+                _metrics?.IncrementBrowserCancellationResets();
+                _ = ClosePageBestEffortAsync(currentPage);
             });
 
             switch (action)
@@ -191,15 +197,15 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
                 {
                     var url = args.RootElement.GetProperty("url").GetString()!;
                     await WithCancellationAsync(
-                        _page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.Load }), ct);
-                    var title = await WithCancellationAsync(_page.TitleAsync(), ct);
+                        page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.Load }), ct);
+                    var title = await WithCancellationAsync(page.TitleAsync(), ct);
                     return $"Navigated to {url}. Title: '{title}'";
                 }
 
                 case "click":
                 {
                     var cSelector = args.RootElement.GetProperty("selector").GetString()!;
-                    await WithCancellationAsync(_page.ClickAsync(cSelector), ct);
+                    await WithCancellationAsync(page.ClickAsync(cSelector), ct);
                     return $"Clicked selector: {cSelector}";
                 }
 
@@ -207,7 +213,7 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
                 {
                     var fSelector = args.RootElement.GetProperty("selector").GetString()!;
                     var value = args.RootElement.GetProperty("value").GetString()!;
-                    await WithCancellationAsync(_page.FillAsync(fSelector, value), ct);
+                    await WithCancellationAsync(page.FillAsync(fSelector, value), ct);
                     return $"Filled {fSelector} with provided value.";
                 }
 
@@ -215,11 +221,11 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
                 {
                     if (args.RootElement.TryGetProperty("selector", out var textSel) && !string.IsNullOrWhiteSpace(textSel.GetString()))
                     {
-                        var content = await WithCancellationAsync(_page.TextContentAsync(textSel.GetString()!), ct);
+                        var content = await WithCancellationAsync(page.TextContentAsync(textSel.GetString()!), ct);
                         return content ?? "No text found for selector.";
                     }
                     
-                    var body = await WithCancellationAsync(_page.TextContentAsync("body"), ct);
+                    var body = await WithCancellationAsync(page.TextContentAsync("body"), ct);
                     return body ?? "Body is empty.";
                 }
 
@@ -230,14 +236,14 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
 
                     var script = args.RootElement.GetProperty("script").GetString()!;
                     // Run script and serialize string
-                    var resultElement = await WithCancellationAsync(_page.EvaluateAsync<JsonElement>(script), ct);
+                    var resultElement = await WithCancellationAsync(page.EvaluateAsync<JsonElement>(script), ct);
                     return resultElement.ToString();
                 }
 
                 case "screenshot":
                 {
                     var bytes = await WithCancellationAsync(
-                        _page.ScreenshotAsync(new PageScreenshotOptions { FullPage = true }), ct);
+                        page.ScreenshotAsync(new PageScreenshotOptions { FullPage = true }), ct);
                     return $"Screenshot taken. Base64: {Convert.ToBase64String(bytes)}";
                 }
 
@@ -270,7 +276,7 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
             _disposed = true;
 
             if (_page != null)
-                await _page.CloseAsync();
+                await ClosePageBestEffortAsync(_page);
             if (_browser != null)
                 await _browser.CloseAsync();
 
@@ -284,6 +290,19 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
         {
             _lock.Release();
         }
+    }
+
+    private async Task<IPage?> EnsureActivePageAsync(CancellationToken ct)
+    {
+        if (_browser is null)
+            return null;
+
+        if (_page is { IsClosed: false } currentPage)
+            return currentPage;
+
+        ct.ThrowIfCancellationRequested();
+        _page = await _browser.NewPageAsync();
+        return _page;
     }
 
     private static async Task ClosePageBestEffortAsync(IPage page)

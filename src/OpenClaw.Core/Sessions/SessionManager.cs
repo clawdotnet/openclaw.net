@@ -3,6 +3,7 @@ using System.Threading;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 
 namespace OpenClaw.Core.Sessions;
 
@@ -14,14 +15,17 @@ public sealed class SessionManager
     private readonly ConcurrentDictionary<string, Session> _active = new();
     private readonly IMemoryStore _store;
     private readonly ILogger? _logger;
+    private readonly RuntimeMetrics? _metrics;
     private readonly TimeSpan _timeout;
     private readonly int _maxSessions;
+    private readonly SemaphoreSlim _admissionGate = new(1, 1);
     private int _activeCount;
 
-    public SessionManager(IMemoryStore store, GatewayConfig config, ILogger? logger = null)
+    public SessionManager(IMemoryStore store, GatewayConfig config, ILogger? logger = null, RuntimeMetrics? metrics = null)
     {
         _store = store;
         _logger = logger;
+        _metrics = metrics;
         _timeout = TimeSpan.FromMinutes(config.SessionTimeoutMinutes);
         _maxSessions = config.MaxConcurrentSessions;
     }
@@ -54,58 +58,63 @@ public sealed class SessionManager
             return session;
         }
 
-        // Try loading from disk
-        session = await _store.GetSessionAsync(key, ct);
-        if (session is not null && session.State == SessionState.Active)
+        await _admissionGate.WaitAsync(ct);
+        try
         {
-            session.LastActiveAt = now;
-            if (_active.TryAdd(key, session))
+            if (_active.TryGetValue(key, out var activeSession))
             {
-                Interlocked.Increment(ref _activeCount);
+                activeSession.LastActiveAt = now;
+                return activeSession;
+            }
+
+            session = await _store.GetSessionAsync(key, ct);
+            if (session is not null && session.State == SessionState.Active)
+            {
+                session.LastActiveAt = now;
+                EnsureCapacityForAdmission();
+                if (_active.TryAdd(key, session))
+                {
+                    Interlocked.Increment(ref _activeCount);
+                    return session;
+                }
+
+                if (_active.TryGetValue(key, out var canonical))
+                {
+                    canonical.LastActiveAt = now;
+                    return canonical;
+                }
+
                 return session;
             }
 
-            if (_active.TryGetValue(key, out var canonical))
+            EnsureCapacityForAdmission();
+
+            var created = new Session
             {
-                canonical.LastActiveAt = now;
-                return canonical;
+                Id = key,
+                ChannelId = channelId,
+                SenderId = senderId,
+                LastActiveAt = now
+            };
+
+            if (_active.TryAdd(key, created))
+            {
+                Interlocked.Increment(ref _activeCount);
+                return created;
             }
 
-            // Extremely unlikely race: fall back to returning loaded session.
-            return session;
-        }
+            if (_active.TryGetValue(key, out activeSession))
+            {
+                activeSession.LastActiveAt = now;
+                return activeSession;
+            }
 
-        // Evict expired sessions if at capacity
-        if (Volatile.Read(ref _activeCount) >= _maxSessions)
-            SweepExpiredActiveSessions();
-
-        if (Volatile.Read(ref _activeCount) >= _maxSessions)
-            EvictLeastRecentlyActive();
-
-        var created = new Session
-        {
-            Id = key,
-            ChannelId = channelId,
-            SenderId = senderId
-        };
-
-        if (_active.TryAdd(key, created))
-        {
-            created.LastActiveAt = now;
-            Interlocked.Increment(ref _activeCount);
             return created;
         }
-
-        // If another thread won the race, return the canonical session.
-        if (_active.TryGetValue(key, out var activeSession))
+        finally
         {
-            activeSession.LastActiveAt = now;
-            return activeSession;
+            _admissionGate.Release();
         }
-
-        // Extremely unlikely race: fall back to returning created session.
-        created.LastActiveAt = now;
-        return created;
     }
 
     public async ValueTask PersistAsync(Session session, CancellationToken ct)
@@ -303,6 +312,7 @@ public sealed class SessionManager
                 {
                     Interlocked.Decrement(ref _activeCount);
                     removedCount++;
+                    _metrics?.IncrementSessionEvictions();
                     _logger?.LogInformation("Session {SessionId} expired and evicted", kvp.Key);
                     _ = PersistBestEffortAsync(removed);
                 }
@@ -352,6 +362,9 @@ public sealed class SessionManager
 
     private void EvictLeastRecentlyActive()
     {
+        if (_maxSessions <= 0)
+            return;
+
         // TODO: This is an O(n) scan over all active sessions. If MaxConcurrentSessions grows
         // beyond hundreds, consider replacing with a PriorityQueue<string, DateTimeOffset> for O(log n) eviction.
         // Safety bound to prevent spin-looping under heavy concurrent access
@@ -381,12 +394,32 @@ public sealed class SessionManager
             {
                 removed.State = SessionState.Expired;
                 Interlocked.Decrement(ref _activeCount);
+                _metrics?.IncrementSessionEvictions();
                 _ = PersistBestEffortAsync(removed);
             }
             else
             {
                 return;
             }
+        }
+    }
+
+    private void EnsureCapacityForAdmission()
+    {
+        if (_maxSessions <= 0)
+            return;
+
+        if (Volatile.Read(ref _activeCount) >= _maxSessions)
+            SweepExpiredActiveSessions();
+
+        if (Volatile.Read(ref _activeCount) >= _maxSessions)
+            EvictLeastRecentlyActive();
+
+        if (Volatile.Read(ref _activeCount) >= _maxSessions)
+        {
+            _metrics?.IncrementSessionCapacityRejects();
+            throw new InvalidOperationException(
+                $"Maximum concurrent sessions limit ({_maxSessions}) has been reached.");
         }
     }
 

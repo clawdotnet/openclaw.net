@@ -32,6 +32,12 @@ public sealed class GatewayConfig
     /// <summary>Max total tokens (input + output) per session. 0 = unlimited.</summary>
     public long SessionTokenBudget { get; set; } = 0;
 
+    /// <summary>
+    /// When true, reject turns early if the estimated prompt tokens alone would exhaust the remaining session budget.
+    /// Disabled by default for backward compatibility with historical token-budget semantics.
+    /// </summary>
+    public bool EnableEstimatedTokenAdmissionControl { get; set; } = false;
+
     /// <summary>Max messages per minute per session at the agent level. 0 = unlimited.</summary>
     public int SessionRateLimitPerMinute { get; set; } = 0;
 

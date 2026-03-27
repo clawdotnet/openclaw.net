@@ -197,6 +197,34 @@ public class PluginDiscoveryTests : IDisposable
         Assert.Equal(2, result.Count);
     }
 
+    [Fact]
+    public void DiscoverWithDiagnostics_PackageEntryOutsideRoot_IsRejected()
+    {
+        var pluginDir = Path.Combine(_tempDir, "packed-plugin");
+        Directory.CreateDirectory(pluginDir);
+        File.WriteAllText(
+            Path.Combine(pluginDir, "package.json"),
+            """
+            {
+              "name": "packed-plugin",
+              "openclaw": {
+                "extensions": ["../escape.js"]
+              }
+            }
+            """);
+
+        var config = new PluginsConfig
+        {
+            Load = new PluginLoadConfig { Paths = [pluginDir] }
+        };
+
+        var result = PluginDiscovery.DiscoverWithDiagnostics(config);
+
+        Assert.Empty(result.Plugins);
+        var report = Assert.Single(result.Reports);
+        Assert.Contains(report.Diagnostics, diagnostic => diagnostic.Code == "entry_outside_root");
+    }
+
     private static DiscoveredPlugin MakePlugin(string id, string? kind = null)
         => new()
         {

@@ -25,6 +25,9 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _adminHeartbeatUri;
     private readonly Uri _adminHeartbeatPreviewUri;
     private readonly Uri _adminHeartbeatStatusUri;
+    private readonly Uri _adminPostureUri;
+    private readonly Uri _adminApprovalSimulationUri;
+    private readonly Uri _adminIncidentExportUri;
     private readonly Uri _adminWhatsAppSetupUri;
     private readonly Uri _adminWhatsAppRestartUri;
     private long _mcpRequestId;
@@ -53,6 +56,9 @@ public sealed class OpenClawHttpClient : IDisposable
         _adminHeartbeatUri = new Uri(baseUri, "/admin/heartbeat");
         _adminHeartbeatPreviewUri = new Uri(baseUri, "/admin/heartbeat/preview");
         _adminHeartbeatStatusUri = new Uri(baseUri, "/admin/heartbeat/status");
+        _adminPostureUri = new Uri(baseUri, "/admin/posture");
+        _adminApprovalSimulationUri = new Uri(baseUri, "/admin/approvals/simulate");
+        _adminIncidentExportUri = new Uri(baseUri, "/admin/incident/export");
         _adminWhatsAppSetupUri = new Uri(baseUri, "/admin/channels/whatsapp/setup");
         _adminWhatsAppRestartUri = new Uri(baseUri, "/admin/channels/whatsapp/restart");
 
@@ -291,6 +297,30 @@ public sealed class OpenClawHttpClient : IDisposable
 
     public Task<HeartbeatStatusResponse> GetHeartbeatStatusAsync(CancellationToken cancellationToken)
         => GetAsync(_adminHeartbeatStatusUri, CoreJsonContext.Default.HeartbeatStatusResponse, cancellationToken);
+
+    public Task<SecurityPostureResponse> GetSecurityPostureAsync(CancellationToken cancellationToken)
+        => GetAsync(_adminPostureUri, CoreJsonContext.Default.SecurityPostureResponse, cancellationToken);
+
+    public async Task<ApprovalSimulationResponse> SimulateApprovalAsync(
+        ApprovalSimulationRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, _adminApprovalSimulationUri)
+        {
+            Content = BuildJsonContent(request, CoreJsonContext.Default.ApprovalSimulationRequest)
+        };
+
+        return await SendAsync(req, CoreJsonContext.Default.ApprovalSimulationResponse, cancellationToken);
+    }
+
+    public Task<IncidentBundleResponse> ExportIncidentBundleAsync(
+        int approvalLimit,
+        int eventLimit,
+        CancellationToken cancellationToken)
+        => GetAsync(
+            new Uri($"{_adminIncidentExportUri}?approvalLimit={Math.Clamp(approvalLimit, 1, 500)}&eventLimit={Math.Clamp(eventLimit, 1, 500)}", UriKind.RelativeOrAbsolute),
+            CoreJsonContext.Default.IncidentBundleResponse,
+            cancellationToken);
 
     public Task<WhatsAppSetupResponse> GetWhatsAppSetupAsync(CancellationToken cancellationToken)
         => GetAsync(_adminWhatsAppSetupUri, CoreJsonContext.Default.WhatsAppSetupResponse, cancellationToken);

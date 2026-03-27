@@ -139,41 +139,26 @@ internal sealed class ToolApprovalGrantStore
         if (_cached is not null)
             return _cached;
 
-        try
+        if (AtomicJsonFileStore.TryLoad(_path, CoreJsonContext.Default.ListToolApprovalGrant, out List<ToolApprovalGrant>? items, out var error))
         {
-            if (!File.Exists(_path))
-            {
-                _cached = [];
-                return _cached;
-            }
+            _cached = items ?? [];
+            return _cached;
+        }
 
-            var json = File.ReadAllText(_path);
-            _cached = JsonSerializer.Deserialize(json, CoreJsonContext.Default.ListToolApprovalGrant) ?? [];
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load tool approval grant store from {Path}", _path);
-            _cached = [];
-        }
+        _logger.LogWarning("Failed to load tool approval grant store from {Path}: {Error}", _path, error);
+        _cached = [];
 
         return _cached;
     }
 
     private void SaveUnsafe(List<ToolApprovalGrant> items)
     {
-        try
+        if (!AtomicJsonFileStore.TryWriteAtomic(_path, items, CoreJsonContext.Default.ListToolApprovalGrant, out var error))
         {
-            var directory = Path.GetDirectoryName(_path);
-            if (!string.IsNullOrWhiteSpace(directory))
-                Directory.CreateDirectory(directory);
+            _logger.LogWarning("Failed to save tool approval grant store to {Path}: {Error}", _path, error);
+            throw new InvalidOperationException($"Failed to persist tool approval grants: {error}");
+        }
 
-            var json = JsonSerializer.Serialize(items, CoreJsonContext.Default.ListToolApprovalGrant);
-            File.WriteAllText(_path, json);
-            _cached = items;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to save tool approval grant store to {Path}", _path);
-        }
+        _cached = items;
     }
 }

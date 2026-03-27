@@ -48,7 +48,8 @@ internal static class CoreServicesExtensions
             new SessionManager(
                 sp.GetRequiredService<IMemoryStore>(),
                 config,
-                sp.GetRequiredService<ILoggerFactory>().CreateLogger("SessionManager")));
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("SessionManager"),
+                sp.GetRequiredService<RuntimeMetrics>()));
         services.AddSingleton<MemoryRetentionSweeperService>();
         services.AddSingleton<IMemoryRetentionCoordinator>(sp => sp.GetRequiredService<MemoryRetentionSweeperService>());
         services.AddHostedService(sp => sp.GetRequiredService<MemoryRetentionSweeperService>());

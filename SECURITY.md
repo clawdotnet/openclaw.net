@@ -1,64 +1,100 @@
-# Security Policy
+# Security Guide
 
-## Supported Versions
+This document covers the operator-facing security posture for OpenClaw.NET deployments.
 
-Only the most recent stable release of OpenClaw is officially supported with security updates. We also accept security reports for the `main` branch.
+## Public Bind Baseline
 
-| Version | Supported          |
-| ------- | ------------------ |
-| v1.x    | :white_check_mark: |
-| < 1.0   | :x:                |
+If you bind the gateway to anything other than loopback:
 
-## Reporting a Vulnerability
+- require gateway authentication
+- treat `--doctor`, `GET /doctor`, and `GET /doctor/text` as a required preflight
+- prefer sandbox `Require` mode for high-risk tools such as `shell`
+- review plugin usage carefully before enabling third-party packages
 
-We take security seriously. If you discover a security vulnerability in OpenClaw, please **do not open a public issue**. Instead:
+The new posture surfaces make these checks visible in both:
 
-1. Email your findings to `tellikoroma@gmail.com` (or specific address if desired).
-2. Include a description of the vulnerability, steps to reproduce, and potential impact.
-3. We will acknowledge receipt within 48 hours.
-4. We will coordinate a fix and release timeline with you.
+- `GET /doctor`
+- `GET /doctor/text`
+- `GET /admin/posture`
+- `openclaw admin posture`
 
-### What qualifies as a vulnerability?
+## Tool Approval Semantics
 
-- **Sandbox escapes**: Reading/writing files outside allowed directories (`AllowedReadRoots`/`AllowedWriteRoots`).
-- **Remote Code Execution (RCE)**: Executing unauthorized code or commands (when `AllowShell=false` or beyond tool scope).
-- **Authentication bypass**: Accessing the gateway without a valid `OPENCLAW_AUTH_TOKEN` (on public binds).
-- **Approval hijacking**: Approving a pending tool action from a different sender/channel on public deployments.
-- **Data leakage**: Exposure of sensitive environment variables or file contents through unintended channels.
-- **Denial of Service (DoS)**: Crashing the gateway with malformed input (NativeAOT panic).
+HTTP tool approval has two distinct modes:
 
-### What is NOT a vulnerability?
+- `RequireRequesterMatchForHttpToolApproval=false`
+  - any authenticated HTTP operator can approve a pending request by id
+  - this preserves existing admin-override behavior
+- `RequireRequesterMatchForHttpToolApproval=true`
+  - the approver must match the original requester identity
+  - this is the safer setting for Internet-facing binds
 
-- **"Self-XSS"**: Executing JS in the user's own browser console.
-- **LLM hallucinations**: The model generating incorrect or biased content (this is an upstream provider issue).
-- **Social engineering**: Phishing or tricking users into running dangerous commands via `shell` tool (when authorized).
-- **Resource exhaustion**: When limits (`SessionTokenBudget`, `RateLimit`) are explicitly disabled by configuration.
+For public deployments, prefer requester-match mode unless you explicitly want centralized operator override.
 
-## Security Best Practices
+Use the approval simulator to inspect effective behavior without mutating live queues:
 
-When running OpenClaw in production:
+- `POST /admin/approvals/simulate`
+- `openclaw admin approvals simulate`
 
-1. **Always set `OPENCLAW_AUTH_TOKEN`**: Especially when binding to `0.0.0.0`.
-2. **Use TLS**: Run behind a reverse proxy (Caddy/nginx) or configure Kestrel HTTPS.
-3. **Restrict Tools**: Set `AllowShell=false` unless strictly necessary.
-4. **Isolate Scope**: Run in a container with minimal privileges (non-root).
-5. **Monitor Logs**: Watch for `EventId=Security` warnings in structured logs.
-6. **Limit Roots**: Configure `AllowedReadRoots` and `AllowedWriteRoots` to specific subdirectories.
-7. **Set Budgets**: Use `SessionTokenBudget` to prevent runaway costs.
-8. **Sign Webhooks**: Keep Twilio/Telegram/WhatsApp signature checks enabled and set webhook HMAC secrets for `/webhooks/{name}` endpoints.
-9. **Avoid Query Tokens Publicly**: Prefer `Authorization: Bearer` and keep `AllowQueryStringToken=false` unless required by your client.
-10. **Plan Retention Storage**: If enabling `OpenClaw:Memory:Retention`, ensure `ArchivePath` has strict filesystem permissions and enough capacity.
-11. **Run Retention Dry-Run First**: Use `POST /memory/retention/sweep?dryRun=true` before enabling destructive sweeps in production.
-12. **Treat Archives as Sensitive Data**: Archive files are plaintext JSON payloads in this phase; encrypt at rest via host-level controls if required by policy.
+## Browser Sessions And Proxies
 
-## Tool Execution
+Browser-session admin auth is only safe when the gateway can determine that the effective request scheme is HTTPS.
 
-By design, OpenClaw executes tools (`shell`, `git`, `code_exec`) that can be dangerous.
-- **`delegate_agent`**: Sub-agents inherit the permissions of the parent session.
-- **`shell`**: Disabled by default in `Production` environment.
-- **`read_file`/`write_file`**: Path traversal is blocked, but ensure roots are scoped correctly.
+If you run behind a reverse proxy or TLS terminator:
 
-## Dependencies
+- forward the standard `X-Forwarded-*` headers
+- configure ASP.NET Core forwarded header trust correctly
+- confirm `/doctor/text` does not warn about insecure browser-session cookie posture
 
-We use `dotnet list package --vulnerable` in CI to check for known vulnerabilities in dependencies.
-Docker images are rebuilt weekly to pick up OS security patches in the base image.
+Without trusted forwarded headers, the gateway may consider the request insecure and the posture report will warn accordingly.
+
+## Plugin Bridge Security
+
+JS/TS plugin IPC now uses hardened local transport defaults for `socket` and `hybrid` modes:
+
+- per-plugin private socket directories
+- authenticated local IPC handshake
+- structured diagnostics in posture and plugin reports
+
+This reduces the risk of a local process racing the intended plugin bridge connection.
+
+Operational notes:
+
+- `stdio` remains available and unchanged
+- user-configured socket paths are still honored, so operators remain responsible for securing those paths
+- plugin manifests and native dynamic plugin manifests must resolve entry paths under the discovered plugin root
+
+## Plugins On Public Binds
+
+Plugins increase the trusted-code surface area. Before enabling them on an Internet-facing gateway:
+
+- keep plugin load paths tightly controlled
+- prefer pinned internal packages over arbitrary local directories
+- review `/doctor` posture warnings for plugin transport and raw secret refs
+- keep `OpenClaw:Security:AllowPublicPlugins=false` unless the deployment has been reviewed
+
+## Webhooks
+
+Webhook endpoints should always use their native signature or token validation:
+
+- Twilio uses request signature validation
+- WhatsApp uses HMAC verification
+- Bot Framework validates issuer, audience, and channel/service claims
+
+Do not disable provider-side signing expectations just because the gateway already requires auth elsewhere.
+
+## Incident Export
+
+The admin incident export is intended for debugging and support workflows:
+
+- `GET /admin/incident/export`
+- `openclaw admin incident export`
+
+It redacts obvious secrets and sensitive metadata keys by construction, but the bundle still contains operationally sensitive information. Restrict it to trusted admins.
+
+## Recommended Deployment Loop
+
+1. Run `--doctor` before first public exposure.
+2. Check `openclaw admin posture` after the deployed config is live behind the real proxy.
+3. Exercise `openclaw admin approvals simulate` for the approval paths you expect.
+4. Export an incident bundle once in staging and verify the redaction level matches your expectations.

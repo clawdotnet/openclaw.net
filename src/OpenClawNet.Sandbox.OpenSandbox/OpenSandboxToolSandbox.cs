@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 
 namespace OpenClawNet.Sandbox.OpenSandbox;
 
@@ -16,6 +17,7 @@ public sealed class OpenSandboxToolSandbox : IToolSandbox, IAsyncDisposable
     private readonly HttpClient _httpClient;
     private readonly OpenSandboxOptions _options;
     private readonly ILogger<OpenSandboxToolSandbox>? _logger;
+    private readonly RuntimeMetrics? _metrics;
     private readonly SemaphoreSlim _leaseGate = new(1, 1);
     private readonly Dictionary<string, SandboxLease> _leases = new(StringComparer.Ordinal);
     private bool _disposed;
@@ -23,11 +25,13 @@ public sealed class OpenSandboxToolSandbox : IToolSandbox, IAsyncDisposable
     public OpenSandboxToolSandbox(
         HttpClient httpClient,
         OpenSandboxOptions options,
-        ILogger<OpenSandboxToolSandbox>? logger = null)
+        ILogger<OpenSandboxToolSandbox>? logger = null,
+        RuntimeMetrics? metrics = null)
     {
         _httpClient = httpClient;
         _options = options;
         _logger = logger;
+        _metrics = metrics;
 
         _httpClient.BaseAddress = options.GetApiBaseUri();
         _httpClient.Timeout = Timeout.InfiniteTimeSpan;
@@ -154,6 +158,7 @@ public sealed class OpenSandboxToolSandbox : IToolSandbox, IAsyncDisposable
                 existing.ExpiresAt > DateTimeOffset.UtcNow &&
                 string.Equals(existing.Template, template, StringComparison.Ordinal))
             {
+                _metrics?.IncrementSandboxLeaseReuses();
                 return existing;
             }
 
@@ -193,7 +198,7 @@ public sealed class OpenSandboxToolSandbox : IToolSandbox, IAsyncDisposable
             OpenSandboxJsonContext.Default.OpenSandboxCreateRequest,
             cancellationToken);
 
-        return await DeserializeAsync(
+        var lease = await DeserializeAsync(
             response,
             OpenSandboxJsonContext.Default.OpenSandboxCreateResponse,
             payload => new SandboxLease(
@@ -201,6 +206,9 @@ public sealed class OpenSandboxToolSandbox : IToolSandbox, IAsyncDisposable
                 template,
                 payload.ExpiresAt ?? DateTimeOffset.UtcNow.AddSeconds(ttl)),
             cancellationToken);
+
+        _metrics?.IncrementSandboxLeaseCreates();
+        return lease;
     }
 
     private async Task RenewLeaseAsync(
@@ -271,6 +279,7 @@ public sealed class OpenSandboxToolSandbox : IToolSandbox, IAsyncDisposable
                 existing.ExpiresAt > DateTimeOffset.UtcNow &&
                 string.Equals(existing.Template, template, StringComparison.Ordinal))
             {
+                _metrics?.IncrementSandboxLeaseRecoveries();
                 return existing;
             }
 
@@ -278,6 +287,7 @@ public sealed class OpenSandboxToolSandbox : IToolSandbox, IAsyncDisposable
 
             var created = await CreateLeaseAsync(template, ttl, leaseKey, cancellationToken);
             _leases[leaseKey] = created;
+            _metrics?.IncrementSandboxLeaseRecoveries();
             return created;
         }
         finally

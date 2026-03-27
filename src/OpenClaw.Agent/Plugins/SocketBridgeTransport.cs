@@ -1,8 +1,11 @@
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using OpenClaw.Core.Observability;
 
 namespace OpenClaw.Agent.Plugins;
 
@@ -13,6 +16,10 @@ public sealed class SocketBridgeTransport : BridgeTransportBase
 {
     private readonly ILogger _logger;
     private readonly string _socketPath;
+    private readonly string? _socketDirectory;
+    private readonly bool _ownsSocketDirectory;
+    private readonly string _authToken;
+    private readonly RuntimeMetrics? _metrics;
     private readonly string? _pipeName;
     private Socket? _listener;
     private Socket? _acceptedSocket;
@@ -20,11 +27,21 @@ public sealed class SocketBridgeTransport : BridgeTransportBase
     private StreamReader? _reader;
     private StreamWriter? _writer;
 
-    public SocketBridgeTransport(string socketPath, ILogger logger)
+    public SocketBridgeTransport(
+        string socketPath,
+        string? socketDirectory,
+        bool ownsSocketDirectory,
+        string authToken,
+        ILogger logger,
+        RuntimeMetrics? metrics = null)
         : base(logger)
     {
         _logger = logger;
         _socketPath = socketPath;
+        _socketDirectory = socketDirectory;
+        _ownsSocketDirectory = ownsSocketDirectory;
+        _authToken = authToken;
+        _metrics = metrics;
         _pipeName = OperatingSystem.IsWindows() ? NormalizePipeName(socketPath) : null;
     }
 
@@ -45,7 +62,10 @@ public sealed class SocketBridgeTransport : BridgeTransportBase
 
         var dir = Path.GetDirectoryName(_socketPath);
         if (!string.IsNullOrWhiteSpace(dir))
+        {
             Directory.CreateDirectory(dir);
+            TryRestrictUnixDirectory(dir);
+        }
 
         if (File.Exists(_socketPath))
         {
@@ -69,11 +89,7 @@ public sealed class SocketBridgeTransport : BridgeTransportBase
                 throw new InvalidOperationException("Named pipe server is not prepared.");
 
             await _pipeServer.WaitForConnectionAsync(connectCts.Token);
-            _reader = new StreamReader(_pipeServer, Encoding.UTF8, leaveOpen: true);
-            _writer = new StreamWriter(_pipeServer, new UTF8Encoding(false), leaveOpen: true)
-            {
-                AutoFlush = true
-            };
+            (_reader, _writer) = await AuthenticateStreamAsync(_pipeServer, connectCts.Token);
             AttachReaderWriter(_reader, _writer);
             return;
         }
@@ -81,13 +97,31 @@ public sealed class SocketBridgeTransport : BridgeTransportBase
         if (_listener is null)
             throw new InvalidOperationException("Socket listener is not prepared.");
 
-        _acceptedSocket = await _listener.AcceptAsync(connectCts.Token);
-        var stream = new NetworkStream(_acceptedSocket, ownsSocket: false);
-        _reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
-        _writer = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true)
+        while (true)
         {
-            AutoFlush = true
-        };
+            var acceptedSocket = await _listener.AcceptAsync(connectCts.Token);
+            try
+            {
+                var stream = new NetworkStream(acceptedSocket, ownsSocket: false);
+                var authenticated = await TryAuthenticateStreamAsync(stream, connectCts.Token);
+                if (authenticated.Reader is null || authenticated.Writer is null)
+                {
+                    acceptedSocket.Dispose();
+                    continue;
+                }
+
+                _acceptedSocket = acceptedSocket;
+                _reader = authenticated.Reader;
+                _writer = authenticated.Writer;
+                break;
+            }
+            catch
+            {
+                acceptedSocket.Dispose();
+                throw;
+            }
+        }
+
         AttachReaderWriter(_reader, _writer);
     }
 
@@ -119,9 +153,115 @@ public sealed class SocketBridgeTransport : BridgeTransportBase
             {
                 _logger.LogDebug(ex, "Failed to remove bridge socket path {SocketPath}", _socketPath);
             }
+
+            if (_ownsSocketDirectory && !string.IsNullOrWhiteSpace(_socketDirectory))
+            {
+                try
+                {
+                    if (Directory.Exists(_socketDirectory))
+                        Directory.Delete(_socketDirectory, recursive: true);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to remove bridge socket directory {SocketDirectory}", _socketDirectory);
+                }
+            }
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    private async Task<(StreamReader? Reader, StreamWriter? Writer)> TryAuthenticateStreamAsync(Stream stream, CancellationToken ct)
+    {
+        try
+        {
+            return await AuthenticateStreamAsync(stream, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _metrics?.IncrementPluginBridgeAuthFailures();
+            _logger.LogWarning(ex, "Rejected unauthenticated local IPC client for {SocketPath}", _socketPath);
+            return (null, null);
+        }
+    }
+
+    private async Task<(StreamReader Reader, StreamWriter Writer)> AuthenticateStreamAsync(Stream stream, CancellationToken ct)
+    {
+        var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
+        var writer = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true)
+        {
+            AutoFlush = true
+        };
+
+        var line = await ReadLineWithCancellationAsync(reader, ct);
+        if (!IsExpectedAuthLine(line))
+        {
+            reader.Dispose();
+            writer.Dispose();
+            throw new InvalidOperationException("Bridge client failed local IPC authentication.");
+        }
+
+        return (reader, writer);
+    }
+
+    private static async Task<string?> ReadLineWithCancellationAsync(StreamReader reader, CancellationToken ct)
+    {
+        var readTask = reader.ReadLineAsync();
+        var completed = await Task.WhenAny(readTask, Task.Delay(Timeout.InfiniteTimeSpan, ct));
+        if (!ReferenceEquals(completed, readTask))
+            throw new OperationCanceledException(ct);
+
+        return await readTask;
+    }
+
+    private bool IsExpectedAuthLine(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+            return false;
+
+        try
+        {
+            using var auth = JsonDocument.Parse(line);
+            if (!auth.RootElement.TryGetProperty("type", out var typeProperty) ||
+                !string.Equals(typeProperty.GetString(), "bridge_auth", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (!auth.RootElement.TryGetProperty("token", out var tokenProperty))
+                return false;
+
+            var token = tokenProperty.GetString();
+            if (string.IsNullOrEmpty(token))
+                return false;
+
+            return CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(token),
+                Encoding.UTF8.GetBytes(_authToken));
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static void TryRestrictUnixDirectory(string path)
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        try
+        {
+            File.SetUnixFileMode(
+                path,
+                UnixFileMode.UserRead |
+                UnixFileMode.UserWrite |
+                UnixFileMode.UserExecute);
+        }
+        catch
+        {
+            // Best effort only.
+        }
     }
 
     private static string NormalizePipeName(string socketPath)

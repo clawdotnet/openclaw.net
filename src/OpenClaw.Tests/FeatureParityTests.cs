@@ -128,6 +128,33 @@ public class FeatureParityTests
     }
 
     [Fact]
+    public async Task RunAsync_EstimatedTokenAdmissionControl_RejectsBeforeCallingLlm()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        var memory = Substitute.For<IMemoryStore>();
+        var gatewayConfig = new GatewayConfig
+        {
+            EnableEstimatedTokenAdmissionControl = true
+        };
+
+        var agent = new AgentRuntime(
+            chatClient,
+            [],
+            memory,
+            DefaultConfig,
+            maxHistoryTurns: 10,
+            sessionTokenBudget: 100,
+            gatewayConfig: gatewayConfig);
+        var session = CreateSession();
+        session.TotalInputTokens = 95;
+
+        var result = await agent.RunAsync(session, new string('x', 40), CancellationToken.None);
+
+        Assert.Contains("close to its token budget", result, StringComparison.OrdinalIgnoreCase);
+        await chatClient.DidNotReceiveWithAnyArgs().GetResponseAsync(default!, default!, default);
+    }
+
+    [Fact]
     public void AgentStreamEvent_EnvelopeType_Maps_Correctly()
     {
         Assert.Equal("assistant_chunk", AgentStreamEvent.TextDelta("x").EnvelopeType);

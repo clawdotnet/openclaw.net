@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 using OpenClaw.Core.Plugins;
 
 namespace OpenClaw.Agent.Plugins;
@@ -21,6 +22,8 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly BridgeTransportConfig _transportConfig;
     private readonly BridgeProcessLaunchSpec? _launchSpec;
+    private readonly string? _runtimeRoot;
+    private readonly RuntimeMetrics? _metrics;
     private IBridgeTransport? _transport;
     private BridgeTransportRuntimeConfig _runtimeTransport = new();
     private string? _entryPath;
@@ -45,12 +48,16 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
         string bridgeScriptPath,
         ILogger logger,
         BridgeTransportConfig? transportConfig = null,
-        BridgeProcessLaunchSpec? launchSpec = null)
+        BridgeProcessLaunchSpec? launchSpec = null,
+        string? runtimeRoot = null,
+        RuntimeMetrics? metrics = null)
     {
         _bridgeScriptPath = bridgeScriptPath;
         _logger = logger;
         _transportConfig = transportConfig ?? new BridgeTransportConfig();
         _launchSpec = launchSpec;
+        _runtimeRoot = runtimeRoot;
+        _metrics = metrics;
     }
 
     /// <summary>
@@ -227,6 +234,7 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
             {
                 try
                 {
+                    _metrics?.IncrementPluginBridgeRestartAttempts();
                     await DisposeTransportAsync();
                     CleanupProcess();
                     _intentionalShutdown = false;
@@ -242,6 +250,7 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
                 catch (Exception ex)
                 {
                     lastError = ex;
+                    _metrics?.IncrementPluginBridgeRestartFailures();
                     _logger.LogWarning(ex, "Failed to restart plugin bridge for '{PluginId}' on attempt {Attempt}.", _pluginId, attempt);
                     await DisposeTransportAsync();
                     CleanupProcess();
@@ -261,7 +270,7 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
 
     private async Task<BridgeResponse> InitializeProcessAsync(CancellationToken ct)
     {
-        var (transport, runtimeTransport) = BridgeTransportFactory.Create(_transportConfig, _pluginId!, _logger);
+        var (transport, runtimeTransport) = BridgeTransportFactory.Create(_transportConfig, _pluginId!, _logger, _runtimeRoot, _metrics);
         if (_notificationHandler is not null)
             transport.SetNotificationHandler(_notificationHandler);
 
@@ -329,6 +338,8 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
         psi.Environment["OPENCLAW_BRIDGE_TRANSPORT_MODE"] = transport.Mode;
         if (!string.IsNullOrWhiteSpace(transport.SocketPath))
             psi.Environment["OPENCLAW_BRIDGE_SOCKET_PATH"] = transport.SocketPath;
+        if (!string.IsNullOrWhiteSpace(transport.SocketAuthToken))
+            psi.Environment["OPENCLAW_BRIDGE_SOCKET_AUTH_TOKEN"] = transport.SocketAuthToken;
 
         var process = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start Node.js plugin bridge process.");
@@ -365,6 +376,8 @@ public sealed class PluginBridgeProcess : IAsyncDisposable
         psi.Environment["OPENCLAW_BRIDGE_TRANSPORT_MODE"] = transport.Mode;
         if (!string.IsNullOrWhiteSpace(transport.SocketPath))
             psi.Environment["OPENCLAW_BRIDGE_SOCKET_PATH"] = transport.SocketPath;
+        if (!string.IsNullOrWhiteSpace(transport.SocketAuthToken))
+            psi.Environment["OPENCLAW_BRIDGE_SOCKET_AUTH_TOKEN"] = transport.SocketAuthToken;
         foreach (var (name, value) in launchSpec.EnvironmentVariables)
         {
             if (value is null)

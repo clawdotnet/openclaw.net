@@ -70,6 +70,45 @@ public class NativePluginRegistryTests
     }
 
     [Fact]
+    public void Constructor_NotionEnabled_RegistersReadAndWriteTools()
+    {
+        var config = new NativePluginsConfig
+        {
+            Notion = new NotionConfig
+            {
+                Enabled = true,
+                ApiKeyRef = "raw:test-token",
+                DefaultPageId = "page-1"
+            }
+        };
+
+        var registry = new NativePluginRegistry(config, NullLogger.Instance);
+
+        Assert.Contains(registry.Tools, t => t.Name == "notion");
+        Assert.Contains(registry.Tools, t => t.Name == "notion_write");
+    }
+
+    [Fact]
+    public void Constructor_NotionReadOnly_RegistersReadToolOnly()
+    {
+        var config = new NativePluginsConfig
+        {
+            Notion = new NotionConfig
+            {
+                Enabled = true,
+                ApiKeyRef = "raw:test-token",
+                DefaultPageId = "page-1",
+                ReadOnly = true
+            }
+        };
+
+        var registry = new NativePluginRegistry(config, NullLogger.Instance);
+
+        Assert.Contains(registry.Tools, t => t.Name == "notion");
+        Assert.DoesNotContain(registry.Tools, t => t.Name == "notion_write");
+    }
+
+    [Fact]
     public void Constructor_AllEnabled_RegistersAllTools()
     {
         var config = new NativePluginsConfig

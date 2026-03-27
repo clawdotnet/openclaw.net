@@ -47,6 +47,9 @@ let transportMode = normalizeMode(process.env.OPENCLAW_BRIDGE_TRANSPORT_MODE ?? 
 /** @type {string | null} */
 let socketPath = process.env.OPENCLAW_BRIDGE_SOCKET_PATH ?? null;
 
+/** @type {string | null} */
+let socketAuthToken = process.env.OPENCLAW_BRIDGE_SOCKET_AUTH_TOKEN ?? null;
+
 /** @type {import("node:net").Socket | null} */
 let transportSocket = null;
 
@@ -89,6 +92,9 @@ function connectSocketTransport() {
   transportSocket.setEncoding("utf8");
 
   transportSocket.once("connect", () => {
+    if (socketAuthToken) {
+      transportSocket.write(`${JSON.stringify({ type: "bridge_auth", token: socketAuthToken })}\n`);
+    }
     resolveSocketReady();
     attachSocketReader(transportSocket);
   });

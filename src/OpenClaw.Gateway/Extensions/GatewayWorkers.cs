@@ -10,6 +10,7 @@ using OpenClaw.Channels;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Middleware;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Core.Security;
@@ -40,10 +41,11 @@ internal static class GatewayWorkers
         ApprovalAuditStore approvalAuditStore,
         PairingManager pairingManager,
         ChatCommandProcessor commandProcessor,
-        RuntimeOperationsState operations)
+        RuntimeOperationsState operations,
+        RuntimeMetrics? runtimeMetrics = null)
     {
         StartSessionCleanup(lifetime, logger, sessionManager, sessionLocks, lockLastUsed);
-        StartInboundWorkers(lifetime, logger, workerCount, isNonLoopbackBind, sessionManager, sessionLocks, lockLastUsed, pipeline, middlewarePipeline, wsChannel, agentRuntime, channelAdapters, config, cronScheduler, heartbeatService, toolApprovalService, approvalAuditStore, pairingManager, commandProcessor, operations);
+        StartInboundWorkers(lifetime, logger, workerCount, isNonLoopbackBind, sessionManager, sessionLocks, lockLastUsed, pipeline, middlewarePipeline, wsChannel, agentRuntime, channelAdapters, config, cronScheduler, heartbeatService, toolApprovalService, approvalAuditStore, pairingManager, commandProcessor, operations, runtimeMetrics);
         StartOutboundWorkers(lifetime, logger, workerCount, pipeline, channelAdapters, heartbeatService);
     }
 
@@ -65,50 +67,13 @@ internal static class GatewayWorkers
                     if (evicted > 0)
                         logger.LogDebug("Proactive active-session sweep evicted {Count} expired sessions", evicted);
 
-                    var now = DateTimeOffset.UtcNow;
-                    var orphanThreshold = TimeSpan.FromHours(2);
-                    
-                    foreach (var kvp in sessionLocks)
-                    {
-                        var sessionKey = kvp.Key;
-                        var semaphore = kvp.Value;
-                        
-                        if (!lockLastUsed.ContainsKey(sessionKey))
-                            lockLastUsed[sessionKey] = now;
-                        
-                        if (!sessionManager.IsActive(sessionKey))
-                        {
-                            var lastUsed = lockLastUsed.GetValueOrDefault(sessionKey, now);
-                            var isOrphaned = (now - lastUsed) > orphanThreshold;
-                            
-                            if (isOrphaned && semaphore.CurrentCount == 1 && semaphore.Wait(0))
-                            {
-                                try
-                                {
-                                    if (!sessionManager.IsActive(sessionKey))
-                                    {
-                                        if (sessionLocks.TryRemove(sessionKey, out _))
-                                        {
-                                            lockLastUsed.TryRemove(sessionKey, out _);
-                                            logger.LogDebug("Cleaned up session lock for {SessionKey}", sessionKey);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        lockLastUsed[sessionKey] = now;
-                                    }
-                                }
-                                finally
-                                {
-                                    try { semaphore.Release(); } catch { /* ignore */ }
-                                }
-                            }
-                        }
-                        else
-                        {
-                            lockLastUsed[sessionKey] = now;
-                        }
-                    }
+                    CleanupSessionLocksOnce(
+                        sessionManager,
+                        sessionLocks,
+                        lockLastUsed,
+                        DateTimeOffset.UtcNow,
+                        TimeSpan.FromHours(2),
+                        logger);
                 }
                 catch (Exception ex)
                 {
@@ -116,6 +81,80 @@ internal static class GatewayWorkers
                 }
             }
         }, lifetime.ApplicationStopping);
+    }
+
+    internal static void CleanupSessionLocksOnce(
+        SessionManager sessionManager,
+        ConcurrentDictionary<string, SemaphoreSlim> sessionLocks,
+        ConcurrentDictionary<string, DateTimeOffset> lockLastUsed,
+        DateTimeOffset now,
+        TimeSpan orphanThreshold,
+        ILogger logger)
+    {
+        foreach (var kvp in sessionLocks)
+        {
+            var sessionKey = kvp.Key;
+            var semaphore = kvp.Value;
+
+            lockLastUsed.TryAdd(sessionKey, now);
+
+            if (sessionManager.IsActive(sessionKey))
+            {
+                lockLastUsed[sessionKey] = now;
+                continue;
+            }
+
+            var lastUsed = lockLastUsed.GetValueOrDefault(sessionKey, now);
+            var isOrphaned = (now - lastUsed) > orphanThreshold;
+            if (!isOrphaned || semaphore.CurrentCount != 1 || !semaphore.Wait(0))
+                continue;
+
+            var removed = false;
+            try
+            {
+                if (sessionManager.IsActive(sessionKey))
+                {
+                    lockLastUsed[sessionKey] = now;
+                    continue;
+                }
+
+                if (sessionLocks.TryRemove(sessionKey, out var removedSemaphore))
+                {
+                    removed = true;
+                    lockLastUsed.TryRemove(sessionKey, out _);
+                    try { removedSemaphore.Release(); } catch { }
+                    removedSemaphore.Dispose();
+                    logger.LogDebug("Cleaned up session lock for {SessionKey}", sessionKey);
+                }
+            }
+            finally
+            {
+                if (!removed)
+                {
+                    try { semaphore.Release(); } catch { }
+                }
+            }
+        }
+    }
+
+    internal static void DisposeSessionLocks(
+        ConcurrentDictionary<string, SemaphoreSlim> sessionLocks,
+        ILogger logger)
+    {
+        foreach (var sessionKey in sessionLocks.Keys)
+        {
+            if (!sessionLocks.TryRemove(sessionKey, out var semaphore))
+                continue;
+
+            try
+            {
+                semaphore.Dispose();
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Failed to dispose session lock for {SessionKey}", sessionKey);
+            }
+        }
     }
 
     private static void StartInboundWorkers(
@@ -138,7 +177,8 @@ internal static class GatewayWorkers
         ApprovalAuditStore approvalAuditStore,
         PairingManager pairingManager,
         ChatCommandProcessor commandProcessor,
-        RuntimeOperationsState operations)
+        RuntimeOperationsState operations,
+        RuntimeMetrics? runtimeMetrics)
     {
         for (var i = 0; i < workerCount; i++)
         {
@@ -200,6 +240,7 @@ internal static class GatewayWorkers
 
                                 if (decisionOutcome.Result == ToolApprovalDecisionResult.Recorded && decisionOutcome.Request is not null)
                                 {
+                                    runtimeMetrics?.IncrementApprovalDecisionsRecorded();
                                     approvalAuditStore.RecordDecision(
                                         decisionOutcome.Request,
                                         msg.Approved.Value,
@@ -216,6 +257,7 @@ internal static class GatewayWorkers
                                 }
                                 else if (decisionOutcome.Result == ToolApprovalDecisionResult.Unauthorized)
                                 {
+                                    runtimeMetrics?.IncrementApprovalDecisionsRejected();
                                     RecordApprovalDecisionRejectedEvent(
                                         operations,
                                         decisionOutcome.Request,
@@ -269,11 +311,12 @@ internal static class GatewayWorkers
                                             msg.SenderId,
                                             requireRequesterMatch: true);
 
-                                        if (decisionOutcome.Result == ToolApprovalDecisionResult.Recorded && decisionOutcome.Request is not null)
-                                        {
-                                            approvalAuditStore.RecordDecision(
-                                                decisionOutcome.Request,
-                                                approved,
+                                    if (decisionOutcome.Result == ToolApprovalDecisionResult.Recorded && decisionOutcome.Request is not null)
+                                    {
+                                        runtimeMetrics?.IncrementApprovalDecisionsRecorded();
+                                        approvalAuditStore.RecordDecision(
+                                            decisionOutcome.Request,
+                                            approved,
                                                 "chat",
                                                 msg.ChannelId,
                                                 msg.SenderId);
@@ -284,12 +327,13 @@ internal static class GatewayWorkers
                                                 "chat",
                                                 msg.ChannelId,
                                                 msg.SenderId);
-                                        }
-                                        else if (decisionOutcome.Result == ToolApprovalDecisionResult.Unauthorized)
-                                        {
-                                            RecordApprovalDecisionRejectedEvent(
-                                                operations,
-                                                decisionOutcome.Request,
+                                    }
+                                    else if (decisionOutcome.Result == ToolApprovalDecisionResult.Unauthorized)
+                                    {
+                                        runtimeMetrics?.IncrementApprovalDecisionsRejected();
+                                        RecordApprovalDecisionRejectedEvent(
+                                            operations,
+                                            decisionOutcome.Request,
                                                 approvalId,
                                                 "requester_mismatch",
                                                 msg.ChannelId,

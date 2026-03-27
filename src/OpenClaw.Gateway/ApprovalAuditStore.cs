@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Pipeline;
@@ -26,7 +25,7 @@ internal sealed class ApprovalAuditStore
 
     public string Path => _path;
 
-    public void RecordCreated(ToolApprovalRequest request)
+    public bool RecordCreated(ToolApprovalRequest request)
         => Append(new ApprovalHistoryEntry
         {
             EventType = "created",
@@ -39,7 +38,7 @@ internal sealed class ApprovalAuditStore
             TimestampUtc = request.CreatedAt
         });
 
-    public void RecordDecision(
+    public bool RecordDecision(
         ToolApprovalRequest request,
         bool approved,
         string decisionSource,
@@ -88,24 +87,16 @@ internal sealed class ApprovalAuditStore
             "Failed to parse approval audit line from {Path}");
     }
 
-    private void Append(ApprovalHistoryEntry entry)
+    private bool Append(ApprovalHistoryEntry entry)
     {
-        try
+        var line = System.Text.Json.JsonSerializer.Serialize(entry, CoreJsonContext.Default.ApprovalHistoryEntry);
+        if (!AtomicJsonFileStore.TryAppendLine(_path, line, _gate, out var error))
         {
-            var directory = System.IO.Path.GetDirectoryName(_path);
-            if (!string.IsNullOrWhiteSpace(directory))
-                Directory.CreateDirectory(directory);
+            _logger.LogWarning("Failed to append approval audit entry to {Path}: {Error}", _path, error);
+            return false;
+        }
 
-            var line = JsonSerializer.Serialize(entry, CoreJsonContext.Default.ApprovalHistoryEntry);
-            lock (_gate)
-            {
-                File.AppendAllText(_path, line + Environment.NewLine);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to append approval audit entry to {Path}", _path);
-        }
+        return true;
     }
 
     private static string Truncate(string? value)

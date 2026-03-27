@@ -6,6 +6,7 @@ using NSubstitute;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Sessions;
@@ -1425,6 +1426,63 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
         Assert.Equal("restarting", await tool.ExecuteAsync("""{"kill":true}""", CancellationToken.None));
         await Task.Delay(500);
         Assert.Equal("echo:second", await tool.ExecuteAsync("""{"text":"second"}""", CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("socket")]
+    [InlineData("hybrid")]
+    public async Task PluginBridgeProcess_Restart_RecordsRuntimeMetrics(string transportMode)
+    {
+        if (!HasNode()) return;
+
+        var pluginDir = CreatePlugin(
+            $"restart-metrics-plugin-{transportMode}",
+            "index.js",
+            """
+            module.exports = function(api) {
+              api.registerTool({
+                name: "restart_metrics_echo",
+                description: "Restart metrics echo",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    text: { type: "string" },
+                    kill: { type: "boolean" }
+                  }
+                },
+                execute: async (_pluginId, params) => {
+                  if (params.kill) {
+                    setTimeout(() => process.exit(0), 20);
+                    return "restarting";
+                  }
+
+                  return `echo:${params.text ?? "ok"}`;
+                }
+              });
+            };
+            """);
+
+        var metrics = new RuntimeMetrics();
+        await using var bridge = new PluginBridgeProcess(
+            GetBridgeScriptPath(),
+            new TestLogger(),
+            new BridgeTransportConfig { Mode = transportMode },
+            runtimeRoot: Path.Combine(_tempDir, "runtime"),
+            metrics: metrics);
+
+        var init = await bridge.StartAsync(
+            Path.Combine(pluginDir, "index.js"),
+            $"restart-metrics-plugin-{transportMode}",
+            null,
+            CancellationToken.None);
+        Assert.True(init.Compatible);
+
+        Assert.Equal("echo:first", await bridge.ExecuteToolAsync("restart_metrics_echo", """{"text":"first"}""", CancellationToken.None));
+        Assert.Equal("restarting", await bridge.ExecuteToolAsync("restart_metrics_echo", """{"kill":true}""", CancellationToken.None));
+        await Task.Delay(500);
+        Assert.Equal("echo:second", await bridge.ExecuteToolAsync("restart_metrics_echo", """{"text":"second"}""", CancellationToken.None));
+        Assert.True(metrics.PluginBridgeRestartAttempts >= 1);
+        Assert.Equal(0, metrics.PluginBridgeRestartFailures);
     }
 
     [Fact]

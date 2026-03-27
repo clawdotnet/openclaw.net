@@ -81,6 +81,21 @@ public class AgentRuntimeTests
     }
 
     [Fact]
+    public async Task RunAsync_DoesNotTreatProviderInvalidOperationAsBudgetAdmissionError()
+    {
+        _chatClient.GetResponseAsync(
+            Arg.Any<IList<ChatMessage>>(),
+            Arg.Any<ChatOptions>(),
+            Arg.Any<CancellationToken>())
+            .Returns<Task<ChatResponse>>(_ => throw new InvalidOperationException("This session is close to its token budget."));
+
+        var session = new Session { Id = "sess1", SenderId = "user1", ChannelId = "test-channel" };
+        var result = await _agent.RunAsync(session, "Hello", CancellationToken.None);
+
+        Assert.Equal("Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly.", result);
+    }
+
+    [Fact]
     public async Task ReloadSkillsAsync_UpdatesLoadedSkillNames()
     {
         var workspaceDir = Path.Combine(Path.GetTempPath(), $"openclaw-skills-{Guid.NewGuid():N}");

@@ -2,12 +2,13 @@ namespace OpenClaw.Cli;
 
 internal sealed class CliArgs
 {
-    private readonly Dictionary<string, string?> _options = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<string>> _options = new(StringComparer.Ordinal);
     private readonly HashSet<string> _flags = new(StringComparer.Ordinal);
 
     public List<string> Positionals { get; } = [];
     public List<string> Files { get; } = [];
     public bool ShowHelp { get; private set; }
+    public IReadOnlyDictionary<string, List<string>> Options => _options;
 
     public static CliArgs Parse(string[] args)
     {
@@ -40,20 +41,31 @@ internal sealed class CliArgs
                 continue;
             }
 
-            if (a is "--url" or "--token" or "--model" or "--system" or "--temperature" or "--max-tokens" or "--file")
+            if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal))
             {
-                if (i + 1 >= args.Length)
-                    throw new ArgumentException($"Missing value for {a}");
+                if (a is "--no-stream")
+                {
+                    parsed._flags.Add(a);
+                    continue;
+                }
 
-                var value = args[++i];
-                if (a == "--file")
-                    parsed.Files.Add(value);
-                else
-                    parsed._options[a] = value;
+                throw new ArgumentException($"Missing value for {a}");
+            }
+
+            var value = args[++i];
+            if (a == "--file")
+            {
+                parsed.Files.Add(value);
                 continue;
             }
 
-            throw new ArgumentException($"Unknown option: {a}");
+            if (!parsed._options.TryGetValue(a, out var values))
+            {
+                values = [];
+                parsed._options[a] = values;
+            }
+
+            values.Add(value);
         }
 
         return parsed;
@@ -62,6 +74,5 @@ internal sealed class CliArgs
     public bool HasFlag(string name) => _flags.Contains(name);
 
     public string? GetOption(string name)
-        => _options.TryGetValue(name, out var value) ? value : null;
+        => _options.TryGetValue(name, out var values) && values.Count > 0 ? values[^1] : null;
 }
-

@@ -167,6 +167,7 @@ public static class ConfigValidator
         if (runtimeOrchestrator is not (RuntimeOrchestrator.Native or RuntimeOrchestrator.Maf))
             errors.Add("Runtime.Orchestrator must be 'native' or 'maf'.");
 
+        ValidateNotionConfig(config.Plugins.Native.Notion, errors);
         // MCP plugin servers
         if (config.Plugins.Mcp.Enabled)
         {
@@ -325,6 +326,35 @@ public static class ConfigValidator
         }
 
         return errors;
+    }
+
+    private static void ValidateNotionConfig(NotionConfig config, List<string> errors)
+    {
+        if (!config.Enabled)
+            return;
+
+        if (string.IsNullOrWhiteSpace(SecretResolver.Resolve(config.ApiKeyRef)))
+            errors.Add("Plugins.Native.Notion.ApiKeyRef must resolve to a token when Notion is enabled.");
+
+        if (!Uri.TryCreate(config.BaseUrl?.TrimEnd('/'), UriKind.Absolute, out _))
+            errors.Add("Plugins.Native.Notion.BaseUrl must be a valid absolute URL when Notion is enabled.");
+
+        if (string.IsNullOrWhiteSpace(config.ApiVersion))
+            errors.Add("Plugins.Native.Notion.ApiVersion must be set when Notion is enabled.");
+
+        if (config.MaxSearchResults < 1)
+            errors.Add($"Plugins.Native.Notion.MaxSearchResults must be >= 1 (got {config.MaxSearchResults}).");
+
+        var hasAnyTarget =
+            !string.IsNullOrWhiteSpace(config.DefaultPageId) ||
+            !string.IsNullOrWhiteSpace(config.DefaultDatabaseId) ||
+            config.AllowedPageIds.Any(id => !string.IsNullOrWhiteSpace(id)) ||
+            config.AllowedDatabaseIds.Any(id => !string.IsNullOrWhiteSpace(id));
+
+        if (!hasAnyTarget)
+        {
+            errors.Add("Plugins.Native.Notion requires at least one allowed/default page or database id when enabled.");
+        }
     }
 
     private static bool IsValidCronExpression(string expression)

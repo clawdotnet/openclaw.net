@@ -116,6 +116,90 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task AdminPosture_ReportsPublicBindRisks()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/posture");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        Assert.True(payload.RootElement.GetProperty("publicBind").GetBoolean());
+        Assert.False(payload.RootElement.GetProperty("requireRequesterMatchForHttpToolApproval").GetBoolean());
+        Assert.Contains(
+            payload.RootElement.GetProperty("riskFlags").EnumerateArray().Select(static item => item.GetString()).OfType<string>(),
+            flag => flag == "public_bind_admin_override_tool_approval");
+    }
+
+    [Fact]
+    public async Task ApprovalSimulation_ReturnsRequiresApprovalForEffectiveToolPolicy()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/admin/approvals/simulate")
+        {
+            Content = JsonContent("""{"toolName":"shell","autonomyMode":"full","requireToolApproval":true,"approvalRequiredTools":["shell"]}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        Assert.Equal("requires_approval", payload.RootElement.GetProperty("decision").GetString());
+    }
+
+    [Fact]
+    public async Task ApprovalSimulation_NormalizesToolAliasForAutonomyChecks()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Tooling.ReadOnlyMode = true;
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/admin/approvals/simulate")
+        {
+            Content = JsonContent("""{"toolName":"file_write","autonomyMode":"readonly","requireToolApproval":false}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        Assert.Equal("deny", payload.RootElement.GetProperty("decision").GetString());
+    }
+
+    [Fact]
+    public async Task IncidentExport_RedactsSensitiveRuntimeEventContent()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        harness.Runtime.Operations.RuntimeEvents.Append(new RuntimeEventEntry
+        {
+            Id = "evt_sensitive",
+            Component = "test",
+            Action = "sensitive",
+            Severity = "warning",
+            Summary = "raw:super-secret-token",
+            Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["authorization"] = "Bearer abc123"
+            }
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/incident/export");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        var runtimeEvent = payload.RootElement.GetProperty("runtimeEvents").EnumerateArray()
+            .First(item => item.GetProperty("id").GetString() == "evt_sensitive");
+        Assert.DoesNotContain("super-secret-token", runtimeEvent.GetProperty("summary").GetString(), StringComparison.Ordinal);
+        Assert.Equal("[redacted]", runtimeEvent.GetProperty("metadata").GetProperty("authorization").GetString());
+    }
+
+    [Fact]
     public async Task HeartbeatEndpoints_PreviewSaveAndStatus_Work()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);

@@ -94,6 +94,7 @@ internal static class DiagnosticsEndpoints
             var pluginReports = runtime.PluginReports;
             var pluginHealth = runtime.Operations.PluginHealth.ListSnapshots();
             var routeHealth = runtime.Operations.LlmExecution.SnapshotRoutes();
+            var posture = SecurityPostureBuilder.Build(startup, runtime);
             const long retentionDisabledWarningThreshold = 2_000;
             string? retentionWarning = null;
             if (!startup.Config.Memory.Retention.Enabled && retentionStatus.StoreStats is not null)
@@ -220,6 +221,7 @@ internal static class DiagnosticsEndpoints
                     count = runtime.AgentRuntime.LoadedSkillNames.Count,
                     names = runtime.AgentRuntime.LoadedSkillNames.ToArray()
                 },
+                securityPosture = posture,
                 usage = new
                 {
                     providers = runtime.ProviderUsage.Snapshot(),
@@ -243,6 +245,7 @@ internal static class DiagnosticsEndpoints
             var retentionStatus = await runtime.RetentionCoordinator.GetStatusAsync(ctx.RequestAborted);
             var pluginReports = runtime.PluginReports;
             var pluginHealth = runtime.Operations.PluginHealth.ListSnapshots();
+            var posture = SecurityPostureBuilder.Build(startup, runtime);
             const long retentionDisabledWarningThreshold = 2_000;
             var persistedScopedItems = retentionStatus.StoreStats is null
                 ? 0
@@ -261,6 +264,18 @@ internal static class DiagnosticsEndpoints
             sb.AppendLine($"- workspace_root: {wsRoot} exists={EndpointHelpers.ToBoolWord(wsExists)}");
             sb.AppendLine($"- approvals_required_effective: {EndpointHelpers.ToBoolWord(runtime.EffectiveRequireToolApproval)}");
             sb.AppendLine($"- approval_timeout_seconds: {startup.Config.Tooling.ToolApprovalTimeoutSeconds}");
+            sb.AppendLine();
+
+            sb.AppendLine("Security posture");
+            sb.AppendLine($"- public_bind: {EndpointHelpers.ToBoolWord(posture.PublicBind)} auth_token_set={EndpointHelpers.ToBoolWord(posture.AuthTokenConfigured)}");
+            sb.AppendLine($"- requester_match_http_tool_approval: {EndpointHelpers.ToBoolWord(posture.RequireRequesterMatchForHttpToolApproval)}");
+            sb.AppendLine($"- browser_sessions_enabled: {EndpointHelpers.ToBoolWord(posture.BrowserSessionsEnabled)} cookie_secure_effective={EndpointHelpers.ToBoolWord(posture.BrowserSessionCookieSecureEffective)} forwarded_headers_trusted={EndpointHelpers.ToBoolWord(posture.TrustForwardedHeaders)}");
+            sb.AppendLine($"- plugin_bridge: enabled={EndpointHelpers.ToBoolWord(posture.PluginBridgeEnabled)} transport={posture.PluginBridgeTransportMode} security={posture.PluginBridgeSecurityMode}");
+            sb.AppendLine($"- sandbox_configured: {EndpointHelpers.ToBoolWord(posture.SandboxConfigured)}");
+            if (posture.RiskFlags.Count > 0)
+                sb.AppendLine($"- risk_flags: {string.Join(", ", posture.RiskFlags)}");
+            foreach (var recommendation in posture.Recommendations)
+                sb.AppendLine($"- recommendation: {recommendation}");
             sb.AppendLine();
 
             sb.AppendLine("Runtime");

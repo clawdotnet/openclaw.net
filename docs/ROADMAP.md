@@ -1,5 +1,17 @@
 # Roadmap
 
+## Recently Completed
+
+- Security audit closure for plugin IPC hardening, plugin-root containment, browser cancellation recovery, strict session-cap admission, and session-lock disposal.
+- Admin/operator tooling:
+  - posture diagnostics
+  - approval policy simulation
+  - redacted incident export
+- Expanded observability for approval decisions, session evictions/cap rejects, browser cancellation resets, plugin bridge auth/restart behavior, and sandbox lease lifecycle.
+- Optional estimated token admission control.
+- Startup/runtime composition split into explicit service, channel, plugin, and runtime assembly stages.
+- Optional native Notion scratchpad integration with scoped read/write tools (`notion`, `notion_write`), allowlists, and write approvals by default.
+
 ## Security Hardening (Likely Breaking)
 
 These are worthwhile changes, but they can break existing deployments or require new configuration.

@@ -82,41 +82,26 @@ internal sealed class SessionMetadataStore
         if (_cached is not null)
             return _cached;
 
-        try
+        if (AtomicJsonFileStore.TryLoad(_path, CoreJsonContext.Default.ListSessionMetadataSnapshot, out List<SessionMetadataSnapshot>? items, out var error))
         {
-            if (!File.Exists(_path))
-            {
-                _cached = [];
-                return _cached;
-            }
+            _cached = items ?? [];
+            return _cached;
+        }
 
-            var json = File.ReadAllText(_path);
-            _cached = JsonSerializer.Deserialize(json, CoreJsonContext.Default.ListSessionMetadataSnapshot) ?? [];
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load session metadata from {Path}", _path);
-            _cached = [];
-        }
+        _logger.LogWarning("Failed to load session metadata from {Path}: {Error}", _path, error);
+        _cached = [];
 
         return _cached;
     }
 
     private void SaveUnsafe(List<SessionMetadataSnapshot> items)
     {
-        try
+        if (!AtomicJsonFileStore.TryWriteAtomic(_path, items, CoreJsonContext.Default.ListSessionMetadataSnapshot, out var error))
         {
-            var directory = Path.GetDirectoryName(_path);
-            if (!string.IsNullOrWhiteSpace(directory))
-                Directory.CreateDirectory(directory);
+            _logger.LogWarning("Failed to save session metadata to {Path}: {Error}", _path, error);
+            throw new InvalidOperationException($"Failed to persist session metadata: {error}");
+        }
 
-            var json = JsonSerializer.Serialize(items, CoreJsonContext.Default.ListSessionMetadataSnapshot);
-            File.WriteAllText(_path, json);
-            _cached = items;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to save session metadata to {Path}", _path);
-        }
+        _cached = items;
     }
 }

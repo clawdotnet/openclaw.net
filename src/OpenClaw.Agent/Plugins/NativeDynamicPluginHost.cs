@@ -453,7 +453,29 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
             return;
         }
 
-        var assemblyPath = Path.GetFullPath(Path.Combine(rootPath, manifest.AssemblyPath));
+        if (!PluginDiscovery.TryResolveContainedPath(rootPath, manifest.AssemblyPath, out var assemblyPath))
+        {
+            result.Reports.Add(new PluginLoadReport
+            {
+                PluginId = manifest.Id,
+                SourcePath = Path.GetFullPath(rootPath),
+                EntryPath = Path.GetFullPath(Path.Combine(rootPath, manifest.AssemblyPath)),
+                Origin = "native_dynamic",
+                EffectiveRuntimeMode = _runtimeState.EffectiveModeName,
+                Loaded = false,
+                Diagnostics =
+                [
+                    new PluginCompatibilityDiagnostic
+                    {
+                        Code = "assembly_outside_root",
+                        Message = $"Dynamic native plugin assembly path for '{manifest.Id}' resolves outside the plugin root.",
+                        Path = Path.GetFullPath(rootPath)
+                    }
+                ]
+            });
+            return;
+        }
+
         if (!File.Exists(assemblyPath))
         {
             result.Reports.Add(new PluginLoadReport

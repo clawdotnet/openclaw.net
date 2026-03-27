@@ -171,6 +171,25 @@ Integrate with MQTT brokers for DIY automation stacks (Zigbee2MQTT, ESPHome, cus
 - Topic discovery (manual): use your broker’s tooling (`mosquitto_sub -v -t '#'`) in a controlled environment, then lock down policies.
 - Topic discovery (agent): `mqtt.subscribe_once` for a known topic/prefix.
 
+### 20. Notion (`notion`, `notion_write`)
+Use Notion as an optional shared scratchpad or note database.
+- **Required Config**: `OpenClaw:Plugins:Native:Notion:Enabled=true`, `ApiKeyRef`, and at least one of `DefaultPageId`, `DefaultDatabaseId`, `AllowedPageIds`, or `AllowedDatabaseIds`
+- **Read Tool**: `notion` — `read_page`, `get_note`, `list_notes`, `search`
+- **Write Tool**: `notion_write` — `append_page`, `create_note`, `update_note`
+- **Defaults**:
+  - `DefaultPageId` is used when `read_page` or `append_page` omit `page_id`
+  - `DefaultDatabaseId` is used when `list_notes`, `search`, or `create_note` omit `database_id`
+- **Security**:
+  - Restrict access with `AllowedPageIds` and `AllowedDatabaseIds`
+  - `ReadOnly=true` omits `notion_write`
+  - `RequireApprovalForWrites=true` forces `notion_write` into the effective approval-required tool set even if global approvals are otherwise off
+  - The Notion token may have broader workspace access than the configured allowlists, so share only the pages/databases you intend to expose and keep the allowlist narrow
+
+**Notion setup tips**
+- Create a dedicated internal integration in Notion and store the token in `NOTION_API_KEY`.
+- Share the target page/database explicitly with that integration.
+- Start with one scratchpad page and one notes database rather than a workspace-wide token + broad allowlist.
+
 ---
 
 ## 🛡 Security Best Practices
@@ -178,7 +197,7 @@ Integrate with MQTT brokers for DIY automation stacks (Zigbee2MQTT, ESPHome, cus
 2. **Environment Variables**: Always use `env:SECRET_NAME` for API keys and passwords instead of plain text in `appsettings.json`.
 3. **Path Restricting**: Limit `AllowedReadRoots` and `AllowedWriteRoots` to your project directory.
 
-Common approval list (example): `["shell","write_file","home_assistant_write","mqtt_publish","code_exec","git"]`
+Common approval list (example): `["shell","write_file","home_assistant_write","mqtt_publish","notion_write","code_exec","git"]`
 
 ### Autonomy Modes (recommended)
 `OpenClaw:Tooling:AutonomyMode` adds a hard “deny layer” across all tools:
@@ -202,7 +221,7 @@ Use these profiles to harden in stages:
    - Suggested knobs:
      - `OpenClaw:Tooling:ReadOnlyMode=false`
      - `OpenClaw:Tooling:RequireToolApproval=true`
-     - `OpenClaw:Tooling:ApprovalRequiredTools=["shell","write_file","code_exec","database","email","home_assistant_write","mqtt_publish"]`
+     - `OpenClaw:Tooling:ApprovalRequiredTools=["shell","write_file","code_exec","database","email","home_assistant_write","mqtt_publish","notion_write"]`
      - Optional: `OpenClaw:Security:RequireRequesterMatchForHttpToolApproval=true`
 
 3. **Read-only lockdown (incident response / audit mode)**
@@ -213,7 +232,7 @@ Use these profiles to harden in stages:
 
 When `ReadOnlyMode=true`, OpenClaw denies write-capable actions for:
 - core tools: `shell`, `write_file`
-- native plugin tools: `code_exec`, `database` (`execute` action), `email` (`send` action), `home_assistant_write`, `mqtt_publish`
+- native plugin tools: `code_exec`, `database` (`execute` action), `email` (`send` action), `home_assistant_write`, `mqtt_publish`, `notion_write`
 
 This model lets you start permissive and progressively harden without breaking existing deployments by default.
 
@@ -308,10 +327,15 @@ Helpful knobs:
 ### Tool Approvals (Supervised Mode)
 When a tool requires approval, the gateway emits a `tool_approval_required` event to WebSocket envelope clients.
 - WebChat supports approvals via a confirmation dialog.
-- On non-loopback/public binds, approval decisions are tied to the original requester (`channelId` + `senderId`).
+- On non-loopback/public binds, HTTP approval behavior depends on `OpenClaw:Security:RequireRequesterMatchForHttpToolApproval`.
+  - `true`: approval is tied to the original requester (`channelId` + `senderId`).
+  - `false`: any authenticated admin/operator can approve the pending request by id.
 - Fallbacks:
   - Reply in chat: `/approve <approvalId> yes|no`
   - HTTP: `POST /tools/approve?approvalId=...&approved=true|false` (admin override; Bearer-protected on non-loopback binds)
+- Read-only simulator:
+  - `POST /admin/approvals/simulate`
+  - `openclaw admin approvals simulate`
 
 ### Strict Allowlists + Onboarding Helpers
 To make allowlists consistent across channels, set:
@@ -331,6 +355,7 @@ The gateway exposes:
 - `GET /doctor/text` (human-readable)
 
 These reports summarize autonomy posture, allowlists, pairing, memory backend status, cron jobs, and skills.
+They also include a security posture section covering public-bind approval mode, browser-session/proxy safety, sandbox posture, and plugin transport risk.
 
 ### Media Marker Protocol (Telegram + WebChat)
 The gateway/channels support portable attachment markers embedded in text (one per line):

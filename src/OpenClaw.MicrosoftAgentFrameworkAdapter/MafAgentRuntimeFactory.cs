@@ -107,6 +107,7 @@ public sealed class MafAgentRuntimeFactory : IAgentRuntimeFactory
             MaxConcurrentSessions = config.MaxConcurrentSessions,
             SessionTimeoutMinutes = config.SessionTimeoutMinutes,
             SessionTokenBudget = config.SessionTokenBudget,
+            EnableEstimatedTokenAdmissionControl = config.EnableEstimatedTokenAdmissionControl,
             SessionRateLimitPerMinute = config.SessionRateLimitPerMinute,
             GracefulShutdownSeconds = config.GracefulShutdownSeconds,
             TokenCostRates = config.TokenCostRates

@@ -32,52 +32,183 @@ internal static class RuntimeInitializationExtensions
     {
         var config = startup.Config;
         var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
+        var services = ResolveRuntimeServices(app);
+        var blockedPluginIds = services.PluginHealth.GetBlockedPluginIds();
+        var channelComposition = await BuildChannelCompositionAsync(app, startup, services, loggerFactory);
+        var builtInTools = CreateBuiltInTools(
+            config,
+            services.MemoryStore,
+            services.SessionManager,
+            services.Pipeline,
+            startup.WorkspacePath,
+            services.RuntimeMetrics);
+        if (config.Plugins.Mcp.Enabled)
+            await services.McpRegistry.RegisterToolsAsync(services.NativeRegistry, app.Lifetime.ApplicationStopping);
 
-        var allowlistSemantics = app.Services.GetRequiredService<AllowlistSemantics>();
-        var allowlists = app.Services.GetRequiredService<AllowlistManager>();
-        var recentSenders = app.Services.GetRequiredService<RecentSendersStore>();
-        var sessionManager = app.Services.GetRequiredService<SessionManager>();
-        var retentionCoordinator = app.Services.GetRequiredService<IMemoryRetentionCoordinator>();
-        var pairingManager = app.Services.GetRequiredService<PairingManager>();
-        var commandProcessor = app.Services.GetRequiredService<ChatCommandProcessor>();
-        var toolApprovalService = app.Services.GetRequiredService<ToolApprovalService>();
-        var approvalAuditStore = app.Services.GetRequiredService<ApprovalAuditStore>();
-        var runtimeMetrics = app.Services.GetRequiredService<RuntimeMetrics>();
-        var providerUsage = app.Services.GetRequiredService<ProviderUsageTracker>();
-        var providerRegistry = app.Services.GetRequiredService<LlmProviderRegistry>();
-        var providerPolicies = app.Services.GetRequiredService<ProviderPolicyService>();
-        var llmExecutionService = app.Services.GetRequiredService<GatewayLlmExecutionService>();
-        var runtimeEventStore = app.Services.GetRequiredService<RuntimeEventStore>();
-        var operatorAuditStore = app.Services.GetRequiredService<OperatorAuditStore>();
-        var approvalGrantStore = app.Services.GetRequiredService<ToolApprovalGrantStore>();
-        var webhookDeliveryStore = app.Services.GetRequiredService<WebhookDeliveryStore>();
-        var actorRateLimits = app.Services.GetRequiredService<ActorRateLimitService>();
-        var sessionMetadataStore = app.Services.GetRequiredService<SessionMetadataStore>();
-        var heartbeatService = app.Services.GetRequiredService<HeartbeatService>();
-        var pluginHealth = app.Services.GetRequiredService<PluginHealthService>();
-        var memoryStore = app.Services.GetRequiredService<IMemoryStore>();
-        var cronJobSource = app.Services.GetRequiredService<ICronJobSource>();
-        var contractGovernance = app.Services.GetRequiredService<ContractGovernanceService>();
-        var toolSandbox = app.Services.GetService<IToolSandbox>();
-        var pipeline = app.Services.GetRequiredService<MessagePipeline>();
-        var wsChannel = app.Services.GetRequiredService<WebSocketChannel>();
-        var nativeRegistry = app.Services.GetRequiredService<NativePluginRegistry>();
-        var mcpRegistry = app.Services.GetRequiredService<McpServerToolRegistry>();
-        var runtimeDiagnostics = new Dictionary<string, List<PluginCompatibilityDiagnostic>>(StringComparer.Ordinal);
-        var dynamicProviderOwners = new HashSet<string>(StringComparer.Ordinal);
-        var blockedPluginIds = pluginHealth.GetBlockedPluginIds();
+        LlmClientFactory.ResetDynamicProviders();
+        try
+        {
+            services.ProviderRegistry.RegisterDefault(config.Llm, LlmClientFactory.CreateChatClient(config.Llm));
+        }
+        catch (InvalidOperationException)
+        {
+            // Dynamic/plugin-backed providers may become available after plugin loading.
+        }
 
+        var pluginComposition = await LoadPluginCompositionAsync(
+            app,
+            startup,
+            services,
+            loggerFactory,
+            channelComposition.ChannelAdapters,
+            blockedPluginIds);
+
+        if (!services.ProviderRegistry.MarkDefault(config.Llm.Provider) && !services.ProviderRegistry.TryGet(config.Llm.Provider, out _))
+        {
+            throw new InvalidOperationException(
+                $"Configured provider '{config.Llm.Provider}' is not available. " +
+                "Register it as the built-in provider or via a compatible plugin.");
+        }
+
+        var chatClient = services.ProviderRegistry.TryGet("default", out var defaultRegistration) && defaultRegistration is not null
+            ? defaultRegistration.Client
+            : LlmClientFactory.CreateChatClient(config.Llm);
+
+        var resolveLogger = loggerFactory.CreateLogger("PluginResolver");
+        IReadOnlyList<ITool> tools = NativePluginRegistry.ResolvePreference(
+            builtInTools,
+            services.NativeRegistry.Tools,
+            [.. pluginComposition.BridgeTools, .. pluginComposition.NativeDynamicTools],
+            config.Plugins,
+            resolveLogger);
+
+        var combinedPluginSkillRoots = CollectPluginSkillRoots(pluginComposition);
+
+        var skillLogger = loggerFactory.CreateLogger("SkillLoader");
+        var skills = SkillLoader.LoadAll(config.Skills, startup.WorkspacePath, skillLogger, combinedPluginSkillRoots);
+        if (skills.Count > 0)
+            skillLogger.LogInformation("{Summary}", SkillPromptBuilder.BuildSummary(skills));
+
+        var hooks = CreateHooks(
+            config,
+            loggerFactory,
+            pluginComposition.PluginHost,
+            pluginComposition.NativeDynamicPluginHost,
+            services.SessionManager,
+            services.ContractGovernance);
+        var (effectiveRequireToolApproval, effectiveApprovalRequiredTools) = ResolveApprovalMode(config);
+
+        var agentLogger = loggerFactory.CreateLogger("AgentRuntime");
+        var orchestratorId = RuntimeOrchestrator.Normalize(config.Runtime.Orchestrator);
+        var agentRuntime = CreateAgentRuntime(
+            app.Services,
+            config,
+            startup.RuntimeState,
+            chatClient,
+            tools,
+            services.MemoryStore,
+            services.RuntimeMetrics,
+            services.ProviderUsage,
+            services.LlmExecutionService,
+            skills,
+            config.Skills,
+            agentLogger,
+            hooks,
+            startup.WorkspacePath,
+            combinedPluginSkillRoots,
+            effectiveRequireToolApproval,
+            effectiveApprovalRequiredTools,
+            services.ToolSandbox);
+
+        var middlewarePipeline = CreateMiddlewarePipeline(config, loggerFactory, services.ContractGovernance, services.SessionManager);
+        var skillWatcher = new SkillWatcherService(
+            config.Skills,
+            startup.WorkspacePath,
+            combinedPluginSkillRoots,
+            agentRuntime,
+            app.Services.GetRequiredService<ILogger<SkillWatcherService>>());
+        skillWatcher.Start(app.Lifetime.ApplicationStopping);
+
+        var cronTask = StartCronIfEnabled(loggerFactory, services.Pipeline, services.CronJobSource, app.Lifetime.ApplicationStopping);
+        StartNativeEventBridges(config, loggerFactory, services.Pipeline, app.Lifetime.ApplicationStopping);
+
+        var profile = app.Services.GetRequiredService<IRuntimeProfile>();
+        var runtime = CreateGatewayRuntime(
+            config,
+            services,
+            channelComposition,
+            pluginComposition,
+            agentRuntime,
+            middlewarePipeline,
+            skillWatcher,
+            effectiveRequireToolApproval,
+            effectiveApprovalRequiredTools,
+            orchestratorId,
+            tools,
+            skills,
+            cronTask);
+
+        services.PluginHealth.SetRuntimeReports(
+            runtime.PluginReports,
+            pluginComposition.PluginHost,
+            pluginComposition.NativeDynamicPluginHost);
+
+        await profile.OnRuntimeInitializedAsync(app, startup, runtime);
+        return runtime;
+    }
+
+    private static RuntimeServices ResolveRuntimeServices(WebApplication app)
+        => new()
+        {
+            Allowlists = app.Services.GetRequiredService<AllowlistManager>(),
+            AllowlistSemantics = app.Services.GetRequiredService<AllowlistSemantics>(),
+            RecentSenders = app.Services.GetRequiredService<RecentSendersStore>(),
+            SessionManager = app.Services.GetRequiredService<SessionManager>(),
+            RetentionCoordinator = app.Services.GetRequiredService<IMemoryRetentionCoordinator>(),
+            PairingManager = app.Services.GetRequiredService<PairingManager>(),
+            CommandProcessor = app.Services.GetRequiredService<ChatCommandProcessor>(),
+            ToolApprovalService = app.Services.GetRequiredService<ToolApprovalService>(),
+            ApprovalAuditStore = app.Services.GetRequiredService<ApprovalAuditStore>(),
+            RuntimeMetrics = app.Services.GetRequiredService<RuntimeMetrics>(),
+            ProviderUsage = app.Services.GetRequiredService<ProviderUsageTracker>(),
+            ProviderRegistry = app.Services.GetRequiredService<LlmProviderRegistry>(),
+            ProviderPolicies = app.Services.GetRequiredService<ProviderPolicyService>(),
+            LlmExecutionService = app.Services.GetRequiredService<GatewayLlmExecutionService>(),
+            RuntimeEventStore = app.Services.GetRequiredService<RuntimeEventStore>(),
+            OperatorAuditStore = app.Services.GetRequiredService<OperatorAuditStore>(),
+            ApprovalGrantStore = app.Services.GetRequiredService<ToolApprovalGrantStore>(),
+            WebhookDeliveryStore = app.Services.GetRequiredService<WebhookDeliveryStore>(),
+            ActorRateLimits = app.Services.GetRequiredService<ActorRateLimitService>(),
+            SessionMetadataStore = app.Services.GetRequiredService<SessionMetadataStore>(),
+            HeartbeatService = app.Services.GetRequiredService<HeartbeatService>(),
+            PluginHealth = app.Services.GetRequiredService<PluginHealthService>(),
+            MemoryStore = app.Services.GetRequiredService<IMemoryStore>(),
+            CronJobSource = app.Services.GetRequiredService<ICronJobSource>(),
+            ContractGovernance = app.Services.GetRequiredService<ContractGovernanceService>(),
+            ToolSandbox = app.Services.GetService<IToolSandbox>(),
+            Pipeline = app.Services.GetRequiredService<MessagePipeline>(),
+            WebSocketChannel = app.Services.GetRequiredService<WebSocketChannel>(),
+            NativeRegistry = app.Services.GetRequiredService<NativePluginRegistry>(),
+            McpRegistry = app.Services.GetRequiredService<McpServerToolRegistry>()
+        };
+
+    private static async Task<ChannelComposition> BuildChannelCompositionAsync(
+        WebApplication app,
+        GatewayStartupContext startup,
+        RuntimeServices services,
+        ILoggerFactory loggerFactory)
+    {
+        var config = startup.Config;
         var (smsChannel, smsWebhookHandler) = CreateTwilioResources(
             config,
-            allowlists,
-            recentSenders,
-            allowlistSemantics);
+            services.Allowlists,
+            services.RecentSenders,
+            services.AllowlistSemantics);
 
         var channelAdapters = new Dictionary<string, IChannelAdapter>(StringComparer.Ordinal)
         {
-            ["websocket"] = wsChannel
+            ["websocket"] = services.WebSocketChannel
         };
-        FirstPartyWhatsAppWorkerHost? whatsAppWorkerHost = null;
 
         if (smsChannel is not null)
             channelAdapters["sms"] = smsChannel;
@@ -88,25 +219,7 @@ internal static class RuntimeInitializationExtensions
         if (config.Channels.Teams.Enabled)
             channelAdapters["teams"] = app.Services.GetRequiredService<TeamsChannel>();
 
-        if (config.Channels.WhatsApp.Enabled)
-        {
-            if (string.Equals(config.Channels.WhatsApp.Type, "first_party_worker", StringComparison.OrdinalIgnoreCase))
-            {
-                var launchSpec = FirstPartyWhatsAppWorkerHost.ResolveLaunchSpec(config.Channels.WhatsApp.FirstPartyWorker);
-                whatsAppWorkerHost = new FirstPartyWhatsAppWorkerHost(
-                    Path.Combine(AppContext.BaseDirectory, "Plugins", "plugin-bridge.mjs"),
-                    launchSpec,
-                    loggerFactory.CreateLogger<FirstPartyWhatsAppWorkerHost>(),
-                    config.Plugins.Transport);
-                var workerChannels = await whatsAppWorkerHost.LoadAsync(config.Channels.WhatsApp.FirstPartyWorker, app.Lifetime.ApplicationStopping);
-                foreach (var workerChannel in workerChannels)
-                    channelAdapters[workerChannel.ChannelId] = workerChannel;
-            }
-            else if (config.Channels.WhatsApp.Type == "bridge")
-                channelAdapters["whatsapp"] = app.Services.GetRequiredService<WhatsAppBridgeChannel>();
-            else
-                channelAdapters["whatsapp"] = app.Services.GetRequiredService<WhatsAppChannel>();
-        }
+        var whatsAppWorkerHost = await CreateWhatsAppChannelAsync(app, startup, services, loggerFactory, channelAdapters);
 
         if (config.Plugins.Native.Email.Enabled)
         {
@@ -119,21 +232,63 @@ internal static class RuntimeInitializationExtensions
             config.Memory.StoragePath,
             loggerFactory.CreateLogger<CronChannel>());
 
-        var builtInTools = CreateBuiltInTools(config, memoryStore, sessionManager, pipeline, startup.WorkspacePath);
-        if (config.Plugins.Mcp.Enabled)
+        return new ChannelComposition
         {
-            await mcpRegistry.RegisterToolsAsync(nativeRegistry, app.Lifetime.ApplicationStopping);
-        }
-        LlmClientFactory.ResetDynamicProviders();
-        try
+            ChannelAdapters = channelAdapters,
+            TwilioSmsWebhookHandler = smsWebhookHandler,
+            WhatsAppWorkerHost = whatsAppWorkerHost
+        };
+    }
+
+    private static async Task<FirstPartyWhatsAppWorkerHost?> CreateWhatsAppChannelAsync(
+        WebApplication app,
+        GatewayStartupContext startup,
+        RuntimeServices services,
+        ILoggerFactory loggerFactory,
+        IDictionary<string, IChannelAdapter> channelAdapters)
+    {
+        var config = startup.Config;
+        if (!config.Channels.WhatsApp.Enabled)
+            return null;
+
+        if (string.Equals(config.Channels.WhatsApp.Type, "first_party_worker", StringComparison.OrdinalIgnoreCase))
         {
-            providerRegistry.RegisterDefault(config.Llm, LlmClientFactory.CreateChatClient(config.Llm));
-        }
-        catch (InvalidOperationException)
-        {
-            // Dynamic/plugin-backed providers may become available after plugin loading.
+            var launchSpec = FirstPartyWhatsAppWorkerHost.ResolveLaunchSpec(config.Channels.WhatsApp.FirstPartyWorker);
+            var whatsAppWorkerHost = new FirstPartyWhatsAppWorkerHost(
+                Path.Combine(AppContext.BaseDirectory, "Plugins", "plugin-bridge.mjs"),
+                launchSpec,
+                loggerFactory.CreateLogger<FirstPartyWhatsAppWorkerHost>(),
+                config.Plugins.Transport,
+                Path.Combine(config.Memory.StoragePath, "runtime"),
+                services.RuntimeMetrics);
+            var workerChannels = await whatsAppWorkerHost.LoadAsync(
+                config.Channels.WhatsApp.FirstPartyWorker,
+                app.Lifetime.ApplicationStopping);
+            foreach (var workerChannel in workerChannels)
+                channelAdapters[workerChannel.ChannelId] = workerChannel;
+
+            return whatsAppWorkerHost;
         }
 
+        if (string.Equals(config.Channels.WhatsApp.Type, "bridge", StringComparison.OrdinalIgnoreCase))
+            channelAdapters["whatsapp"] = app.Services.GetRequiredService<WhatsAppBridgeChannel>();
+        else
+            channelAdapters["whatsapp"] = app.Services.GetRequiredService<WhatsAppChannel>();
+
+        return null;
+    }
+
+    private static async Task<PluginComposition> LoadPluginCompositionAsync(
+        WebApplication app,
+        GatewayStartupContext startup,
+        RuntimeServices services,
+        ILoggerFactory loggerFactory,
+        IDictionary<string, IChannelAdapter> channelAdapters,
+        IReadOnlyCollection<string> blockedPluginIds)
+    {
+        var config = startup.Config;
+        var runtimeDiagnostics = new Dictionary<string, List<PluginCompatibilityDiagnostic>>(StringComparer.Ordinal);
+        var dynamicProviderOwners = new HashSet<string>(StringComparer.Ordinal);
         PluginHost? pluginHost = null;
         NativeDynamicPluginHost? nativeDynamicPluginHost = null;
         IReadOnlyList<ITool> bridgeTools = [];
@@ -147,12 +302,14 @@ internal static class RuntimeInitializationExtensions
                 bridgeScript,
                 loggerFactory.CreateLogger<PluginHost>(),
                 startup.RuntimeState,
-                blockedPluginIds);
+                blockedPluginIds,
+                Path.Combine(config.Memory.StoragePath, "runtime"),
+                services.RuntimeMetrics);
             bridgeTools = await pluginHost.LoadAsync(startup.WorkspacePath, app.Lifetime.ApplicationStopping);
 
             RegisterBridgeChannels(channelAdapters, pluginHost, runtimeDiagnostics);
-            RegisterBridgeCommands(commandProcessor, pluginHost, runtimeDiagnostics);
-            RegisterBridgeProviders(loggerFactory, providerRegistry, pluginHost, runtimeDiagnostics, dynamicProviderOwners);
+            RegisterBridgeCommands(services.CommandProcessor, pluginHost, runtimeDiagnostics);
+            RegisterBridgeProviders(loggerFactory, services.ProviderRegistry, pluginHost, runtimeDiagnostics, dynamicProviderOwners);
         }
 
         if (config.Plugins.DynamicNative.Enabled)
@@ -165,137 +322,104 @@ internal static class RuntimeInitializationExtensions
             nativeDynamicTools = await nativeDynamicPluginHost.LoadAsync(startup.WorkspacePath, app.Lifetime.ApplicationStopping);
 
             RegisterNativeDynamicChannels(channelAdapters, nativeDynamicPluginHost, runtimeDiagnostics);
-            RegisterNativeDynamicCommands(commandProcessor, nativeDynamicPluginHost, runtimeDiagnostics);
-            RegisterNativeDynamicProviders(providerRegistry, nativeDynamicPluginHost, runtimeDiagnostics, dynamicProviderOwners);
+            RegisterNativeDynamicCommands(services.CommandProcessor, nativeDynamicPluginHost, runtimeDiagnostics);
+            RegisterNativeDynamicProviders(services.ProviderRegistry, nativeDynamicPluginHost, runtimeDiagnostics, dynamicProviderOwners);
         }
-        if (!providerRegistry.MarkDefault(config.Llm.Provider) && !providerRegistry.TryGet(config.Llm.Provider, out _))
+
+        return new PluginComposition
         {
-            throw new InvalidOperationException(
-                $"Configured provider '{config.Llm.Provider}' is not available. " +
-                "Register it as the built-in provider or via a compatible plugin.");
-        }
+            PluginHost = pluginHost,
+            NativeDynamicPluginHost = nativeDynamicPluginHost,
+            BridgeTools = bridgeTools,
+            NativeDynamicTools = nativeDynamicTools,
+            RuntimeDiagnostics = runtimeDiagnostics,
+            DynamicProviderOwners = [.. dynamicProviderOwners]
+        };
+    }
 
-        var chatClient = providerRegistry.TryGet("default", out var defaultRegistration) && defaultRegistration is not null
-            ? defaultRegistration.Client
-            : LlmClientFactory.CreateChatClient(config.Llm);
-
-        var resolveLogger = loggerFactory.CreateLogger("PluginResolver");
-        IReadOnlyList<ITool> tools = NativePluginRegistry.ResolvePreference(
-            builtInTools,
-            nativeRegistry.Tools,
-            [.. bridgeTools, .. nativeDynamicTools],
-            config.Plugins,
-            resolveLogger);
-
+    private static List<string> CollectPluginSkillRoots(PluginComposition pluginComposition)
+    {
         var combinedPluginSkillRoots = new List<string>();
-        if (pluginHost is not null)
-            combinedPluginSkillRoots.AddRange(pluginHost.SkillRoots);
-        if (nativeDynamicPluginHost is not null)
-            combinedPluginSkillRoots.AddRange(nativeDynamicPluginHost.SkillRoots);
+        if (pluginComposition.PluginHost is not null)
+            combinedPluginSkillRoots.AddRange(pluginComposition.PluginHost.SkillRoots);
+        if (pluginComposition.NativeDynamicPluginHost is not null)
+            combinedPluginSkillRoots.AddRange(pluginComposition.NativeDynamicPluginHost.SkillRoots);
+        return combinedPluginSkillRoots;
+    }
 
-        var skillLogger = loggerFactory.CreateLogger("SkillLoader");
-        var skills = SkillLoader.LoadAll(config.Skills, startup.WorkspacePath, skillLogger, combinedPluginSkillRoots);
-        if (skills.Count > 0)
-            skillLogger.LogInformation("{Summary}", SkillPromptBuilder.BuildSummary(skills));
-
-        var hooks = CreateHooks(config, loggerFactory, pluginHost, nativeDynamicPluginHost, sessionManager, contractGovernance);
-        var (effectiveRequireToolApproval, effectiveApprovalRequiredTools) = ResolveApprovalMode(config);
-
-        var agentLogger = loggerFactory.CreateLogger("AgentRuntime");
-        var orchestratorId = RuntimeOrchestrator.Normalize(config.Runtime.Orchestrator);
-        var agentRuntime = CreateAgentRuntime(
-            app.Services,
-            config,
-            startup.RuntimeState,
-            chatClient,
-            tools,
-            memoryStore,
-            runtimeMetrics,
-            providerUsage,
-            llmExecutionService,
-            skills,
-            config.Skills,
-            agentLogger,
-            hooks,
-            startup.WorkspacePath,
-            combinedPluginSkillRoots,
-            effectiveRequireToolApproval,
-            effectiveApprovalRequiredTools,
-            toolSandbox);
-
-        var middlewarePipeline = CreateMiddlewarePipeline(config, loggerFactory, contractGovernance, sessionManager);
-        var skillWatcher = new SkillWatcherService(
-            config.Skills,
-            startup.WorkspacePath,
-            combinedPluginSkillRoots,
-            agentRuntime,
-            app.Services.GetRequiredService<ILogger<SkillWatcherService>>());
-        skillWatcher.Start(app.Lifetime.ApplicationStopping);
-
-        var cronTask = StartCronIfEnabled(loggerFactory, pipeline, cronJobSource, app.Lifetime.ApplicationStopping);
-        StartNativeEventBridges(config, loggerFactory, pipeline, app.Lifetime.ApplicationStopping);
-
-        var profile = app.Services.GetRequiredService<IRuntimeProfile>();
+    private static GatewayAppRuntime CreateGatewayRuntime(
+        GatewayConfig config,
+        RuntimeServices services,
+        ChannelComposition channelComposition,
+        PluginComposition pluginComposition,
+        IAgentRuntime agentRuntime,
+        MiddlewarePipeline middlewarePipeline,
+        SkillWatcherService skillWatcher,
+        bool effectiveRequireToolApproval,
+        IReadOnlyList<string> effectiveApprovalRequiredTools,
+        string orchestratorId,
+        IReadOnlyList<ITool> tools,
+        IReadOnlyList<SkillDefinition> skills,
+        CronScheduler? cronTask)
+    {
         var operations = new RuntimeOperationsState
         {
-            ProviderPolicies = providerPolicies,
-            ProviderRegistry = providerRegistry,
-            LlmExecution = llmExecutionService,
-            PluginHealth = pluginHealth,
-            ApprovalGrants = approvalGrantStore,
-            RuntimeEvents = runtimeEventStore,
-            OperatorAudit = operatorAuditStore,
-            WebhookDeliveries = webhookDeliveryStore,
-            ActorRateLimits = actorRateLimits,
-            SessionMetadata = sessionMetadataStore
+            ProviderPolicies = services.ProviderPolicies,
+            ProviderRegistry = services.ProviderRegistry,
+            LlmExecution = services.LlmExecutionService,
+            PluginHealth = services.PluginHealth,
+            ApprovalGrants = services.ApprovalGrantStore,
+            RuntimeEvents = services.RuntimeEventStore,
+            OperatorAudit = services.OperatorAuditStore,
+            WebhookDeliveries = services.WebhookDeliveryStore,
+            ActorRateLimits = services.ActorRateLimits,
+            SessionMetadata = services.SessionMetadataStore
         };
 
-        var runtime = new GatewayAppRuntime
+        return new GatewayAppRuntime
         {
             AgentRuntime = agentRuntime,
             OrchestratorId = orchestratorId,
-            Pipeline = pipeline,
+            Pipeline = services.Pipeline,
             MiddlewarePipeline = middlewarePipeline,
-            WebSocketChannel = wsChannel,
-            ChannelAdapters = channelAdapters,
-            SessionManager = sessionManager,
-            RetentionCoordinator = retentionCoordinator,
-            PairingManager = pairingManager,
-            Allowlists = allowlists,
-            AllowlistSemantics = allowlistSemantics,
-            RecentSenders = recentSenders,
-            CommandProcessor = commandProcessor,
-            ToolApprovalService = toolApprovalService,
-            ApprovalAuditStore = approvalAuditStore,
-            RuntimeMetrics = runtimeMetrics,
-            ProviderUsage = providerUsage,
-            Heartbeat = heartbeatService,
+            WebSocketChannel = services.WebSocketChannel,
+            ChannelAdapters = channelComposition.ChannelAdapters,
+            SessionManager = services.SessionManager,
+            RetentionCoordinator = services.RetentionCoordinator,
+            PairingManager = services.PairingManager,
+            Allowlists = services.Allowlists,
+            AllowlistSemantics = services.AllowlistSemantics,
+            RecentSenders = services.RecentSenders,
+            CommandProcessor = services.CommandProcessor,
+            ToolApprovalService = services.ToolApprovalService,
+            ApprovalAuditStore = services.ApprovalAuditStore,
+            RuntimeMetrics = services.RuntimeMetrics,
+            ProviderUsage = services.ProviderUsage,
+            Heartbeat = services.HeartbeatService,
             SkillWatcher = skillWatcher,
-            PluginReports = GetCombinedPluginReports(pluginHost, nativeDynamicPluginHost, runtimeDiagnostics),
+            PluginReports = GetCombinedPluginReports(
+                pluginComposition.PluginHost,
+                pluginComposition.NativeDynamicPluginHost,
+                pluginComposition.RuntimeDiagnostics),
             Operations = operations,
             EffectiveRequireToolApproval = effectiveRequireToolApproval,
             EffectiveApprovalRequiredTools = effectiveApprovalRequiredTools,
-            NativeRegistry = nativeRegistry,
+            NativeRegistry = services.NativeRegistry,
             SessionLocks = new ConcurrentDictionary<string, SemaphoreSlim>(),
             LockLastUsed = new ConcurrentDictionary<string, DateTimeOffset>(),
             AllowedOriginsSet = config.Security.AllowedOrigins.Length > 0
                 ? config.Security.AllowedOrigins.ToFrozenSet(StringComparer.Ordinal)
                 : null,
-            DynamicProviderOwners = dynamicProviderOwners.ToArray(),
+            DynamicProviderOwners = pluginComposition.DynamicProviderOwners,
             EstimatedSkillPromptChars = SkillPromptBuilder.EstimateCharacterCost(skills),
             CronTask = cronTask,
-            TwilioSmsWebhookHandler = smsWebhookHandler,
-            PluginHost = pluginHost,
-            NativeDynamicPluginHost = nativeDynamicPluginHost,
-            WhatsAppWorkerHost = whatsAppWorkerHost,
+            TwilioSmsWebhookHandler = channelComposition.TwilioSmsWebhookHandler,
+            PluginHost = pluginComposition.PluginHost,
+            NativeDynamicPluginHost = pluginComposition.NativeDynamicPluginHost,
+            WhatsAppWorkerHost = channelComposition.WhatsAppWorkerHost,
             RegisteredToolNames = tools.Select(t => t.Name).ToFrozenSet(StringComparer.Ordinal),
-            ChannelAuthEvents = WireChannelAuthEvents(channelAdapters)
+            ChannelAuthEvents = WireChannelAuthEvents(channelComposition.ChannelAdapters)
         };
-
-        pluginHealth.SetRuntimeReports(runtime.PluginReports, pluginHost, nativeDynamicPluginHost);
-
-        await profile.OnRuntimeInitializedAsync(app, startup, runtime);
-        return runtime;
     }
 
     private static IReadOnlyList<ITool> CreateBuiltInTools(
@@ -303,7 +427,8 @@ internal static class RuntimeInitializationExtensions
         IMemoryStore memoryStore,
         SessionManager sessionManager,
         MessagePipeline pipeline,
-        string? workspacePath)
+        string? workspacePath,
+        RuntimeMetrics runtimeMetrics)
     {
         var projectId = config.Memory.ProjectId
             ?? Environment.GetEnvironmentVariable("OPENCLAW_PROJECT")
@@ -321,7 +446,7 @@ internal static class RuntimeInitializationExtensions
         };
 
         if (config.Tooling.EnableBrowserTool)
-            tools.Add(new BrowserTool(config.Tooling));
+            tools.Add(new BrowserTool(config.Tooling, runtimeMetrics));
 
         if (string.Equals(Environment.GetEnvironmentVariable("OPENCLAW_ENABLE_STREAMING_SMOKE_TOOL"), "1", StringComparison.Ordinal))
             tools.Add(new StreamingSmokeEchoTool());
@@ -368,22 +493,34 @@ internal static class RuntimeInitializationExtensions
         return hooks;
     }
 
-    private static (bool RequireApproval, IReadOnlyList<string> RequiredTools) ResolveApprovalMode(GatewayConfig config)
+    internal static (bool RequireApproval, IReadOnlyList<string> RequiredTools) ResolveApprovalMode(GatewayConfig config)
     {
         var autonomyMode = (config.Tooling.AutonomyMode ?? "full").Trim().ToLowerInvariant();
-        var effectiveRequireToolApproval = config.Tooling.RequireToolApproval || autonomyMode == "supervised";
+        var requireNotionWriteApproval = config.Plugins.Native.Notion.Enabled &&
+            !config.Plugins.Native.Notion.ReadOnly &&
+            config.Plugins.Native.Notion.RequireApprovalForWrites;
+
+        var effectiveRequireToolApproval = config.Tooling.RequireToolApproval || autonomyMode == "supervised" || requireNotionWriteApproval;
         var effectiveApprovalRequiredTools = config.Tooling.ApprovalRequiredTools;
 
         if (autonomyMode == "supervised")
         {
             var defaults = new[]
             {
-                "shell", "write_file", "code_exec", "git", "home_assistant_write", "mqtt_publish",
+                "shell", "write_file", "code_exec", "git", "home_assistant_write", "mqtt_publish", "notion_write",
                 "database", "email", "inbox_zero", "calendar", "delegate_agent"
             };
 
             effectiveApprovalRequiredTools = effectiveApprovalRequiredTools
                 .Concat(defaults)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        if (requireNotionWriteApproval)
+        {
+            effectiveApprovalRequiredTools = effectiveApprovalRequiredTools
+                .Concat(["notion_write"])
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
         }
@@ -788,5 +925,56 @@ internal static class RuntimeInitializationExtensions
             }
         }
         return store;
+    }
+
+    private sealed class RuntimeServices
+    {
+        public required AllowlistManager Allowlists { get; init; }
+        public required AllowlistSemantics AllowlistSemantics { get; init; }
+        public required RecentSendersStore RecentSenders { get; init; }
+        public required SessionManager SessionManager { get; init; }
+        public required IMemoryRetentionCoordinator RetentionCoordinator { get; init; }
+        public required PairingManager PairingManager { get; init; }
+        public required ChatCommandProcessor CommandProcessor { get; init; }
+        public required ToolApprovalService ToolApprovalService { get; init; }
+        public required ApprovalAuditStore ApprovalAuditStore { get; init; }
+        public required RuntimeMetrics RuntimeMetrics { get; init; }
+        public required ProviderUsageTracker ProviderUsage { get; init; }
+        public required LlmProviderRegistry ProviderRegistry { get; init; }
+        public required ProviderPolicyService ProviderPolicies { get; init; }
+        public required GatewayLlmExecutionService LlmExecutionService { get; init; }
+        public required RuntimeEventStore RuntimeEventStore { get; init; }
+        public required OperatorAuditStore OperatorAuditStore { get; init; }
+        public required ToolApprovalGrantStore ApprovalGrantStore { get; init; }
+        public required WebhookDeliveryStore WebhookDeliveryStore { get; init; }
+        public required ActorRateLimitService ActorRateLimits { get; init; }
+        public required SessionMetadataStore SessionMetadataStore { get; init; }
+        public required HeartbeatService HeartbeatService { get; init; }
+        public required PluginHealthService PluginHealth { get; init; }
+        public required IMemoryStore MemoryStore { get; init; }
+        public required ICronJobSource CronJobSource { get; init; }
+        public required ContractGovernanceService ContractGovernance { get; init; }
+        public IToolSandbox? ToolSandbox { get; init; }
+        public required MessagePipeline Pipeline { get; init; }
+        public required WebSocketChannel WebSocketChannel { get; init; }
+        public required NativePluginRegistry NativeRegistry { get; init; }
+        public required McpServerToolRegistry McpRegistry { get; init; }
+    }
+
+    private sealed class ChannelComposition
+    {
+        public required Dictionary<string, IChannelAdapter> ChannelAdapters { get; init; }
+        public TwilioSmsWebhookHandler? TwilioSmsWebhookHandler { get; init; }
+        public FirstPartyWhatsAppWorkerHost? WhatsAppWorkerHost { get; init; }
+    }
+
+    private sealed class PluginComposition
+    {
+        public PluginHost? PluginHost { get; init; }
+        public NativeDynamicPluginHost? NativeDynamicPluginHost { get; init; }
+        public required IReadOnlyList<ITool> BridgeTools { get; init; }
+        public required IReadOnlyList<ITool> NativeDynamicTools { get; init; }
+        public required IReadOnlyDictionary<string, List<PluginCompatibilityDiagnostic>> RuntimeDiagnostics { get; init; }
+        public required IReadOnlyList<string> DynamicProviderOwners { get; init; }
     }
 }

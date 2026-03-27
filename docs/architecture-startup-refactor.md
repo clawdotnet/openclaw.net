@@ -16,6 +16,12 @@ The gateway startup path is now split into three layers:
    - Registers pre-build services in grouped extension methods.
    - Preserves the existing Core/Agent runtime model as the single source of truth for AOT vs JIT.
    - Builds runtime-only objects after `builder.Build()` in `InitializeOpenClawRuntimeAsync(...)`.
+   - Runtime assembly is now staged as:
+     - service resolution
+     - channel/webhook composition
+     - plugin/runtime extension loading
+     - agent runtime assembly
+     - final `GatewayAppRuntime` construction
    - Keeps plugin loading, provider registration, skill loading, hooks, and worker startup order intact.
 
 3. `Pipeline/` and `Endpoints/`
@@ -51,6 +57,6 @@ The gateway profile layer does not replace plugin/runtime capability enforcement
 
 - Add config/bootstrap rules in `Bootstrap/` when behavior must happen before `builder.Build()`.
 - Add DI-friendly services in the appropriate `Composition/*ServicesExtensions.cs` file.
-- Add runtime-only initialization in `InitializeOpenClawRuntimeAsync(...)` if it depends on built services, app lifetime, plugin loading, or runtime ordering.
+- Add runtime-only initialization in the relevant `InitializeOpenClawRuntimeAsync(...)` stage helper if it depends on built services, app lifetime, plugin loading, or runtime ordering.
 - Add new route handlers in the relevant `Endpoints/*` module and register them through `MapOpenClawEndpoints(...)`.
 - Add profile-specific gateway composition only in `Profiles/*`; do not duplicate runtime-mode or plugin capability policy there.

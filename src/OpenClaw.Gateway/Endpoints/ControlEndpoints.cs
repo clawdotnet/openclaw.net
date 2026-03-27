@@ -186,6 +186,7 @@ internal static class ControlEndpoints
                 var adminOutcome = runtime.ToolApprovalService.TrySetDecisionWithRequest(approvalId, approved, requesterChannelId: null, requesterSenderId: null, requireRequesterMatch: false);
                 if (adminOutcome.Result == ToolApprovalDecisionResult.Recorded && adminOutcome.Request is not null)
                 {
+                    runtime.RuntimeMetrics.IncrementApprovalDecisionsRecorded();
                     runtime.ApprovalAuditStore.RecordDecision(
                         adminOutcome.Request,
                         approved,
@@ -203,6 +204,7 @@ internal static class ControlEndpoints
                 }
                 else if (adminOutcome.Result == ToolApprovalDecisionResult.Unauthorized)
                 {
+                    runtime.RuntimeMetrics.IncrementApprovalDecisionsRejected();
                     AppendRejectedApprovalRuntimeEvent(runtime, adminOutcome.Request, approvalId, "requester_mismatch", "http", auth.AuthMode);
                 }
 
@@ -245,6 +247,7 @@ internal static class ControlEndpoints
 
             if (outcome.Result == ToolApprovalDecisionResult.Recorded && outcome.Request is not null)
             {
+                runtime.RuntimeMetrics.IncrementApprovalDecisionsRecorded();
                 runtime.ApprovalAuditStore.RecordDecision(
                     outcome.Request,
                     approved,
@@ -262,6 +265,7 @@ internal static class ControlEndpoints
             }
             else if (outcome.Result == ToolApprovalDecisionResult.Unauthorized)
             {
+                runtime.RuntimeMetrics.IncrementApprovalDecisionsRejected();
                 AppendRejectedApprovalRuntimeEvent(runtime, outcome.Request, approvalId, "requester_mismatch", requesterChannelId, requesterSenderId);
             }
 

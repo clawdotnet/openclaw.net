@@ -2,6 +2,8 @@ using System.Buffers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Microsoft.Extensions.Logging.Abstractions;
+using OpenClaw.Agent;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Channels;
 using OpenClaw.Core.Abstractions;
@@ -172,6 +174,68 @@ internal static class AdminEndpoints
             };
 
             return Results.Json(response, CoreJsonContext.Default.AdminSummaryResponse);
+        });
+
+        app.MapGet("/admin/posture", (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.posture");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            return Results.Json(SecurityPostureBuilder.Build(startup, runtime), CoreJsonContext.Default.SecurityPostureResponse);
+        });
+
+        app.MapPost("/admin/approvals/simulate", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.approvals.simulate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.ApprovalSimulationRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+
+            var request = requestPayload.Value;
+            if (request is null || string.IsNullOrWhiteSpace(request.ToolName))
+                return Results.BadRequest(new MutationResponse { Success = false, Error = "toolName is required." });
+
+            var response = await SimulateApprovalAsync(startup, runtime, request, ctx.RequestAborted);
+            return Results.Json(response, CoreJsonContext.Default.ApprovalSimulationResponse);
+        });
+
+        app.MapGet("/admin/incident/export", async (HttpContext ctx, int approvalLimit = 100, int eventLimit = 200) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.incident.export");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            runtime.RuntimeMetrics.SetActiveSessions(runtime.SessionManager.ActiveCount);
+            runtime.RuntimeMetrics.SetCircuitBreakerState((int)runtime.AgentRuntime.CircuitBreakerState);
+            var posture = SecurityPostureBuilder.Build(startup, runtime);
+            var retentionStatus = await runtime.RetentionCoordinator.GetStatusAsync(ctx.RequestAborted);
+
+            var response = new IncidentBundleResponse
+            {
+                GeneratedAtUtc = DateTimeOffset.UtcNow,
+                Posture = posture,
+                Metrics = runtime.RuntimeMetrics.Snapshot(),
+                Retention = retentionStatus,
+                ApprovalHistory = runtime.ApprovalAuditStore.Query(new ApprovalHistoryQuery { Limit = approvalLimit })
+                    .Select(RedactApprovalHistory)
+                    .ToArray(),
+                ProviderPolicies = operations.ProviderPolicies.List(),
+                ProviderRoutes = operations.LlmExecution.SnapshotRoutes(),
+                ProviderUsage = runtime.ProviderUsage.Snapshot(),
+                RuntimeEvents = operations.RuntimeEvents.Query(new RuntimeEventQuery { Limit = eventLimit })
+                    .Select(RedactRuntimeEvent)
+                    .ToArray(),
+                WebhookDeadLetters = operations.WebhookDeliveries.List()
+                    .Select(RedactDeadLetter)
+                    .ToArray(),
+                PluginHealth = operations.PluginHealth.ListSnapshots()
+            };
+
+            return Results.Json(response, CoreJsonContext.Default.IncidentBundleResponse);
         });
 
         app.MapGet("/admin/sessions", async (HttpContext ctx, int page = 1, int pageSize = 25, string? search = null, string? channelId = null, string? senderId = null, string? state = null, DateTimeOffset? fromUtc = null, DateTimeOffset? toUtc = null, bool? starred = null, string? tag = null) =>
@@ -560,12 +624,20 @@ internal static class AdminEndpoints
                 return authResult.Failure;
             var auth = authResult.Authorization!;
 
-            var before = operations.ProviderPolicies.List().FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.Ordinal));
-            var removed = operations.ProviderPolicies.Delete(id);
-            RecordOperatorAudit(ctx, operations, auth, "provider_policy_delete", id, removed ? $"Deleted provider policy '{id}'." : $"Provider policy '{id}' was not found.", removed, before, after: null);
-            return removed
-                ? Results.Json(new MutationResponse { Success = true, Message = "Provider policy deleted." }, CoreJsonContext.Default.MutationResponse)
-                : Results.NotFound(new MutationResponse { Success = false, Error = "Provider policy not found." });
+            try
+            {
+                var before = operations.ProviderPolicies.List().FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.Ordinal));
+                var removed = operations.ProviderPolicies.Delete(id);
+                RecordOperatorAudit(ctx, operations, auth, "provider_policy_delete", id, removed ? $"Deleted provider policy '{id}'." : $"Provider policy '{id}' was not found.", removed, before, after: null);
+                return removed
+                    ? Results.Json(new MutationResponse { Success = true, Message = "Provider policy deleted." }, CoreJsonContext.Default.MutationResponse)
+                    : Results.NotFound(new MutationResponse { Success = false, Error = "Provider policy not found." });
+            }
+            catch (Exception ex)
+            {
+                RecordOperatorAudit(ctx, operations, auth, "provider_policy_delete", id, ex.Message, success: false, before: null, after: null);
+                return Results.Json(new MutationResponse { Success = false, Error = ex.Message }, CoreJsonContext.Default.MutationResponse, statusCode: StatusCodes.Status500InternalServerError);
+            }
         });
 
         app.MapPost("/admin/providers/{providerId}/circuit/reset", (HttpContext ctx, string providerId) =>
@@ -648,10 +720,18 @@ internal static class AdminEndpoints
             if (request is null)
                 return Results.BadRequest(new OperationStatusResponse { Success = false, Error = "Session metadata payload is required." });
 
-            var before = operations.SessionMetadata.Get(id);
-            var updated = operations.SessionMetadata.Set(id, request);
-            RecordOperatorAudit(ctx, operations, auth, "session_metadata_update", id, $"Updated session metadata for '{id}'.", success: true, before, updated);
-            return Results.Json(updated, CoreJsonContext.Default.SessionMetadataSnapshot);
+            try
+            {
+                var before = operations.SessionMetadata.Get(id);
+                var updated = operations.SessionMetadata.Set(id, request);
+                RecordOperatorAudit(ctx, operations, auth, "session_metadata_update", id, $"Updated session metadata for '{id}'.", success: true, before, updated);
+                return Results.Json(updated, CoreJsonContext.Default.SessionMetadataSnapshot);
+            }
+            catch (Exception ex)
+            {
+                RecordOperatorAudit(ctx, operations, auth, "session_metadata_update", id, ex.Message, success: false, before: null, after: request);
+                return Results.Json(new MutationResponse { Success = false, Error = ex.Message }, CoreJsonContext.Default.MutationResponse, statusCode: StatusCodes.Status500InternalServerError);
+            }
         });
 
         app.MapGet("/admin/sessions/export", async (HttpContext ctx, string? search = null, string? channelId = null, string? senderId = null, string? state = null, DateTimeOffset? fromUtc = null, DateTimeOffset? toUtc = null, bool? starred = null, string? tag = null) =>
@@ -811,23 +891,31 @@ internal static class AdminEndpoints
             if (request is null)
                 return Results.BadRequest(new OperationStatusResponse { Success = false, Error = "Approval policy payload is required." });
 
-            var saved = operations.ApprovalGrants.AddOrUpdate(new ToolApprovalGrant
+            try
             {
-                Id = string.IsNullOrWhiteSpace(request.Id) ? $"apg_{Guid.NewGuid():N}"[..20] : request.Id,
-                Scope = request.Scope,
-                ChannelId = request.ChannelId,
-                SenderId = request.SenderId,
-                SessionId = request.SessionId,
-                ToolName = request.ToolName,
-                CreatedAtUtc = request.CreatedAtUtc == default ? DateTimeOffset.UtcNow : request.CreatedAtUtc,
-                ExpiresAtUtc = request.ExpiresAtUtc,
-                GrantedBy = string.IsNullOrWhiteSpace(request.GrantedBy) ? EndpointHelpers.GetOperatorActorId(ctx, auth) : request.GrantedBy,
-                GrantSource = string.IsNullOrWhiteSpace(request.GrantSource) ? auth.AuthMode : request.GrantSource,
-                RemainingUses = Math.Max(1, request.RemainingUses)
-            });
+                var saved = operations.ApprovalGrants.AddOrUpdate(new ToolApprovalGrant
+                {
+                    Id = string.IsNullOrWhiteSpace(request.Id) ? $"apg_{Guid.NewGuid():N}"[..20] : request.Id,
+                    Scope = request.Scope,
+                    ChannelId = request.ChannelId,
+                    SenderId = request.SenderId,
+                    SessionId = request.SessionId,
+                    ToolName = request.ToolName,
+                    CreatedAtUtc = request.CreatedAtUtc == default ? DateTimeOffset.UtcNow : request.CreatedAtUtc,
+                    ExpiresAtUtc = request.ExpiresAtUtc,
+                    GrantedBy = string.IsNullOrWhiteSpace(request.GrantedBy) ? EndpointHelpers.GetOperatorActorId(ctx, auth) : request.GrantedBy,
+                    GrantSource = string.IsNullOrWhiteSpace(request.GrantSource) ? auth.AuthMode : request.GrantSource,
+                    RemainingUses = Math.Max(1, request.RemainingUses)
+                });
 
-            RecordOperatorAudit(ctx, operations, auth, "approval_grant_upsert", saved.Id, $"Updated tool approval grant '{saved.Id}'.", success: true, before: null, after: saved);
-            return Results.Json(saved, CoreJsonContext.Default.ToolApprovalGrant);
+                RecordOperatorAudit(ctx, operations, auth, "approval_grant_upsert", saved.Id, $"Updated tool approval grant '{saved.Id}'.", success: true, before: null, after: saved);
+                return Results.Json(saved, CoreJsonContext.Default.ToolApprovalGrant);
+            }
+            catch (Exception ex)
+            {
+                RecordOperatorAudit(ctx, operations, auth, "approval_grant_upsert", request.Id ?? "new", ex.Message, success: false, before: null, after: request);
+                return Results.Json(new MutationResponse { Success = false, Error = ex.Message }, CoreJsonContext.Default.MutationResponse, statusCode: StatusCodes.Status500InternalServerError);
+            }
         });
 
         app.MapDelete("/tools/approval-policies/{id}", (HttpContext ctx, string id) =>
@@ -837,11 +925,19 @@ internal static class AdminEndpoints
                 return authResult.Failure;
             var auth = authResult.Authorization!;
 
-            var removed = operations.ApprovalGrants.Delete(id);
-            RecordOperatorAudit(ctx, operations, auth, "approval_grant_delete", id, removed ? $"Deleted tool approval grant '{id}'." : $"Tool approval grant '{id}' was not found.", removed, before: null, after: null);
-            return removed
-                ? Results.Json(new MutationResponse { Success = true, Message = "Approval grant deleted." }, CoreJsonContext.Default.MutationResponse)
-                : Results.NotFound(new MutationResponse { Success = false, Error = "Approval grant not found." });
+            try
+            {
+                var removed = operations.ApprovalGrants.Delete(id);
+                RecordOperatorAudit(ctx, operations, auth, "approval_grant_delete", id, removed ? $"Deleted tool approval grant '{id}'." : $"Tool approval grant '{id}' was not found.", removed, before: null, after: null);
+                return removed
+                    ? Results.Json(new MutationResponse { Success = true, Message = "Approval grant deleted." }, CoreJsonContext.Default.MutationResponse)
+                    : Results.NotFound(new MutationResponse { Success = false, Error = "Approval grant not found." });
+            }
+            catch (Exception ex)
+            {
+                RecordOperatorAudit(ctx, operations, auth, "approval_grant_delete", id, ex.Message, success: false, before: null, after: null);
+                return Results.Json(new MutationResponse { Success = false, Error = ex.Message }, CoreJsonContext.Default.MutationResponse, statusCode: StatusCodes.Status500InternalServerError);
+            }
         });
 
         app.MapGet("/admin/audit", (HttpContext ctx, int limit = 100, string? actorId = null, string? actionType = null, string? targetId = null) =>
@@ -933,9 +1029,17 @@ internal static class AdminEndpoints
             if (request is null)
                 return Results.BadRequest(new OperationStatusResponse { Success = false, Error = "Rate-limit policy payload is required." });
 
-            var saved = operations.ActorRateLimits.AddOrUpdate(request);
-            RecordOperatorAudit(ctx, operations, auth, "rate_limit_policy_upsert", saved.Id, $"Updated rate-limit policy '{saved.Id}'.", success: true, before: null, after: saved);
-            return Results.Json(saved, CoreJsonContext.Default.ActorRateLimitPolicy);
+            try
+            {
+                var saved = operations.ActorRateLimits.AddOrUpdate(request);
+                RecordOperatorAudit(ctx, operations, auth, "rate_limit_policy_upsert", saved.Id, $"Updated rate-limit policy '{saved.Id}'.", success: true, before: null, after: saved);
+                return Results.Json(saved, CoreJsonContext.Default.ActorRateLimitPolicy);
+            }
+            catch (Exception ex)
+            {
+                RecordOperatorAudit(ctx, operations, auth, "rate_limit_policy_upsert", request.Id ?? "new", ex.Message, success: false, before: null, after: request);
+                return Results.Json(new MutationResponse { Success = false, Error = ex.Message }, CoreJsonContext.Default.MutationResponse, statusCode: StatusCodes.Status500InternalServerError);
+            }
         });
 
         app.MapDelete("/admin/rate-limits/{id}", (HttpContext ctx, string id) =>
@@ -945,11 +1049,19 @@ internal static class AdminEndpoints
                 return authResult.Failure;
             var auth = authResult.Authorization!;
 
-            var removed = operations.ActorRateLimits.Delete(id);
-            RecordOperatorAudit(ctx, operations, auth, "rate_limit_policy_delete", id, removed ? $"Deleted rate-limit policy '{id}'." : $"Rate-limit policy '{id}' was not found.", removed, before: null, after: null);
-            return removed
-                ? Results.Json(new MutationResponse { Success = true, Message = "Rate-limit policy deleted." }, CoreJsonContext.Default.MutationResponse)
-                : Results.NotFound(new MutationResponse { Success = false, Error = "Rate-limit policy not found." });
+            try
+            {
+                var removed = operations.ActorRateLimits.Delete(id);
+                RecordOperatorAudit(ctx, operations, auth, "rate_limit_policy_delete", id, removed ? $"Deleted rate-limit policy '{id}'." : $"Rate-limit policy '{id}' was not found.", removed, before: null, after: null);
+                return removed
+                    ? Results.Json(new MutationResponse { Success = true, Message = "Rate-limit policy deleted." }, CoreJsonContext.Default.MutationResponse)
+                    : Results.NotFound(new MutationResponse { Success = false, Error = "Rate-limit policy not found." });
+            }
+            catch (Exception ex)
+            {
+                RecordOperatorAudit(ctx, operations, auth, "rate_limit_policy_delete", id, ex.Message, success: false, before: null, after: null);
+                return Results.Json(new MutationResponse { Success = false, Error = ex.Message }, CoreJsonContext.Default.MutationResponse, statusCode: StatusCodes.Status500InternalServerError);
+            }
         });
 
         // ── Channel Auth Events ──────────────────────────────────────
@@ -1806,6 +1918,167 @@ internal static class AdminEndpoints
         var index = branchId.IndexOf(marker, StringComparison.Ordinal);
         return index > 0 ? branchId[..index] : null;
     }
+
+    private static async Task<ApprovalSimulationResponse> SimulateApprovalAsync(
+        GatewayStartupContext startup,
+        GatewayAppRuntime runtime,
+        ApprovalSimulationRequest request,
+        CancellationToken ct)
+    {
+        var effectiveTooling = CloneToolingConfig(startup.Config.Tooling, request.AutonomyMode);
+        var argumentsJson = string.IsNullOrWhiteSpace(request.ArgumentsJson) ? "{}" : request.ArgumentsJson;
+        var normalizedToolName = NormalizeApprovalToolName(request.ToolName!);
+        var requireToolApproval = request.RequireToolApproval ?? runtime.EffectiveRequireToolApproval;
+        var approvalRequiredTools = (request.ApprovalRequiredTools is { Length: > 0 }
+                ? request.ApprovalRequiredTools
+                : runtime.EffectiveApprovalRequiredTools.ToArray())
+            .Where(static item => !string.IsNullOrWhiteSpace(item))
+            .Select(NormalizeApprovalToolName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var autonomyHook = new AutonomyHook(effectiveTooling, NullLogger.Instance);
+        var allowed = await autonomyHook.BeforeExecuteAsync(normalizedToolName, argumentsJson, ct);
+        if (!allowed)
+        {
+            return new ApprovalSimulationResponse
+            {
+                Decision = "deny",
+                Reason = "Autonomy or path policy would deny this tool execution.",
+                ToolName = request.ToolName!,
+                AutonomyMode = (effectiveTooling.AutonomyMode ?? "full").Trim().ToLowerInvariant(),
+                RequireToolApproval = requireToolApproval,
+                ApprovalRequiredTools = approvalRequiredTools
+            };
+        }
+
+        if (requireToolApproval && approvalRequiredTools.Contains(normalizedToolName, StringComparer.OrdinalIgnoreCase))
+        {
+            return new ApprovalSimulationResponse
+            {
+                Decision = "requires_approval",
+                Reason = "The effective approval policy requires approval for this tool.",
+                ToolName = request.ToolName!,
+                AutonomyMode = (effectiveTooling.AutonomyMode ?? "full").Trim().ToLowerInvariant(),
+                RequireToolApproval = requireToolApproval,
+                ApprovalRequiredTools = approvalRequiredTools
+            };
+        }
+
+        return new ApprovalSimulationResponse
+        {
+            Decision = "allow",
+            Reason = "The tool passes autonomy checks and is not currently approval-gated.",
+            ToolName = request.ToolName!,
+            AutonomyMode = (effectiveTooling.AutonomyMode ?? "full").Trim().ToLowerInvariant(),
+            RequireToolApproval = requireToolApproval,
+            ApprovalRequiredTools = approvalRequiredTools
+        };
+    }
+
+    private static ToolingConfig CloneToolingConfig(ToolingConfig source, string? autonomyModeOverride)
+        => new()
+        {
+            AutonomyMode = string.IsNullOrWhiteSpace(autonomyModeOverride) ? source.AutonomyMode : autonomyModeOverride,
+            WorkspaceRoot = source.WorkspaceRoot,
+            WorkspaceOnly = source.WorkspaceOnly,
+            AllowedShellCommandGlobs = source.AllowedShellCommandGlobs,
+            ForbiddenPathGlobs = source.ForbiddenPathGlobs,
+            AllowShell = source.AllowShell,
+            ReadOnlyMode = source.ReadOnlyMode,
+            AllowedReadRoots = source.AllowedReadRoots,
+            AllowedWriteRoots = source.AllowedWriteRoots,
+            ToolTimeoutSeconds = source.ToolTimeoutSeconds,
+            ParallelToolExecution = source.ParallelToolExecution,
+            RequireToolApproval = source.RequireToolApproval,
+            ApprovalRequiredTools = source.ApprovalRequiredTools,
+            ToolApprovalTimeoutSeconds = source.ToolApprovalTimeoutSeconds,
+            EnableBrowserTool = source.EnableBrowserTool,
+            AllowBrowserEvaluate = source.AllowBrowserEvaluate,
+            BrowserHeadless = source.BrowserHeadless,
+            BrowserTimeoutSeconds = source.BrowserTimeoutSeconds
+        };
+
+    private static string NormalizeApprovalToolName(string toolName)
+        => string.Equals(toolName.Trim(), "file_write", StringComparison.Ordinal)
+            ? "write_file"
+            : toolName.Trim();
+
+    private static ApprovalHistoryEntry RedactApprovalHistory(ApprovalHistoryEntry entry)
+        => new()
+        {
+            EventType = entry.EventType,
+            ApprovalId = entry.ApprovalId,
+            SessionId = entry.SessionId,
+            ChannelId = entry.ChannelId,
+            SenderId = entry.SenderId,
+            ToolName = entry.ToolName,
+            ArgumentsPreview = RedactSensitiveText(entry.ArgumentsPreview),
+            TimestampUtc = entry.TimestampUtc,
+            DecisionAtUtc = entry.DecisionAtUtc,
+            ActorChannelId = entry.ActorChannelId,
+            ActorSenderId = entry.ActorSenderId,
+            DecisionSource = entry.DecisionSource,
+            Approved = entry.Approved
+        };
+
+    private static RuntimeEventEntry RedactRuntimeEvent(RuntimeEventEntry entry)
+        => new()
+        {
+            Id = entry.Id,
+            TimestampUtc = entry.TimestampUtc,
+            SessionId = entry.SessionId,
+            ChannelId = entry.ChannelId,
+            SenderId = entry.SenderId,
+            CorrelationId = entry.CorrelationId,
+            Component = entry.Component,
+            Action = entry.Action,
+            Severity = entry.Severity,
+            Summary = RedactSensitiveText(entry.Summary),
+            Metadata = entry.Metadata?.ToDictionary(
+                static kvp => kvp.Key,
+                static kvp => ShouldRedactKey(kvp.Key) ? "[redacted]" : RedactSensitiveText(kvp.Value),
+                StringComparer.Ordinal)
+        };
+
+    private static WebhookDeadLetterEntry RedactDeadLetter(WebhookDeadLetterEntry entry)
+        => new()
+        {
+            Id = entry.Id,
+            Source = entry.Source,
+            DeliveryKey = entry.DeliveryKey,
+            EndpointName = entry.EndpointName,
+            ChannelId = entry.ChannelId,
+            SenderId = entry.SenderId,
+            SessionId = entry.SessionId,
+            CreatedAtUtc = entry.CreatedAtUtc,
+            Error = RedactSensitiveText(entry.Error),
+            PayloadPreview = RedactSensitiveText(entry.PayloadPreview),
+            Discarded = entry.Discarded,
+            ReplayedAtUtc = entry.ReplayedAtUtc
+        };
+
+    private static string RedactSensitiveText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var redacted = value.Replace("raw:", "raw:[redacted]", StringComparison.OrdinalIgnoreCase);
+        foreach (var marker in new[] { "token", "secret", "password", "apikey", "authorization" })
+        {
+            if (redacted.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0)
+                return "[redacted]";
+        }
+
+        return redacted;
+    }
+
+    private static bool ShouldRedactKey(string key)
+        => key.Contains("token", StringComparison.OrdinalIgnoreCase)
+           || key.Contains("secret", StringComparison.OrdinalIgnoreCase)
+           || key.Contains("password", StringComparison.OrdinalIgnoreCase)
+           || key.Contains("authorization", StringComparison.OrdinalIgnoreCase)
+           || key.Contains("apikey", StringComparison.OrdinalIgnoreCase);
 
     private readonly record struct JsonBodyReadResult<T>(
         T? Value,
