@@ -34,7 +34,7 @@ public sealed class McpNativeTool(
                         value = v.GetString();
                         break;
                     case JsonValueKind.Number:
-                        value = v.TryGetInt64(out var l) ? l : v.GetDouble();
+                        value = v.Clone();
                         break;
                     case JsonValueKind.True:
                     case JsonValueKind.False:

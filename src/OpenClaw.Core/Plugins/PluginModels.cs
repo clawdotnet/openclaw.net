@@ -135,6 +135,24 @@ public sealed class McpServerConfig
     public int RequestTimeoutSeconds { get; set; } = 60;
 }
 
+public static class McpServerConfigExtensions
+{
+    public static string NormalizeTransport(this McpServerConfig config)
+    {
+        var transport = config.Transport?.Trim();
+        if (string.IsNullOrWhiteSpace(transport))
+            return string.IsNullOrWhiteSpace(config.Url) ? "stdio" : "http";
+
+        if (transport.Equals("streamable-http", StringComparison.OrdinalIgnoreCase) ||
+            transport.Equals("streamable_http", StringComparison.OrdinalIgnoreCase))
+        {
+            return "http";
+        }
+
+        return transport.ToLowerInvariant();
+    }
+}
+
 /// <summary>
 /// Configuration for native (C#) replicas of popular OpenClaw plugins.
 /// Each property matches the canonical plugin id.

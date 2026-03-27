@@ -23,6 +23,7 @@ public sealed class McpServerToolRegistry : IDisposable
     private readonly List<DiscoveredMcpTool> _tools = [];
     private readonly List<McpClient> _clients = [];
     private bool _loaded;
+    private bool _registered;
 
     /// <summary>
     /// Creates a registry for configured MCP servers.
@@ -38,9 +39,14 @@ public sealed class McpServerToolRegistry : IDisposable
     /// </summary>
     public async Task RegisterToolsAsync(NativePluginRegistry nativeRegistry, CancellationToken ct)
     {
+        if (_registered)
+            return;
+
         var tools = await LoadAsync(ct);
         foreach (var tool in tools)
             nativeRegistry.RegisterExternalTool(tool.Tool, tool.PluginId, tool.Detail);
+
+        _registered = true;
     }
 
     internal async Task<IReadOnlyList<DiscoveredMcpTool>> LoadAsync(CancellationToken ct)
@@ -182,9 +188,14 @@ public sealed class McpServerToolRegistry : IDisposable
 
     public void Dispose()
     {
-        _loadSemaphore.Wait();
+        bool acquired = false;
         try
         {
+            acquired = _loadSemaphore.Wait(TimeSpan.FromSeconds(5));
+            if (!acquired)
+            {
+                _logger.LogWarning("McpServerToolRegistry.Dispose() timed out waiting for load semaphore");
+            }
             foreach (var client in _clients)
             {
                 try
@@ -199,31 +210,17 @@ public sealed class McpServerToolRegistry : IDisposable
         }
         finally
         {
-            _loadSemaphore.Release();
+            if (acquired)
+                _loadSemaphore.Release();
             _loadSemaphore.Dispose();
         }
     }
 
 
 
-    private static string NormalizeTransport(McpServerConfig config)
-    {
-        var transport = config.Transport?.Trim();
-        if (string.IsNullOrWhiteSpace(transport))
-            return string.IsNullOrWhiteSpace(config.Url) ? "stdio" : "http";
-
-        if (transport.Equals("streamable-http", StringComparison.OrdinalIgnoreCase) ||
-            transport.Equals("streamable_http", StringComparison.OrdinalIgnoreCase))
-        {
-            return "http";
-        }
-
-        return transport.ToLowerInvariant();
-    }
-
     private static IClientTransport CreateTransport(string serverId, McpServerConfig config)
     {
-        var transport = NormalizeTransport(config);
+        var transport = config.NormalizeTransport();
         return transport switch
         {
             "stdio" => new StdioClientTransport(new StdioClientTransportOptions

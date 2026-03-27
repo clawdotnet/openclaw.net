@@ -1,5 +1,6 @@
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Plugins;
 
 namespace OpenClaw.Core.Validation;
 
@@ -174,7 +175,7 @@ public static class ConfigValidator
                 if (!server.Enabled)
                     continue;
 
-                var transport = NormalizeMcpTransport(server);
+                var transport = server.NormalizeTransport();
                 if (transport is not ("stdio" or "http"))
                 {
                     errors.Add($"Plugins.Mcp.Servers.{serverId}.Transport must be 'stdio' or 'http'.");
@@ -408,20 +409,5 @@ public static class ConfigValidator
         {
             errors.Add($"{field} must be 'open', 'pairing', or 'closed'.");
         }
-    }
-
-    private static string NormalizeMcpTransport(OpenClaw.Core.Plugins.McpServerConfig config)
-    {
-        var transport = config.Transport?.Trim();
-        if (string.IsNullOrWhiteSpace(transport))
-            return string.IsNullOrWhiteSpace(config.Url) ? "stdio" : "http";
-
-        if (transport.Equals("streamable-http", StringComparison.OrdinalIgnoreCase) ||
-            transport.Equals("streamable_http", StringComparison.OrdinalIgnoreCase))
-        {
-            return "http";
-        }
-
-        return transport.ToLowerInvariant();
     }
 }
