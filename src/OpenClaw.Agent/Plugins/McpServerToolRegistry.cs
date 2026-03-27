@@ -84,7 +84,7 @@ public sealed class McpServerToolRegistry : IDisposable
 
         try
         {
-            foreach (var (serverId, serverConfig) in _config.Servers)
+            foreach (var (serverId, serverConfig) in _config.Servers ?? [])
             {
                 if (!serverConfig.Enabled)
                     continue;
@@ -263,9 +263,9 @@ public sealed class McpServerToolRegistry : IDisposable
         };
     }
 
-    private static Dictionary<string, string?>? ResolveEnv(Dictionary<string, string> environment)
+    private static Dictionary<string, string?>? ResolveEnv(Dictionary<string, string>? environment)
     {
-        if (environment.Count == 0)
+        if (environment is null || environment.Count == 0)
             return null;
 
         var resolved = new Dictionary<string, string?>(StringComparer.Ordinal);
@@ -280,9 +280,9 @@ public sealed class McpServerToolRegistry : IDisposable
         return resolved;
     }
 
-    private static Dictionary<string, string>? ResolveHeaders(Dictionary<string, string> headers)
+    private static Dictionary<string, string>? ResolveHeaders(Dictionary<string, string>? headers)
     {
-        if (headers.Count == 0)
+        if (headers is null || headers.Count == 0)
             return null;
 
         var resolved = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

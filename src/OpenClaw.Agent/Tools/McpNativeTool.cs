@@ -64,6 +64,10 @@ public sealed class McpNativeTool(
         {
             return $"Error: Invalid JSON arguments for MCP tool '{localName}': {ex.Message}";
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             return $"Error: MCP tool '{localName}' failed: {ex.Message}";
