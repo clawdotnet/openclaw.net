@@ -7,6 +7,7 @@ using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.Profiles;
 #if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using OpenClaw.MicrosoftAgentFrameworkAdapter;
+using OpenClaw.Gateway.A2A;
 #endif
 #if OPENCLAW_ENABLE_OPENSANDBOX
 using OpenClawNet.Sandbox.OpenSandbox;
@@ -44,10 +45,16 @@ var runtime = await app.InitializeOpenClawRuntimeAsync(startup);
 
 app.InitializeMcpRuntime(runtime);
 app.UseOpenClawMcpAuth(startup, runtime);
+#if OPENCLAW_ENABLE_MAF_EXPERIMENT
+app.UseOpenClawA2AAuth(startup, runtime);
+#endif
 
 app.UseOpenClawPipeline(startup, runtime);
 app.MapOpenApi("/openapi/{documentName}.json");
 app.MapOpenClawEndpoints(startup, runtime);
 app.MapMcp("/mcp");
+#if OPENCLAW_ENABLE_MAF_EXPERIMENT
+app.MapOpenClawA2AEndpoints(startup, runtime);
+#endif
 
 app.Run($"http://{startup.Config.BindAddress}:{startup.Config.Port}");

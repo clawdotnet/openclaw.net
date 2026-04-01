@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using OpenClaw.Agent;
+using OpenClaw.MicrosoftAgentFrameworkAdapter.A2A;
 
 namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
 
@@ -11,11 +12,16 @@ public static class MafServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddSingleton<IOptions<MafOptions>>(_ => Options.Create(CreateOptions(configuration)));
+        var options = CreateOptions(configuration);
+        services.AddSingleton<IOptions<MafOptions>>(_ => Options.Create(options));
         services.AddSingleton<MafTelemetryAdapter>();
         services.AddSingleton<MafSessionStateStore>();
         services.AddSingleton<MafAgentFactory>();
         services.AddSingleton<IAgentRuntimeFactory, MafAgentRuntimeFactory>();
+
+        if (options.EnableA2A)
+            services.AddOpenClawA2AServices();
+
         return services;
     }
 
@@ -40,6 +46,41 @@ public static class MafServiceCollectionExtensions
             options.EnableStreaming = enableStreaming;
         else if (bool.TryParse(section["EnableStreamingFallback"], out var enableStreamingFallback))
             options.EnableStreaming = enableStreamingFallback;
+
+        // A2A configuration
+        if (bool.TryParse(section["EnableA2A"], out var enableA2A))
+            options.EnableA2A = enableA2A;
+
+        var a2aPathPrefix = section["A2APathPrefix"];
+        if (!string.IsNullOrWhiteSpace(a2aPathPrefix))
+            options.A2APathPrefix = a2aPathPrefix;
+
+        var a2aVersion = section["A2AVersion"];
+        if (!string.IsNullOrWhiteSpace(a2aVersion))
+            options.A2AVersion = a2aVersion;
+
+        var skillsSection = section.GetSection("A2ASkills");
+        if (skillsSection.Exists())
+        {
+            var skills = new List<A2ASkillConfig>();
+            foreach (var child in skillsSection.GetChildren())
+            {
+                var skill = new A2ASkillConfig
+                {
+                    Id = child["Id"] ?? "",
+                    Name = child["Name"] ?? "",
+                    Description = child["Description"]
+                };
+
+                var tagsSection = child.GetSection("Tags");
+                if (tagsSection.Exists())
+                    skill.Tags = tagsSection.GetChildren().Select(t => t.Value ?? "").ToList();
+
+                skills.Add(skill);
+            }
+
+            options.A2ASkills = skills;
+        }
 
         return options;
     }
