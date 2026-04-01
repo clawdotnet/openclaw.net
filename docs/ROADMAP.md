@@ -2,6 +2,13 @@
 
 ## Recently Completed
 
+- **Channel expansion**: Discord (Gateway WebSocket + interaction webhook), Slack (Events API + slash commands), Signal (signald/signal-cli bridge) channel adapters with DM policy, allowlists, thread-to-session mapping, and signature validation.
+- **Tool expansion** (34 → 48 native tools): edit_file, apply_patch, message, x_search, memory_get, sessions_history, sessions_send, sessions_spawn, session_status, sessions_yield, agents_list, cron, gateway, profile_write.
+- **Tool presets and groups**: 4 new built-in presets (full, coding, messaging, minimal) and 7 built-in tool groups (group:runtime, group:fs, group:sessions, group:memory, group:web, group:automation, group:messaging).
+- **Chat commands**: /think (reasoning effort), /compact (history compaction), /verbose (tool call/token output).
+- **Multi-agent routing**: per-channel/sender routing with model override, system prompt, workspace isolation, and tool preset config.
+- **Integrations**: Tailscale Serve/Funnel, Gmail Pub/Sub event bridge, mDNS/Bonjour service discovery.
+- **Plugin installer**: built-in `openclaw plugins install/remove/list/search` for npm/ClawHub packages.
 - Security audit closure for plugin IPC hardening, plugin-root containment, browser cancellation recovery, strict session-cap admission, and session-lock disposal.
 - Admin/operator tooling:
   - posture diagnostics
@@ -15,23 +22,6 @@
 ## Runtime and Platform Expansion
 
 These are strong candidates for the next roadmap phases because they extend the current runtime, channel, and operator model without fighting the existing architecture.
-
-### Channel Expansion
-
-1. **Discord channel adapter**
-   - Add a new `IChannelAdapter` for Discord bot integrations.
-   - Support DMs, server channels, allowlists, slash commands, and thread-to-session mapping.
-   - Keep voice-channel handling separate from transcription so the initial scope stays text-first.
-
-2. **Slack channel adapter**
-   - Add bot/app token support with workspace allowlisting.
-   - Map Slack threads to OpenClaw sessions.
-   - Support slash commands and channel-friendly rich formatting.
-
-3. **Signal channel adapter**
-   - Add a privacy-focused Signal bridge using Signal CLI or `signald`.
-   - Start with DM-only support and optional no-content logging mode.
-   - Treat group support as a later follow-up rather than part of the first release.
 
 ### Multimodal and Input Expansion
 

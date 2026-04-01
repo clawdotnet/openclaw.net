@@ -119,6 +119,18 @@ internal static class RuntimeInitializationExtensions
             effectiveApprovalRequiredTools,
             services.ToolSandbox);
 
+        // Wire compact callback so /compact command can trigger LLM-powered compaction
+        if (agentRuntime is AgentRuntime concreteRuntime)
+        {
+            services.CommandProcessor.SetCompactCallback(async (session, ct) =>
+            {
+                var countBefore = session.History.Count;
+                await concreteRuntime.CompactHistoryAsync(session, ct);
+                var countAfter = session.History.Count;
+                return countAfter; // Return actual remaining turn count
+            });
+        }
+
         var middlewarePipeline = CreateMiddlewarePipeline(config, loggerFactory, services.ContractGovernance, services.SessionManager);
         var skillWatcher = new SkillWatcherService(
             config.Skills,

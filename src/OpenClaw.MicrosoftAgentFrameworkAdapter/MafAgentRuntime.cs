@@ -400,7 +400,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
     }
 
     private ChatOptions CreateChatOptions(Session session, System.Text.Json.JsonElement? responseSchema)
-        => new()
+    {
+        var options = new ChatOptions
         {
             ModelId = session.ModelOverride ?? _config.Model,
             MaxOutputTokens = _config.MaxTokens,
@@ -409,6 +410,15 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 ? ChatResponseFormat.ForJsonSchema(responseSchema.Value, "response")
                 : null
         };
+
+        if (!string.IsNullOrWhiteSpace(session.ReasoningEffort))
+        {
+            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            options.AdditionalProperties["reasoning_effort"] = session.ReasoningEffort;
+        }
+
+        return options;
+    }
 
     private async ValueTask TryInjectRecallAsync(List<ChatMessage> messages, string userMessage, CancellationToken ct)
     {

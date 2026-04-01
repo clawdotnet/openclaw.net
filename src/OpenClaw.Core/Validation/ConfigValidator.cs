@@ -288,6 +288,9 @@ public static class ConfigValidator
         ValidateDmPolicy("Channels.Telegram.DmPolicy", config.Channels.Telegram.DmPolicy, errors);
         ValidateDmPolicy("Channels.WhatsApp.DmPolicy", config.Channels.WhatsApp.DmPolicy, errors);
         ValidateDmPolicy("Channels.Teams.DmPolicy", config.Channels.Teams.DmPolicy, errors);
+        ValidateDmPolicy("Channels.Slack.DmPolicy", config.Channels.Slack.DmPolicy, errors);
+        ValidateDmPolicy("Channels.Discord.DmPolicy", config.Channels.Discord.DmPolicy, errors);
+        ValidateDmPolicy("Channels.Signal.DmPolicy", config.Channels.Signal.DmPolicy, errors);
 
         // Cron
         if (config.Cron.Enabled)

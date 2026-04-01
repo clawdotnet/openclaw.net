@@ -234,6 +234,12 @@ public sealed class AgentRuntime : IAgentRuntime
                 : null
         };
 
+        if (!string.IsNullOrWhiteSpace(session.ReasoningEffort))
+        {
+            chatOptions.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            chatOptions.AdditionalProperties["reasoning_effort"] = session.ReasoningEffort;
+        }
+
         for (var i = 0; i < _maxIterations; i++)
         {
             // Mid-turn budget check: stop if token budget is exceeded
@@ -391,6 +397,12 @@ public sealed class AgentRuntime : IAgentRuntime
             Temperature = _temperature,
             Tools = _toolExecutor.GetToolDeclarations(session)
         };
+
+        if (!string.IsNullOrWhiteSpace(session.ReasoningEffort))
+        {
+            chatOptions.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            chatOptions.AdditionalProperties["reasoning_effort"] = session.ReasoningEffort;
+        }
 
         for (var i = 0; i < _maxIterations; i++)
         {
@@ -1089,7 +1101,7 @@ public sealed class AgentRuntime : IAgentRuntime
     /// Compacts session history by summarizing older turns via the LLM.
     /// Keeps the most recent turns verbatim and replaces older ones with a summary.
     /// </summary>
-    internal async Task CompactHistoryAsync(Session session, CancellationToken ct)
+    public async Task CompactHistoryAsync(Session session, CancellationToken ct)
     {
         if (session.History.Count <= _compactionThreshold)
         {
