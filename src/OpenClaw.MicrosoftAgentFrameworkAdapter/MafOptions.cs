@@ -22,7 +22,7 @@ public sealed class MafOptions
     // ── A2A Protocol Configuration ──────────────────────────────────
 
     /// <summary>Whether to expose A2A protocol endpoints when MAF is enabled.</summary>
-    public bool EnableA2A { get; set; }
+    public bool EnableA2A { get; set; } = true;
 
     /// <summary>URL path prefix for A2A endpoints (default: <c>/a2a</c>).</summary>
     public string A2APathPrefix { get; set; } = "/a2a";

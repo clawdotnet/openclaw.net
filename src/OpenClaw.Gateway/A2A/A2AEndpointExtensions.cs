@@ -43,7 +43,7 @@ internal static class A2AEndpointExtensions
         // Map the A2A protocol endpoint (handles JSON-RPC POST for message/send, message/stream, etc.)
         // and the .well-known/agent-card.json discovery endpoint using the official SDK extension
         app.MapHttpA2A(requestHandler, agentCard, pathPrefix);
-
+        app.MapWellKnownAgentCard(agentCard, pathPrefix);
         app.Logger.LogInformation(
             "A2A protocol endpoints mapped at {PathPrefix} with agent '{AgentName}'.",
             pathPrefix,

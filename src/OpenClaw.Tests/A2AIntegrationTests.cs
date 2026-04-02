@@ -1,5 +1,6 @@
 #if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using A2A;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;

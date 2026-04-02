@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
-    <OpenClawEnableMafExperiment Condition="'$(OpenClawEnableMafExperiment)' == ''">false</OpenClawEnableMafExperiment>
+    <OpenClawEnableMafExperiment Condition="'$(OpenClawEnableMafExperiment)' == ''">true</OpenClawEnableMafExperiment>
     <OpenClawEnableOpenSandbox Condition="'$(OpenClawEnableOpenSandbox)' == ''">false</OpenClawEnableOpenSandbox>
     <RootNamespace>OpenClaw.Tests</RootNamespace>
     <InterceptorsNamespaces>$(InterceptorsNamespaces);Microsoft.AspNetCore.OpenApi.Generated</InterceptorsNamespaces>
