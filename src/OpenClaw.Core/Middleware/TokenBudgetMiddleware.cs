@@ -12,7 +12,7 @@ namespace OpenClaw.Core.Middleware;
 public sealed class TokenBudgetMiddleware : IMessageMiddleware
 {
     private readonly long _maxTokensPerSession;
-    private readonly Func<string, string, (decimal MaxCost, decimal CurrentCost, bool Exceeded)>? _costChecker;
+    private readonly Func<string?, string, string, (decimal MaxCost, decimal CurrentCost, bool Exceeded)>? _costChecker;
     private readonly ILogger? _logger;
 
     public string Name => "TokenBudget";
@@ -26,7 +26,7 @@ public sealed class TokenBudgetMiddleware : IMessageMiddleware
     public TokenBudgetMiddleware(
         long maxTokensPerSession,
         ILogger? logger = null,
-        Func<string, string, (decimal MaxCost, decimal CurrentCost, bool Exceeded)>? costChecker = null)
+        Func<string?, string, string, (decimal MaxCost, decimal CurrentCost, bool Exceeded)>? costChecker = null)
     {
         _maxTokensPerSession = maxTokensPerSession;
         _costChecker = costChecker;
@@ -53,7 +53,7 @@ public sealed class TokenBudgetMiddleware : IMessageMiddleware
         // USD cost budget check (contract governance)
         if (_costChecker is not null)
         {
-            var (maxCost, currentCost, exceeded) = _costChecker(context.ChannelId, context.SenderId);
+            var (maxCost, currentCost, exceeded) = _costChecker(context.SessionId, context.ChannelId, context.SenderId);
             if (exceeded)
             {
                 _logger?.LogWarning("Cost budget exceeded for {Channel}:{Sender} ({Current:C}/{Max:C})",

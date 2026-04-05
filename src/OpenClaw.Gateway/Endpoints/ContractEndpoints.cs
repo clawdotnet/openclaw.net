@@ -14,6 +14,7 @@ internal static class ContractEndpoints
     {
         var browserSessions = app.Services.GetRequiredService<BrowserSessionAuthService>();
         var governance = app.Services.GetRequiredService<ContractGovernanceService>();
+        var operatorAudit = app.Services.GetService<OperatorAuditStore>();
         var group = app.MapGroup("/api/contracts").WithTags("OpenClaw Contracts");
 
         // POST /api/contracts/validate — pre-flight validation without creating
@@ -62,6 +63,7 @@ internal static class ContractEndpoints
             };
 
             var result = governance.ValidatePreFlight(policy, runtime.RegisteredToolNames);
+            RecordAudit(ctx, startup, browserSessions, operatorAudit, "contract_validate", "validate-only", "Validated contract policy.");
             return Results.Json(result, CoreJsonContext.Default.ContractValidationResult);
         });
 
@@ -104,8 +106,13 @@ internal static class ContractEndpoints
             {
                 var session = await runtime.SessionManager.LoadAsync(request.SessionId, ctx.RequestAborted);
                 if (session is not null)
-                    session.ContractPolicy = response.Policy;
+                {
+                    governance.AttachToSession(session, response.Policy);
+                    await runtime.SessionManager.PersistAsync(session, ctx.RequestAborted);
+                }
             }
+
+            RecordAudit(ctx, startup, browserSessions, operatorAudit, "contract_create", response.Policy.Id, $"Created contract '{response.Policy.Id}'.");
 
             return Results.Json(response, CoreJsonContext.Default.ContractCreateResponse,
                 statusCode: StatusCodes.Status201Created);
@@ -121,6 +128,7 @@ internal static class ContractEndpoints
             var sessionId = GetOptionalQueryString(ctx, "sessionId");
             var limit = GetQueryInt(ctx, "limit", 50);
 
+            RecordAudit(ctx, startup, browserSessions, operatorAudit, "contract_list", sessionId ?? "*", "Listed contracts.");
             return Results.Json(governance.ListContracts(sessionId, limit), CoreJsonContext.Default.ContractListResponse);
         });
 
@@ -140,11 +148,12 @@ internal static class ContractEndpoints
                     statusCode: StatusCodes.Status404NotFound);
             }
 
+            RecordAudit(ctx, startup, browserSessions, operatorAudit, "contract_get", id, $"Viewed contract '{id}'.");
             return Results.Json(response, CoreJsonContext.Default.ContractStatusResponse);
         });
 
         // POST /api/contracts/{id}/cancel — cancel a contract
-        group.MapPost("/{id}/cancel", (HttpContext ctx, string id) =>
+        group.MapPost("/{id}/cancel", async (HttpContext ctx, string id) =>
         {
             var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "contract_http", requireCsrf: true);
             if (failure is not null)
@@ -171,6 +180,11 @@ internal static class ContractEndpoints
                 Severity = "info",
                 Summary = $"Contract '{id}' cancelled by operator."
             });
+
+            if (governance.CancelContract(id, runtime.SessionManager, out var detachedSession) && detachedSession is not null)
+                await runtime.SessionManager.PersistAsync(detachedSession, ctx.RequestAborted);
+
+            RecordAudit(ctx, startup, browserSessions, operatorAudit, "contract_cancel", id, $"Cancelled contract '{id}'.");
 
             return Results.Json(
                 new OperationStatusResponse { Success = true },
@@ -218,5 +232,33 @@ internal static class ContractEndpoints
     {
         var value = GetOptionalQueryString(ctx, key);
         return int.TryParse(value, out var parsed) ? parsed : fallback;
+    }
+
+    private static void RecordAudit(
+        HttpContext ctx,
+        GatewayStartupContext startup,
+        BrowserSessionAuthService browserSessions,
+        OperatorAuditStore? operatorAudit,
+        string actionType,
+        string targetId,
+        string summary)
+    {
+        if (operatorAudit is null)
+            return;
+
+        var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
+        if (!auth.IsAuthorized)
+            return;
+
+        operatorAudit.Append(new OperatorAuditEntry
+        {
+            Id = $"audit_{Guid.NewGuid():N}"[..20],
+            ActorId = EndpointHelpers.GetOperatorActorId(ctx, auth),
+            AuthMode = auth.AuthMode,
+            ActionType = actionType,
+            TargetId = targetId,
+            Summary = summary,
+            Success = true
+        });
     }
 }

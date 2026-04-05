@@ -32,11 +32,13 @@ internal static class SecurityServicesExtensions
         services.AddSingleton(sp =>
             new RuntimeEventStore(
                 startup.Config.Memory.StoragePath,
-                sp.GetRequiredService<ILogger<RuntimeEventStore>>()));
+                sp.GetRequiredService<ILogger<RuntimeEventStore>>(),
+                sp.GetRequiredService<OpenClaw.Core.Observability.RuntimeMetrics>()));
         services.AddSingleton(sp =>
             new OperatorAuditStore(
                 startup.Config.Memory.StoragePath,
-                sp.GetRequiredService<ILogger<OperatorAuditStore>>()));
+                sp.GetRequiredService<ILogger<OperatorAuditStore>>(),
+                sp.GetRequiredService<OpenClaw.Core.Observability.RuntimeMetrics>()));
         services.AddSingleton(sp =>
             new ToolApprovalGrantStore(
                 startup.Config.Memory.StoragePath,

@@ -172,14 +172,14 @@ internal sealed class HeartbeatService
         }
     }
 
-    public HeartbeatPreviewResponse BuildPreview(HeartbeatConfigDto config, GatewayAppRuntime runtime, CancellationToken ct)
+    public async ValueTask<HeartbeatPreviewResponse> BuildPreviewAsync(HeartbeatConfigDto config, GatewayAppRuntime runtime, CancellationToken ct)
     {
         var normalized = Normalize(config);
         var issues = Validate(normalized, runtime);
         var markdown = RenderMarkdown(normalized);
         var promptPreview = BuildManagedPrompt(normalized, markdown);
         var templates = BuildTemplates(runtime);
-        var suggestions = BuildSuggestions(runtime, ct);
+        var suggestions = await BuildSuggestionsAsync(runtime, ct);
         var estimate = EstimateCost(normalized, runtime);
 
         return new HeartbeatPreviewResponse
@@ -199,12 +199,12 @@ internal sealed class HeartbeatService
         };
     }
 
-    public HeartbeatStatusResponse BuildStatus(GatewayAppRuntime runtime, CancellationToken ct)
+    public async ValueTask<HeartbeatStatusResponse> BuildStatusAsync(GatewayAppRuntime runtime, CancellationToken ct)
     {
         var config = LoadConfig();
         var issues = Validate(config, runtime);
         var templates = BuildTemplates(runtime);
-        var suggestions = BuildSuggestions(runtime, ct);
+        var suggestions = await BuildSuggestionsAsync(runtime, ct);
         var estimate = EstimateCost(config, runtime);
 
         return new HeartbeatStatusResponse
@@ -833,7 +833,7 @@ internal sealed class HeartbeatService
             .ToArray();
     }
 
-    private IReadOnlyList<HeartbeatSuggestionDto> BuildSuggestions(GatewayAppRuntime runtime, CancellationToken ct)
+    private async ValueTask<IReadOnlyList<HeartbeatSuggestionDto>> BuildSuggestionsAsync(GatewayAppRuntime runtime, CancellationToken ct)
     {
         var suggestions = new Dictionary<string, SuggestionAccumulator>(StringComparer.OrdinalIgnoreCase);
         var texts = new List<(string Source, string Text)>();
@@ -844,10 +844,10 @@ internal sealed class HeartbeatService
 
         if (_memoryStore is ISessionAdminStore sessionAdminStore)
         {
-            var page = sessionAdminStore.ListSessionsAsync(1, 20, new SessionListQuery(), ct).AsTask().GetAwaiter().GetResult();
+            var page = await sessionAdminStore.ListSessionsAsync(1, 20, new SessionListQuery(), ct);
             foreach (var summary in page.Items)
             {
-                var session = _sessionManager.LoadAsync(summary.Id, ct).AsTask().GetAwaiter().GetResult();
+                var session = await _sessionManager.LoadAsync(summary.Id, ct);
                 if (session is null)
                     continue;
 
@@ -856,10 +856,10 @@ internal sealed class HeartbeatService
             }
         }
 
-        var noteKeys = _memoryStore.ListNotesWithPrefixAsync("", ct).AsTask().GetAwaiter().GetResult();
+        var noteKeys = await _memoryStore.ListNotesWithPrefixAsync("", ct);
         foreach (var key in noteKeys.Take(20))
         {
-            var note = _memoryStore.LoadNoteAsync(key, ct).AsTask().GetAwaiter().GetResult();
+            var note = await _memoryStore.LoadNoteAsync(key, ct);
             if (!string.IsNullOrWhiteSpace(note))
                 texts.Add(($"note:{key}", note!));
         }
@@ -1014,16 +1014,8 @@ internal sealed class HeartbeatService
 
     private decimal ResolveRate(string providerId, string modelId)
     {
-        var key = $"{providerId}:{modelId}";
-        if (_config.TokenCostRates.TryGetValue(key, out var modelRate))
-            return modelRate;
-        if (_config.TokenCostRates.TryGetValue(providerId, out var providerRate))
-            return providerRate;
-        if (DefaultTokenCostRates.Rates.TryGetValue(key, out var defaultModelRate))
-            return defaultModelRate;
-        if (DefaultTokenCostRates.Rates.TryGetValue(providerId, out var defaultProviderRate))
-            return defaultProviderRate;
-        return 0m;
+        var rate = TokenCostRateResolver.Resolve(_config, providerId, modelId);
+        return Math.Max(rate.InputUsdPer1K, rate.OutputUsdPer1K);
     }
 
     private static bool LooksLikeApi(string value)

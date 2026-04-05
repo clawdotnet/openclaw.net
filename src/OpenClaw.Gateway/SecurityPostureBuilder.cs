@@ -29,7 +29,7 @@ internal static class SecurityPostureBuilder
         if (publicBind && !config.Security.RequireRequesterMatchForHttpToolApproval)
         {
             riskFlags.Add("public_bind_admin_override_tool_approval");
-            recommendations.Add("Set OpenClaw:Security:RequireRequesterMatchForHttpToolApproval=true on public binds unless operator override is explicitly intended.");
+            recommendations.Add("Set OpenClaw:Security:RequireRequesterMatchForHttpToolApproval=true on public binds so operator HTTP approvals must also supply the original requester identity.");
         }
 
         if (publicBind && !browserSessionCookieSecureEffective)

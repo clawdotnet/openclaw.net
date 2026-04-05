@@ -36,6 +36,8 @@ public sealed class RuntimeMetrics
     private long _retentionArchivedItems;
     private long _retentionDeletedItems;
     private long _retentionSkippedProtectedSessions;
+    private long _operatorAuditWriteFailures;
+    private long _runtimeEventWriteFailures;
 
     // ── Gauges ────────────────────────────────────────────────────────────
     private int _activeSessions;
@@ -70,6 +72,8 @@ public sealed class RuntimeMetrics
     public long RetentionArchivedItems => Interlocked.Read(ref _retentionArchivedItems);
     public long RetentionDeletedItems => Interlocked.Read(ref _retentionDeletedItems);
     public long RetentionSkippedProtectedSessions => Interlocked.Read(ref _retentionSkippedProtectedSessions);
+    public long OperatorAuditWriteFailures => Interlocked.Read(ref _operatorAuditWriteFailures);
+    public long RuntimeEventWriteFailures => Interlocked.Read(ref _runtimeEventWriteFailures);
     public int ActiveSessions => Volatile.Read(ref _activeSessions);
     public int CircuitBreakerState => Volatile.Read(ref _circuitBreakerState);
     public long RetentionLastRunAtUnixSeconds => Interlocked.Read(ref _retentionLastRunAtUnixSeconds);
@@ -102,6 +106,8 @@ public sealed class RuntimeMetrics
     public void AddRetentionArchivedItems(long n) => Interlocked.Add(ref _retentionArchivedItems, n);
     public void AddRetentionDeletedItems(long n) => Interlocked.Add(ref _retentionDeletedItems, n);
     public void AddRetentionSkippedProtectedSessions(long n) => Interlocked.Add(ref _retentionSkippedProtectedSessions, n);
+    public void IncrementOperatorAuditWriteFailures() => Interlocked.Increment(ref _operatorAuditWriteFailures);
+    public void IncrementRuntimeEventWriteFailures() => Interlocked.Increment(ref _runtimeEventWriteFailures);
     public void SetActiveSessions(int count) => Volatile.Write(ref _activeSessions, count);
     public void SetCircuitBreakerState(int state) => Volatile.Write(ref _circuitBreakerState, state);
     public void SetRetentionLastRun(DateTimeOffset runAtUtc, long durationMs, bool succeeded)
@@ -142,6 +148,8 @@ public sealed class RuntimeMetrics
         RetentionArchivedItems = RetentionArchivedItems,
         RetentionDeletedItems = RetentionDeletedItems,
         RetentionSkippedProtectedSessions = RetentionSkippedProtectedSessions,
+        OperatorAuditWriteFailures = OperatorAuditWriteFailures,
+        RuntimeEventWriteFailures = RuntimeEventWriteFailures,
         RetentionLastRunAtUnixSeconds = RetentionLastRunAtUnixSeconds,
         RetentionLastRunDurationMs = RetentionLastRunDurationMs,
         RetentionLastRunSucceeded = RetentionLastRunSucceeded,
@@ -178,6 +186,8 @@ public struct MetricsSnapshot
     public long RetentionArchivedItems { get; set; }
     public long RetentionDeletedItems { get; set; }
     public long RetentionSkippedProtectedSessions { get; set; }
+    public long OperatorAuditWriteFailures { get; set; }
+    public long RuntimeEventWriteFailures { get; set; }
     public long RetentionLastRunAtUnixSeconds { get; set; }
     public long RetentionLastRunDurationMs { get; set; }
     public int RetentionLastRunSucceeded { get; set; }

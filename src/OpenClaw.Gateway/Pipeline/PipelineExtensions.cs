@@ -112,7 +112,8 @@ internal static class PipelineExtensions
             runtime.Operations,
             runtime.RuntimeMetrics,
             app.Services.GetService<LearningService>(),
-            app.Services.GetService<GatewayAutomationService>());
+            app.Services.GetService<GatewayAutomationService>(),
+            app.Services.GetService<ContractGovernanceService>());
     }
 
     private static void StartChannels(WebApplication app, GatewayAppRuntime runtime)

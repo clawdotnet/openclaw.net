@@ -9,19 +9,34 @@ using OpenClaw.Core.Models;
 
 namespace OpenClaw.Core.Memory;
 
+public sealed class MemoryStoreCorruptionException : IOException
+{
+    public MemoryStoreCorruptionException(string message, string sessionId, string filePath, Exception innerException)
+        : base(message, innerException)
+    {
+        SessionId = sessionId;
+        FilePath = filePath;
+    }
+
+    public string SessionId { get; }
+    public string FilePath { get; }
+}
+
 /// <summary>
 /// File-based implementation of <see cref="IMemoryStore"/>.
 /// Sessions and notes are stored as JSON files with URL-safe base64 encoded filenames
 /// to prevent path traversal attacks. Includes in-memory LRU cache for sessions.
 /// </summary>
-public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore
+public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IAsyncDisposable, IDisposable
 {
+    private const int SessionLoadStripeCount = 64;
+
     private readonly string _basePath;
     private readonly string _sessionsPath;
     private readonly string _notesPath;
     private readonly string _branchesPath;
     private readonly IMemoryCache _sessionCache;
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLoadGates = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim[] _sessionLoadStripes;
     private readonly ILogger<FileMemoryStore>? _logger;
 
     public FileMemoryStore(string basePath, int maxCachedSessions = 100, ILogger<FileMemoryStore>? logger = null)
@@ -41,6 +56,9 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
         {
             SizeLimit = Math.Max(1, maxCachedSessions)
         });
+        _sessionLoadStripes = Enumerable.Range(0, SessionLoadStripeCount)
+            .Select(static _ => new SemaphoreSlim(1, 1))
+            .ToArray();
     }
 
     public async ValueTask<Session?> GetSessionAsync(string sessionId, CancellationToken ct)
@@ -52,7 +70,7 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
         if (_sessionCache.TryGetValue(sessionId, out Session? cached))
             return cached;
 
-        var loadGate = _sessionLoadGates.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
+        var loadGate = ResolveSessionLoadStripe(sessionId);
         await loadGate.WaitAsync(ct);
         try
         {
@@ -84,9 +102,13 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
                         return session;
                     }
                 }
-                catch
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
-                    // Fall through to normal path
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    throw QuarantineCorruptSessionFile(legacyPath, sessionId, ex);
                 }
             }
 
@@ -114,15 +136,71 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
 
                 return loaded;
             }
-            catch
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                return null;
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw QuarantineCorruptSessionFile(filePath, sessionId, ex);
             }
         }
         finally
         {
             loadGate.Release();
         }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        foreach (var stripe in _sessionLoadStripes)
+            stripe.Dispose();
+
+        _sessionCache.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    public void Dispose()
+        => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+    private SemaphoreSlim ResolveSessionLoadStripe(string sessionId)
+    {
+        var index = (sessionId.GetHashCode(StringComparison.Ordinal) & int.MaxValue) % _sessionLoadStripes.Length;
+        return _sessionLoadStripes[index];
+    }
+
+    private MemoryStoreCorruptionException QuarantineCorruptSessionFile(string filePath, string sessionId, Exception ex)
+    {
+        string? quarantinePath = null;
+
+        try
+        {
+            if (File.Exists(filePath))
+            {
+                quarantinePath = filePath + $".corrupt-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}";
+                File.Move(filePath, quarantinePath, overwrite: true);
+            }
+        }
+        catch (Exception quarantineEx)
+        {
+            _logger?.LogWarning(
+                quarantineEx,
+                "Failed to quarantine corrupt session file {FilePath} for session {SessionId}",
+                filePath,
+                sessionId);
+        }
+
+        var effectivePath = quarantinePath ?? filePath;
+        _logger?.LogError(
+            ex,
+            "Session file for {SessionId} is corrupt or unreadable and was quarantined to {FilePath}",
+            sessionId,
+            effectivePath);
+        return new MemoryStoreCorruptionException(
+            $"Session '{sessionId}' could not be loaded because its persisted state is corrupt.",
+            sessionId,
+            effectivePath,
+            ex);
     }
 
     public async ValueTask SaveSessionAsync(Session session, CancellationToken ct)

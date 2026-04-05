@@ -669,6 +669,8 @@ public sealed class NativeDynamicPluginManifest
     public required string Id { get; init; }
     public string? Name { get; init; }
     public string? Version { get; init; }
+    public string? MinHostVersion { get; init; }
+    public string? PluginApiVersion { get; init; }
     public required string AssemblyPath { get; init; }
     public required string TypeName { get; init; }
     public string[] Capabilities { get; init; } = [];

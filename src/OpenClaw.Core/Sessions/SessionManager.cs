@@ -10,9 +10,12 @@ namespace OpenClaw.Core.Sessions;
 /// <summary>
 /// Manages active sessions with automatic expiry. Thread-safe, allocation-light.
 /// </summary>
-public sealed class SessionManager
+public sealed class SessionManager : IAsyncDisposable, IDisposable
 {
     private readonly ConcurrentDictionary<string, Session> _active = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _lockLastUsed = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<long, Task> _backgroundPersists = new();
     private readonly IMemoryStore _store;
     private readonly ILogger? _logger;
     private readonly RuntimeMetrics? _metrics;
@@ -20,6 +23,8 @@ public sealed class SessionManager
     private readonly int _maxSessions;
     private readonly SemaphoreSlim _admissionGate = new(1, 1);
     private int _activeCount;
+    private long _backgroundPersistSequence;
+    private int _disposeStarted;
 
     public SessionManager(IMemoryStore store, GatewayConfig config, ILogger? logger = null, RuntimeMetrics? metrics = null)
     {
@@ -29,6 +34,9 @@ public sealed class SessionManager
         _timeout = TimeSpan.FromMinutes(config.SessionTimeoutMinutes);
         _maxSessions = config.MaxConcurrentSessions;
     }
+
+    public ConcurrentDictionary<string, SemaphoreSlim> SessionLocks => _sessionLocks;
+    public ConcurrentDictionary<string, DateTimeOffset> LockLastUsed => _lockLastUsed;
 
     /// <summary>
     /// Get or create a session for the given channel+sender pair.
@@ -117,8 +125,18 @@ public sealed class SessionManager
         }
     }
 
-    public async ValueTask PersistAsync(Session session, CancellationToken ct)
+    public ValueTask PersistAsync(Session session, CancellationToken ct)
+        => PersistAsync(session, ct, sessionLockHeld: false);
+
+    public async ValueTask PersistAsync(Session session, CancellationToken ct, bool sessionLockHeld)
     {
+        if (session is null)
+            throw new ArgumentNullException(nameof(session));
+
+        await using var sessionLock = sessionLockHeld
+            ? null
+            : await AcquireSessionLockAsync(session.Id, ct);
+
         const int MaxRetries = 3;
         var delay = TimeSpan.FromMilliseconds(100);
 
@@ -157,6 +175,7 @@ public sealed class SessionManager
     /// </summary>
     public async ValueTask<string> BranchAsync(Session session, string branchName, CancellationToken ct)
     {
+        await using var sessionLock = await AcquireSessionLockAsync(session.Id, ct);
         var branchId = $"{session.Id}:branch:{branchName}:{DateTimeOffset.UtcNow.Ticks}";
         var branch = new SessionBranch
         {
@@ -176,6 +195,7 @@ public sealed class SessionManager
     /// </summary>
     public async ValueTask<bool> RestoreBranchAsync(Session session, string branchId, CancellationToken ct)
     {
+        await using var sessionLock = await AcquireSessionLockAsync(session.Id, ct);
         var branch = await _store.LoadBranchAsync(branchId, ct);
         if (branch is null || branch.SessionId != session.Id)
             return false;
@@ -201,6 +221,7 @@ public sealed class SessionManager
         SessionMetadataSnapshot? metadata,
         CancellationToken ct)
     {
+        await using var sessionLock = await AcquireSessionLockAsync(session.Id, ct);
         var branch = await _store.LoadBranchAsync(branchId, ct);
         if (branch is null || !string.Equals(branch.SessionId, session.Id, StringComparison.Ordinal))
             return null;
@@ -252,6 +273,17 @@ public sealed class SessionManager
             if (string.Equals(session.Id, sessionId, StringComparison.Ordinal))
                 return session;
         }
+        return null;
+    }
+
+    public Session? TryGetActiveByContractId(string contractId)
+    {
+        foreach (var session in _active.Values)
+        {
+            if (string.Equals(session.ContractPolicy?.Id, contractId, StringComparison.Ordinal))
+                return session;
+        }
+
         return null;
     }
 
@@ -314,7 +346,7 @@ public sealed class SessionManager
                     removedCount++;
                     _metrics?.IncrementSessionEvictions();
                     _logger?.LogInformation("Session {SessionId} expired and evicted", kvp.Key);
-                    _ = PersistBestEffortAsync(removed);
+                    QueueBestEffortPersist(removed);
                 }
             }
         }
@@ -395,7 +427,7 @@ public sealed class SessionManager
                 removed.State = SessionState.Expired;
                 Interlocked.Decrement(ref _activeCount);
                 _metrics?.IncrementSessionEvictions();
-                _ = PersistBestEffortAsync(removed);
+                QueueBestEffortPersist(removed);
             }
             else
             {
@@ -427,11 +459,161 @@ public sealed class SessionManager
     {
         try
         {
-            await _store.SaveSessionAsync(session, CancellationToken.None);
+            await PersistAsync(session, CancellationToken.None);
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Best-effort persistence failed for session {SessionId}", session.Id);
+        }
+    }
+
+    public async ValueTask<IAsyncDisposable> AcquireSessionLockAsync(string sessionId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            throw new ArgumentException("sessionId must be set.", nameof(sessionId));
+
+        var gate = _sessionLocks.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        _lockLastUsed[sessionId] = DateTimeOffset.UtcNow;
+        return new SessionLockLease(this, sessionId, gate);
+    }
+
+    public void CleanupSessionLocksOnce(DateTimeOffset now, TimeSpan orphanThreshold)
+    {
+        foreach (var kvp in _sessionLocks)
+        {
+            var sessionKey = kvp.Key;
+            var semaphore = kvp.Value;
+
+            _lockLastUsed.TryAdd(sessionKey, now);
+
+            if (IsActive(sessionKey))
+            {
+                _lockLastUsed[sessionKey] = now;
+                continue;
+            }
+
+            var lastUsed = _lockLastUsed.GetValueOrDefault(sessionKey, now);
+            var isOrphaned = (now - lastUsed) > orphanThreshold;
+            if (!isOrphaned || semaphore.CurrentCount != 1 || !semaphore.Wait(0))
+                continue;
+
+            var removed = false;
+            try
+            {
+                if (IsActive(sessionKey))
+                {
+                    _lockLastUsed[sessionKey] = now;
+                    continue;
+                }
+
+                if (_sessionLocks.TryRemove(sessionKey, out var removedSemaphore))
+                {
+                    removed = true;
+                    _lockLastUsed.TryRemove(sessionKey, out _);
+                    try { removedSemaphore.Release(); } catch { }
+                    removedSemaphore.Dispose();
+                }
+            }
+            finally
+            {
+                if (!removed)
+                {
+                    try { semaphore.Release(); } catch { }
+                }
+            }
+        }
+    }
+
+    public void DisposeSessionLocks()
+    {
+        foreach (var sessionKey in _sessionLocks.Keys)
+        {
+            if (!_sessionLocks.TryRemove(sessionKey, out var semaphore))
+                continue;
+
+            try
+            {
+                semaphore.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Failed to dispose session lock for {SessionKey}", sessionKey);
+            }
+        }
+
+        _lockLastUsed.Clear();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposeStarted, 1) != 0)
+            return;
+
+        var pending = _backgroundPersists.Values.ToArray();
+        if (pending.Length > 0)
+        {
+            try
+            {
+                await Task.WhenAll(pending);
+            }
+            catch
+            {
+                // Individual best-effort tasks already log their failures.
+            }
+        }
+
+        DisposeSessionLocks();
+        _admissionGate.Dispose();
+
+        _backgroundPersists.Clear();
+
+        switch (_store)
+        {
+            case IAsyncDisposable asyncDisposable:
+                await asyncDisposable.DisposeAsync();
+                break;
+            case IDisposable disposable:
+                disposable.Dispose();
+                break;
+        }
+    }
+
+    public void Dispose()
+        => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+    private void QueueBestEffortPersist(Session session)
+    {
+        var opId = Interlocked.Increment(ref _backgroundPersistSequence);
+        var persistTask = PersistBestEffortAsync(session);
+        _backgroundPersists[opId] = persistTask;
+        _ = persistTask.ContinueWith(
+            static (_, state) =>
+            {
+                var tuple = (BackgroundPersistState)state!;
+                Task? removedTask = null;
+                tuple.Pending.TryRemove(tuple.OpId, out removedTask);
+            },
+            state: new BackgroundPersistState(_backgroundPersists, opId),
+            cancellationToken: CancellationToken.None,
+            continuationOptions: TaskContinuationOptions.ExecuteSynchronously,
+            scheduler: TaskScheduler.Default);
+    }
+
+    private sealed record BackgroundPersistState(ConcurrentDictionary<long, Task> Pending, long OpId);
+
+    private sealed class SessionLockLease(SessionManager owner, string sessionId, SemaphoreSlim gate) : IAsyncDisposable
+    {
+        private int _disposed;
+
+        public ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return ValueTask.CompletedTask;
+
+            owner._lockLastUsed[sessionId] = DateTimeOffset.UtcNow;
+            try { gate.Release(); } catch { /* ignore */ }
+            return ValueTask.CompletedTask;
         }
     }
 }

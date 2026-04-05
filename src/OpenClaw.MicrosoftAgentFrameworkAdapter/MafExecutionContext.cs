@@ -12,6 +12,7 @@ internal sealed class MafExecutionContext
     public required int SkillPromptLength { get; init; }
     public required long SessionTokenBudget { get; init; }
     public required List<ToolInvocation> ToolInvocations { get; init; }
+    public Action<Session, string, string, long, long>? RecordContractTurnUsage { get; init; }
     public ToolApprovalCallback? ApprovalCallback { get; init; }
     public Func<AgentStreamEvent, CancellationToken, ValueTask>? StreamEventWriter { get; init; }
 }

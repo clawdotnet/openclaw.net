@@ -106,21 +106,34 @@ internal static class MemoryRetentionArchive
         {
             ct.ThrowIfCancellationRequested();
 
-            DateTime lastWriteUtc;
             try
             {
-                lastWriteUtc = File.GetLastWriteTimeUtc(file);
+                using var stream = File.OpenRead(file);
+                using var doc = JsonDocument.Parse(stream);
+                if (!doc.RootElement.TryGetProperty("sweptAtUtc", out var sweptAtElement) ||
+                    sweptAtElement.ValueKind != JsonValueKind.String ||
+                    !DateTime.TryParse(
+                        sweptAtElement.GetString(),
+                        provider: null,
+                        System.Globalization.DateTimeStyles.RoundtripKind,
+                        out var sweptAtUtc))
+                {
+                    var fallbackLastWriteUtc = File.GetLastWriteTimeUtc(file);
+                    if (fallbackLastWriteUtc >= cutoff)
+                        continue;
+                }
+                else if (sweptAtUtc >= cutoff)
+                {
+                    continue;
+                }
             }
             catch (Exception ex)
             {
                 errors++;
                 if (errorMessages.Count < 16)
-                    errorMessages.Add($"Failed to stat archive file '{file}': {ex.Message}");
+                    errorMessages.Add($"Failed to inspect archive file '{file}': {ex.Message}");
                 continue;
             }
-
-            if (lastWriteUtc >= cutoff)
-                continue;
 
             try
             {
@@ -135,6 +148,8 @@ internal static class MemoryRetentionArchive
             }
         }
 
+        CleanupEmptyDirectories(archiveRoot);
+
         return (deleted, errors, errorMessages);
     }
 
@@ -142,5 +157,22 @@ internal static class MemoryRetentionArchive
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(id));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static void CleanupEmptyDirectories(string archiveRoot)
+    {
+        foreach (var dir in Directory.EnumerateDirectories(archiveRoot, "*", SearchOption.AllDirectories)
+                     .OrderByDescending(static path => path.Length))
+        {
+            try
+            {
+                if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                    Directory.Delete(dir, recursive: false);
+            }
+            catch
+            {
+                // Best effort.
+            }
+        }
     }
 }

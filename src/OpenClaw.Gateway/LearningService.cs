@@ -1,4 +1,6 @@
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.AI;
 using OpenClaw.Agent;
 using OpenClaw.Core.Abstractions;
@@ -72,9 +74,16 @@ internal sealed class LearningService
                 await _profileStore.SaveProfileAsync(proposal.ProfileUpdate, ct);
                 break;
             case LearningProposalKind.AutomationSuggestion when proposal.AutomationDraft is not null:
+                if (proposal.Status != LearningProposalStatus.Pending)
+                    break;
                 await _automationStore.SaveAutomationAsync(proposal.AutomationDraft, ct);
                 break;
             case LearningProposalKind.SkillDraft when !string.IsNullOrWhiteSpace(proposal.DraftContent):
+                if (!ValidateSkillDraft(proposal.SkillName ?? proposal.Title, proposal.DraftContent, proposal.DraftContentHash, out var validationError))
+                {
+                    return await RejectAsync(proposal.Id, validationError, ct);
+                }
+
                 await SaveManagedSkillAsync(proposal.SkillName ?? proposal.Title, proposal.DraftContent, ct);
                 await runtime.ReloadSkillsAsync(ct);
                 break;
@@ -90,6 +99,7 @@ internal sealed class LearningService
             Summary = proposal.Summary,
             SkillName = proposal.SkillName,
             DraftContent = proposal.DraftContent,
+            DraftContentHash = proposal.DraftContentHash,
             ProfileUpdate = proposal.ProfileUpdate,
             AutomationDraft = proposal.AutomationDraft,
             SourceSessionIds = proposal.SourceSessionIds,
@@ -119,6 +129,7 @@ internal sealed class LearningService
             Summary = proposal.Summary,
             SkillName = proposal.SkillName,
             DraftContent = proposal.DraftContent,
+            DraftContentHash = proposal.DraftContentHash,
             ProfileUpdate = proposal.ProfileUpdate,
             AutomationDraft = proposal.AutomationDraft,
             SourceSessionIds = proposal.SourceSessionIds,
@@ -163,17 +174,37 @@ internal sealed class LearningService
             ]
         };
 
+        if (_config.ReviewRequired)
+        {
+            await _proposalStore.SaveProposalAsync(new LearningProposal
+            {
+                Id = $"lp_{Guid.NewGuid():N}"[..20],
+                Kind = LearningProposalKind.ProfileUpdate,
+                Status = LearningProposalStatus.Pending,
+                ActorId = actorId,
+                Title = "Profile update suggestion",
+                Summary = "Detected a possible stable user preference or identity hint.",
+                ProfileUpdate = profile,
+                SourceSessionIds = [session.Id],
+                Confidence = 0.55f
+            }, ct);
+            return;
+        }
+
+        await _profileStore.SaveProfileAsync(profile, ct);
         await _proposalStore.SaveProposalAsync(new LearningProposal
         {
             Id = $"lp_{Guid.NewGuid():N}"[..20],
             Kind = LearningProposalKind.ProfileUpdate,
-            Status = LearningProposalStatus.Pending,
+            Status = LearningProposalStatus.Approved,
             ActorId = actorId,
             Title = "Profile update suggestion",
             Summary = "Detected a possible stable user preference or identity hint.",
             ProfileUpdate = profile,
             SourceSessionIds = [session.Id],
-            Confidence = 0.55f
+            Confidence = 0.55f,
+            ReviewedAtUtc = DateTimeOffset.UtcNow,
+            ReviewNotes = "auto-applied because Learning.ReviewRequired=false"
         }, ct);
     }
 
@@ -209,7 +240,7 @@ internal sealed class LearningService
             TemplateKey = "custom"
         };
 
-        await _proposalStore.SaveProposalAsync(new LearningProposal
+        var automationProposal = new LearningProposal
         {
             Id = $"lp_{Guid.NewGuid():N}"[..20],
             Kind = LearningProposalKind.AutomationSuggestion,
@@ -220,7 +251,9 @@ internal sealed class LearningService
             AutomationDraft = automation,
             SourceSessionIds = [session.Id],
             Confidence = Math.Min(0.9f, 0.3f + (search.Items.Count * 0.1f))
-        }, ct);
+        };
+
+        await _proposalStore.SaveProposalAsync(automationProposal, ct);
     }
 
     private async Task EnsureSkillProposalAsync(Session session, string actorId, ChatTurn assistantTurn, CancellationToken ct)
@@ -254,6 +287,7 @@ internal sealed class LearningService
             Summary = "Repeated multi-tool workflow detected.",
             SkillName = skillName,
             DraftContent = draftContent.Length > _config.MaxDraftChars ? draftContent[.._config.MaxDraftChars] : draftContent,
+            DraftContentHash = ComputeDraftHash(draftContent.Length > _config.MaxDraftChars ? draftContent[.._config.MaxDraftChars] : draftContent),
             SourceSessionIds = [session.Id],
             Confidence = Math.Min(0.95f, 0.4f + (repeatedCount * 0.1f))
         }, ct);
@@ -315,6 +349,71 @@ Use it when repeated requests resemble the sessions that produced this draft.
         Directory.CreateDirectory(root);
         await File.WriteAllTextAsync(Path.Combine(root, "SKILL.md"), content, ct);
     }
+
+    private static bool ValidateSkillDraft(string skillName, string content, string? expectedHash, out string error)
+    {
+        error = string.Empty;
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            error = "Skill draft content is empty.";
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectedHash) &&
+            !string.Equals(expectedHash, ComputeDraftHash(content), StringComparison.Ordinal))
+        {
+            error = "Skill draft content no longer matches the reviewed proposal.";
+            return false;
+        }
+
+        if (content.Length > 4_000)
+        {
+            error = "Skill draft content exceeds the maximum allowed length.";
+            return false;
+        }
+
+        if (content.Contains("..", StringComparison.Ordinal) || content.Contains('\0'))
+        {
+            error = "Skill draft contains invalid path-like content.";
+            return false;
+        }
+
+        var lines = content.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        if (lines.Length < 5 || lines[0] != "---")
+        {
+            error = "Skill draft must begin with YAML frontmatter.";
+            return false;
+        }
+
+        var endIndex = Array.IndexOf(lines, "---", 1);
+        if (endIndex < 2)
+        {
+            error = "Skill draft frontmatter is incomplete.";
+            return false;
+        }
+
+        var frontmatter = lines[1..endIndex];
+        var nameLine = frontmatter.FirstOrDefault(static line => line.StartsWith("name:", StringComparison.OrdinalIgnoreCase));
+        var descriptionLine = frontmatter.FirstOrDefault(static line => line.StartsWith("description:", StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrWhiteSpace(nameLine) || string.IsNullOrWhiteSpace(descriptionLine))
+        {
+            error = "Skill draft frontmatter must include name and description.";
+            return false;
+        }
+
+        var declaredName = nameLine["name:".Length..].Trim();
+        if (!string.Equals(Slugify(declaredName), Slugify(skillName), StringComparison.Ordinal))
+        {
+            error = "Skill draft name does not match the target skill slug.";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    private static string ComputeDraftHash(string content)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 
     public static string BuildActorId(string channelId, string senderId)
         => $"{channelId}:{senderId}";

@@ -144,6 +144,7 @@ public sealed class ExecutionProcessStatus
 public sealed class ExecutionProcessLogRequest
 {
     public required string ProcessId { get; init; }
+    public string? OwnerSessionId { get; init; }
     public int StdoutOffset { get; init; }
     public int StderrOffset { get; init; }
     public int MaxChars { get; init; } = 8_192;
@@ -162,6 +163,7 @@ public sealed class ExecutionProcessLogResult
 public sealed class ExecutionProcessInputRequest
 {
     public required string ProcessId { get; init; }
+    public string? OwnerSessionId { get; init; }
     public required string Data { get; init; }
 }
 

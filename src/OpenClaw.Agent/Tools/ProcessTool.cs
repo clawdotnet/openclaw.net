@@ -58,11 +58,11 @@ public sealed class ProcessTool : IToolWithContext
         {
             "start" => await StartAsync(root, context, ct),
             "list" => List(root, context),
-            "poll" => Poll(root),
-            "log" => Log(root),
-            "wait" => await WaitAsync(root, ct),
-            "write" => await WriteAsync(root, ct),
-            "kill" => await KillAsync(root, ct),
+            "poll" => Poll(root, context),
+            "log" => Log(root, context),
+            "wait" => await WaitAsync(root, context, ct),
+            "write" => await WriteAsync(root, context, ct),
+            "kill" => await KillAsync(root, context, ct),
             _ => "Error: Unknown action. Valid actions are start, list, poll, log, wait, write, and kill."
         };
     }
@@ -106,20 +106,20 @@ public sealed class ProcessTool : IToolWithContext
         return sb.ToString().TrimEnd();
     }
 
-    private string Poll(JsonElement root)
+    private string Poll(JsonElement root, ToolExecutionContext context)
     {
         var processId = GetRequiredProcessId(root);
         if (processId is null)
             return "Error: process_id is required.";
 
-        var status = _processes.GetStatus(processId);
+        var status = _processes.GetStatus(processId, context.Session.Id);
         if (status is null)
             return $"Error: process '{processId}' was not found.";
 
         return $"{status.ProcessId} [{status.State}] exit={status.ExitCode?.ToString() ?? "-"} stdout={status.StdoutBytes} stderr={status.StderrBytes}";
     }
 
-    private string Log(JsonElement root)
+    private string Log(JsonElement root, ToolExecutionContext context)
     {
         var processId = GetRequiredProcessId(root);
         if (processId is null)
@@ -128,6 +128,7 @@ public sealed class ProcessTool : IToolWithContext
         var log = _processes.ReadLog(new ExecutionProcessLogRequest
         {
             ProcessId = processId,
+            OwnerSessionId = context.Session.Id,
             StdoutOffset = GetInt(root, "stdout_offset") ?? 0,
             StderrOffset = GetInt(root, "stderr_offset") ?? 0,
             MaxChars = GetInt(root, "max_chars") ?? 8_192
@@ -139,20 +140,20 @@ public sealed class ProcessTool : IToolWithContext
         return $"[stdout]\n{log.Stdout}\n[stderr]\n{log.Stderr}\n[next_stdout_offset={log.NextStdoutOffset} next_stderr_offset={log.NextStderrOffset}]";
     }
 
-    private async Task<string> WaitAsync(JsonElement root, CancellationToken ct)
+    private async Task<string> WaitAsync(JsonElement root, ToolExecutionContext context, CancellationToken ct)
     {
         var processId = GetRequiredProcessId(root);
         if (processId is null)
             return "Error: process_id is required.";
 
-        var status = await _processes.WaitAsync(processId, ct);
+        var status = await _processes.WaitAsync(processId, context.Session.Id, ct);
         if (status is null)
             return $"Error: process '{processId}' was not found.";
 
         return $"{status.ProcessId} completed with state={status.State} exit={status.ExitCode?.ToString() ?? "-"}";
     }
 
-    private async Task<string> WriteAsync(JsonElement root, CancellationToken ct)
+    private async Task<string> WriteAsync(JsonElement root, ToolExecutionContext context, CancellationToken ct)
     {
         var processId = GetRequiredProcessId(root);
         var input = GetString(root, "input");
@@ -164,19 +165,20 @@ public sealed class ProcessTool : IToolWithContext
         return await _processes.WriteAsync(new ExecutionProcessInputRequest
         {
             ProcessId = processId,
+            OwnerSessionId = context.Session.Id,
             Data = input
         }, ct)
             ? $"Input written to process {processId}."
             : $"Error: process '{processId}' was not found.";
     }
 
-    private async Task<string> KillAsync(JsonElement root, CancellationToken ct)
+    private async Task<string> KillAsync(JsonElement root, ToolExecutionContext context, CancellationToken ct)
     {
         var processId = GetRequiredProcessId(root);
         if (processId is null)
             return "Error: process_id is required.";
 
-        return await _processes.KillAsync(processId, ct)
+        return await _processes.KillAsync(processId, context.Session.Id, ct)
             ? $"Process {processId} terminated."
             : $"Error: process '{processId}' was not found.";
     }

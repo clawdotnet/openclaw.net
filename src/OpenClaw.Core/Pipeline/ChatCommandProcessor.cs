@@ -103,7 +103,7 @@ public sealed class ChatCommandProcessor
                 return (true, $"Model override set to: {args}");
 
             case "/usage":
-                return (true, $"Total Token Usage in this session:\n- Input: {session.TotalInputTokens}\n- Output: {session.TotalOutputTokens}\n- Sum: {session.TotalInputTokens + session.TotalOutputTokens}");
+                return (true, $"Total Token Usage in this session:\n- Input: {session.TotalInputTokens}\n- Output: {session.TotalOutputTokens}\n- Sum: {session.GetTotalTokens()}");
 
             case "/think":
                 if (string.IsNullOrWhiteSpace(args))

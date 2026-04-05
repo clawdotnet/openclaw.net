@@ -257,11 +257,11 @@ internal static class ControlEndpoints
                 AppendApprovalRuntimeEvent(
                     runtime,
                     outcome.Request,
-                    approved,
-                    "http_requester",
-                    requesterChannelId,
-                    requesterSenderId);
-                AppendAudit(ctx, operations, auth, "tool_approval_requester", approvalId, $"Requester {(approved ? "approved" : "denied")} tool approval '{approvalId}'.", true);
+                        approved,
+                        "http_requester",
+                        requesterChannelId,
+                        requesterSenderId);
+                AppendAudit(ctx, operations, auth, "tool_approval_admin_requester_match", approvalId, $"Admin {(approved ? "approved" : "denied")} tool approval '{approvalId}' with requester-match guard.", true);
             }
             else if (outcome.Result == ToolApprovalDecisionResult.Unauthorized)
             {
@@ -275,14 +275,14 @@ internal static class ControlEndpoints
                     new OperationStatusResponse
                     {
                         Success = true,
-                        Mode = "requester_match"
+                        Mode = "admin_requester_match_guard"
                     },
                     CoreJsonContext.Default.OperationStatusResponse),
                 ToolApprovalDecisionResult.Unauthorized => Results.Json(
                     new OperationStatusResponse
                     {
                         Success = false,
-                        Error = "Requester does not match pending approval owner."
+                        Error = "Requester does not match the pending approval owner for this admin approval request."
                     },
                     CoreJsonContext.Default.OperationStatusResponse,
                     statusCode: StatusCodes.Status403Forbidden),

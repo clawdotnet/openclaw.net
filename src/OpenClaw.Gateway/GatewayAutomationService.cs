@@ -18,6 +18,7 @@ internal sealed class GatewayAutomationService
     private readonly IAutomationStore _store;
     private readonly HeartbeatService _heartbeat;
     private readonly ILogger<GatewayAutomationService>? _logger;
+    private AutomationDefinition[] _cachedAutomations = [];
 
     public GatewayAutomationService(
         GatewayConfig config,
@@ -37,7 +38,9 @@ internal sealed class GatewayAutomationService
         if (_config.Cron.Enabled)
             items.AddRange(_config.Cron.Jobs.Select(MapLegacyJob));
 
-        items.AddRange(await _store.ListAutomationsAsync(ct));
+        var storedAutomations = await _store.ListAutomationsAsync(ct);
+        _cachedAutomations = [.. storedAutomations];
+        items.AddRange(storedAutomations);
 
         var heartbeat = MapHeartbeatConfig(_heartbeat.LoadConfig());
         items.Add(heartbeat);
@@ -92,6 +95,7 @@ internal sealed class GatewayAutomationService
         }
 
         await _store.SaveAutomationAsync(normalized, ct);
+        await RefreshCacheAsync(ct);
         return normalized;
     }
 
@@ -104,6 +108,7 @@ internal sealed class GatewayAutomationService
         }
 
         await _store.DeleteAutomationAsync(automationId, ct);
+        await RefreshCacheAsync(ct);
     }
 
     public async ValueTask<AutomationRunState?> GetRunStateAsync(string automationId, CancellationToken ct)
@@ -218,9 +223,15 @@ internal sealed class GatewayAutomationService
         {
             foreach (var automation in migrated.Where(static item => !string.Equals(item.Id, HeartbeatAutomationId, StringComparison.OrdinalIgnoreCase)))
                 await _store.SaveAutomationAsync(automation, ct);
+            await RefreshCacheAsync(ct);
         }
 
         return migrated;
+    }
+
+    public async ValueTask RefreshCacheAsync(CancellationToken ct)
+    {
+        _cachedAutomations = [.. await _store.ListAutomationsAsync(ct)];
     }
 
     public IReadOnlyList<AutomationTemplate> GetTemplates()
@@ -273,8 +284,7 @@ internal sealed class GatewayAutomationService
         if (managedHeartbeatJob is not null)
             jobs.Add(managedHeartbeatJob);
 
-        var stored = _store.ListAutomationsAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
-        foreach (var automation in stored)
+        foreach (var automation in _cachedAutomations)
         {
             if (!automation.Enabled || automation.IsDraft)
                 continue;

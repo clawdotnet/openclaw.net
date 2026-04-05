@@ -30,6 +30,8 @@ public sealed class ApprovalAuditStoreTests
         Assert.Equal(2, all.Count);
         Assert.Equal("decision", all[0].EventType);
         Assert.Equal("created", all[1].EventType);
+        Assert.Equal(all[0].DecisionAtUtc, all[0].TimestampUtc);
+        Assert.True(all[0].TimestampUtc >= all[1].TimestampUtc);
 
         var filtered = store.Query(new ApprovalHistoryQuery { Limit = 10, ToolName = "shell" });
         Assert.Equal(2, filtered.Count);

@@ -47,7 +47,9 @@ internal sealed class ApprovalAuditStore
         string decisionSource,
         string? actorChannelId,
         string? actorSenderId)
-        => Append(new ApprovalHistoryEntry
+    {
+        var decidedAt = DateTimeOffset.UtcNow;
+        return Append(new ApprovalHistoryEntry
         {
             EventType = "decision",
             ApprovalId = request.ApprovalId,
@@ -59,13 +61,14 @@ internal sealed class ApprovalAuditStore
             Action = request.Action,
             IsMutation = request.IsMutation,
             Summary = request.Summary,
-            TimestampUtc = request.CreatedAt,
-            DecisionAtUtc = DateTimeOffset.UtcNow,
+            TimestampUtc = decidedAt,
+            DecisionAtUtc = decidedAt,
             ActorChannelId = actorChannelId,
             ActorSenderId = actorSenderId,
             DecisionSource = decisionSource,
             Approved = approved
         });
+    }
 
     public IReadOnlyList<ApprovalHistoryEntry> Query(ApprovalHistoryQuery query)
     {

@@ -120,7 +120,8 @@ public sealed class WebSocketChannel : IChannelAdapter
                     MessageId = parsed.MessageId,
                     ReplyToMessageId = parsed.ReplyToMessageId,
                     ApprovalId = parsed.ApprovalId,
-                    Approved = parsed.Approved
+                    Approved = parsed.Approved,
+                    RequestCancellation = ct
                 };
 
                 if (OnMessageReceived is not null)

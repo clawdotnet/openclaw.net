@@ -358,6 +358,56 @@ public sealed class ContractGovernanceTests
     }
 
     [Fact]
+    public async Task ContractScopeHook_ProcessWorkingDirectoryOutsideScope_Denies()
+    {
+        var allowedRoot = Path.Combine(Path.GetTempPath(), $"openclaw-scope-{Guid.NewGuid():N}", "allowed");
+        var deniedRoot = Path.Combine(Path.GetTempPath(), $"openclaw-scope-{Guid.NewGuid():N}", "denied");
+        var policy = new ContractPolicy
+        {
+            Id = "ctr_test",
+            ScopedCapabilities = [new ScopedCapability { ToolName = "process", AllowedPaths = [allowedRoot] }]
+        };
+        var hook = new ContractScopeHook(_ => policy, _ => 0, NullLogger.Instance);
+        var context = new ToolHookContext
+        {
+            SessionId = "s1",
+            ChannelId = "ws",
+            SenderId = "u1",
+            CorrelationId = "c1",
+            ToolName = "process",
+            ArgumentsJson = JsonSerializer.Serialize(new { action = "start", working_directory = deniedRoot }),
+            IsStreaming = false
+        };
+
+        var result = await hook.BeforeExecuteAsync(context, CancellationToken.None);
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task ContractScopeHook_ScopedShellWithoutResolvablePath_Denies()
+    {
+        var policy = new ContractPolicy
+        {
+            Id = "ctr_test",
+            ScopedCapabilities = [new ScopedCapability { ToolName = "shell", AllowedPaths = [Path.GetTempPath()] }]
+        };
+        var hook = new ContractScopeHook(_ => policy, _ => 0, NullLogger.Instance);
+        var context = new ToolHookContext
+        {
+            SessionId = "s1",
+            ChannelId = "ws",
+            SenderId = "u1",
+            CorrelationId = "c1",
+            ToolName = "shell",
+            ArgumentsJson = JsonSerializer.Serialize(new { command = "pwd" }),
+            IsStreaming = false
+        };
+
+        var result = await hook.BeforeExecuteAsync(context, CancellationToken.None);
+        Assert.False(result);
+    }
+
+    [Fact]
     public async Task ContractScopeHook_NoContractPolicy_AllowsAll()
     {
         var hook = new ContractScopeHook(
@@ -455,7 +505,7 @@ public sealed class ContractGovernanceTests
         var middleware = new TokenBudgetMiddleware(
             maxTokensPerSession: 0, // unlimited tokens
             logger: null,
-            costChecker: (_, _) => (1.00m, 1.50m, true)); // cost exceeded
+            costChecker: (_, _, _) => (1.00m, 1.50m, true)); // cost exceeded
 
         var context = new MessageContext { ChannelId = "ws", SenderId = "user1", Text = "hello" };
         var nextCalled = false;

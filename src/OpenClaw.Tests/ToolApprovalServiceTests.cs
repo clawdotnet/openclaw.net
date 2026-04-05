@@ -44,8 +44,13 @@ public sealed class ToolApprovalServiceTests
         var service = new ToolApprovalService();
         var request = service.Create("sess-1", "telegram", "user-1", "shell", "{}", TimeSpan.FromMinutes(1));
 
-        var ok = service.TrySetDecision(request.ApprovalId, approved: false);
+        var result = service.TrySetDecision(
+            request.ApprovalId,
+            approved: false,
+            requesterChannelId: null,
+            requesterSenderId: null,
+            requireRequesterMatch: false);
 
-        Assert.True(ok);
+        Assert.Equal(ToolApprovalDecisionResult.Recorded, result);
     }
 }

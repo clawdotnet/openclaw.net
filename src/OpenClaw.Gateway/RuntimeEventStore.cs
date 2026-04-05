@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 
 namespace OpenClaw.Gateway;
 
@@ -12,14 +13,16 @@ internal sealed class RuntimeEventStore
     private readonly string _path;
     private readonly object _gate = new();
     private readonly ILogger<RuntimeEventStore> _logger;
+    private readonly RuntimeMetrics? _metrics;
 
-    public RuntimeEventStore(string storagePath, ILogger<RuntimeEventStore> logger)
+    public RuntimeEventStore(string storagePath, ILogger<RuntimeEventStore> logger, RuntimeMetrics? metrics = null)
     {
         var rootedStoragePath = Path.IsPathRooted(storagePath)
             ? storagePath
             : Path.GetFullPath(storagePath);
         _path = Path.Combine(rootedStoragePath, DirectoryName, FileName);
         _logger = logger;
+        _metrics = metrics;
     }
 
     public void Append(RuntimeEventEntry entry)
@@ -38,6 +41,7 @@ internal sealed class RuntimeEventStore
         }
         catch (Exception ex)
         {
+            _metrics?.IncrementRuntimeEventWriteFailures();
             _logger.LogWarning(ex, "Failed to append runtime event to {Path}", _path);
         }
     }

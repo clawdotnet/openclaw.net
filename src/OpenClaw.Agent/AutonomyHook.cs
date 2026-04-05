@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Security;
 using OpenClaw.Agent.Tools;
 
@@ -16,20 +17,6 @@ public sealed class AutonomyHook : IToolHook
     private readonly ILogger _logger;
     private readonly string? _workspaceRoot;
     public string Name => "Autonomy";
-
-    private static readonly HashSet<string> AlwaysWriteTools = new(StringComparer.Ordinal)
-    {
-        "write_file",
-        "shell",
-        "code_exec",
-        "home_assistant_write",
-        "mqtt_publish",
-        "notion_write",
-        "inbox_zero",
-        "email",
-        "calendar",
-        "delegate_agent"
-    };
 
     public AutonomyHook(ToolingConfig config, ILogger logger)
     {
@@ -98,21 +85,7 @@ public sealed class AutonomyHook : IToolHook
         => ValueTask.CompletedTask;
 
     private bool IsWriteCapable(string toolName, string arguments)
-    {
-        if (AlwaysWriteTools.Contains(toolName))
-            return true;
-
-        if (toolName == "git")
-            return true; // git can mutate repo; treat as write-capable for readonly mode
-
-        if (toolName == "database")
-        {
-            // DatabaseTool can be configured read-only, but treat it as write-capable for readonly mode.
-            return true;
-        }
-
-        return false;
-    }
+        => ToolActionPolicyResolver.IsMutationCapable(toolName, arguments);
 
     private bool IsShellCommandAllowed(string command)
     {

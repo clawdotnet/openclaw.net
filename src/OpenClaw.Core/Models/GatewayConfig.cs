@@ -58,6 +58,18 @@ public sealed class GatewayConfig
     /// Used for contract-governed USD cost budgets. Example: { "openai:gpt-4o": 0.005 }
     /// </summary>
     public Dictionary<string, decimal> TokenCostRates { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Detailed token cost rates by "provider:model" or "provider" key, in USD per 1K tokens.
+    /// Used when providers have asymmetric input/output pricing.
+    /// </summary>
+    public Dictionary<string, TokenCostRateConfig> TokenCostRateDetails { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+public sealed class TokenCostRateConfig
+{
+    public decimal InputUsdPer1K { get; set; }
+    public decimal OutputUsdPer1K { get; set; }
 }
 
 public sealed class LlmProviderConfig
@@ -153,6 +165,46 @@ public static class DefaultTokenCostRates
             ["anthropic:claude-haiku-3-5"] = 0.002m,
             ["ollama"] = 0.0m,
         };
+
+    public static IReadOnlyDictionary<string, TokenCostRateConfig> DetailedRates { get; } =
+        new Dictionary<string, TokenCostRateConfig>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["openai:gpt-4o"] = new() { InputUsdPer1K = 0.0025m, OutputUsdPer1K = 0.010m },
+            ["openai:gpt-4o-mini"] = new() { InputUsdPer1K = 0.00015m, OutputUsdPer1K = 0.0006m },
+            ["openai:gpt-4.1"] = new() { InputUsdPer1K = 0.002m, OutputUsdPer1K = 0.008m },
+            ["openai:gpt-4.1-mini"] = new() { InputUsdPer1K = 0.0004m, OutputUsdPer1K = 0.0016m },
+            ["openai:gpt-4.1-nano"] = new() { InputUsdPer1K = 0.0001m, OutputUsdPer1K = 0.0004m },
+            ["anthropic:claude-sonnet-4-5"] = new() { InputUsdPer1K = 0.003m, OutputUsdPer1K = 0.015m },
+            ["anthropic:claude-haiku-3-5"] = new() { InputUsdPer1K = 0.0008m, OutputUsdPer1K = 0.004m },
+            ["ollama"] = new() { InputUsdPer1K = 0.0m, OutputUsdPer1K = 0.0m }
+        };
+}
+
+public static class TokenCostRateResolver
+{
+    public static TokenCostRateConfig Resolve(GatewayConfig config, string providerId, string modelId)
+    {
+        var key = $"{providerId}:{modelId}";
+
+        if (config.TokenCostRateDetails.TryGetValue(key, out var modelDetailedRate))
+            return modelDetailedRate;
+        if (config.TokenCostRateDetails.TryGetValue(providerId, out var providerDetailedRate))
+            return providerDetailedRate;
+        if (config.TokenCostRates.TryGetValue(key, out var modelRate))
+            return new TokenCostRateConfig { InputUsdPer1K = modelRate, OutputUsdPer1K = modelRate };
+        if (config.TokenCostRates.TryGetValue(providerId, out var providerRate))
+            return new TokenCostRateConfig { InputUsdPer1K = providerRate, OutputUsdPer1K = providerRate };
+        if (DefaultTokenCostRates.DetailedRates.TryGetValue(key, out var defaultModelDetailedRate))
+            return defaultModelDetailedRate;
+        if (DefaultTokenCostRates.DetailedRates.TryGetValue(providerId, out var defaultProviderDetailedRate))
+            return defaultProviderDetailedRate;
+        if (DefaultTokenCostRates.Rates.TryGetValue(key, out var defaultModelRate))
+            return new TokenCostRateConfig { InputUsdPer1K = defaultModelRate, OutputUsdPer1K = defaultModelRate };
+        if (DefaultTokenCostRates.Rates.TryGetValue(providerId, out var defaultProviderRate))
+            return new TokenCostRateConfig { InputUsdPer1K = defaultProviderRate, OutputUsdPer1K = defaultProviderRate };
+
+        return new TokenCostRateConfig();
+    }
 }
 
 public sealed class MemoryRecallConfig

@@ -171,7 +171,7 @@ public sealed class OpenClawToolExecutorTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_SandboxRequireWithProviderNone_UsesLocalExecution()
+    public async Task ExecuteAsync_SandboxRequireWithProviderNone_FailsClosed()
     {
         var tool = new SandboxCapableEchoTool(ToolSandboxMode.Require, "local-result");
         var executor = CreateExecutor(
@@ -203,8 +203,8 @@ public sealed class OpenClawToolExecutorTests
             approvalCallback: null,
             CancellationToken.None);
 
-        Assert.Equal("local-result", result.ResultText);
-        Assert.Equal(1, tool.LocalExecutionCount);
+        Assert.Contains("requires sandboxing", result.ResultText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, tool.LocalExecutionCount);
     }
 
     [Fact]

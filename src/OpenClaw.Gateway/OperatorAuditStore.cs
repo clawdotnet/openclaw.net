@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 
 namespace OpenClaw.Gateway;
 
@@ -12,14 +13,16 @@ internal sealed class OperatorAuditStore
     private readonly string _path;
     private readonly object _gate = new();
     private readonly ILogger<OperatorAuditStore> _logger;
+    private readonly RuntimeMetrics? _metrics;
 
-    public OperatorAuditStore(string storagePath, ILogger<OperatorAuditStore> logger)
+    public OperatorAuditStore(string storagePath, ILogger<OperatorAuditStore> logger, RuntimeMetrics? metrics = null)
     {
         var rootedStoragePath = Path.IsPathRooted(storagePath)
             ? storagePath
             : Path.GetFullPath(storagePath);
         _path = Path.Combine(rootedStoragePath, DirectoryName, FileName);
         _logger = logger;
+        _metrics = metrics;
     }
 
     public void Append(OperatorAuditEntry entry)
@@ -38,6 +41,7 @@ internal sealed class OperatorAuditStore
         }
         catch (Exception ex)
         {
+            _metrics?.IncrementOperatorAuditWriteFailures();
             _logger.LogWarning(ex, "Failed to append operator audit entry to {Path}", _path);
         }
     }

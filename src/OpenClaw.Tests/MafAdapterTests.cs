@@ -137,7 +137,11 @@ public sealed class MafAdapterTests
                 Logger = NullLogger.Instance,
                 Hooks = [],
                 RequireToolApproval = false,
-                ApprovalRequiredTools = []
+                ApprovalRequiredTools = [],
+                IsContractTokenBudgetExceeded = null,
+                IsContractRuntimeBudgetExceeded = null,
+                RecordContractTurnUsage = null,
+                AppendContractSnapshot = null
             }));
 
             var mafToolsField = typeof(MafAgentRuntime).GetField("_mafTools", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);

@@ -84,7 +84,8 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
         {
             foreach (var plugin in enabled)
             {
-                var requestedCapabilities = DetermineRequestedCapabilities(plugin.Manifest.Capabilities, ResolveSkillDirectories(plugin));
+                var diagnostics = new List<PluginCompatibilityDiagnostic>();
+                var requestedCapabilities = DetermineRequestedCapabilities(plugin.Manifest.Capabilities, ResolveSkillDirectories(plugin, diagnostics));
                 var blockedCapabilities = PluginCapabilityPolicy.GetBlockedCapabilities(
                     _runtimeState.EffectiveMode,
                     requestedCapabilities,
@@ -106,6 +107,7 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
                     Error = message,
                     Diagnostics =
                     [
+                        .. diagnostics,
                         new PluginCompatibilityDiagnostic
                         {
                             Severity = "error",
@@ -177,13 +179,15 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
     private async Task LoadPluginAsync(DiscoveredNativeDynamicPlugin plugin, CancellationToken ct)
     {
         var manifest = plugin.Manifest;
-        var requestedCapabilities = DetermineRequestedCapabilities(manifest.Capabilities, ResolveSkillDirectories(plugin));
         var diagnostics = new List<PluginCompatibilityDiagnostic>();
+        var requestedCapabilities = DetermineRequestedCapabilities(manifest.Capabilities, ResolveSkillDirectories(plugin, diagnostics));
 
         try
         {
             var loadContext = new NativeDynamicPluginLoadContext(plugin.AssemblyPath);
             var assembly = loadContext.LoadFromAssemblyPath(plugin.AssemblyPath);
+            if (!TryValidatePluginKitReference(assembly, plugin.AssemblyPath, diagnostics))
+                throw new InvalidOperationException($"Dynamic native plugin '{manifest.Id}' references an incompatible OpenClaw.PluginKit version.");
             var type = assembly.GetType(manifest.TypeName, throwOnError: false);
             if (type is null)
                 throw new InvalidOperationException($"Type '{manifest.TypeName}' was not found in assembly '{plugin.AssemblyPath}'.");
@@ -224,7 +228,7 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
             _providerRegistrations.AddRange(registrationContext.Providers);
             _providerRegistrationsDetailed.AddRange(registrationContext.Providers.Select(provider => (manifest.Id, provider.ProviderId, provider.Models, provider.Client)));
 
-            var skillDirs = ResolveSkillDirectories(plugin).ToArray();
+            var skillDirs = ResolveSkillDirectories(plugin, diagnostics).ToArray();
             foreach (var skillDir in skillDirs)
             {
                 if (!_skillRoots.Contains(skillDir, StringComparer.Ordinal))
@@ -286,7 +290,7 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
             : config;
     }
 
-    private IReadOnlyList<string> ResolveSkillDirectories(DiscoveredNativeDynamicPlugin plugin)
+    private IReadOnlyList<string> ResolveSkillDirectories(DiscoveredNativeDynamicPlugin plugin, ICollection<PluginCompatibilityDiagnostic>? diagnostics = null)
     {
         var result = new List<string>();
         foreach (var relativePath in plugin.Manifest.Skills ?? [])
@@ -294,7 +298,23 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
             if (string.IsNullOrWhiteSpace(relativePath))
                 continue;
 
-            var resolved = Path.GetFullPath(Path.Combine(plugin.RootPath, relativePath));
+            if (!PluginDiscovery.TryResolveContainedPath(plugin.RootPath, relativePath, out var resolved))
+            {
+                _logger.LogWarning(
+                    "Dynamic native plugin '{PluginId}' declared out-of-root skill directory {Path}",
+                    plugin.Manifest.Id,
+                    relativePath);
+                diagnostics?.Add(new PluginCompatibilityDiagnostic
+                {
+                    Severity = "error",
+                    Code = "skill_dir_outside_root",
+                    Message = $"Dynamic native plugin '{plugin.Manifest.Id}' skill directory resolves outside the plugin root.",
+                    Surface = "skills",
+                    Path = relativePath
+                });
+                continue;
+            }
+
             if (!Directory.Exists(resolved))
             {
                 _logger.LogWarning(
@@ -499,6 +519,21 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
             return;
         }
 
+        if (!TryValidateCompatibility(manifest, assemblyPath, out var compatibilityDiagnostics))
+        {
+            result.Reports.Add(new PluginLoadReport
+            {
+                PluginId = manifest.Id,
+                SourcePath = Path.GetFullPath(rootPath),
+                EntryPath = assemblyPath,
+                Origin = "native_dynamic",
+                EffectiveRuntimeMode = _runtimeState.EffectiveModeName,
+                Loaded = false,
+                Diagnostics = [.. compatibilityDiagnostics]
+            });
+            return;
+        }
+
         result.Plugins.Add(new DiscoveredNativeDynamicPlugin
         {
             Manifest = manifest,
@@ -549,6 +584,119 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable
         _providerRegistrationsDetailed.Clear();
         _skillRoots.Clear();
         _reports.Clear();
+    }
+
+    private static bool TryValidateCompatibility(
+        NativeDynamicPluginManifest manifest,
+        string assemblyPath,
+        out List<PluginCompatibilityDiagnostic> diagnostics)
+    {
+        diagnostics = [];
+        return TryValidateMinHostVersion(manifest, diagnostics)
+            && TryValidatePluginApiVersion(manifest, diagnostics);
+    }
+
+    private static bool TryValidateMinHostVersion(
+        NativeDynamicPluginManifest manifest,
+        ICollection<PluginCompatibilityDiagnostic> diagnostics)
+    {
+        if (string.IsNullOrWhiteSpace(manifest.MinHostVersion))
+            return true;
+
+        if (!Version.TryParse(manifest.MinHostVersion, out var minHostVersion))
+        {
+            diagnostics.Add(new PluginCompatibilityDiagnostic
+            {
+                Severity = "error",
+                Code = "invalid_min_host_version",
+                Message = $"Dynamic native plugin '{manifest.Id}' declares an invalid minHostVersion '{manifest.MinHostVersion}'.",
+                Surface = "manifest",
+                Path = manifest.Id
+            });
+            return false;
+        }
+
+        var hostVersion = typeof(NativeDynamicPluginHost).Assembly.GetName().Version ?? new Version(0, 0);
+        if (hostVersion < minHostVersion)
+        {
+            diagnostics.Add(new PluginCompatibilityDiagnostic
+            {
+                Severity = "error",
+                Code = "host_version_too_old",
+                Message = $"Dynamic native plugin '{manifest.Id}' requires host version {minHostVersion}, but the current host is {hostVersion}.",
+                Surface = "host_version",
+                Path = manifest.Id
+            });
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidatePluginApiVersion(
+        NativeDynamicPluginManifest manifest,
+        ICollection<PluginCompatibilityDiagnostic> diagnostics)
+    {
+        if (string.IsNullOrWhiteSpace(manifest.PluginApiVersion))
+            return true;
+
+        if (!Version.TryParse(manifest.PluginApiVersion, out var pluginApiVersion))
+        {
+            diagnostics.Add(new PluginCompatibilityDiagnostic
+            {
+                Severity = "error",
+                Code = "invalid_plugin_api_version",
+                Message = $"Dynamic native plugin '{manifest.Id}' declares an invalid pluginApiVersion '{manifest.PluginApiVersion}'.",
+                Surface = "manifest",
+                Path = manifest.Id
+            });
+            return false;
+        }
+
+        var hostPluginApiVersion = typeof(INativeDynamicPlugin).Assembly.GetName().Version ?? new Version(0, 0);
+        if (pluginApiVersion.Major != hostPluginApiVersion.Major)
+        {
+            diagnostics.Add(new PluginCompatibilityDiagnostic
+            {
+                Severity = "error",
+                Code = "plugin_api_version_mismatch",
+                Message = $"Dynamic native plugin '{manifest.Id}' targets plugin API major {pluginApiVersion.Major}, but the host exposes major {hostPluginApiVersion.Major}.",
+                Surface = "plugin_api",
+                Path = manifest.Id
+            });
+            return false;
+        }
+
+        return true;
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026:RequiresUnreferencedCode", Justification = "Dynamic native plugins are JIT-only and blocked in AOT mode.")]
+    private static bool TryValidatePluginKitReference(
+        Assembly assembly,
+        string assemblyPath,
+        ICollection<PluginCompatibilityDiagnostic> diagnostics)
+    {
+        var referencedPluginKit = assembly
+            .GetReferencedAssemblies()
+            .FirstOrDefault(static candidate => string.Equals(candidate.Name, "OpenClaw.PluginKit", StringComparison.Ordinal));
+        if (referencedPluginKit?.Version is null)
+            return true;
+
+        var hostPluginKitVersion = typeof(INativeDynamicPlugin).Assembly.GetName().Version ?? new Version(0, 0);
+        if (referencedPluginKit.Version.Major != hostPluginKitVersion.Major)
+        {
+            diagnostics.Add(new PluginCompatibilityDiagnostic
+            {
+                Severity = "error",
+                Code = "pluginkit_major_version_mismatch",
+                Message = $"Dynamic native plugin references OpenClaw.PluginKit major {referencedPluginKit.Version.Major}, but the host provides major {hostPluginKitVersion.Major}.",
+                Surface = "assembly_reference",
+                Path = assemblyPath
+            });
+            return false;
+        }
+
+        return true;
     }
 
     private sealed class NativeDynamicDiscoveryResult

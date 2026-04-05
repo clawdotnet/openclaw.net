@@ -13,10 +13,12 @@ namespace OpenClaw.Core.Pipeline;
 /// </summary>
 public sealed class CronScheduler : BackgroundService
 {
+    private static readonly TimeSpan MaxRunningDuration = TimeSpan.FromHours(6);
+
     private readonly ICronJobSource _jobSource;
     private readonly ILogger<CronScheduler> _logger;
     private readonly ChannelWriter<InboundMessage> _pipelineChannel;
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _runningJobs = new(StringComparer.OrdinalIgnoreCase);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _runningJobs = new(StringComparer.OrdinalIgnoreCase);
 
     public CronScheduler(ICronJobSource jobSource, ILogger<CronScheduler> logger, ChannelWriter<InboundMessage> pipelineChannel)
     {
@@ -56,6 +58,7 @@ public sealed class CronScheduler : BackgroundService
 
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
+            CleanupStaleRunningJobs(DateTimeOffset.UtcNow);
             var jobs = _jobSource.GetJobs();
             if (jobs.Count == 0)
                 continue;
@@ -101,7 +104,20 @@ public sealed class CronScheduler : BackgroundService
     private async ValueTask EnqueueJobIfNotRunningAsync(CronJobConfig job, CancellationToken ct)
     {
         var jobName = string.IsNullOrWhiteSpace(job.Name) ? "unnamed" : job.Name;
-        if (!_runningJobs.TryAdd(jobName, 0))
+        var now = DateTimeOffset.UtcNow;
+        if (_runningJobs.TryGetValue(jobName, out var runningSince))
+        {
+            if ((now - runningSince) <= MaxRunningDuration)
+            {
+                _logger.LogWarning("Skipping cron job '{JobName}' because a previous invocation is still running.", jobName);
+                return;
+            }
+
+            _logger.LogWarning("Reaping stale running state for cron job '{JobName}' after {Duration}.", jobName, now - runningSince);
+            _runningJobs.TryRemove(jobName, out _);
+        }
+
+        if (!_runningJobs.TryAdd(jobName, now))
         {
             _logger.LogWarning("Skipping cron job '{JobName}' because a previous invocation is still running.", jobName);
             return;
@@ -199,7 +215,7 @@ public sealed class CronScheduler : BackgroundService
 
                 if (TryParseRange(range, out var start, out var end))
                 {
-                    if (value < start || value > end)
+                    if (!IsValueInRange(value, start, end))
                         return false;
 
                     return (value - start) % step == 0;
@@ -208,7 +224,7 @@ public sealed class CronScheduler : BackgroundService
         }
 
         if (TryParseRange(field, out var rangeStart, out var rangeEnd))
-            return value >= rangeStart && value <= rangeEnd;
+            return IsValueInRange(value, rangeStart, rangeEnd);
 
         return false;
     }
@@ -222,7 +238,31 @@ public sealed class CronScheduler : BackgroundService
             return false;
 
         return int.TryParse(rangeParts[0], out start)
-            && int.TryParse(rangeParts[1], out end)
-            && start <= end;
+            && int.TryParse(rangeParts[1], out end);
+    }
+
+    private void CleanupStaleRunningJobs(DateTimeOffset nowUtc)
+    {
+        foreach (var kvp in _runningJobs)
+        {
+            if ((nowUtc - kvp.Value) <= MaxRunningDuration)
+                continue;
+
+            if (_runningJobs.TryRemove(kvp.Key, out _))
+            {
+                _logger.LogWarning(
+                    "Removed stale running marker for cron job '{JobName}' after {Duration}.",
+                    kvp.Key,
+                    nowUtc - kvp.Value);
+            }
+        }
+    }
+
+    private static bool IsValueInRange(int value, int start, int end)
+    {
+        if (start <= end)
+            return value >= start && value <= end;
+
+        return value >= start || value <= end;
     }
 }

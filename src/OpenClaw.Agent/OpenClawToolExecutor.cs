@@ -244,7 +244,7 @@ public sealed class OpenClawToolExecutor
         }
         catch (Exception ex)
         {
-            result = $"Error: Tool execution failed ({ex.GetType().Name}).";
+            result = "Error: Tool execution failed.";
             toolFailed = true;
             _metrics?.IncrementToolFailures();
             _logger?.LogWarning(ex, "[{CorrelationId}] Tool {Tool} failed", turnCtx.CorrelationId, tool.Name);
@@ -375,7 +375,7 @@ public sealed class OpenClawToolExecutor
         TurnContext turnCtx,
         CancellationToken ct)
     {
-        if (!_executionRouter.TryResolveRoute(tool, out var route, out var template, out var legacySandboxRoute))
+        if (!_executionRouter.TryResolveRoute(tool, out var route, out var template, out var legacySandboxRoute, out var sandboxMode))
             return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
 
         if (tool is not ISandboxCapableTool sandboxCapableTool)
@@ -384,6 +384,12 @@ public sealed class OpenClawToolExecutor
         var backendName = string.IsNullOrWhiteSpace(route?.Backend)
             ? _config.Execution.DefaultBackend
             : route.Backend;
+        if (sandboxMode == ToolSandboxMode.Require && !legacySandboxRoute && route is null)
+        {
+            throw new ToolSandboxException(
+                $"Error: Tool '{tool.Name}' requires sandboxing but no sandbox provider is configured.");
+        }
+
         if (string.Equals(backendName, "local", StringComparison.OrdinalIgnoreCase) && !legacySandboxRoute)
             return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
 
@@ -439,6 +445,13 @@ public sealed class OpenClawToolExecutor
         }
         catch (ToolSandboxUnavailableException ex) when (legacySandboxRoute || !string.IsNullOrWhiteSpace(route?.FallbackBackend))
         {
+            if (sandboxMode == ToolSandboxMode.Require)
+            {
+                throw new ToolSandboxException(
+                    $"Error: Tool '{tool.Name}' requires sandboxing but the sandbox provider is unavailable.",
+                    ex);
+            }
+
             _logger?.LogWarning(
                 ex,
                 "[{CorrelationId}] Execution backend unavailable for tool {Tool}; falling back to {Fallback}",

@@ -314,7 +314,11 @@ public static class PluginConfigValidator
         {
             try
             {
-                if (!System.Text.RegularExpressions.Regex.IsMatch(value, pattern.GetString() ?? ""))
+                if (!System.Text.RegularExpressions.Regex.IsMatch(
+                        value,
+                        pattern.GetString() ?? "",
+                        System.Text.RegularExpressions.RegexOptions.None,
+                        TimeSpan.FromSeconds(1)))
                 {
                     diagnostics.Add(Diagnostic(
                         "config_pattern_mismatch",
@@ -327,6 +331,13 @@ public static class PluginConfigValidator
                 diagnostics.Add(Diagnostic(
                     "invalid_schema_pattern",
                     $"Schema pattern at '{path}' is invalid.",
+                    path));
+            }
+            catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+            {
+                diagnostics.Add(Diagnostic(
+                    "schema_pattern_timeout",
+                    $"Schema pattern at '{path}' timed out during validation.",
                     path));
             }
         }

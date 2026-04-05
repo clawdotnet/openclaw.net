@@ -481,6 +481,11 @@ public static class PluginDiscovery
     {
         resolvedPath = Path.GetFullPath(Path.Combine(rootPath, relativePath));
         var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath));
+
+        // Resolve symlinks for both paths to prevent symlink-based escape from the root.
+        resolvedPath = ResolveRealPath(resolvedPath);
+        fullRoot = ResolveRealPath(fullRoot);
+
         var comparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
@@ -489,5 +494,33 @@ public static class PluginDiscovery
             return true;
 
         return resolvedPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, comparison);
+    }
+
+    /// <summary>
+    /// Resolves the real filesystem path, following symlinks.
+    /// Falls back to the normalized path when the target does not exist.
+    /// </summary>
+    private static string ResolveRealPath(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                var resolved = File.ResolveLinkTarget(path, returnFinalTarget: true);
+                return resolved?.FullName ?? path;
+            }
+
+            if (Directory.Exists(path))
+            {
+                var resolved = Directory.ResolveLinkTarget(path, returnFinalTarget: true);
+                return resolved?.FullName ?? path;
+            }
+        }
+        catch
+        {
+            // Symlink resolution failed — fall through to the unresolved path.
+        }
+
+        return path;
     }
 }

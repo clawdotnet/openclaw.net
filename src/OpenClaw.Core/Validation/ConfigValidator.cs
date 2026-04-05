@@ -10,6 +10,21 @@ namespace OpenClaw.Core.Validation;
 /// </summary>
 public static class ConfigValidator
 {
+    private static readonly HashSet<string> BuiltInLlmProviders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "openai",
+        "anthropic",
+        "claude",
+        "gemini",
+        "google",
+        "ollama",
+        "azure-openai",
+        "openai-compatible",
+        "groq",
+        "together",
+        "lmstudio"
+    };
+
     public static IReadOnlyList<string> Validate(Models.GatewayConfig config)
     {
         var errors = new List<string>();
@@ -21,6 +36,10 @@ public static class ConfigValidator
         // LLM
         if (string.IsNullOrWhiteSpace(config.Llm.Model))
             errors.Add("Llm.Model must be set.");
+        var pluginBackedProvidersPossible =
+            config.Plugins.Enabled || config.Plugins.DynamicNative.Enabled || config.Plugins.Mcp.Enabled;
+        if (!pluginBackedProvidersPossible && !BuiltInLlmProviders.Contains(config.Llm.Provider))
+            errors.Add($"Llm.Provider '{config.Llm.Provider}' is not a supported built-in provider.");
         if (config.Llm.MaxTokens < 1)
             errors.Add($"Llm.MaxTokens must be >= 1 (got {config.Llm.MaxTokens}).");
         if (config.Llm.Temperature is < 0 or > 2)
@@ -79,6 +98,22 @@ public static class ConfigValidator
         // Tooling
         if (config.Tooling.ToolTimeoutSeconds < 0)
             errors.Add($"Tooling.ToolTimeoutSeconds must be >= 0 (got {config.Tooling.ToolTimeoutSeconds}).");
+
+        if (config.Tooling.WorkspaceOnly)
+        {
+            var resolvedWorkspaceRoot = ResolveConfiguredPath(config.Tooling.WorkspaceRoot);
+            if (string.IsNullOrWhiteSpace(resolvedWorkspaceRoot))
+            {
+                errors.Add("Tooling.WorkspaceRoot must resolve to a non-empty absolute path when WorkspaceOnly=true.");
+            }
+            else if (!Path.IsPathRooted(resolvedWorkspaceRoot))
+            {
+                errors.Add("Tooling.WorkspaceRoot must resolve to an absolute path when WorkspaceOnly=true.");
+            }
+        }
+
+        ValidateRootSet("Tooling.AllowedReadRoots", config.Tooling.AllowedReadRoots, errors);
+        ValidateRootSet("Tooling.AllowedWriteRoots", config.Tooling.AllowedWriteRoots, errors);
 
         // Sandbox
         var sandboxProvider = SandboxProviderNames.Normalize(config.Sandbox.Provider);
@@ -390,33 +425,31 @@ public static class ConfigValidator
 
     private static bool IsValidCronField(string field, int min, int max)
     {
+        if (string.IsNullOrWhiteSpace(field))
+            return false;
+
         if (field == "*")
             return true;
+
+        if (field == "L")
+            return min == 1;
 
         if (int.TryParse(field, out var exact))
             return exact >= min && exact <= max;
 
+        if (field.Contains(','))
+        {
+            var options = field.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return options.Length > 0 && options.All(option => IsValidCronField(option, min, max));
+        }
+
         if (field.Contains('/'))
         {
             var stepParts = field.Split('/');
-            if (stepParts.Length != 2 || stepParts[0] != "*" || !int.TryParse(stepParts[1], out var step))
-                return false;
-            return step > 0;
-        }
-
-        if (field.Contains(','))
-        {
-            var options = field.Split(',');
-            if (options.Length == 0)
+            if (stepParts.Length != 2 || !int.TryParse(stepParts[1], out var step) || step <= 0)
                 return false;
 
-            foreach (var option in options)
-            {
-                if (!int.TryParse(option, out var parsed) || parsed < min || parsed > max)
-                    return false;
-            }
-
-            return true;
+            return stepParts[0] == "*" || IsValidCronField(stepParts[0], min, max);
         }
 
         if (field.Contains('-'))
@@ -429,7 +462,7 @@ public static class ConfigValidator
                 return false;
             }
 
-            return start >= min && end <= max && start <= end;
+            return start >= min && start <= max && end >= min && end <= max;
         }
 
         return false;
@@ -450,4 +483,33 @@ public static class ConfigValidator
             errors.Add($"{field} must be 'open', 'pairing', or 'closed'.");
         }
     }
+
+    private static void ValidateRootSet(string field, string[] roots, ICollection<string> errors)
+    {
+        if (roots.Length == 0)
+            return;
+
+        var wildcardCount = roots.Count(static root => string.Equals(root, "*", StringComparison.Ordinal));
+        if (wildcardCount > 0 && roots.Length > wildcardCount)
+            errors.Add($"{field} cannot mix '*' with explicit paths.");
+
+        foreach (var root in roots)
+        {
+            if (string.Equals(root, "*", StringComparison.Ordinal))
+                continue;
+
+            var resolved = ResolveConfiguredPath(root);
+            if (string.IsNullOrWhiteSpace(resolved))
+            {
+                errors.Add($"{field} entries must resolve to non-empty absolute paths.");
+                continue;
+            }
+
+            if (!Path.IsPathRooted(resolved))
+                errors.Add($"{field} entries must be absolute paths (got '{root}').");
+        }
+    }
+
+    private static string ResolveConfiguredPath(string? path)
+        => ConfigPathResolver.Resolve(path);
 }

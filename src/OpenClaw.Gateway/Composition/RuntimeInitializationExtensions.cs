@@ -34,6 +34,18 @@ internal static class RuntimeInitializationExtensions
     {
         var config = startup.Config;
         var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
+        var startupLogger = loggerFactory.CreateLogger("Startup");
+        startupLogger.LogInformation(
+            "Runtime mode resolved: requested={RequestedMode}, effective={EffectiveMode}, dynamicCodeSupported={DynamicCodeSupported}, orchestrator={Orchestrator}.",
+            startup.RuntimeState.RequestedMode,
+            startup.RuntimeState.EffectiveModeName,
+            startup.RuntimeState.DynamicCodeSupported,
+            RuntimeOrchestrator.Normalize(config.Runtime.Orchestrator));
+        if (startup.IsNonLoopbackBind && !config.Security.RequireRequesterMatchForHttpToolApproval)
+        {
+            startupLogger.LogWarning(
+                "Requester-matched HTTP tool approvals are disabled on a non-loopback bind. Enable OpenClaw:Security:RequireRequesterMatchForHttpToolApproval for safer public deployments.");
+        }
         var services = ResolveRuntimeServices(app);
         var blockedPluginIds = services.PluginHealth.GetBlockedPluginIds();
         var channelComposition = await BuildChannelCompositionAsync(app, startup, services, loggerFactory);
@@ -140,6 +152,7 @@ internal static class RuntimeInitializationExtensions
             app.Services.GetRequiredService<ILogger<SkillWatcherService>>());
         skillWatcher.Start(app.Lifetime.ApplicationStopping);
 
+        await services.AutomationService.RefreshCacheAsync(app.Lifetime.ApplicationStopping);
         var cronTask = StartCronIfEnabled(loggerFactory, services.Pipeline, services.CronJobSource, app.Lifetime.ApplicationStopping);
         StartNativeEventBridges(config, loggerFactory, services.Pipeline, app.Lifetime.ApplicationStopping);
 
@@ -454,8 +467,8 @@ internal static class RuntimeInitializationExtensions
             EffectiveRequireToolApproval = effectiveRequireToolApproval,
             EffectiveApprovalRequiredTools = effectiveApprovalRequiredTools,
             NativeRegistry = services.NativeRegistry,
-            SessionLocks = new ConcurrentDictionary<string, SemaphoreSlim>(),
-            LockLastUsed = new ConcurrentDictionary<string, DateTimeOffset>(),
+            SessionLocks = services.SessionManager.SessionLocks,
+            LockLastUsed = services.SessionManager.LockLastUsed,
             AllowedOriginsSet = config.Security.AllowedOrigins.Length > 0
                 ? config.Security.AllowedOrigins.ToFrozenSet(StringComparer.Ordinal)
                 : null,
@@ -626,6 +639,7 @@ internal static class RuntimeInitializationExtensions
         var factory = AgentRuntimeFactorySelector.Select(
             services.GetServices<IAgentRuntimeFactory>(),
             config.Runtime.Orchestrator);
+        var contractGovernance = services.GetRequiredService<ContractGovernanceService>();
 
         return factory.Create(new AgentRuntimeFactoryContext
         {
@@ -647,7 +661,11 @@ internal static class RuntimeInitializationExtensions
             RequireToolApproval = requireToolApproval,
             ApprovalRequiredTools = approvalRequiredTools,
             ToolSandbox = toolSandbox,
-            ToolUsageTracker = services.GetRequiredService<ToolUsageTracker>()
+            ToolUsageTracker = services.GetRequiredService<ToolUsageTracker>(),
+            IsContractTokenBudgetExceeded = contractGovernance.IsTokenBudgetExceeded,
+            IsContractRuntimeBudgetExceeded = contractGovernance.IsRuntimeBudgetExceeded,
+            RecordContractTurnUsage = contractGovernance.RecordTurnUsage,
+            AppendContractSnapshot = contractGovernance.AppendSnapshot
         });
     }
 
@@ -661,8 +679,8 @@ internal static class RuntimeInitializationExtensions
         if (config.SessionRateLimitPerMinute > 0)
             middlewareList.Add(new RateLimitMiddleware(config.SessionRateLimitPerMinute, loggerFactory.CreateLogger("RateLimit")));
 
-        Func<string, string, (decimal, decimal, bool)> costChecker =
-            (channelId, senderId) => contractGovernance.CheckCostBudget(channelId, senderId, sessionManager);
+        Func<string?, string, string, (decimal, decimal, bool)> costChecker =
+            (sessionId, channelId, senderId) => contractGovernance.CheckCostBudget(sessionId, channelId, senderId, sessionManager);
 
         middlewareList.Add(new TokenBudgetMiddleware(
             config.SessionTokenBudget,

@@ -409,7 +409,11 @@ public sealed class MafGatewayIntegrationTests
             Logger = NullLogger.Instance,
             Hooks = [],
             RequireToolApproval = false,
-            ApprovalRequiredTools = []
+            ApprovalRequiredTools = [],
+            IsContractTokenBudgetExceeded = null,
+            IsContractRuntimeBudgetExceeded = null,
+            RecordContractTurnUsage = null,
+            AppendContractSnapshot = null
         });
     }
 

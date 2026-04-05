@@ -5,6 +5,24 @@ namespace OpenClaw.Core.Pipeline;
 
 public static class ToolActionPolicyResolver
 {
+    private static readonly HashSet<string> AlwaysMutatingTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "write_file",
+        "edit_file",
+        "apply_patch",
+        "shell",
+        "code_exec",
+        "git",
+        "database",
+        "home_assistant_write",
+        "mqtt_publish",
+        "notion_write",
+        "inbox_zero",
+        "email",
+        "calendar",
+        "delegate_agent"
+    };
+
     public static ToolActionDescriptor Resolve(string toolName, string argumentsJson)
     {
         if (string.IsNullOrWhiteSpace(toolName))
@@ -92,6 +110,17 @@ public static class ToolActionPolicyResolver
     public static bool SupportsActionAwareApproval(string toolName)
         => toolName.Equals("process", StringComparison.OrdinalIgnoreCase)
            || toolName.Equals("automation", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsMutationCapable(string toolName, string argumentsJson)
+    {
+        if (string.IsNullOrWhiteSpace(toolName))
+            return false;
+
+        if (AlwaysMutatingTools.Contains(toolName))
+            return true;
+
+        return Resolve(toolName, argumentsJson).IsMutation;
+    }
 
     private static string? GetString(JsonElement root, string propertyName)
         => root.TryGetProperty(propertyName, out var element) && element.ValueKind == JsonValueKind.String

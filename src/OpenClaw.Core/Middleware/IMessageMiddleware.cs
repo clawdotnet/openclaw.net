@@ -10,6 +10,7 @@ public sealed class MessageContext
     public required string SenderId { get; init; }
     public required string Text { get; set; }
     public string? MessageId { get; init; }
+    public string? SessionId { get; init; }
 
     /// <summary>Session-level token counters (input + output accumulated across turns).</summary>
     public long SessionInputTokens { get; set; }

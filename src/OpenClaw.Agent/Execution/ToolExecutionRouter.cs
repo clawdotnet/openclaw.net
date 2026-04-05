@@ -6,7 +6,12 @@ namespace OpenClaw.Agent.Execution;
 
 public sealed class ToolExecutionRouter
 {
-    public sealed record ExecutionRouteResolution(string BackendName, string? FallbackBackend, string? Template, bool RequireWorkspace);
+    public sealed record ExecutionRouteResolution(
+        string BackendName,
+        string? FallbackBackend,
+        string? Template,
+        bool RequireWorkspace,
+        ToolSandboxMode SandboxMode);
 
     private readonly GatewayConfig _config;
     private readonly IReadOnlyDictionary<string, IExecutionBackend> _backends;
@@ -56,10 +61,16 @@ public sealed class ToolExecutionRouter
         _backends = backends;
     }
 
-    public bool TryResolveRoute(ITool tool, out ExecutionToolRouteConfig? route, out string? template, out bool legacySandboxRoute)
+    public bool TryResolveRoute(
+        ITool tool,
+        out ExecutionToolRouteConfig? route,
+        out string? template,
+        out bool legacySandboxRoute,
+        out ToolSandboxMode sandboxMode)
     {
         legacySandboxRoute = false;
         template = null;
+        sandboxMode = ToolSandboxMode.None;
 
         if (_config.Execution.Enabled &&
             _config.Execution.Tools.TryGetValue(tool.Name, out var configuredRoute) &&
@@ -75,12 +86,12 @@ public sealed class ToolExecutionRouter
         if (tool is not ISandboxCapableTool sandboxCapableTool)
             return false;
 
-        if (!ToolSandboxPolicy.IsOpenSandboxProviderConfigured(_config))
+        sandboxMode = ToolSandboxPolicy.ResolveMode(_config, tool.Name, sandboxCapableTool.DefaultSandboxMode);
+        if (sandboxMode == ToolSandboxMode.None)
             return false;
 
-        var mode = ToolSandboxPolicy.ResolveMode(_config, tool.Name, sandboxCapableTool.DefaultSandboxMode);
-        if (mode == ToolSandboxMode.None)
-            return false;
+        if (!ToolSandboxPolicy.IsOpenSandboxProviderConfigured(_config))
+            return true;
 
         template = ToolSandboxPolicy.ResolveTemplate(_config, tool.Name);
         route = new ExecutionToolRouteConfig
@@ -152,7 +163,8 @@ public sealed class ToolExecutionRouter
                     processRoute.Backend,
                     processRoute.FallbackBackend,
                     ResolveTemplate(processRoute.Backend),
-                    processRoute.RequireWorkspace);
+                    processRoute.RequireWorkspace,
+                    ToolSandboxMode.None);
             }
 
             if (_config.Execution.Tools.TryGetValue("shell", out var shellRoute) &&
@@ -162,7 +174,8 @@ public sealed class ToolExecutionRouter
                     shellRoute.Backend,
                     shellRoute.FallbackBackend,
                     ResolveTemplate(shellRoute.Backend),
-                    shellRoute.RequireWorkspace);
+                    shellRoute.RequireWorkspace,
+                    ToolSandboxMode.None);
             }
         }
 
@@ -170,7 +183,8 @@ public sealed class ToolExecutionRouter
             _config.Execution.DefaultBackend,
             null,
             ResolveTemplate(_config.Execution.DefaultBackend),
-            RequiresWorkspace(_config.Execution.DefaultBackend));
+            RequiresWorkspace(_config.Execution.DefaultBackend),
+            ToolSandboxMode.None);
     }
 
     internal bool TryGetProcessBackend(string backendName, out IExecutionProcessBackend? backend)

@@ -195,42 +195,97 @@ internal sealed class ContractGovernanceService
         };
     }
 
+    public void AttachToSession(Session session, ContractPolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(policy);
+
+        session.ContractPolicy = policy;
+        session.ContractAttachedAtUtc = DateTimeOffset.UtcNow;
+        session.ContractBaselineInputTokens = session.TotalInputTokens;
+        session.ContractBaselineOutputTokens = session.TotalOutputTokens;
+        session.ContractBaselineToolCalls = CountToolCalls(session);
+        session.ContractAccumulatedCostUsd = 0m;
+
+        _contractStore.Append(BuildSnapshot(session, status: "active"));
+    }
+
+    public decimal ComputeSessionCostUsd(Session session)
+        => session.ContractAccumulatedCostUsd;
+
     /// <summary>
-    /// Compute approximate USD cost for a session based on provider usage and configured rates.
+    /// Estimates session cost from recent turn history. Note: this is observability-only
+    /// and may undercount for sessions exceeding 256 turns. For budget enforcement,
+    /// use the accumulated counter via <see cref="ComputeSessionCostUsd(Session)"/>.
     /// </summary>
     public decimal ComputeSessionCostUsd(string sessionId)
     {
-        var userRates = _startup.Config.TokenCostRates;
-        var defaultRates = DefaultTokenCostRates.Rates;
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        var turns = _providerUsage.RecentTurns(sessionId, limit: 256);
         var totalCost = 0m;
-
-        foreach (var turn in turns)
-        {
-            var key = $"{turn.ProviderId}:{turn.ModelId}";
-
-            // Try user-configured rates first (model-specific, then provider-level)
-            if (userRates.TryGetValue(key, out var ratePerThousand))
-            {
-                totalCost += (turn.InputTokens + turn.OutputTokens) * ratePerThousand / 1000m;
-            }
-            else if (userRates.TryGetValue(turn.ProviderId, out var providerRate))
-            {
-                totalCost += (turn.InputTokens + turn.OutputTokens) * providerRate / 1000m;
-            }
-            // Fall back to built-in defaults (model-specific, then provider-level)
-            else if (defaultRates.TryGetValue(key, out var defaultRate))
-            {
-                totalCost += (turn.InputTokens + turn.OutputTokens) * defaultRate / 1000m;
-            }
-            else if (defaultRates.TryGetValue(turn.ProviderId, out var defaultProviderRate))
-            {
-                totalCost += (turn.InputTokens + turn.OutputTokens) * defaultProviderRate / 1000m;
-            }
-        }
+        foreach (var turn in _providerUsage.RecentTurns(sessionId, limit: 256))
+            totalCost += ComputeTurnCostUsd(turn.ProviderId, turn.ModelId, turn.InputTokens, turn.OutputTokens);
 
         return totalCost;
+    }
+
+    public decimal ComputeTurnCostUsd(string providerId, string modelId, long inputTokens, long outputTokens)
+    {
+        if (inputTokens <= 0 && outputTokens <= 0)
+            return 0m;
+
+        var rate = TokenCostRateResolver.Resolve(_startup.Config, providerId, modelId);
+        return ((inputTokens * rate.InputUsdPer1K) + (outputTokens * rate.OutputUsdPer1K)) / 1000m;
+    }
+
+    public bool IsTokenBudgetExceeded(Session session)
+    {
+        if (session.ContractPolicy is not { MaxTokens: > 0 })
+            return false;
+
+        var usedTokens = GetContractTokenUsage(session);
+        return usedTokens >= session.ContractPolicy.MaxTokens;
+    }
+
+    public bool IsRuntimeBudgetExceeded(Session session)
+    {
+        if (session.ContractPolicy is not { MaxRuntimeSeconds: > 0 })
+            return false;
+
+        var attachedAt = session.ContractAttachedAtUtc ?? session.ContractPolicy.CreatedAtUtc;
+        return (DateTimeOffset.UtcNow - attachedAt).TotalSeconds >= session.ContractPolicy.MaxRuntimeSeconds;
+    }
+
+    public void RecordTurnUsage(Session session, string providerId, string modelId, long inputTokens, long outputTokens)
+    {
+        if (session.ContractPolicy is null)
+            return;
+
+        session.ContractAccumulatedCostUsd += ComputeTurnCostUsd(providerId, modelId, inputTokens, outputTokens);
+    }
+
+    public bool CancelContract(string contractId, SessionManager sessionManager, out Session? detachedSession)
+    {
+        detachedSession = sessionManager.TryGetActiveByContractId(contractId);
+        if (detachedSession?.ContractPolicy is null)
+            return false;
+
+        AppendSnapshot(detachedSession, "cancelled");
+        detachedSession.ContractPolicy = null;
+        detachedSession.ContractAttachedAtUtc = null;
+        detachedSession.ContractBaselineInputTokens = 0;
+        detachedSession.ContractBaselineOutputTokens = 0;
+        detachedSession.ContractBaselineToolCalls = 0;
+        detachedSession.ContractAccumulatedCostUsd = 0m;
+        return true;
+    }
+
+    public void AppendSnapshot(Session session, string status)
+    {
+        if (session.ContractPolicy is null)
+            return;
+
+        _contractStore.Append(BuildSnapshot(session, status));
     }
 
     /// <summary>
@@ -238,13 +293,18 @@ internal sealed class ContractGovernanceService
     /// Returns (maxCost, currentCost, exceeded).
     /// </summary>
     public (decimal MaxCost, decimal CurrentCost, bool Exceeded) CheckCostBudget(
-        string channelId, string senderId, SessionManager sessionManager)
+        string? sessionId,
+        string channelId,
+        string senderId,
+        SessionManager sessionManager)
     {
-        var session = sessionManager.TryGetActive(channelId, senderId);
+        var session = !string.IsNullOrWhiteSpace(sessionId)
+            ? sessionManager.TryGetActiveById(sessionId)
+            : sessionManager.TryGetActive(channelId, senderId);
         if (session?.ContractPolicy is not { MaxCostUsd: > 0 } policy)
             return (0m, 0m, false);
 
-        var currentCost = ComputeSessionCostUsd(session.Id);
+        var currentCost = session.ContractAccumulatedCostUsd;
 
         if (policy.SoftCostWarningUsd > 0 && currentCost >= policy.SoftCostWarningUsd && currentCost < policy.MaxCostUsd)
         {
@@ -253,6 +313,37 @@ internal sealed class ContractGovernanceService
         }
 
         return (policy.MaxCostUsd, currentCost, currentCost >= policy.MaxCostUsd);
+    }
+
+    public ContractExecutionSnapshot BuildSnapshot(Session session, string status)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (session.ContractPolicy is null)
+            throw new InvalidOperationException("Session does not have a contract policy.");
+
+        var attachedAt = session.ContractAttachedAtUtc ?? session.ContractPolicy.CreatedAtUtc;
+        return new ContractExecutionSnapshot
+        {
+            ContractId = session.ContractPolicy.Id,
+            SessionId = session.Id,
+            Status = status,
+            AccumulatedCostUsd = session.ContractAccumulatedCostUsd,
+            AccumulatedTokens = GetContractTokenUsage(session),
+            ToolCallCount = GetContractToolCallUsage(session),
+            ElapsedSeconds = Math.Max(0, (DateTimeOffset.UtcNow - attachedAt).TotalSeconds),
+            StartedAtUtc = attachedAt,
+            EndedAtUtc = status is "completed" or "cancelled" or "budget_exceeded" ? DateTimeOffset.UtcNow : null
+        };
+    }
+
+    public ContractExecutionSnapshot? GetLatestSnapshot(string contractId, SessionManager sessionManager)
+    {
+        var snapshots = _contractStore.Query(contractId: contractId, limit: 1);
+        var activeSession = sessionManager.TryGetActiveByContractId(contractId);
+        if (activeSession?.ContractPolicy is not null)
+            return BuildSnapshot(activeSession, status: "active");
+
+        return snapshots.Count == 0 ? null : snapshots[0];
     }
 
     /// <summary>Query persisted contract snapshots.</summary>
@@ -283,4 +374,16 @@ internal sealed class ContractGovernanceService
 
         return new ContractListResponse { Items = items };
     }
+
+    private static long GetContractTokenUsage(Session session)
+        => Math.Max(0, (session.TotalInputTokens - session.ContractBaselineInputTokens)
+            + (session.TotalOutputTokens - session.ContractBaselineOutputTokens));
+
+    private static int GetContractToolCallUsage(Session session)
+        => Math.Max(0, CountToolCalls(session) - session.ContractBaselineToolCalls);
+
+    private static int CountToolCalls(Session session)
+        => session.History
+            .Where(static turn => turn.ToolCalls is { Count: > 0 })
+            .Sum(static turn => turn.ToolCalls!.Count);
 }

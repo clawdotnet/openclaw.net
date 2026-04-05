@@ -11,6 +11,7 @@ namespace OpenClaw.Gateway.Endpoints;
 internal static class OpenAiEndpoints
 {
     private const int MaxChatCompletionRequestBytes = 1024 * 1024;
+    private const string StableSessionHeader = "X-OpenClaw-Session-Id";
 
     public static void MapOpenClawOpenAiEndpoints(
         this WebApplication app,
@@ -65,24 +66,31 @@ internal static class OpenAiEndpoints
                 string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase));
             var userText = lastUserMsg?.Content ?? req.Messages[^1].Content ?? "";
 
+            var requesterKey = EndpointHelpers.GetHttpRateLimitKey(ctx, startup.Config);
+            var stableSessionId = GetOptionalStableSessionId(ctx);
+            var requestId = $"oai-http:{Guid.NewGuid():N}";
+            var session = !string.IsNullOrWhiteSpace(stableSessionId)
+                ? await runtime.SessionManager.GetOrCreateByIdAsync(stableSessionId!, "openai-http", requesterKey, ctx.RequestAborted)
+                : await runtime.SessionManager.GetOrCreateAsync("openai-http", requestId, ctx.RequestAborted);
+
             var httpMwCtx = new MessageContext
             {
                 ChannelId = "openai-http",
-                SenderId = EndpointHelpers.GetHttpRateLimitKey(ctx, startup.Config),
+                SenderId = requesterKey,
+                SessionId = session.Id,
                 Text = userText ?? "",
-                SessionInputTokens = 0,
-                SessionOutputTokens = 0
+                SessionInputTokens = session.TotalInputTokens,
+                SessionOutputTokens = session.TotalOutputTokens
             };
             var allow = await runtime.MiddlewarePipeline.ExecuteAsync(httpMwCtx, ctx.RequestAborted);
             if (!allow)
             {
                 ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                 await ctx.Response.WriteAsync(httpMwCtx.ShortCircuitResponse ?? "Request blocked.", ctx.RequestAborted);
+                if (string.IsNullOrWhiteSpace(stableSessionId))
+                    runtime.SessionManager.RemoveActive(session.Id);
                 return;
             }
-
-            var requestId = $"oai-http:{Guid.NewGuid():N}";
-            var session = await runtime.SessionManager.GetOrCreateAsync("openai-http", requestId, ctx.RequestAborted);
             if (req.Model is not null)
                 session.ModelOverride = req.Model;
             var presetHeader = ctx.Request.Headers.TryGetValue("X-OpenClaw-Preset", out var presetValues)
@@ -295,7 +303,10 @@ internal static class OpenAiEndpoints
             }
             finally
             {
-                runtime.SessionManager.RemoveActive(session.Id);
+                if (!string.IsNullOrWhiteSpace(stableSessionId))
+                    await runtime.SessionManager.PersistAsync(session, ctx.RequestAborted);
+                else
+                    runtime.SessionManager.RemoveActive(session.Id);
             }
         });
 
@@ -336,24 +347,31 @@ internal static class OpenAiEndpoints
                 return;
             }
 
+            var requesterKey = EndpointHelpers.GetHttpRateLimitKey(ctx, startup.Config);
+            var stableSessionId = GetOptionalStableSessionId(ctx);
+            var requestId = $"oai-resp:{Guid.NewGuid():N}";
+            var session = !string.IsNullOrWhiteSpace(stableSessionId)
+                ? await runtime.SessionManager.GetOrCreateByIdAsync(stableSessionId!, "openai-responses", requesterKey, ctx.RequestAborted)
+                : await runtime.SessionManager.GetOrCreateAsync("openai-responses", requestId, ctx.RequestAborted);
+
             var httpMwCtx = new MessageContext
             {
                 ChannelId = "openai-http",
-                SenderId = EndpointHelpers.GetHttpRateLimitKey(ctx, startup.Config),
+                SenderId = requesterKey,
+                SessionId = session.Id,
                 Text = req.Input,
-                SessionInputTokens = 0,
-                SessionOutputTokens = 0
+                SessionInputTokens = session.TotalInputTokens,
+                SessionOutputTokens = session.TotalOutputTokens
             };
             var allow = await runtime.MiddlewarePipeline.ExecuteAsync(httpMwCtx, ctx.RequestAborted);
             if (!allow)
             {
                 ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                 await ctx.Response.WriteAsync(httpMwCtx.ShortCircuitResponse ?? "Request blocked.", ctx.RequestAborted);
+                if (string.IsNullOrWhiteSpace(stableSessionId))
+                    runtime.SessionManager.RemoveActive(session.Id);
                 return;
             }
-
-            var requestId = $"oai-resp:{Guid.NewGuid():N}";
-            var session = await runtime.SessionManager.GetOrCreateAsync("openai-responses", requestId, ctx.RequestAborted);
             if (req.Model is not null)
                 session.ModelOverride = req.Model;
             var responsesPresetHeader = ctx.Request.Headers.TryGetValue("X-OpenClaw-Preset", out var responsesPresetValues)
@@ -826,9 +844,21 @@ internal static class OpenAiEndpoints
             }
             finally
             {
-                runtime.SessionManager.RemoveActive(session.Id);
+                if (!string.IsNullOrWhiteSpace(stableSessionId))
+                    await runtime.SessionManager.PersistAsync(session, ctx.RequestAborted);
+                else
+                    runtime.SessionManager.RemoveActive(session.Id);
             }
         });
+    }
+
+    private static string? GetOptionalStableSessionId(HttpContext ctx)
+    {
+        if (!ctx.Request.Headers.TryGetValue(StableSessionHeader, out var values))
+            return null;
+
+        var value = values.ToString().Trim();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
     private static OpenAiResponseStreamItem CreateFunctionCallItem(ResponsesToolState state, string status)

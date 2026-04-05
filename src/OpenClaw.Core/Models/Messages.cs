@@ -19,6 +19,8 @@ public sealed record InboundMessage
     public string? ApprovalId { get; init; }
     public bool? Approved { get; init; }
     public DateTimeOffset ReceivedAt { get; init; } = DateTimeOffset.UtcNow;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public CancellationToken RequestCancellation { get; init; } = CancellationToken.None;
 
     // Group chat fields
     public bool IsGroup { get; init; }

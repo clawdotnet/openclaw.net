@@ -58,7 +58,7 @@ public sealed class PdfReadTool : ITool
         if (!File.Exists(path))
             return $"Error: File not found: {path}";
 
-        var fullPath = Path.GetFullPath(path);
+        var fullPath = ToolPathPolicy.ResolveRealPath(path);
 
         // Enforce read path policy — same as FileReadTool
         if (!ToolPathPolicy.IsReadAllowed(_toolingConfig, fullPath))

@@ -206,7 +206,8 @@ public sealed class PluginHost : IAsyncDisposable
         var pluginConfig = GetPluginConfig(id);
 
         var initResult = await bridge.StartAsync(plugin.EntryPath, id, pluginConfig, ct);
-        var skillDirs = ResolveSkillDirectories(plugin).ToArray();
+        var skillDiagnostics = new List<PluginCompatibilityDiagnostic>();
+        var skillDirs = ResolveSkillDirectories(plugin, skillDiagnostics).ToArray();
         var requestedCapabilities = DetermineRequestedCapabilities(initResult, skillDirs);
         if (!initResult.Compatible)
         {
@@ -219,7 +220,7 @@ public sealed class PluginHost : IAsyncDisposable
                 EffectiveRuntimeMode = _runtimeState.EffectiveModeName,
                 RequestedCapabilities = requestedCapabilities,
                 Loaded = false,
-                Diagnostics = initResult.Diagnostics,
+                Diagnostics = [.. initResult.Diagnostics, .. skillDiagnostics],
                 Error = "Plugin uses unsupported OpenClaw extension APIs."
             });
             _logger.LogError("Plugin '{PluginId}' is incompatible: {Errors}",
@@ -237,6 +238,7 @@ public sealed class PluginHost : IAsyncDisposable
             var message =
                 $"Plugin '{id}' requires JIT runtime mode for capabilities: {string.Join(", ", blockedCapabilities)}.";
             var diagnostics = initResult.Diagnostics
+                .Concat(skillDiagnostics)
                 .Concat(new[]
                 {
                     new PluginCompatibilityDiagnostic
@@ -277,7 +279,7 @@ public sealed class PluginHost : IAsyncDisposable
                 _skillRoots.Add(skillDir);
         }
 
-        var reportDiagnostics = new List<PluginCompatibilityDiagnostic>();
+        var reportDiagnostics = new List<PluginCompatibilityDiagnostic>(skillDiagnostics);
         var registeredCount = 0;
         foreach (var reg in initResult.Tools)
         {
@@ -434,14 +436,27 @@ public sealed class PluginHost : IAsyncDisposable
             : config;
     }
 
-    private IEnumerable<string> ResolveSkillDirectories(DiscoveredPlugin plugin)
+    private IEnumerable<string> ResolveSkillDirectories(DiscoveredPlugin plugin, ICollection<PluginCompatibilityDiagnostic>? diagnostics = null)
     {
         foreach (var skillDir in plugin.Manifest.Skills ?? [])
         {
             if (string.IsNullOrWhiteSpace(skillDir))
                 continue;
 
-            var resolved = Path.GetFullPath(Path.Combine(plugin.RootPath, skillDir));
+            if (!PluginDiscovery.TryResolveContainedPath(plugin.RootPath, skillDir, out var resolved))
+            {
+                _logger.LogWarning("Plugin '{PluginId}' declared out-of-root skill directory {Path}", plugin.Manifest.Id, skillDir);
+                diagnostics?.Add(new PluginCompatibilityDiagnostic
+                {
+                    Severity = "error",
+                    Code = "skill_dir_outside_root",
+                    Message = $"Plugin '{plugin.Manifest.Id}' skill directory resolves outside the plugin root.",
+                    Surface = "skills",
+                    Path = skillDir
+                });
+                continue;
+            }
+
             if (!Directory.Exists(resolved))
             {
                 _logger.LogWarning("Plugin '{PluginId}' declared missing skill directory {Path}", plugin.Manifest.Id, resolved);

@@ -944,7 +944,9 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
+        // Clear only the pool for this instance's database, not all pools globally.
+        using var conn = new SqliteConnection(ConnectionString);
+        SqliteConnection.ClearPool(conn);
     }
 
     // ── ISessionAdminStore ────────────────────────────────────────────────

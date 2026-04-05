@@ -455,13 +455,13 @@ internal static class AdminEndpoints
             return Results.Json(response, CoreJsonContext.Default.AdminSettingsResponse);
         });
 
-        app.MapGet("/admin/heartbeat", (HttpContext ctx) =>
+        app.MapGet("/admin/heartbeat", async (HttpContext ctx) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.heartbeat");
             if (authResult.Failure is not null)
                 return authResult.Failure;
 
-            var preview = heartbeat.BuildPreview(heartbeat.LoadConfig(), runtime, ctx.RequestAborted);
+            var preview = await heartbeat.BuildPreviewAsync(heartbeat.LoadConfig(), runtime, ctx.RequestAborted);
             return Results.Json(preview, CoreJsonContext.Default.HeartbeatPreviewResponse);
         });
 
@@ -485,7 +485,7 @@ internal static class AdminEndpoints
                 });
             }
 
-            var preview = heartbeat.BuildPreview(request, runtime, ctx.RequestAborted);
+            var preview = await heartbeat.BuildPreviewAsync(request, runtime, ctx.RequestAborted);
             return Results.Json(preview, CoreJsonContext.Default.HeartbeatPreviewResponse);
         });
 
@@ -511,7 +511,7 @@ internal static class AdminEndpoints
             }
 
             var before = heartbeat.LoadConfig();
-            var preview = heartbeat.BuildPreview(request, runtime, ctx.RequestAborted);
+            var preview = await heartbeat.BuildPreviewAsync(request, runtime, ctx.RequestAborted);
             var hasErrors = preview.Issues.Any(static issue => string.Equals(issue.Severity, "error", StringComparison.OrdinalIgnoreCase));
             if (hasErrors)
             {
@@ -520,18 +520,18 @@ internal static class AdminEndpoints
             }
 
             var saved = heartbeat.SaveConfig(request);
-            var savedPreview = heartbeat.BuildPreview(saved, runtime, ctx.RequestAborted);
+            var savedPreview = await heartbeat.BuildPreviewAsync(saved, runtime, ctx.RequestAborted);
             RecordOperatorAudit(ctx, operations, auth, "heartbeat_save", "heartbeat.default", "Saved managed heartbeat configuration.", success: true, before, after: saved);
             return Results.Json(savedPreview, CoreJsonContext.Default.HeartbeatPreviewResponse);
         });
 
-        app.MapGet("/admin/heartbeat/status", (HttpContext ctx) =>
+        app.MapGet("/admin/heartbeat/status", async (HttpContext ctx) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.heartbeat.status");
             if (authResult.Failure is not null)
                 return authResult.Failure;
 
-            var status = heartbeat.BuildStatus(runtime, ctx.RequestAborted);
+            var status = await heartbeat.BuildStatusAsync(runtime, ctx.RequestAborted);
             return Results.Json(status, CoreJsonContext.Default.HeartbeatStatusResponse);
         });
 

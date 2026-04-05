@@ -44,10 +44,11 @@ internal static class GatewayWorkers
         RuntimeOperationsState operations,
         RuntimeMetrics? runtimeMetrics = null,
         LearningService? learningService = null,
-        GatewayAutomationService? automationService = null)
+        GatewayAutomationService? automationService = null,
+        ContractGovernanceService? contractGovernance = null)
     {
         StartSessionCleanup(lifetime, logger, sessionManager, sessionLocks, lockLastUsed);
-        StartInboundWorkers(lifetime, logger, workerCount, isNonLoopbackBind, sessionManager, sessionLocks, lockLastUsed, pipeline, middlewarePipeline, wsChannel, agentRuntime, channelAdapters, config, cronScheduler, heartbeatService, toolApprovalService, approvalAuditStore, pairingManager, commandProcessor, operations, runtimeMetrics, learningService, automationService);
+        StartInboundWorkers(lifetime, logger, workerCount, isNonLoopbackBind, sessionManager, sessionLocks, lockLastUsed, pipeline, middlewarePipeline, wsChannel, agentRuntime, channelAdapters, config, cronScheduler, heartbeatService, toolApprovalService, approvalAuditStore, pairingManager, commandProcessor, operations, runtimeMetrics, learningService, automationService, contractGovernance);
         StartOutboundWorkers(lifetime, logger, workerCount, pipeline, channelAdapters, heartbeatService);
     }
 
@@ -69,13 +70,7 @@ internal static class GatewayWorkers
                     if (evicted > 0)
                         logger.LogDebug("Proactive active-session sweep evicted {Count} expired sessions", evicted);
 
-                    CleanupSessionLocksOnce(
-                        sessionManager,
-                        sessionLocks,
-                        lockLastUsed,
-                        DateTimeOffset.UtcNow,
-                        TimeSpan.FromHours(2),
-                        logger);
+                    sessionManager.CleanupSessionLocksOnce(DateTimeOffset.UtcNow, TimeSpan.FromHours(2));
                 }
                 catch (Exception ex)
                 {
@@ -182,7 +177,8 @@ internal static class GatewayWorkers
         RuntimeOperationsState operations,
         RuntimeMetrics? runtimeMetrics,
         LearningService? learningService,
-        GatewayAutomationService? automationService)
+        GatewayAutomationService? automationService,
+        ContractGovernanceService? contractGovernance)
     {
         var routeResolver = config.Routing.Enabled
             ? new OpenClaw.Gateway.Integrations.AgentRouteResolver(config.Routing)
@@ -194,21 +190,22 @@ internal static class GatewayWorkers
             {
                 while (await pipeline.InboundReader.WaitToReadAsync(lifetime.ApplicationStopping))
                 {
-                    while (pipeline.InboundReader.TryRead(out var msg))
-                    {
-                        Session? session = null;
-                        SemaphoreSlim? lockObj = null;
-                        IBridgedChannelControl? bridgedAdapter = null;
-                        var lockAcquired = false;
-                        var bridgedTypingStarted = false;
-                        long initialInputTokens = 0;
-                        long initialOutputTokens = 0;
-                        var conversationRecipientId = ResolveConversationRecipientId(msg);
-                        try
+                        while (pipeline.InboundReader.TryRead(out var msg))
                         {
-                            if (!msg.IsSystem)
+                            Session? session = null;
+                            IAsyncDisposable? sessionLock = null;
+                            IBridgedChannelControl? bridgedAdapter = null;
+                            var bridgedTypingStarted = false;
+                            long initialInputTokens = 0;
+                            long initialOutputTokens = 0;
+                            var conversationRecipientId = ResolveConversationRecipientId(msg);
+                            using var processingCts = CreateProcessingCts(msg.RequestCancellation, lifetime.ApplicationStopping);
+                            var processingCt = processingCts?.Token ?? lifetime.ApplicationStopping;
+                            try
                             {
-                                if (!operations.ActorRateLimits.TryConsume("channel_sender", $"{msg.ChannelId}:{msg.SenderId}", "inbound_chat", out _))
+                                if (!msg.IsSystem)
+                                {
+                                    if (!operations.ActorRateLimits.TryConsume("channel_sender", $"{msg.ChannelId}:{msg.SenderId}", "inbound_chat", out _))
                                 {
                                     await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
                                     {
@@ -434,12 +431,10 @@ internal static class GatewayWorkers
                             initialInputTokens = session.TotalInputTokens;
                             initialOutputTokens = session.TotalOutputTokens;
 
-                            lockObj = sessionLocks.GetOrAdd(session.Id, _ => new SemaphoreSlim(1, 1));
-                            await lockObj.WaitAsync(lifetime.ApplicationStopping);
-                            lockAcquired = true;
+                            sessionLock = await sessionManager.AcquireSessionLockAsync(session.Id, processingCt);
 
                             // ── Chat Command Processing ──────────────────────
-                            var (handled, cmdResponse) = await commandProcessor.TryProcessCommandAsync(session, msg.Text, lifetime.ApplicationStopping);
+                            var (handled, cmdResponse) = await commandProcessor.TryProcessCommandAsync(session, msg.Text, processingCt);
                             if (handled)
                             {
                                 if (cmdResponse is not null)
@@ -451,7 +446,7 @@ internal static class GatewayWorkers
                                         Text = cmdResponse,
                                         Subject = msg.Subject,
                                         ReplyToMessageId = msg.MessageId
-                                    }, lifetime.ApplicationStopping);
+                                    }, processingCt);
                                 }
                                 continue; // Skip LLM completely
                             }
@@ -462,11 +457,12 @@ internal static class GatewayWorkers
                                 SenderId = msg.SenderId,
                                 Text = msg.Text,
                                 MessageId = msg.MessageId,
+                                SessionId = session.Id,
                                 SessionInputTokens = session.TotalInputTokens,
                                 SessionOutputTokens = session.TotalOutputTokens
                             };
 
-                            var shouldProceed = await middlewarePipeline.ExecuteAsync(mwContext, lifetime.ApplicationStopping);
+                            var shouldProceed = await middlewarePipeline.ExecuteAsync(mwContext, processingCt);
                             if (!shouldProceed)
                             {
                                 var shortCircuitText = mwContext.ShortCircuitResponse ?? "Request blocked.";
@@ -474,7 +470,7 @@ internal static class GatewayWorkers
                                 {
                                     await wsChannel.SendStreamEventAsync(
                                         msg.SenderId, "assistant_message", shortCircuitText, msg.MessageId,
-                                        lifetime.ApplicationStopping);
+                                        processingCt);
                                 }
                                 else
                                 {
@@ -485,7 +481,7 @@ internal static class GatewayWorkers
                                         Text = shortCircuitText,
                                         Subject = msg.Subject,
                                         ReplyToMessageId = msg.MessageId
-                                    }, lifetime.ApplicationStopping);
+                                    }, processingCt);
                                 }
                                 continue;
                             }
@@ -608,11 +604,11 @@ internal static class GatewayWorkers
 
                             if (useStreaming)
                             {
-                                await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_start", "", msg.MessageId, lifetime.ApplicationStopping);
+                                await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_start", "", msg.MessageId, processingCt);
 
                                 AgentStreamEvent? doneEvent = null;
                                 await foreach (var evt in agentRuntime.RunStreamingAsync(
-                                    session, messageText, lifetime.ApplicationStopping, approvalCallback: ApprovalCallback))
+                                    session, messageText, processingCt, approvalCallback: ApprovalCallback))
                                 {
                                     if (string.Equals(evt.EnvelopeType, "assistant_done", StringComparison.Ordinal))
                                     {
@@ -622,11 +618,11 @@ internal static class GatewayWorkers
 
                                     await wsChannel.SendStreamEventAsync(
                                         msg.SenderId, evt.EnvelopeType, evt.Content, msg.MessageId,
-                                        lifetime.ApplicationStopping);
+                                        processingCt);
                                 }
-                                await sessionManager.PersistAsync(session, lifetime.ApplicationStopping);
+                                await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
                                 if (learningService is not null)
-                                    await learningService.ObserveSessionAsync(session, lifetime.ApplicationStopping);
+                                    await learningService.ObserveSessionAsync(session, processingCt);
 
                                 // Send verbose footer via stream for streaming sessions
                                 if (session.VerboseMode)
@@ -643,7 +639,7 @@ internal static class GatewayWorkers
                                             break;
                                     }
                                     var verboseFooter = $"\n\n---\n{streamToolCalls} tool call(s) | {streamInputDelta} in / {streamOutputDelta} out tokens (this turn)";
-                                    await wsChannel.SendStreamEventAsync(msg.SenderId, "text_delta", verboseFooter, msg.MessageId, lifetime.ApplicationStopping);
+                                    await wsChannel.SendStreamEventAsync(msg.SenderId, "text_delta", verboseFooter, msg.MessageId, processingCt);
                                 }
 
                                 if (doneEvent is AgentStreamEvent completedEvent)
@@ -653,10 +649,10 @@ internal static class GatewayWorkers
                                         completedEvent.EnvelopeType,
                                         completedEvent.Content,
                                         msg.MessageId,
-                                        lifetime.ApplicationStopping);
+                                        processingCt);
                                 }
 
-                                await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_stop", "", msg.MessageId, lifetime.ApplicationStopping);
+                                await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_stop", "", msg.MessageId, processingCt);
                             }
                             else
                             {
@@ -672,16 +668,22 @@ internal static class GatewayWorkers
                                     {
                                         var receiptJid = msg.IsGroup ? msg.GroupId : msg.SenderId;
                                         var receiptParticipant = msg.IsGroup ? msg.SenderId : null;
-                                        _ = bridgedAdapter.SendReadReceiptAsync(msg.MessageId, receiptJid, receiptParticipant, lifetime.ApplicationStopping);
+                                        ObserveBackgroundTask(
+                                            bridgedAdapter.SendReadReceiptAsync(msg.MessageId, receiptJid, receiptParticipant, processingCt).AsTask(),
+                                            logger,
+                                            "bridged read receipt");
                                     }
-                                    _ = bridgedAdapter.SendTypingAsync(conversationRecipientId, true, lifetime.ApplicationStopping);
+                                    ObserveBackgroundTask(
+                                        bridgedAdapter.SendTypingAsync(conversationRecipientId, true, processingCt).AsTask(),
+                                        logger,
+                                        "bridged typing start");
                                     bridgedTypingStarted = true;
                                 }
 
-                                var responseText = await agentRuntime.RunAsync(session, messageText, lifetime.ApplicationStopping, approvalCallback: ApprovalCallback);
-                                await sessionManager.PersistAsync(session, lifetime.ApplicationStopping);
+                                var responseText = await agentRuntime.RunAsync(session, messageText, processingCt, approvalCallback: ApprovalCallback);
+                                await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
                                 if (learningService is not null)
-                                    await learningService.ObserveSessionAsync(session, lifetime.ApplicationStopping);
+                                    await learningService.ObserveSessionAsync(session, processingCt);
 
                                 var inputTokenDelta = session.TotalInputTokens - initialInputTokens;
                                 var outputTokenDelta = session.TotalOutputTokens - initialOutputTokens;
@@ -721,7 +723,7 @@ internal static class GatewayWorkers
                                         CronJobName = msg.CronJobName,
                                         Subject = msg.Subject,
                                         ReplyToMessageId = msg.MessageId
-                                    }, lifetime.ApplicationStopping);
+                                    }, processingCt);
                                 }
                             }
                         }
@@ -731,6 +733,9 @@ internal static class GatewayWorkers
                         }
                         catch (OperationCanceledException)
                         {
+                            if (session?.ContractPolicy is not null)
+                                contractGovernance?.AppendSnapshot(session, "cancelled");
+
                             if (session is not null)
                                 logger.LogWarning("Request canceled for session {SessionId}", session.Id);
                             else
@@ -755,14 +760,14 @@ internal static class GatewayWorkers
 
                             try
                             {
-                                var errorText = $"Internal error ({ex.GetType().Name}).";
+                                const string errorText = "Internal error.";
                                 if (msg.ChannelId == "websocket" && wsChannel.IsClientUsingEnvelopes(msg.SenderId))
                                 {
                                     await wsChannel.SendStreamEventAsync(
                                         msg.SenderId, "error", errorText, msg.MessageId,
-                                        lifetime.ApplicationStopping);
+                                        processingCt);
                                         
-                                    await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_stop", "", msg.MessageId, lifetime.ApplicationStopping);
+                                    await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_stop", "", msg.MessageId, processingCt);
                                 }
                                 else
                                 {
@@ -773,7 +778,7 @@ internal static class GatewayWorkers
                                         Text = errorText,
                                         Subject = msg.Subject,
                                         ReplyToMessageId = msg.MessageId
-                                    }, lifetime.ApplicationStopping);
+                                    }, processingCt);
                                 }
                             }
                             catch { /* Best effort */ }
@@ -781,18 +786,22 @@ internal static class GatewayWorkers
                         finally
                         {
                             if (bridgedAdapter is not null && bridgedTypingStarted)
-                                _ = bridgedAdapter.SendTypingAsync(conversationRecipientId, false, lifetime.ApplicationStopping);
+                            {
+                                try
+                                {
+                                    await bridgedAdapter.SendTypingAsync(conversationRecipientId, false, CancellationToken.None);
+                                }
+                                catch (Exception ex)
+                                {
+                                    logger.LogWarning(ex, "Background bridged typing stop failed");
+                                }
+                            }
 
                             cronScheduler?.MarkJobCompleted(msg.CronJobName);
                             automationService?.MarkRunCompleted(msg.CronJobName);
 
-                            if (lockAcquired && lockObj is not null)
-                            {
-                                try { lockObj.Release(); } catch { /* ignore */ }
-                            }
-
-                            if (session is not null)
-                                lockLastUsed[session.Id] = DateTimeOffset.UtcNow;
+                            if (sessionLock is not null)
+                                await sessionLock.DisposeAsync();
                         }
                     }
                 }
@@ -853,6 +862,31 @@ internal static class GatewayWorkers
                 }
             }, lifetime.ApplicationStopping);
         }
+    }
+
+    private static CancellationTokenSource? CreateProcessingCts(CancellationToken requestCancellation, CancellationToken appStopping)
+    {
+        if (!requestCancellation.CanBeCanceled || requestCancellation == appStopping)
+            return null;
+
+        return CancellationTokenSource.CreateLinkedTokenSource(requestCancellation, appStopping);
+    }
+
+    private static void ObserveBackgroundTask(Task task, ILogger logger, string operation)
+    {
+        _ = task.ContinueWith(
+            static (completed, state) =>
+            {
+                if (completed.IsFaulted && completed.Exception is not null)
+                {
+                    var (log, op) = ((ILogger, string))state!;
+                    log.LogWarning(completed.Exception.GetBaseException(), "Background {Operation} failed", op);
+                }
+            },
+            state: (logger, operation),
+            cancellationToken: CancellationToken.None,
+            continuationOptions: TaskContinuationOptions.ExecuteSynchronously,
+            scheduler: TaskScheduler.Default);
     }
 
     private static string ResolveConversationRecipientId(InboundMessage msg)

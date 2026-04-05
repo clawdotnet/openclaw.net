@@ -61,6 +61,62 @@ public sealed class ProcessToolTests
         Assert.Contains("done", log, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_DeniesCrossSessionProcessAccess()
+    {
+        var workspace = Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workspace);
+
+        var config = new GatewayConfig();
+        config.Tooling.WorkspaceRoot = workspace;
+
+        var router = new ToolExecutionRouter(
+            config,
+            toolSandbox: null,
+            NullLoggerFactory.Instance.CreateLogger<ToolExecutionRouter>());
+        await using var processes = new ExecutionProcessService(router, NullLogger<ExecutionProcessService>.Instance);
+        var tool = new ProcessTool(processes, config.Tooling);
+
+        var ownerContext = new ToolExecutionContext
+        {
+            Session = new Session
+            {
+                Id = "sess_owner",
+                ChannelId = "websocket",
+                SenderId = "user1"
+            },
+            TurnContext = new TurnContext
+            {
+                SessionId = "sess_owner",
+                ChannelId = "websocket"
+            }
+        };
+
+        var attackerContext = new ToolExecutionContext
+        {
+            Session = new Session
+            {
+                Id = "sess_attacker",
+                ChannelId = "websocket",
+                SenderId = "user2"
+            },
+            TurnContext = new TurnContext
+            {
+                SessionId = "sess_attacker",
+                ChannelId = "websocket"
+            }
+        };
+
+        var start = await tool.ExecuteAsync(
+            $$"""{"action":"start","command":"{{CreateCommand()}}","timeout_seconds":30}""",
+            ownerContext,
+            CancellationToken.None);
+        var processId = Regex.Match(start, @"Started process (?<id>\S+)").Groups["id"].Value;
+
+        var poll = await tool.ExecuteAsync($$"""{"action":"poll","process_id":"{{processId}}"}""", attackerContext, CancellationToken.None);
+        Assert.Contains("was not found", poll, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string CreateCommand()
         => OperatingSystem.IsWindows()
             ? "echo hello && ping 127.0.0.1 -n 3 > nul && echo done"

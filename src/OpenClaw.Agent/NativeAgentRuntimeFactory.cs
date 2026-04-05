@@ -42,7 +42,11 @@ public sealed class NativeAgentRuntimeFactory : IAgentRuntimeFactory
             gatewayConfig: context.Config,
             toolUsageTracker: toolUsageTracker,
             executionRouter: context.Services.GetService(typeof(Execution.ToolExecutionRouter)) as Execution.ToolExecutionRouter,
-            toolPresetResolver: context.Services.GetService(typeof(OpenClaw.Core.Abstractions.IToolPresetResolver)) as OpenClaw.Core.Abstractions.IToolPresetResolver);
+            toolPresetResolver: context.Services.GetService(typeof(OpenClaw.Core.Abstractions.IToolPresetResolver)) as OpenClaw.Core.Abstractions.IToolPresetResolver,
+            isContractTokenBudgetExceeded: context.IsContractTokenBudgetExceeded,
+            isContractRuntimeBudgetExceeded: context.IsContractRuntimeBudgetExceeded,
+            recordContractTurnUsage: context.RecordContractTurnUsage,
+            appendContractSnapshot: context.AppendContractSnapshot);
 
     public IAgentRuntime Create(AgentRuntimeFactoryContext context)
     {

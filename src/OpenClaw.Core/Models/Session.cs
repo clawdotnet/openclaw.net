@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using OpenClaw.Core.Contacts;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Plugins;
@@ -13,6 +14,9 @@ namespace OpenClaw.Core.Models;
 /// </summary>
 public sealed class Session
 {
+    private long _totalInputTokens;
+    private long _totalOutputTokens;
+
     public required string Id { get; init; }
     public required string ChannelId { get; init; }
     public required string SenderId { get; init; }
@@ -40,13 +44,45 @@ public sealed class Session
     public bool VerboseMode { get; set; }
 
     /// <summary>Total input tokens consumed across all turns in this session.</summary>
-    public long TotalInputTokens { get; set; }
+    public long TotalInputTokens
+    {
+        get => Interlocked.Read(ref _totalInputTokens);
+        set => Interlocked.Exchange(ref _totalInputTokens, value);
+    }
 
     /// <summary>Total output tokens consumed across all turns in this session.</summary>
-    public long TotalOutputTokens { get; set; }
+    public long TotalOutputTokens
+    {
+        get => Interlocked.Read(ref _totalOutputTokens);
+        set => Interlocked.Exchange(ref _totalOutputTokens, value);
+    }
 
     /// <summary>Optional contract policy governing this session's execution limits.</summary>
     public ContractPolicy? ContractPolicy { get; set; }
+
+    /// <summary>Timestamp when the current contract was attached to this session.</summary>
+    public DateTimeOffset? ContractAttachedAtUtc { get; set; }
+
+    /// <summary>Session token counters at the time the current contract was attached.</summary>
+    public long ContractBaselineInputTokens { get; set; }
+    public long ContractBaselineOutputTokens { get; set; }
+
+    /// <summary>Session tool-call count at the time the current contract was attached.</summary>
+    public int ContractBaselineToolCalls { get; set; }
+
+    /// <summary>Accumulated USD cost incurred since the current contract was attached.</summary>
+    public decimal ContractAccumulatedCostUsd { get; set; }
+
+    public void AddTokenUsage(long inputTokens, long outputTokens)
+    {
+        if (inputTokens != 0)
+            Interlocked.Add(ref _totalInputTokens, inputTokens);
+        if (outputTokens != 0)
+            Interlocked.Add(ref _totalOutputTokens, outputTokens);
+    }
+
+    public long GetTotalTokens()
+        => TotalInputTokens + TotalOutputTokens;
 }
 
 public enum SessionState : byte
@@ -87,6 +123,8 @@ public sealed record ToolInvocation
 [JsonSerializable(typeof(RuntimeConfig))]
 [JsonSerializable(typeof(GatewayRuntimeState))]
 [JsonSerializable(typeof(LlmProviderConfig))]
+[JsonSerializable(typeof(TokenCostRateConfig))]
+[JsonSerializable(typeof(Dictionary<string, TokenCostRateConfig>))]
 [JsonSerializable(typeof(MemoryConfig))]
 [JsonSerializable(typeof(MemorySqliteConfig))]
 [JsonSerializable(typeof(MemoryRecallConfig))]

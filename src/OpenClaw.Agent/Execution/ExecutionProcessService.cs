@@ -316,15 +316,15 @@ public sealed class ExecutionProcessService : IAsyncDisposable
             .Select(static p => p.GetStatus())
             .ToArray();
 
-    public ExecutionProcessStatus? GetStatus(string processId)
-        => _processes.TryGetValue(processId, out var process) ? process.GetStatus() : null;
+    public ExecutionProcessStatus? GetStatus(string processId, string? ownerSessionId)
+        => TryGetOwnedProcess(processId, ownerSessionId, out var process) ? process.GetStatus() : null;
 
     public ExecutionProcessLogResult? ReadLog(ExecutionProcessLogRequest request)
-        => _processes.TryGetValue(request.ProcessId, out var process) ? process.ReadLog(request) : null;
+        => TryGetOwnedProcess(request.ProcessId, request.OwnerSessionId, out var process) ? process.ReadLog(request) : null;
 
-    public async Task<ExecutionProcessStatus?> WaitAsync(string processId, CancellationToken ct)
+    public async Task<ExecutionProcessStatus?> WaitAsync(string processId, string? ownerSessionId, CancellationToken ct)
     {
-        if (!_processes.TryGetValue(processId, out var process))
+        if (!TryGetOwnedProcess(processId, ownerSessionId, out var process))
             return null;
 
         await process.WaitAsync(ct);
@@ -333,7 +333,7 @@ public sealed class ExecutionProcessService : IAsyncDisposable
 
     public async Task<bool> WriteAsync(ExecutionProcessInputRequest request, CancellationToken ct)
     {
-        if (!_processes.TryGetValue(request.ProcessId, out var process))
+        if (!TryGetOwnedProcess(request.ProcessId, request.OwnerSessionId, out var process))
             return false;
 
         await process.WriteAsync(request.Data, ct);
@@ -341,9 +341,9 @@ public sealed class ExecutionProcessService : IAsyncDisposable
         return true;
     }
 
-    public async Task<bool> KillAsync(string processId, CancellationToken ct)
+    public async Task<bool> KillAsync(string processId, string? ownerSessionId, CancellationToken ct)
     {
-        if (!_processes.TryGetValue(processId, out var process))
+        if (!TryGetOwnedProcess(processId, ownerSessionId, out var process))
             return false;
 
         await process.KillAsync(ct);
@@ -369,5 +369,20 @@ public sealed class ExecutionProcessService : IAsyncDisposable
         }
 
         _processes.Clear();
+    }
+
+    private bool TryGetOwnedProcess(string processId, string? ownerSessionId, out ManagedExecutionProcess process)
+    {
+        if (_processes.TryGetValue(processId, out process!))
+        {
+            if (string.IsNullOrWhiteSpace(ownerSessionId) ||
+                string.Equals(process.OwnerSessionId, ownerSessionId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        process = null!;
+        return false;
     }
 }

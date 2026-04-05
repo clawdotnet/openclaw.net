@@ -112,4 +112,31 @@ public sealed class FileMemoryStoreTests
             Directory.Delete(storagePath, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task GetSessionAsync_CorruptFileThrowsAndQuarantines()
+    {
+        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-file-memory-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var sessionId = "corrupt-session";
+            var sessionFile = Path.Combine(storagePath, "sessions", "Y29ycnVwdC1zZXNzaW9u.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(sessionFile)!);
+            await File.WriteAllTextAsync(sessionFile, "{ this is not valid json", CancellationToken.None);
+
+            var store = new FileMemoryStore(storagePath, 4);
+            var ex = await Assert.ThrowsAsync<MemoryStoreCorruptionException>(async () =>
+                await store.GetSessionAsync(sessionId, CancellationToken.None));
+
+            Assert.Equal(sessionId, ex.SessionId);
+            Assert.Contains(".corrupt-", ex.FilePath, StringComparison.Ordinal);
+            Assert.DoesNotContain(sessionFile, Directory.GetFiles(Path.Combine(storagePath, "sessions")), StringComparer.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
 }

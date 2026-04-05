@@ -24,6 +24,7 @@ public sealed class CircuitBreaker
     private DateTimeOffset _openedAt;
     private TimeSpan _currentCooldown;
     private int _state = (int)CircuitState.Closed;
+    private int _halfOpenProbeActive;
     private readonly object _lock = new();
 
     public CircuitBreaker(int failureThreshold = 5, TimeSpan? cooldown = null, ILogger? logger = null)
@@ -51,6 +52,7 @@ public sealed class CircuitBreaker
             _probeFailures = 0;
             _currentCooldown = _baseCooldown;
             _state = (int)CircuitState.Closed;
+            _halfOpenProbeActive = 0;
         }
     }
 
@@ -109,7 +111,14 @@ public sealed class CircuitBreaker
                         break;
 
                     case CircuitState.HalfOpen:
-                        // Allow the probe request through
+                        if (_halfOpenProbeActive == 1)
+                        {
+                            throw new CircuitOpenException(
+                                "I'm temporarily unavailable. Please try again shortly.",
+                                _openedAt + _currentCooldown - DateTimeOffset.UtcNow);
+                        }
+
+                        _halfOpenProbeActive = 1;
                         break;
 
                     case CircuitState.Closed:
@@ -154,6 +163,7 @@ public sealed class CircuitBreaker
             _probeFailures = 0;
             _currentCooldown = _baseCooldown;
             _state = (int)CircuitState.Closed;
+            _halfOpenProbeActive = 0;
         }
     }
 
@@ -179,6 +189,7 @@ public sealed class CircuitBreaker
                 }
 
                 _state = (int)CircuitState.Open;
+                _halfOpenProbeActive = 0;
                 _openedAt = DateTimeOffset.UtcNow;
                 _logger?.LogWarning(
                     "Circuit breaker opened after {Failures} consecutive failures. " +

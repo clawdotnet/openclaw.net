@@ -93,7 +93,7 @@ public sealed class ToolApprovalService
         return req;
     }
 
-    public bool TrySetDecision(string approvalId, bool approved)
+    internal bool TrySetDecision(string approvalId, bool approved)
         => TrySetDecisionWithRequest(approvalId, approved, requesterChannelId: null, requesterSenderId: null, requireRequesterMatch: false)
             .Result is ToolApprovalDecisionResult.Recorded;
 

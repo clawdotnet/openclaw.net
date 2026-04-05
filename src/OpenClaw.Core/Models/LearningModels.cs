@@ -33,6 +33,7 @@ public sealed class LearningProposal
     public string Summary { get; init; } = "";
     public string? SkillName { get; init; }
     public string? DraftContent { get; init; }
+    public string? DraftContentHash { get; init; }
     public UserProfile? ProfileUpdate { get; init; }
     public AutomationDefinition? AutomationDraft { get; init; }
     public IReadOnlyList<string> SourceSessionIds { get; init; } = [];
