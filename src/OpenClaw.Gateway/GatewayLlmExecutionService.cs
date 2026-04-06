@@ -1,9 +1,12 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Agent;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
+using OpenClaw.Gateway.Models;
 
 namespace OpenClaw.Gateway;
 
@@ -20,7 +23,8 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
     }
 
     private readonly GatewayConfig _config;
-    private readonly LlmProviderRegistry _registry;
+    private readonly ConfiguredModelProfileRegistry _modelProfiles;
+    private readonly IModelSelectionPolicy _selectionPolicy;
     private readonly ProviderPolicyService _policyService;
     private readonly RuntimeEventStore _eventStore;
     private readonly RuntimeMetrics _runtimeMetrics;
@@ -30,7 +34,8 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
 
     public GatewayLlmExecutionService(
         GatewayConfig config,
-        LlmProviderRegistry registry,
+        ConfiguredModelProfileRegistry modelProfiles,
+        IModelSelectionPolicy selectionPolicy,
         ProviderPolicyService policyService,
         RuntimeEventStore eventStore,
         RuntimeMetrics runtimeMetrics,
@@ -38,7 +43,8 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         ILogger<GatewayLlmExecutionService> logger)
     {
         _config = config;
-        _registry = registry;
+        _modelProfiles = modelProfiles;
+        _selectionPolicy = selectionPolicy;
         _policyService = policyService;
         _eventStore = eventStore;
         _runtimeMetrics = runtimeMetrics;
@@ -46,40 +52,59 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         _logger = logger;
     }
 
+    public GatewayLlmExecutionService(
+        GatewayConfig config,
+        LlmProviderRegistry registry,
+        ProviderPolicyService policyService,
+        RuntimeEventStore eventStore,
+        RuntimeMetrics runtimeMetrics,
+        ProviderUsageTracker providerUsage,
+        ILogger<GatewayLlmExecutionService> logger)
+        : this(
+            config,
+            new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance),
+            new DefaultModelSelectionPolicy(new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance)),
+            policyService,
+            eventStore,
+            runtimeMetrics,
+            providerUsage,
+            logger)
+    {
+    }
+
     public CircuitState DefaultCircuitState
-        => GetRouteState(_config.Llm.Provider, _config.Llm.Model).CircuitBreaker.State;
+        => GetRouteState(
+            _modelProfiles.DefaultProfileId ?? "default",
+            _config.Llm.Provider,
+            _config.Llm.Model).CircuitBreaker.State;
 
     public IReadOnlyList<ProviderRouteHealthSnapshot> SnapshotRoutes()
-        => _registry.Snapshot()
-            .SelectMany(registration =>
+        => _modelProfiles.ListStatuses()
+            .Select(profile =>
             {
-                var models = registration.Models.Length > 0 ? registration.Models : [_config.Llm.Model];
-                return models.Distinct(StringComparer.OrdinalIgnoreCase).Select(modelId =>
+                var state = GetRouteState(profile.Id, profile.ProviderId, profile.ModelId);
+                return new ProviderRouteHealthSnapshot
                 {
-                    var state = GetRouteState(registration.ProviderId, modelId);
-                    return new ProviderRouteHealthSnapshot
-                    {
-                        ProviderId = registration.ProviderId,
-                        ModelId = modelId,
-                        IsDefaultRoute = registration.IsDefault && string.Equals(modelId, _config.Llm.Model, StringComparison.OrdinalIgnoreCase),
-                        IsDynamic = registration.IsDynamic,
-                        OwnerId = registration.OwnerId,
-                        CircuitState = state.CircuitBreaker.State.ToString(),
-                        Requests = Interlocked.Read(ref state.Requests),
-                        Retries = Interlocked.Read(ref state.Retries),
-                        Errors = Interlocked.Read(ref state.Errors),
-                        LastError = state.LastError,
-                        LastErrorAtUtc = state.LastErrorAtUtc
-                    };
-                });
+                    ProfileId = profile.Id,
+                    ProviderId = profile.ProviderId,
+                    ModelId = profile.ModelId,
+                    IsDefaultRoute = profile.IsDefault,
+                    CircuitState = state.CircuitBreaker.State.ToString(),
+                    Requests = Interlocked.Read(ref state.Requests),
+                    Retries = Interlocked.Read(ref state.Retries),
+                    Errors = Interlocked.Read(ref state.Errors),
+                    LastError = state.LastError,
+                    LastErrorAtUtc = state.LastErrorAtUtc,
+                    Tags = profile.Tags,
+                    ValidationIssues = profile.ValidationIssues
+                };
             })
-            .OrderBy(static item => item.ProviderId, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(static item => item.ModelId, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static item => item.ProfileId, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
     public void ResetProvider(string providerId)
     {
-        foreach (var key in _routes.Keys.Where(key => key.StartsWith(providerId + ":", StringComparison.OrdinalIgnoreCase)).ToArray())
+        foreach (var key in _routes.Keys.Where(key => key.Contains($":{providerId}:", StringComparison.OrdinalIgnoreCase)).ToArray())
         {
             if (_routes.TryRemove(key, out var state))
                 state.CircuitBreaker.Reset();
@@ -94,98 +119,114 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         LlmExecutionEstimate estimate,
         CancellationToken ct)
     {
-        var resolved = _policyService.Resolve(session, _config.Llm);
-        var effectiveOptions = CreateEffectiveOptions(options, resolved, estimate);
-        var modelsToTry = new[] { resolved.ModelId }
-            .Concat(resolved.FallbackModels.Where(static item => !string.IsNullOrWhiteSpace(item)))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var selection = ResolveSelection(session, messages, options, streaming: false);
+        var legacyPolicy = _policyService.Resolve(session, _config.Llm);
 
-        RecordEvent(session, turnContext, "llm", "route_selected", "info", $"Selected provider route {resolved.ProviderId}/{resolved.ModelId}", new()
+        RecordEvent(session, turnContext, "llm", "route_selected", "info", $"Selected provider route {selection.ProviderId}/{selection.ModelId}", new()
         {
-            ["providerId"] = resolved.ProviderId,
-            ["modelId"] = resolved.ModelId,
-            ["policyRuleId"] = resolved.RuleId ?? ""
+            ["providerId"] = selection.ProviderId,
+            ["modelId"] = selection.ModelId,
+            ["profileId"] = selection.SelectedProfileId ?? "",
+            ["policyRuleId"] = legacyPolicy.RuleId ?? ""
         });
+        if (!string.IsNullOrWhiteSpace(selection.Explanation))
+            _logger.LogInformation("{Explanation}", selection.Explanation);
 
         Exception? lastError = null;
-        for (var modelIndex = 0; modelIndex < modelsToTry.Length; modelIndex++)
+        foreach (var candidate in selection.Candidates)
         {
-            var modelId = modelsToTry[modelIndex];
-            var routeState = GetRouteState(resolved.ProviderId, modelId);
-            var chatClient = GetClient(resolved.ProviderId);
+            if (!_modelProfiles.TryGetRegistration(candidate.Profile.Id, out var registration) || registration?.Client is null)
+                continue;
 
-            for (var attempt = 0; attempt <= _config.Llm.RetryCount; attempt++)
+            var modelsToTry = new[] { ResolveRequestedModelId(session, candidate.Profile) }
+                .Concat(candidate.FallbackModels.Where(static item => !string.IsNullOrWhiteSpace(item)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            for (var modelIndex = 0; modelIndex < modelsToTry.Length; modelIndex++)
             {
-                Interlocked.Increment(ref routeState.Requests);
-                _providerUsage.RecordRequest(resolved.ProviderId, modelId);
+                var modelId = modelsToTry[modelIndex];
+                var routeState = GetRouteState(candidate.Profile.Id, candidate.Profile.ProviderId, modelId);
+                var chatClient = registration.Client;
+                var effectiveOptions = CreateEffectiveOptions(options, candidate.Profile, registration.ProviderConfig, legacyPolicy, estimate);
 
-                if (attempt > 0 || modelIndex > 0)
+                for (var attempt = 0; attempt <= registration.ProviderConfig.RetryCount; attempt++)
                 {
-                    Interlocked.Increment(ref routeState.Retries);
-                    turnContext.RecordRetry();
-                    _runtimeMetrics.IncrementLlmRetries();
-                    _providerUsage.RecordRetry(resolved.ProviderId, modelId);
-                    var delayMs = Math.Min(4_000, (int)Math.Pow(2, attempt + modelIndex) * 500);
-                    await Task.Delay(delayMs, ct);
-                }
+                    Interlocked.Increment(ref routeState.Requests);
+                    _providerUsage.RecordRequest(candidate.Profile.ProviderId, modelId);
 
-                try
-                {
-                    RecordEvent(session, turnContext, "llm", "request_started", "info", $"LLM request started for {resolved.ProviderId}/{modelId}", new()
+                    if (attempt > 0 || modelIndex > 0)
                     {
-                        ["providerId"] = resolved.ProviderId,
-                        ["modelId"] = modelId
-                    });
+                        Interlocked.Increment(ref routeState.Retries);
+                        turnContext.RecordRetry();
+                        _runtimeMetrics.IncrementLlmRetries();
+                        _providerUsage.RecordRetry(candidate.Profile.ProviderId, modelId);
+                        var delayMs = Math.Min(4_000, (int)Math.Pow(2, attempt + modelIndex) * 500);
+                        await Task.Delay(delayMs, ct);
+                    }
 
-                    effectiveOptions.ModelId = modelId;
-                    var response = await routeState.CircuitBreaker.ExecuteAsync(async innerCt =>
+                    try
                     {
-                        if (_config.Llm.TimeoutSeconds > 0)
+                        RecordEvent(session, turnContext, "llm", "request_started", "info", $"LLM request started for {candidate.Profile.ProviderId}/{modelId}", new()
                         {
-                            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(innerCt);
-                            timeoutCts.CancelAfter(TimeSpan.FromSeconds(_config.Llm.TimeoutSeconds));
-                            return await chatClient.GetResponseAsync(messages, effectiveOptions, timeoutCts.Token);
-                        }
+                            ["providerId"] = candidate.Profile.ProviderId,
+                            ["modelId"] = modelId,
+                            ["profileId"] = candidate.Profile.Id
+                        });
 
-                        return await chatClient.GetResponseAsync(messages, effectiveOptions, innerCt);
-                    }, ct);
+                        effectiveOptions.ModelId = modelId;
+                        var response = await routeState.CircuitBreaker.ExecuteAsync(async innerCt =>
+                        {
+                            if (registration.ProviderConfig.TimeoutSeconds > 0)
+                            {
+                                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(innerCt);
+                                timeoutCts.CancelAfter(TimeSpan.FromSeconds(registration.ProviderConfig.TimeoutSeconds));
+                                return await chatClient.GetResponseAsync(messages, effectiveOptions, timeoutCts.Token);
+                            }
 
-                    RecordEvent(session, turnContext, "llm", "request_completed", "info", $"LLM request completed for {resolved.ProviderId}/{modelId}", new()
+                            return await chatClient.GetResponseAsync(messages, effectiveOptions, innerCt);
+                        }, ct);
+
+                        RecordEvent(session, turnContext, "llm", "request_completed", "info", $"LLM request completed for {candidate.Profile.ProviderId}/{modelId}", new()
+                        {
+                            ["providerId"] = candidate.Profile.ProviderId,
+                            ["modelId"] = modelId,
+                            ["profileId"] = candidate.Profile.Id
+                        });
+
+                        return new LlmExecutionResult
+                        {
+                            ProfileId = candidate.Profile.Id,
+                            ProviderId = candidate.Profile.ProviderId,
+                            ModelId = modelId,
+                            PolicyRuleId = legacyPolicy.RuleId,
+                            SelectionExplanation = selection.Explanation,
+                            Response = response
+                        };
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
-                        ["providerId"] = resolved.ProviderId,
-                        ["modelId"] = modelId
-                    });
-
-                    return new LlmExecutionResult
+                        throw;
+                    }
+                    catch (Exception ex)
                     {
-                        ProviderId = resolved.ProviderId,
-                        ModelId = modelId,
-                        PolicyRuleId = resolved.RuleId,
-                        Response = response
-                    };
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    lastError = ex;
-                    Interlocked.Increment(ref routeState.Errors);
-                    routeState.LastError = ex.Message;
-                    routeState.LastErrorAtUtc = DateTimeOffset.UtcNow;
-                    _runtimeMetrics.IncrementLlmErrors();
-                    _providerUsage.RecordError(resolved.ProviderId, modelId);
-                    RecordEvent(session, turnContext, "llm", "request_failed", "error", ex.Message, new()
-                    {
-                        ["providerId"] = resolved.ProviderId,
-                        ["modelId"] = modelId,
-                        ["exceptionType"] = ex.GetType().Name
-                    });
+                        lastError = ex;
+                        Interlocked.Increment(ref routeState.Errors);
+                        routeState.LastError = ex.Message;
+                        routeState.LastErrorAtUtc = DateTimeOffset.UtcNow;
+                        _runtimeMetrics.IncrementLlmErrors();
+                        _providerUsage.RecordError(candidate.Profile.ProviderId, modelId);
+                        RecordEvent(session, turnContext, "llm", "request_failed", "error", ex.Message, new()
+                        {
+                            ["providerId"] = candidate.Profile.ProviderId,
+                            ["modelId"] = modelId,
+                            ["profileId"] = candidate.Profile.Id,
+                            ["exceptionType"] = ex.GetType().Name
+                        });
 
-                    if (!IsTransient(ex))
-                        break;
+                        if (!IsTransient(ex))
+                            break;
+                    }
                 }
             }
         }
@@ -201,43 +242,56 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         LlmExecutionEstimate estimate,
         CancellationToken ct)
     {
-        var resolved = _policyService.Resolve(session, _config.Llm);
-        var effectiveOptions = CreateEffectiveOptions(options, resolved, estimate);
-        var routeState = GetRouteState(resolved.ProviderId, resolved.ModelId);
-        var chatClient = GetClient(resolved.ProviderId);
+        var selection = ResolveSelection(session, messages, options, streaming: true);
+        var legacyPolicy = _policyService.Resolve(session, _config.Llm);
+        var candidate = selection.Candidates.FirstOrDefault()
+            ?? throw new InvalidOperationException("No model profile candidate is available for streaming.");
+        if (!_modelProfiles.TryGetRegistration(candidate.Profile.Id, out var registration) || registration?.Client is null)
+            throw new ModelSelectionException($"Selected model profile '{candidate.Profile.Id}' is not available.");
+
+        var effectiveOptions = CreateEffectiveOptions(options, candidate.Profile, registration.ProviderConfig, legacyPolicy, estimate);
+        var selectedModelId = ResolveRequestedModelId(session, candidate.Profile);
+        var routeState = GetRouteState(candidate.Profile.Id, candidate.Profile.ProviderId, selectedModelId);
+        var chatClient = registration.Client;
 
         Interlocked.Increment(ref routeState.Requests);
-        _providerUsage.RecordRequest(resolved.ProviderId, resolved.ModelId);
-        RecordEvent(session, turnContext, "llm", "route_selected", "info", $"Selected provider route {resolved.ProviderId}/{resolved.ModelId}", new()
+        _providerUsage.RecordRequest(candidate.Profile.ProviderId, selectedModelId);
+        RecordEvent(session, turnContext, "llm", "route_selected", "info", $"Selected provider route {candidate.Profile.ProviderId}/{selectedModelId}", new()
         {
-            ["providerId"] = resolved.ProviderId,
-            ["modelId"] = resolved.ModelId,
-            ["policyRuleId"] = resolved.RuleId ?? ""
+            ["providerId"] = candidate.Profile.ProviderId,
+            ["modelId"] = selectedModelId,
+            ["profileId"] = candidate.Profile.Id,
+            ["policyRuleId"] = legacyPolicy.RuleId ?? ""
         });
-        RecordEvent(session, turnContext, "llm", "stream_started", "info", $"LLM stream started for {resolved.ProviderId}/{resolved.ModelId}", new()
+        RecordEvent(session, turnContext, "llm", "stream_started", "info", $"LLM stream started for {candidate.Profile.ProviderId}/{selectedModelId}", new()
         {
-            ["providerId"] = resolved.ProviderId,
-            ["modelId"] = resolved.ModelId,
-            ["policyRuleId"] = resolved.RuleId ?? ""
+            ["providerId"] = candidate.Profile.ProviderId,
+            ["modelId"] = selectedModelId,
+            ["profileId"] = candidate.Profile.Id,
+            ["policyRuleId"] = legacyPolicy.RuleId ?? ""
         });
 
-        effectiveOptions.ModelId = resolved.ModelId;
+        effectiveOptions.ModelId = selectedModelId;
         IAsyncEnumerable<ChatResponseUpdate> updates = StreamWithCircuitAsync(
             session,
             turnContext,
             chatClient,
             routeState,
-            resolved.ProviderId,
-            resolved.ModelId,
+            candidate.Profile.ProviderId,
+            selectedModelId,
             messages,
             effectiveOptions,
+            registration.ProviderConfig.TimeoutSeconds,
+            candidate.Profile.Id,
             ct);
 
         return Task.FromResult(new LlmStreamingExecutionResult
         {
-            ProviderId = resolved.ProviderId,
-            ModelId = resolved.ModelId,
-            PolicyRuleId = resolved.RuleId,
+            ProfileId = candidate.Profile.Id,
+            ProviderId = candidate.Profile.ProviderId,
+            ModelId = selectedModelId,
+            PolicyRuleId = legacyPolicy.RuleId,
+            SelectionExplanation = selection.Explanation,
             Updates = updates
         });
     }
@@ -251,15 +305,17 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         string modelId,
         IReadOnlyList<ChatMessage> messages,
         ChatOptions options,
+        int timeoutSeconds,
+        string profileId,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
     {
         routeState.CircuitBreaker.ThrowIfOpen();
         CancellationToken activeToken = ct;
         CancellationTokenSource? timeoutCts = null;
-        if (_config.Llm.TimeoutSeconds > 0)
+        if (timeoutSeconds > 0)
         {
             timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(_config.Llm.TimeoutSeconds));
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
             activeToken = timeoutCts.Token;
         }
 
@@ -295,6 +351,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
                     {
                         ["providerId"] = providerId,
                         ["modelId"] = modelId,
+                        ["profileId"] = profileId,
                         ["exceptionType"] = ex.GetType().Name
                     });
                     throw;
@@ -307,7 +364,8 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
             RecordEvent(session, turnContext, "llm", "stream_completed", "info", $"LLM stream completed for {providerId}/{modelId}", new()
             {
                 ["providerId"] = providerId,
-                ["modelId"] = modelId
+                ["modelId"] = modelId,
+                ["profileId"] = profileId
             });
         }
         finally
@@ -316,21 +374,9 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         }
     }
 
-    private IChatClient GetClient(string providerId)
-    {
-        if (!_registry.TryGet(providerId, out var registration) || registration is null)
-        {
-            throw new InvalidOperationException(
-                $"Provider '{providerId}' is not registered. " +
-                $"Available providers: {string.Join(", ", _registry.Snapshot().Select(static item => item.ProviderId))}");
-        }
-
-        return registration.Client;
-    }
-
-    private RouteState GetRouteState(string providerId, string modelId)
+    private RouteState GetRouteState(string profileId, string providerId, string modelId)
         => _routes.GetOrAdd(
-            $"{providerId}:{modelId}",
+            $"{profileId}:{providerId}:{modelId}",
             _ => new RouteState
             {
                 CircuitBreaker = new CircuitBreaker(
@@ -339,26 +385,60 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
                     _logger)
             });
 
-    private ChatOptions CreateEffectiveOptions(ChatOptions source, ResolvedProviderRoute resolved, LlmExecutionEstimate estimate)
+    private ModelSelectionResult ResolveSelection(
+        Session session,
+        IReadOnlyList<ChatMessage> messages,
+        ChatOptions options,
+        bool streaming)
+    {
+        var explicitProfileId = !string.IsNullOrWhiteSpace(session.ModelProfileId)
+            ? session.ModelProfileId
+            : (!string.IsNullOrWhiteSpace(session.ModelOverride) && _modelProfiles.TryGet(session.ModelOverride!, out _)
+                ? session.ModelOverride
+                : null);
+        return _selectionPolicy.Resolve(new ModelSelectionRequest
+        {
+            ExplicitProfileId = explicitProfileId,
+            Session = session,
+            Messages = messages,
+            Options = options,
+            Streaming = streaming
+        });
+    }
+
+    private ChatOptions CreateEffectiveOptions(
+        ChatOptions source,
+        ModelProfile profile,
+        LlmProviderConfig providerConfig,
+        ResolvedProviderRoute legacyPolicy,
+        LlmExecutionEstimate estimate)
     {
         var maxOutputTokens = source.MaxOutputTokens;
-        if (resolved.MaxOutputTokens > 0)
-            maxOutputTokens = maxOutputTokens is > 0 ? Math.Min(maxOutputTokens.Value, resolved.MaxOutputTokens) : resolved.MaxOutputTokens;
+        if (profile.Capabilities.MaxOutputTokens > 0)
+            maxOutputTokens = maxOutputTokens is > 0 ? Math.Min(maxOutputTokens.Value, profile.Capabilities.MaxOutputTokens) : profile.Capabilities.MaxOutputTokens;
+        if (legacyPolicy.MaxOutputTokens > 0)
+            maxOutputTokens = maxOutputTokens is > 0 ? Math.Min(maxOutputTokens.Value, legacyPolicy.MaxOutputTokens) : legacyPolicy.MaxOutputTokens;
 
-        if (resolved.MaxInputTokens > 0 && estimate.EstimatedInputTokens > resolved.MaxInputTokens)
+        if (profile.Capabilities.MaxContextTokens > 0 && estimate.EstimatedInputTokens > profile.Capabilities.MaxContextTokens)
         {
-            throw new InvalidOperationException(
-                $"Provider policy blocked this request because estimated input tokens ({estimate.EstimatedInputTokens}) exceed maxInputTokens ({resolved.MaxInputTokens}).");
+            throw new ModelSelectionException(
+                $"Selected model profile '{profile.Id}' cannot satisfy this request because estimated input tokens ({estimate.EstimatedInputTokens}) exceed MaxContextTokens ({profile.Capabilities.MaxContextTokens}).");
         }
 
-        if (resolved.MaxTotalTokens > 0)
+        if (legacyPolicy.MaxInputTokens > 0 && estimate.EstimatedInputTokens > legacyPolicy.MaxInputTokens)
         {
-            var configuredOutput = maxOutputTokens ?? _config.Llm.MaxTokens;
-            var remaining = resolved.MaxTotalTokens - estimate.EstimatedInputTokens;
+            throw new InvalidOperationException(
+                $"Provider policy blocked this request because estimated input tokens ({estimate.EstimatedInputTokens}) exceed maxInputTokens ({legacyPolicy.MaxInputTokens}).");
+        }
+
+        if (legacyPolicy.MaxTotalTokens > 0)
+        {
+            var configuredOutput = maxOutputTokens ?? providerConfig.MaxTokens;
+            var remaining = legacyPolicy.MaxTotalTokens - estimate.EstimatedInputTokens;
             if (remaining <= 0)
             {
                 throw new InvalidOperationException(
-                    $"Provider policy blocked this request because estimated total tokens would exceed maxTotalTokens ({resolved.MaxTotalTokens}).");
+                    $"Provider policy blocked this request because estimated total tokens would exceed maxTotalTokens ({legacyPolicy.MaxTotalTokens}).");
             }
 
             maxOutputTokens = Math.Min(configuredOutput, (int)remaining);
@@ -366,12 +446,20 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
 
         return new ChatOptions
         {
-            ModelId = resolved.ModelId,
+            ModelId = profile.ModelId,
             MaxOutputTokens = maxOutputTokens,
             Temperature = source.Temperature,
             Tools = source.Tools,
             ResponseFormat = source.ResponseFormat
         };
+    }
+
+    private string ResolveRequestedModelId(Session session, ModelProfile profile)
+    {
+        if (!string.IsNullOrWhiteSpace(session.ModelOverride) && !_modelProfiles.TryGet(session.ModelOverride!, out _))
+            return session.ModelOverride!.Trim();
+
+        return profile.ModelId;
     }
 
     private void RecordEvent(

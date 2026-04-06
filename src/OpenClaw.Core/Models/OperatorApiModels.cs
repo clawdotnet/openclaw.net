@@ -45,11 +45,14 @@ public sealed class ProviderPolicyListResponse
 
 public sealed class ProviderRouteHealthSnapshot
 {
+    public string? ProfileId { get; init; }
     public required string ProviderId { get; init; }
     public required string ModelId { get; init; }
     public bool IsDefaultRoute { get; init; }
     public bool IsDynamic { get; init; }
     public string? OwnerId { get; init; }
+    public string[] Tags { get; init; } = [];
+    public string[] ValidationIssues { get; init; } = [];
     public string CircuitState { get; init; } = "Closed";
     public long Requests { get; init; }
     public long Retries { get; init; }
@@ -73,6 +76,7 @@ public sealed class ProviderTurnUsageEntry
 public sealed class ProviderAdminResponse
 {
     public IReadOnlyList<ProviderRouteHealthSnapshot> Routes { get; init; } = [];
+    public ModelProfilesStatusResponse? ModelProfiles { get; init; }
     public IReadOnlyList<ProviderUsageSnapshot> Usage { get; init; } = [];
     public IReadOnlyList<ProviderPolicyRule> Policies { get; init; } = [];
     public IReadOnlyList<ProviderTurnUsageEntry> RecentTurns { get; init; } = [];

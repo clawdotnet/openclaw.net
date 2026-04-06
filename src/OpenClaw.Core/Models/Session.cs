@@ -28,6 +28,18 @@ public sealed class Session
     /// <summary>Optional model override for this specific session (set via /model command).</summary>
     public string? ModelOverride { get; set; }
 
+    /// <summary>Optional named model profile selected for this session or route.</summary>
+    public string? ModelProfileId { get; set; }
+
+    /// <summary>Optional route/session profile preferences used by profile-aware model selection.</summary>
+    public string[] PreferredModelTags { get; set; } = [];
+
+    /// <summary>Optional route/session fallback profile order used when the selected profile lacks required capabilities.</summary>
+    public string[] FallbackModelProfileIds { get; set; } = [];
+
+    /// <summary>Optional route/session capability requirements used during profile-aware model selection.</summary>
+    public ModelSelectionRequirements ModelRequirements { get; set; } = new();
+
     /// <summary>Optional route-scoped system prompt appended by gateway routing before runtime execution.</summary>
     public string? SystemPromptOverride { get; set; }
 
@@ -123,6 +135,24 @@ public sealed record ToolInvocation
 [JsonSerializable(typeof(RuntimeConfig))]
 [JsonSerializable(typeof(GatewayRuntimeState))]
 [JsonSerializable(typeof(LlmProviderConfig))]
+[JsonSerializable(typeof(ModelsConfig))]
+[JsonSerializable(typeof(ModelProfileConfig))]
+[JsonSerializable(typeof(List<ModelProfileConfig>))]
+[JsonSerializable(typeof(ModelCapabilities))]
+[JsonSerializable(typeof(ModelSelectionRequirements))]
+[JsonSerializable(typeof(ModelProfile))]
+[JsonSerializable(typeof(List<ModelProfile>))]
+[JsonSerializable(typeof(ModelProfileStatus))]
+[JsonSerializable(typeof(List<ModelProfileStatus>))]
+[JsonSerializable(typeof(ModelProfilesStatusResponse))]
+[JsonSerializable(typeof(ModelSelectionDoctorResponse))]
+[JsonSerializable(typeof(ModelSelectionDescriptor))]
+[JsonSerializable(typeof(ModelEvaluationRequest))]
+[JsonSerializable(typeof(ModelEvaluationScenarioResult))]
+[JsonSerializable(typeof(List<ModelEvaluationScenarioResult>))]
+[JsonSerializable(typeof(ModelEvaluationProfileReport))]
+[JsonSerializable(typeof(List<ModelEvaluationProfileReport>))]
+[JsonSerializable(typeof(ModelEvaluationReport))]
 [JsonSerializable(typeof(TokenCostRateConfig))]
 [JsonSerializable(typeof(Dictionary<string, TokenCostRateConfig>))]
 [JsonSerializable(typeof(MemoryConfig))]

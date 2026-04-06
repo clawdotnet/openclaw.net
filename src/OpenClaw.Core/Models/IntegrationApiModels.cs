@@ -98,6 +98,7 @@ public sealed class IntegrationApprovalHistoryResponse
 
 public sealed class IntegrationProvidersResponse
 {
+    public ModelProfilesStatusResponse? ModelProfiles { get; init; }
     public IReadOnlyList<ProviderRouteHealthSnapshot> Routes { get; init; } = [];
     public IReadOnlyList<OpenClaw.Core.Observability.ProviderUsageSnapshot> Usage { get; init; } = [];
     public IReadOnlyList<ProviderPolicyRule> Policies { get; init; } = [];

@@ -33,6 +33,9 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _adminHeartbeatPreviewUri;
     private readonly Uri _adminHeartbeatStatusUri;
     private readonly Uri _adminPostureUri;
+    private readonly Uri _adminModelsUri;
+    private readonly Uri _adminModelsDoctorUri;
+    private readonly Uri _adminModelEvaluationsUri;
     private readonly Uri _adminApprovalSimulationUri;
     private readonly Uri _adminIncidentExportUri;
     private readonly Uri _adminWhatsAppSetupUri;
@@ -71,6 +74,9 @@ public sealed class OpenClawHttpClient : IDisposable
         _adminHeartbeatPreviewUri = new Uri(baseUri, "/admin/heartbeat/preview");
         _adminHeartbeatStatusUri = new Uri(baseUri, "/admin/heartbeat/status");
         _adminPostureUri = new Uri(baseUri, "/admin/posture");
+        _adminModelsUri = new Uri(baseUri, "/admin/models");
+        _adminModelsDoctorUri = new Uri(baseUri, "/admin/models/doctor");
+        _adminModelEvaluationsUri = new Uri(baseUri, "/admin/models/evaluations");
         _adminApprovalSimulationUri = new Uri(baseUri, "/admin/approvals/simulate");
         _adminIncidentExportUri = new Uri(baseUri, "/admin/incident/export");
         _adminWhatsAppSetupUri = new Uri(baseUri, "/admin/channels/whatsapp/setup");
@@ -437,6 +443,22 @@ public sealed class OpenClawHttpClient : IDisposable
 
     public Task<SecurityPostureResponse> GetSecurityPostureAsync(CancellationToken cancellationToken)
         => GetAsync(_adminPostureUri, CoreJsonContext.Default.SecurityPostureResponse, cancellationToken);
+
+    public Task<ModelProfilesStatusResponse> GetModelProfilesAsync(CancellationToken cancellationToken)
+        => GetAsync(_adminModelsUri, CoreJsonContext.Default.ModelProfilesStatusResponse, cancellationToken);
+
+    public Task<ModelSelectionDoctorResponse> GetModelSelectionDoctorAsync(CancellationToken cancellationToken)
+        => GetAsync(_adminModelsDoctorUri, CoreJsonContext.Default.ModelSelectionDoctorResponse, cancellationToken);
+
+    public async Task<ModelEvaluationReport> RunModelEvaluationAsync(ModelEvaluationRequest request, CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _adminModelEvaluationsUri)
+        {
+            Content = BuildJsonContent(request, CoreJsonContext.Default.ModelEvaluationRequest)
+        };
+
+        return await SendAsync(httpRequest, CoreJsonContext.Default.ModelEvaluationReport, cancellationToken);
+    }
 
     public async Task<ApprovalSimulationResponse> SimulateApprovalAsync(
         ApprovalSimulationRequest request,

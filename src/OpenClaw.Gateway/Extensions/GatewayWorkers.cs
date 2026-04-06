@@ -409,6 +409,20 @@ internal static class GatewayWorkers
                                 session.ModelOverride = string.IsNullOrWhiteSpace(resolvedRoute.ModelOverride)
                                     ? session.ModelOverride
                                     : resolvedRoute.ModelOverride.Trim();
+                                session.ModelProfileId = string.IsNullOrWhiteSpace(resolvedRoute.ModelProfileId)
+                                    ? null
+                                    : resolvedRoute.ModelProfileId.Trim();
+                                session.PreferredModelTags = resolvedRoute.PreferredModelTags
+                                    .Where(static item => !string.IsNullOrWhiteSpace(item))
+                                    .Select(static item => item.Trim())
+                                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                                    .ToArray();
+                                session.FallbackModelProfileIds = resolvedRoute.FallbackModelProfileIds
+                                    .Where(static item => !string.IsNullOrWhiteSpace(item))
+                                    .Select(static item => item.Trim())
+                                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                                    .ToArray();
+                                session.ModelRequirements = resolvedRoute.ModelRequirements ?? new ModelSelectionRequirements();
                                 session.SystemPromptOverride = string.IsNullOrWhiteSpace(resolvedRoute.SystemPrompt)
                                     ? null
                                     : resolvedRoute.SystemPrompt.Trim();
@@ -423,6 +437,10 @@ internal static class GatewayWorkers
                             }
                             else
                             {
+                                session.ModelProfileId = null;
+                                session.PreferredModelTags = [];
+                                session.FallbackModelProfileIds = [];
+                                session.ModelRequirements = new ModelSelectionRequirements();
                                 session.SystemPromptOverride = null;
                                 session.RoutePresetId = null;
                                 session.RouteAllowedTools = [];

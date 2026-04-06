@@ -299,6 +299,12 @@ public sealed class AgentRuntime : IAgentRuntime
                 LogTurnComplete(turnCtx);
                 return ex.Message;
             }
+            catch (ModelSelectionException ex)
+            {
+                _logger?.LogWarning("[{CorrelationId}] Model selection failed: {Message}", turnCtx.CorrelationId, ex.Message);
+                LogTurnComplete(turnCtx);
+                return ex.Message;
+            }
 
             catch (Exception ex)
             {
@@ -796,6 +802,13 @@ public sealed class AgentRuntime : IAgentRuntime
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 throw;
+            }
+            catch (ModelSelectionException ex)
+            {
+                _logger?.LogWarning("[{CorrelationId}] Streaming model selection failed: {Message}", turnCtx.CorrelationId, ex.Message);
+                result.Error = ex.Message;
+                LogTurnComplete(turnCtx);
+                return result;
             }
             catch (Exception ex)
             {

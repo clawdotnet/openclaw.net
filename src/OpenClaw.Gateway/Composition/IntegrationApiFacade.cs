@@ -180,6 +180,11 @@ internal sealed class IntegrationApiFacade
     public IntegrationProvidersResponse GetProviders(int recentTurnsLimit)
         => new()
         {
+            ModelProfiles = new ModelProfilesStatusResponse
+            {
+                DefaultProfileId = _runtime.Operations.ModelProfiles.DefaultProfileId,
+                Profiles = _runtime.Operations.ModelProfiles.ListStatuses()
+            },
             Routes = _runtime.Operations.LlmExecution.SnapshotRoutes(),
             Usage = _runtime.ProviderUsage.Snapshot(),
             Policies = _runtime.Operations.ProviderPolicies.List(),

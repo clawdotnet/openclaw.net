@@ -34,6 +34,8 @@ internal static class Program
                 "setup" => await SetupAsync(rest),
                 "migrate" => await MigrateAsync(rest),
                 "heartbeat" => await HeartbeatAsync(rest),
+                "models" => await ModelsAsync(rest),
+                "eval" => await EvalAsync(rest),
                 "admin" => await AdminAsync(rest),
                 "plugins" => await PluginCommands.RunAsync(rest),
                 "clawhub" => await ClawHubCommand.RunAsync(rest),
@@ -80,6 +82,8 @@ internal static class Program
               openclaw setup [options]
               openclaw migrate [options]
               openclaw heartbeat <wizard|preview|status> [options]
+              openclaw models <list|doctor> [options]
+              openclaw eval <run|compare> [options]
               openclaw admin <posture|incident export|approvals simulate> [options]
               openclaw clawhub [wrapper options] [--] <clawhub args...>
 
@@ -111,6 +115,10 @@ internal static class Program
               openclaw setup --workspace ./workspace
               openclaw migrate --apply
               openclaw heartbeat status
+              openclaw models list
+              openclaw models doctor
+              openclaw eval run --profile gemma4-prod
+              openclaw eval compare --profiles gemma4-prod,frontier-tools
               openclaw heartbeat wizard
               openclaw admin posture
               openclaw admin approvals simulate --tool shell --args "{\"command\":\"pwd\"}"
@@ -160,6 +168,30 @@ internal static class Program
               openclaw admin posture [--url <url>] [--token <token>]
               openclaw admin incident export [--approval-limit <n>] [--event-limit <n>] [--url <url>] [--token <token>]
               openclaw admin approvals simulate --tool <tool> [--args <json>] [--autonomy <mode>] [--require-approval <true|false>] [--approval-tool <tool>]... [--url <url>] [--token <token>]
+            """);
+    }
+
+    private static void PrintModelsHelp()
+    {
+        Console.WriteLine(
+            """
+            openclaw models
+
+            Usage:
+              openclaw models list [--url <url>] [--token <token>]
+              openclaw models doctor [--url <url>] [--token <token>]
+            """);
+    }
+
+    private static void PrintEvalHelp()
+    {
+        Console.WriteLine(
+            """
+            openclaw eval
+
+            Usage:
+              openclaw eval run [--profile <id>] [--scenario <id>]... [--url <url>] [--token <token>]
+              openclaw eval compare --profiles <id,id,...> [--scenario <id>]... [--url <url>] [--token <token>]
             """);
     }
 
@@ -631,6 +663,101 @@ internal static class Program
         }
 
         PrintAdminHelp();
+        return 2;
+    }
+
+    private static async Task<int> ModelsAsync(string[] args)
+    {
+        if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+        {
+            PrintModelsHelp();
+            return 0;
+        }
+
+        var subcommand = args[0].Trim().ToLowerInvariant();
+        var parsed = CliArgs.Parse(args.Skip(1).ToArray());
+        var baseUrl = parsed.GetOption("--url") ?? Environment.GetEnvironmentVariable(EnvBaseUrl) ?? DefaultBaseUrl;
+        var token = ResolveAuthToken(parsed, Console.Error);
+        using var client = new OpenClawHttpClient(baseUrl, token);
+
+        if (subcommand == "list")
+        {
+            var response = await client.GetModelProfilesAsync(CancellationToken.None);
+            Console.WriteLine($"default_profile={response.DefaultProfileId ?? "none"}");
+            foreach (var profile in response.Profiles)
+            {
+                Console.WriteLine($"- {profile.Id} | {profile.ProviderId}/{profile.ModelId} | default={profile.IsDefault.ToString().ToLowerInvariant()} | tags={string.Join(",", profile.Tags)}");
+                if (profile.ValidationIssues.Length > 0)
+                    Console.WriteLine($"  issues: {string.Join("; ", profile.ValidationIssues)}");
+            }
+
+            return 0;
+        }
+
+        if (subcommand == "doctor")
+        {
+            var response = await client.GetModelSelectionDoctorAsync(CancellationToken.None);
+            Console.WriteLine($"default_profile={response.DefaultProfileId ?? "none"}");
+            foreach (var error in response.Errors)
+                Console.WriteLine($"ERROR: {error}");
+            foreach (var warning in response.Warnings)
+                Console.WriteLine($"WARN: {warning}");
+            foreach (var profile in response.Profiles)
+                Console.WriteLine($"- {profile.Id} | available={profile.IsAvailable.ToString().ToLowerInvariant()} | {profile.ProviderId}/{profile.ModelId}");
+            return response.Errors.Count > 0 ? 1 : 0;
+        }
+
+        PrintModelsHelp();
+        return 2;
+    }
+
+    private static async Task<int> EvalAsync(string[] args)
+    {
+        if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+        {
+            PrintEvalHelp();
+            return 0;
+        }
+
+        var subcommand = args[0].Trim().ToLowerInvariant();
+        var parsed = CliArgs.Parse(args.Skip(1).ToArray());
+        var baseUrl = parsed.GetOption("--url") ?? Environment.GetEnvironmentVariable(EnvBaseUrl) ?? DefaultBaseUrl;
+        var token = ResolveAuthToken(parsed, Console.Error);
+        using var client = new OpenClawHttpClient(baseUrl, token);
+
+        if (subcommand is "run" or "compare")
+        {
+            var profiles = new List<string>();
+            if (parsed.GetOption("--profile") is { Length: > 0 } singleProfile)
+                profiles.Add(singleProfile);
+            if (parsed.GetOption("--profiles") is { Length: > 0 } multiProfiles)
+                profiles.AddRange(multiProfiles.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+            var scenarios = parsed.Options.TryGetValue("--scenario", out var scenarioValues)
+                ? scenarioValues.ToArray()
+                : [];
+            var report = await client.RunModelEvaluationAsync(new ModelEvaluationRequest
+            {
+                ProfileIds = profiles.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                ScenarioIds = scenarios,
+                IncludeMarkdown = true
+            }, CancellationToken.None);
+
+            Console.WriteLine($"run_id={report.RunId}");
+            Console.WriteLine($"json={report.JsonPath}");
+            if (!string.IsNullOrWhiteSpace(report.MarkdownPath))
+                Console.WriteLine($"markdown={report.MarkdownPath}");
+            foreach (var profile in report.Profiles)
+            {
+                Console.WriteLine($"[{profile.ProfileId}] {profile.ProviderId}/{profile.ModelId}");
+                foreach (var scenario in profile.Scenarios)
+                    Console.WriteLine($"- {scenario.ScenarioId}: {scenario.Status} ({scenario.LatencyMs} ms) {scenario.Summary ?? scenario.Error ?? ""}".TrimEnd());
+            }
+
+            return 0;
+        }
+
+        PrintEvalHelp();
         return 2;
     }
 

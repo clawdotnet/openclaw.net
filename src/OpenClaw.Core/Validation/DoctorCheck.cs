@@ -24,6 +24,22 @@ public static class DoctorCheck
         allPassed &= Check("LLM API Key configured", () => !string.IsNullOrWhiteSpace(config.Llm.ApiKey));
         
         allPassed &= Check("LLM max tokens > 0", () => config.Llm.MaxTokens > 0);
+        allPassed &= Check(
+            "Model profile configuration is internally consistent",
+            () =>
+            {
+                var profileIds = config.Models.Profiles
+                    .Where(static profile => !string.IsNullOrWhiteSpace(profile.Id))
+                    .Select(static profile => profile.Id)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
+                return config.Models.Profiles.Count == 0 ||
+                       (profileIds == config.Models.Profiles.Count &&
+                        (string.IsNullOrWhiteSpace(config.Models.DefaultProfile) ||
+                         config.Models.Profiles.Any(profile => string.Equals(profile.Id, config.Models.DefaultProfile, StringComparison.OrdinalIgnoreCase))));
+            },
+            warnOnly: false,
+            detail: "Check Models.DefaultProfile, duplicate profile ids, and route profile references.");
 
         var workspaceRoot = ResolveConfiguredPath(config.Tooling.WorkspaceRoot);
         if (config.Tooling.WorkspaceOnly)
