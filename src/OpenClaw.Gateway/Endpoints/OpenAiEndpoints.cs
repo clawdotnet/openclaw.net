@@ -92,7 +92,18 @@ internal static class OpenAiEndpoints
                 return;
             }
             if (req.Model is not null)
-                session.ModelOverride = req.Model;
+            {
+                if (runtime.Operations.ModelProfiles.TryGet(req.Model, out _))
+                {
+                    session.ModelProfileId = req.Model;
+                    session.ModelOverride = null;
+                }
+                else
+                {
+                    session.ModelOverride = req.Model;
+                    session.ModelProfileId = null;
+                }
+            }
             var presetHeader = ctx.Request.Headers.TryGetValue("X-OpenClaw-Preset", out var presetValues)
                 ? presetValues.ToString()
                 : null;
@@ -373,7 +384,18 @@ internal static class OpenAiEndpoints
                 return;
             }
             if (req.Model is not null)
-                session.ModelOverride = req.Model;
+            {
+                if (runtime.Operations.ModelProfiles.TryGet(req.Model, out _))
+                {
+                    session.ModelProfileId = req.Model;
+                    session.ModelOverride = null;
+                }
+                else
+                {
+                    session.ModelOverride = req.Model;
+                    session.ModelProfileId = null;
+                }
+            }
             var responsesPresetHeader = ctx.Request.Headers.TryGetValue("X-OpenClaw-Preset", out var responsesPresetValues)
                 ? responsesPresetValues.ToString()
                 : null;

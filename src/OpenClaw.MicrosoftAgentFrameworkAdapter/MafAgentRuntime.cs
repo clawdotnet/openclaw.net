@@ -240,6 +240,12 @@ public sealed class MafAgentRuntime : IAgentRuntime
         {
             throw;
         }
+        catch (ModelSelectionException ex)
+        {
+            _logger?.LogWarning("[{CorrelationId}] MAF model selection failed: {Message}", turnCtx.CorrelationId, ex.Message);
+            LogTurnComplete(turnCtx);
+            return ex.Message;
+        }
         catch (Exception ex)
         {
             _metrics.IncrementLlmErrors();
@@ -409,6 +415,19 @@ public sealed class MafAgentRuntime : IAgentRuntime
         {
             writer.TryComplete();
             throw;
+        }
+        catch (ModelSelectionException ex)
+        {
+            _logger?.LogWarning("[{CorrelationId}] MAF streaming model selection failed: {Message}", turnCtx.CorrelationId, ex.Message);
+            try
+            {
+                await writer.WriteAsync(AgentStreamEvent.ErrorOccurred(ex.Message, "model_selection_failed"), ct);
+                await writer.WriteAsync(AgentStreamEvent.Complete(), ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
         }
         catch (Exception ex)
         {

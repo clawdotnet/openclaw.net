@@ -13,6 +13,7 @@ public sealed class GatewayConfig
     public string? AuthToken { get; set; }
     public RuntimeConfig Runtime { get; set; } = new();
     public LlmProviderConfig Llm { get; set; } = new();
+    public ModelsConfig Models { get; set; } = new();
     public MemoryConfig Memory { get; set; } = new();
     public SecurityConfig Security { get; set; } = new();
     public WebSocketConfig WebSocket { get; set; } = new();
@@ -609,6 +610,10 @@ public sealed class AgentRouteConfig
     public string? SenderId { get; set; }
     public string? SystemPrompt { get; set; }
     public string? ModelOverride { get; set; }
+    public string? ModelProfileId { get; set; }
+    public string[] PreferredModelTags { get; set; } = [];
+    public string[] FallbackModelProfileIds { get; set; } = [];
+    public ModelSelectionRequirements ModelRequirements { get; set; } = new();
     public string? PresetId { get; set; }
     public string[] AllowedTools { get; set; } = [];
 }

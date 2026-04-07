@@ -52,6 +52,7 @@ public static class ConfigValidator
             errors.Add($"Llm.CircuitBreakerThreshold must be >= 1 (got {config.Llm.CircuitBreakerThreshold}).");
         if (config.Llm.CircuitBreakerCooldownSeconds < 1)
             errors.Add($"Llm.CircuitBreakerCooldownSeconds must be >= 1 (got {config.Llm.CircuitBreakerCooldownSeconds}).");
+        ValidateModelProfiles(config, errors, pluginBackedProvidersPossible);
 
         // Memory
         if (string.IsNullOrWhiteSpace(config.Memory.StoragePath))
@@ -507,6 +508,66 @@ public static class ConfigValidator
 
             if (!Path.IsPathRooted(resolved))
                 errors.Add($"{field} entries must be absolute paths (got '{root}').");
+        }
+    }
+
+    private static void ValidateModelProfiles(GatewayConfig config, List<string> errors, bool pluginBackedProvidersPossible)
+    {
+        var hasExplicitProfiles = config.Models.Profiles.Count > 0;
+        var profileIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var profile in config.Models.Profiles)
+        {
+            if (string.IsNullOrWhiteSpace(profile.Id))
+            {
+                errors.Add("Models.Profiles[].Id must be set.");
+                continue;
+            }
+
+            if (!profileIds.Add(profile.Id))
+                errors.Add($"Models.Profiles contains duplicate id '{profile.Id}'.");
+
+            if (string.IsNullOrWhiteSpace(profile.Provider))
+                errors.Add($"Models.Profiles.{profile.Id}.Provider must be set.");
+            else if (!pluginBackedProvidersPossible && !BuiltInLlmProviders.Contains(profile.Provider))
+                errors.Add($"Models.Profiles.{profile.Id}.Provider '{profile.Provider}' is not a supported built-in provider.");
+
+            if (string.IsNullOrWhiteSpace(profile.Model))
+                errors.Add($"Models.Profiles.{profile.Id}.Model must be set.");
+            if (profile.Capabilities?.MaxContextTokens < 0)
+                errors.Add($"Models.Profiles.{profile.Id}.Capabilities.MaxContextTokens must be >= 0.");
+            if (profile.Capabilities?.MaxOutputTokens < 0)
+                errors.Add($"Models.Profiles.{profile.Id}.Capabilities.MaxOutputTokens must be >= 0.");
+        }
+
+        if (!hasExplicitProfiles)
+            profileIds.Add("default");
+
+        if (!string.IsNullOrWhiteSpace(config.Models.DefaultProfile) &&
+            !profileIds.Contains(config.Models.DefaultProfile))
+        {
+            errors.Add($"Models.DefaultProfile '{config.Models.DefaultProfile}' does not exist in Models.Profiles.");
+        }
+
+        foreach (var profile in config.Models.Profiles)
+        {
+            foreach (var fallbackId in profile.FallbackProfileIds.Where(static item => !string.IsNullOrWhiteSpace(item)))
+            {
+                if (!profileIds.Contains(fallbackId))
+                    errors.Add($"Models.Profiles.{profile.Id}.FallbackProfileIds contains unknown profile '{fallbackId}'.");
+            }
+        }
+
+        foreach (var (routeId, route) in config.Routing.Routes)
+        {
+            if (!string.IsNullOrWhiteSpace(route.ModelProfileId) && !profileIds.Contains(route.ModelProfileId))
+                errors.Add($"Routing.Routes.{routeId}.ModelProfileId '{route.ModelProfileId}' does not exist in Models.Profiles.");
+
+            foreach (var fallbackId in route.FallbackModelProfileIds.Where(static item => !string.IsNullOrWhiteSpace(item)))
+            {
+                if (!profileIds.Contains(fallbackId))
+                    errors.Add($"Routing.Routes.{routeId}.FallbackModelProfileIds contains unknown profile '{fallbackId}'.");
+            }
         }
     }
 

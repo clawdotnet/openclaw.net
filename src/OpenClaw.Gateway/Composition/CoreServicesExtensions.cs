@@ -12,6 +12,7 @@ using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
+using OpenClaw.Gateway.Models;
 
 namespace OpenClaw.Gateway.Composition;
 
@@ -36,6 +37,10 @@ internal static class CoreServicesExtensions
         services.AddSingleton<ProviderUsageTracker>();
         services.AddSingleton<ToolUsageTracker>();
         services.AddSingleton<LlmProviderRegistry>();
+        services.AddSingleton<ConfiguredModelProfileRegistry>();
+        services.AddSingleton<IModelProfileRegistry>(sp => sp.GetRequiredService<ConfiguredModelProfileRegistry>());
+        services.AddSingleton<IModelSelectionPolicy, DefaultModelSelectionPolicy>();
+        services.AddSingleton<ModelEvaluationRunner>();
         services.AddSingleton<ProviderPolicyService>(sp =>
             new ProviderPolicyService(
                 config.Memory.StoragePath,

@@ -21,6 +21,7 @@ using OpenClaw.Core.Skills;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
+using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Profiles;
 using OpenClaw.Gateway.Tools;
 
@@ -217,6 +218,7 @@ internal static class RuntimeInitializationExtensions
             ApprovalAuditStore = app.Services.GetRequiredService<ApprovalAuditStore>(),
             RuntimeMetrics = app.Services.GetRequiredService<RuntimeMetrics>(),
             ProviderUsage = app.Services.GetRequiredService<ProviderUsageTracker>(),
+            ModelProfiles = app.Services.GetRequiredService<ConfiguredModelProfileRegistry>(),
             ProviderRegistry = app.Services.GetRequiredService<LlmProviderRegistry>(),
             ProviderPolicies = app.Services.GetRequiredService<ProviderPolicyService>(),
             LlmExecutionService = app.Services.GetRequiredService<GatewayLlmExecutionService>(),
@@ -426,6 +428,7 @@ internal static class RuntimeInitializationExtensions
     {
         var operations = new RuntimeOperationsState
         {
+            ModelProfiles = services.ModelProfiles,
             ProviderPolicies = services.ProviderPolicies,
             ProviderRegistry = services.ProviderRegistry,
             LlmExecution = services.LlmExecutionService,
@@ -1033,6 +1036,7 @@ internal static class RuntimeInitializationExtensions
         public required ApprovalAuditStore ApprovalAuditStore { get; init; }
         public required RuntimeMetrics RuntimeMetrics { get; init; }
         public required ProviderUsageTracker ProviderUsage { get; init; }
+        public required ConfiguredModelProfileRegistry ModelProfiles { get; init; }
         public required LlmProviderRegistry ProviderRegistry { get; init; }
         public required ProviderPolicyService ProviderPolicies { get; init; }
         public required GatewayLlmExecutionService LlmExecutionService { get; init; }

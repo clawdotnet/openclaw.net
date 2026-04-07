@@ -24,6 +24,11 @@ public static class DoctorCheck
         allPassed &= Check("LLM API Key configured", () => !string.IsNullOrWhiteSpace(config.Llm.ApiKey));
         
         allPassed &= Check("LLM max tokens > 0", () => config.Llm.MaxTokens > 0);
+        allPassed &= Check(
+            "Model profile configuration is internally consistent",
+            () => HasValidModelProfileConfiguration(config),
+            warnOnly: false,
+            detail: "Check Models.DefaultProfile, duplicate profile ids, route profile references, and profile fallback references.");
 
         var workspaceRoot = ResolveConfiguredPath(config.Tooling.WorkspaceRoot);
         if (config.Tooling.WorkspaceOnly)
@@ -335,6 +340,39 @@ public static class DoctorCheck
 
             var resolved = ResolveConfiguredPath(root);
             if (string.IsNullOrWhiteSpace(resolved) || !Path.IsPathRooted(resolved))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool HasValidModelProfileConfiguration(GatewayConfig config)
+    {
+        var profileIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var profile in config.Models.Profiles)
+        {
+            if (string.IsNullOrWhiteSpace(profile.Id) || !profileIds.Add(profile.Id))
+                return false;
+        }
+
+        if (profileIds.Count == 0)
+            profileIds.Add("default");
+
+        if (!string.IsNullOrWhiteSpace(config.Models.DefaultProfile) && !profileIds.Contains(config.Models.DefaultProfile))
+            return false;
+
+        foreach (var profile in config.Models.Profiles)
+        {
+            if (profile.FallbackProfileIds.Any(fallbackId => !string.IsNullOrWhiteSpace(fallbackId) && !profileIds.Contains(fallbackId)))
+                return false;
+        }
+
+        foreach (var route in config.Routing.Routes.Values)
+        {
+            if (!string.IsNullOrWhiteSpace(route.ModelProfileId) && !profileIds.Contains(route.ModelProfileId))
+                return false;
+
+            if (route.FallbackModelProfileIds.Any(fallbackId => !string.IsNullOrWhiteSpace(fallbackId) && !profileIds.Contains(fallbackId)))
                 return false;
         }
 

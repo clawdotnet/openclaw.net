@@ -14,6 +14,7 @@ using OpenClaw.Core.Security;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
+using OpenClaw.Gateway.Models;
 using QRCoder;
 
 namespace OpenClaw.Gateway.Endpoints;
@@ -37,6 +38,12 @@ internal static class AdminEndpoints
         var facade = IntegrationApiFacade.Create(startup, runtime, app.Services);
         var sessionAdminStore = (ISessionAdminStore)app.Services.GetRequiredService<IMemoryStore>();
         var operations = runtime.Operations;
+        var modelEvaluationRunner = app.Services.GetService<ModelEvaluationRunner>()
+            ?? new ModelEvaluationRunner(
+                operations.ModelProfiles as ConfiguredModelProfileRegistry
+                    ?? new ConfiguredModelProfileRegistry(startup.Config, NullLogger<ConfiguredModelProfileRegistry>.Instance),
+                startup.Config,
+                NullLogger<ModelEvaluationRunner>.Instance);
 
         app.MapGet("/auth/session", (HttpContext ctx) =>
         {
@@ -786,11 +793,55 @@ internal static class AdminEndpoints
 
             return Results.Json(new ProviderAdminResponse
             {
+                ModelProfiles = new ModelProfilesStatusResponse
+                {
+                    DefaultProfileId = operations.ModelProfiles.DefaultProfileId,
+                    Profiles = operations.ModelProfiles.ListStatuses()
+                },
                 Routes = operations.LlmExecution.SnapshotRoutes(),
                 Usage = runtime.ProviderUsage.Snapshot(),
                 Policies = operations.ProviderPolicies.List(),
                 RecentTurns = runtime.ProviderUsage.RecentTurns(limit: 50)
             }, CoreJsonContext.Default.ProviderAdminResponse);
+        });
+
+        app.MapGet("/admin/models", (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.models");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            return Results.Json(
+                new ModelProfilesStatusResponse
+                {
+                    DefaultProfileId = operations.ModelProfiles.DefaultProfileId,
+                    Profiles = operations.ModelProfiles.ListStatuses()
+                },
+                CoreJsonContext.Default.ModelProfilesStatusResponse);
+        });
+
+        app.MapGet("/admin/models/doctor", (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.models.doctor");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            return Results.Json(modelEvaluationRunner.BuildDoctor(), CoreJsonContext.Default.ModelSelectionDoctorResponse);
+        });
+
+        app.MapPost("/admin/models/evaluations", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.models.evaluate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.ModelEvaluationRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+
+            var request = requestPayload.Value ?? new ModelEvaluationRequest();
+            var report = await modelEvaluationRunner.RunAsync(request, ctx.RequestAborted);
+            return Results.Json(report, CoreJsonContext.Default.ModelEvaluationReport);
         });
 
         app.MapGet("/admin/providers/policies", (HttpContext ctx) =>

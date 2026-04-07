@@ -37,6 +37,15 @@ internal sealed class OpenClawHttpClient : IDisposable
     public Task<SecurityPostureResponse> GetSecurityPostureAsync(CancellationToken cancellationToken)
         => _inner.GetSecurityPostureAsync(cancellationToken);
 
+    public Task<ModelProfilesStatusResponse> GetModelProfilesAsync(CancellationToken cancellationToken)
+        => _inner.GetModelProfilesAsync(cancellationToken);
+
+    public Task<ModelSelectionDoctorResponse> GetModelSelectionDoctorAsync(CancellationToken cancellationToken)
+        => _inner.GetModelSelectionDoctorAsync(cancellationToken);
+
+    public Task<ModelEvaluationReport> RunModelEvaluationAsync(ModelEvaluationRequest request, CancellationToken cancellationToken)
+        => _inner.RunModelEvaluationAsync(request, cancellationToken);
+
     public Task<ApprovalSimulationResponse> SimulateApprovalAsync(ApprovalSimulationRequest request, CancellationToken cancellationToken)
         => _inner.SimulateApprovalAsync(request, cancellationToken);
 

@@ -12,17 +12,21 @@ public sealed class LlmExecutionEstimate
 
 public sealed class LlmExecutionResult
 {
+    public string? ProfileId { get; init; }
     public required string ProviderId { get; init; }
     public required string ModelId { get; init; }
     public string? PolicyRuleId { get; init; }
+    public string? SelectionExplanation { get; init; }
     public required ChatResponse Response { get; init; }
 }
 
 public sealed class LlmStreamingExecutionResult
 {
+    public string? ProfileId { get; init; }
     public required string ProviderId { get; init; }
     public required string ModelId { get; init; }
     public string? PolicyRuleId { get; init; }
+    public string? SelectionExplanation { get; init; }
     public required IAsyncEnumerable<ChatResponseUpdate> Updates { get; init; }
 }
 

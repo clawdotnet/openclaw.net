@@ -40,6 +40,7 @@ If this repo is useful to you, please star it.
 - Configurable reasoning effort (`/think off|low|medium|high`)
 - Delegated sub-agents with configurable profiles, tool restrictions, and depth limits
 - Multi-agent routing — route channels/senders with per-route model, prompt, tool preset, and tool allowlist overrides
+- Profile-aware routing — route channels/senders with per-route profile id, capability requirements, preferred tags, and fallback profile order
 - Persistent session search, user profiles, and session-scoped todo state available to the agent and operators
 
 ### Built-In Providers
@@ -52,6 +53,17 @@ If this repo is useful to you, please star it.
 - **OpenAI-compatible** endpoints via `Provider: "openai-compatible"`, `groq`, `together`, or `lmstudio`
 
 OpenClaw registers OpenAI, Claude, and Gemini natively at startup, so a fresh install only needs a provider id, model, and API key to get going.
+
+### Model Profiles and Gemma
+
+OpenClaw now supports **provider-agnostic named model profiles**. This keeps model routing and capability checks above the provider layer, so **Gemma-family models, including Gemma 4, plug into the existing runtime through Ollama or OpenAI-compatible endpoints** instead of requiring a Gemma-specific execution path.
+
+- Configure **Gemma 4 local/dev** with `Provider: "ollama"` and a named profile such as `gemma4-local`
+- Configure **Gemma 4 production/self-hosted** with `Provider: "openai-compatible"` and a named profile such as `gemma4-prod`
+- Select profiles explicitly or by **capabilities** and **tags** such as `local`, `private`, `cheap`, `tool-reliable`, or `vision`
+- The runtime will **fail clearly** or **fall back** if a selected profile cannot satisfy required capabilities like tool calling, structured outputs, streaming, or image input
+
+See [Model Profiles and Gemma](docs/MODEL_PROFILES.md) for the full configuration and evaluation guide.
 
 ### Review-First Learning
 
@@ -262,6 +274,12 @@ Then open one of:
 # CLI chat
 dotnet run --project src/OpenClaw.Cli -c Release -- chat
 
+# Inspect registered model profiles
+dotnet run --project src/OpenClaw.Cli -c Release -- models list
+
+# Run a built-in evaluation suite against a profile
+dotnet run --project src/OpenClaw.Cli -c Release -- eval run --profile gemma4-prod
+
 # CLI live session
 dotnet run --project src/OpenClaw.Cli -c Release -- live --provider gemini
 
@@ -306,6 +324,98 @@ export MODEL_PROVIDER_KEY="sk-ant-..."
 export OpenClaw__Llm__Provider="gemini"
 export OpenClaw__Llm__Model="gemini-2.5-flash"
 export MODEL_PROVIDER_KEY="AIza..."
+
+# Ollama
+export OpenClaw__Llm__Provider="ollama"
+export OpenClaw__Llm__Model="gemma4"
+
+# OpenAI-compatible
+export OpenClaw__Llm__Provider="openai-compatible"
+export OpenClaw__Llm__Model="gemma-4"
+export OpenClaw__Llm__Endpoint="https://your-inference-gateway.example.com/v1"
+export MODEL_PROVIDER_KEY="your-api-key"
+```
+
+**Example model profile config with Gemma 4:**
+
+```json
+{
+  "OpenClaw": {
+    "Llm": {
+      "Provider": "openai",
+      "Model": "gpt-4.1"
+    },
+    "Models": {
+      "DefaultProfile": "gemma4-prod",
+      "Profiles": [
+        {
+          "Id": "gemma4-local",
+          "Provider": "ollama",
+          "Model": "gemma4",
+          "BaseUrl": "http://localhost:11434/v1",
+          "Tags": ["local", "private", "cheap"],
+          "Capabilities": {
+            "SupportsTools": false,
+            "SupportsVision": true,
+            "SupportsJsonSchema": false,
+            "SupportsStructuredOutputs": false,
+            "SupportsStreaming": true,
+            "SupportsParallelToolCalls": false,
+            "SupportsReasoningEffort": false,
+            "SupportsSystemMessages": true,
+            "SupportsImageInput": true,
+            "SupportsAudioInput": false,
+            "MaxContextTokens": 131072,
+            "MaxOutputTokens": 8192
+          }
+        },
+        {
+          "Id": "gemma4-prod",
+          "Provider": "openai-compatible",
+          "Model": "gemma-4",
+          "BaseUrl": "https://your-inference-gateway.example.com/v1",
+          "ApiKey": "env:MODEL_PROVIDER_KEY",
+          "Tags": ["private", "prod", "vision"],
+          "FallbackProfileIds": ["frontier-tools"],
+          "Capabilities": {
+            "SupportsTools": true,
+            "SupportsVision": true,
+            "SupportsJsonSchema": true,
+            "SupportsStructuredOutputs": true,
+            "SupportsStreaming": true,
+            "SupportsParallelToolCalls": true,
+            "SupportsReasoningEffort": false,
+            "SupportsSystemMessages": true,
+            "SupportsImageInput": true,
+            "SupportsAudioInput": false,
+            "MaxContextTokens": 262144,
+            "MaxOutputTokens": 16384
+          }
+        },
+        {
+          "Id": "frontier-tools",
+          "Provider": "openai",
+          "Model": "gpt-4.1",
+          "Tags": ["tool-reliable", "frontier"],
+          "Capabilities": {
+            "SupportsTools": true,
+            "SupportsVision": true,
+            "SupportsJsonSchema": true,
+            "SupportsStructuredOutputs": true,
+            "SupportsStreaming": true,
+            "SupportsParallelToolCalls": true,
+            "SupportsReasoningEffort": true,
+            "SupportsSystemMessages": true,
+            "SupportsImageInput": true,
+            "SupportsAudioInput": true,
+            "MaxContextTokens": 1000000,
+            "MaxOutputTokens": 32768
+          }
+        }
+      ]
+    }
+  }
+}
 ```
 
 See the full [Quickstart Guide](docs/QUICKSTART.md) for deployment notes.
