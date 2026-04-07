@@ -2,8 +2,11 @@ using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
+using OpenClaw.Agent;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 using OpenClaw.Core.Validation;
+using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Models;
@@ -136,6 +139,67 @@ public sealed class ModelProfileSelectionTests
     }
 
     [Fact]
+    public void ConfigValidator_RejectsUnknownFallbackProfileIds()
+    {
+        var config = new GatewayConfig
+        {
+            Models = new ModelsConfig
+            {
+                Profiles =
+                [
+                    new ModelProfileConfig
+                    {
+                        Id = "gemma4-local",
+                        Provider = "ollama",
+                        Model = "gemma4",
+                        FallbackProfileIds = ["missing-profile"]
+                    }
+                ]
+            },
+            Routing = new RoutingConfig
+            {
+                Routes = new Dictionary<string, AgentRouteConfig>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["telegram:coder"] = new()
+                    {
+                        ModelProfileId = "missing-profile"
+                    }
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.Contains(errors, error => error.Contains("Models.Profiles.gemma4-local.FallbackProfileIds", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("Routing.Routes.telegram:coder.ModelProfileId", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ConfigValidator_RejectsExplicitRouteProfileWhenUsingImplicitDefaultOnly()
+    {
+        var config = new GatewayConfig
+        {
+            Llm = new LlmProviderConfig
+            {
+                Provider = "openai",
+                Model = "gpt-4.1"
+            },
+            Routing = new RoutingConfig
+            {
+                Routes = new Dictionary<string, AgentRouteConfig>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["telegram:coder"] = new()
+                    {
+                        ModelProfileId = "gemma4-local"
+                    }
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.Contains(errors, error => error.Contains("Routing.Routes.telegram:coder.ModelProfileId", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void LoadGatewayConfig_BindsModelProfiles()
     {
         var values = new Dictionary<string, string?>
@@ -165,7 +229,224 @@ public sealed class ModelProfileSelectionTests
         Assert.Equal(2, config.Models.Profiles.Count);
         Assert.Equal("ollama", config.Models.Profiles[0].Provider);
         Assert.Equal("https://example.invalid/v1", config.Models.Profiles[1].BaseUrl);
-        Assert.True(config.Models.Profiles[1].Capabilities.SupportsTools);
+        Assert.NotNull(config.Models.Profiles[1].Capabilities);
+        Assert.True(config.Models.Profiles[1].Capabilities!.SupportsTools);
+    }
+
+    [Fact]
+    public void Registry_WhenCapabilitiesOmitted_UsesProviderGuessAndResolvesSecrets()
+    {
+        LlmClientFactory.ResetDynamicProviders();
+        LlmClientFactory.RegisterProvider("openai-compatible", new EvaluationChatClient());
+
+        Environment.SetEnvironmentVariable("MODEL_PROFILE_ENDPOINT", "https://example.invalid/v1");
+        Environment.SetEnvironmentVariable("MODEL_PROFILE_KEY", "secret-token");
+        try
+        {
+            var config = new GatewayConfig
+            {
+                Llm = new LlmProviderConfig
+                {
+                    Provider = "openai",
+                    Model = "gpt-4.1",
+                    ApiKey = "fallback-key"
+                },
+                Models = new ModelsConfig
+                {
+                    Profiles =
+                    [
+                        new ModelProfileConfig
+                        {
+                            Id = "gemma4-prod",
+                            Provider = "openai-compatible",
+                            Model = "gemma-4",
+                            BaseUrl = "env:MODEL_PROFILE_ENDPOINT",
+                            ApiKey = "env:MODEL_PROFILE_KEY"
+                        }
+                    ]
+                }
+            };
+
+            var registry = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+            Assert.True(registry.TryGet("gemma4-prod", out var profile));
+            Assert.NotNull(profile);
+            Assert.Equal("https://example.invalid/v1", profile!.BaseUrl);
+            Assert.Equal("secret-token", profile.ApiKey);
+            Assert.True(profile.Capabilities.SupportsTools);
+            Assert.True(profile.Capabilities.SupportsStructuredOutputs);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MODEL_PROFILE_ENDPOINT", null);
+            Environment.SetEnvironmentVariable("MODEL_PROFILE_KEY", null);
+        }
+    }
+
+    [Fact]
+    public void SelectionPolicy_SkipsUnavailableExplicitProfileAndFallsBack()
+    {
+        LlmClientFactory.ResetDynamicProviders();
+        LlmClientFactory.RegisterProvider("fake-profile-tests", new EvaluationChatClient());
+
+        var config = new GatewayConfig
+        {
+            Llm = new LlmProviderConfig
+            {
+                Provider = "fake-profile-tests",
+                Model = "legacy-model"
+            },
+            Models = new ModelsConfig
+            {
+                Profiles =
+                [
+                    new ModelProfileConfig
+                    {
+                        Id = "broken-remote",
+                        Provider = "openai-compatible",
+                        Model = "gemma-4",
+                        FallbackProfileIds = ["frontier-tools"],
+                        Capabilities = new ModelCapabilities
+                        {
+                            SupportsTools = true
+                        }
+                    },
+                    new ModelProfileConfig
+                    {
+                        Id = "frontier-tools",
+                        Provider = "fake-profile-tests",
+                        Model = "frontier",
+                        Capabilities = new ModelCapabilities
+                        {
+                            SupportsTools = true,
+                            SupportsStreaming = true,
+                            SupportsSystemMessages = true
+                        }
+                    }
+                ]
+            }
+        };
+
+        var registry = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var policy = new DefaultModelSelectionPolicy(registry);
+        var selection = policy.Resolve(new OpenClaw.Core.Abstractions.ModelSelectionRequest
+        {
+            ExplicitProfileId = "broken-remote",
+            Session = new Session
+            {
+                Id = "s3",
+                ChannelId = "test",
+                SenderId = "user"
+            },
+            Messages = [new ChatMessage(ChatRole.User, "Need tools")],
+            Options = new ChatOptions
+            {
+                Tools =
+                [
+                    AIFunctionFactory.CreateDeclaration(
+                        "record_observation",
+                        "Record an observation",
+                        JsonDocument.Parse("""{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}""").RootElement.Clone(),
+                        returnJsonSchema: null)
+                ]
+            }
+        });
+
+        Assert.Equal("frontier-tools", selection.SelectedProfileId);
+        Assert.Contains("broken-remote", selection.Explanation, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GatewayExecution_FallsBackWhenSelectedProfileContextTooSmall()
+    {
+        LlmClientFactory.ResetDynamicProviders();
+        LlmClientFactory.RegisterProvider("fake-profile-tests", new EvaluationChatClient());
+
+        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-model-selection", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        var config = BuildProfileConfig();
+        var registry = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var policy = new DefaultModelSelectionPolicy(registry);
+        var service = new GatewayLlmExecutionService(
+            config,
+            registry,
+            policy,
+            new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance),
+            new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance),
+            new RuntimeMetrics(),
+            new ProviderUsageTracker(),
+            NullLogger<GatewayLlmExecutionService>.Instance);
+
+        var session = new Session
+        {
+            Id = "s4",
+            ChannelId = "test",
+            SenderId = "user",
+            ModelProfileId = "gemma4-local"
+        };
+
+        var result = await service.GetResponseAsync(
+            session,
+            [new ChatMessage(ChatRole.User, "hello")],
+            new ChatOptions(),
+            new TurnContext { SessionId = session.Id, ChannelId = session.ChannelId },
+            new LlmExecutionEstimate
+            {
+                EstimatedInputTokens = 200_000,
+                EstimatedInputTokensByComponent = new InputTokenComponentEstimate()
+            },
+            CancellationToken.None);
+
+        Assert.Equal("frontier-tools", result.ProfileId);
+        Assert.Equal("frontier", result.ModelId);
+    }
+
+    [Fact]
+    public async Task GatewayExecutionService_CompatibilityConstructor_UsesInjectedProviderRegistry()
+    {
+        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-model-compat", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        var config = new GatewayConfig
+        {
+            Llm = new LlmProviderConfig
+            {
+                Provider = "fake-injected-provider",
+                Model = "legacy-model"
+            }
+        };
+
+        var providerRegistry = new LlmProviderRegistry();
+        providerRegistry.RegisterDefault(config.Llm, new EvaluationChatClient());
+        var service = new GatewayLlmExecutionService(
+            config,
+            providerRegistry,
+            new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance),
+            new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance),
+            new RuntimeMetrics(),
+            new ProviderUsageTracker(),
+            NullLogger<GatewayLlmExecutionService>.Instance);
+
+        var session = new Session
+        {
+            Id = "s5",
+            ChannelId = "test",
+            SenderId = "user"
+        };
+
+        var result = await service.GetResponseAsync(
+            session,
+            [new ChatMessage(ChatRole.User, "hello")],
+            new ChatOptions(),
+            new TurnContext { SessionId = session.Id, ChannelId = session.ChannelId },
+            new LlmExecutionEstimate
+            {
+                EstimatedInputTokens = 16,
+                EstimatedInputTokensByComponent = new InputTokenComponentEstimate()
+            },
+            CancellationToken.None);
+
+        Assert.Equal("default", result.ProfileId);
+        Assert.Equal("fake-injected-provider", result.ProviderId);
+        Assert.Equal("legacy-model", result.ModelId);
     }
 
     [Fact]

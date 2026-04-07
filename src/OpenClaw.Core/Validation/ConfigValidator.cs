@@ -513,10 +513,9 @@ public static class ConfigValidator
 
     private static void ValidateModelProfiles(GatewayConfig config, List<string> errors, bool pluginBackedProvidersPossible)
     {
-        if (config.Models.Profiles.Count == 0)
-            return;
-
+        var hasExplicitProfiles = config.Models.Profiles.Count > 0;
         var profileIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var profile in config.Models.Profiles)
         {
             if (string.IsNullOrWhiteSpace(profile.Id))
@@ -535,16 +534,28 @@ public static class ConfigValidator
 
             if (string.IsNullOrWhiteSpace(profile.Model))
                 errors.Add($"Models.Profiles.{profile.Id}.Model must be set.");
-            if (profile.Capabilities.MaxContextTokens < 0)
+            if (profile.Capabilities?.MaxContextTokens < 0)
                 errors.Add($"Models.Profiles.{profile.Id}.Capabilities.MaxContextTokens must be >= 0.");
-            if (profile.Capabilities.MaxOutputTokens < 0)
+            if (profile.Capabilities?.MaxOutputTokens < 0)
                 errors.Add($"Models.Profiles.{profile.Id}.Capabilities.MaxOutputTokens must be >= 0.");
         }
+
+        if (!hasExplicitProfiles)
+            profileIds.Add("default");
 
         if (!string.IsNullOrWhiteSpace(config.Models.DefaultProfile) &&
             !profileIds.Contains(config.Models.DefaultProfile))
         {
             errors.Add($"Models.DefaultProfile '{config.Models.DefaultProfile}' does not exist in Models.Profiles.");
+        }
+
+        foreach (var profile in config.Models.Profiles)
+        {
+            foreach (var fallbackId in profile.FallbackProfileIds.Where(static item => !string.IsNullOrWhiteSpace(item)))
+            {
+                if (!profileIds.Contains(fallbackId))
+                    errors.Add($"Models.Profiles.{profile.Id}.FallbackProfileIds contains unknown profile '{fallbackId}'.");
+            }
         }
 
         foreach (var (routeId, route) in config.Routing.Routes)

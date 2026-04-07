@@ -3,6 +3,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 using OpenClaw.Gateway.Extensions;
 
 namespace OpenClaw.Gateway.Models;
@@ -20,10 +21,20 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
 
     private readonly ConcurrentDictionary<string, Registration> _registrations = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<ConfiguredModelProfileRegistry> _logger;
+    private readonly LlmProviderRegistry? _providerRegistry;
 
     public ConfiguredModelProfileRegistry(GatewayConfig config, ILogger<ConfiguredModelProfileRegistry> logger)
+        : this(config, logger, null)
+    {
+    }
+
+    public ConfiguredModelProfileRegistry(
+        GatewayConfig config,
+        ILogger<ConfiguredModelProfileRegistry> logger,
+        LlmProviderRegistry? providerRegistry)
     {
         _logger = logger;
+        _providerRegistry = providerRegistry;
         DefaultProfileId = BuildRegistrations(config);
     }
 
@@ -80,14 +91,17 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
             IChatClient? client = null;
             if (issues.Length == 0)
             {
-                try
+                if (!TryResolveRegisteredClient(profile, out client))
                 {
-                    client = LlmClientFactory.CreateChatClient(providerConfig);
-                }
-                catch (Exception ex)
-                {
-                    issues = [.. issues, ex.Message];
-                    _logger.LogWarning(ex, "Failed to initialize model profile {ProfileId}", profile.Id);
+                    try
+                    {
+                        client = LlmClientFactory.CreateChatClient(providerConfig);
+                    }
+                    catch (Exception ex)
+                    {
+                        issues = [.. issues, ex.Message];
+                        _logger.LogWarning(ex, "Failed to initialize model profile {ProfileId}", profile.Id);
+                    }
                 }
             }
 
@@ -164,12 +178,12 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
             Id = Normalize(model.Id) ?? "default",
             ProviderId = Normalize(model.Provider) ?? config.Llm.Provider,
             ModelId = Normalize(model.Model) ?? config.Llm.Model,
-            BaseUrl = Normalize(model.BaseUrl),
-            ApiKey = Normalize(model.ApiKey),
+            BaseUrl = ResolveSecretValue(model.BaseUrl),
+            ApiKey = ResolveSecretValue(model.ApiKey),
             Tags = NormalizeDistinct(model.Tags),
             FallbackProfileIds = NormalizeDistinct(model.FallbackProfileIds),
             FallbackModels = NormalizeDistinct(model.FallbackModels),
-            Capabilities = model.Capabilities ?? GuessCapabilities(model.Provider),
+            Capabilities = model.Capabilities ?? GuessCapabilities(Normalize(model.Provider) ?? config.Llm.Provider),
             IsImplicit = string.Equals(model.Id, "default", StringComparison.OrdinalIgnoreCase)
                 && config.Models.Profiles.Count == 0
         };
@@ -228,6 +242,15 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
     private static string? Normalize(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    private static string? ResolveSecretValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var resolved = SecretResolver.Resolve(value);
+        return string.IsNullOrWhiteSpace(resolved) ? null : resolved.Trim();
+    }
+
     private static string[] NormalizeDistinct(IEnumerable<string>? values)
         => values is null
             ? []
@@ -235,4 +258,21 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
                 .Select(static item => item.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
+
+    private bool TryResolveRegisteredClient(ModelProfile profile, out IChatClient? client)
+    {
+        client = null;
+        if (_providerRegistry is null || !_providerRegistry.TryGet(profile.ProviderId, out var registration) || registration?.Client is null)
+            return false;
+
+        if (registration.Models.Length > 0 &&
+            !registration.Models.Contains(profile.ModelId, StringComparer.OrdinalIgnoreCase) &&
+            !profile.FallbackModels.Any(model => registration.Models.Contains(model, StringComparer.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        client = registration.Client;
+        return true;
+    }
 }

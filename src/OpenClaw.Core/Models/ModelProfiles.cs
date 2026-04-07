@@ -16,7 +16,7 @@ public sealed class ModelProfileConfig
     public string[] Tags { get; set; } = [];
     public string[] FallbackProfileIds { get; set; } = [];
     public string[] FallbackModels { get; set; } = [];
-    public ModelCapabilities Capabilities { get; set; } = new();
+    public ModelCapabilities? Capabilities { get; set; }
 }
 
 public sealed class ModelCapabilities

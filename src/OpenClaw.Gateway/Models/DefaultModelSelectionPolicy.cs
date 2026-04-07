@@ -20,65 +20,50 @@ internal sealed class DefaultModelSelectionPolicy : IModelSelectionPolicy
         var fallbackProfileIds = CollectFallbackProfileIds(request.Session);
         var explicitProfileId = Normalize(request.ExplicitProfileId) ?? Normalize(request.Session.ModelProfileId);
 
-        var attempted = new List<ModelSelectionCandidate>();
         if (!string.IsNullOrWhiteSpace(explicitProfileId))
         {
             if (!_registry.TryGetRegistration(explicitProfileId, out var explicitRegistration) || explicitRegistration is null)
                 throw new ModelSelectionException($"Selected model profile '{explicitProfileId}' is not registered.");
 
-            attempted.Add(new ModelSelectionCandidate
+            var explicitCandidates = explicitRegistration.Profile.FallbackProfileIds
+                .Concat(fallbackProfileIds)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(fallbackId => _registry.TryGetRegistration(fallbackId, out var fallbackRegistration) ? fallbackRegistration : null)
+                .Where(static registration => registration is not null)
+                .Cast<ConfiguredModelProfileRegistry.Registration>()
+                .Where(registration => IsSelectable(registration) && Satisfies(registration.Profile, requirements))
+                .Select(ToCandidate)
+                .ToList();
+            var explicitMissing = DescribeUnselectable(explicitRegistration, requirements);
+            if (IsSelectable(explicitRegistration) && Satisfies(explicitRegistration.Profile, requirements))
             {
-                Profile = explicitRegistration.Profile,
-                FallbackModels = explicitRegistration.ProviderConfig.FallbackModels
-            });
-
-            if (Satisfies(explicitRegistration.Profile, requirements))
-                return BuildResult(explicitProfileId, explicitRegistration.Profile, requirements, preferredTags, attempted, null);
-
-            foreach (var fallbackId in explicitRegistration.Profile.FallbackProfileIds.Concat(fallbackProfileIds))
+                explicitCandidates.Insert(0, ToCandidate(explicitRegistration));
+                return BuildResult(explicitProfileId, explicitRegistration.Profile, requirements, preferredTags, explicitCandidates, null);
+            }
+            if (explicitCandidates.Count > 0)
             {
-                if (!_registry.TryGetRegistration(fallbackId, out var fallbackRegistration) || fallbackRegistration is null)
-                    continue;
-
-                attempted.Add(new ModelSelectionCandidate
-                {
-                    Profile = fallbackRegistration.Profile,
-                    FallbackModels = fallbackRegistration.ProviderConfig.FallbackModels
-                });
-
-                if (Satisfies(fallbackRegistration.Profile, requirements))
-                {
-                    var explanation =
-                        $"Falling back from '{explicitRegistration.Profile.Id}' to '{fallbackRegistration.Profile.Id}' because {DescribeMissing(explicitRegistration.Profile, requirements)}.";
-                    return BuildResult(explicitProfileId, fallbackRegistration.Profile, requirements, preferredTags, attempted, explanation);
-                }
+                var explanation =
+                    $"Falling back from '{explicitRegistration.Profile.Id}' to '{explicitCandidates[0].Profile.Id}' because {explicitMissing}.";
+                return BuildResult(explicitProfileId, explicitCandidates[0].Profile, requirements, preferredTags, explicitCandidates, explanation);
             }
 
             throw new ModelSelectionException(
-                $"This route requires {DescribeRequirementSummary(requirements)}, but selected model profile '{explicitRegistration.Profile.Id}' does not support it.");
+                $"This route requires {DescribeRequirementSummary(requirements)}, but selected model profile '{explicitRegistration.Profile.Id}' cannot satisfy it because {explicitMissing}.");
         }
 
         var candidates = _registry.ListStatuses()
             .OrderByDescending(item => Score(item, preferredTags, requirements))
             .ThenByDescending(static item => item.IsDefault)
-            .ThenBy(static item => item.Id, StringComparer.OrdinalIgnoreCase);
+            .ThenBy(static item => item.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(status => _registry.TryGetRegistration(status.Id, out var registration) ? registration : null)
+            .Where(static registration => registration is not null)
+            .Cast<ConfiguredModelProfileRegistry.Registration>()
+            .Where(registration => IsSelectable(registration) && Satisfies(registration.Profile, requirements))
+            .Select(ToCandidate)
+            .ToArray();
 
-        foreach (var status in candidates)
-        {
-            if (!_registry.TryGetRegistration(status.Id, out var registration) || registration is null)
-                continue;
-
-            if (!Satisfies(registration.Profile, requirements))
-                continue;
-
-            attempted.Add(new ModelSelectionCandidate
-            {
-                Profile = registration.Profile,
-                FallbackModels = registration.ProviderConfig.FallbackModels
-            });
-
-            return BuildResult(null, registration.Profile, requirements, preferredTags, attempted, null);
-        }
+        if (candidates.Length > 0)
+            return BuildResult(null, candidates[0].Profile, requirements, preferredTags, candidates, null);
 
         throw new ModelSelectionException(
             $"No configured model profile satisfies the current request requirements ({DescribeRequirementSummary(requirements)}).");
@@ -121,6 +106,16 @@ internal sealed class DefaultModelSelectionPolicy : IModelSelectionPolicy
             score += 5;
         return score;
     }
+
+    private static bool IsSelectable(ConfiguredModelProfileRegistry.Registration registration)
+        => registration.Client is not null && registration.ValidationIssues.Length == 0;
+
+    private static ModelSelectionCandidate ToCandidate(ConfiguredModelProfileRegistry.Registration registration)
+        => new()
+        {
+            Profile = registration.Profile,
+            FallbackModels = registration.ProviderConfig.FallbackModels
+        };
 
     internal static ModelSelectionRequirements BuildRequirements(ModelSelectionRequest request)
     {
@@ -222,6 +217,18 @@ internal sealed class DefaultModelSelectionPolicy : IModelSelectionPolicy
         if (requirements.SupportsAudioInput == true && !profile.Capabilities.SupportsAudioInput)
             missing.Add("audio input was required");
         return missing.Count == 0 ? "required capabilities were not satisfied" : string.Join(", ", missing);
+    }
+
+    private static string DescribeUnselectable(
+        ConfiguredModelProfileRegistry.Registration registration,
+        ModelSelectionRequirements requirements)
+    {
+        if (!IsSelectable(registration))
+            return registration.ValidationIssues.Length > 0
+                ? string.Join("; ", registration.ValidationIssues)
+                : "the profile is not available";
+
+        return DescribeMissing(registration.Profile, requirements);
     }
 
     private static string DescribeRequirementSummary(ModelSelectionRequirements requirements)
