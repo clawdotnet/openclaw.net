@@ -394,7 +394,7 @@ public sealed class A2AIntegrationTests
             Status = new A2A.TaskStatus { State = TaskState.Completed }
         };
 
-        await store.SetTaskAsync(task, CancellationToken.None);
+        await store.SaveTaskAsync(task.Id, task, CancellationToken.None);
         var retrieved = await store.GetTaskAsync("test-task-1", CancellationToken.None);
 
         Assert.NotNull(retrieved);
