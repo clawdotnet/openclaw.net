@@ -639,7 +639,10 @@ public sealed class AgentRuntime : IAgentRuntime
             _metrics?.IncrementMemoryRecallSearches();
             var hits = await search.SearchNotesAsync(userMessage, _memoryRecallPrefix, limit, ct);
             if (hits.Count == 0 && !string.IsNullOrWhiteSpace(_memoryRecallPrefix))
+            {
+                _metrics?.IncrementMemoryRecallSearches();
                 hits = await search.SearchNotesAsync(userMessage, prefix: null, limit, ct);
+            }
             if (hits.Count == 0)
                 return;
             _metrics?.AddMemoryRecallHits(hits.Count);

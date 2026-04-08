@@ -978,12 +978,7 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
             if (batch.Count == 0)
                 break;
 
-            await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
-            await using var updateCmd = conn.CreateCommand();
-            updateCmd.Transaction = tx;
-            updateCmd.CommandText = "UPDATE notes SET embedding = $embedding WHERE key = $key;";
-            var embeddingParam = updateCmd.Parameters.Add("$embedding", SqliteType.Blob);
-            var keyParam = updateCmd.Parameters.Add("$key", SqliteType.Text);
+            var updates = new List<(string Key, byte[] Embedding)>(batch.Count);
 
             foreach (var (key, content) in batch)
             {
@@ -992,15 +987,30 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
                     var result = await _embeddingGenerator.GenerateAsync([content], cancellationToken: ct);
                     if (result is { Count: > 0 })
                     {
-                        embeddingParam.Value = SerializeEmbedding(result[0]);
-                        keyParam.Value = key;
-                        await updateCmd.ExecuteNonQueryAsync(ct);
+                        updates.Add((key, SerializeEmbedding(result[0])));
                     }
                 }
                 catch (Exception ex)
                 {
                     _logger?.LogWarning(ex, "Backfill embedding failed for note '{Key}'", key);
                 }
+            }
+
+            if (updates.Count == 0)
+                continue;
+
+            await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
+            await using var updateCmd = conn.CreateCommand();
+            updateCmd.Transaction = tx;
+            updateCmd.CommandText = "UPDATE notes SET embedding = $embedding WHERE key = $key;";
+            var embeddingParam = updateCmd.Parameters.Add("$embedding", SqliteType.Blob);
+            var keyParam = updateCmd.Parameters.Add("$key", SqliteType.Text);
+
+            foreach (var update in updates)
+            {
+                embeddingParam.Value = update.Embedding;
+                keyParam.Value = update.Key;
+                await updateCmd.ExecuteNonQueryAsync(ct);
             }
 
             await tx.CommitAsync(ct);

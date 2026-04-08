@@ -34,7 +34,7 @@ public sealed class MemoryRetentionSweeperService : BackgroundService, IMemoryRe
     private readonly RuntimeMetrics _metrics;
     private readonly ILogger<MemoryRetentionSweeperService> _logger;
     private readonly IMemoryRetentionStore? _retentionStore;
-    private readonly SessionMetadataStore? _metadataStore;
+    private readonly Func<IReadOnlyDictionary<string, SessionMetadataSnapshot>>? _metadataSnapshotProvider;
     private readonly SemaphoreSlim _runGate = new(1, 1);
     private readonly object _statusLock = new();
     private RetentionRunStatus _status;
@@ -45,14 +45,14 @@ public sealed class MemoryRetentionSweeperService : BackgroundService, IMemoryRe
         IMemoryStore memoryStore,
         RuntimeMetrics metrics,
         ILogger<MemoryRetentionSweeperService> logger,
-        SessionMetadataStore? metadataStore = null)
+        Func<IReadOnlyDictionary<string, SessionMetadataSnapshot>>? metadataSnapshotProvider = null)
     {
         _config = config;
         _sessionManager = sessionManager;
         _metrics = metrics;
         _logger = logger;
         _retentionStore = memoryStore as IMemoryRetentionStore;
-        _metadataStore = metadataStore;
+        _metadataSnapshotProvider = metadataSnapshotProvider;
 
         _status = new RetentionRunStatus
         {
@@ -228,9 +228,9 @@ public sealed class MemoryRetentionSweeperService : BackgroundService, IMemoryRe
                 set.Add(session.Id);
         }
 
-        if (_metadataStore is not null)
+        if (_metadataSnapshotProvider is not null)
         {
-            foreach (var metadata in _metadataStore.GetAll().Values)
+            foreach (var metadata in _metadataSnapshotProvider().Values)
             {
                 if (metadata.Starred || metadata.Tags.Any(static tag => ProtectedRetentionTags.Contains(tag)))
                     set.Add(metadata.SessionId);

@@ -164,7 +164,7 @@ public sealed class MemoryRetentionSweeperServiceTests
                 store,
                 new RuntimeMetrics(),
                 NullLogger<MemoryRetentionSweeperService>.Instance,
-                metadataStore);
+                metadataStore.GetAll);
 
             _ = await service.SweepNowAsync(dryRun: true, CancellationToken.None);
 

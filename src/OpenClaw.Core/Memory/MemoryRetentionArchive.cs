@@ -106,6 +106,7 @@ internal static class MemoryRetentionArchive
         {
             ct.ThrowIfCancellationRequested();
 
+            var shouldDelete = false;
             try
             {
                 if (TryGetArchiveSweepDayUtc(archiveRoot, file, out var archiveDayUtc))
@@ -113,26 +114,29 @@ internal static class MemoryRetentionArchive
                     if (archiveDayUtc > cutoff.Date)
                         continue;
                     if (archiveDayUtc < cutoff.Date)
-                        goto delete_file;
+                        shouldDelete = true;
                 }
 
-                using var stream = File.OpenRead(file);
-                using var doc = JsonDocument.Parse(stream);
-                if (!doc.RootElement.TryGetProperty("sweptAtUtc", out var sweptAtElement) ||
-                    sweptAtElement.ValueKind != JsonValueKind.String ||
-                    !DateTime.TryParse(
-                        sweptAtElement.GetString(),
-                        provider: null,
-                        System.Globalization.DateTimeStyles.RoundtripKind,
-                        out var sweptAtUtc))
+                if (!shouldDelete)
                 {
-                    var fallbackLastWriteUtc = File.GetLastWriteTimeUtc(file);
-                    if (fallbackLastWriteUtc >= cutoff)
+                    using var stream = File.OpenRead(file);
+                    using var doc = JsonDocument.Parse(stream);
+                    if (!doc.RootElement.TryGetProperty("sweptAtUtc", out var sweptAtElement) ||
+                        sweptAtElement.ValueKind != JsonValueKind.String ||
+                        !DateTime.TryParse(
+                            sweptAtElement.GetString(),
+                            provider: null,
+                            System.Globalization.DateTimeStyles.RoundtripKind,
+                            out var sweptAtUtc))
+                    {
+                        var fallbackLastWriteUtc = File.GetLastWriteTimeUtc(file);
+                        if (fallbackLastWriteUtc >= cutoff)
+                            continue;
+                    }
+                    else if (sweptAtUtc >= cutoff)
+                    {
                         continue;
-                }
-                else if (sweptAtUtc >= cutoff)
-                {
-                    continue;
+                    }
                 }
             }
             catch (Exception ex)
@@ -143,7 +147,6 @@ internal static class MemoryRetentionArchive
                 continue;
             }
 
-delete_file:
             try
             {
                 File.Delete(file);

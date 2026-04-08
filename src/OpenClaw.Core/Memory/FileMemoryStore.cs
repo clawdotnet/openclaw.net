@@ -574,9 +574,6 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
 
             ct.ThrowIfCancellationRequested();
 
-            if (File.GetLastWriteTimeUtc(file) >= request.SessionExpiresBeforeUtc.UtcDateTime)
-                continue;
-
             string payloadJson;
             try
             {
@@ -687,9 +684,6 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
             }
 
             ct.ThrowIfCancellationRequested();
-
-            if (File.GetLastWriteTimeUtc(file) >= request.BranchExpiresBeforeUtc.UtcDateTime)
-                continue;
 
             string payloadJson;
             try
