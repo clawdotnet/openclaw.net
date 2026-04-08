@@ -30,7 +30,8 @@ internal static class CoreServicesExtensions
         services.AddSingleton(sp =>
             new AllowlistManager(config.Memory.StoragePath, sp.GetRequiredService<ILogger<AllowlistManager>>()));
 
-        services.AddSingleton<IMemoryStore>(_ => CreateMemoryStore(config));
+        services.AddSingleton<RuntimeMetrics>();
+        services.AddSingleton<IMemoryStore>(sp => CreateMemoryStore(config, sp.GetRequiredService<RuntimeMetrics>()));
         services.AddSingleton<ISessionAdminStore>(sp =>
         {
             var memory = sp.GetRequiredService<IMemoryStore>();
@@ -39,7 +40,6 @@ internal static class CoreServicesExtensions
         });
         services.AddSingleton<ISessionSearchStore>(sp => (ISessionSearchStore)sp.GetRequiredService<IMemoryStore>());
         AddFeatureStores(services, config);
-        services.AddSingleton<RuntimeMetrics>();
         services.AddSingleton<ProviderUsageTracker>();
         services.AddSingleton<ToolUsageTracker>();
         services.AddSingleton<LlmProviderRegistry>();
@@ -150,7 +150,7 @@ internal static class CoreServicesExtensions
         return Path.GetFullPath(dbPath);
     }
 
-    private static IMemoryStore CreateMemoryStore(OpenClaw.Core.Models.GatewayConfig config)
+    private static IMemoryStore CreateMemoryStore(OpenClaw.Core.Models.GatewayConfig config, RuntimeMetrics metrics)
     {
         if (string.Equals(config.Memory.Provider, "sqlite", StringComparison.OrdinalIgnoreCase))
         {
@@ -181,6 +181,7 @@ internal static class CoreServicesExtensions
 
         return new FileMemoryStore(
             config.Memory.StoragePath,
-            config.Memory.MaxCachedSessions ?? config.MaxConcurrentSessions);
+            config.Memory.MaxCachedSessions ?? config.MaxConcurrentSessions,
+            metrics: metrics);
     }
 }

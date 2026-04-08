@@ -65,6 +65,7 @@ public sealed class AgentRuntime : IAgentRuntime
     private readonly SkillsConfig? _skillsConfig;
     private readonly string? _skillWorkspacePath;
     private readonly IReadOnlyList<string> _pluginSkillDirs;
+    private readonly string? _memoryRecallPrefix;
     private readonly object _skillGate = new();
     private string[] _loadedSkillNames = [];
     private int _skillPromptLength;
@@ -158,6 +159,9 @@ public sealed class AgentRuntime : IAgentRuntime
         _isContractRuntimeBudgetExceeded = isContractRuntimeBudgetExceeded;
         _recordContractTurnUsage = recordContractTurnUsage;
         _appendContractSnapshot = appendContractSnapshot;
+        var projectId = gatewayConfig?.Memory.ProjectId
+            ?? Environment.GetEnvironmentVariable("OPENCLAW_PROJECT");
+        _memoryRecallPrefix = string.IsNullOrWhiteSpace(projectId) ? null : $"project:{projectId.Trim()}:";
         ApplySkills(skills ?? []);
     }
 
@@ -632,9 +636,13 @@ public sealed class AgentRuntime : IAgentRuntime
         try
         {
             var limit = Math.Clamp(_recall.MaxNotes, 1, 32);
-            var hits = await search.SearchNotesAsync(userMessage, prefix: null, limit, ct);
+            _metrics?.IncrementMemoryRecallSearches();
+            var hits = await search.SearchNotesAsync(userMessage, _memoryRecallPrefix, limit, ct);
+            if (hits.Count == 0 && !string.IsNullOrWhiteSpace(_memoryRecallPrefix))
+                hits = await search.SearchNotesAsync(userMessage, prefix: null, limit, ct);
             if (hits.Count == 0)
                 return;
+            _metrics?.AddMemoryRecallHits(hits.Count);
 
             var maxChars = Math.Clamp(_recall.MaxChars, 256, 100_000);
 
@@ -1258,6 +1266,7 @@ public sealed class AgentRuntime : IAgentRuntime
 
             if (!string.IsNullOrWhiteSpace(summary))
             {
+                _metrics?.IncrementMemoryCompactions();
                 session.History.RemoveRange(0, toSummarizeCount);
                 session.History.Insert(0, new ChatTurn
                 {

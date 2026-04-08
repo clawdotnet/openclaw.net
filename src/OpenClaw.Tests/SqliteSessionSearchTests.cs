@@ -155,6 +155,39 @@ public sealed class SqliteSessionSearchTests
         }
     }
 
+    [Fact]
+    public async Task GetSessionAsync_CorruptRow_ThrowsCorruptionException()
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            var dbPath = Path.Combine(root, "memory.db");
+            using var store = new SqliteMemoryStore(dbPath, enableFts: false);
+
+            await store.SaveSessionAsync(new Session
+            {
+                Id = "session-corrupt",
+                ChannelId = "websocket",
+                SenderId = "alice"
+            }, CancellationToken.None);
+
+            await using var conn = new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = dbPath }.ToString());
+            await conn.OpenAsync();
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "UPDATE sessions SET json = '{not valid json' WHERE id = $id;";
+            cmd.Parameters.AddWithValue("$id", "session-corrupt");
+            await cmd.ExecuteNonQueryAsync();
+
+            var ex = await Assert.ThrowsAsync<MemoryStoreCorruptionException>(async () =>
+                await store.GetSessionAsync("session-corrupt", CancellationToken.None));
+            Assert.Equal("session-corrupt", ex.SessionId);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTempDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("n"));

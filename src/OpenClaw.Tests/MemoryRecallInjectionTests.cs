@@ -46,4 +46,44 @@ namespace OpenClaw.Tests;
                 (m.Text ?? "").Contains("[Relevant memory]", StringComparison.Ordinal) &&
                 (m.Text ?? "").Contains("untrusted", StringComparison.OrdinalIgnoreCase));
         }
+
+        [Fact]
+        public async Task RunAsync_PrefersProjectScopedRecall_WhenProjectIdConfigured()
+        {
+        var chatClient = Substitute.For<IChatClient>();
+        chatClient.GetResponseAsync(
+                Arg.Any<IList<ChatMessage>>(),
+                Arg.Any<ChatOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ChatResponse(new[] { new ChatMessage(ChatRole.Assistant, "ok") })));
+
+        var memory = Substitute.For<IMemoryStore, IMemoryNoteSearch>();
+        var search = (IMemoryNoteSearch)memory;
+        search.SearchNotesAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IReadOnlyList<MemoryNoteHit>>([]));
+
+        var agent = new AgentRuntime(
+            chatClient,
+            tools: [],
+            memory,
+            new LlmProviderConfig { Provider = "openai", ApiKey = "test", Model = "gpt-4" },
+            maxHistoryTurns: 5,
+            recall: new MemoryRecallConfig { Enabled = true, MaxNotes = 5, MaxChars = 4000 },
+            gatewayConfig: new GatewayConfig
+            {
+                Memory = new MemoryConfig
+                {
+                    ProjectId = "demo"
+                }
+            });
+
+        var session = new Session { Id = "s1", ChannelId = "test", SenderId = "u1" };
+        _ = await agent.RunAsync(session, "what should I remember?", CancellationToken.None);
+
+        await search.Received().SearchNotesAsync(
+            "what should I remember?",
+            "project:demo:",
+            Arg.Any<int>(),
+            Arg.Any<CancellationToken>());
+        }
     }

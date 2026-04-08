@@ -113,7 +113,7 @@ public sealed class MemoryConfig
     public bool EnableCompaction { get; set; } = false;
 
     /// <summary>Number of history turns that triggers compaction (must exceed MaxHistoryTurns).</summary>
-    public int CompactionThreshold { get; set; } = 40;
+    public int CompactionThreshold { get; set; } = 80;
 
     /// <summary>Number of recent turns to keep verbatim during compaction.</summary>
     public int CompactionKeepRecent { get; set; } = 10;

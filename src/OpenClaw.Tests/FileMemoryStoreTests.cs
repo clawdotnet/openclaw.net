@@ -186,4 +186,29 @@ public sealed class FileMemoryStoreTests
             Directory.Delete(storagePath, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task SearchNotesAsync_PrefersHigherScoringAndMoreRecentNotes()
+    {
+        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-file-memory-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var store = new FileMemoryStore(storagePath, 4);
+            await store.SaveNoteAsync("project:demo:legacy", "architecture notes about migration", CancellationToken.None);
+            await Task.Delay(20);
+            await store.SaveNoteAsync("project:demo:architecture", "architecture migration checklist", CancellationToken.None);
+
+            var hits = await store.SearchNotesAsync("architecture migration", "project:demo:", 2, CancellationToken.None);
+
+            Assert.Equal(2, hits.Count);
+            Assert.Equal("project:demo:architecture", hits[0].Key);
+            Assert.True(hits[0].Score >= hits[1].Score);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
 }

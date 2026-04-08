@@ -3,6 +3,7 @@ using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Sessions;
+using OpenClaw.Gateway;
 using OpenClaw.Gateway.Extensions;
 using Xunit;
 
@@ -131,9 +132,54 @@ public sealed class MemoryRetentionSweeperServiceTests
         await first;
     }
 
+    [Fact]
+    public async Task SweepNowAsync_ProtectsStarredSessionsFromMetadataStore()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "openclaw-retention-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var config = new GatewayConfig
+            {
+                Memory = new MemoryConfig
+                {
+                    StoragePath = root,
+                    Retention = new MemoryRetentionConfig
+                    {
+                        Enabled = true,
+                        ArchiveEnabled = false
+                    }
+                }
+            };
+
+            var metadataStore = new SessionMetadataStore(root, NullLogger<SessionMetadataStore>.Instance);
+            metadataStore.Set("session-starred", new SessionMetadataUpdateRequest { Starred = true });
+
+            var store = new StubRetentionStore();
+            var manager = new SessionManager(store, config);
+            var service = new MemoryRetentionSweeperService(
+                config,
+                manager,
+                store,
+                new RuntimeMetrics(),
+                NullLogger<MemoryRetentionSweeperService>.Instance,
+                metadataStore);
+
+            _ = await service.SweepNowAsync(dryRun: true, CancellationToken.None);
+
+            Assert.Contains("session-starred", store.LastProtectedSessionIds);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private sealed class StubRetentionStore : IMemoryStore, IMemoryRetentionStore
     {
         public Func<RetentionSweepRequest, Task<RetentionSweepResult>>? NextResultFactory { get; set; }
+        public IReadOnlySet<string> LastProtectedSessionIds { get; private set; } = new HashSet<string>(StringComparer.Ordinal);
 
         public ValueTask<Session?> GetSessionAsync(string sessionId, CancellationToken ct) => ValueTask.FromResult<Session?>(null);
         public ValueTask SaveSessionAsync(Session session, CancellationToken ct) => ValueTask.CompletedTask;
@@ -151,6 +197,7 @@ public sealed class MemoryRetentionSweeperServiceTests
             IReadOnlySet<string> protectedSessionIds,
             CancellationToken ct)
         {
+            LastProtectedSessionIds = new HashSet<string>(protectedSessionIds, StringComparer.Ordinal);
             if (NextResultFactory is null)
             {
                 return new RetentionSweepResult

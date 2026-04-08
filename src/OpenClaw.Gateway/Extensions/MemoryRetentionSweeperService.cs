@@ -5,6 +5,7 @@ using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Sessions;
+using OpenClaw.Gateway;
 
 namespace OpenClaw.Gateway.Extensions;
 
@@ -20,11 +21,20 @@ public interface IMemoryRetentionCoordinator
 /// </summary>
 public sealed class MemoryRetentionSweeperService : BackgroundService, IMemoryRetentionCoordinator
 {
+    private static readonly HashSet<string> ProtectedRetentionTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "keep",
+        "pinned",
+        "retain",
+        "retention-exempt"
+    };
+
     private readonly GatewayConfig _config;
     private readonly SessionManager _sessionManager;
     private readonly RuntimeMetrics _metrics;
     private readonly ILogger<MemoryRetentionSweeperService> _logger;
     private readonly IMemoryRetentionStore? _retentionStore;
+    private readonly SessionMetadataStore? _metadataStore;
     private readonly SemaphoreSlim _runGate = new(1, 1);
     private readonly object _statusLock = new();
     private RetentionRunStatus _status;
@@ -34,13 +44,15 @@ public sealed class MemoryRetentionSweeperService : BackgroundService, IMemoryRe
         SessionManager sessionManager,
         IMemoryStore memoryStore,
         RuntimeMetrics metrics,
-        ILogger<MemoryRetentionSweeperService> logger)
+        ILogger<MemoryRetentionSweeperService> logger,
+        SessionMetadataStore? metadataStore = null)
     {
         _config = config;
         _sessionManager = sessionManager;
         _metrics = metrics;
         _logger = logger;
         _retentionStore = memoryStore as IMemoryRetentionStore;
+        _metadataStore = metadataStore;
 
         _status = new RetentionRunStatus
         {
@@ -214,6 +226,15 @@ public sealed class MemoryRetentionSweeperService : BackgroundService, IMemoryRe
         {
             if (!string.IsNullOrWhiteSpace(session.Id))
                 set.Add(session.Id);
+        }
+
+        if (_metadataStore is not null)
+        {
+            foreach (var metadata in _metadataStore.GetAll().Values)
+            {
+                if (metadata.Starred || metadata.Tags.Any(static tag => ProtectedRetentionTags.Contains(tag)))
+                    set.Add(metadata.SessionId);
+            }
         }
 
         return set;

@@ -879,7 +879,7 @@ public class FeatureParityTests
     {
         var config = new MemoryConfig();
         Assert.False(config.EnableCompaction); // Default false
-        Assert.Equal(40, config.CompactionThreshold);
+        Assert.Equal(80, config.CompactionThreshold);
         Assert.Equal(10, config.CompactionKeepRecent);
     }
 

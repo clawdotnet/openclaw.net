@@ -163,9 +163,14 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         {
             return JsonSerializer.Deserialize(json, CoreJsonContext.Default.Session);
         }
-        catch
+        catch (Exception ex)
         {
-            return null;
+            _logger?.LogError(ex, "Persisted sqlite session row for {SessionId} is corrupt or unreadable", sessionId);
+            throw new MemoryStoreCorruptionException(
+                $"Session '{sessionId}' could not be loaded because its persisted sqlite state is corrupt.",
+                sessionId,
+                $"{_dbPath}#sessions/{sessionId}",
+                ex);
         }
     }
 
@@ -516,9 +521,10 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         {
             return JsonSerializer.Deserialize(json, CoreJsonContext.Default.SessionBranch);
         }
-        catch
+        catch (Exception ex)
         {
-            return null;
+            _logger?.LogError(ex, "Persisted sqlite branch row for {BranchId} is corrupt or unreadable", branchId);
+            throw new InvalidDataException($"Branch '{branchId}' could not be loaded because its persisted sqlite state is corrupt.", ex);
         }
     }
 
@@ -955,11 +961,11 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         if (!_enableVectors || _embeddingGenerator is null)
             return;
 
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+
         while (!ct.IsCancellationRequested)
         {
-            await using var conn = new SqliteConnection(ConnectionString);
-            await conn.OpenAsync(ct);
-
             await using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT key, content FROM notes WHERE embedding IS NULL LIMIT $limit;";
             cmd.Parameters.AddWithValue("$limit", batchSize);
@@ -972,6 +978,13 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
             if (batch.Count == 0)
                 break;
 
+            await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
+            await using var updateCmd = conn.CreateCommand();
+            updateCmd.Transaction = tx;
+            updateCmd.CommandText = "UPDATE notes SET embedding = $embedding WHERE key = $key;";
+            var embeddingParam = updateCmd.Parameters.Add("$embedding", SqliteType.Blob);
+            var keyParam = updateCmd.Parameters.Add("$key", SqliteType.Text);
+
             foreach (var (key, content) in batch)
             {
                 try
@@ -979,13 +992,8 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
                     var result = await _embeddingGenerator.GenerateAsync([content], cancellationToken: ct);
                     if (result is { Count: > 0 })
                     {
-                        var blob = SerializeEmbedding(result[0]);
-                        await using var updateConn = new SqliteConnection(ConnectionString);
-                        await updateConn.OpenAsync(ct);
-                        await using var updateCmd = updateConn.CreateCommand();
-                        updateCmd.CommandText = "UPDATE notes SET embedding = $embedding WHERE key = $key;";
-                        updateCmd.Parameters.AddWithValue("$embedding", blob);
-                        updateCmd.Parameters.AddWithValue("$key", key);
+                        embeddingParam.Value = SerializeEmbedding(result[0]);
+                        keyParam.Value = key;
                         await updateCmd.ExecuteNonQueryAsync(ct);
                     }
                 }
@@ -994,6 +1002,8 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
                     _logger?.LogWarning(ex, "Backfill embedding failed for note '{Key}'", key);
                 }
             }
+
+            await tx.CommitAsync(ct);
         }
     }
 

@@ -55,6 +55,11 @@ public static class ConfigValidator
         ValidateModelProfiles(config, errors, pluginBackedProvidersPossible);
 
         // Memory
+        if (!string.Equals(config.Memory.Provider, "file", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(config.Memory.Provider, "sqlite", StringComparison.OrdinalIgnoreCase))
+        {
+            errors.Add($"Memory.Provider '{config.Memory.Provider}' must be 'file' or 'sqlite'.");
+        }
         if (string.IsNullOrWhiteSpace(config.Memory.StoragePath))
             errors.Add("Memory.StoragePath must be set.");
         if (config.Memory.MaxHistoryTurns < 1)

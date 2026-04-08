@@ -38,6 +38,11 @@ public sealed class RuntimeMetrics
     private long _retentionSkippedProtectedSessions;
     private long _operatorAuditWriteFailures;
     private long _runtimeEventWriteFailures;
+    private long _sessionCacheHits;
+    private long _sessionCacheMisses;
+    private long _memoryRecallSearches;
+    private long _memoryRecallHits;
+    private long _memoryCompactions;
 
     // ── Gauges ────────────────────────────────────────────────────────────
     private int _activeSessions;
@@ -74,6 +79,11 @@ public sealed class RuntimeMetrics
     public long RetentionSkippedProtectedSessions => Interlocked.Read(ref _retentionSkippedProtectedSessions);
     public long OperatorAuditWriteFailures => Interlocked.Read(ref _operatorAuditWriteFailures);
     public long RuntimeEventWriteFailures => Interlocked.Read(ref _runtimeEventWriteFailures);
+    public long SessionCacheHits => Interlocked.Read(ref _sessionCacheHits);
+    public long SessionCacheMisses => Interlocked.Read(ref _sessionCacheMisses);
+    public long MemoryRecallSearches => Interlocked.Read(ref _memoryRecallSearches);
+    public long MemoryRecallHits => Interlocked.Read(ref _memoryRecallHits);
+    public long MemoryCompactions => Interlocked.Read(ref _memoryCompactions);
     public int ActiveSessions => Volatile.Read(ref _activeSessions);
     public int CircuitBreakerState => Volatile.Read(ref _circuitBreakerState);
     public long RetentionLastRunAtUnixSeconds => Interlocked.Read(ref _retentionLastRunAtUnixSeconds);
@@ -108,6 +118,11 @@ public sealed class RuntimeMetrics
     public void AddRetentionSkippedProtectedSessions(long n) => Interlocked.Add(ref _retentionSkippedProtectedSessions, n);
     public void IncrementOperatorAuditWriteFailures() => Interlocked.Increment(ref _operatorAuditWriteFailures);
     public void IncrementRuntimeEventWriteFailures() => Interlocked.Increment(ref _runtimeEventWriteFailures);
+    public void IncrementSessionCacheHits() => Interlocked.Increment(ref _sessionCacheHits);
+    public void IncrementSessionCacheMisses() => Interlocked.Increment(ref _sessionCacheMisses);
+    public void IncrementMemoryRecallSearches() => Interlocked.Increment(ref _memoryRecallSearches);
+    public void AddMemoryRecallHits(long n) => Interlocked.Add(ref _memoryRecallHits, n);
+    public void IncrementMemoryCompactions() => Interlocked.Increment(ref _memoryCompactions);
     public void SetActiveSessions(int count) => Volatile.Write(ref _activeSessions, count);
     public void SetCircuitBreakerState(int state) => Volatile.Write(ref _circuitBreakerState, state);
     public void SetRetentionLastRun(DateTimeOffset runAtUtc, long durationMs, bool succeeded)
@@ -150,6 +165,11 @@ public sealed class RuntimeMetrics
         RetentionSkippedProtectedSessions = RetentionSkippedProtectedSessions,
         OperatorAuditWriteFailures = OperatorAuditWriteFailures,
         RuntimeEventWriteFailures = RuntimeEventWriteFailures,
+        SessionCacheHits = SessionCacheHits,
+        SessionCacheMisses = SessionCacheMisses,
+        MemoryRecallSearches = MemoryRecallSearches,
+        MemoryRecallHits = MemoryRecallHits,
+        MemoryCompactions = MemoryCompactions,
         RetentionLastRunAtUnixSeconds = RetentionLastRunAtUnixSeconds,
         RetentionLastRunDurationMs = RetentionLastRunDurationMs,
         RetentionLastRunSucceeded = RetentionLastRunSucceeded,
@@ -188,6 +208,11 @@ public struct MetricsSnapshot
     public long RetentionSkippedProtectedSessions { get; set; }
     public long OperatorAuditWriteFailures { get; set; }
     public long RuntimeEventWriteFailures { get; set; }
+    public long SessionCacheHits { get; set; }
+    public long SessionCacheMisses { get; set; }
+    public long MemoryRecallSearches { get; set; }
+    public long MemoryRecallHits { get; set; }
+    public long MemoryCompactions { get; set; }
     public long RetentionLastRunAtUnixSeconds { get; set; }
     public long RetentionLastRunDurationMs { get; set; }
     public int RetentionLastRunSucceeded { get; set; }

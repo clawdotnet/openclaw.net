@@ -190,6 +190,21 @@ public sealed class ConfigValidatorTests
     }
 
     [Fact]
+    public void Validate_InvalidMemoryProvider_ReturnsError()
+    {
+        var config = new GatewayConfig
+        {
+            Memory = new MemoryConfig
+            {
+                Provider = "redis"
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.Contains(errors, e => e.Contains("Memory.Provider", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_InvalidRuntimeMode_ReturnsError()
     {
         var config = new GatewayConfig

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 
 namespace OpenClaw.Core.Memory;
 
@@ -37,12 +38,17 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
     private readonly string _branchesPath;
     private readonly IMemoryCache _sessionCache;
     private readonly SemaphoreSlim[] _sessionLoadStripes;
+    private readonly SemaphoreSlim _noteIndexGate = new(1, 1);
+    private readonly ConcurrentDictionary<string, NoteIndexEntry> _noteIndex = new(StringComparer.Ordinal);
     private readonly ILogger<FileMemoryStore>? _logger;
+    private readonly RuntimeMetrics? _metrics;
+    private int _noteIndexInitialized;
 
-    public FileMemoryStore(string basePath, int maxCachedSessions = 100, ILogger<FileMemoryStore>? logger = null)
+    public FileMemoryStore(string basePath, int maxCachedSessions = 100, ILogger<FileMemoryStore>? logger = null, RuntimeMetrics? metrics = null)
     {
         _basePath = basePath ?? throw new ArgumentNullException(nameof(basePath));
         _logger = logger;
+        _metrics = metrics;
         
         _sessionsPath = Path.Combine(_basePath, "sessions");
         _notesPath = Path.Combine(_basePath, "notes");
@@ -68,7 +74,11 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
 
         // Check cache first
         if (_sessionCache.TryGetValue(sessionId, out Session? cached))
+        {
+            _metrics?.IncrementSessionCacheHits();
             return cached;
+        }
+        _metrics?.IncrementSessionCacheMisses();
 
         var loadGate = ResolveSessionLoadStripe(sessionId);
         await loadGate.WaitAsync(ct);
@@ -156,6 +166,7 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
         foreach (var stripe in _sessionLoadStripes)
             stripe.Dispose();
 
+        _noteIndexGate.Dispose();
         _sessionCache.Dispose();
         return ValueTask.CompletedTask;
     }
@@ -272,12 +283,14 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
         var tempPath = $"{filePath}.tmp";
         var keyPath = Path.Combine(_notesPath, $"{encodedKey}.key");
         var keyTempPath = $"{keyPath}.tmp";
+        var nowUtc = DateTimeOffset.UtcNow;
 
         try
         {
             await File.WriteAllTextAsync(tempPath, content, ct);
             File.Move(tempPath, filePath, overwrite: true);
             await PersistOriginalNoteKeyAsync(key, keyPath, keyTempPath, ct);
+            UpsertNoteIndexEntry(key, content, nowUtc);
         }
         catch
         {
@@ -300,6 +313,7 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
         {
             File.Delete(filePath);
             File.Delete(keyPath);
+            _noteIndex.TryRemove(key, out _);
         }
         catch
         {
@@ -311,26 +325,7 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
 
     public ValueTask<IReadOnlyList<string>> ListNotesWithPrefixAsync(string prefix, CancellationToken ct)
     {
-        var results = new List<string>();
-
-        try
-        {
-            var files = Directory.EnumerateFiles(_notesPath, "*.md");
-            foreach (var file in files)
-            {
-                var encodedKey = Path.GetFileNameWithoutExtension(file);
-                var key = ResolveNoteKey(encodedKey);
-                
-                if (key.StartsWith(prefix, StringComparison.Ordinal))
-                    results.Add(key);
-            }
-        }
-        catch
-        {
-            // Return empty list on error
-        }
-
-        return ValueTask.FromResult<IReadOnlyList<string>>(results);
+        return ListNotesWithPrefixCoreAsync(prefix ?? "", ct);
     }
 
     public async ValueTask<IReadOnlyList<MemoryNoteHit>> SearchNotesAsync(string query, string? prefix, int limit, CancellationToken ct)
@@ -340,56 +335,48 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
 
         limit = Math.Clamp(limit, 1, 50);
         prefix ??= "";
-
-        var hits = new List<MemoryNoteHit>(capacity: Math.Min(limit, 16));
         try
         {
-            foreach (var file in Directory.EnumerateFiles(_notesPath, "*.md"))
+            await EnsureNoteIndexLoadedAsync(ct);
+            var normalizedQuery = NormalizeSearchText(query);
+            if (normalizedQuery.Length == 0)
+                return [];
+
+            var terms = BuildQueryTerms(normalizedQuery);
+            var candidates = _noteIndex.Values
+                .Where(entry => string.IsNullOrEmpty(prefix) || entry.Key.StartsWith(prefix, StringComparison.Ordinal))
+                .Select(entry => new { Entry = entry, Score = ScoreNoteEntry(entry, normalizedQuery, terms) })
+                .Where(static item => item.Score > 0)
+                .OrderByDescending(static item => item.Score)
+                .ThenByDescending(static item => item.Entry.UpdatedAt)
+                .ThenBy(static item => item.Entry.Key, StringComparer.Ordinal)
+                .Take(Math.Min(limit * 4, 64))
+                .ToArray();
+
+            var hits = new List<MemoryNoteHit>(capacity: Math.Min(limit, candidates.Length));
+            foreach (var candidate in candidates)
             {
                 ct.ThrowIfCancellationRequested();
 
-                var encodedKey = Path.GetFileNameWithoutExtension(file);
-                var key = ResolveNoteKey(encodedKey);
-
-                if (!string.IsNullOrEmpty(prefix) && !key.StartsWith(prefix, StringComparison.Ordinal))
-                    continue;
-
-                string content;
-                try
-                {
-                    content = await File.ReadAllTextAsync(file, ct);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                if (content.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0 &&
-                    key.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
-                {
-                    continue;
-                }
-
-                var updatedAt = File.GetLastWriteTimeUtc(file);
-
+                var content = await LoadNoteAsync(candidate.Entry.Key, ct) ?? candidate.Entry.PreviewContent;
                 hits.Add(new MemoryNoteHit
                 {
-                    Key = key,
+                    Key = candidate.Entry.Key,
                     Content = content,
-                    UpdatedAt = new DateTimeOffset(updatedAt, TimeSpan.Zero),
-                    Score = 1.0f
+                    UpdatedAt = candidate.Entry.UpdatedAt,
+                    Score = candidate.Score
                 });
 
                 if (hits.Count >= limit)
                     break;
             }
+
+            return hits;
         }
         catch
         {
             return [];
         }
-
-        return hits;
     }
 
     public async ValueTask SaveBranchAsync(SessionBranch branch, CancellationToken ct)
@@ -587,6 +574,9 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
 
             ct.ThrowIfCancellationRequested();
 
+            if (File.GetLastWriteTimeUtc(file) >= request.SessionExpiresBeforeUtc.UtcDateTime)
+                continue;
+
             string payloadJson;
             try
             {
@@ -698,6 +688,9 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
 
             ct.ThrowIfCancellationRequested();
 
+            if (File.GetLastWriteTimeUtc(file) >= request.BranchExpiresBeforeUtc.UtcDateTime)
+                continue;
+
             string payloadJson;
             try
             {
@@ -794,6 +787,129 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
         return ValueTask.CompletedTask;
     }
 
+    private async ValueTask<IReadOnlyList<string>> ListNotesWithPrefixCoreAsync(string prefix, CancellationToken ct)
+    {
+        try
+        {
+            await EnsureNoteIndexLoadedAsync(ct);
+            return _noteIndex.Keys
+                .Where(key => key.StartsWith(prefix, StringComparison.Ordinal))
+                .OrderBy(static key => key, StringComparer.Ordinal)
+                .ToArray();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private async ValueTask EnsureNoteIndexLoadedAsync(CancellationToken ct)
+    {
+        if (Volatile.Read(ref _noteIndexInitialized) != 0)
+            return;
+
+        await _noteIndexGate.WaitAsync(ct);
+        try
+        {
+            if (_noteIndexInitialized != 0)
+                return;
+
+            _noteIndex.Clear();
+            foreach (var file in Directory.EnumerateFiles(_notesPath, "*.md"))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var encodedKey = Path.GetFileNameWithoutExtension(file);
+                var key = ResolveNoteKey(encodedKey);
+
+                string content;
+                try
+                {
+                    content = await File.ReadAllTextAsync(file, ct);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                var updatedAt = new DateTimeOffset(File.GetLastWriteTimeUtc(file), TimeSpan.Zero);
+                _noteIndex[key] = CreateNoteIndexEntry(key, content, updatedAt);
+            }
+
+            Volatile.Write(ref _noteIndexInitialized, 1);
+        }
+        finally
+        {
+            _noteIndexGate.Release();
+        }
+    }
+
+    private void UpsertNoteIndexEntry(string key, string content, DateTimeOffset updatedAt)
+    {
+        if (Volatile.Read(ref _noteIndexInitialized) == 0)
+            return;
+
+        _noteIndex[key] = CreateNoteIndexEntry(key, content, updatedAt);
+    }
+
+    private static NoteIndexEntry CreateNoteIndexEntry(string key, string content, DateTimeOffset updatedAt)
+    {
+        content ??= "";
+        return new NoteIndexEntry
+        {
+            Key = key,
+            PreviewContent = content.Length <= 4_096 ? content : content[..4_096] + "…",
+            SearchText = NormalizeSearchText($"{key}\n{content}"),
+            UpdatedAt = updatedAt
+        };
+    }
+
+    private static string NormalizeSearchText(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var normalized = value.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .ToLowerInvariant();
+
+        return normalized.Length <= 16_384 ? normalized : normalized[..16_384];
+    }
+
+    private static string[] BuildQueryTerms(string normalizedQuery)
+    {
+        return normalizedQuery
+            .Split([' ', '\n', '\t', ',', '.', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}', '"', '\'', '/', '\\', '-', '_'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(static term => term.Length >= 3)
+            .Distinct(StringComparer.Ordinal)
+            .Take(8)
+            .ToArray();
+    }
+
+    private static float ScoreNoteEntry(NoteIndexEntry entry, string normalizedQuery, IReadOnlyList<string> terms)
+    {
+        var score = 0f;
+        if (entry.SearchText.Contains(normalizedQuery, StringComparison.Ordinal))
+            score += 6f;
+        if (entry.Key.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase))
+            score += 4f;
+
+        foreach (var term in terms)
+        {
+            if (entry.Key.Contains(term, StringComparison.OrdinalIgnoreCase))
+                score += 2f;
+            if (entry.SearchText.Contains(term, StringComparison.Ordinal))
+                score += 1f;
+        }
+
+        if (score <= 0f)
+            return 0f;
+
+        var ageDays = Math.Max(0d, (DateTimeOffset.UtcNow - entry.UpdatedAt).TotalDays);
+        var recencyBoost = (float)Math.Max(0.1d, 1.5d - Math.Min(1.4d, ageDays / 14d));
+        return score + recencyBoost;
+    }
+
     private async ValueTask PersistOriginalNoteKeyAsync(string key, string keyPath, string keyTempPath, CancellationToken ct)
     {
         if (!RequiresKeySidecar(key))
@@ -874,6 +990,14 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
             // If decode fails, return the encoded string (shouldn't happen in normal operation)
             return encoded;
         }
+    }
+
+    private sealed class NoteIndexEntry
+    {
+        public required string Key { get; init; }
+        public required string PreviewContent { get; init; }
+        public required string SearchText { get; init; }
+        public required DateTimeOffset UpdatedAt { get; init; }
     }
 
     // ── ISessionAdminStore ────────────────────────────────────────────────

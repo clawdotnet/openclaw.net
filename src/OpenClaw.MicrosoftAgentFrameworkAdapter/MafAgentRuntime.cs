@@ -43,6 +43,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
     private readonly Func<Session, bool>? _isContractTokenBudgetExceeded;
     private readonly Func<Session, bool>? _isContractRuntimeBudgetExceeded;
     private readonly Action<Session, string>? _appendContractSnapshot;
+    private readonly string? _memoryRecallPrefix;
     private readonly object _skillGate = new();
     private readonly IList<AITool> _mafTools;
     private string _systemPrompt = string.Empty;
@@ -93,6 +94,9 @@ public sealed class MafAgentRuntime : IAgentRuntime
         _isContractTokenBudgetExceeded = context.IsContractTokenBudgetExceeded;
         _isContractRuntimeBudgetExceeded = context.IsContractRuntimeBudgetExceeded;
         _appendContractSnapshot = context.AppendContractSnapshot;
+        var projectId = context.Config.Memory.ProjectId
+            ?? Environment.GetEnvironmentVariable("OPENCLAW_PROJECT");
+        _memoryRecallPrefix = string.IsNullOrWhiteSpace(projectId) ? null : $"project:{projectId.Trim()}:";
         _chatClient = new MafExecutionServiceChatClient(
             context.LlmExecutionService,
             context.RuntimeMetrics,
@@ -507,9 +511,13 @@ public sealed class MafAgentRuntime : IAgentRuntime
         try
         {
             var limit = Math.Clamp(_recall.MaxNotes, 1, 32);
-            var hits = await search.SearchNotesAsync(userMessage, prefix: null, limit, ct);
+            _metrics?.IncrementMemoryRecallSearches();
+            var hits = await search.SearchNotesAsync(userMessage, _memoryRecallPrefix, limit, ct);
+            if (hits.Count == 0 && !string.IsNullOrWhiteSpace(_memoryRecallPrefix))
+                hits = await search.SearchNotesAsync(userMessage, prefix: null, limit, ct);
             if (hits.Count == 0)
                 return;
+            _metrics?.AddMemoryRecallHits(hits.Count);
             var maxChars = Math.Clamp(_recall.MaxChars, 256, 100_000);
             var sb = new StringBuilder();
             sb.AppendLine("[Relevant memory]");
@@ -612,6 +620,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 return;
             }
 
+            _metrics?.IncrementMemoryCompactions();
             session.History.RemoveRange(0, toSummarizeCount);
             session.History.Insert(0, new ChatTurn
             {

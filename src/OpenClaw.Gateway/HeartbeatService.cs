@@ -851,8 +851,13 @@ internal sealed class HeartbeatService
                 if (session is null)
                     continue;
 
-                foreach (var turn in session.History.Where(static turn => string.Equals(turn.Role, "user", StringComparison.OrdinalIgnoreCase)))
-                    texts.Add(($"session:{summary.Id}", turn.Content));
+                foreach (var turn in session.History
+                    .Where(static turn => string.Equals(turn.Role, "user", StringComparison.OrdinalIgnoreCase))
+                    .TakeLast(6))
+                {
+                    if (!string.IsNullOrWhiteSpace(turn.Content))
+                        texts.Add(($"session:{summary.Id}", Truncate(turn.Content, 2_000)));
+                }
             }
         }
 
@@ -861,7 +866,7 @@ internal sealed class HeartbeatService
         {
             var note = await _memoryStore.LoadNoteAsync(key, ct);
             if (!string.IsNullOrWhiteSpace(note))
-                texts.Add(($"note:{key}", note!));
+                texts.Add(($"note:{key}", Truncate(note!, 2_000)));
         }
 
         foreach (var (source, text) in texts)
