@@ -35,6 +35,7 @@ builder.Services.AddOpenClawMcpServices(startup);
 builder.Services.ApplyOpenClawRuntimeProfile(startup);
 #if OPENCLAW_ENABLE_MAF_EXPERIMENT
 builder.Services.AddMicrosoftAgentFrameworkExperiment(builder.Configuration);
+builder.Services.AddOpenClawA2AServices();
 #endif
 #if OPENCLAW_ENABLE_OPENSANDBOX
 builder.Services.AddOpenSandboxIntegration(builder.Configuration);

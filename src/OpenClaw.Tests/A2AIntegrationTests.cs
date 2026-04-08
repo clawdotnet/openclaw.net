@@ -5,6 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using OpenClaw.Core.Models;
+using OpenClaw.Gateway.A2A;
 using OpenClaw.MicrosoftAgentFrameworkAdapter;
 using OpenClaw.MicrosoftAgentFrameworkAdapter.A2A;
 using Xunit;
@@ -99,31 +101,20 @@ public sealed class A2AIntegrationTests
             StreamingResponse = false
         };
 
-        // Execute in background, consume events
-        var executeTask = handler.ExecuteAsync(context, eventQueue, CancellationToken.None);
         var events = new List<StreamResponse>();
-
+        await handler.ExecuteAsync(context, eventQueue, CancellationToken.None);
+        eventQueue.Complete();
         await foreach (var evt in eventQueue)
-        {
             events.Add(evt);
-        }
 
-        await executeTask;
+        var workingUpdate = events.FirstOrDefault(e => e.StatusUpdate?.Status.State == TaskState.Working);
+        var completedUpdate = events.LastOrDefault(e => e.StatusUpdate?.Status.State == TaskState.Completed);
 
-        // Should have at least a working and completed status update
-        Assert.True(events.Count >= 2, $"Expected at least 2 events, got {events.Count}");
-
-        // First event should be working
-        var firstUpdate = events[0].StatusUpdate;
-        Assert.NotNull(firstUpdate);
-        Assert.Equal(TaskState.Working, firstUpdate!.Status.State);
-
-        // Last event should be completed with response text
-        var lastUpdate = events[^1].StatusUpdate;
-        Assert.NotNull(lastUpdate);
-        Assert.Equal(TaskState.Completed, lastUpdate!.Status.State);
-        Assert.NotNull(lastUpdate.Status.Message);
-        Assert.Contains("Hello A2A", lastUpdate.Status.Message!.Parts![0].Text);
+        Assert.NotEmpty(events);
+        Assert.NotNull(completedUpdate);
+        Assert.NotNull(completedUpdate!.StatusUpdate!.Status.Message);
+        Assert.Contains("bridge:Hello A2A", completedUpdate.StatusUpdate.Status.Message!.Parts![0].Text);
+        Assert.NotNull(workingUpdate);
     }
 
     [Fact]
@@ -143,15 +134,11 @@ public sealed class A2AIntegrationTests
             StreamingResponse = false
         };
 
-        var cancelTask = handler.CancelAsync(context, eventQueue, CancellationToken.None);
         var events = new List<StreamResponse>();
-
+        await handler.CancelAsync(context, eventQueue, CancellationToken.None);
+        eventQueue.Complete();
         await foreach (var evt in eventQueue)
-        {
             events.Add(evt);
-        }
-
-        await cancelTask;
 
         Assert.Single(events);
         Assert.NotNull(events[0].StatusUpdate);
@@ -166,8 +153,9 @@ public sealed class A2AIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IOptions<MafOptions>>(_ => Options.Create(CreateOptions()));
-
         services.AddOpenClawA2AServices();
+        services.AddSingleton<IOpenClawA2AExecutionBridge>(new FakeExecutionBridge());
+
 
         using var provider = services.BuildServiceProvider();
 
@@ -178,7 +166,7 @@ public sealed class A2AIntegrationTests
     }
 
     [Fact]
-    public void MafServiceCollectionExtensions_Registers_A2A_When_Enabled()
+    public void MafServiceCollectionExtensions_Parses_A2A_Options_Without_Registering_Endpoints()
     {
         var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -194,31 +182,11 @@ public sealed class A2AIntegrationTests
         services.AddMicrosoftAgentFrameworkExperiment(config);
 
         using var provider = services.BuildServiceProvider();
+        var resolvedOptions = provider.GetRequiredService<IOptions<MafOptions>>().Value;
 
-        // A2A services should be registered
-        Assert.NotNull(provider.GetService<ITaskStore>());
-        Assert.NotNull(provider.GetService<OpenClawA2AAgentHandler>());
-    }
-
-    [Fact]
-    public void MafServiceCollectionExtensions_Skips_A2A_When_Disabled()
-    {
-        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                [$"{MafOptions.SectionName}:EnableA2A"] = "false"
-            })
-            .Build();
-
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton(new OpenClaw.Core.Models.GatewayConfig());
-        services.AddMicrosoftAgentFrameworkExperiment(config);
-
-        using var provider = services.BuildServiceProvider();
-
-        // A2A services should NOT be registered
-        Assert.Null(provider.GetService<ITaskStore>());
+        Assert.True(resolvedOptions.EnableA2A);
+        Assert.Equal("TestA2A", resolvedOptions.AgentName);
+        Assert.Null(provider.GetService<IA2ARequestHandler>());
     }
 
     // ── A2A Server Integration Tests ────────────────────────────────
@@ -241,10 +209,10 @@ public sealed class A2AIntegrationTests
             CancellationToken.None);
 
         Assert.NotNull(response);
-        // Response should contain a task with completed status
         Assert.NotNull(response.Task);
         Assert.NotNull(response.Task!.Id);
         Assert.Equal(TaskState.Completed, response.Task.Status.State);
+        Assert.Contains("bridge:What is 2+2?", response.Task.Status.Message!.Parts![0].Text);
     }
 
     [Fact]
@@ -324,13 +292,10 @@ public sealed class A2AIntegrationTests
 
         var taskId = sendResponse.Task!.Id;
 
-        // Cancel it
-        var cancelResponse = await requestHandler.CancelTaskAsync(
-            new CancelTaskRequest { Id = taskId },
-            CancellationToken.None);
-
-        Assert.NotNull(cancelResponse);
-        Assert.Equal(TaskState.Canceled, cancelResponse!.Status.State);
+        await Assert.ThrowsAsync<A2AException>(() =>
+            requestHandler.CancelTaskAsync(
+                new CancelTaskRequest { Id = taskId },
+                CancellationToken.None));
     }
 
     // ── MafOptions A2A Configuration Tests ──────────────────────────
@@ -424,6 +389,7 @@ public sealed class A2AIntegrationTests
     private static OpenClawA2AAgentHandler CreateHandler()
         => new(
             Options.Create(CreateOptions()),
+            new FakeExecutionBridge(),
             NullLogger<OpenClawA2AAgentHandler>.Instance);
 
     private static ServiceProvider BuildA2AServiceProvider()
@@ -432,7 +398,20 @@ public sealed class A2AIntegrationTests
         services.AddLogging();
         services.AddSingleton<IOptions<MafOptions>>(_ => Options.Create(CreateOptions()));
         services.AddOpenClawA2AServices();
+        services.AddSingleton<IOpenClawA2AExecutionBridge>(new FakeExecutionBridge());
         return services.BuildServiceProvider();
+    }
+
+    private sealed class FakeExecutionBridge : IOpenClawA2AExecutionBridge
+    {
+        public async Task ExecuteStreamingAsync(
+            OpenClawA2AExecutionRequest request,
+            Func<AgentStreamEvent, CancellationToken, ValueTask> onEvent,
+            CancellationToken cancellationToken)
+        {
+            await onEvent(AgentStreamEvent.TextDelta($"bridge:{request.UserText}"), cancellationToken);
+            await onEvent(AgentStreamEvent.Complete(), cancellationToken);
+        }
     }
 }
 #endif

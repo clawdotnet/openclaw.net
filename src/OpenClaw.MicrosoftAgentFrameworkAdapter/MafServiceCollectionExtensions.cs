@@ -2,7 +2,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using OpenClaw.Agent;
-using OpenClaw.MicrosoftAgentFrameworkAdapter.A2A;
 
 namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
 
@@ -18,9 +17,6 @@ public static class MafServiceCollectionExtensions
         services.AddSingleton<MafSessionStateStore>();
         services.AddSingleton<MafAgentFactory>();
         services.AddSingleton<IAgentRuntimeFactory, MafAgentRuntimeFactory>();
-
-        if (options.EnableA2A)
-            services.AddOpenClawA2AServices();
 
         return services;
     }
