@@ -1,8 +1,3 @@
-using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Net;
-using System.Text.Json;
-using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -16,6 +11,12 @@ using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Extensions;
+using OpenClaw.Gateway.Models;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Net;
+using System.Text.Json;
+using System.Threading.Channels;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -103,7 +104,9 @@ public sealed class GatewayWorkersTests
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
         var commandProcessor = new ChatCommandProcessor(sessionManager);
         var runtimeMetrics = new OpenClaw.Core.Observability.RuntimeMetrics();
-        var providerRegistry = new LlmProviderRegistry();
+        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
+        var providerRegistry = new LlmProviderRegistry(); 
         var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
         var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
         var operations = new RuntimeOperationsState
@@ -112,7 +115,8 @@ public sealed class GatewayWorkersTests
             ProviderRegistry = providerRegistry,
             LlmExecution = new GatewayLlmExecutionService(
                 config,
-                providerRegistry,
+                modelProfile,
+                modelselectionPolicy, 
                 providerPolicies,
                 runtimeEvents,
                 runtimeMetrics,
@@ -217,6 +221,8 @@ public sealed class GatewayWorkersTests
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
         var commandProcessor = new ChatCommandProcessor(sessionManager);
         var runtimeMetrics = new OpenClaw.Core.Observability.RuntimeMetrics();
+        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
         var providerRegistry = new LlmProviderRegistry();
         var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
         var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
@@ -237,7 +243,8 @@ public sealed class GatewayWorkersTests
             ProviderRegistry = providerRegistry,
             LlmExecution = new GatewayLlmExecutionService(
                 config,
-                providerRegistry,
+                modelProfile,
+                modelselectionPolicy,
                 providerPolicies,
                 runtimeEvents,
                 runtimeMetrics,
@@ -350,6 +357,8 @@ public sealed class GatewayWorkersTests
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
         var commandProcessor = new ChatCommandProcessor(sessionManager);
         var runtimeMetrics = new OpenClaw.Core.Observability.RuntimeMetrics();
+        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
         var providerRegistry = new LlmProviderRegistry();
         var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
         var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
@@ -359,7 +368,8 @@ public sealed class GatewayWorkersTests
             ProviderRegistry = providerRegistry,
             LlmExecution = new GatewayLlmExecutionService(
                 config,
-                providerRegistry,
+                modelProfile,
+                modelselectionPolicy,
                 providerPolicies,
                 runtimeEvents,
                 runtimeMetrics,
@@ -456,6 +466,8 @@ public sealed class GatewayWorkersTests
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
         var commandProcessor = new ChatCommandProcessor(sessionManager);
         var runtimeMetrics = new OpenClaw.Core.Observability.RuntimeMetrics();
+        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
         var providerRegistry = new LlmProviderRegistry();
         var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
         var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
@@ -465,7 +477,8 @@ public sealed class GatewayWorkersTests
             ProviderRegistry = providerRegistry,
             LlmExecution = new GatewayLlmExecutionService(
                 config,
-                providerRegistry,
+                modelProfile,
+                modelselectionPolicy,
                 providerPolicies,
                 runtimeEvents,
                 runtimeMetrics,
@@ -579,6 +592,8 @@ public sealed class GatewayWorkersTests
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
         var commandProcessor = new ChatCommandProcessor(sessionManager);
         var runtimeMetrics = new OpenClaw.Core.Observability.RuntimeMetrics();
+        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
         var providerRegistry = new LlmProviderRegistry();
         var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
         var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
@@ -588,7 +603,8 @@ public sealed class GatewayWorkersTests
             ProviderRegistry = providerRegistry,
             LlmExecution = new GatewayLlmExecutionService(
                 config,
-                providerRegistry,
+                modelProfile,
+                modelselectionPolicy,
                 providerPolicies,
                 runtimeEvents,
                 runtimeMetrics,
@@ -687,7 +703,10 @@ public sealed class GatewayWorkersTests
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
         var commandProcessor = new ChatCommandProcessor(sessionManager);
         var runtimeMetrics = new OpenClaw.Core.Observability.RuntimeMetrics();
+        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
         var providerRegistry = new LlmProviderRegistry();
+
         var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
         var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
         var operations = new RuntimeOperationsState
@@ -696,7 +715,8 @@ public sealed class GatewayWorkersTests
             ProviderRegistry = providerRegistry,
             LlmExecution = new GatewayLlmExecutionService(
                 config,
-                providerRegistry,
+                modelProfile,
+                modelselectionPolicy,
                 providerPolicies,
                 runtimeEvents,
                 runtimeMetrics,
@@ -791,6 +811,8 @@ public sealed class GatewayWorkersTests
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
         var commandProcessor = new ChatCommandProcessor(sessionManager);
         var runtimeMetrics = new OpenClaw.Core.Observability.RuntimeMetrics();
+        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
         var providerRegistry = new LlmProviderRegistry();
         var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
         var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
@@ -800,7 +822,8 @@ public sealed class GatewayWorkersTests
             ProviderRegistry = providerRegistry,
             LlmExecution = new GatewayLlmExecutionService(
                 config,
-                providerRegistry,
+                modelProfile, 
+                modelselectionPolicy,
                 providerPolicies,
                 runtimeEvents,
                 runtimeMetrics,
@@ -901,6 +924,8 @@ public sealed class GatewayWorkersTests
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
         var commandProcessor = new ChatCommandProcessor(sessionManager);
         var runtimeMetrics = new OpenClaw.Core.Observability.RuntimeMetrics();
+        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
         var providerRegistry = new LlmProviderRegistry();
         var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
         var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
@@ -910,7 +935,8 @@ public sealed class GatewayWorkersTests
             ProviderRegistry = providerRegistry,
             LlmExecution = new GatewayLlmExecutionService(
                 config,
-                providerRegistry,
+                modelProfile,
+                modelselectionPolicy, 
                 providerPolicies,
                 runtimeEvents,
                 runtimeMetrics,
@@ -1006,6 +1032,8 @@ public sealed class GatewayWorkersTests
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
         var commandProcessor = new ChatCommandProcessor(sessionManager);
         var runtimeMetrics = new OpenClaw.Core.Observability.RuntimeMetrics();
+        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
         var providerRegistry = new LlmProviderRegistry();
         var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
         var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
@@ -1015,7 +1043,8 @@ public sealed class GatewayWorkersTests
             ProviderRegistry = providerRegistry,
             LlmExecution = new GatewayLlmExecutionService(
                 config,
-                providerRegistry,
+                modelProfile,
+                modelselectionPolicy,
                 providerPolicies,
                 runtimeEvents,
                 runtimeMetrics,
@@ -1115,6 +1144,8 @@ public sealed class GatewayWorkersTests
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
         var commandProcessor = new ChatCommandProcessor(sessionManager);
         var runtimeMetrics = new OpenClaw.Core.Observability.RuntimeMetrics();
+        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
         var providerRegistry = new LlmProviderRegistry();
         var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
         var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
@@ -1124,7 +1155,8 @@ public sealed class GatewayWorkersTests
             ProviderRegistry = providerRegistry,
             LlmExecution = new GatewayLlmExecutionService(
                 config,
-                providerRegistry,
+                modelProfile,
+                modelselectionPolicy,
                 providerPolicies,
                 runtimeEvents,
                 runtimeMetrics,
@@ -1241,6 +1273,8 @@ public sealed class GatewayWorkersTests
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
         var commandProcessor = new ChatCommandProcessor(sessionManager);
         var runtimeMetrics = new OpenClaw.Core.Observability.RuntimeMetrics();
+        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
         var providerRegistry = new LlmProviderRegistry();
         var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
         var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
@@ -1250,7 +1284,8 @@ public sealed class GatewayWorkersTests
             ProviderRegistry = providerRegistry,
             LlmExecution = new GatewayLlmExecutionService(
                 config,
-                providerRegistry,
+                modelProfile,
+                modelselectionPolicy,
                 providerPolicies,
                 runtimeEvents,
                 runtimeMetrics,
@@ -1352,6 +1387,8 @@ public sealed class GatewayWorkersTests
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
         var commandProcessor = new ChatCommandProcessor(sessionManager);
         var runtimeMetrics = new OpenClaw.Core.Observability.RuntimeMetrics();
+        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
         var providerRegistry = new LlmProviderRegistry();
         var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
         var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
@@ -1361,7 +1398,8 @@ public sealed class GatewayWorkersTests
             ProviderRegistry = providerRegistry,
             LlmExecution = new GatewayLlmExecutionService(
                 config,
-                providerRegistry,
+                modelProfile,
+                modelselectionPolicy,
                 providerPolicies,
                 runtimeEvents,
                 runtimeMetrics,

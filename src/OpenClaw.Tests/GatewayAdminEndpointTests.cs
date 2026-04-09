@@ -1,21 +1,16 @@
-using System.Collections.Concurrent;
-using System.Net;
-using System.Net.Http.Headers;
-using System.Text.RegularExpressions;
-using System.Text;
-using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using ModelContextProtocol.AspNetCore;
 using NSubstitute;
-using OpenClaw.Client;
-using OpenClaw.Companion.Services;
-using OpenClaw.Companion.ViewModels;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Channels;
+using OpenClaw.Client;
+using OpenClaw.Companion.Services;
+using OpenClaw.Companion.ViewModels;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Middleware;
@@ -27,11 +22,17 @@ using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
-using ModelContextProtocol.AspNetCore;
 using OpenClaw.Gateway.Composition;
 using OpenClaw.Gateway.Endpoints;
 using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Mcp;
+using OpenClaw.Gateway.Models;
+using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -1854,6 +1855,8 @@ public sealed class GatewayAdminEndpointTests
         var approvalAuditStore = new ApprovalAuditStore(storagePath, NullLogger<ApprovalAuditStore>.Instance);
         var runtimeMetrics = new RuntimeMetrics();
         var providerUsage = new ProviderUsageTracker();
+        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
         var providerRegistry = new LlmProviderRegistry();
         var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
         var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
@@ -1865,11 +1868,12 @@ public sealed class GatewayAdminEndpointTests
         var pluginHealth = new PluginHealthService(storagePath, NullLogger<PluginHealthService>.Instance);
         var llmExecution = new GatewayLlmExecutionService(
             config,
-            providerRegistry,
+            modelProfile,
+            modelselectionPolicy, 
             providerPolicies,
             runtimeEvents,
             runtimeMetrics,
-            providerUsage,
+            providerUsage, 
             NullLogger<GatewayLlmExecutionService>.Instance);
         var retentionCoordinator = Substitute.For<IMemoryRetentionCoordinator>();
         retentionCoordinator.GetStatusAsync(Arg.Any<CancellationToken>())
