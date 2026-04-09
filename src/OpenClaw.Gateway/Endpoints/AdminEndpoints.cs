@@ -1380,29 +1380,7 @@ internal static class AdminEndpoints
             using var subscription = authEventStore.Subscribe();
             var ct = ctx.RequestAborted;
 
-            // Send current state as first event
-            var currentItems = accountId is not null
-                ? authEventStore.GetLatest(channelId, accountId) is { } currentEvt ? [currentEvt] : []
-                : authEventStore.GetAll(channelId);
-            foreach (var current in currentItems)
-            {
-                var json = JsonSerializer.Serialize(MapChannelAuthStatusItem(current), CoreJsonContext.Default.ChannelAuthStatusItem);
-                await ctx.Response.WriteAsync($"data: {json}\n\n", ct);
-                await ctx.Response.Body.FlushAsync(ct);
-            }
-
-            // Stream subsequent events
-            await foreach (var evt in subscription.Reader.ReadAllAsync(ct))
-            {
-                if (!string.Equals(evt.ChannelId, channelId, StringComparison.Ordinal))
-                    continue;
-                if (accountId is not null && !string.Equals(evt.AccountId, accountId, StringComparison.Ordinal))
-                    continue;
-
-                var evtJson = JsonSerializer.Serialize(MapChannelAuthStatusItem(evt), CoreJsonContext.Default.ChannelAuthStatusItem);
-                await ctx.Response.WriteAsync($"data: {evtJson}\n\n", ct);
-                await ctx.Response.Body.FlushAsync(ct);
-            }
+            await StreamChannelAuthEventsAsync(ctx, subscription, authEventStore, channelId, accountId, ct);
         });
 
         app.MapGet("/admin/channels/whatsapp/auth", (HttpContext ctx, string? accountId) =>
@@ -1439,27 +1417,7 @@ internal static class AdminEndpoints
             using var subscription = authEventStore.Subscribe();
             var ct = ctx.RequestAborted;
 
-            var currentItems = accountId is not null
-                ? authEventStore.GetLatest("whatsapp", accountId) is { } currentEvt ? [currentEvt] : []
-                : authEventStore.GetAll("whatsapp");
-            foreach (var current in currentItems)
-            {
-                var json = JsonSerializer.Serialize(MapChannelAuthStatusItem(current), CoreJsonContext.Default.ChannelAuthStatusItem);
-                await ctx.Response.WriteAsync($"data: {json}\n\n", ct);
-                await ctx.Response.Body.FlushAsync(ct);
-            }
-
-            await foreach (var evt in subscription.Reader.ReadAllAsync(ct))
-            {
-                if (!string.Equals(evt.ChannelId, "whatsapp", StringComparison.Ordinal))
-                    continue;
-                if (accountId is not null && !string.Equals(evt.AccountId, accountId, StringComparison.Ordinal))
-                    continue;
-
-                var evtJson = JsonSerializer.Serialize(MapChannelAuthStatusItem(evt), CoreJsonContext.Default.ChannelAuthStatusItem);
-                await ctx.Response.WriteAsync($"data: {evtJson}\n\n", ct);
-                await ctx.Response.Body.FlushAsync(ct);
-            }
+            await StreamChannelAuthEventsAsync(ctx, subscription, authEventStore, "whatsapp", accountId, ct);
         });
 
         app.MapGet("/admin/channels/whatsapp/auth/qr.svg", (HttpContext ctx, string? accountId) =>
@@ -1738,6 +1696,55 @@ internal static class AdminEndpoints
             AccountId = evt.AccountId,
             UpdatedAtUtc = evt.UpdatedAtUtc
         };
+
+    private static async Task StreamChannelAuthEventsAsync(
+        HttpContext ctx,
+        ChannelAuthEventStore.AuthEventSubscription subscription,
+        ChannelAuthEventStore authEventStore,
+        string channelId,
+        string? accountId,
+        CancellationToken ct)
+    {
+        try
+        {
+            await ctx.Response.WriteAsync(": connected\n\n", ct);
+            await ctx.Response.Body.FlushAsync(ct);
+
+            var currentItems = accountId is not null
+                ? authEventStore.GetLatest(channelId, accountId) is { } currentEvt ? [currentEvt] : []
+                : authEventStore.GetAll(channelId);
+            foreach (var current in currentItems)
+            {
+                await WriteChannelAuthSseEventAsync(ctx, current, ct);
+            }
+
+            await foreach (var evt in subscription.Reader.ReadAllAsync(ct))
+            {
+                if (!string.Equals(evt.ChannelId, channelId, StringComparison.Ordinal))
+                    continue;
+                if (accountId is not null && !string.Equals(evt.AccountId, accountId, StringComparison.Ordinal))
+                    continue;
+
+                await WriteChannelAuthSseEventAsync(ctx, evt, ct);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return;
+        }
+    }
+
+    private static Task WriteChannelAuthSseEventAsync(HttpContext ctx, BridgeChannelAuthEvent evt, CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(MapChannelAuthStatusItem(evt), CoreJsonContext.Default.ChannelAuthStatusItem);
+        return WriteSsePayloadAsync(ctx, $"data: {json}\n\n", ct);
+    }
+
+    private static async Task WriteSsePayloadAsync(HttpContext ctx, string payload, CancellationToken ct)
+    {
+        await ctx.Response.WriteAsync(payload, ct);
+        await ctx.Response.Body.FlushAsync(ct);
+    }
 
     private static WhatsAppSetupResponse BuildWhatsAppSetupResponse(
         GatewayStartupContext startup,
