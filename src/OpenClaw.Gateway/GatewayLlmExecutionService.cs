@@ -44,6 +44,50 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
 
     public GatewayLlmExecutionService(
         GatewayConfig config,
+        LlmProviderRegistry providerRegistry,
+        ProviderPolicyService policyService,
+        RuntimeEventStore eventStore,
+        RuntimeMetrics runtimeMetrics,
+        ProviderUsageTracker providerUsage,
+        ILogger<GatewayLlmExecutionService> logger)
+        : this(
+            config,
+            CreateCompatibilityServices(config, providerRegistry),
+            policyService,
+            eventStore,
+            runtimeMetrics,
+            providerUsage,
+            new PromptCacheCoordinator(config, new PromptCacheTraceWriter(config)),
+            new PromptCacheWarmRegistry(),
+            logger)
+    {
+    }
+
+    public GatewayLlmExecutionService(
+        GatewayConfig config,
+        LlmProviderRegistry providerRegistry,
+        ProviderPolicyService policyService,
+        RuntimeEventStore eventStore,
+        RuntimeMetrics runtimeMetrics,
+        ProviderUsageTracker providerUsage,
+        PromptCacheCoordinator promptCacheCoordinator,
+        PromptCacheWarmRegistry promptCacheWarmRegistry,
+        ILogger<GatewayLlmExecutionService> logger)
+        : this(
+            config,
+            CreateCompatibilityServices(config, providerRegistry),
+            policyService,
+            eventStore,
+            runtimeMetrics,
+            providerUsage,
+            promptCacheCoordinator,
+            promptCacheWarmRegistry,
+            logger)
+    {
+    }
+
+    public GatewayLlmExecutionService(
+        GatewayConfig config,
         ConfiguredModelProfileRegistry modelProfiles,
         IModelSelectionPolicy selectionPolicy,
         ProviderPolicyService policyService,
@@ -61,6 +105,30 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
             providerUsage,
             new PromptCacheCoordinator(config, new PromptCacheTraceWriter(config)),
             new PromptCacheWarmRegistry(),
+            logger)
+    {
+    }
+
+    private GatewayLlmExecutionService(
+        GatewayConfig config,
+        CompatibilityServices compatibilityServices,
+        ProviderPolicyService policyService,
+        RuntimeEventStore eventStore,
+        RuntimeMetrics runtimeMetrics,
+        ProviderUsageTracker providerUsage,
+        PromptCacheCoordinator promptCacheCoordinator,
+        PromptCacheWarmRegistry promptCacheWarmRegistry,
+        ILogger<GatewayLlmExecutionService> logger)
+        : this(
+            config,
+            compatibilityServices.Registry,
+            compatibilityServices.SelectionPolicy,
+            policyService,
+            eventStore,
+            runtimeMetrics,
+            providerUsage,
+            promptCacheCoordinator,
+            promptCacheWarmRegistry,
             logger)
     {
     }

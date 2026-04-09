@@ -412,16 +412,26 @@ public sealed class ModelProfileSelectionTests
             {
                 Provider = "fake-injected-provider",
                 Model = "legacy-model"
+            },
+            Models = new ModelsConfig
+            {
+                DefaultProfile = "default",
+                Profiles = new List<ModelProfileConfig>
+                {
+                    new ModelProfileConfig
+                    {             
+                        Id = "default",
+                        Provider = "fake-injected-provider",
+                        Model = "legacy-model"
+                    }
+                }
             }
         };
-        var modelProfile = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
-        var modelselectionPolicy = new DefaultModelSelectionPolicy(modelProfile);
         var providerRegistry = new LlmProviderRegistry(); 
         providerRegistry.RegisterDefault(config.Llm, new EvaluationChatClient());
         var service = new GatewayLlmExecutionService(
             config,
-            modelProfile,
-            modelselectionPolicy, 
+            providerRegistry,
             new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance),
             new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance),
             new RuntimeMetrics(),
