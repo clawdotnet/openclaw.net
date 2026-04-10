@@ -422,7 +422,15 @@ internal sealed class AdminSettingsService
     }
 
     private static AdminSettingsSnapshot CloneSnapshotWithWhatsApp(AdminSettingsSnapshot source, WhatsAppSetupRequest request)
-        => new()
+    {
+        var webhookVerifyToken = string.IsNullOrWhiteSpace(request.WebhookVerifyToken)
+            ? string.IsNullOrWhiteSpace(request.WebhookVerifyTokenRef) ? "" : source.WhatsAppWebhookVerifyToken
+            : request.WebhookVerifyToken;
+        var webhookAppSecret = ResolveNullableSecretValue(source.WhatsAppWebhookAppSecret, request.WebhookAppSecret, request.WebhookAppSecretRef);
+        var cloudApiToken = ResolveNullableSecretValue(source.WhatsAppCloudApiToken, request.CloudApiToken, request.CloudApiTokenRef);
+        var bridgeToken = ResolveNullableSecretValue(source.WhatsAppBridgeToken, request.BridgeToken, request.BridgeTokenRef);
+
+        return new AdminSettingsSnapshot
         {
             UsageFooter = source.UsageFooter,
             MaxConcurrentSessions = source.MaxConcurrentSessions,
@@ -465,20 +473,29 @@ internal sealed class AdminSettingsService
             WhatsAppType = request.Type,
             WhatsAppWebhookPath = request.WebhookPath,
             WhatsAppWebhookPublicBaseUrl = request.WebhookPublicBaseUrl,
-            WhatsAppWebhookVerifyToken = request.WebhookVerifyToken,
+            WhatsAppWebhookVerifyToken = webhookVerifyToken,
             WhatsAppWebhookVerifyTokenRef = request.WebhookVerifyTokenRef,
-            WhatsAppWebhookAppSecret = request.WebhookAppSecret,
+            WhatsAppWebhookAppSecret = webhookAppSecret,
             WhatsAppWebhookAppSecretRef = request.WebhookAppSecretRef,
-            WhatsAppCloudApiToken = request.CloudApiToken,
+            WhatsAppCloudApiToken = cloudApiToken,
             WhatsAppCloudApiTokenRef = request.CloudApiTokenRef,
             WhatsAppPhoneNumberId = request.PhoneNumberId,
             WhatsAppBusinessAccountId = request.BusinessAccountId,
             WhatsAppBridgeUrl = request.BridgeUrl,
-            WhatsAppBridgeToken = request.BridgeToken,
+            WhatsAppBridgeToken = bridgeToken,
             WhatsAppBridgeTokenRef = request.BridgeTokenRef,
             WhatsAppBridgeSuppressSendExceptions = request.BridgeSuppressSendExceptions,
             WhatsAppFirstPartyWorker = CloneWhatsAppFirstPartyWorker(request.FirstPartyWorker ?? source.WhatsAppFirstPartyWorker)
         };
+    }
+
+    private static string? ResolveNullableSecretValue(string? existingValue, string? requestedValue, string? requestedRef)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedValue))
+            return requestedValue;
+
+        return string.IsNullOrWhiteSpace(requestedRef) ? null : existingValue;
+    }
 
     private static WhatsAppFirstPartyWorkerConfig CloneWhatsAppFirstPartyWorker(WhatsAppFirstPartyWorkerConfig? source)
     {

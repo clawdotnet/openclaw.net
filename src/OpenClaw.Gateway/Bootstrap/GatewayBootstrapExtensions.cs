@@ -130,6 +130,7 @@ internal static class GatewayBootstrapExtensions
         }
         ApplyEnvironmentOverrides(config);
         ApplyExecutionCompatibility(config);
+        NormalizeCodingBackendConfig(config);
         return config;
     }
 
@@ -211,6 +212,16 @@ internal static class GatewayBootstrapExtensions
                 FallbackBackend = mode == ToolSandboxMode.Prefer ? "local" : null,
                 RequireWorkspace = false
             };
+        }
+    }
+
+    private static void NormalizeCodingBackendConfig(GatewayConfig config)
+    {
+        foreach (var backend in config.CodingBackends.EnumerateConfiguredBackends())
+        {
+            backend.ExecutablePath = NormalizeOptionalPath(backend.ExecutablePath);
+            backend.DefaultWorkspacePath = NormalizeOptionalPath(backend.DefaultWorkspacePath);
+            backend.Credentials.TokenFilePath = NormalizeOptionalPath(backend.Credentials.TokenFilePath);
         }
     }
 
@@ -339,6 +350,17 @@ internal static class GatewayBootstrapExtensions
         }
 
         return value;
+    }
+
+    private static string? NormalizeOptionalPath(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var expanded = ExpandPath(value);
+        return Path.IsPathRooted(expanded)
+            ? Path.GetFullPath(expanded)
+            : Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), expanded));
     }
 
     private static async Task<int> RunHealthCheckAsync(GatewayConfig config, bool isNonLoopbackBind)

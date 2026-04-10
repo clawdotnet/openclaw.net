@@ -38,18 +38,36 @@ public sealed class WhatsAppBridgeChannel : IChannelAdapter
 
     public async ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(outbound.Text)) return;
         if (string.IsNullOrWhiteSpace(_config.BridgeUrl))
         {
             _logger.LogWarning("WhatsApp Bridge SendAsync aborted: BridgeUrl is not configured.");
             return;
         }
 
+        var (markers, remainingText) = MediaMarkerProtocol.Extract(outbound.Text);
+        if (markers.Count == 0 && string.IsNullOrWhiteSpace(remainingText))
+            return;
+
+        WhatsAppBridgeAttachmentPayload[]? attachments = null;
+        if (markers.Count > 0)
+        {
+            attachments = new WhatsAppBridgeAttachmentPayload[markers.Count];
+            for (var i = 0; i < markers.Count; i++)
+            {
+                attachments[i] = new WhatsAppBridgeAttachmentPayload
+                {
+                    Type = MarkerKindToMediaType(markers[i].Kind),
+                    Url = markers[i].Value
+                };
+            }
+        }
+
         var payload = new WhatsAppBridgeSendPayload
         {
             To = outbound.RecipientId,
-            Text = outbound.Text,
-            ReplyToMessageId = outbound.ReplyToMessageId
+            Text = remainingText,
+            ReplyToMessageId = outbound.ReplyToMessageId,
+            Attachments = attachments
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, _config.BridgeUrl);
@@ -87,6 +105,17 @@ public sealed class WhatsAppBridgeChannel : IChannelAdapter
         _http.Dispose();
         return ValueTask.CompletedTask;
     }
+
+    private static string MarkerKindToMediaType(MediaMarkerKind kind)
+        => kind switch
+        {
+            MediaMarkerKind.ImageUrl or MediaMarkerKind.ImagePath => "image",
+            MediaMarkerKind.VideoUrl => "video",
+            MediaMarkerKind.AudioUrl => "audio",
+            MediaMarkerKind.DocumentUrl or MediaMarkerKind.FileUrl or MediaMarkerKind.FilePath => "document",
+            MediaMarkerKind.StickerUrl => "sticker",
+            _ => throw new InvalidOperationException($"WhatsApp bridge does not support marker kind '{kind}'.")
+        };
 }
 
 public sealed class WhatsAppBridgeSendPayload
@@ -99,6 +128,35 @@ public sealed class WhatsAppBridgeSendPayload
 
     [JsonPropertyName("reply_to_message_id")]
     public string? ReplyToMessageId { get; set; }
+
+    [JsonPropertyName("attachments")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WhatsAppBridgeAttachmentPayload[]? Attachments { get; set; }
+}
+
+public sealed class WhatsAppBridgeAttachmentPayload
+{
+    [JsonPropertyName("type")]
+    public required string Type { get; set; }
+
+    [JsonPropertyName("url")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Url { get; set; }
+
+    [JsonPropertyName("caption")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Caption { get; set; }
+
+    [JsonPropertyName("mimeType")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? MimeType { get; set; }
+
+    [JsonPropertyName("fileName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FileName { get; set; }
+
+    [JsonPropertyName("gifPlayback")]
+    public bool GifPlayback { get; set; }
 }
 
 public sealed class WhatsAppBridgeInboundPayload
@@ -118,4 +176,6 @@ public sealed class WhatsAppBridgeInboundPayload
 
 [JsonSerializable(typeof(WhatsAppBridgeSendPayload))]
 [JsonSerializable(typeof(WhatsAppBridgeInboundPayload))]
+[JsonSerializable(typeof(WhatsAppBridgeAttachmentPayload))]
+[JsonSerializable(typeof(WhatsAppBridgeAttachmentPayload[]))]
 public partial class WhatsAppBridgeJsonContext : JsonSerializerContext;

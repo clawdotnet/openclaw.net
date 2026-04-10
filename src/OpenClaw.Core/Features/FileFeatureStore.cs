@@ -5,10 +5,13 @@ using OpenClaw.Core.Models;
 
 namespace OpenClaw.Core.Features;
 
-public sealed class FileFeatureStore : IAutomationStore, IUserProfileStore, ILearningProposalStore
+public sealed class FileFeatureStore : IAutomationStore, IUserProfileStore, ILearningProposalStore, IConnectedAccountStore, IBackendSessionStore
 {
     private readonly string _automationsPath;
     private readonly string _automationRunsPath;
+    private readonly string _accountsPath;
+    private readonly string _backendEventsPath;
+    private readonly string _backendSessionsPath;
     private readonly string _profilesPath;
     private readonly string _proposalsPath;
 
@@ -17,11 +20,17 @@ public sealed class FileFeatureStore : IAutomationStore, IUserProfileStore, ILea
         var root = Path.GetFullPath(storagePath);
         _automationsPath = Path.Combine(root, "automations");
         _automationRunsPath = Path.Combine(root, "automation-runs");
+        _accountsPath = Path.Combine(root, "connected-accounts");
+        _backendSessionsPath = Path.Combine(root, "backend-sessions");
+        _backendEventsPath = Path.Combine(root, "backend-session-events");
         _profilesPath = Path.Combine(root, "profiles");
         _proposalsPath = Path.Combine(root, "learning-proposals");
 
         Directory.CreateDirectory(_automationsPath);
         Directory.CreateDirectory(_automationRunsPath);
+        Directory.CreateDirectory(_accountsPath);
+        Directory.CreateDirectory(_backendSessionsPath);
+        Directory.CreateDirectory(_backendEventsPath);
         Directory.CreateDirectory(_profilesPath);
         Directory.CreateDirectory(_proposalsPath);
     }
@@ -68,6 +77,54 @@ public sealed class FileFeatureStore : IAutomationStore, IUserProfileStore, ILea
 
     public ValueTask SaveProposalAsync(LearningProposal proposal, CancellationToken ct)
         => SaveOneAsync(Path.Combine(_proposalsPath, $"{EncodeKey(proposal.Id)}.json"), proposal, CoreJsonContext.Default.LearningProposal, ct);
+
+    public async ValueTask<IReadOnlyList<ConnectedAccount>> ListAccountsAsync(CancellationToken ct)
+        => await LoadAllAsync(_accountsPath, CoreJsonContext.Default.ConnectedAccount, ct);
+
+    public ValueTask<ConnectedAccount?> GetAccountAsync(string accountId, CancellationToken ct)
+        => LoadOneAsync(Path.Combine(_accountsPath, $"{EncodeKey(accountId)}.json"), CoreJsonContext.Default.ConnectedAccount, ct);
+
+    public ValueTask SaveAccountAsync(ConnectedAccount account, CancellationToken ct)
+        => SaveOneAsync(Path.Combine(_accountsPath, $"{EncodeKey(account.Id)}.json"), account, CoreJsonContext.Default.ConnectedAccount, ct);
+
+    public ValueTask DeleteAccountAsync(string accountId, CancellationToken ct)
+        => DeleteOneAsync(Path.Combine(_accountsPath, $"{EncodeKey(accountId)}.json"));
+
+    public async ValueTask<IReadOnlyList<BackendSessionRecord>> ListBackendSessionsAsync(string? backendId, CancellationToken ct)
+    {
+        var all = await LoadAllAsync(_backendSessionsPath, CoreJsonContext.Default.BackendSessionRecord, ct);
+        return string.IsNullOrWhiteSpace(backendId)
+            ? all
+            : all.Where(item => string.Equals(item.BackendId, backendId, StringComparison.OrdinalIgnoreCase)).ToArray();
+    }
+
+    public ValueTask<BackendSessionRecord?> GetBackendSessionAsync(string sessionId, CancellationToken ct)
+        => LoadOneAsync(Path.Combine(_backendSessionsPath, $"{EncodeKey(sessionId)}.json"), CoreJsonContext.Default.BackendSessionRecord, ct);
+
+    public ValueTask SaveBackendSessionAsync(BackendSessionRecord session, CancellationToken ct)
+        => SaveOneAsync(Path.Combine(_backendSessionsPath, $"{EncodeKey(session.SessionId)}.json"), session, CoreJsonContext.Default.BackendSessionRecord, ct);
+
+    public ValueTask DeleteBackendSessionAsync(string sessionId, CancellationToken ct)
+        => DeleteOneAsync(Path.Combine(_backendSessionsPath, $"{EncodeKey(sessionId)}.json"));
+
+    public async ValueTask AppendBackendEventAsync(BackendEvent evt, CancellationToken ct)
+    {
+        var path = Path.Combine(_backendEventsPath, $"{EncodeKey(evt.SessionId)}.json");
+        var events = await LoadOneAsync(path, CoreJsonContext.Default.ListBackendEvent, ct) ?? [];
+        events.Add(evt);
+        await SaveOneAsync(path, events, CoreJsonContext.Default.ListBackendEvent, ct);
+    }
+
+    public async ValueTask<IReadOnlyList<BackendEvent>> ListBackendEventsAsync(string sessionId, long afterSequence, int limit, CancellationToken ct)
+    {
+        var path = Path.Combine(_backendEventsPath, $"{EncodeKey(sessionId)}.json");
+        var events = await LoadOneAsync(path, CoreJsonContext.Default.ListBackendEvent, ct) ?? [];
+        return events
+            .Where(item => item.Sequence > afterSequence)
+            .OrderBy(item => item.Sequence)
+            .Take(Math.Max(1, limit))
+            .ToArray();
+    }
 
     private static async ValueTask<IReadOnlyList<T>> LoadAllAsync<T>(
         string directory,

@@ -7,6 +7,7 @@ public sealed record InboundMessage
 {
     public required string ChannelId { get; init; }
     public required string SenderId { get; init; }
+    public string? AccountId { get; init; }
     public string? SessionId { get; init; }
     public string? CronJobName { get; init; }
     public string? Type { get; init; }
@@ -43,6 +44,7 @@ public sealed record OutboundMessage
     public required string ChannelId { get; init; }
     public required string RecipientId { get; init; }
     public required string Text { get; init; }
+    public string? AccountId { get; init; }
     public string? SessionId { get; init; }
     public string? CronJobName { get; init; }
     public string? Subject { get; init; }

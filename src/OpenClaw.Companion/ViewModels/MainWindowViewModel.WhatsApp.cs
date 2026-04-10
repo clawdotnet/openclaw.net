@@ -16,6 +16,7 @@ public sealed partial class MainWindowViewModel
 {
     private readonly Func<string, string?, OpenClawHttpClient> _adminClientFactory;
     private CancellationTokenSource? _whatsAppAuthCts;
+    private readonly object _whatsAppAuthStatesLock = new();
     private readonly Dictionary<string, ChannelAuthStatusItem> _whatsAppAuthStates = new(StringComparer.Ordinal);
 
     public IReadOnlyList<string> WhatsAppTypeOptions { get; } = ["official", "bridge", "first_party_worker"];
@@ -252,9 +253,12 @@ public sealed partial class MainWindowViewModel
         WhatsAppWarnings = string.Join(Environment.NewLine, response.Warnings ?? []);
         WhatsAppValidationErrors = string.Join(Environment.NewLine, response.ValidationErrors ?? []);
 
-        _whatsAppAuthStates.Clear();
-        foreach (var item in response.AuthStates)
-            _whatsAppAuthStates[BuildAuthKey(item)] = item;
+        lock (_whatsAppAuthStatesLock)
+        {
+            _whatsAppAuthStates.Clear();
+            foreach (var item in response.AuthStates)
+                _whatsAppAuthStates[BuildAuthKey(item)] = item;
+        }
         RefreshWhatsAppAuthUi();
     }
 
@@ -286,7 +290,10 @@ public sealed partial class MainWindowViewModel
 
                 await client.StreamChannelAuthAsync("whatsapp", accountId: null, item =>
                 {
-                    _whatsAppAuthStates[BuildAuthKey(item)] = item;
+                    lock (_whatsAppAuthStatesLock)
+                    {
+                        _whatsAppAuthStates[BuildAuthKey(item)] = item;
+                    }
                     Dispatcher.UIThread.Post(RefreshWhatsAppAuthUi);
                 }, ct);
             }
@@ -312,9 +319,13 @@ public sealed partial class MainWindowViewModel
 
     private void RefreshWhatsAppAuthUi()
     {
-        var items = _whatsAppAuthStates.Values
-            .OrderByDescending(static item => item.UpdatedAtUtc)
-            .ToArray();
+        ChannelAuthStatusItem[] items;
+        lock (_whatsAppAuthStatesLock)
+        {
+            items = _whatsAppAuthStates.Values
+                .OrderByDescending(static item => item.UpdatedAtUtc)
+                .ToArray();
+        }
         WhatsAppAuthSummary = items.Length == 0
             ? "No live WhatsApp auth state."
             : string.Join(Environment.NewLine, items.Select(static item =>

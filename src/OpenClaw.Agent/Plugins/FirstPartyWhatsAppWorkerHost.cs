@@ -108,8 +108,11 @@ public sealed class FirstPartyWhatsAppWorkerHost : IAsyncDisposable
         return config.Driver?.ToLowerInvariant() switch
         {
             "baileys" => ResolveBaileysLaunchSpec(config),
+            "baileys_csharp" => ResolveBaileysLaunchSpec(config),
             "whatsmeow" => ResolveWhatsmeowLaunchSpec(config),
-            _ => ResolveDotNetWorkerLaunchSpec(config)
+            "simulated" => ResolveDotNetWorkerLaunchSpec(config),
+            _ => throw new InvalidOperationException(
+                $"Unsupported WhatsApp first-party worker driver '{config.Driver}'. Expected one of: baileys, whatsmeow, simulated.")
         };
     }
 

@@ -29,6 +29,7 @@ builder.AddOpenClawObservability();
 builder.Services.AddOpenClawCoreServices(startup);
 builder.Services.AddOpenClawChannelServices(startup);
 builder.Services.AddOpenClawToolServices(startup);
+builder.Services.AddOpenClawBackendServices(startup);
 builder.Services.AddOpenClawSecurityServices(startup);
 builder.Services.AddOpenClawMcpServices(startup);
 builder.Services.ApplyOpenClawRuntimeProfile(startup);

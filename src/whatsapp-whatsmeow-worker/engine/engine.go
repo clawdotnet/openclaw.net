@@ -37,6 +37,7 @@ type AccountConfig struct {
 type SendRequest struct {
 	ChannelID        string            `json:"channelId"`
 	RecipientID      string            `json:"recipientId"`
+	AccountID        string            `json:"accountId"`
 	Text             string            `json:"text"`
 	SessionID        string            `json:"sessionId"`
 	ReplyToMessageID string            `json:"replyToMessageId"`
@@ -58,6 +59,7 @@ type MediaAttachment struct {
 type TypingRequest struct {
 	ChannelID   string `json:"channelId"`
 	RecipientID string `json:"recipientId"`
+	AccountID   string `json:"accountId"`
 	IsTyping    bool   `json:"isTyping"`
 }
 
@@ -65,6 +67,7 @@ type TypingRequest struct {
 type ReceiptRequest struct {
 	ChannelID   string `json:"channelId"`
 	MessageID   string `json:"messageId"`
+	AccountID   string `json:"accountId"`
 	RemoteJid   string `json:"remoteJid"`
 	Participant string `json:"participant"`
 }
@@ -73,6 +76,7 @@ type ReceiptRequest struct {
 type ReactionRequest struct {
 	ChannelID   string `json:"channelId"`
 	MessageID   string `json:"messageId"`
+	AccountID   string `json:"accountId"`
 	Emoji       string `json:"emoji"`
 	RemoteJid   string `json:"remoteJid"`
 	Participant string `json:"participant"`
@@ -145,25 +149,37 @@ func (e *Engine) Stop() {
 
 // Send routes a message to the appropriate session.
 func (e *Engine) Send(ctx context.Context, req *SendRequest) error {
-	session := e.resolveSession(req.RecipientID)
+	session, err := e.resolveSession(req.AccountID, req.RecipientID)
+	if err != nil {
+		return err
+	}
 	return session.Send(ctx, req)
 }
 
 // SendTyping sends a typing indicator.
 func (e *Engine) SendTyping(ctx context.Context, req *TypingRequest) error {
-	session := e.resolveSession(req.RecipientID)
+	session, err := e.resolveSession(req.AccountID, req.RecipientID)
+	if err != nil {
+		return err
+	}
 	return session.SendTyping(ctx, req)
 }
 
 // SendReadReceipt marks a message as read.
 func (e *Engine) SendReadReceipt(ctx context.Context, req *ReceiptRequest) error {
-	session := e.defaultSession()
+	session, err := e.resolveSession(req.AccountID, req.RemoteJid)
+	if err != nil {
+		return err
+	}
 	return session.SendReadReceipt(ctx, req)
 }
 
 // SendReaction sends an emoji reaction.
 func (e *Engine) SendReaction(ctx context.Context, req *ReactionRequest) error {
-	session := e.defaultSession()
+	session, err := e.resolveSession(req.AccountID, req.RemoteJid)
+	if err != nil {
+		return err
+	}
 	return session.SendReaction(ctx, req)
 }
 
@@ -195,13 +211,26 @@ func ParseJSON[T any](raw *json.RawMessage) (*T, error) {
 	return &v, nil
 }
 
-func (e *Engine) resolveSession(recipientJid string) *Session {
+func (e *Engine) resolveSession(accountID string, recipientJid string) (*Session, error) {
+	if accountID != "" {
+		if s, ok := e.sessions[accountID]; ok {
+			return s, nil
+		}
+		return nil, fmt.Errorf("unknown WhatsApp account %q", accountID)
+	}
+
 	if len(e.sessions) == 1 {
 		for _, s := range e.sessions {
-			return s
+			return s, nil
 		}
 	}
-	return e.defaultSession()
+
+	session := e.defaultSession()
+	if session == nil {
+		return nil, fmt.Errorf("no WhatsApp sessions are configured")
+	}
+
+	return session, nil
 }
 
 func (e *Engine) defaultSession() *Session {

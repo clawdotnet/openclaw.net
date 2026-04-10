@@ -111,8 +111,6 @@ internal sealed class WhatsAppWebhookHandler
                         if (message.Type != "text" || message.Text is null || string.IsNullOrWhiteSpace(message.From))
                             continue;
 
-                        await _recentSenders.RecordAsync("whatsapp", message.From, senderName: null, ct);
-
                         var effective = _allowlists.GetEffective("whatsapp", new ChannelAllowlistFile
                         {
                             AllowedFrom = _config.AllowedFromIds
@@ -135,6 +133,8 @@ internal sealed class WhatsAppWebhookHandler
                                 }
                             }
                         }
+
+                        await _recentSenders.RecordAsync("whatsapp", message.From, senderName, ct);
 
                         var text = message.Text.Body;
                         if (text.Length > _config.MaxInboundChars)

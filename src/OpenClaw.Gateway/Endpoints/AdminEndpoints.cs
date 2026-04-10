@@ -1373,36 +1373,7 @@ internal static class AdminEndpoints
                 return;
             }
 
-            ctx.Response.ContentType = "text/event-stream";
-            ctx.Response.Headers.CacheControl = "no-cache";
-            ctx.Response.Headers.Connection = "keep-alive";
-
-            using var subscription = authEventStore.Subscribe();
-            var ct = ctx.RequestAborted;
-
-            // Send current state as first event
-            var currentItems = accountId is not null
-                ? authEventStore.GetLatest(channelId, accountId) is { } currentEvt ? [currentEvt] : []
-                : authEventStore.GetAll(channelId);
-            foreach (var current in currentItems)
-            {
-                var json = JsonSerializer.Serialize(MapChannelAuthStatusItem(current), CoreJsonContext.Default.ChannelAuthStatusItem);
-                await ctx.Response.WriteAsync($"data: {json}\n\n", ct);
-                await ctx.Response.Body.FlushAsync(ct);
-            }
-
-            // Stream subsequent events
-            await foreach (var evt in subscription.Reader.ReadAllAsync(ct))
-            {
-                if (!string.Equals(evt.ChannelId, channelId, StringComparison.Ordinal))
-                    continue;
-                if (accountId is not null && !string.Equals(evt.AccountId, accountId, StringComparison.Ordinal))
-                    continue;
-
-                var evtJson = JsonSerializer.Serialize(MapChannelAuthStatusItem(evt), CoreJsonContext.Default.ChannelAuthStatusItem);
-                await ctx.Response.WriteAsync($"data: {evtJson}\n\n", ct);
-                await ctx.Response.Body.FlushAsync(ct);
-            }
+            await StreamChannelAuthEventsAsync(ctx, authEventStore, channelId, accountId);
         });
 
         app.MapGet("/admin/channels/whatsapp/auth", (HttpContext ctx, string? accountId) =>
@@ -1432,34 +1403,7 @@ internal static class AdminEndpoints
                 return;
             }
 
-            ctx.Response.ContentType = "text/event-stream";
-            ctx.Response.Headers.CacheControl = "no-cache";
-            ctx.Response.Headers.Connection = "keep-alive";
-
-            using var subscription = authEventStore.Subscribe();
-            var ct = ctx.RequestAborted;
-
-            var currentItems = accountId is not null
-                ? authEventStore.GetLatest("whatsapp", accountId) is { } currentEvt ? [currentEvt] : []
-                : authEventStore.GetAll("whatsapp");
-            foreach (var current in currentItems)
-            {
-                var json = JsonSerializer.Serialize(MapChannelAuthStatusItem(current), CoreJsonContext.Default.ChannelAuthStatusItem);
-                await ctx.Response.WriteAsync($"data: {json}\n\n", ct);
-                await ctx.Response.Body.FlushAsync(ct);
-            }
-
-            await foreach (var evt in subscription.Reader.ReadAllAsync(ct))
-            {
-                if (!string.Equals(evt.ChannelId, "whatsapp", StringComparison.Ordinal))
-                    continue;
-                if (accountId is not null && !string.Equals(evt.AccountId, accountId, StringComparison.Ordinal))
-                    continue;
-
-                var evtJson = JsonSerializer.Serialize(MapChannelAuthStatusItem(evt), CoreJsonContext.Default.ChannelAuthStatusItem);
-                await ctx.Response.WriteAsync($"data: {evtJson}\n\n", ct);
-                await ctx.Response.Body.FlushAsync(ct);
-            }
+            await StreamChannelAuthEventsAsync(ctx, authEventStore, "whatsapp", accountId);
         });
 
         app.MapGet("/admin/channels/whatsapp/auth/qr.svg", (HttpContext ctx, string? accountId) =>
@@ -1769,6 +1713,7 @@ internal static class AdminEndpoints
             warnings.Add(pluginTarget.Warning);
         if (readiness is not null)
             warnings.AddRange(readiness.Warnings);
+        warnings.Add("WhatsApp secrets are redacted on read. Leave secret values blank to preserve them, or clear both the value and its corresponding *Ref field to remove them.");
 
         var restartSupported = runtime.ChannelAdapters.TryGetValue("whatsapp", out var adapter)
             && adapter is IRestartableChannelAdapter;
@@ -1783,17 +1728,21 @@ internal static class AdminEndpoints
             DmPolicy = snapshot.WhatsAppDmPolicy,
             WebhookPath = snapshot.WhatsAppWebhookPath,
             WebhookPublicBaseUrl = snapshot.WhatsAppWebhookPublicBaseUrl,
-            WebhookVerifyToken = snapshot.WhatsAppWebhookVerifyToken,
+            WebhookVerifyToken = "",
+            WebhookVerifyTokenConfigured = HasConfiguredSecretValue(snapshot.WhatsAppWebhookVerifyToken, snapshot.WhatsAppWebhookVerifyTokenRef),
             WebhookVerifyTokenRef = snapshot.WhatsAppWebhookVerifyTokenRef,
             ValidateSignature = snapshot.WhatsAppValidateSignature,
-            WebhookAppSecret = snapshot.WhatsAppWebhookAppSecret,
+            WebhookAppSecret = null,
+            WebhookAppSecretConfigured = HasConfiguredSecretValue(snapshot.WhatsAppWebhookAppSecret, snapshot.WhatsAppWebhookAppSecretRef),
             WebhookAppSecretRef = snapshot.WhatsAppWebhookAppSecretRef,
-            CloudApiToken = snapshot.WhatsAppCloudApiToken,
+            CloudApiToken = null,
+            CloudApiTokenConfigured = HasConfiguredSecretValue(snapshot.WhatsAppCloudApiToken, snapshot.WhatsAppCloudApiTokenRef),
             CloudApiTokenRef = snapshot.WhatsAppCloudApiTokenRef,
             PhoneNumberId = snapshot.WhatsAppPhoneNumberId,
             BusinessAccountId = snapshot.WhatsAppBusinessAccountId,
             BridgeUrl = snapshot.WhatsAppBridgeUrl,
-            BridgeToken = snapshot.WhatsAppBridgeToken,
+            BridgeToken = null,
+            BridgeTokenConfigured = HasConfiguredSecretValue(snapshot.WhatsAppBridgeToken, snapshot.WhatsAppBridgeTokenRef),
             BridgeTokenRef = snapshot.WhatsAppBridgeTokenRef,
             BridgeSuppressSendExceptions = snapshot.WhatsAppBridgeSuppressSendExceptions,
             FirstPartyWorker = snapshot.WhatsAppFirstPartyWorker,
@@ -1961,7 +1910,7 @@ internal static class AdminEndpoints
            {
              "type": "object",
              "properties": {
-               "driver": { "type": "string", "enum": ["baileys_csharp", "simulated"] },
+               "driver": { "type": "string", "enum": ["baileys", "baileys_csharp", "whatsmeow", "simulated"] },
                "executablePath": { "type": "string" },
                "workingDirectory": { "type": "string" },
                "storagePath": { "type": "string" },
@@ -2258,6 +2207,63 @@ internal static class AdminEndpoints
            || key.Contains("password", StringComparison.OrdinalIgnoreCase)
            || key.Contains("authorization", StringComparison.OrdinalIgnoreCase)
            || key.Contains("apikey", StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasConfiguredSecretValue(string? value, string? valueRef)
+        => !string.IsNullOrWhiteSpace(SecretResolver.Resolve(valueRef) ?? value);
+
+    internal static async Task StreamChannelAuthEventsAsync(
+        HttpContext ctx,
+        ChannelAuthEventStore authEventStore,
+        string channelId,
+        string? accountId)
+    {
+        ctx.Response.ContentType = "text/event-stream";
+        ctx.Response.Headers.CacheControl = "no-cache";
+        ctx.Response.Headers.Connection = "keep-alive";
+
+        using var subscription = authEventStore.Subscribe();
+        var ct = ctx.RequestAborted;
+
+        try
+        {
+            await WriteSseCommentAsync(ctx, "stream-open", ct);
+
+            var currentItems = accountId is not null
+                ? authEventStore.GetLatest(channelId, accountId) is { } currentEvt ? [currentEvt] : []
+                : authEventStore.GetAll(channelId);
+            foreach (var current in currentItems)
+            {
+                await WriteChannelAuthEventAsync(ctx, current, ct);
+            }
+
+            await foreach (var evt in subscription.Reader.ReadAllAsync(ct))
+            {
+                if (!string.Equals(evt.ChannelId, channelId, StringComparison.Ordinal))
+                    continue;
+                if (accountId is not null && !string.Equals(evt.AccountId, accountId, StringComparison.Ordinal))
+                    continue;
+
+                await WriteChannelAuthEventAsync(ctx, evt, ct);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // RequestAborted is the normal shutdown path for disconnected SSE clients.
+        }
+    }
+
+    private static async Task WriteChannelAuthEventAsync(HttpContext ctx, BridgeChannelAuthEvent evt, CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(MapChannelAuthStatusItem(evt), CoreJsonContext.Default.ChannelAuthStatusItem);
+        await ctx.Response.WriteAsync($"data: {json}\n\n", cancellationToken);
+        await ctx.Response.Body.FlushAsync(cancellationToken);
+    }
+
+    private static async Task WriteSseCommentAsync(HttpContext ctx, string comment, CancellationToken cancellationToken)
+    {
+        await ctx.Response.WriteAsync($": {comment}\n\n", cancellationToken);
+        await ctx.Response.Body.FlushAsync(cancellationToken);
+    }
 
     private readonly record struct JsonBodyReadResult<T>(
         T? Value,

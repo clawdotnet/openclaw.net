@@ -45,6 +45,7 @@ export function mapInboundMessage(msg, mediaInfo, accountId) {
 
   const result = {
     senderId: jidNormalizedUser(senderId),
+    accountId,
     senderName,
     text,
     sessionId: isGroup ? `whatsapp:group:${from}` : jidNormalizedUser(senderId),

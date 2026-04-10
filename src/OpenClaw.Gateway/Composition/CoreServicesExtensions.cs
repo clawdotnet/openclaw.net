@@ -139,6 +139,8 @@ internal static class CoreServicesExtensions
             services.AddSingleton<IAutomationStore>(sp => sp.GetRequiredService<SqliteFeatureStore>());
             services.AddSingleton<IUserProfileStore>(sp => sp.GetRequiredService<SqliteFeatureStore>());
             services.AddSingleton<ILearningProposalStore>(sp => sp.GetRequiredService<SqliteFeatureStore>());
+            services.AddSingleton<IConnectedAccountStore>(sp => sp.GetRequiredService<SqliteFeatureStore>());
+            services.AddSingleton<IBackendSessionStore>(sp => sp.GetRequiredService<SqliteFeatureStore>());
             return;
         }
 
@@ -146,6 +148,8 @@ internal static class CoreServicesExtensions
         services.AddSingleton<IAutomationStore>(sp => sp.GetRequiredService<FileFeatureStore>());
         services.AddSingleton<IUserProfileStore>(sp => sp.GetRequiredService<FileFeatureStore>());
         services.AddSingleton<ILearningProposalStore>(sp => sp.GetRequiredService<FileFeatureStore>());
+        services.AddSingleton<IConnectedAccountStore>(sp => sp.GetRequiredService<FileFeatureStore>());
+        services.AddSingleton<IBackendSessionStore>(sp => sp.GetRequiredService<FileFeatureStore>());
     }
 
     private static string ResolveSqliteDbPath(GatewayConfig config)

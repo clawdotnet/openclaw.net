@@ -107,6 +107,7 @@ public sealed class WhatsAppWorkerService : IAsyncDisposable
         {
             channelId = ChannelId,
             senderId = message.SenderId,
+            accountId = message.AccountId,
             senderName = message.SenderName,
             text = message.Text,
             sessionId = message.SessionId,
@@ -153,7 +154,8 @@ public sealed class WhatsAppWorkerService : IAsyncDisposable
     private static IWhatsAppWorkerEngine CreateEngine(WhatsAppFirstPartyWorkerConfig config)
         => string.Equals(config.Driver, "simulated", StringComparison.OrdinalIgnoreCase)
             ? new SimulatedWhatsAppWorkerEngine(config)
-            : new UnavailableBaileysWorkerEngine(config);
+            : throw new NotSupportedException(
+                $"The in-process WhatsApp worker only supports Driver='simulated'. Driver='{config.Driver}' must be launched through the first-party worker host.");
 
     private IWhatsAppWorkerEngine EnsureEngine()
         => _engine ?? throw new InvalidOperationException("Worker was not initialized.");
@@ -174,6 +176,7 @@ public sealed class WhatsAppWorkerService : IAsyncDisposable
 public sealed class WhatsAppWorkerInboundMessage
 {
     public required string SenderId { get; init; }
+    public string? AccountId { get; init; }
     public string? SenderName { get; init; }
     public string Text { get; init; } = "";
     public string? SessionId { get; init; }
@@ -318,6 +321,7 @@ internal sealed class SimulatedWhatsAppWorkerEngine : IWhatsAppWorkerEngine
             await handler(new WhatsAppWorkerInboundMessage
             {
                 SenderId = senderId!,
+                AccountId = element.TryGetProperty("accountId", out var accountIdProp) ? accountIdProp.GetString() : null,
                 SenderName = element.TryGetProperty("senderName", out var senderNameProp) ? senderNameProp.GetString() : null,
                 Text = element.TryGetProperty("text", out var textProp) ? textProp.GetString() ?? "" : "",
                 SessionId = element.TryGetProperty("sessionId", out var sessionIdProp) ? sessionIdProp.GetString() : null,

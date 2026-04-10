@@ -98,6 +98,33 @@ public sealed class ConfigValidatorTests
         Assert.Contains(errors, e => e.Contains("WhatsApp.ValidateSignature", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("baileys")]
+    [InlineData("baileys_csharp")]
+    [InlineData("whatsmeow")]
+    [InlineData("simulated")]
+    public void Validate_WhatsAppFirstPartyWorkerSupportedDrivers_AreAccepted(string driver)
+    {
+        var config = new GatewayConfig
+        {
+            Channels = new ChannelsConfig
+            {
+                WhatsApp = new WhatsAppChannelConfig
+                {
+                    Type = "first_party_worker",
+                    FirstPartyWorker = new WhatsAppFirstPartyWorkerConfig
+                    {
+                        Driver = driver,
+                        Accounts = [new WhatsAppWorkerAccountConfig { AccountId = "default", SessionPath = "./session/default" }]
+                    }
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.DoesNotContain(errors, error => error.Contains("FirstPartyWorker.Driver", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Validate_TeamsEnabledWithoutCredentials_ReturnsErrors()
     {

@@ -39,22 +39,18 @@ public sealed class WhatsAppChannel : IChannelAdapter
 
     public async ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(outbound.Text)) return;
         if (string.IsNullOrWhiteSpace(_config.PhoneNumberId))
         {
             _logger.LogWarning("WhatsApp SendAsync aborted: PhoneNumberId is not configured.");
             return;
         }
 
+        var (markers, remainingText) = MediaMarkerProtocol.Extract(outbound.Text);
+        if (markers.Count == 0 && string.IsNullOrWhiteSpace(remainingText))
+            return;
+
         var url = $"https://graph.facebook.com/v21.0/{_config.PhoneNumberId}/messages";
-        var payload = new WhatsAppSendPayload
-        {
-            To = outbound.RecipientId,
-            Text = new WhatsAppTextObj { Body = outbound.Text },
-            Context = string.IsNullOrWhiteSpace(outbound.ReplyToMessageId) 
-                ? null 
-                : new WhatsAppContextObj { MessageId = outbound.ReplyToMessageId }
-        };
+        var payload = BuildPayload(outbound, markers, remainingText);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiToken);
@@ -69,6 +65,7 @@ public sealed class WhatsAppChannel : IChannelAdapter
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send WhatsApp message to {RecipientId}", outbound.RecipientId);
+            throw;
         }
     }
 
@@ -84,6 +81,92 @@ public sealed class WhatsAppChannel : IChannelAdapter
         _http.Dispose();
         return ValueTask.CompletedTask;
     }
+
+    private WhatsAppSendPayload BuildPayload(OutboundMessage outbound, IReadOnlyList<MediaMarker> markers, string remainingText)
+    {
+        var payload = new WhatsAppSendPayload
+        {
+            To = outbound.RecipientId,
+            Context = string.IsNullOrWhiteSpace(outbound.ReplyToMessageId)
+                ? null
+                : new WhatsAppContextObj { MessageId = outbound.ReplyToMessageId }
+        };
+
+        if (markers.Count == 0)
+        {
+            payload.Type = "text";
+            payload.Text = new WhatsAppTextObj { Body = remainingText };
+            return payload;
+        }
+
+        if (markers.Count > 1)
+            _logger.LogWarning("WhatsApp Cloud API only supports one outbound media attachment per message. Using the first attachment for {RecipientId}.", outbound.RecipientId);
+
+        var marker = markers[0];
+        payload.Type = MarkerKindToMessageType(marker.Kind);
+        var media = new WhatsAppMediaObj
+        {
+            Link = MarkerKindToLink(marker),
+            Caption = SupportsCaption(payload.Type) && !string.IsNullOrWhiteSpace(remainingText) ? remainingText : null,
+            Filename = payload.Type is "document" && marker.Kind is MediaMarkerKind.FileUrl or MediaMarkerKind.DocumentUrl
+                ? GetFileName(marker.Value)
+                : null
+        };
+
+        switch (payload.Type)
+        {
+            case "image":
+                payload.Image = media;
+                break;
+            case "video":
+                payload.Video = media;
+                break;
+            case "audio":
+                payload.Audio = media;
+                break;
+            case "document":
+                payload.Document = media;
+                break;
+            case "sticker":
+                payload.Sticker = media;
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported WhatsApp media type '{payload.Type}'.");
+        }
+
+        return payload;
+    }
+
+    private static string MarkerKindToMessageType(MediaMarkerKind kind)
+        => kind switch
+        {
+            MediaMarkerKind.ImageUrl or MediaMarkerKind.ImagePath => "image",
+            MediaMarkerKind.VideoUrl => "video",
+            MediaMarkerKind.AudioUrl => "audio",
+            MediaMarkerKind.DocumentUrl or MediaMarkerKind.FileUrl or MediaMarkerKind.FilePath => "document",
+            MediaMarkerKind.StickerUrl => "sticker",
+            _ => throw new InvalidOperationException($"WhatsApp Cloud API does not support marker kind '{kind}'.")
+        };
+
+    private static string MarkerKindToLink(MediaMarker marker)
+    {
+        if (Uri.TryCreate(marker.Value, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            return marker.Value;
+
+        throw new InvalidOperationException($"WhatsApp Cloud API outbound media markers must use absolute http(s) URLs. Unsupported value: '{marker.Value}'.");
+    }
+
+    private static bool SupportsCaption(string messageType)
+        => messageType is "image" or "video" or "document";
+
+    private static string? GetFileName(string value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+            return null;
+
+        var fileName = Path.GetFileName(uri.LocalPath);
+        return string.IsNullOrWhiteSpace(fileName) ? null : fileName;
+    }
 }
 
 public sealed class WhatsAppSendPayload
@@ -95,6 +178,7 @@ public sealed class WhatsAppSendPayload
     public string RecipientType { get; set; } = "individual";
 
     [JsonPropertyName("context")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public WhatsAppContextObj? Context { get; set; }
 
     [JsonPropertyName("to")]
@@ -104,7 +188,28 @@ public sealed class WhatsAppSendPayload
     public string Type { get; set; } = "text";
 
     [JsonPropertyName("text")]
-    public required WhatsAppTextObj Text { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WhatsAppTextObj? Text { get; set; }
+
+    [JsonPropertyName("image")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WhatsAppMediaObj? Image { get; set; }
+
+    [JsonPropertyName("video")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WhatsAppMediaObj? Video { get; set; }
+
+    [JsonPropertyName("audio")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WhatsAppMediaObj? Audio { get; set; }
+
+    [JsonPropertyName("document")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WhatsAppMediaObj? Document { get; set; }
+
+    [JsonPropertyName("sticker")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WhatsAppMediaObj? Sticker { get; set; }
 }
 
 public sealed class WhatsAppContextObj
@@ -120,6 +225,20 @@ public sealed class WhatsAppTextObj
 
     [JsonPropertyName("preview_url")]
     public bool PreviewUrl { get; set; } = false;
+}
+
+public sealed class WhatsAppMediaObj
+{
+    [JsonPropertyName("link")]
+    public required string Link { get; set; }
+
+    [JsonPropertyName("caption")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Caption { get; set; }
+
+    [JsonPropertyName("filename")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Filename { get; set; }
 }
 
 [JsonSerializable(typeof(WhatsAppSendPayload))]

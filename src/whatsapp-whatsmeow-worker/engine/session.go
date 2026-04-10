@@ -427,6 +427,7 @@ func (s *Session) handleInboundMessage(evt *events.Message) {
 
 	msg := map[string]interface{}{
 		"channelId": s.ChannelID,
+		"accountId": s.AccountID,
 		"senderId":  senderId,
 		"text":      text,
 		"sessionId": func() string {

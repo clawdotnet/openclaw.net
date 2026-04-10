@@ -221,6 +221,74 @@ public sealed class AdminSettingsServiceTests
         }
     }
 
+    [Fact]
+    public void UpdateWhatsAppSettings_BlankSecretsPreserveExistingValues_UntilRefsAreCleared()
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            var config = CreateConfig(root);
+            config.Channels.WhatsApp.WebhookVerifyToken = "verify-existing";
+            config.Channels.WhatsApp.WebhookVerifyTokenRef = "env:WA_VERIFY";
+            config.Channels.WhatsApp.WebhookAppSecret = "secret-existing";
+            config.Channels.WhatsApp.WebhookAppSecretRef = "env:WA_SECRET";
+            config.Channels.WhatsApp.CloudApiToken = "cloud-existing";
+            config.Channels.WhatsApp.CloudApiTokenRef = "env:WA_TOKEN";
+            config.Channels.WhatsApp.BridgeToken = "bridge-existing";
+            config.Channels.WhatsApp.BridgeTokenRef = "env:WA_BRIDGE";
+
+            var service = CreateService(config);
+
+            var preserved = service.UpdateWhatsAppSettings(new WhatsAppSetupRequest
+            {
+                Enabled = true,
+                Type = "official",
+                DmPolicy = "pairing",
+                WebhookPath = "/whatsapp/inbound",
+                WebhookVerifyToken = "",
+                WebhookVerifyTokenRef = "env:WA_VERIFY",
+                WebhookAppSecret = null,
+                WebhookAppSecretRef = "env:WA_SECRET",
+                CloudApiToken = null,
+                CloudApiTokenRef = "env:WA_TOKEN",
+                BridgeToken = null,
+                BridgeTokenRef = "env:WA_BRIDGE"
+            });
+
+            Assert.True(preserved.Success);
+            Assert.Equal("verify-existing", config.Channels.WhatsApp.WebhookVerifyToken);
+            Assert.Equal("secret-existing", config.Channels.WhatsApp.WebhookAppSecret);
+            Assert.Equal("cloud-existing", config.Channels.WhatsApp.CloudApiToken);
+            Assert.Equal("bridge-existing", config.Channels.WhatsApp.BridgeToken);
+
+            var cleared = service.UpdateWhatsAppSettings(new WhatsAppSetupRequest
+            {
+                Enabled = true,
+                Type = "official",
+                DmPolicy = "pairing",
+                WebhookPath = "/whatsapp/inbound",
+                WebhookVerifyToken = "",
+                WebhookVerifyTokenRef = "",
+                WebhookAppSecret = null,
+                WebhookAppSecretRef = "",
+                CloudApiToken = null,
+                CloudApiTokenRef = "",
+                BridgeToken = null,
+                BridgeTokenRef = ""
+            });
+
+            Assert.True(cleared.Success);
+            Assert.Equal("", config.Channels.WhatsApp.WebhookVerifyToken);
+            Assert.Null(config.Channels.WhatsApp.WebhookAppSecret);
+            Assert.Null(config.Channels.WhatsApp.CloudApiToken);
+            Assert.Null(config.Channels.WhatsApp.BridgeToken);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static AdminSettingsService CreateService(GatewayConfig config)
         => new(
             config,

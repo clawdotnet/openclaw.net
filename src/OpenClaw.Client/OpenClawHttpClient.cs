@@ -20,6 +20,8 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _integrationProvidersUri;
     private readonly Uri _integrationPluginsUri;
     private readonly Uri _integrationOperatorAuditUri;
+    private readonly Uri _integrationAccountsUri;
+    private readonly Uri _integrationBackendsUri;
     private readonly Uri _integrationSessionsUri;
     private readonly Uri _integrationSessionSearchUri;
     private readonly Uri _integrationProfilesUri;
@@ -37,6 +39,8 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _adminModelsDoctorUri;
     private readonly Uri _adminModelEvaluationsUri;
     private readonly Uri _adminApprovalSimulationUri;
+    private readonly Uri _adminAccountResolutionUri;
+    private readonly Uri _adminBackendsUri;
     private readonly Uri _adminIncidentExportUri;
     private readonly Uri _adminWhatsAppSetupUri;
     private readonly Uri _adminWhatsAppRestartUri;
@@ -61,6 +65,8 @@ public sealed class OpenClawHttpClient : IDisposable
         _integrationProvidersUri = new Uri(baseUri, "/api/integration/providers");
         _integrationPluginsUri = new Uri(baseUri, "/api/integration/plugins");
         _integrationOperatorAuditUri = new Uri(baseUri, "/api/integration/operator-audit");
+        _integrationAccountsUri = new Uri(baseUri, "/api/integration/accounts");
+        _integrationBackendsUri = new Uri(baseUri, "/api/integration/backends");
         _integrationSessionsUri = new Uri(baseUri, "/api/integration/sessions");
         _integrationSessionSearchUri = new Uri(baseUri, "/api/integration/session-search");
         _integrationProfilesUri = new Uri(baseUri, "/api/integration/profiles");
@@ -78,6 +84,8 @@ public sealed class OpenClawHttpClient : IDisposable
         _adminModelsDoctorUri = new Uri(baseUri, "/admin/models/doctor");
         _adminModelEvaluationsUri = new Uri(baseUri, "/admin/models/evaluations");
         _adminApprovalSimulationUri = new Uri(baseUri, "/admin/approvals/simulate");
+        _adminAccountResolutionUri = new Uri(baseUri, "/admin/accounts/test-resolution");
+        _adminBackendsUri = new Uri(baseUri, "/admin/backends");
         _adminIncidentExportUri = new Uri(baseUri, "/admin/incident/export");
         _adminWhatsAppSetupUri = new Uri(baseUri, "/admin/channels/whatsapp/setup");
         _adminWhatsAppRestartUri = new Uri(baseUri, "/admin/channels/whatsapp/restart");
@@ -247,6 +255,112 @@ public sealed class OpenClawHttpClient : IDisposable
 
     public Task<IntegrationPluginsResponse> GetIntegrationPluginsAsync(CancellationToken cancellationToken)
         => GetAsync(_integrationPluginsUri, CoreJsonContext.Default.IntegrationPluginsResponse, cancellationToken);
+
+    public Task<IntegrationAccountsResponse> GetIntegrationAccountsAsync(CancellationToken cancellationToken)
+        => GetAsync(_integrationAccountsUri, CoreJsonContext.Default.IntegrationAccountsResponse, cancellationToken);
+
+    public Task<IntegrationConnectedAccountResponse> GetIntegrationAccountAsync(string accountId, CancellationToken cancellationToken)
+        => GetAsync(BuildIntegrationAccountUri(accountId), CoreJsonContext.Default.IntegrationConnectedAccountResponse, cancellationToken);
+
+    public async Task<IntegrationConnectedAccountResponse> CreateIntegrationAccountAsync(ConnectedAccountCreateRequest request, CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _integrationAccountsUri)
+        {
+            Content = BuildJsonContent(request, CoreJsonContext.Default.ConnectedAccountCreateRequest)
+        };
+
+        return await SendAsync(httpRequest, CoreJsonContext.Default.IntegrationConnectedAccountResponse, cancellationToken);
+    }
+
+    public async Task<OperationStatusResponse> DeleteIntegrationAccountAsync(string accountId, CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Delete, BuildIntegrationAccountUri(accountId));
+        return await SendAsync(httpRequest, CoreJsonContext.Default.OperationStatusResponse, cancellationToken);
+    }
+
+    public Task<IntegrationBackendsResponse> GetIntegrationBackendsAsync(CancellationToken cancellationToken)
+        => GetAsync(_integrationBackendsUri, CoreJsonContext.Default.IntegrationBackendsResponse, cancellationToken);
+
+    public Task<IntegrationBackendResponse> GetIntegrationBackendAsync(string backendId, CancellationToken cancellationToken)
+        => GetAsync(BuildIntegrationBackendUri(backendId), CoreJsonContext.Default.IntegrationBackendResponse, cancellationToken);
+
+    public async Task<BackendProbeResult> ProbeIntegrationBackendAsync(string backendId, BackendProbeRequest request, CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, BuildIntegrationBackendProbeUri(backendId))
+        {
+            Content = BuildJsonContent(request, CoreJsonContext.Default.BackendProbeRequest)
+        };
+
+        return await SendAsync(httpRequest, CoreJsonContext.Default.BackendProbeResult, cancellationToken);
+    }
+
+    public async Task<IntegrationBackendSessionResponse> StartBackendSessionAsync(string backendId, StartBackendSessionRequest request, CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, BuildIntegrationBackendSessionsUri(backendId))
+        {
+            Content = BuildJsonContent(request, CoreJsonContext.Default.StartBackendSessionRequest)
+        };
+
+        return await SendAsync(httpRequest, CoreJsonContext.Default.IntegrationBackendSessionResponse, cancellationToken);
+    }
+
+    public async Task<IntegrationBackendSessionResponse> SendBackendInputAsync(string backendId, string sessionId, BackendInput input, CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, BuildIntegrationBackendInputUri(backendId, sessionId))
+        {
+            Content = BuildJsonContent(input, CoreJsonContext.Default.BackendInput)
+        };
+
+        return await SendAsync(httpRequest, CoreJsonContext.Default.IntegrationBackendSessionResponse, cancellationToken);
+    }
+
+    public async Task<OperationStatusResponse> StopBackendSessionAsync(string backendId, string sessionId, CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Delete, BuildIntegrationBackendSessionUri(backendId, sessionId));
+        return await SendAsync(httpRequest, CoreJsonContext.Default.OperationStatusResponse, cancellationToken);
+    }
+
+    public Task<IntegrationBackendSessionResponse> GetBackendSessionAsync(string backendId, string sessionId, CancellationToken cancellationToken)
+        => GetAsync(BuildIntegrationBackendSessionUri(backendId, sessionId), CoreJsonContext.Default.IntegrationBackendSessionResponse, cancellationToken);
+
+    public Task<IntegrationBackendEventsResponse> GetBackendEventsAsync(string backendId, string sessionId, long afterSequence, int limit, CancellationToken cancellationToken)
+        => GetAsync(BuildIntegrationBackendEventsUri(backendId, sessionId, afterSequence, limit), CoreJsonContext.Default.IntegrationBackendEventsResponse, cancellationToken);
+
+    public async Task StreamBackendEventsAsync(
+        string backendId,
+        string sessionId,
+        long afterSequence,
+        int limit,
+        Action<BackendEvent> onEvent,
+        CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, BuildIntegrationBackendEventStreamUri(backendId, sessionId, afterSequence, limit));
+        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!resp.IsSuccessStatusCode)
+            throw await CreateHttpErrorAsync(resp, cancellationToken);
+
+        await using var stream = await resp.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 16 * 1024, leaveOpen: false);
+
+        while (true)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+                break;
+            if (!line.StartsWith("data:", StringComparison.Ordinal))
+                continue;
+
+            var data = line["data:".Length..].TrimStart();
+            if (data.Length == 0)
+                continue;
+
+            var item = JsonSerializer.Deserialize(data, CoreJsonContext.Default.BackendEvent);
+            if (item is not null)
+                onEvent(item);
+        }
+    }
 
     public Task<IntegrationOperatorAuditResponse> GetIntegrationOperatorAuditAsync(
         OperatorAuditQuery query,
@@ -470,6 +584,18 @@ public sealed class OpenClawHttpClient : IDisposable
         };
 
         return await SendAsync(req, CoreJsonContext.Default.ApprovalSimulationResponse, cancellationToken);
+    }
+
+    public async Task<BackendCredentialResolutionResponse> TestAccountResolutionAsync(
+        BackendCredentialResolutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _adminAccountResolutionUri)
+        {
+            Content = BuildJsonContent(request, CoreJsonContext.Default.BackendCredentialResolutionRequest)
+        };
+
+        return await SendAsync(httpRequest, CoreJsonContext.Default.BackendCredentialResolutionResponse, cancellationToken);
     }
 
     public Task<IncidentBundleResponse> ExportIncidentBundleAsync(
@@ -718,6 +844,45 @@ public sealed class OpenClawHttpClient : IDisposable
 
         return new Uri($"{_integrationProfilesUri.AbsoluteUri.TrimEnd('/')}/{Uri.EscapeDataString(actorId)}", UriKind.Absolute);
     }
+
+    private Uri BuildIntegrationAccountUri(string accountId)
+    {
+        if (string.IsNullOrWhiteSpace(accountId))
+            throw new ArgumentException("Account id is required.", nameof(accountId));
+
+        return new Uri($"{_integrationAccountsUri.AbsoluteUri.TrimEnd('/')}/{Uri.EscapeDataString(accountId)}", UriKind.Absolute);
+    }
+
+    private Uri BuildIntegrationBackendUri(string backendId)
+    {
+        if (string.IsNullOrWhiteSpace(backendId))
+            throw new ArgumentException("Backend id is required.", nameof(backendId));
+
+        return new Uri($"{_integrationBackendsUri.AbsoluteUri.TrimEnd('/')}/{Uri.EscapeDataString(backendId)}", UriKind.Absolute);
+    }
+
+    private Uri BuildIntegrationBackendProbeUri(string backendId)
+        => new($"{BuildIntegrationBackendUri(backendId).AbsoluteUri}/probe", UriKind.Absolute);
+
+    private Uri BuildIntegrationBackendSessionsUri(string backendId)
+        => new($"{BuildIntegrationBackendUri(backendId).AbsoluteUri}/sessions", UriKind.Absolute);
+
+    private Uri BuildIntegrationBackendSessionUri(string backendId, string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            throw new ArgumentException("Session id is required.", nameof(sessionId));
+
+        return new Uri($"{BuildIntegrationBackendSessionsUri(backendId).AbsoluteUri}/{Uri.EscapeDataString(sessionId)}", UriKind.Absolute);
+    }
+
+    private Uri BuildIntegrationBackendInputUri(string backendId, string sessionId)
+        => new($"{BuildIntegrationBackendSessionUri(backendId, sessionId).AbsoluteUri}/input", UriKind.Absolute);
+
+    private Uri BuildIntegrationBackendEventsUri(string backendId, string sessionId, long afterSequence, int limit)
+        => new($"{BuildIntegrationBackendSessionUri(backendId, sessionId).AbsoluteUri}/events?afterSequence={Math.Max(0, afterSequence)}&limit={Math.Clamp(limit, 1, 500)}", UriKind.Absolute);
+
+    private Uri BuildIntegrationBackendEventStreamUri(string backendId, string sessionId, long afterSequence, int limit)
+        => new($"{BuildIntegrationBackendSessionUri(backendId, sessionId).AbsoluteUri}/events/stream?afterSequence={Math.Max(0, afterSequence)}&limit={Math.Clamp(limit, 1, 500)}", UriKind.Absolute);
 
     private Uri BuildAutomationUri(string automationId)
     {

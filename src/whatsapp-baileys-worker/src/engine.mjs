@@ -55,29 +55,29 @@ export class BaileysEngine {
   }
 
   async send(request) {
-    const session = this._resolveSession(request.recipientId);
+    const session = this._resolveSession(request.accountId, request.recipientId);
     await session.send(request);
     return { sent: true };
   }
 
   async sendTyping(request) {
-    const session = this._resolveSession(request.recipientId);
+    const session = this._resolveSession(request.accountId, request.recipientId);
     await session.sendTyping(request.recipientId, request.isTyping ?? true);
     return { accepted: true };
   }
 
   async sendReadReceipt(request) {
     const session = request.remoteJid
-      ? this._resolveSession(request.remoteJid)
-      : this._getDefaultSession();
+      ? this._resolveSession(request.accountId, request.remoteJid)
+      : this._resolveSession(request.accountId, null);
     await session.sendReadReceipt(request.messageId, request.remoteJid, request.participant);
     return { accepted: true };
   }
 
   async sendReaction(request) {
     const session = request.remoteJid
-      ? this._resolveSession(request.remoteJid)
-      : this._getDefaultSession();
+      ? this._resolveSession(request.accountId, request.remoteJid)
+      : this._resolveSession(request.accountId, null);
     await session.sendReaction(request.messageId, request.emoji, request.remoteJid, request.participant);
     return { accepted: true };
   }
@@ -93,13 +93,20 @@ export class BaileysEngine {
     return { driver: "baileys", accounts };
   }
 
-  _resolveSession(recipientJid) {
-    // For single-account setups, return the only session
+  _resolveSession(accountId, recipientJid) {
+    if (accountId) {
+      const session = this.sessions.get(accountId);
+      if (!session) {
+        throw new Error(`Unknown WhatsApp account '${accountId}'`);
+      }
+      return session;
+    }
+
     if (this.sessions.size === 1) {
       return this.sessions.values().next().value;
     }
 
-    // Multi-account: try to match by selfId prefix or default
+    // Multi-account requests without an explicit accountId fall back to the default session.
     return this._getDefaultSession();
   }
 

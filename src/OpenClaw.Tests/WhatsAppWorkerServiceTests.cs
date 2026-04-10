@@ -84,6 +84,7 @@ public sealed class WhatsAppWorkerServiceTests
         await service.DebugSimulateInboundAsync(JsonSerializer.SerializeToElement(new
         {
             senderId = "person@s.whatsapp.net",
+            accountId = "default",
             senderName = "Person",
             text = "hello group",
             sessionId = "sess-group",
@@ -101,6 +102,7 @@ public sealed class WhatsAppWorkerServiceTests
 
         Assert.NotNull(captured);
         Assert.Equal("whatsapp", captured!.Params?.GetProperty("channelId").GetString());
+        Assert.Equal("default", captured.Params?.GetProperty("accountId").GetString());
         Assert.Equal("group@g.us", captured.Params?.GetProperty("groupId").GetString());
         Assert.True(captured.Params?.GetProperty("isGroup").GetBoolean());
         Assert.Equal("image", captured.Params?.GetProperty("mediaType").GetString());
@@ -127,6 +129,7 @@ public sealed class WhatsAppWorkerServiceTests
         {
             ChannelId = "whatsapp",
             RecipientId = "group@g.us",
+            AccountId = "default",
             Text = "hello",
             SessionId = "sess-1",
             ReplyToMessageId = "prev-1",
@@ -144,17 +147,20 @@ public sealed class WhatsAppWorkerServiceTests
         {
             ChannelId = "whatsapp",
             RecipientId = "group@g.us",
+            AccountId = "default",
             IsTyping = true
         });
         _ = await service.SendReadReceiptAsync(new BridgeChannelReceiptRequest
         {
             ChannelId = "whatsapp",
-            MessageId = "prev-1"
+            MessageId = "prev-1",
+            AccountId = "default"
         });
         _ = await service.SendReactionAsync(new BridgeChannelReactionRequest
         {
             ChannelId = "whatsapp",
             MessageId = "prev-1",
+            AccountId = "default",
             Emoji = "👍"
         });
 
@@ -164,5 +170,23 @@ public sealed class WhatsAppWorkerServiceTests
         Assert.Equal(1, state.GetProperty("typings").GetArrayLength());
         Assert.Equal(1, state.GetProperty("receipts").GetArrayLength());
         Assert.Equal(1, state.GetProperty("reactions").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task InitializeAsync_NonSimulatedDriver_ThrowsNotSupportedException()
+    {
+        await using var service = new WhatsAppWorkerService();
+
+        var ex = await Assert.ThrowsAsync<NotSupportedException>(() => service.InitializeAsync(new BridgeInitRequest
+        {
+            EntryPath = "builtin://test",
+            PluginId = "worker-test",
+            Config = JsonSerializer.SerializeToElement(new WhatsAppFirstPartyWorkerConfig
+            {
+                Driver = "baileys"
+            }, CoreJsonContext.Default.WhatsAppFirstPartyWorkerConfig)
+        }));
+
+        Assert.Contains("Driver='simulated'", ex.Message, StringComparison.Ordinal);
     }
 }

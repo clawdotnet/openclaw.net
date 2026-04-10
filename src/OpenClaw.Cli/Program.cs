@@ -36,6 +36,8 @@ internal static class Program
                 "heartbeat" => await HeartbeatAsync(rest),
                 "models" => await ModelsAsync(rest),
                 "eval" => await EvalAsync(rest),
+                "accounts" => await AccountsAsync(rest),
+                "backends" => await BackendsAsync(rest),
                 "admin" => await AdminAsync(rest),
                 "plugins" => await PluginCommands.RunAsync(rest),
                 "clawhub" => await ClawHubCommand.RunAsync(rest),
@@ -84,6 +86,8 @@ internal static class Program
               openclaw heartbeat <wizard|preview|status> [options]
               openclaw models <list|doctor> [options]
               openclaw eval <run|compare> [options]
+              openclaw accounts <list|add|remove|probe> [options]
+              openclaw backends <list|probe|run|session send> [options]
               openclaw admin <posture|incident export|approvals simulate> [options]
               openclaw clawhub [wrapper options] [--] <clawhub args...>
 
@@ -119,6 +123,10 @@ internal static class Program
               openclaw models doctor
               openclaw eval run --profile gemma4-prod
               openclaw eval compare --profiles gemma4-prod,frontier-tools
+              openclaw accounts list
+              openclaw accounts add codex --display-name "Local Codex" --secret-ref env:OPENAI_API_KEY
+              openclaw backends list
+              openclaw backends run codex-cli --workspace . --prompt "summarize this repository"
               openclaw heartbeat wizard
               openclaw admin posture
               openclaw admin approvals simulate --tool shell --args "{\"command\":\"pwd\"}"
@@ -192,6 +200,35 @@ internal static class Program
             Usage:
               openclaw eval run [--profile <id>] [--scenario <id>]... [--url <url>] [--token <token>]
               openclaw eval compare --profiles <id,id,...> [--scenario <id>]... [--url <url>] [--token <token>]
+            """);
+    }
+
+    private static void PrintAccountsHelp()
+    {
+        Console.WriteLine(
+            """
+            openclaw accounts
+
+            Usage:
+              openclaw accounts list [--url <url>] [--token <token>]
+              openclaw accounts add <provider> [--display-name <name>] (--secret-ref <ref> | --secret <secret> | --token-file <path>)
+                                     [--scope <scope>]... [--expires-at <iso8601>] [--metadata <key=value>]... [--url <url>] [--token <token>]
+              openclaw accounts remove <id> [--url <url>] [--token <token>]
+              openclaw accounts probe <provider|id> [--backend <id>] [--url <url>] [--token <token>]
+            """);
+    }
+
+    private static void PrintBackendsHelp()
+    {
+        Console.WriteLine(
+            """
+            openclaw backends
+
+            Usage:
+              openclaw backends list [--url <url>] [--token <token>]
+              openclaw backends probe <id> [--workspace <path>] [--url <url>] [--token <token>]
+              openclaw backends run <id> --workspace <path> --prompt <text> [--model <id>] [--read-only <true|false>] [--url <url>] [--token <token>]
+              openclaw backends session send <id> <sessionId> --text <text> [--url <url>] [--token <token>]
             """);
     }
 
@@ -761,11 +798,343 @@ internal static class Program
         return 2;
     }
 
+    private static async Task<int> AccountsAsync(string[] args)
+    {
+        if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+        {
+            PrintAccountsHelp();
+            return 0;
+        }
+
+        var subcommand = args[0].Trim().ToLowerInvariant();
+        var parsed = CliArgs.Parse(args.Skip(1).ToArray());
+        var baseUrl = parsed.GetOption("--url") ?? Environment.GetEnvironmentVariable(EnvBaseUrl) ?? DefaultBaseUrl;
+        var token = ResolveAuthToken(parsed, Console.Error);
+        using var client = new OpenClawHttpClient(baseUrl, token);
+
+        switch (subcommand)
+        {
+            case "list":
+            {
+                var accounts = await client.GetIntegrationAccountsAsync(CancellationToken.None);
+                foreach (var item in accounts.Items.OrderBy(static item => item.Provider, StringComparer.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"{item.Id} | provider={item.Provider} | kind={item.SecretKind} | active={ToBoolWord(item.IsActive)} | display={item.DisplayName ?? "n/a"}");
+                    if (item.ExpiresAt is { } expiresAt)
+                        Console.WriteLine($"  expires={expiresAt:O}");
+                }
+
+                return 0;
+            }
+
+            case "add":
+            {
+                var provider = parsed.Positionals.Count > 0 ? parsed.Positionals[0] : null;
+                if (string.IsNullOrWhiteSpace(provider))
+                {
+                    Console.Error.WriteLine("Provider is required.");
+                    return 2;
+                }
+
+                var scopes = parsed.Options.TryGetValue("--scope", out var scopeValues)
+                    ? scopeValues.ToArray()
+                    : [];
+                var metadata = ParseMetadata(parsed.Options.TryGetValue("--metadata", out var metadataValues) ? metadataValues : null);
+                var expiresAt = ParseDateTimeOffset(parsed.GetOption("--expires-at"));
+                var created = await client.CreateIntegrationAccountAsync(new ConnectedAccountCreateRequest
+                {
+                    Provider = provider,
+                    DisplayName = parsed.GetOption("--display-name"),
+                    SecretRef = parsed.GetOption("--secret-ref"),
+                    Secret = parsed.GetOption("--secret"),
+                    TokenFilePath = parsed.GetOption("--token-file"),
+                    Scopes = scopes,
+                    ExpiresAt = expiresAt,
+                    Metadata = metadata
+                }, CancellationToken.None);
+
+                Console.WriteLine($"created account: {created.Account!.Id}");
+                Console.WriteLine($"provider={created.Account.Provider} kind={created.Account.SecretKind} display={created.Account.DisplayName ?? "n/a"}");
+                return 0;
+            }
+
+            case "remove":
+            {
+                var id = parsed.Positionals.Count > 0 ? parsed.Positionals[0] : null;
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    Console.Error.WriteLine("Account id is required.");
+                    return 2;
+                }
+
+                var result = await client.DeleteIntegrationAccountAsync(id, CancellationToken.None);
+                Console.WriteLine(result.Message ?? "Account deleted.");
+                return result.Success ? 0 : 1;
+            }
+
+            case "probe":
+            {
+                var target = parsed.Positionals.Count > 0 ? parsed.Positionals[0] : null;
+                if (string.IsNullOrWhiteSpace(target))
+                {
+                    Console.Error.WriteLine("Provider or account id is required.");
+                    return 2;
+                }
+
+                var backendId = parsed.GetOption("--backend");
+                if (target.StartsWith("acct_", StringComparison.Ordinal))
+                {
+                    var response = await client.TestAccountResolutionAsync(new BackendCredentialResolutionRequest
+                    {
+                        BackendId = backendId,
+                        CredentialSource = new ConnectedAccountSecretRef
+                        {
+                            ConnectedAccountId = target
+                        }
+                    }, CancellationToken.None);
+
+                    if (!response.Success || response.Credential is null)
+                    {
+                        Console.Error.WriteLine(response.Error ?? "Credential resolution failed.");
+                        return 1;
+                    }
+
+                    Console.WriteLine($"resolved provider={response.Credential.Provider} source={response.Credential.SourceKind} account={response.Credential.AccountId}");
+                    if (!string.IsNullOrWhiteSpace(response.Credential.TokenFilePath))
+                        Console.WriteLine($"token_file={response.Credential.TokenFilePath}");
+                    if (response.Credential.Scopes.Length > 0)
+                        Console.WriteLine($"scopes={string.Join(",", response.Credential.Scopes)}");
+                    return 0;
+                }
+
+                if (string.IsNullOrWhiteSpace(backendId))
+                {
+                    Console.Error.WriteLine("When probing by provider, --backend is required in v1.");
+                    return 2;
+                }
+
+                var probe = await client.ProbeIntegrationBackendAsync(backendId, new BackendProbeRequest(), CancellationToken.None);
+                Console.WriteLine($"backend={probe.BackendId} success={ToBoolWord(probe.Success)} exit_code={probe.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "n/a"}");
+                Console.WriteLine(probe.Message ?? "");
+                return probe.Success ? 0 : 1;
+            }
+        }
+
+        PrintAccountsHelp();
+        return 2;
+    }
+
+    private static async Task<int> BackendsAsync(string[] args)
+    {
+        if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+        {
+            PrintBackendsHelp();
+            return 0;
+        }
+
+        var subcommand = args[0].Trim().ToLowerInvariant();
+        if (subcommand == "session" && args.Length > 1 && string.Equals(args[1], "send", StringComparison.OrdinalIgnoreCase))
+        {
+            var parsed = CliArgs.Parse(args.Skip(2).ToArray());
+            var backendId = parsed.Positionals.Count > 0 ? parsed.Positionals[0] : null;
+            var sessionId = parsed.Positionals.Count > 1 ? parsed.Positionals[1] : null;
+            if (string.IsNullOrWhiteSpace(backendId) || string.IsNullOrWhiteSpace(sessionId))
+            {
+                Console.Error.WriteLine("Backend id and session id are required.");
+                return 2;
+            }
+
+            var text = parsed.GetOption("--text");
+            if (string.IsNullOrWhiteSpace(text))
+                text = await ReadAllStdinAsync();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                Console.Error.WriteLine("--text or stdin is required.");
+                return 2;
+            }
+
+            var baseUrl = parsed.GetOption("--url") ?? Environment.GetEnvironmentVariable(EnvBaseUrl) ?? DefaultBaseUrl;
+            var token = ResolveAuthToken(parsed, Console.Error);
+            using var client = new OpenClawHttpClient(baseUrl, token);
+            var before = await client.GetBackendSessionAsync(backendId, sessionId, CancellationToken.None);
+            var afterSequence = before.Session?.LastEventSequence ?? 0;
+            await client.SendBackendInputAsync(backendId, sessionId, new BackendInput { Text = text }, CancellationToken.None);
+            return await PollBackendSessionAsync(client, backendId, sessionId, afterSequence, idleLimit: 4);
+        }
+
+        var parsedRoot = CliArgs.Parse(args.Skip(1).ToArray());
+        var baseUrlRoot = parsedRoot.GetOption("--url") ?? Environment.GetEnvironmentVariable(EnvBaseUrl) ?? DefaultBaseUrl;
+        var tokenRoot = ResolveAuthToken(parsedRoot, Console.Error);
+        using var rootClient = new OpenClawHttpClient(baseUrlRoot, tokenRoot);
+
+        switch (subcommand)
+        {
+            case "list":
+            {
+                var backends = await rootClient.GetIntegrationBackendsAsync(CancellationToken.None);
+                foreach (var item in backends.Items)
+                {
+                    Console.WriteLine($"{item.BackendId} | provider={item.Provider} | enabled={ToBoolWord(item.Enabled)} | model={item.DefaultModel ?? "n/a"} | executable={item.ExecutablePath ?? "n/a"}");
+                    Console.WriteLine($"  readonly_default={ToBoolWord(item.AccessPolicy.ReadOnlyByDefault)} write_enabled={ToBoolWord(item.AccessPolicy.WriteEnabled)} require_workspace={ToBoolWord(item.AccessPolicy.RequireWorkspace)}");
+                }
+
+                return 0;
+            }
+
+            case "probe":
+            {
+                var backendId = parsedRoot.Positionals.Count > 0 ? parsedRoot.Positionals[0] : null;
+                if (string.IsNullOrWhiteSpace(backendId))
+                {
+                    Console.Error.WriteLine("Backend id is required.");
+                    return 2;
+                }
+
+                var result = await rootClient.ProbeIntegrationBackendAsync(backendId, new BackendProbeRequest
+                {
+                    WorkspacePath = parsedRoot.GetOption("--workspace")
+                }, CancellationToken.None);
+
+                Console.WriteLine($"backend={result.BackendId} success={ToBoolWord(result.Success)} exit_code={result.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "n/a"} structured_output={ToBoolWord(result.StructuredOutputSupported)}");
+                if (!string.IsNullOrWhiteSpace(result.Message))
+                    Console.WriteLine(result.Message);
+                if (!string.IsNullOrWhiteSpace(result.Stdout))
+                    Console.WriteLine(result.Stdout.TrimEnd());
+                if (!string.IsNullOrWhiteSpace(result.Stderr))
+                    Console.Error.WriteLine(result.Stderr.TrimEnd());
+                return result.Success ? 0 : 1;
+            }
+
+            case "run":
+            {
+                var backendId = parsedRoot.Positionals.Count > 0 ? parsedRoot.Positionals[0] : null;
+                if (string.IsNullOrWhiteSpace(backendId))
+                {
+                    Console.Error.WriteLine("Backend id is required.");
+                    return 2;
+                }
+
+                var prompt = parsedRoot.GetOption("--prompt");
+                if (string.IsNullOrWhiteSpace(prompt))
+                    prompt = await ReadAllStdinAsync();
+                if (string.IsNullOrWhiteSpace(prompt))
+                {
+                    Console.Error.WriteLine("--prompt or stdin is required.");
+                    return 2;
+                }
+
+                var started = await rootClient.StartBackendSessionAsync(backendId, new StartBackendSessionRequest
+                {
+                    BackendId = backendId,
+                    WorkspacePath = parsedRoot.GetOption("--workspace"),
+                    Prompt = prompt,
+                    Model = parsedRoot.GetOption("--model"),
+                    ReadOnly = ParseBool(parsedRoot.GetOption("--read-only"))
+                }, CancellationToken.None);
+
+                if (started.Session is null)
+                {
+                    Console.Error.WriteLine("Backend session failed to start.");
+                    return 1;
+                }
+
+                Console.WriteLine($"session={started.Session.SessionId}");
+                return await PollBackendSessionAsync(rootClient, backendId, started.Session.SessionId, 0, idleLimit: 6);
+            }
+        }
+
+        PrintBackendsHelp();
+        return 2;
+    }
+
     private static async Task<int> HeartbeatStatusAsync(OpenClawHttpClient client)
     {
         var status = await client.GetHeartbeatStatusAsync(CancellationToken.None);
         WriteHeartbeatStatus(status);
         return 0;
+    }
+
+    private static async Task<int> PollBackendSessionAsync(
+        OpenClawHttpClient client,
+        string backendId,
+        string sessionId,
+        long afterSequence,
+        int idleLimit)
+    {
+        var idleCount = 0;
+        while (true)
+        {
+            var events = await client.GetBackendEventsAsync(backendId, sessionId, afterSequence, 200, CancellationToken.None);
+            foreach (var item in events.Items)
+                WriteBackendEvent(item);
+
+            if (events.Items.Count > 0)
+            {
+                afterSequence = events.NextSequence;
+                idleCount = 0;
+            }
+            else
+            {
+                idleCount++;
+            }
+
+            var session = await client.GetBackendSessionAsync(backendId, sessionId, CancellationToken.None);
+            var state = session.Session?.State ?? BackendSessionState.Failed;
+            if (state is BackendSessionState.Completed)
+                return session.Session?.ExitCode is null or 0 ? 0 : 1;
+            if (state is BackendSessionState.Failed or BackendSessionState.Cancelled)
+                return 1;
+            if (idleCount >= idleLimit)
+            {
+                Console.WriteLine($"session_state={state}");
+                return 0;
+            }
+
+            await Task.Delay(500);
+        }
+    }
+
+    private static void WriteBackendEvent(BackendEvent evt)
+    {
+        switch (evt)
+        {
+            case BackendAssistantMessageEvent assistant:
+                Console.WriteLine(assistant.Text);
+                break;
+            case BackendStdoutOutputEvent stdout:
+                Console.WriteLine(stdout.Text);
+                break;
+            case BackendStderrOutputEvent stderr:
+                Console.Error.WriteLine(stderr.Text);
+                break;
+            case BackendShellCommandProposedEvent proposed:
+                Console.WriteLine($"$ {proposed.Command}");
+                break;
+            case BackendShellCommandExecutedEvent executed:
+                Console.WriteLine($"executed: {executed.Command} (exit={executed.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "n/a"})");
+                break;
+            case BackendToolCallRequestedEvent tool:
+                Console.WriteLine($"tool: {tool.ToolName}");
+                break;
+            case BackendPatchProposedEvent patch:
+                Console.WriteLine($"patch proposed: {patch.Path ?? "(unknown)"}");
+                break;
+            case BackendPatchAppliedEvent applied:
+                Console.WriteLine($"patch applied: {applied.Path ?? applied.Summary ?? "(unknown)"}");
+                break;
+            case BackendFileReadEvent fileRead:
+                Console.WriteLine($"read: {fileRead.Path}");
+                break;
+            case BackendFileWriteEvent fileWrite:
+                Console.WriteLine($"write: {fileWrite.Path}");
+                break;
+            case BackendErrorEvent error:
+                Console.Error.WriteLine($"error: {error.Message}");
+                break;
+            case BackendSessionCompletedEvent completed:
+                Console.WriteLine($"session completed: exit={completed.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "n/a"} reason={completed.Reason ?? "n/a"}");
+                break;
+        }
     }
 
     private static async Task<int> HeartbeatPreviewAsync(OpenClawHttpClient client)
@@ -1262,6 +1631,35 @@ internal static class Program
             "0" or "false" or "no" or "n" => false,
             _ => throw new ArgumentException($"Invalid bool: {raw}")
         };
+    }
+
+    private static DateTimeOffset? ParseDateTimeOffset(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        if (!DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AllowWhiteSpaces, out var value))
+            throw new ArgumentException($"Invalid datetime: {raw}");
+
+        return value;
+    }
+
+    private static Dictionary<string, string> ParseMetadata(IReadOnlyList<string>? pairs)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (pairs is null)
+            return metadata;
+
+        foreach (var pair in pairs)
+        {
+            var separator = pair.IndexOf('=', StringComparison.Ordinal);
+            if (separator <= 0 || separator == pair.Length - 1)
+                throw new ArgumentException($"Invalid metadata entry: {pair}");
+
+            metadata[pair[..separator].Trim()] = pair[(separator + 1)..].Trim();
+        }
+
+        return metadata;
     }
 
     private static string ToBoolWord(bool value) => value ? "true" : "false";

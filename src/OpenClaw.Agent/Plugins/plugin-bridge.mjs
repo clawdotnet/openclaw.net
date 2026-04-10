@@ -528,6 +528,7 @@ async function handleRequest(req) {
       const channelId = getParam(req.params, "channelId");
       const recipientId = getParam(req.params, "recipientId");
       const text = getParam(req.params, "text");
+      const accountId = req.params?.accountId ?? null;
       const sessionId = req.params?.sessionId ?? null;
       const replyToMessageId = req.params?.replyToMessageId ?? null;
       const subject = req.params?.subject ?? null;
@@ -535,7 +536,7 @@ async function handleRequest(req) {
       const ch = registeredChannels.get(channelId);
       if (!ch) throw new Error(`Unknown channel: ${channelId}`);
       if (typeof ch.send === "function") {
-        await ch.send({ channelId, recipientId, text, sessionId, replyToMessageId, subject, attachments });
+        await ch.send({ channelId, recipientId, accountId, text, sessionId, replyToMessageId, subject, attachments });
       }
       return { ok: true };
     }
@@ -543,11 +544,12 @@ async function handleRequest(req) {
     case "channel_typing": {
       const channelId = getParam(req.params, "channelId");
       const recipientId = getParam(req.params, "recipientId");
+      const accountId = req.params?.accountId ?? null;
       const isTyping = req.params?.isTyping ?? true;
       const ch = registeredChannels.get(channelId);
       if (!ch) throw new Error(`Unknown channel: ${channelId}`);
       if (typeof ch.typing === "function") {
-        await ch.typing({ channelId, recipientId, isTyping });
+        await ch.typing({ channelId, recipientId, accountId, isTyping });
       }
       return { ok: true };
     }
@@ -555,12 +557,13 @@ async function handleRequest(req) {
     case "channel_read_receipt": {
       const channelId = getParam(req.params, "channelId");
       const messageId = getParam(req.params, "messageId");
+      const accountId = req.params?.accountId ?? null;
       const remoteJid = req.params?.remoteJid ?? null;
       const participant = req.params?.participant ?? null;
       const ch = registeredChannels.get(channelId);
       if (!ch) throw new Error(`Unknown channel: ${channelId}`);
       if (typeof ch.readReceipt === "function") {
-        await ch.readReceipt({ channelId, messageId, remoteJid, participant });
+        await ch.readReceipt({ channelId, messageId, accountId, remoteJid, participant });
       }
       return { ok: true };
     }
@@ -568,13 +571,14 @@ async function handleRequest(req) {
     case "channel_react": {
       const channelId = getParam(req.params, "channelId");
       const messageId = getParam(req.params, "messageId");
+      const accountId = req.params?.accountId ?? null;
       const emoji = getParam(req.params, "emoji");
       const remoteJid = req.params?.remoteJid ?? null;
       const participant = req.params?.participant ?? null;
       const ch = registeredChannels.get(channelId);
       if (!ch) throw new Error(`Unknown channel: ${channelId}`);
       if (typeof ch.react === "function") {
-        await ch.react({ channelId, messageId, emoji, remoteJid, participant });
+        await ch.react({ channelId, messageId, accountId, emoji, remoteJid, participant });
       }
       return { ok: true };
     }

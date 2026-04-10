@@ -833,6 +833,7 @@ public sealed class BridgeChannelSendRequest
     public required string ChannelId { get; init; }
     public required string RecipientId { get; init; }
     public required string Text { get; init; }
+    public string? AccountId { get; init; }
     public string? SessionId { get; init; }
     public string? ReplyToMessageId { get; init; }
     public string? Subject { get; init; }
@@ -870,6 +871,7 @@ public sealed class BridgeChannelTypingRequest
 {
     public required string ChannelId { get; init; }
     public required string RecipientId { get; init; }
+    public string? AccountId { get; init; }
     public bool IsTyping { get; init; } = true;
 }
 
@@ -880,6 +882,7 @@ public sealed class BridgeChannelReceiptRequest
 {
     public required string ChannelId { get; init; }
     public required string MessageId { get; init; }
+    public string? AccountId { get; init; }
     public string? RemoteJid { get; init; }
     public string? Participant { get; init; }
 }
@@ -892,6 +895,7 @@ public sealed class BridgeChannelReactionRequest
     public required string ChannelId { get; init; }
     public required string MessageId { get; init; }
     public required string Emoji { get; init; }
+    public string? AccountId { get; init; }
     public string? RemoteJid { get; init; }
     public string? Participant { get; init; }
 }

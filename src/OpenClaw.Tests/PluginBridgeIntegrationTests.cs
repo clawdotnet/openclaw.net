@@ -1198,6 +1198,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
                   setTimeout(() => {
                     channel.receive({
                       senderId: "user1@wa",
+                      accountId: "acc-1",
                       senderName: "User One",
                       text: "caption",
                       sessionId: "sess-123",
@@ -1265,6 +1266,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
         Assert.True(authEvt.UpdatedAtUtc > DateTimeOffset.UtcNow.AddMinutes(-1));
 
         Assert.Equal("user1@wa", inbound.SenderId);
+        Assert.Equal("acc-1", inbound.AccountId);
         Assert.True(inbound.IsGroup);
         Assert.Equal("group-1@wa", inbound.GroupId);
         Assert.Equal("Test Group", inbound.GroupName);
@@ -1279,17 +1281,19 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
         {
             ChannelId = "whatsapp",
             RecipientId = "group-1@wa",
+            AccountId = "acc-1",
             Text = "[IMAGE_URL:https://cdn.example/image.png]\nhello world",
             SessionId = "sess-out",
             ReplyToMessageId = "msg-1",
             Subject = "subject"
         }, CancellationToken.None);
-        await adapter.SendTypingAsync("group-1@wa", true, CancellationToken.None);
-        await adapter.SendReadReceiptAsync("msg-1", "group-1@wa", "sender@wa", CancellationToken.None);
-        await adapter.SendReactionAsync("msg-1", "👍", "group-1@wa", "sender@wa", CancellationToken.None);
+        await adapter.SendTypingAsync("group-1@wa", true, "acc-1", CancellationToken.None);
+        await adapter.SendReadReceiptAsync("msg-1", "group-1@wa", "sender@wa", "acc-1", CancellationToken.None);
+        await adapter.SendReactionAsync("msg-1", "👍", "group-1@wa", "sender@wa", "acc-1", CancellationToken.None);
 
         var sendPayload = JsonDocument.Parse(await WaitForFileTextAsync(sendPath, TimeSpan.FromSeconds(5))).RootElement;
         Assert.Equal("group-1@wa", sendPayload.GetProperty("recipientId").GetString());
+        Assert.Equal("acc-1", sendPayload.GetProperty("accountId").GetString());
         Assert.Equal("hello world", sendPayload.GetProperty("text").GetString());
         Assert.Equal("sess-out", sendPayload.GetProperty("sessionId").GetString());
         Assert.Equal("msg-1", sendPayload.GetProperty("replyToMessageId").GetString());
@@ -1299,13 +1303,16 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
         Assert.Equal("https://cdn.example/image.png", attachment.GetProperty("url").GetString());
 
         var typingPayload = JsonDocument.Parse(await WaitForFileTextAsync(typingPath, TimeSpan.FromSeconds(5))).RootElement;
+        Assert.Equal("acc-1", typingPayload.GetProperty("accountId").GetString());
         Assert.Equal("group-1@wa", typingPayload.GetProperty("recipientId").GetString());
         Assert.True(typingPayload.GetProperty("isTyping").GetBoolean());
 
         var receiptPayload = JsonDocument.Parse(await WaitForFileTextAsync(receiptPath, TimeSpan.FromSeconds(5))).RootElement;
+        Assert.Equal("acc-1", receiptPayload.GetProperty("accountId").GetString());
         Assert.Equal("msg-1", receiptPayload.GetProperty("messageId").GetString());
 
         var reactionPayload = JsonDocument.Parse(await WaitForFileTextAsync(reactionPath, TimeSpan.FromSeconds(5))).RootElement;
+        Assert.Equal("acc-1", reactionPayload.GetProperty("accountId").GetString());
         Assert.Equal("msg-1", reactionPayload.GetProperty("messageId").GetString());
         Assert.Equal("👍", reactionPayload.GetProperty("emoji").GetString());
     }

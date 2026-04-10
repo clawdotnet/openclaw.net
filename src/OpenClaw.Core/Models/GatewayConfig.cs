@@ -20,6 +20,7 @@ public sealed class GatewayConfig
     public ToolingConfig Tooling { get; set; } = new();
     public SandboxConfig Sandbox { get; set; } = new();
     public ExecutionConfig Execution { get; set; } = new();
+    public CodingBackendsConfig CodingBackends { get; set; } = new();
     public MultimodalConfig Multimodal { get; set; } = new();
     public ChannelsConfig Channels { get; set; } = new();
     public PluginsConfig Plugins { get; set; } = new();
@@ -394,10 +395,10 @@ public sealed class WhatsAppChannelConfig
 public sealed class WhatsAppFirstPartyWorkerConfig
 {
     /// <summary>
-    /// Worker transport engine. "baileys_csharp" is the intended production engine;
+    /// Worker transport engine. "baileys" and "whatsmeow" launch the bundled external workers;
     /// "simulated" is available for tests and dry-run validation.
     /// </summary>
-    public string Driver { get; set; } = "baileys_csharp";
+    public string Driver { get; set; } = "baileys";
 
     /// <summary>
     /// Optional explicit path to the worker executable or DLL. When empty, the gateway tries

@@ -5,7 +5,7 @@ using OpenClaw.Core.Models;
 
 namespace OpenClaw.Core.Features;
 
-public sealed class SqliteFeatureStore : IAutomationStore, IUserProfileStore, ILearningProposalStore, IDisposable
+public sealed class SqliteFeatureStore : IAutomationStore, IUserProfileStore, ILearningProposalStore, IConnectedAccountStore, IBackendSessionStore, IDisposable
 {
     private readonly string _dbPath;
 
@@ -49,6 +49,29 @@ public sealed class SqliteFeatureStore : IAutomationStore, IUserProfileStore, IL
               updated_at INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS connected_accounts (
+              id TEXT PRIMARY KEY,
+              provider TEXT NOT NULL,
+              json TEXT NOT NULL,
+              updated_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS backend_sessions (
+              session_id TEXT PRIMARY KEY,
+              backend_id TEXT NOT NULL,
+              state TEXT NOT NULL,
+              json TEXT NOT NULL,
+              updated_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS backend_session_events (
+              session_id TEXT NOT NULL,
+              sequence INTEGER NOT NULL,
+              json TEXT NOT NULL,
+              created_at INTEGER NOT NULL,
+              PRIMARY KEY(session_id, sequence)
+            );
+
             CREATE TABLE IF NOT EXISTS learning_proposals (
               id TEXT PRIMARY KEY,
               kind TEXT NOT NULL,
@@ -58,6 +81,9 @@ public sealed class SqliteFeatureStore : IAutomationStore, IUserProfileStore, IL
             );
 
             CREATE INDEX IF NOT EXISTS idx_learning_status ON learning_proposals(status, kind, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_connected_accounts_provider ON connected_accounts(provider, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_backend_sessions_backend ON backend_sessions(backend_id, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_backend_session_events_lookup ON backend_session_events(session_id, sequence);
             """;
         cmd.ExecuteNonQuery();
     }
@@ -132,6 +158,98 @@ public sealed class SqliteFeatureStore : IAutomationStore, IUserProfileStore, IL
     public ValueTask SaveProposalAsync(LearningProposal proposal, CancellationToken ct)
         => UpsertLearningProposalAsync(proposal, ct);
 
+    public async ValueTask<IReadOnlyList<ConnectedAccount>> ListAccountsAsync(CancellationToken ct)
+        => await QueryJsonListAsync("SELECT json FROM connected_accounts ORDER BY updated_at DESC;", CoreJsonContext.Default.ConnectedAccount, ct);
+
+    public ValueTask<ConnectedAccount?> GetAccountAsync(string accountId, CancellationToken ct)
+        => QuerySingleAsync("SELECT json FROM connected_accounts WHERE id = $id LIMIT 1;", "$id", accountId, CoreJsonContext.Default.ConnectedAccount, ct);
+
+    public ValueTask SaveAccountAsync(ConnectedAccount account, CancellationToken ct)
+        => UpsertConnectedAccountAsync(account, ct);
+
+    public ValueTask DeleteAccountAsync(string accountId, CancellationToken ct)
+        => ExecuteAsync("DELETE FROM connected_accounts WHERE id = $id;", "$id", accountId, ct);
+
+    public async ValueTask<IReadOnlyList<BackendSessionRecord>> ListBackendSessionsAsync(string? backendId, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        if (string.IsNullOrWhiteSpace(backendId))
+        {
+            cmd.CommandText = "SELECT json FROM backend_sessions ORDER BY updated_at DESC;";
+        }
+        else
+        {
+            cmd.CommandText = "SELECT json FROM backend_sessions WHERE backend_id = $backend_id ORDER BY updated_at DESC;";
+            cmd.Parameters.AddWithValue("$backend_id", backendId);
+        }
+
+        var results = new List<BackendSessionRecord>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var item = JsonSerializer.Deserialize(reader.GetString(0), CoreJsonContext.Default.BackendSessionRecord);
+            if (item is not null)
+                results.Add(item);
+        }
+
+        return results;
+    }
+
+    public ValueTask<BackendSessionRecord?> GetBackendSessionAsync(string sessionId, CancellationToken ct)
+        => QuerySingleAsync("SELECT json FROM backend_sessions WHERE session_id = $id LIMIT 1;", "$id", sessionId, CoreJsonContext.Default.BackendSessionRecord, ct);
+
+    public ValueTask SaveBackendSessionAsync(BackendSessionRecord session, CancellationToken ct)
+        => UpsertBackendSessionAsync(session, ct);
+
+    public ValueTask DeleteBackendSessionAsync(string sessionId, CancellationToken ct)
+        => ExecuteAsync("DELETE FROM backend_sessions WHERE session_id = $id;", "$id", sessionId, ct);
+
+    public async ValueTask AppendBackendEventAsync(BackendEvent evt, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO backend_session_events(session_id, sequence, json, created_at)
+            VALUES($session_id, $sequence, $json, $created_at)
+            ON CONFLICT(session_id, sequence) DO UPDATE SET json=excluded.json, created_at=excluded.created_at;
+            """;
+        cmd.Parameters.AddWithValue("$session_id", evt.SessionId);
+        cmd.Parameters.AddWithValue("$sequence", evt.Sequence);
+        cmd.Parameters.AddWithValue("$json", JsonSerializer.Serialize<BackendEvent>(evt, CoreJsonContext.Default.BackendEvent));
+        cmd.Parameters.AddWithValue("$created_at", evt.TimestampUtc.ToUnixTimeSeconds());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async ValueTask<IReadOnlyList<BackendEvent>> ListBackendEventsAsync(string sessionId, long afterSequence, int limit, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT json FROM backend_session_events
+            WHERE session_id = $session_id AND sequence > $after_sequence
+            ORDER BY sequence ASC
+            LIMIT $limit;
+            """;
+        cmd.Parameters.AddWithValue("$session_id", sessionId);
+        cmd.Parameters.AddWithValue("$after_sequence", afterSequence);
+        cmd.Parameters.AddWithValue("$limit", Math.Max(1, limit));
+
+        var results = new List<BackendEvent>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var item = JsonSerializer.Deserialize<BackendEvent>(reader.GetString(0), CoreJsonContext.Default.BackendEvent);
+            if (item is not null)
+                results.Add(item);
+        }
+
+        return results;
+    }
+
     private async ValueTask UpsertAsync(string sql, string idParamName, string id, string json, CancellationToken ct)
     {
         await using var conn = new SqliteConnection(ConnectionString);
@@ -158,6 +276,41 @@ public sealed class SqliteFeatureStore : IAutomationStore, IUserProfileStore, IL
         cmd.Parameters.AddWithValue("$kind", proposal.Kind);
         cmd.Parameters.AddWithValue("$status", proposal.Status);
         cmd.Parameters.AddWithValue("$json", JsonSerializer.Serialize(proposal, CoreJsonContext.Default.LearningProposal));
+        cmd.Parameters.AddWithValue("$updated_at", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private async ValueTask UpsertConnectedAccountAsync(ConnectedAccount account, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO connected_accounts(id, provider, json, updated_at)
+            VALUES($id, $provider, $json, $updated_at)
+            ON CONFLICT(id) DO UPDATE SET provider=excluded.provider, json=excluded.json, updated_at=excluded.updated_at;
+            """;
+        cmd.Parameters.AddWithValue("$id", account.Id);
+        cmd.Parameters.AddWithValue("$provider", account.Provider);
+        cmd.Parameters.AddWithValue("$json", JsonSerializer.Serialize(account, CoreJsonContext.Default.ConnectedAccount));
+        cmd.Parameters.AddWithValue("$updated_at", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private async ValueTask UpsertBackendSessionAsync(BackendSessionRecord session, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO backend_sessions(session_id, backend_id, state, json, updated_at)
+            VALUES($session_id, $backend_id, $state, $json, $updated_at)
+            ON CONFLICT(session_id) DO UPDATE SET backend_id=excluded.backend_id, state=excluded.state, json=excluded.json, updated_at=excluded.updated_at;
+            """;
+        cmd.Parameters.AddWithValue("$session_id", session.SessionId);
+        cmd.Parameters.AddWithValue("$backend_id", session.BackendId);
+        cmd.Parameters.AddWithValue("$state", session.State);
+        cmd.Parameters.AddWithValue("$json", JsonSerializer.Serialize(session, CoreJsonContext.Default.BackendSessionRecord));
         cmd.Parameters.AddWithValue("$updated_at", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
         await cmd.ExecuteNonQueryAsync(ct);
     }

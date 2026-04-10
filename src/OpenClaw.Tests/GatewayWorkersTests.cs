@@ -1169,6 +1169,7 @@ public sealed class GatewayWorkersTests
         {
             ChannelId = "whatsapp",
             SenderId = "user-1",
+            AccountId = "acc-1",
             Text = "hello group",
             MessageId = "msg-group",
             IsGroup = true,
@@ -1184,20 +1185,23 @@ public sealed class GatewayWorkersTests
             "Timed out waiting for bridged typing lifecycle.");
 
         Assert.Equal("group-1", outbound.RecipientId);
+        Assert.Equal("acc-1", outbound.AccountId);
         Assert.Equal("msg-group", outbound.ReplyToMessageId);
         Assert.Collection(
             adapter.TypingEvents,
             evt =>
             {
                 Assert.Equal("group-1", evt.RecipientId);
+                Assert.Equal("acc-1", evt.AccountId);
                 Assert.True(evt.IsTyping);
             },
             evt =>
             {
                 Assert.Equal("group-1", evt.RecipientId);
+                Assert.Equal("acc-1", evt.AccountId);
                 Assert.False(evt.IsTyping);
             });
-        Assert.Contains("msg-group", adapter.ReadReceiptMessageIds);
+        Assert.Contains(adapter.ReadReceiptEvents, evt => evt.MessageId == "msg-group" && evt.AccountId == "acc-1");
         Assert.NotNull(sessionManager.TryGetActive("whatsapp", "group-1"));
         Assert.Null(sessionManager.TryGetActive("whatsapp", "user-1"));
     }
@@ -1556,8 +1560,8 @@ public sealed class GatewayWorkersTests
         public string ChannelId { get; } = channelId;
         public string? SelfId { get; init; }
         public IReadOnlyList<string> SelfIds => string.IsNullOrWhiteSpace(SelfId) ? [] : [SelfId];
-        public List<(string RecipientId, bool IsTyping)> TypingEvents { get; } = [];
-        public List<string> ReadReceiptMessageIds { get; } = [];
+        public List<(string RecipientId, string? AccountId, bool IsTyping)> TypingEvents { get; } = [];
+        public List<(string MessageId, string? AccountId)> ReadReceiptEvents { get; } = [];
 
         public event Func<InboundMessage, CancellationToken, ValueTask> OnMessageReceived
         {
@@ -1570,15 +1574,15 @@ public sealed class GatewayWorkersTests
         public ValueTask SendAsync(OutboundMessage message, CancellationToken ct)
             => _messages.Writer.WriteAsync(message, ct);
 
-        public ValueTask SendTypingAsync(string recipientId, bool isTyping, CancellationToken ct)
+        public ValueTask SendTypingAsync(string recipientId, bool isTyping, string? accountId, CancellationToken ct)
         {
-            TypingEvents.Add((recipientId, isTyping));
+            TypingEvents.Add((recipientId, accountId, isTyping));
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask SendReadReceiptAsync(string messageId, string? remoteJid, string? participant, CancellationToken ct)
+        public ValueTask SendReadReceiptAsync(string messageId, string? remoteJid, string? participant, string? accountId, CancellationToken ct)
         {
-            ReadReceiptMessageIds.Add(messageId);
+            ReadReceiptEvents.Add((messageId, accountId));
             return ValueTask.CompletedTask;
         }
 

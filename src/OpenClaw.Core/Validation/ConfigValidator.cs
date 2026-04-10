@@ -172,6 +172,8 @@ public static class ConfigValidator
             }
         }
 
+        ValidateCodingBackends(config.CodingBackends, errors);
+
         // Delegation
         if (config.Delegation.Enabled)
         {
@@ -279,8 +281,8 @@ public static class ConfigValidator
         if (string.Equals(config.Channels.WhatsApp.Type, "first_party_worker", StringComparison.OrdinalIgnoreCase))
         {
             var worker = config.Channels.WhatsApp.FirstPartyWorker;
-            if (worker.Driver is not ("baileys_csharp" or "simulated"))
-                errors.Add("Channels.WhatsApp.FirstPartyWorker.Driver must be 'baileys_csharp' or 'simulated'.");
+            if (worker.Driver is not ("baileys" or "baileys_csharp" or "whatsmeow" or "simulated"))
+                errors.Add("Channels.WhatsApp.FirstPartyWorker.Driver must be 'baileys', 'whatsmeow', or 'simulated'.");
             if (worker.Accounts.Count == 0)
                 errors.Add("Channels.WhatsApp.FirstPartyWorker.Accounts must contain at least one account.");
 
@@ -373,6 +375,45 @@ public static class ConfigValidator
         }
 
         return errors;
+    }
+
+    private static void ValidateCodingBackends(CodingBackendsConfig config, List<string> errors)
+    {
+        var backendIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var backend in config.EnumerateConfiguredBackends())
+        {
+            if (string.IsNullOrWhiteSpace(backend.BackendId))
+            {
+                errors.Add("CodingBackends entries must set BackendId.");
+                continue;
+            }
+
+            if (!backendIds.Add(backend.BackendId))
+                errors.Add($"CodingBackends backend id '{backend.BackendId}' must be unique.");
+
+            if (backend.TimeoutSeconds < 1)
+                errors.Add($"CodingBackends.{backend.BackendId}.TimeoutSeconds must be >= 1 (got {backend.TimeoutSeconds}).");
+
+            if (string.IsNullOrWhiteSpace(backend.Provider))
+                errors.Add($"CodingBackends.{backend.BackendId}.Provider must be set.");
+
+            if (!backend.WriteEnabled && !backend.ReadOnlyByDefault)
+                errors.Add($"CodingBackends.{backend.BackendId} must set ReadOnlyByDefault=true when WriteEnabled=false.");
+
+            if (backend.RequireWorkspace && !string.IsNullOrWhiteSpace(backend.DefaultWorkspacePath) && !Path.IsPathRooted(backend.DefaultWorkspacePath))
+                errors.Add($"CodingBackends.{backend.BackendId}.DefaultWorkspacePath must be absolute when set.");
+
+            var credentialSourceCount = 0;
+            if (!string.IsNullOrWhiteSpace(backend.Credentials.SecretRef))
+                credentialSourceCount++;
+            if (!string.IsNullOrWhiteSpace(backend.Credentials.TokenFilePath))
+                credentialSourceCount++;
+            if (!string.IsNullOrWhiteSpace(backend.Credentials.ConnectedAccountId))
+                credentialSourceCount++;
+
+            if (credentialSourceCount > 1)
+                errors.Add($"CodingBackends.{backend.BackendId}.Credentials must specify at most one of SecretRef, TokenFilePath, or ConnectedAccountId.");
+        }
     }
 
     private static void ValidateNotionConfig(NotionConfig config, List<string> errors)

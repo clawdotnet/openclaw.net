@@ -211,6 +211,7 @@ internal static class GatewayWorkers
                                     {
                                         ChannelId = msg.ChannelId,
                                         RecipientId = conversationRecipientId,
+                                        AccountId = msg.AccountId,
                                         Text = "Rate limit exceeded. Please slow down.",
                                         ReplyToMessageId = msg.MessageId
                                     }, lifetime.ApplicationStopping);
@@ -224,6 +225,7 @@ internal static class GatewayWorkers
                                     {
                                         ChannelId = msg.ChannelId,
                                         RecipientId = conversationRecipientId,
+                                        AccountId = msg.AccountId,
                                         Text = "Session rate limit exceeded. Please retry shortly.",
                                         ReplyToMessageId = msg.MessageId
                                     }, lifetime.ApplicationStopping);
@@ -283,6 +285,7 @@ internal static class GatewayWorkers
                                 {
                                     ChannelId = msg.ChannelId,
                                     RecipientId = conversationRecipientId,
+                                    AccountId = msg.AccountId,
                                     Text = ack,
                                     ReplyToMessageId = msg.MessageId
                                 }, lifetime.ApplicationStopping);
@@ -356,6 +359,7 @@ internal static class GatewayWorkers
                                         {
                                             ChannelId = msg.ChannelId,
                                             RecipientId = conversationRecipientId,
+                                            AccountId = msg.AccountId,
                                             Text = ack,
                                             ReplyToMessageId = msg.MessageId
                                         }, lifetime.ApplicationStopping);
@@ -387,6 +391,7 @@ internal static class GatewayWorkers
                                 {
                                     ChannelId = msg.ChannelId,
                                     RecipientId = conversationRecipientId,
+                                    AccountId = msg.AccountId,
                                     Text = pairingMsg,
                                     ReplyToMessageId = msg.MessageId
                                 }, lifetime.ApplicationStopping);
@@ -461,6 +466,7 @@ internal static class GatewayWorkers
                                     {
                                         ChannelId = msg.ChannelId,
                                         RecipientId = conversationRecipientId,
+                                        AccountId = msg.AccountId,
                                         Text = cmdResponse,
                                         Subject = msg.Subject,
                                         ReplyToMessageId = msg.MessageId
@@ -496,6 +502,7 @@ internal static class GatewayWorkers
                                     {
                                         ChannelId = msg.ChannelId,
                                         RecipientId = conversationRecipientId,
+                                        AccountId = msg.AccountId,
                                         Text = shortCircuitText,
                                         Subject = msg.Subject,
                                         ReplyToMessageId = msg.MessageId
@@ -600,6 +607,7 @@ internal static class GatewayWorkers
                                     {
                                         ChannelId = msg.ChannelId,
                                         RecipientId = conversationRecipientId,
+                                        AccountId = msg.AccountId,
                                         Text = prompt,
                                         ReplyToMessageId = msg.MessageId
                                     }, ct);
@@ -687,12 +695,12 @@ internal static class GatewayWorkers
                                         var receiptJid = msg.IsGroup ? msg.GroupId : msg.SenderId;
                                         var receiptParticipant = msg.IsGroup ? msg.SenderId : null;
                                         ObserveBackgroundTask(
-                                            bridgedAdapter.SendReadReceiptAsync(msg.MessageId, receiptJid, receiptParticipant, processingCt).AsTask(),
+                                            bridgedAdapter.SendReadReceiptAsync(msg.MessageId, receiptJid, receiptParticipant, msg.AccountId, processingCt).AsTask(),
                                             logger,
                                             "bridged read receipt");
                                     }
                                     ObserveBackgroundTask(
-                                        bridgedAdapter.SendTypingAsync(conversationRecipientId, true, processingCt).AsTask(),
+                                        bridgedAdapter.SendTypingAsync(conversationRecipientId, true, msg.AccountId, processingCt).AsTask(),
                                         logger,
                                         "bridged typing start");
                                     bridgedTypingStarted = true;
@@ -736,6 +744,7 @@ internal static class GatewayWorkers
                                     {
                                         ChannelId = msg.ChannelId,
                                         RecipientId = conversationRecipientId,
+                                        AccountId = msg.AccountId,
                                         Text = responseText,
                                         SessionId = session.Id,
                                         CronJobName = msg.CronJobName,
@@ -793,6 +802,7 @@ internal static class GatewayWorkers
                                     {
                                         ChannelId = msg.ChannelId,
                                         RecipientId = conversationRecipientId,
+                                        AccountId = msg.AccountId,
                                         Text = errorText,
                                         Subject = msg.Subject,
                                         ReplyToMessageId = msg.MessageId
@@ -807,7 +817,7 @@ internal static class GatewayWorkers
                             {
                                 try
                                 {
-                                    await bridgedAdapter.SendTypingAsync(conversationRecipientId, false, CancellationToken.None);
+                                    await bridgedAdapter.SendTypingAsync(conversationRecipientId, false, msg.AccountId, CancellationToken.None);
                                 }
                                 catch (Exception ex)
                                 {

@@ -200,16 +200,20 @@ public sealed class WhatsAppSetupResponse
     public string WebhookPath { get; init; } = "/whatsapp/inbound";
     public string? WebhookPublicBaseUrl { get; init; }
     public string WebhookVerifyToken { get; init; } = "openclaw-verify";
+    public bool WebhookVerifyTokenConfigured { get; init; }
     public string WebhookVerifyTokenRef { get; init; } = "env:WHATSAPP_VERIFY_TOKEN";
     public bool ValidateSignature { get; init; }
     public string? WebhookAppSecret { get; init; }
+    public bool WebhookAppSecretConfigured { get; init; }
     public string WebhookAppSecretRef { get; init; } = "env:WHATSAPP_APP_SECRET";
     public string? CloudApiToken { get; init; }
+    public bool CloudApiTokenConfigured { get; init; }
     public string CloudApiTokenRef { get; init; } = "env:WHATSAPP_CLOUD_API_TOKEN";
     public string? PhoneNumberId { get; init; }
     public string? BusinessAccountId { get; init; }
     public string? BridgeUrl { get; init; }
     public string? BridgeToken { get; init; }
+    public bool BridgeTokenConfigured { get; init; }
     public string BridgeTokenRef { get; init; } = "env:WHATSAPP_BRIDGE_TOKEN";
     public bool BridgeSuppressSendExceptions { get; init; }
     public WhatsAppFirstPartyWorkerConfig? FirstPartyWorker { get; init; }

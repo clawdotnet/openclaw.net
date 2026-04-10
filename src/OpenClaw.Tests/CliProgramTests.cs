@@ -49,4 +49,24 @@ public sealed class CliProgramTests
             Environment.SetEnvironmentVariable("OPENCLAW_AUTH_TOKEN", previous);
         }
     }
+
+    [Fact]
+    public void CliArgs_Parse_RepeatedAccountAndBackendOptions()
+    {
+        var parsed = CliArgs.Parse([
+            "codex",
+            "--scope", "repo",
+            "--scope", "write",
+            "--metadata", "team=core",
+            "--metadata", "env=test",
+            "--workspace", "./repo",
+            "--no-stream"
+        ]);
+
+        Assert.Equal("codex", parsed.Positionals[0]);
+        Assert.Equal(2, parsed.Options["--scope"].Count);
+        Assert.Equal(2, parsed.Options["--metadata"].Count);
+        Assert.Equal("./repo", parsed.GetOption("--workspace"));
+        Assert.True(parsed.HasFlag("--no-stream"));
+    }
 }

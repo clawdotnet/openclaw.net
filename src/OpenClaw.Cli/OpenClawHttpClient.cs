@@ -46,6 +46,45 @@ internal sealed class OpenClawHttpClient : IDisposable
     public Task<ModelEvaluationReport> RunModelEvaluationAsync(ModelEvaluationRequest request, CancellationToken cancellationToken)
         => _inner.RunModelEvaluationAsync(request, cancellationToken);
 
+    public Task<IntegrationAccountsResponse> GetIntegrationAccountsAsync(CancellationToken cancellationToken)
+        => _inner.GetIntegrationAccountsAsync(cancellationToken);
+
+    public Task<IntegrationConnectedAccountResponse> GetIntegrationAccountAsync(string accountId, CancellationToken cancellationToken)
+        => _inner.GetIntegrationAccountAsync(accountId, cancellationToken);
+
+    public Task<IntegrationConnectedAccountResponse> CreateIntegrationAccountAsync(ConnectedAccountCreateRequest request, CancellationToken cancellationToken)
+        => _inner.CreateIntegrationAccountAsync(request, cancellationToken);
+
+    public Task<OperationStatusResponse> DeleteIntegrationAccountAsync(string accountId, CancellationToken cancellationToken)
+        => _inner.DeleteIntegrationAccountAsync(accountId, cancellationToken);
+
+    public Task<BackendCredentialResolutionResponse> TestAccountResolutionAsync(BackendCredentialResolutionRequest request, CancellationToken cancellationToken)
+        => _inner.TestAccountResolutionAsync(request, cancellationToken);
+
+    public Task<IntegrationBackendsResponse> GetIntegrationBackendsAsync(CancellationToken cancellationToken)
+        => _inner.GetIntegrationBackendsAsync(cancellationToken);
+
+    public Task<BackendProbeResult> ProbeIntegrationBackendAsync(string backendId, BackendProbeRequest request, CancellationToken cancellationToken)
+        => _inner.ProbeIntegrationBackendAsync(backendId, request, cancellationToken);
+
+    public Task<IntegrationBackendSessionResponse> StartBackendSessionAsync(string backendId, StartBackendSessionRequest request, CancellationToken cancellationToken)
+        => _inner.StartBackendSessionAsync(backendId, request, cancellationToken);
+
+    public Task<IntegrationBackendSessionResponse> SendBackendInputAsync(string backendId, string sessionId, BackendInput input, CancellationToken cancellationToken)
+        => _inner.SendBackendInputAsync(backendId, sessionId, input, cancellationToken);
+
+    public Task<OperationStatusResponse> StopBackendSessionAsync(string backendId, string sessionId, CancellationToken cancellationToken)
+        => _inner.StopBackendSessionAsync(backendId, sessionId, cancellationToken);
+
+    public Task<IntegrationBackendSessionResponse> GetBackendSessionAsync(string backendId, string sessionId, CancellationToken cancellationToken)
+        => _inner.GetBackendSessionAsync(backendId, sessionId, cancellationToken);
+
+    public Task<IntegrationBackendEventsResponse> GetBackendEventsAsync(string backendId, string sessionId, long afterSequence, int limit, CancellationToken cancellationToken)
+        => _inner.GetBackendEventsAsync(backendId, sessionId, afterSequence, limit, cancellationToken);
+
+    public Task StreamBackendEventsAsync(string backendId, string sessionId, long afterSequence, int limit, Action<BackendEvent> onEvent, CancellationToken cancellationToken)
+        => _inner.StreamBackendEventsAsync(backendId, sessionId, afterSequence, limit, onEvent, cancellationToken);
+
     public Task<ApprovalSimulationResponse> SimulateApprovalAsync(ApprovalSimulationRequest request, CancellationToken cancellationToken)
         => _inner.SimulateApprovalAsync(request, cancellationToken);
 
