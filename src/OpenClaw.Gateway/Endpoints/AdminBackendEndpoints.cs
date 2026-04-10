@@ -54,7 +54,8 @@ internal static class AdminBackendEndpoints
                     {
                         Success = credential is not null,
                         Error = credential is null ? "No credential source resolved." : null,
-                        Credential = credential
+                        HasSecret = !string.IsNullOrWhiteSpace(credential?.Secret),
+                        Credential = credential is null ? null : RedactCredential(credential)
                     },
                     CoreJsonContext.Default.BackendCredentialResolutionResponse);
             }
@@ -137,4 +138,18 @@ internal static class AdminBackendEndpoints
 
         return null;
     }
+
+    private static ResolvedBackendCredential RedactCredential(ResolvedBackendCredential credential)
+        => new()
+        {
+            Provider = credential.Provider,
+            SourceKind = credential.SourceKind,
+            AccountId = credential.AccountId,
+            DisplayName = credential.DisplayName,
+            Secret = null,
+            TokenFilePath = null,
+            Scopes = credential.Scopes,
+            ExpiresAt = credential.ExpiresAt,
+            Metadata = new Dictionary<string, string>(credential.Metadata, StringComparer.OrdinalIgnoreCase)
+        };
 }

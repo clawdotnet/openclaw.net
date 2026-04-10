@@ -324,6 +324,7 @@ public sealed class BackendCredentialResolutionResponse
 {
     public bool Success { get; init; }
     public string? Error { get; init; }
+    public bool HasSecret { get; init; }
     public ResolvedBackendCredential? Credential { get; init; }
 }
 

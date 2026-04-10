@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Threading.Channels;
 using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
@@ -1298,17 +1299,23 @@ public sealed class GatewayAdminEndpointTests
         var createText = await createResponse.Content.ReadAsStringAsync();
         Assert.True(createResponse.StatusCode == HttpStatusCode.OK, createText);
         using var createPayload = await ReadJsonAsync(createResponse);
-        var accountId = createPayload.RootElement.GetProperty("account").GetProperty("id").GetString();
+        var createdAccount = createPayload.RootElement.GetProperty("account");
+        var accountId = createdAccount.GetProperty("id").GetString();
         Assert.False(string.IsNullOrWhiteSpace(accountId));
+        AssertRedactedOrMissing(createdAccount, "encryptedSecretJson");
+        AssertRedactedOrMissing(createdAccount, "tokenFilePath");
+        AssertRedactedOrMissing(createdAccount, "secretRef");
 
         using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/api/integration/accounts");
         listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
         var listResponse = await harness.Client.SendAsync(listRequest);
         Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
         using var listPayload = await ReadJsonAsync(listResponse);
-        Assert.Contains(
-            listPayload.RootElement.GetProperty("items").EnumerateArray().Select(item => item.GetProperty("id").GetString()),
-            id => id == accountId);
+        var listedAccount = listPayload.RootElement.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == accountId);
+        AssertRedactedOrMissing(listedAccount, "encryptedSecretJson");
+        AssertRedactedOrMissing(listedAccount, "tokenFilePath");
+        AssertRedactedOrMissing(listedAccount, "secretRef");
 
         using var probeRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/accounts/test-resolution")
         {
@@ -1320,7 +1327,10 @@ public sealed class GatewayAdminEndpointTests
         Assert.True(probeResponse.StatusCode == HttpStatusCode.OK, probeText);
         using var probePayload = await ReadJsonAsync(probeResponse);
         Assert.True(probePayload.RootElement.GetProperty("success").GetBoolean());
+        Assert.True(probePayload.RootElement.GetProperty("hasSecret").GetBoolean());
         Assert.Equal(accountId, probePayload.RootElement.GetProperty("credential").GetProperty("accountId").GetString());
+        AssertRedactedOrMissing(probePayload.RootElement.GetProperty("credential"), "secret");
+        AssertRedactedOrMissing(probePayload.RootElement.GetProperty("credential"), "tokenFilePath");
     }
 
     [Fact]
@@ -1410,6 +1420,42 @@ public sealed class GatewayAdminEndpointTests
         var payload = await streamResponse.Content.ReadAsStringAsync();
         Assert.Contains("assistant_message", payload, StringComparison.Ordinal);
         Assert.Contains("session_completed", payload, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IntegrationBackends_EventStream_SendsInitialComment_AndStopsCleanlyOnRequestAbort()
+    {
+        using var cts = new CancellationTokenSource();
+        var channel = Channel.CreateUnbounded<BackendEvent>();
+        var responseBody = new MemoryStream();
+        var context = new DefaultHttpContext();
+        context.RequestAborted = cts.Token;
+        context.Response.Body = responseBody;
+        context.Response.ContentType = "text/event-stream";
+
+        var session = new BackendSessionRecord
+        {
+            SessionId = "backend-stream",
+            BackendId = "fake-backend",
+            Provider = "fake",
+            State = BackendSessionState.Running
+        };
+
+        var streamTask = IntegrationBackendEndpoints.StreamSessionEventsAsync(context, session, [], channel.Reader, afterSequence: 0);
+
+        await WaitForAsync(
+            static state => ((MemoryStream)state!).Length > 0,
+            responseBody,
+            TimeSpan.FromSeconds(1));
+
+        cts.Cancel();
+        await streamTask;
+
+        responseBody.Position = 0;
+        using var reader = new StreamReader(responseBody, Encoding.UTF8, leaveOpen: true);
+        var payload = await reader.ReadToEndAsync();
+        Assert.StartsWith(": stream-open", payload, StringComparison.Ordinal);
+        Assert.Equal("text/event-stream", context.Response.ContentType);
     }
 
     [Fact]
@@ -1945,6 +1991,14 @@ public sealed class GatewayAdminEndpointTests
         }
 
         throw new TimeoutException("Condition was not met before timeout.");
+    }
+
+    private static void AssertRedactedOrMissing(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var value))
+            return;
+
+        Assert.Equal(JsonValueKind.Null, value.ValueKind);
     }
 
     private static async Task<JsonDocument> ReadMcpJsonAsync(HttpResponseMessage response)

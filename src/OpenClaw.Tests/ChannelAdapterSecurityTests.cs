@@ -207,6 +207,31 @@ public sealed class ChannelAdapterSecurityTests
     }
 
     [Fact]
+    public async Task WhatsAppChannel_SendAsync_ImagePathMarkerIsRejectedAsUnsupported()
+    {
+        using var http = new HttpClient(new CallbackHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)));
+        var channel = new WhatsAppChannel(
+            new WhatsAppChannelConfig
+            {
+                PhoneNumberId = "phone-1",
+                CloudApiToken = "cloud-token"
+            },
+            http,
+            NullLogger<WhatsAppChannel>.Instance);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => channel.SendAsync(
+            new OutboundMessage
+            {
+                ChannelId = "whatsapp",
+                RecipientId = "15551234567",
+                Text = "[IMAGE_PATH:/tmp/cat.png]"
+            },
+            CancellationToken.None).AsTask());
+
+        Assert.Contains("does not support marker kind", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task WhatsAppBridgeChannel_SendAsync_MarkerOnlyMessagePreservesAttachments()
     {
         string? capturedPayload = null;

@@ -140,10 +140,10 @@ public sealed class WhatsAppChannel : IChannelAdapter
     private static string MarkerKindToMessageType(MediaMarkerKind kind)
         => kind switch
         {
-            MediaMarkerKind.ImageUrl or MediaMarkerKind.ImagePath => "image",
+            MediaMarkerKind.ImageUrl => "image",
             MediaMarkerKind.VideoUrl => "video",
             MediaMarkerKind.AudioUrl => "audio",
-            MediaMarkerKind.DocumentUrl or MediaMarkerKind.FileUrl or MediaMarkerKind.FilePath => "document",
+            MediaMarkerKind.DocumentUrl or MediaMarkerKind.FileUrl => "document",
             MediaMarkerKind.StickerUrl => "sticker",
             _ => throw new InvalidOperationException($"WhatsApp Cloud API does not support marker kind '{kind}'.")
         };

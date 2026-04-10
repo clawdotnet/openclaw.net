@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Threading.Channels;
 using OpenClaw.Core.Models;
 using OpenClaw.Gateway.Backends;
 using OpenClaw.Gateway.Bootstrap;
@@ -164,22 +165,40 @@ internal static class IntegrationBackendEndpoints
             ctx.Response.Headers.Connection = "keep-alive";
 
             using var subscription = liveEvents.Subscribe();
-            var lastSequence = afterSequence;
             var currentItems = await coordinator.ListEventsAsync(sessionId, afterSequence, limit, ctx.RequestAborted);
+            await StreamSessionEventsAsync(ctx, session, currentItems, subscription.Reader, afterSequence);
+
+            return Results.Empty;
+        });
+    }
+
+    internal static async Task StreamSessionEventsAsync(
+        HttpContext ctx,
+        BackendSessionRecord session,
+        IReadOnlyList<BackendEvent> currentItems,
+        ChannelReader<BackendEvent> reader,
+        long afterSequence)
+    {
+        var lastSequence = afterSequence;
+
+        try
+        {
+            await WriteSseCommentAsync(ctx, "stream-open");
+
             foreach (var item in currentItems)
             {
                 await WriteSseEventAsync(ctx, item);
                 lastSequence = item.Sequence;
                 if (item is BackendSessionCompletedEvent)
-                    return Results.Empty;
+                    return;
             }
 
             if (IsTerminalState(session.State) && lastSequence >= session.LastEventSequence)
-                return Results.Empty;
+                return;
 
-            await foreach (var item in subscription.Reader.ReadAllAsync(ctx.RequestAborted))
+            await foreach (var item in reader.ReadAllAsync(ctx.RequestAborted))
             {
-                if (!string.Equals(item.SessionId, sessionId, StringComparison.Ordinal))
+                if (!string.Equals(item.SessionId, session.SessionId, StringComparison.Ordinal))
                     continue;
                 if (item.Sequence <= lastSequence)
                     continue;
@@ -189,9 +208,10 @@ internal static class IntegrationBackendEndpoints
                 if (item is BackendSessionCompletedEvent)
                     break;
             }
-
-            return Results.Empty;
-        });
+        }
+        catch (OperationCanceledException) when (ctx.RequestAborted.IsCancellationRequested)
+        {
+        }
     }
 
     private static async Task<T?> TryReadJsonAsync<T>(HttpContext ctx, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo)
@@ -242,6 +262,12 @@ internal static class IntegrationBackendEndpoints
     {
         var json = JsonSerializer.Serialize(evt, CoreJsonContext.Default.BackendEvent);
         await ctx.Response.WriteAsync($"data: {json}\n\n", ctx.RequestAborted);
+        await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+    }
+
+    private static async Task WriteSseCommentAsync(HttpContext ctx, string comment)
+    {
+        await ctx.Response.WriteAsync($": {comment}\n\n", ctx.RequestAborted);
         await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
     }
 

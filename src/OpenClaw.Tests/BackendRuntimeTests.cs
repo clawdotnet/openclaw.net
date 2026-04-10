@@ -133,6 +133,44 @@ public sealed class BackendRuntimeTests
         Assert.Contains(runtime.Events, item => item is BackendAssistantMessageEvent assistant && assistant.Text == "echo-me");
     }
 
+    [Fact]
+    public async Task ProcessHost_StopAsync_CompletesSessionAsCancelled()
+    {
+        if (!File.Exists("/bin/cat"))
+            return;
+
+        var host = new CodingBackendProcessHost(NullLogger<CodingBackendProcessHost>.Instance);
+        var runtime = new TestRuntime(new BackendSessionRecord
+        {
+            SessionId = "bks_stop",
+            BackendId = "shell",
+            Provider = "shell"
+        }, new FileFeatureStore(Path.Combine(Path.GetTempPath(), "openclaw-backend-process-stop-store", Guid.NewGuid().ToString("N"))));
+
+        await host.StartAsync(
+            new CodingBackendProcessSpec
+            {
+                SessionId = runtime.Session.SessionId,
+                BackendId = "shell",
+                Command = "/bin/cat",
+                TimeoutSeconds = 30
+            },
+            _ => [],
+            _ => [],
+            runtime,
+            CancellationToken.None);
+
+        await host.StopAsync(runtime.Session.SessionId, CancellationToken.None);
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+        while (DateTime.UtcNow < deadline && runtime.Session.CompletedAtUtc is null)
+            await Task.Delay(10);
+
+        Assert.Equal(BackendSessionState.Cancelled, runtime.Session.State);
+        Assert.NotNull(runtime.Session.CompletedAtUtc);
+        Assert.Contains(runtime.Events, item => item is BackendSessionCompletedEvent completed && completed.Reason == "process_stopped");
+    }
+
     private sealed class TestRuntime : IBackendSessionRuntime
     {
         private readonly IBackendSessionStore _store;

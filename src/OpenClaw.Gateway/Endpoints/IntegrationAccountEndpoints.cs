@@ -25,7 +25,7 @@ internal static class IntegrationAccountEndpoints
                 return failure;
 
             return Results.Json(
-                new IntegrationAccountsResponse { Items = await accounts.ListAsync(ctx.RequestAborted) },
+                new IntegrationAccountsResponse { Items = (await accounts.ListAsync(ctx.RequestAborted)).Select(RedactAccount).ToArray() },
                 CoreJsonContext.Default.IntegrationAccountsResponse);
         });
 
@@ -39,7 +39,7 @@ internal static class IntegrationAccountEndpoints
             if (account is null)
                 return Results.Json(new OperationStatusResponse { Success = false, Error = "Account not found." }, CoreJsonContext.Default.OperationStatusResponse, statusCode: StatusCodes.Status404NotFound);
 
-            return Results.Json(new IntegrationConnectedAccountResponse { Account = account }, CoreJsonContext.Default.IntegrationConnectedAccountResponse);
+            return Results.Json(new IntegrationConnectedAccountResponse { Account = RedactAccount(account) }, CoreJsonContext.Default.IntegrationConnectedAccountResponse);
         });
 
         group.MapPost("", async (HttpContext ctx) =>
@@ -64,7 +64,7 @@ internal static class IntegrationAccountEndpoints
             try
             {
                 var created = await accounts.CreateAsync(request, ctx.RequestAborted);
-                return Results.Json(new IntegrationConnectedAccountResponse { Account = created }, CoreJsonContext.Default.IntegrationConnectedAccountResponse);
+                return Results.Json(new IntegrationConnectedAccountResponse { Account = RedactAccount(created) }, CoreJsonContext.Default.IntegrationConnectedAccountResponse);
             }
             catch (Exception ex)
             {
@@ -105,4 +105,22 @@ internal static class IntegrationAccountEndpoints
 
         return null;
     }
+
+    private static ConnectedAccount RedactAccount(ConnectedAccount account)
+        => new()
+        {
+            Id = account.Id,
+            Provider = account.Provider,
+            DisplayName = account.DisplayName,
+            SecretKind = account.SecretKind,
+            SecretRef = null,
+            EncryptedSecretJson = null,
+            TokenFilePath = null,
+            Scopes = account.Scopes,
+            ExpiresAt = account.ExpiresAt,
+            IsActive = account.IsActive,
+            Metadata = new Dictionary<string, string>(account.Metadata, StringComparer.OrdinalIgnoreCase),
+            CreatedAtUtc = account.CreatedAtUtc,
+            UpdatedAtUtc = account.UpdatedAtUtc
+        };
 }

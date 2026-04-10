@@ -282,7 +282,7 @@ public static class ConfigValidator
         {
             var worker = config.Channels.WhatsApp.FirstPartyWorker;
             if (worker.Driver is not ("baileys" or "baileys_csharp" or "whatsmeow" or "simulated"))
-                errors.Add("Channels.WhatsApp.FirstPartyWorker.Driver must be 'baileys', 'whatsmeow', or 'simulated'.");
+                errors.Add("Channels.WhatsApp.FirstPartyWorker.Driver must be 'baileys', 'baileys_csharp', 'whatsmeow', or 'simulated'.");
             if (worker.Accounts.Count == 0)
                 errors.Add("Channels.WhatsApp.FirstPartyWorker.Accounts must contain at least one account.");
 

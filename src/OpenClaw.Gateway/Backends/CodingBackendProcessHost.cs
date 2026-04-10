@@ -150,6 +150,10 @@ internal sealed class CodingBackendProcessHost
         private readonly Action<string> _onClosed;
         private readonly ILogger _logger;
         private readonly CancellationTokenSource _stopCts = new();
+        private readonly object _completionGate = new();
+        private string? _requestedCompletionState;
+        private int? _requestedExitCode;
+        private string? _requestedCompletionReason;
         private int _completed;
 
         public ActiveBackendProcess(
@@ -181,7 +185,7 @@ internal sealed class CodingBackendProcessHost
 
             _ = Task.Run(() => PumpOutputAsync(_process.StandardOutput, _stdoutParser, _stopCts.Token));
             _ = Task.Run(() => PumpOutputAsync(_process.StandardError, _stderrParser, _stopCts.Token));
-            _ = Task.Run(() => MonitorExitAsync(_stopCts.Token));
+            _ = Task.Run(MonitorExitAsync);
             if (_spec.TimeoutSeconds > 0)
                 _ = Task.Run(() => MonitorTimeoutAsync(_stopCts.Token));
         }
@@ -204,6 +208,7 @@ internal sealed class CodingBackendProcessHost
 
         public async Task StopAsync(CancellationToken ct)
         {
+            RequestCompletion(BackendSessionState.Cancelled, -1, "process_stopped", overwrite: false);
             _stopCts.Cancel();
             CodingBackendProcessHost.TryKill(_process);
             try
@@ -213,6 +218,32 @@ internal sealed class CodingBackendProcessHost
             catch
             {
             }
+        }
+
+        private void RequestCompletion(string state, int? exitCode, string? reason, bool overwrite = true)
+        {
+            lock (_completionGate)
+            {
+                if (!overwrite && !string.IsNullOrWhiteSpace(_requestedCompletionState))
+                    return;
+
+                _requestedCompletionState = state;
+                _requestedExitCode = exitCode;
+                _requestedCompletionReason = reason;
+            }
+        }
+
+        private (string State, int? ExitCode, string? Reason) ResolveCompletion()
+        {
+            lock (_completionGate)
+            {
+                if (!string.IsNullOrWhiteSpace(_requestedCompletionState))
+                    return (_requestedCompletionState!, _requestedExitCode, _requestedCompletionReason);
+            }
+
+            return _process.ExitCode == 0
+                ? (BackendSessionState.Completed, _process.ExitCode, "process_exited")
+                : (BackendSessionState.Failed, _process.ExitCode, "process_failed");
         }
 
         private async Task PumpOutputAsync(
@@ -241,19 +272,17 @@ internal sealed class CodingBackendProcessHost
             }
         }
 
-        private async Task MonitorExitAsync(CancellationToken ct)
+        private async Task MonitorExitAsync()
         {
             try
             {
-                await _process.WaitForExitAsync(ct);
-                await CompleteAsync(
-                    _process.ExitCode == 0 ? BackendSessionState.Completed : BackendSessionState.Failed,
-                    _process.ExitCode,
-                    _process.ExitCode == 0 ? "process_exited" : "process_failed",
-                    CancellationToken.None);
+                await _process.WaitForExitAsync(CancellationToken.None);
+                var completion = ResolveCompletion();
+                await CompleteAsync(completion.State, completion.ExitCode, completion.Reason, CancellationToken.None);
             }
-            catch (OperationCanceledException)
+            catch (Exception ex)
             {
+                _logger.LogDebug(ex, "Backend exit monitor failed for {SessionId}", _spec.SessionId);
             }
         }
 
@@ -277,8 +306,8 @@ internal sealed class CodingBackendProcessHost
                 Message = $"Backend session timed out after {_spec.TimeoutSeconds} seconds."
             }, CancellationToken.None);
 
+            RequestCompletion(BackendSessionState.Failed, -1, "timed_out");
             await StopAsync(CancellationToken.None);
-            await CompleteAsync(BackendSessionState.Failed, -1, "timed_out", CancellationToken.None);
         }
 
         private async Task CompleteAsync(string state, int? exitCode, string? reason, CancellationToken ct)
