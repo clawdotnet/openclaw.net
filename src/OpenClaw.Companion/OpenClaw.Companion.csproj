@@ -31,5 +31,6 @@
     <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
   </ItemGroup>
 </Project>
