@@ -128,9 +128,15 @@ public sealed class BackendRuntimeTests
             CancellationToken.None);
 
         await host.WriteInputAsync(runtime.Session.SessionId, new BackendInput { Text = "echo-me", CloseInput = true }, CancellationToken.None);
-        await Task.Delay(500);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+        while (DateTime.UtcNow < deadline &&
+               !runtime.Events.ToArray().Any(item => item is BackendAssistantMessageEvent assistant && assistant.Text == "echo-me") &&
+               runtime.Session.CompletedAtUtc is null)
+        {
+            await Task.Delay(10);
+        }
 
-        Assert.Contains(runtime.Events, item => item is BackendAssistantMessageEvent assistant && assistant.Text == "echo-me");
+        Assert.Contains(runtime.Events.ToArray(), item => item is BackendAssistantMessageEvent assistant && assistant.Text == "echo-me");
     }
 
     [Fact]

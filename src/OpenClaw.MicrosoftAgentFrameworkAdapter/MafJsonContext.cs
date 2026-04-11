@@ -1,3 +1,4 @@
+using A2A;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -14,6 +15,7 @@ internal sealed class MafSessionEnvelope
 }
 
 [JsonSerializable(typeof(MafSessionEnvelope))]
+[JsonSerializable(typeof(AgentCard))]
 internal sealed partial class MafJsonContext : JsonSerializerContext
 {
 }

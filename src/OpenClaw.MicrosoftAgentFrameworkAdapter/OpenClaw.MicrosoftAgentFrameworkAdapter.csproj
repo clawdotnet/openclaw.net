@@ -14,10 +14,14 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="OpenClaw.Tests" />
+    <InternalsVisibleTo Include="OpenClaw.Gateway" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0" />
+    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A" Version="1.0.0-preview.260330.1" />
+    <PackageReference Include="A2A" Version="1.0.0-preview" />
+    <PackageReference Include="A2A.AspNetCore" Version="1.0.0-preview" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.5" />
