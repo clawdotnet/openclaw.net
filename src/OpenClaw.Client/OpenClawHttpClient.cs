@@ -19,6 +19,7 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _integrationApprovalHistoryUri;
     private readonly Uri _integrationProvidersUri;
     private readonly Uri _integrationPluginsUri;
+    private readonly Uri _integrationCompatibilityCatalogUri;
     private readonly Uri _integrationOperatorAuditUri;
     private readonly Uri _integrationAccountsUri;
     private readonly Uri _integrationBackendsUri;
@@ -68,6 +69,7 @@ public sealed class OpenClawHttpClient : IDisposable
         _integrationApprovalHistoryUri = new Uri(baseUri, "/api/integration/approval-history");
         _integrationProvidersUri = new Uri(baseUri, "/api/integration/providers");
         _integrationPluginsUri = new Uri(baseUri, "/api/integration/plugins");
+        _integrationCompatibilityCatalogUri = new Uri(baseUri, "/api/integration/compatibility/catalog");
         _integrationOperatorAuditUri = new Uri(baseUri, "/api/integration/operator-audit");
         _integrationAccountsUri = new Uri(baseUri, "/api/integration/accounts");
         _integrationBackendsUri = new Uri(baseUri, "/api/integration/backends");
@@ -263,6 +265,16 @@ public sealed class OpenClawHttpClient : IDisposable
 
     public Task<IntegrationPluginsResponse> GetIntegrationPluginsAsync(CancellationToken cancellationToken)
         => GetAsync(_integrationPluginsUri, CoreJsonContext.Default.IntegrationPluginsResponse, cancellationToken);
+
+    public Task<IntegrationCompatibilityCatalogResponse> GetCompatibilityCatalogAsync(
+        string? compatibilityStatus,
+        string? kind,
+        string? category,
+        CancellationToken cancellationToken)
+        => GetAsync(
+            BuildCompatibilityCatalogUri(compatibilityStatus, kind, category),
+            CoreJsonContext.Default.IntegrationCompatibilityCatalogResponse,
+            cancellationToken);
 
     public Task<IntegrationAccountsResponse> GetIntegrationAccountsAsync(CancellationToken cancellationToken)
         => GetAsync(_integrationAccountsUri, CoreJsonContext.Default.IntegrationAccountsResponse, cancellationToken);
@@ -1077,6 +1089,21 @@ public sealed class OpenClawHttpClient : IDisposable
             pairs.Add($"targetId={Uri.EscapeDataString(query.TargetId)}");
 
         return new Uri($"{_integrationOperatorAuditUri}?{string.Join("&", pairs)}", UriKind.RelativeOrAbsolute);
+    }
+
+    private Uri BuildCompatibilityCatalogUri(string? compatibilityStatus, string? kind, string? category)
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(compatibilityStatus))
+            query.Add($"compatibilityStatus={Uri.EscapeDataString(compatibilityStatus)}");
+        if (!string.IsNullOrWhiteSpace(kind))
+            query.Add($"kind={Uri.EscapeDataString(kind)}");
+        if (!string.IsNullOrWhiteSpace(category))
+            query.Add($"category={Uri.EscapeDataString(category)}");
+
+        return query.Count == 0
+            ? _integrationCompatibilityCatalogUri
+            : new Uri($"{_integrationCompatibilityCatalogUri.AbsoluteUri}?{string.Join("&", query)}", UriKind.Absolute);
     }
 
     private Uri BuildRuntimeEventsUri(RuntimeEventQuery query)

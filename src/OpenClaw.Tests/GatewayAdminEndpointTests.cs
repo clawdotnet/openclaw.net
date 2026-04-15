@@ -1390,6 +1390,19 @@ public sealed class GatewayAdminEndpointTests
         Assert.Equal("Incident Followup", skills[0].GetProperty("name").GetString());
         Assert.Equal("upstream-compatible", skills[0].GetProperty("trustLevel").GetString());
         Assert.Contains("OPENAI_API_KEY", skills[0].GetProperty("requiredEnv").EnumerateArray().Select(static item => item.GetString()));
+
+        using var compatibilityRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/compatibility/catalog?compatibilityStatus=compatible&kind=npm-plugin");
+        compatibilityRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var compatibilityResponse = await harness.Client.SendAsync(compatibilityRequest);
+        Assert.Equal(HttpStatusCode.OK, compatibilityResponse.StatusCode);
+        using var compatibilityPayload = await ReadJsonAsync(compatibilityResponse);
+        var catalogItems = compatibilityPayload.RootElement.GetProperty("catalog").GetProperty("items").EnumerateArray().ToArray();
+        Assert.NotEmpty(catalogItems);
+        Assert.All(catalogItems, static item =>
+        {
+            Assert.Equal("compatible", item.GetProperty("compatibilityStatus").GetString());
+            Assert.Equal("npm-plugin", item.GetProperty("kind").GetString());
+        });
     }
 
     [Fact]
@@ -1627,6 +1640,15 @@ public sealed class GatewayAdminEndpointTests
         Assert.Equal(HttpStatusCode.OK, pluginsResponse.StatusCode);
         using var pluginsPayload = await ReadJsonAsync(pluginsResponse);
         Assert.True(pluginsPayload.RootElement.TryGetProperty("items", out _));
+
+        using var compatibilityRequest = new HttpRequestMessage(HttpMethod.Get, "/api/integration/compatibility/catalog?category=js-tool-plugin");
+        compatibilityRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var compatibilityResponse = await harness.Client.SendAsync(compatibilityRequest);
+        Assert.Equal(HttpStatusCode.OK, compatibilityResponse.StatusCode);
+        using var compatibilityPayload = await ReadJsonAsync(compatibilityResponse);
+        var compatibilityItems = compatibilityPayload.RootElement.GetProperty("catalog").GetProperty("items").EnumerateArray().ToArray();
+        Assert.NotEmpty(compatibilityItems);
+        Assert.All(compatibilityItems, static item => Assert.Equal("js-tool-plugin", item.GetProperty("category").GetString()));
 
         using var auditRequest = new HttpRequestMessage(HttpMethod.Get, "/api/integration/operator-audit?limit=10&actionType=dashboard_test");
         auditRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -2372,6 +2394,7 @@ public sealed class GatewayAdminEndpointTests
             "/api/integration/approval-history",
             "/api/integration/providers",
             "/api/integration/plugins",
+            "/api/integration/compatibility/catalog",
             "/api/integration/operator-audit",
             "/api/integration/sessions",
             "/api/integration/sessions/{id}",
@@ -2396,6 +2419,7 @@ public sealed class GatewayAdminEndpointTests
             "/admin/branches/{id}/restore",
             "/admin/plugins",
             "/admin/skills",
+            "/admin/compatibility/catalog",
             "/admin/plugins/{id}",
             "/admin/plugins/{id}/disable",
             "/admin/plugins/{id}/enable",

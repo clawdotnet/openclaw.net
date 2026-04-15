@@ -36,6 +36,7 @@ internal static class Program
                 "accounts" => await AccountsAsync(rest),
                 "backends" => await BackendsAsync(rest),
                 "admin" => await AdminAsync(rest),
+                "compatibility" or "compat" => CompatibilityCommands.Run(rest),
                 "plugins" => await PluginCommands.RunAsync(rest),
                 "skills" => await SkillCommands.RunAsync(rest),
                 "clawhub" => await ClawHubCommand.RunAsync(rest),
@@ -88,6 +89,7 @@ internal static class Program
               openclaw accounts <list|add|remove|probe> [options]
               openclaw backends <list|probe|run|session send> [options]
               openclaw admin <posture|incident export|approvals simulate> [options]
+              openclaw compatibility <catalog> [options]
               openclaw skills <inspect|install|list> [options]
               openclaw clawhub [wrapper options] [--] <clawhub args...>
 
@@ -133,6 +135,7 @@ internal static class Program
               openclaw admin posture
               openclaw admin approvals simulate --tool shell --args "{\"command\":\"pwd\"}"
               openclaw admin incident export
+              openclaw compatibility catalog --status compatible
 
             Plugin management:
               openclaw plugins install <package-name>    Install from npm/ClawHub
@@ -146,6 +149,10 @@ internal static class Program
               openclaw skills install ./my-skill --dry-run
               openclaw skills install ./my-skill --managed
               openclaw skills list --managed
+
+            Compatibility catalog:
+              openclaw compatibility catalog              List pinned upstream compatibility scenarios
+              openclaw compat catalog --json             Emit catalog JSON
 
             ClawHub wrapper:
               # Forward --help to ClawHub itself:

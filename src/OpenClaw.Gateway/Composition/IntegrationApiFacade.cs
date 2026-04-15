@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using OpenClaw.Core.Compatibility;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Gateway.Bootstrap;
@@ -190,6 +191,15 @@ internal sealed class IntegrationApiFacade
         => new()
         {
             Items = _runtime.Operations.PluginHealth.ListSnapshots()
+        };
+
+    public IntegrationCompatibilityCatalogResponse GetCompatibilityCatalog(
+        string? compatibilityStatus,
+        string? kind,
+        string? category)
+        => new()
+        {
+            Catalog = PublicCompatibilityCatalog.GetCatalog(compatibilityStatus, kind, category)
         };
 
     public IntegrationOperatorAuditResponse GetOperatorAudit(OperatorAuditQuery query)

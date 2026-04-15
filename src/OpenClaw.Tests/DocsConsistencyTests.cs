@@ -16,6 +16,7 @@ public sealed class DocsConsistencyTests
         Assert.Contains("docs/COMPATIBILITY.md", readme, StringComparison.Ordinal);
         Assert.Contains("openclaw skills inspect", readme, StringComparison.Ordinal);
         Assert.Contains("/admin/skills", readme, StringComparison.Ordinal);
+        Assert.Contains("openclaw compatibility catalog", readme, StringComparison.Ordinal);
 
         Assert.Contains("openclaw setup", quickstart, StringComparison.Ordinal);
         Assert.Contains("openclaw init", quickstart, StringComparison.Ordinal);
@@ -28,6 +29,8 @@ public sealed class DocsConsistencyTests
         Assert.Contains("Compatibility Guide", userGuide, StringComparison.Ordinal);
         Assert.Contains("openclaw skills inspect", userGuide, StringComparison.Ordinal);
         Assert.Contains("/admin/plugins/{id}/review", userGuide, StringComparison.Ordinal);
+        Assert.Contains("openclaw compatibility catalog", userGuide, StringComparison.Ordinal);
+        Assert.Contains("/admin/compatibility/catalog", userGuide, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -41,6 +44,7 @@ public sealed class DocsConsistencyTests
         Assert.Contains("## Plugin Package Compatibility", compatibility, StringComparison.Ordinal);
         Assert.Contains("## Channel Compatibility", compatibility, StringComparison.Ordinal);
         Assert.Contains("## Operator Trust Workflow", compatibility, StringComparison.Ordinal);
+        Assert.Contains("## Tested Catalog", compatibility, StringComparison.Ordinal);
         Assert.Contains("## Known Limitations", compatibility, StringComparison.Ordinal);
     }
 

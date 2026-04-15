@@ -110,6 +110,11 @@ public sealed class IntegrationPluginsResponse
     public IReadOnlyList<PluginHealthSnapshot> Items { get; init; } = [];
 }
 
+public sealed class IntegrationCompatibilityCatalogResponse
+{
+    public required CompatibilityCatalogResponse Catalog { get; init; }
+}
+
 public sealed class IntegrationOperatorAuditResponse
 {
     public required OperatorAuditQuery Query { get; init; }

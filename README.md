@@ -193,6 +193,16 @@ openclaw skills list
 
 The admin UI also exposes a live skill inventory through `GET /admin/skills`, including trust level, requirements, dispatch mode, and install location.
 
+OpenClaw.NET now also ships the pinned public compatibility catalog that backs the smoke lane:
+
+```bash
+openclaw compatibility catalog
+openclaw compatibility catalog --status compatible --kind npm-plugin
+openclaw compat catalog --json
+```
+
+Operators can inspect the same catalog through `GET /admin/compatibility/catalog` or `GET /api/integration/compatibility/catalog` to see tested pass/fail scenarios, install commands, required config examples, and expected diagnostics for representative upstream packages.
+
 ### Integrations
 
 | Integration | Description |

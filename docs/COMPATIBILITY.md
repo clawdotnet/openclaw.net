@@ -115,6 +115,21 @@ Unsupported schema keywords are rejected with `unsupported_schema_keyword`.
 - `GET /admin/skills` exposes the loaded skill inventory with trust level, host requirements, dispatch metadata, and source location.
 - Local `SKILL.md` folders or `.tgz` bundles can be inspected and installed with `openclaw skills inspect` and `openclaw skills install`.
 
+## Tested Catalog
+
+OpenClaw.NET now ships the pinned public compatibility catalog used by the smoke lane itself.
+
+- `openclaw compatibility catalog`
+- `openclaw compatibility catalog --status compatible --kind npm-plugin`
+- `GET /admin/compatibility/catalog`
+- `GET /api/integration/compatibility/catalog`
+
+The catalog is scenario-based rather than marketing-based:
+
+- positive scenarios show pinned packages expected to load successfully
+- negative scenarios show pinned configs or packages expected to fail with explicit diagnostics
+- each entry includes install guidance, required config examples where relevant, and expected tools, skills, or diagnostics
+
 ## Known Limitations
 
 - Public-bind setup defaults intentionally disable bridge plugins and shell until you opt into the relevant trust settings.

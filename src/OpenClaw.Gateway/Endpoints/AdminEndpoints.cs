@@ -1672,6 +1672,27 @@ internal static class AdminEndpoints
             }, CoreJsonContext.Default.SkillListResponse);
         });
 
+        app.MapGet("/admin/compatibility/catalog", (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.compatibility");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var compatibilityStatus = ctx.Request.Query.TryGetValue("compatibilityStatus", out var statusValue)
+                ? statusValue.ToString()
+                : null;
+            var kind = ctx.Request.Query.TryGetValue("kind", out var kindValue)
+                ? kindValue.ToString()
+                : null;
+            var category = ctx.Request.Query.TryGetValue("category", out var categoryValue)
+                ? categoryValue.ToString()
+                : null;
+
+            return Results.Json(
+                facade.GetCompatibilityCatalog(compatibilityStatus, kind, category),
+                CoreJsonContext.Default.IntegrationCompatibilityCatalogResponse);
+        });
+
         app.MapGet("/admin/plugins/{id}", (HttpContext ctx, string id) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.plugins");

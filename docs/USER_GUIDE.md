@@ -191,6 +191,16 @@ When you already have a local upstream-style skill folder or tarball, use the bu
 
 `inspect` and `install --dry-run` report trust classification, install slug, requirements, command dispatch metadata, and warnings before any files are copied.
 
+### Compatibility catalog for upstream packages
+
+OpenClaw.NET also ships the pinned compatibility catalog that backs the public smoke lane:
+
+- `openclaw compatibility catalog`
+- `openclaw compatibility catalog --status compatible --kind npm-plugin`
+- `openclaw compat catalog --json`
+
+This is useful when you want a concrete list of tested upstream scenarios, including install commands, config examples, and expected failure diagnostics for known-bad cases.
+
 This repo ships a bundled set of powerful personas and capabilities out-of-the-box (Software Developer, Deep Researcher, Data Analyst, daily news digest, email triage, Home Assistant + MQTT operations). You can disable any skill via:
 ```json
 {
@@ -244,6 +254,7 @@ For operator workflows outside the chat UI, the gateway also exposes:
 - `POST /admin/plugins/{id}/review`
 - `POST /admin/plugins/{id}/unreview`
 - `GET /admin/skills`
+- `GET /admin/compatibility/catalog`
 - `GET /admin/learning/proposals/{id}`
 - `POST /admin/learning/proposals/{id}/rollback`
 
@@ -252,6 +263,7 @@ CLI mirrors:
 - `openclaw admin posture`
 - `openclaw admin approvals simulate`
 - `openclaw admin incident export`
+- `openclaw compatibility catalog`
 
 These are useful for validating public-bind posture, approval-policy behavior, and exporting a redacted incident bundle during support/debugging.
 
@@ -266,6 +278,7 @@ For memory and learning operations, the admin API now also supports:
 - rolling back an approved profile-update proposal when a learned preference should be reverted
 - reviewing bridge or dynamic plugins after operator validation and clearing that review state later
 - browsing the currently loaded skills with trust level, required env/config/bin dependencies, and command dispatch metadata
+- browsing the pinned public compatibility catalog with pass/fail scenarios, install guidance, config examples, and expected diagnostics
 
 Plugin trust levels shown in the admin UI and CLI are:
 

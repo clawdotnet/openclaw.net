@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Agent.Plugins;
+using OpenClaw.Core.Compatibility;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Skills;
@@ -33,8 +33,8 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
         if (!HasNode() || !IsSmokeEnabled())
             return;
 
-        var manifest = LoadManifest();
-        foreach (var entry in manifest.Entries)
+        var manifest = PublicCompatibilityCatalog.GetCatalog();
+        foreach (var entry in manifest.Items)
         {
             switch (entry.Kind)
             {
@@ -50,10 +50,10 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
         }
     }
 
-    private async Task VerifyClawHubSkillAsync(SmokeEntry entry)
+    private async Task VerifyClawHubSkillAsync(CompatibilityCatalogEntry entry)
     {
-        Assert.False(string.IsNullOrWhiteSpace(entry.Slug), $"Smoke entry '{entry.Id}' must declare a skill slug.");
-        Assert.False(string.IsNullOrWhiteSpace(entry.Version), $"Smoke entry '{entry.Id}' must declare a skill version.");
+        Assert.False(string.IsNullOrWhiteSpace(entry.SkillSlug), $"Smoke entry '{entry.Id}' must declare a skill slug.");
+        Assert.False(string.IsNullOrWhiteSpace(entry.PackageVersion), $"Smoke entry '{entry.Id}' must declare a skill version.");
         Assert.False(string.IsNullOrWhiteSpace(entry.ExpectedRelativePath), $"Smoke entry '{entry.Id}' must declare expectedRelativePath.");
 
         var workdir = CreateScenarioDirectory(entry.Id);
@@ -64,8 +64,8 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
             "--workdir", workdir,
             "--dir", "skills",
             "--no-input",
-            "install", entry.Slug!,
-            "--version", entry.Version!);
+            "install", entry.SkillSlug!,
+            "--version", entry.PackageVersion!);
 
         var expectedPath = Path.Combine(workdir, entry.ExpectedRelativePath!
             .Replace('/', Path.DirectorySeparatorChar)
@@ -84,18 +84,18 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
         Assert.NotEmpty(skills);
     }
 
-    private async Task VerifyNpmPluginAsync(SmokeEntry entry)
+    private async Task VerifyNpmPluginAsync(CompatibilityCatalogEntry entry)
     {
-        Assert.False(string.IsNullOrWhiteSpace(entry.Spec), $"Smoke entry '{entry.Id}' must declare an npm spec.");
+        Assert.False(string.IsNullOrWhiteSpace(entry.PackageSpec), $"Smoke entry '{entry.Id}' must declare an npm spec.");
         Assert.False(string.IsNullOrWhiteSpace(entry.PackageName), $"Smoke entry '{entry.Id}' must declare packageName.");
         Assert.False(string.IsNullOrWhiteSpace(entry.PluginId), $"Smoke entry '{entry.Id}' must declare pluginId.");
-        Assert.False(string.IsNullOrWhiteSpace(entry.ExpectedStatus), $"Smoke entry '{entry.Id}' must declare expectedStatus.");
+        Assert.False(string.IsNullOrWhiteSpace(entry.CompatibilityStatus), $"Smoke entry '{entry.Id}' must declare expectedStatus.");
 
         var scenarioDir = CreateScenarioDirectory(entry.Id);
         var installDir = Path.Combine(scenarioDir, "npm");
         Directory.CreateDirectory(installDir);
 
-        var packages = new List<string> { entry.Spec! };
+        var packages = new List<string> { entry.PackageSpec! };
         if (entry.InstallExtraPackages is { Length: > 0 })
             packages.AddRange(entry.InstallExtraPackages);
         await InstallPackagesAsync(installDir, packages);
@@ -113,7 +113,7 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
         var report = host.Reports.LastOrDefault(r => string.Equals(r.PluginId, entry.PluginId, StringComparison.Ordinal));
         Assert.NotNull(report);
 
-        if (string.Equals(entry.ExpectedStatus, "compatible", StringComparison.Ordinal))
+        if (string.Equals(entry.CompatibilityStatus, "compatible", StringComparison.Ordinal))
         {
             Assert.True(report!.Loaded, $"Expected plugin '{entry.Id}' to load. Error: {report.Error}");
 
@@ -136,7 +136,7 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
                     Assert.Contains(skills, skill => string.Equals(skill.Name, skillName, StringComparison.Ordinal));
             }
         }
-        else if (string.Equals(entry.ExpectedStatus, "incompatible", StringComparison.Ordinal))
+        else if (string.Equals(entry.CompatibilityStatus, "incompatible", StringComparison.Ordinal))
         {
             Assert.False(report!.Loaded, $"Expected plugin '{entry.Id}' to fail compatibility checks.");
             foreach (var diagnosticCode in entry.ExpectedDiagnosticCodes ?? [])
@@ -148,11 +148,11 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
         }
         else
         {
-            throw new Xunit.Sdk.XunitException($"Unsupported expectedStatus '{entry.ExpectedStatus}' for smoke entry '{entry.Id}'.");
+            throw new Xunit.Sdk.XunitException($"Unsupported expectedStatus '{entry.CompatibilityStatus}' for smoke entry '{entry.Id}'.");
         }
     }
 
-    private static PluginsConfig BuildPluginConfig(SmokeEntry entry, string packageDir)
+    private static PluginsConfig BuildPluginConfig(CompatibilityCatalogEntry entry, string packageDir)
     {
         var config = new PluginsConfig
         {
@@ -160,11 +160,11 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
             Load = new PluginLoadConfig { Paths = [packageDir] }
         };
 
-        if (!string.IsNullOrWhiteSpace(entry.ConfigJson))
+        if (!string.IsNullOrWhiteSpace(entry.ConfigJsonExample))
         {
             config.Entries[entry.PluginId!] = new PluginEntryConfig
             {
-                Config = JsonDocument.Parse(entry.ConfigJson).RootElement.Clone()
+                Config = JsonDocument.Parse(entry.ConfigJsonExample).RootElement.Clone()
             };
         }
 
@@ -198,20 +198,6 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
 
     private PluginHost CreateHost(PluginsConfig config)
         => new(config, GetBridgeScriptPath(), new TestLogger());
-
-    private static SmokeManifest LoadManifest()
-    {
-        var manifestPath = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory,
-            "..", "..", "..", "..", "..",
-            "compat", "public-smoke.json"));
-        Assert.True(File.Exists(manifestPath), $"Public smoke manifest not found at {manifestPath}");
-
-        using var stream = File.OpenRead(manifestPath);
-        var manifest = JsonSerializer.Deserialize(stream, SmokeJsonContext.Default.SmokeManifest);
-        Assert.NotNull(manifest);
-        return manifest!;
-    }
 
     private static async Task RunCommandAsync(string fileName, string workdir, params string[] args)
     {
@@ -294,36 +280,4 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
             Func<TState, Exception?, string> formatter)
         { }
     }
-}
-
-public sealed class SmokeManifest
-{
-    public int Version { get; set; }
-    public SmokeEntry[] Entries { get; set; } = [];
-}
-
-public sealed class SmokeEntry
-{
-    public string Id { get; set; } = "";
-    public string Category { get; set; } = "";
-    public string Kind { get; set; } = "";
-    public string? Spec { get; set; }
-    public string? PackageName { get; set; }
-    public string? PluginId { get; set; }
-    public string? Slug { get; set; }
-    public string? Version { get; set; }
-    public string? ExpectedStatus { get; set; }
-    public string? ExpectedRelativePath { get; set; }
-    public string? ConfigJson { get; set; }
-    public string[]? InstallExtraPackages { get; set; }
-    public string[]? ExpectedToolNames { get; set; }
-    public string[]? ExpectedSkillNames { get; set; }
-    public string[]? ExpectedDiagnosticCodes { get; set; }
-}
-
-[JsonSerializable(typeof(SmokeManifest))]
-[JsonSerializable(typeof(SmokeEntry[]))]
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
-internal sealed partial class SmokeJsonContext : JsonSerializerContext
-{
 }
