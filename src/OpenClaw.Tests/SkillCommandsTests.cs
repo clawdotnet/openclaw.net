@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OpenClaw.Cli;
 using Xunit;
 
@@ -56,6 +57,63 @@ public sealed class SkillCommandsTests
         }
     }
 
+    [Fact]
+    public async Task RunAsync_Install_FromTarballWithSpecialPath_Succeeds()
+    {
+        var root = CreateTempRoot();
+        var previousWorkspace = Environment.GetEnvironmentVariable("OPENCLAW_WORKSPACE");
+        try
+        {
+            var workspace = Path.Combine(root, "workspace");
+            Directory.CreateDirectory(workspace);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", workspace);
+
+            var sourceDir = CreateSkill(root, "Tarball Skill", "Install from a tarball.");
+            var tarballPath = Path.Combine(root, "-tarball skill.tgz");
+            await CreateTarballAsync(root, Path.GetFileName(sourceDir), tarballPath);
+
+            var exitCode = await SkillCommands.RunAsync(["install", tarballPath]);
+
+            Assert.Equal(0, exitCode);
+            Assert.True(File.Exists(Path.Combine(workspace, "skills", "tarball-skill", "SKILL.md")));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", previousWorkspace);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_Install_RejectsSymlinkEntries()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var root = CreateTempRoot();
+        var previousWorkspace = Environment.GetEnvironmentVariable("OPENCLAW_WORKSPACE");
+        try
+        {
+            var workspace = Path.Combine(root, "workspace");
+            Directory.CreateDirectory(workspace);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", workspace);
+
+            var sourceDir = CreateSkill(root, "Symlink Skill", "Should reject symlink content.");
+            var outsideFile = Path.Combine(root, "outside.txt");
+            await File.WriteAllTextAsync(outsideFile, "secret");
+            File.CreateSymbolicLink(Path.Combine(sourceDir, "escape.txt"), outsideFile);
+
+            var exitCode = await SkillCommands.RunAsync(["install", sourceDir]);
+
+            Assert.Equal(1, exitCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", previousWorkspace);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTempRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "openclaw-skill-command-tests", Guid.NewGuid().ToString("n"));
@@ -78,5 +136,31 @@ public sealed class SkillCommandsTests
             "Follow the documented process." +
             Environment.NewLine);
         return skillDir;
+    }
+
+    private static async Task CreateTarballAsync(string workingDirectory, string sourceDirectoryName, string tarballPath)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "tar",
+                WorkingDirectory = workingDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+        process.StartInfo.ArgumentList.Add("--create");
+        process.StartInfo.ArgumentList.Add("--gzip");
+        process.StartInfo.ArgumentList.Add("--file");
+        process.StartInfo.ArgumentList.Add(tarballPath);
+        process.StartInfo.ArgumentList.Add(sourceDirectoryName);
+
+        process.Start();
+        var stderr = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        Assert.True(process.ExitCode == 0, $"tar create failed: {stderr}");
     }
 }

@@ -2316,20 +2316,20 @@
 
             pluginsOutput.innerHTML = data.items.map(item => `
                 <div class="card" style="margin-bottom:0.75rem;">
-                    <strong>${item.pluginId}</strong>
-                    <div class="muted">${item.origin} · trust=${item.trustLevel} · compatibility=${item.compatibilityStatus} · loaded=${item.loaded} · disabled=${item.disabled} · quarantined=${item.quarantined} · reviewed=${item.reviewed}</div>
-                    <div class="muted">${item.trustReason || 'No trust rationale recorded.'}</div>
-                    <div class="muted">Capabilities: ${(item.requestedCapabilities || []).join(', ') || 'none'} | declared: ${item.declaredSurface || 'entry-only'}</div>
+                    <strong>${escapeHtml(item.pluginId)}</strong>
+                    <div class="muted">${escapeHtml(item.origin)} · trust=${escapeHtml(item.trustLevel)} · compatibility=${escapeHtml(item.compatibilityStatus)} · loaded=${item.loaded} · disabled=${item.disabled} · quarantined=${item.quarantined} · reviewed=${item.reviewed}</div>
+                    <div class="muted">${escapeHtml(item.trustReason || 'No trust rationale recorded.')}</div>
+                    <div class="muted">Capabilities: ${(item.requestedCapabilities || []).map(escapeHtml).join(', ') || 'none'} | declared: ${escapeHtml(item.declaredSurface || 'entry-only')}</div>
                     <div class="muted">Diagnostics: errors=${item.errorCount || 0} warnings=${item.warningCount || 0}</div>
-                    <div class="muted">Entry: ${item.entryPath || 'n/a'}</div>
-                    <div class="muted">${item.pendingReason || item.lastError || 'No outstanding issues.'}</div>
+                    <div class="muted">Entry: ${escapeHtml(item.entryPath || 'n/a')}</div>
+                    <div class="muted">${escapeHtml(item.pendingReason || item.lastError || 'No outstanding issues.')}</div>
                     <div class="actions" style="margin-top:0.5rem;">
-                        <button data-plugin-action="disable" data-plugin-id="${item.pluginId}">Disable</button>
-                        <button class="secondary" data-plugin-action="enable" data-plugin-id="${item.pluginId}">Enable</button>
-                        <button class="secondary" data-plugin-action="review" data-plugin-id="${item.pluginId}">Mark Reviewed</button>
-                        <button class="secondary" data-plugin-action="unreview" data-plugin-id="${item.pluginId}">Clear Review</button>
-                        <button class="secondary" data-plugin-action="quarantine" data-plugin-id="${item.pluginId}">Quarantine</button>
-                        <button class="secondary" data-plugin-action="clear-quarantine" data-plugin-id="${item.pluginId}">Clear Quarantine</button>
+                        <button data-plugin-action="disable" data-plugin-id="${escapeHtml(item.pluginId)}">Disable</button>
+                        <button class="secondary" data-plugin-action="enable" data-plugin-id="${escapeHtml(item.pluginId)}">Enable</button>
+                        <button class="secondary" data-plugin-action="review" data-plugin-id="${escapeHtml(item.pluginId)}">Mark Reviewed</button>
+                        <button class="secondary" data-plugin-action="unreview" data-plugin-id="${escapeHtml(item.pluginId)}">Clear Review</button>
+                        <button class="secondary" data-plugin-action="quarantine" data-plugin-id="${escapeHtml(item.pluginId)}">Quarantine</button>
+                        <button class="secondary" data-plugin-action="clear-quarantine" data-plugin-id="${escapeHtml(item.pluginId)}">Clear Quarantine</button>
                     </div>
                 </div>
             `).join('');
@@ -2349,14 +2349,14 @@
 
             skillsOutput.innerHTML = data.items.map(item => `
                 <div class="card" style="margin-bottom:0.75rem;">
-                    <strong>${item.name}</strong>
-                    <div class="muted">${item.source} · trust=${item.trustLevel} · always=${item.always} · userInvocable=${item.userInvocable} · disableModelInvocation=${item.disableModelInvocation}</div>
-                    <div class="muted">${item.description || 'No description.'}</div>
-                    <div class="muted">${item.trustReason || 'No trust rationale recorded.'}</div>
-                    <div class="muted">Requirements: bins=${(item.requiredBins || []).join(', ') || 'none'} | anyBins=${(item.requiredAnyBins || []).join(', ') || 'none'} | env=${(item.requiredEnv || []).join(', ') || 'none'} | config=${(item.requiredConfig || []).join(', ') || 'none'}</div>
-                    <div class="muted">Dispatch: ${item.commandDispatch || 'none'}${item.commandTool ? ` | tool=${item.commandTool}` : ''}${item.commandArgMode ? ` | args=${item.commandArgMode}` : ''}</div>
-                    <div class="muted">Location: ${item.location}</div>
-                    <div class="muted">${(item.warnings || []).join(' | ') || 'No warnings.'}</div>
+                    <strong>${escapeHtml(item.name)}</strong>
+                    <div class="muted">${escapeHtml(item.source)} · trust=${escapeHtml(item.trustLevel)} · always=${item.always} · userInvocable=${item.userInvocable} · disableModelInvocation=${item.disableModelInvocation}</div>
+                    <div class="muted">${escapeHtml(item.description || 'No description.')}</div>
+                    <div class="muted">${escapeHtml(item.trustReason || 'No trust rationale recorded.')}</div>
+                    <div class="muted">Requirements: bins=${(item.requiredBins || []).map(escapeHtml).join(', ') || 'none'} | anyBins=${(item.requiredAnyBins || []).map(escapeHtml).join(', ') || 'none'} | env=${(item.requiredEnv || []).map(escapeHtml).join(', ') || 'none'} | config=${(item.requiredConfig || []).map(escapeHtml).join(', ') || 'none'}</div>
+                    <div class="muted">Dispatch: ${escapeHtml(item.commandDispatch || 'none')}${item.commandTool ? ` | tool=${escapeHtml(item.commandTool)}` : ''}${item.commandArgMode ? ` | args=${escapeHtml(item.commandArgMode)}` : ''}</div>
+                    <div class="muted">Location: ${escapeHtml(item.location)}</div>
+                    <div class="muted">${(item.warnings || []).map(escapeHtml).join(' | ') || 'No warnings.'}</div>
                 </div>
             `).join('');
         }

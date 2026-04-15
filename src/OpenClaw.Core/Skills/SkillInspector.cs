@@ -64,7 +64,15 @@ public static class SkillInspector
         }
 
         var matches = Directory
-            .GetFiles(candidatePath, "SKILL.md", SearchOption.AllDirectories)
+            .EnumerateFiles(
+                candidatePath,
+                "SKILL.md",
+                new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    IgnoreInaccessible = true,
+                    AttributesToSkip = FileAttributes.ReparsePoint
+                })
             .Select(Path.GetDirectoryName)
             .Where(static path => !string.IsNullOrWhiteSpace(path))
             .Distinct(StringComparer.Ordinal)

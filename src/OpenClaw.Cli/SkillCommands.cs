@@ -77,6 +77,11 @@ internal static class SkillCommands
             Console.WriteLine($"Installed skill '{inspected.Definition.Name}' to {targetDir}");
             return 0;
         }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
         finally
         {
             if (!string.IsNullOrWhiteSpace(resolved.TempDirectory))
@@ -156,13 +161,16 @@ internal static class SkillCommands
 
             try
             {
-                var extractResult = await RunProcessAsync("tar", $"xzf {Quote(resolvedSourcePath)} -C {Quote(tempDir)}", tempDir);
+                var extractResult = await RunProcessAsync(
+                    "tar",
+                    ["--extract", "--gzip", "--file", resolvedSourcePath, "--directory", tempDir],
+                    tempDir);
                 if (extractResult.ExitCode != 0)
-                    return (SkillCommandInspection.Failure($"Failed to extract skill tarball: {extractResult.Stderr}"), null);
+                    return (SkillCommandInspection.Failure($"Failed to extract skill tarball: {extractResult.Stderr}"), retainExtractedDirectory ? tempDir : null);
 
                 var inspection = SkillInspector.InspectPath(tempDir, SkillSource.Extra);
                 if (!inspection.Success)
-                    return (SkillCommandInspection.Failure(inspection.ErrorMessage ?? $"Failed to inspect extracted tarball {resolvedSourcePath}."), null);
+                    return (SkillCommandInspection.Failure(inspection.ErrorMessage ?? $"Failed to inspect extracted tarball {resolvedSourcePath}."), retainExtractedDirectory ? tempDir : null);
 
                 return (CreateInspection(inspection), retainExtractedDirectory ? tempDir : null);
             }
@@ -288,15 +296,34 @@ internal static class SkillCommands
 
     private static void CopyDirectory(string source, string destination)
     {
+        ThrowIfReparsePoint(new DirectoryInfo(source));
         Directory.CreateDirectory(destination);
         foreach (var file in Directory.GetFiles(source))
+        {
+            ThrowIfReparsePoint(new FileInfo(file));
             File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true);
+        }
 
         foreach (var dir in Directory.GetDirectories(source))
+        {
+            ThrowIfReparsePoint(new DirectoryInfo(dir));
             CopyDirectory(dir, Path.Combine(destination, Path.GetFileName(dir)));
+        }
     }
 
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(string fileName, string arguments, string workingDirectory)
+    private static void ThrowIfReparsePoint(FileSystemInfo info)
+    {
+        if ((info.Attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new InvalidOperationException(
+                $"Refusing to install skill package containing a symlink or reparse point: {info.FullName}");
+        }
+    }
+
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string workingDirectory)
     {
         try
         {
@@ -305,7 +332,6 @@ internal static class SkillCommands
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = fileName,
-                    Arguments = arguments,
                     WorkingDirectory = workingDirectory,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -313,6 +339,8 @@ internal static class SkillCommands
                     CreateNoWindow = true
                 }
             };
+            foreach (var argument in arguments)
+                process.StartInfo.ArgumentList.Add(argument);
 
             process.Start();
             var stdout = await process.StandardOutput.ReadToEndAsync();
@@ -325,9 +353,6 @@ internal static class SkillCommands
             return (127, "", $"Command not found: {fileName}");
         }
     }
-
-    private static string Quote(string path)
-        => path.Contains(' ') ? $"\"{path}\"" : path;
 
     private static string Slugify(string value)
     {

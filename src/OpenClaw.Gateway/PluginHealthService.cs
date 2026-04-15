@@ -143,13 +143,31 @@ internal sealed class PluginHealthService
     }
 
     public PluginOperatorState SetDisabled(string pluginId, bool disabled, string? reason)
-        => UpsertState(pluginId, disabled: disabled, quarantined: null, disabled ? reason : string.Empty, reviewed: null, reviewNotes: null);
+        => UpsertState(
+            pluginId,
+            disabled: disabled,
+            quarantined: null,
+            reason: disabled ? reason : string.Empty,
+            reviewed: null,
+            reviewNotes: null);
 
     public PluginOperatorState SetQuarantined(string pluginId, bool quarantined, string? reason)
-        => UpsertState(pluginId, disabled: null, quarantined, quarantined ? reason : string.Empty, reviewed: null, reviewNotes: null);
+        => UpsertState(
+            pluginId,
+            disabled: null,
+            quarantined: quarantined,
+            reason: quarantined ? reason : string.Empty,
+            reviewed: null,
+            reviewNotes: null);
 
     public PluginOperatorState SetReviewed(string pluginId, bool reviewed, string? reviewNotes)
-        => UpsertState(pluginId, disabled: null, quarantined: null, reason: null, reviewed, reviewed ? reviewNotes : string.Empty);
+        => UpsertState(
+            pluginId,
+            disabled: null,
+            quarantined: null,
+            reason: null,
+            reviewed: reviewed,
+            reviewNotes: reviewed ? reviewNotes : string.Empty);
 
     private PluginOperatorState UpsertState(string pluginId, bool? disabled, bool? quarantined, string? reason, bool? reviewed, string? reviewNotes)
     {
