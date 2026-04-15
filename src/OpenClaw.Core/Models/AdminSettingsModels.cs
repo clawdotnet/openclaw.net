@@ -39,6 +39,17 @@ public sealed class AdminSettingsSnapshot
     public bool TelegramEnabled { get; init; }
     public bool TelegramValidateSignature { get; init; }
     public string TelegramDmPolicy { get; init; } = "pairing";
+    public bool TeamsEnabled { get; init; }
+    public bool TeamsValidateToken { get; init; }
+    public string TeamsDmPolicy { get; init; } = "pairing";
+    public bool SlackEnabled { get; init; }
+    public bool SlackValidateSignature { get; init; }
+    public string SlackDmPolicy { get; init; } = "pairing";
+    public bool DiscordEnabled { get; init; }
+    public bool DiscordValidateSignature { get; init; }
+    public string DiscordDmPolicy { get; init; } = "pairing";
+    public bool SignalEnabled { get; init; }
+    public string SignalDmPolicy { get; init; } = "pairing";
     [JsonPropertyName("whatsappEnabled")]
     public bool WhatsAppEnabled { get; init; }
     [JsonPropertyName("whatsappValidateSignature")]

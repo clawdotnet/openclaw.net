@@ -53,6 +53,17 @@ public sealed class AdminSettingsServiceTests
                 TelegramEnabled = true,
                 TelegramValidateSignature = true,
                 TelegramDmPolicy = "closed",
+                TeamsEnabled = false,
+                TeamsValidateToken = false,
+                TeamsDmPolicy = "open",
+                SlackEnabled = false,
+                SlackValidateSignature = false,
+                SlackDmPolicy = "closed",
+                DiscordEnabled = false,
+                DiscordValidateSignature = false,
+                DiscordDmPolicy = "open",
+                SignalEnabled = false,
+                SignalDmPolicy = "closed",
                 WhatsAppEnabled = true,
                 WhatsAppValidateSignature = false,
                 WhatsAppDmPolicy = "pairing"
@@ -74,6 +85,11 @@ public sealed class AdminSettingsServiceTests
             Assert.False(config.Channels.Sms.Twilio.ValidateSignature);
             Assert.Equal("open", config.Channels.Sms.DmPolicy);
             Assert.Equal("closed", config.Channels.Telegram.DmPolicy);
+            Assert.False(config.Channels.Teams.Enabled);
+            Assert.False(config.Channels.Teams.ValidateToken);
+            Assert.Equal("closed", config.Channels.Slack.DmPolicy);
+            Assert.False(config.Channels.Discord.Enabled);
+            Assert.Equal("closed", config.Channels.Signal.DmPolicy);
 
             var loaded = AdminSettingsService.TryLoadPersistedSnapshot(
                 AdminSettingsService.GetSettingsPath(config),
@@ -87,6 +103,8 @@ public sealed class AdminSettingsServiceTests
             Assert.True(persisted.RetentionEnabled);
             Assert.Equal("strict", persisted.AllowlistSemantics);
             Assert.True(persisted.SmsEnabled);
+            Assert.False(persisted.TeamsEnabled);
+            Assert.False(persisted.SignalEnabled);
             Assert.False(persisted.WhatsAppValidateSignature);
             Assert.Equal("open", persisted.SmsDmPolicy);
         }
@@ -198,6 +216,17 @@ public sealed class AdminSettingsServiceTests
                 TelegramEnabled = true,
                 TelegramValidateSignature = true,
                 TelegramDmPolicy = "open",
+                TeamsEnabled = false,
+                TeamsValidateToken = false,
+                TeamsDmPolicy = "open",
+                SlackEnabled = false,
+                SlackValidateSignature = false,
+                SlackDmPolicy = "closed",
+                DiscordEnabled = false,
+                DiscordValidateSignature = false,
+                DiscordDmPolicy = "open",
+                SignalEnabled = false,
+                SignalDmPolicy = "closed",
                 WhatsAppEnabled = true,
                 WhatsAppValidateSignature = true,
                 WhatsAppDmPolicy = "pairing"
@@ -213,6 +242,8 @@ public sealed class AdminSettingsServiceTests
             Assert.Equal("legacy", config.Channels.AllowlistSemantics);
             Assert.False(config.Channels.Sms.Twilio.Enabled);
             Assert.Equal("pairing", config.Channels.Sms.DmPolicy);
+            Assert.False(config.Channels.Teams.Enabled);
+            Assert.False(config.Channels.Signal.Enabled);
             Assert.False(File.Exists(AdminSettingsService.GetSettingsPath(config)));
         }
         finally

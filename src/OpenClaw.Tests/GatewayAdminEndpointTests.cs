@@ -204,6 +204,437 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task Allowlists_DiscordChannel_UsesConfiguredAllowlist()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Channels.Discord.AllowedFromUserIds = ["discord-user"];
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/allowlists/discord");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        using var payload = await ReadJsonAsync(response);
+        var allowed = payload.RootElement.GetProperty("effective").GetProperty("allowedFrom").EnumerateArray().Select(static item => item.GetString()).OfType<string>().ToArray();
+        Assert.Single(allowed);
+        Assert.Equal("discord-user", allowed[0]);
+    }
+
+    [Fact]
+    public async Task DoctorText_ListsAllChannelAllowlists()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Channels.Teams.AllowedFromIds = ["teams-user"];
+            config.Channels.Slack.AllowedFromUserIds = ["slack-user"];
+            config.Channels.Discord.AllowedFromUserIds = ["discord-user"];
+            config.Channels.Signal.AllowedFromNumbers = ["+15551230000"];
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/doctor/text");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var text = await response.Content.ReadAsStringAsync();
+        Assert.Contains("- teams:", text, StringComparison.Ordinal);
+        Assert.Contains("- slack:", text, StringComparison.Ordinal);
+        Assert.Contains("- discord:", text, StringComparison.Ordinal);
+        Assert.Contains("- signal:", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LearningProposalDetail_ProfileUpdate_IncludesDiffAndProvenance()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var store = new FileFeatureStore(harness.StoragePath);
+        var actorId = "telegram:detail-user";
+
+        await store.SaveProfileAsync(new UserProfile
+        {
+            ActorId = actorId,
+            ChannelId = "telegram",
+            SenderId = "detail-user",
+            Summary = "Prefers terse updates.",
+            Tone = "concise",
+            Preferences = ["terse"],
+            RecentIntents = ["status"],
+            Facts =
+            [
+                new UserProfileFact
+                {
+                    Key = "style",
+                    Value = "terse",
+                    Confidence = 0.6f,
+                    SourceSessionIds = ["sess-prev"]
+                }
+            ]
+        }, CancellationToken.None);
+
+        await store.SaveProposalAsync(new LearningProposal
+        {
+            Id = "lp_detail_profile",
+            Kind = LearningProposalKind.ProfileUpdate,
+            Status = LearningProposalStatus.Pending,
+            ActorId = actorId,
+            Title = "Profile update suggestion",
+            Summary = "Detected a style preference change.",
+            ProfileUpdate = new UserProfile
+            {
+                ActorId = actorId,
+                ChannelId = "telegram",
+                SenderId = "detail-user",
+                Summary = "Prefers terse updates and weekly summaries.",
+                Tone = "concise",
+                Preferences = ["terse", "weekly-digest"],
+                RecentIntents = ["status", "digest"],
+                Facts =
+                [
+                    new UserProfileFact
+                    {
+                        Key = "style",
+                        Value = "terse",
+                        Confidence = 0.7f,
+                        SourceSessionIds = ["sess-new"]
+                    }
+                ]
+            },
+            SourceSessionIds = ["sess-1", "sess-2"],
+            Confidence = 0.72f
+        }, CancellationToken.None);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/learning/proposals/lp_detail_profile");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        Assert.Equal("lp_detail_profile", payload.RootElement.GetProperty("proposal").GetProperty("id").GetString());
+        Assert.Equal("Prefers terse updates.", payload.RootElement.GetProperty("baselineProfile").GetProperty("summary").GetString());
+        Assert.Equal("Prefers terse updates.", payload.RootElement.GetProperty("currentProfile").GetProperty("summary").GetString());
+        Assert.False(payload.RootElement.GetProperty("canRollback").GetBoolean());
+        Assert.Equal(0.72f, payload.RootElement.GetProperty("provenance").GetProperty("confidence").GetSingle());
+
+        var diff = payload.RootElement.GetProperty("profileDiff").EnumerateArray().ToArray();
+        Assert.Contains(diff, entry => entry.GetProperty("path").GetString() == "summary" &&
+                                       entry.GetProperty("before").GetString() == "Prefers terse updates." &&
+                                       entry.GetProperty("after").GetString() == "Prefers terse updates and weekly summaries.");
+        Assert.Contains(diff, entry => entry.GetProperty("path").GetString() == "preferences" &&
+                                       entry.GetProperty("before").GetString()!.Contains("terse", StringComparison.Ordinal) &&
+                                       entry.GetProperty("after").GetString()!.Contains("weekly-digest", StringComparison.Ordinal));
+        Assert.Contains(diff, entry => entry.GetProperty("path").GetString() == "facts" &&
+                                       entry.GetProperty("before").GetString()!.Contains("confidence:0.6", StringComparison.Ordinal) &&
+                                       entry.GetProperty("after").GetString()!.Contains("confidence:0.7", StringComparison.Ordinal));
+        var sourceSessions = payload.RootElement.GetProperty("provenance").GetProperty("sourceSessionIds").EnumerateArray().Select(static item => item.GetString()).OfType<string>().ToArray();
+        Assert.Equal(["sess-1", "sess-2"], sourceSessions);
+    }
+
+    [Fact]
+    public async Task LearningProposalRollback_ProfileUpdate_RestoresPreviousProfile()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var store = new FileFeatureStore(harness.StoragePath);
+        var actorId = "slack:rollback-user";
+        var beforeProfile = new UserProfile
+        {
+            ActorId = actorId,
+            ChannelId = "slack",
+            SenderId = "rollback-user",
+            Summary = "Original profile",
+            Tone = "friendly",
+            Preferences = ["plain-text"]
+        };
+        var updatedProfile = new UserProfile
+        {
+            ActorId = actorId,
+            ChannelId = "slack",
+            SenderId = "rollback-user",
+            Summary = "Updated profile",
+            Tone = "friendly",
+            Preferences = ["plain-text", "charts"]
+        };
+
+        await store.SaveProfileAsync(updatedProfile, CancellationToken.None);
+        await store.SaveProposalAsync(new LearningProposal
+        {
+            Id = "lp_rollback_profile",
+            Kind = LearningProposalKind.ProfileUpdate,
+            Status = LearningProposalStatus.Approved,
+            ActorId = actorId,
+            Title = "Profile update suggestion",
+            Summary = "Approved change.",
+            ProfileUpdate = updatedProfile,
+            AppliedProfileBefore = beforeProfile,
+            SourceSessionIds = ["sess-rollback"],
+            Confidence = 0.8f,
+            ReviewedAtUtc = DateTimeOffset.UtcNow,
+            ReviewNotes = "approved"
+        }, CancellationToken.None);
+
+        using var rollbackRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_rollback_profile/rollback")
+        {
+            Content = JsonContent("""{"reason":"revert noisy preference"}""")
+        };
+        rollbackRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var rollbackResponse = await harness.Client.SendAsync(rollbackRequest);
+
+        Assert.Equal(HttpStatusCode.OK, rollbackResponse.StatusCode);
+        using var rollbackPayload = await ReadJsonAsync(rollbackResponse);
+        Assert.Equal("rolled_back", rollbackPayload.RootElement.GetProperty("status").GetString());
+        Assert.True(rollbackPayload.RootElement.GetProperty("rolledBack").GetBoolean());
+        Assert.Equal("revert noisy preference", rollbackPayload.RootElement.GetProperty("rollbackReason").GetString());
+
+        using var profileRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/profiles/{Uri.EscapeDataString(actorId)}");
+        profileRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var profileResponse = await harness.Client.SendAsync(profileRequest);
+        Assert.Equal(HttpStatusCode.OK, profileResponse.StatusCode);
+        using var profilePayload = await ReadJsonAsync(profileResponse);
+        Assert.Equal("Original profile", profilePayload.RootElement.GetProperty("profile").GetProperty("summary").GetString());
+    }
+
+    [Fact]
+    public async Task AdminProfiles_ExportAndImport_RoundTripsProfilesAndProposals()
+    {
+        const string actorId = "discord:portable-user";
+
+        await using var sourceHarness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var sourceStore = new FileFeatureStore(sourceHarness.StoragePath);
+        await sourceStore.SaveProfileAsync(new UserProfile
+        {
+            ActorId = actorId,
+            ChannelId = "discord",
+            SenderId = "portable-user",
+            Summary = "Portable memory",
+            Tone = "direct",
+            Preferences = ["summaries"],
+            ActiveProjects = ["roadmap"]
+        }, CancellationToken.None);
+        await sourceStore.SaveProposalAsync(new LearningProposal
+        {
+            Id = "lp_portable_profile",
+            Kind = LearningProposalKind.ProfileUpdate,
+            Status = LearningProposalStatus.Pending,
+            ActorId = actorId,
+            Title = "Portable proposal",
+            Summary = "Pending proposal in export bundle.",
+            ProfileUpdate = new UserProfile
+            {
+                ActorId = actorId,
+                ChannelId = "discord",
+                SenderId = "portable-user",
+                Summary = "Portable memory with follow-up cadence",
+                Tone = "direct",
+                Preferences = ["summaries", "cadence"]
+            },
+            SourceSessionIds = ["sess-portable"],
+            Confidence = 0.66f
+        }, CancellationToken.None);
+
+        using var exportRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/profiles/export?actorId={Uri.EscapeDataString(actorId)}");
+        exportRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", sourceHarness.AuthToken);
+        var exportResponse = await sourceHarness.Client.SendAsync(exportRequest);
+        Assert.Equal(HttpStatusCode.OK, exportResponse.StatusCode);
+        var exportJson = await exportResponse.Content.ReadAsStringAsync();
+
+        await using var targetHarness = await CreateHarnessAsync(nonLoopbackBind: true);
+        using var importRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/profiles/import")
+        {
+            Content = new StringContent(exportJson, Encoding.UTF8, "application/json")
+        };
+        importRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+        var importResponse = await targetHarness.Client.SendAsync(importRequest);
+        Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+        using var importPayload = await ReadJsonAsync(importResponse);
+        Assert.True(importPayload.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(1, importPayload.RootElement.GetProperty("profilesImported").GetInt32());
+        Assert.Equal(1, importPayload.RootElement.GetProperty("proposalsImported").GetInt32());
+
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/profiles/{Uri.EscapeDataString(actorId)}");
+        detailRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+        var detailResponse = await targetHarness.Client.SendAsync(detailRequest);
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailPayload = await ReadJsonAsync(detailResponse);
+        Assert.Equal("Portable memory", detailPayload.RootElement.GetProperty("profile").GetProperty("summary").GetString());
+
+        using var proposalRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/learning/proposals/lp_portable_profile");
+        proposalRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+        var proposalResponse = await targetHarness.Client.SendAsync(proposalRequest);
+        Assert.Equal(HttpStatusCode.OK, proposalResponse.StatusCode);
+        using var proposalPayload = await ReadJsonAsync(proposalResponse);
+        Assert.Equal("lp_portable_profile", proposalPayload.RootElement.GetProperty("proposal").GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task AdminMemoryNotes_ListSearchSaveAndDelete_Work()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        await harness.MemoryStore.SaveNoteAsync("project:alpha:architecture", "Use NativeAOT for the shipping target.", CancellationToken.None);
+        await harness.MemoryStore.SaveNoteAsync("runbook:deploy-checklist", "Confirm doctor and posture before deploy.", CancellationToken.None);
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/notes?memoryClass=project_fact&projectId=alpha");
+        listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var listResponse = await harness.Client.SendAsync(listRequest);
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listPayload = await ReadJsonAsync(listResponse);
+        var listedItems = listPayload.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Single(listedItems);
+        Assert.Equal("project:alpha:architecture", listedItems[0].GetProperty("key").GetString());
+        Assert.Equal("architecture", listedItems[0].GetProperty("displayKey").GetString());
+        Assert.Equal("project_fact", listedItems[0].GetProperty("memoryClass").GetString());
+
+        using var searchRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/search?query=NativeAOT&memoryClass=project_fact&projectId=alpha");
+        searchRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var searchResponse = await harness.Client.SendAsync(searchRequest);
+        Assert.Equal(HttpStatusCode.OK, searchResponse.StatusCode);
+        using var searchPayload = await ReadJsonAsync(searchResponse);
+        Assert.Single(searchPayload.RootElement.GetProperty("items").EnumerateArray());
+
+        using var saveRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/memory/notes")
+        {
+            Content = JsonContent("""{"key":"daily-triage","memoryClass":"approved_automation","content":"Run inbox triage every morning."}""")
+        };
+        saveRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var saveResponse = await harness.Client.SendAsync(saveRequest);
+        Assert.Equal(HttpStatusCode.OK, saveResponse.StatusCode);
+        using var savePayload = await ReadJsonAsync(saveResponse);
+        var savedNote = savePayload.RootElement.GetProperty("note");
+        Assert.Equal("automation:daily-triage", savedNote.GetProperty("key").GetString());
+        Assert.Equal("approved_automation", savedNote.GetProperty("memoryClass").GetString());
+        Assert.Equal("Run inbox triage every morning.", savedNote.GetProperty("content").GetString());
+
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/notes/automation%3Adaily-triage");
+        detailRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var detailResponse = await harness.Client.SendAsync(detailRequest);
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailPayload = await ReadJsonAsync(detailResponse);
+        Assert.Equal("daily-triage", detailPayload.RootElement.GetProperty("note").GetProperty("displayKey").GetString());
+
+        using var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, "/admin/memory/notes/automation%3Adaily-triage");
+        deleteRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var deleteResponse = await harness.Client.SendAsync(deleteRequest);
+        Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+
+        Assert.Null(await harness.MemoryStore.LoadNoteAsync("automation:daily-triage", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task AdminMemoryExportImport_RoundTripsNotesProfilesProposalsAndAutomations()
+    {
+        const string actorId = "telegram:memory-portable";
+
+        await using var sourceHarness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var sourceFeatureStore = new FileFeatureStore(sourceHarness.StoragePath);
+
+        await sourceHarness.MemoryStore.SaveNoteAsync("project:apollo:runbook", "Escalate incidents through the launch room.", CancellationToken.None);
+        await sourceFeatureStore.SaveProfileAsync(new UserProfile
+        {
+            ActorId = actorId,
+            ChannelId = "telegram",
+            SenderId = "memory-portable",
+            Summary = "Portable operator profile",
+            Tone = "direct",
+            Preferences = ["daily-summary"]
+        }, CancellationToken.None);
+        await sourceFeatureStore.SaveProposalAsync(new LearningProposal
+        {
+            Id = "lp_memory_bundle",
+            Kind = LearningProposalKind.SkillDraft,
+            Status = LearningProposalStatus.Pending,
+            ActorId = actorId,
+            Title = "Skill draft bundle item",
+            Summary = "Draft captured in memory export.",
+            SkillName = "incident-followup",
+            DraftContent = "---\nname: incident-followup\ndescription: Follow up incidents\n---\nUse after incidents.",
+            DraftContentHash = "hash",
+            SourceSessionIds = ["sess-memory"],
+            Confidence = 0.7f
+        }, CancellationToken.None);
+        await sourceFeatureStore.SaveAutomationAsync(new AutomationDefinition
+        {
+            Id = "auto_memory_bundle",
+            Name = "Daily memory digest",
+            Enabled = false,
+            Schedule = "@daily",
+            Prompt = "Summarize memory changes.",
+            DeliveryChannelId = "cron",
+            IsDraft = true,
+            Source = "learning",
+            TemplateKey = "custom"
+        }, CancellationToken.None);
+
+        using var exportRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/export?projectId=apollo");
+        exportRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", sourceHarness.AuthToken);
+        var exportResponse = await sourceHarness.Client.SendAsync(exportRequest);
+        Assert.Equal(HttpStatusCode.OK, exportResponse.StatusCode);
+        var exportJson = await exportResponse.Content.ReadAsStringAsync();
+
+        await using var targetHarness = await CreateHarnessAsync(nonLoopbackBind: true);
+        using var importRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/memory/import")
+        {
+            Content = new StringContent(exportJson, Encoding.UTF8, "application/json")
+        };
+        importRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+        var importResponse = await targetHarness.Client.SendAsync(importRequest);
+        Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+        using var importPayload = await ReadJsonAsync(importResponse);
+        Assert.True(importPayload.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(1, importPayload.RootElement.GetProperty("notesImported").GetInt32());
+        Assert.Equal(1, importPayload.RootElement.GetProperty("profilesImported").GetInt32());
+        Assert.Equal(1, importPayload.RootElement.GetProperty("proposalsImported").GetInt32());
+        Assert.True(importPayload.RootElement.GetProperty("automationsImported").GetInt32() >= 1);
+
+        using var noteRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/notes?memoryClass=project_fact&projectId=apollo");
+        noteRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+        var noteResponse = await targetHarness.Client.SendAsync(noteRequest);
+        Assert.Equal(HttpStatusCode.OK, noteResponse.StatusCode);
+        using var notePayload = await ReadJsonAsync(noteResponse);
+        Assert.Single(notePayload.RootElement.GetProperty("items").EnumerateArray());
+
+        using var profileRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/profiles/{Uri.EscapeDataString(actorId)}");
+        profileRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+        var profileResponse = await targetHarness.Client.SendAsync(profileRequest);
+        Assert.Equal(HttpStatusCode.OK, profileResponse.StatusCode);
+
+        using var proposalRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/learning/proposals/lp_memory_bundle");
+        proposalRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+        var proposalResponse = await targetHarness.Client.SendAsync(proposalRequest);
+        Assert.Equal(HttpStatusCode.OK, proposalResponse.StatusCode);
+
+        using var automationRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/automations/auto_memory_bundle");
+        automationRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+        var automationResponse = await targetHarness.Client.SendAsync(automationRequest);
+        Assert.Equal(HttpStatusCode.OK, automationResponse.StatusCode);
+        using var automationPayload = await ReadJsonAsync(automationResponse);
+        Assert.Equal("Daily memory digest", automationPayload.RootElement.GetProperty("automation").GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task AdminMemoryEndpoints_RejectInvalidKeys()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/notes/bad..key");
+        detailRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var detailResponse = await harness.Client.SendAsync(detailRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, detailResponse.StatusCode);
+
+        using var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, "/admin/memory/notes/bad..key");
+        deleteRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var deleteResponse = await harness.Client.SendAsync(deleteRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, deleteResponse.StatusCode);
+
+        using var importRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/memory/import")
+        {
+            Content = JsonContent("""{"notes":[{"key":"bad..key","displayKey":"bad..key","memoryClass":"general","preview":"bad","content":"bad"}],"profiles":[],"proposals":[],"automations":[]}""")
+        };
+        importRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var importResponse = await harness.Client.SendAsync(importRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, importResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task HeartbeatEndpoints_PreviewSaveAndStatus_Work()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);

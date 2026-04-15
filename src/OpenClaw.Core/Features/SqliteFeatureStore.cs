@@ -121,6 +121,9 @@ public sealed class SqliteFeatureStore : IAutomationStore, IUserProfileStore, IL
             "INSERT INTO user_profiles(actor_id, json, updated_at) VALUES($id, $json, $updated_at) ON CONFLICT(actor_id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at;",
             "$id", profile.ActorId, JsonSerializer.Serialize(profile, CoreJsonContext.Default.UserProfile), ct);
 
+    public ValueTask DeleteProfileAsync(string actorId, CancellationToken ct)
+        => ExecuteAsync("DELETE FROM user_profiles WHERE actor_id = $id;", "$id", actorId, ct);
+
     public async ValueTask<IReadOnlyList<LearningProposal>> ListProposalsAsync(string? status, string? kind, CancellationToken ct)
     {
         var where = new List<string>();

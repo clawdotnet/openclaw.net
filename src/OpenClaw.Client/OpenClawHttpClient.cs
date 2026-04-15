@@ -31,6 +31,10 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _integrationMessagesUri;
     private readonly Uri _adminAutomationsUri;
     private readonly Uri _adminLearningProposalsUri;
+    private readonly Uri _adminMemoryNotesUri;
+    private readonly Uri _adminMemorySearchUri;
+    private readonly Uri _adminMemoryExportUri;
+    private readonly Uri _adminMemoryImportUri;
     private readonly Uri _adminHeartbeatUri;
     private readonly Uri _adminHeartbeatPreviewUri;
     private readonly Uri _adminHeartbeatStatusUri;
@@ -76,6 +80,10 @@ public sealed class OpenClawHttpClient : IDisposable
         _integrationMessagesUri = new Uri(baseUri, "/api/integration/messages");
         _adminAutomationsUri = new Uri(baseUri, "/admin/automations");
         _adminLearningProposalsUri = new Uri(baseUri, "/admin/learning/proposals");
+        _adminMemoryNotesUri = new Uri(baseUri, "/admin/memory/notes");
+        _adminMemorySearchUri = new Uri(baseUri, "/admin/memory/search");
+        _adminMemoryExportUri = new Uri(baseUri, "/admin/memory/export");
+        _adminMemoryImportUri = new Uri(baseUri, "/admin/memory/import");
         _adminHeartbeatUri = new Uri(baseUri, "/admin/heartbeat");
         _adminHeartbeatPreviewUri = new Uri(baseUri, "/admin/heartbeat/preview");
         _adminHeartbeatStatusUri = new Uri(baseUri, "/admin/heartbeat/status");
@@ -412,6 +420,66 @@ public sealed class OpenClawHttpClient : IDisposable
         };
 
         return await SendAsync(req, CoreJsonContext.Default.IntegrationProfileResponse, cancellationToken);
+    }
+
+    public Task<MemoryNoteListResponse> ListMemoryNotesAsync(
+        string? prefix,
+        string? memoryClass,
+        string? projectId,
+        int limit,
+        CancellationToken cancellationToken)
+        => GetAsync(BuildMemoryNotesUri(prefix, memoryClass, projectId, limit), CoreJsonContext.Default.MemoryNoteListResponse, cancellationToken);
+
+    public Task<MemoryNoteListResponse> SearchMemoryNotesAsync(
+        string query,
+        string? memoryClass,
+        string? projectId,
+        int limit,
+        CancellationToken cancellationToken)
+        => GetAsync(BuildMemorySearchUri(query, memoryClass, projectId, limit), CoreJsonContext.Default.MemoryNoteListResponse, cancellationToken);
+
+    public Task<MemoryNoteDetailResponse> GetMemoryNoteAsync(string key, CancellationToken cancellationToken)
+        => GetAsync(BuildMemoryNoteUri(key), CoreJsonContext.Default.MemoryNoteDetailResponse, cancellationToken);
+
+    public async Task<MemoryNoteDetailResponse> SaveMemoryNoteAsync(MemoryNoteUpsertRequest request, CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, _adminMemoryNotesUri)
+        {
+            Content = BuildJsonContent(request, CoreJsonContext.Default.MemoryNoteUpsertRequest)
+        };
+
+        return await SendAsync(req, CoreJsonContext.Default.MemoryNoteDetailResponse, cancellationToken);
+    }
+
+    public async Task<MutationResponse> DeleteMemoryNoteAsync(string key, CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Delete, BuildMemoryNoteUri(key));
+        return await SendAsync(req, CoreJsonContext.Default.MutationResponse, cancellationToken);
+    }
+
+    public Task<MemoryConsoleExportBundle> ExportMemoryConsoleAsync(
+        string? actorId,
+        string? projectId,
+        bool includeProfiles,
+        bool includeProposals,
+        bool includeAutomations,
+        bool includeNotes,
+        CancellationToken cancellationToken)
+        => GetAsync(
+            BuildMemoryExportUri(actorId, projectId, includeProfiles, includeProposals, includeAutomations, includeNotes),
+            CoreJsonContext.Default.MemoryConsoleExportBundle,
+            cancellationToken);
+
+    public async Task<MemoryConsoleImportResponse> ImportMemoryConsoleAsync(
+        MemoryConsoleExportBundle bundle,
+        CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, _adminMemoryImportUri)
+        {
+            Content = BuildJsonContent(bundle, CoreJsonContext.Default.MemoryConsoleExportBundle)
+        };
+
+        return await SendAsync(req, CoreJsonContext.Default.MemoryConsoleImportResponse, cancellationToken);
     }
 
     public async Task<SessionMetadataSnapshot> UpdateSessionMetadataAsync(
@@ -924,6 +992,74 @@ public sealed class OpenClawHttpClient : IDisposable
             throw new ArgumentException("Proposal id is required.", nameof(proposalId));
 
         return new Uri($"{_adminLearningProposalsUri.AbsoluteUri.TrimEnd('/')}/{Uri.EscapeDataString(proposalId)}/{action}", UriKind.Absolute);
+    }
+
+    private Uri BuildMemoryNotesUri(string? prefix, string? memoryClass, string? projectId, int limit)
+    {
+        var pairs = new List<string>
+        {
+            $"limit={Math.Clamp(limit, 1, 500)}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(prefix))
+            pairs.Add($"prefix={Uri.EscapeDataString(prefix)}");
+        if (!string.IsNullOrWhiteSpace(memoryClass))
+            pairs.Add($"memoryClass={Uri.EscapeDataString(memoryClass)}");
+        if (!string.IsNullOrWhiteSpace(projectId))
+            pairs.Add($"projectId={Uri.EscapeDataString(projectId)}");
+
+        return new Uri($"{_adminMemoryNotesUri}?{string.Join("&", pairs)}", UriKind.RelativeOrAbsolute);
+    }
+
+    private Uri BuildMemorySearchUri(string query, string? memoryClass, string? projectId, int limit)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            throw new ArgumentException("Query is required.", nameof(query));
+
+        var pairs = new List<string>
+        {
+            $"query={Uri.EscapeDataString(query)}",
+            $"limit={Math.Clamp(limit, 1, 50)}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(memoryClass))
+            pairs.Add($"memoryClass={Uri.EscapeDataString(memoryClass)}");
+        if (!string.IsNullOrWhiteSpace(projectId))
+            pairs.Add($"projectId={Uri.EscapeDataString(projectId)}");
+
+        return new Uri($"{_adminMemorySearchUri}?{string.Join("&", pairs)}", UriKind.RelativeOrAbsolute);
+    }
+
+    private Uri BuildMemoryNoteUri(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Memory note key is required.", nameof(key));
+
+        return new Uri($"{_adminMemoryNotesUri.AbsoluteUri.TrimEnd('/')}/{Uri.EscapeDataString(key)}", UriKind.Absolute);
+    }
+
+    private Uri BuildMemoryExportUri(
+        string? actorId,
+        string? projectId,
+        bool includeProfiles,
+        bool includeProposals,
+        bool includeAutomations,
+        bool includeNotes)
+    {
+        var pairs = new List<string>
+        {
+            $"includeProfiles={includeProfiles.ToString().ToLowerInvariant()}",
+            $"includeProposals={includeProposals.ToString().ToLowerInvariant()}",
+            $"includeAutomations={includeAutomations.ToString().ToLowerInvariant()}",
+            $"includeNotes={includeNotes.ToString().ToLowerInvariant()}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(actorId))
+            pairs.Add($"actorId={Uri.EscapeDataString(actorId)}");
+        if (!string.IsNullOrWhiteSpace(projectId))
+            pairs.Add($"projectId={Uri.EscapeDataString(projectId)}");
+
+        return new Uri($"{_adminMemoryExportUri}?{string.Join("&", pairs)}", UriKind.RelativeOrAbsolute);
     }
 
     private Uri BuildOperatorAuditUri(OperatorAuditQuery query)

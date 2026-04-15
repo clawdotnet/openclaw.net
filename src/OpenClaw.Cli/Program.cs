@@ -1,6 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using OpenClaw.Core.Models;
 
 namespace OpenClaw.Cli;
@@ -10,8 +8,6 @@ internal static class Program
     private const string DefaultBaseUrl = "http://127.0.0.1:18789";
     private const string EnvBaseUrl = "OPENCLAW_BASE_URL";
     private const string EnvAuthToken = "OPENCLAW_AUTH_TOKEN";
-    private const string DefaultSetupConfigPath = "~/.openclaw/config/openclaw.settings.json";
-
     public static async Task<int> Main(string[] args)
     {
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
@@ -32,6 +28,7 @@ internal static class Program
                 "live" => await LiveAsync(rest),
                 "tui" => await TuiAsync(rest),
                 "setup" => await SetupAsync(rest),
+                "init" => InitCommand.Run(rest),
                 "migrate" => await MigrateAsync(rest),
                 "heartbeat" => await HeartbeatAsync(rest),
                 "models" => await ModelsAsync(rest),
@@ -82,6 +79,7 @@ internal static class Program
               openclaw live [options]
               openclaw tui [options]
               openclaw setup [options]
+              openclaw init [options]
               openclaw migrate [options]
               openclaw heartbeat <wizard|preview|status> [options]
               openclaw models <list|doctor> [options]
@@ -116,7 +114,9 @@ internal static class Program
               openclaw chat --system "Be concise."
               openclaw live --model gemini-2.0-flash-live-001 --system "Be concise."
               openclaw tui
-              openclaw setup --workspace ./workspace
+              openclaw setup
+              openclaw setup --non-interactive --profile local --workspace ./workspace --provider openai --model gpt-4o --api-key env:MODEL_PROVIDER_KEY
+              openclaw init --preset public
               openclaw migrate --apply
               openclaw heartbeat status
               openclaw models list
@@ -239,14 +239,18 @@ internal static class Program
             openclaw setup
 
             Usage:
-              openclaw setup [--config <path>] [--workspace <path>] [--provider <id>] [--model <id>] [--api-key <secret-or-envref>]
+              openclaw setup [--profile <local|public>] [--non-interactive]
+                              [--config <path>] [--workspace <path>] [--provider <id>] [--model <id>] [--api-key <secret-or-envref>]
                               [--bind <address>] [--port <n>] [--auth-token <token>]
                               [--docker-image <image>] [--opensandbox-endpoint <url>] [--ssh-host <host>] [--ssh-user <user>] [--ssh-key <path>]
+              openclaw setup channel <telegram|slack|discord|teams|whatsapp> [--config <path>] [--non-interactive] [...]
 
             Notes:
-              - Writes an external JSON config file for the gateway.
-              - Validates workspace and optional execution backend prerequisites.
-              - Prints the exact gateway launch command using the generated config.
+              - Bare 'openclaw setup' launches a guided onboarding flow.
+              - 'openclaw setup channel ...' updates an existing external config with channel-specific settings.
+              - Use --non-interactive for automation or CI.
+              - Writes an external JSON config file plus an adjacent env example.
+              - Prints gateway, companion, doctor, and admin posture commands.
             """);
     }
 
@@ -480,105 +484,7 @@ internal static class Program
             return 0;
         }
 
-        var configPath = ExpandPath(parsed.GetOption("--config") ?? DefaultSetupConfigPath);
-        var workspace = Path.GetFullPath(ExpandPath(parsed.GetOption("--workspace") ?? Path.Combine(Directory.GetCurrentDirectory(), "workspace")));
-        Directory.CreateDirectory(workspace);
-
-        var config = new GatewayConfig
-        {
-            BindAddress = parsed.GetOption("--bind") ?? "127.0.0.1",
-            Port = ParseInt(parsed.GetOption("--port")) ?? 18789,
-            AuthToken = parsed.GetOption("--auth-token")
-                ?? Environment.GetEnvironmentVariable(EnvAuthToken)
-                ?? $"oc_{Guid.NewGuid():N}",
-            Llm = new LlmProviderConfig
-            {
-                Provider = parsed.GetOption("--provider") ?? "openai",
-                Model = parsed.GetOption("--model") ?? new GatewayConfig().Llm.Model,
-                ApiKey = parsed.GetOption("--api-key") ?? "env:MODEL_PROVIDER_KEY"
-            },
-            Tooling = new ToolingConfig
-            {
-                WorkspaceRoot = workspace
-            }
-        };
-
-        var warnings = new List<string>();
-        if (parsed.GetOption("--docker-image") is { Length: > 0 } dockerImage)
-        {
-            config.Execution.Profiles["docker"] = new ExecutionBackendProfileConfig
-            {
-                Type = ExecutionBackendType.Docker,
-                Image = dockerImage,
-                WorkingDirectory = workspace
-            };
-            config.Execution.Tools["shell"] = new ExecutionToolRouteConfig { Backend = "docker", FallbackBackend = "local", RequireWorkspace = true };
-            warnings.AddRange(CheckCommandAvailability("docker", "--version", "Docker backend requested but docker was not found on PATH."));
-        }
-
-        if (parsed.GetOption("--opensandbox-endpoint") is { Length: > 0 } openSandboxEndpoint)
-        {
-            if (!Uri.TryCreate(openSandboxEndpoint, UriKind.Absolute, out _))
-                throw new ArgumentException($"Invalid OpenSandbox endpoint: {openSandboxEndpoint}");
-
-            config.Sandbox.Provider = SandboxProviderNames.OpenSandbox;
-            config.Sandbox.Endpoint = openSandboxEndpoint;
-            config.Execution.Profiles["opensandbox"] = new ExecutionBackendProfileConfig
-            {
-                Type = ExecutionBackendType.OpenSandbox,
-                Endpoint = openSandboxEndpoint
-            };
-        }
-
-        if (parsed.GetOption("--ssh-host") is { Length: > 0 } sshHost)
-        {
-            var sshUser = parsed.GetOption("--ssh-user");
-            if (string.IsNullOrWhiteSpace(sshUser))
-                throw new ArgumentException("--ssh-user is required when --ssh-host is set.");
-
-            config.Execution.Profiles["ssh"] = new ExecutionBackendProfileConfig
-            {
-                Type = ExecutionBackendType.Ssh,
-                Host = sshHost,
-                Username = sshUser,
-                PrivateKeyPath = parsed.GetOption("--ssh-key"),
-                WorkingDirectory = workspace
-            };
-            warnings.AddRange(CheckCommandAvailability("ssh", "-V", "SSH backend requested but ssh was not found on PATH."));
-        }
-
-        var openClawNode = JsonNode.Parse(JsonSerializer.Serialize(config, CoreJsonContext.Default.GatewayConfig))
-            ?? throw new InvalidOperationException("Failed to serialize gateway config.");
-        var root = new JsonObject
-        {
-            ["OpenClaw"] = openClawNode
-        };
-
-        var directory = Path.GetDirectoryName(configPath);
-        if (!string.IsNullOrWhiteSpace(directory))
-            Directory.CreateDirectory(directory);
-
-        await File.WriteAllTextAsync(
-            configPath,
-            root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }),
-            CancellationToken.None);
-
-        Console.WriteLine($"Wrote config: {configPath}");
-        Console.WriteLine($"Workspace: {workspace}");
-        Console.WriteLine($"Provider/model: {config.Llm.Provider}/{config.Llm.Model}");
-        Console.WriteLine($"Auth token: {config.AuthToken}");
-        if (warnings.Count > 0)
-        {
-            Console.WriteLine();
-            Console.WriteLine("Validation warnings:");
-            foreach (var warning in warnings)
-                Console.WriteLine($"- {warning}");
-        }
-
-        Console.WriteLine();
-        Console.WriteLine("Launch:");
-        Console.WriteLine($"dotnet run --project src/OpenClaw.Gateway -- --config {QuoteIfNeeded(configPath)}");
-        return 0;
+        return await SetupCommand.RunAsync(args, Console.In, Console.Out, Console.Error, Directory.GetCurrentDirectory(), canPrompt: !Console.IsInputRedirected);
     }
 
     private static async Task<int> MigrateAsync(string[] args)

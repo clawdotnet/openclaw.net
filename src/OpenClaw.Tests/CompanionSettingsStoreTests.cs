@@ -12,7 +12,7 @@ public sealed class CompanionSettingsStoreTests
         var baseDir = CreateTempDir();
         try
         {
-            var store = new SettingsStore(baseDir);
+            var store = new SettingsStore(baseDir, new ProtectedTokenStore(baseDir, new InMemorySecretStore()));
             store.Save(new CompanionSettings
             {
                 ServerUrl = "ws://127.0.0.1:18789/ws",
@@ -40,9 +40,7 @@ public sealed class CompanionSettingsStoreTests
         var baseDir = CreateTempDir();
         try
         {
-            File.WriteAllText(Path.Combine(baseDir, "keys"), "not-a-directory");
-
-            var store = new SettingsStore(baseDir);
+            var store = new SettingsStore(baseDir, new ProtectedTokenStore(baseDir, new UnavailableTestSecretStore()));
             store.Save(new CompanionSettings
             {
                 ServerUrl = "ws://127.0.0.1:18789/ws",
@@ -70,9 +68,7 @@ public sealed class CompanionSettingsStoreTests
         var baseDir = CreateTempDir();
         try
         {
-            File.WriteAllText(Path.Combine(baseDir, "keys"), "not-a-directory");
-
-            var store = new SettingsStore(baseDir);
+            var store = new SettingsStore(baseDir, new ProtectedTokenStore(baseDir, new UnavailableTestSecretStore()));
             store.Save(new CompanionSettings
             {
                 ServerUrl = "ws://127.0.0.1:18789/ws",
@@ -101,5 +97,55 @@ public sealed class CompanionSettingsStoreTests
         var path = Path.Combine(Path.GetTempPath(), "openclaw-companion-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private sealed class InMemorySecretStore : ICompanionSecretStore
+    {
+        private string? _secret;
+
+        public string StorageDescription => "memory";
+
+        public bool IsAvailable => true;
+
+        public string? LoadSecret(out string? warning)
+        {
+            warning = null;
+            return _secret;
+        }
+
+        public bool SaveSecret(string secret, out string? warning)
+        {
+            _secret = secret;
+            warning = null;
+            return true;
+        }
+
+        public void ClearSecret()
+        {
+            _secret = null;
+        }
+    }
+
+    private sealed class UnavailableTestSecretStore : ICompanionSecretStore
+    {
+        public string StorageDescription => "unavailable";
+
+        public bool IsAvailable => false;
+
+        public string? LoadSecret(out string? warning)
+        {
+            warning = "Secure token storage is unavailable on this system.";
+            return null;
+        }
+
+        public bool SaveSecret(string secret, out string? warning)
+        {
+            warning = "Secure token storage is unavailable on this system.";
+            return false;
+        }
+
+        public void ClearSecret()
+        {
+        }
     }
 }

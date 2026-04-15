@@ -32,7 +32,12 @@ internal static class AdminEndpoints
         var adminSettings = app.Services.GetRequiredService<AdminSettingsService>();
         var pluginAdminSettings = app.Services.GetRequiredService<PluginAdminSettingsService>();
         var heartbeat = app.Services.GetRequiredService<HeartbeatService>();
+        var memoryStore = app.Services.GetRequiredService<IMemoryStore>();
+        var memorySearch = memoryStore as IMemoryNoteSearch;
+        var memoryCatalog = memoryStore as IMemoryNoteCatalog;
         var fallbackFeatureStore = FeatureFallbackServices.CreateFallbackFeatureStore(startup);
+        var profileStore = app.Services.GetService<IUserProfileStore>() ?? fallbackFeatureStore;
+        var proposalStore = app.Services.GetService<ILearningProposalStore>() ?? fallbackFeatureStore;
         var automationService = FeatureFallbackServices.ResolveAutomationService(startup, app.Services, heartbeat, fallbackFeatureStore);
         var learningService = FeatureFallbackServices.ResolveLearningService(startup, app.Services, fallbackFeatureStore);
         var facade = IntegrationApiFacade.Create(startup, runtime, app.Services);
@@ -682,6 +687,530 @@ internal static class AdminEndpoints
                 statusCode: result.Success ? StatusCodes.Status202Accepted : StatusCodes.Status400BadRequest);
         });
 
+        app.MapGet("/admin/memory/notes", async (HttpContext ctx, string? prefix = null, string? memoryClass = null, string? projectId = null, int limit = 100) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.memory");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            if (memoryCatalog is null)
+            {
+                return Results.Json(
+                    new MutationResponse { Success = false, Error = "Memory catalog is not available in this runtime." },
+                    CoreJsonContext.Default.MutationResponse,
+                    statusCode: StatusCodes.Status501NotImplemented);
+            }
+
+            var items = await ListMemoryNotesAsync(memoryCatalog, prefix, memoryClass, projectId, limit, ctx.RequestAborted);
+            return Results.Json(
+                new MemoryNoteListResponse
+                {
+                    Prefix = string.IsNullOrWhiteSpace(prefix) ? null : prefix.Trim(),
+                    MemoryClass = string.IsNullOrWhiteSpace(memoryClass) ? null : memoryClass.Trim(),
+                    ProjectId = string.IsNullOrWhiteSpace(projectId) ? null : projectId.Trim(),
+                    Items = items
+                },
+                CoreJsonContext.Default.MemoryNoteListResponse);
+        });
+
+        app.MapGet("/admin/memory/search", async (HttpContext ctx, string query, string? memoryClass = null, string? projectId = null, int limit = 20) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.memory");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            if (memorySearch is null)
+            {
+                return Results.Json(
+                    new MutationResponse { Success = false, Error = "Memory search is not available in this runtime." },
+                    CoreJsonContext.Default.MutationResponse,
+                    statusCode: StatusCodes.Status501NotImplemented);
+            }
+
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = "query is required."
+                });
+            }
+
+            var normalizedClass = NormalizeMemoryClass(memoryClass);
+            if (normalizedClass is null && !string.IsNullOrWhiteSpace(memoryClass))
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = $"Unknown memoryClass '{memoryClass}'."
+                });
+            }
+
+            var normalizedProjectId = NormalizeOptionalValue(projectId);
+            var prefixFilter = BuildMemoryPrefix(normalizedClass, normalizedProjectId, prefixSuffix: null);
+            var hits = await memorySearch.SearchNotesAsync(query.Trim(), prefixFilter, Math.Clamp(limit, 1, 50), ctx.RequestAborted);
+            var items = hits
+                .Select(static hit => MapMemoryNoteItem(hit.Key, hit.Content, hit.UpdatedAt))
+                .Where(item => MatchesMemoryNoteFilter(item, normalizedClass, normalizedProjectId))
+                .ToArray();
+
+            return Results.Json(
+                new MemoryNoteListResponse
+                {
+                    Query = query.Trim(),
+                    MemoryClass = normalizedClass,
+                    ProjectId = normalizedProjectId,
+                    Items = items
+                },
+                CoreJsonContext.Default.MemoryNoteListResponse);
+        });
+
+        app.MapGet("/admin/memory/notes/{key}", async (HttpContext ctx, string key) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.memory");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var keyError = InputSanitizer.CheckMemoryKey(key);
+            if (keyError is not null)
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = keyError
+                });
+            }
+
+            var content = await memoryStore.LoadNoteAsync(key, ctx.RequestAborted);
+            if (content is null)
+            {
+                return Results.NotFound(new MutationResponse
+                {
+                    Success = false,
+                    Error = "Memory note not found."
+                });
+            }
+
+            var updatedAt = DateTimeOffset.UtcNow;
+            if (memoryCatalog is not null)
+                updatedAt = (await memoryCatalog.GetNoteEntryAsync(key, ctx.RequestAborted))?.UpdatedAt ?? updatedAt;
+
+            return Results.Json(
+                new MemoryNoteDetailResponse
+                {
+                    Note = MapMemoryNoteItem(key, content, updatedAt, includeContent: true)
+                },
+                CoreJsonContext.Default.MemoryNoteDetailResponse);
+        });
+
+        app.MapPost("/admin/memory/notes", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.memory.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.MemoryNoteUpsertRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+
+            var request = requestPayload.Value;
+            if (request is null)
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = "Memory note payload is required."
+                });
+            }
+
+            var normalizedClass = NormalizeMemoryClass(request.MemoryClass);
+            if (normalizedClass is null && !string.IsNullOrWhiteSpace(request.MemoryClass))
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = $"Unknown memoryClass '{request.MemoryClass}'."
+                });
+            }
+
+            var resolvedKey = BuildMemoryNoteKey(request.Key, normalizedClass, request.ProjectId, out var keyError);
+            if (!string.IsNullOrWhiteSpace(keyError))
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = keyError
+                });
+            }
+
+            var previousContent = await memoryStore.LoadNoteAsync(resolvedKey!, ctx.RequestAborted);
+            await memoryStore.SaveNoteAsync(resolvedKey!, request.Content ?? string.Empty, ctx.RequestAborted);
+            var savedEntry = memoryCatalog is null
+                ? MapMemoryNoteItem(resolvedKey!, request.Content ?? string.Empty, DateTimeOffset.UtcNow, includeContent: true)
+                : MapMemoryNoteItem(
+                    resolvedKey!,
+                    request.Content ?? string.Empty,
+                    (await memoryCatalog.GetNoteEntryAsync(resolvedKey!, ctx.RequestAborted))?.UpdatedAt ?? DateTimeOffset.UtcNow,
+                    includeContent: true);
+
+            operations.RuntimeEvents.Append(new RuntimeEventEntry
+            {
+                Id = $"evt_{Guid.NewGuid():N}"[..20],
+                TimestampUtc = DateTimeOffset.UtcNow,
+                Component = "memory",
+                Action = "note_saved",
+                Severity = "info",
+                Summary = $"Saved memory note '{resolvedKey}'."
+            });
+            RecordOperatorAudit(ctx, operations, auth, "memory_note_save", resolvedKey!, $"Saved memory note '{resolvedKey}'.", success: true, before: previousContent, after: savedEntry);
+
+            return Results.Json(
+                new MemoryNoteDetailResponse { Note = savedEntry },
+                CoreJsonContext.Default.MemoryNoteDetailResponse);
+        });
+
+        app.MapDelete("/admin/memory/notes/{key}", async (HttpContext ctx, string key) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.memory.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var keyError = InputSanitizer.CheckMemoryKey(key);
+            if (keyError is not null)
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = keyError
+                });
+            }
+
+            var previousContent = await memoryStore.LoadNoteAsync(key, ctx.RequestAborted);
+            if (previousContent is null)
+            {
+                return Results.NotFound(new MutationResponse
+                {
+                    Success = false,
+                    Error = "Memory note not found."
+                });
+            }
+
+            await memoryStore.DeleteNoteAsync(key, ctx.RequestAborted);
+            operations.RuntimeEvents.Append(new RuntimeEventEntry
+            {
+                Id = $"evt_{Guid.NewGuid():N}"[..20],
+                TimestampUtc = DateTimeOffset.UtcNow,
+                Component = "memory",
+                Action = "note_deleted",
+                Severity = "warning",
+                Summary = $"Deleted memory note '{key}'."
+            });
+            RecordOperatorAudit(ctx, operations, auth, "memory_note_delete", key, $"Deleted memory note '{key}'.", success: true, before: previousContent, after: null);
+
+            return Results.Json(
+                new MutationResponse
+                {
+                    Success = true,
+                    Message = "Memory note deleted."
+                },
+                CoreJsonContext.Default.MutationResponse);
+        });
+
+        app.MapGet("/admin/memory/export", async (HttpContext ctx, string? actorId = null, string? projectId = null, bool includeProfiles = true, bool includeProposals = true, bool includeAutomations = true, bool includeNotes = true) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.memory.export");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var normalizedActorId = NormalizeOptionalValue(actorId);
+            var normalizedProjectId = NormalizeOptionalValue(projectId);
+
+            IReadOnlyList<UserProfile> profiles = [];
+            if (includeProfiles)
+            {
+                profiles = await profileStore.ListProfilesAsync(ctx.RequestAborted);
+                if (!string.IsNullOrWhiteSpace(normalizedActorId))
+                {
+                    profiles = profiles
+                        .Where(profile => string.Equals(profile.ActorId, normalizedActorId, StringComparison.OrdinalIgnoreCase))
+                        .ToArray();
+                }
+            }
+
+            IReadOnlyList<LearningProposal> proposals = [];
+            if (includeProposals)
+            {
+                proposals = await proposalStore.ListProposalsAsync(status: null, kind: null, ctx.RequestAborted);
+                if (!string.IsNullOrWhiteSpace(normalizedActorId))
+                {
+                    proposals = proposals
+                        .Where(item => ProposalMatchesActor(item, normalizedActorId))
+                        .ToArray();
+                }
+            }
+
+            IReadOnlyList<AutomationDefinition> automations = [];
+            if (includeAutomations)
+            {
+                automations = await automationService.ListAsync(ctx.RequestAborted);
+            }
+
+            IReadOnlyList<MemoryNoteItem> notes = [];
+            if (includeNotes && memoryCatalog is not null)
+            {
+                var prefixFilter = BuildMemoryPrefix(memoryClass: null, normalizedProjectId, prefixSuffix: null);
+                var entries = await memoryCatalog.ListNotesAsync(prefixFilter, 500, ctx.RequestAborted);
+                notes = await MaterializeMemoryNoteItemsAsync(memoryStore, entries, includeContent: true, ctx.RequestAborted);
+            }
+
+            return Results.Json(
+                new MemoryConsoleExportBundle
+                {
+                    ExportedAtUtc = DateTimeOffset.UtcNow,
+                    Notes = notes,
+                    Profiles = profiles,
+                    Proposals = proposals,
+                    Automations = automations
+                },
+                CoreJsonContext.Default.MemoryConsoleExportBundle);
+        });
+
+        app.MapPost("/admin/memory/import", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.memory.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.MemoryConsoleExportBundle);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+
+            var bundle = requestPayload.Value;
+            if (bundle is null)
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = "Memory import payload is required."
+                });
+            }
+
+            var notesImported = 0;
+            var profilesImported = 0;
+            var proposalsImported = 0;
+            var automationsImported = 0;
+
+            var invalidNoteKeys = bundle.Notes
+                .Where(static note => !string.IsNullOrWhiteSpace(note.Key) && note.Content is not null)
+                .Select(static note => new { note.Key, Error = InputSanitizer.CheckMemoryKey(note.Key) })
+                .Where(static item => item.Error is not null)
+                .ToArray();
+            if (invalidNoteKeys.Length > 0)
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = $"Memory import contains invalid note keys: {string.Join(", ", invalidNoteKeys.Select(static item => item.Key))}."
+                });
+            }
+
+            foreach (var note in bundle.Notes.Where(static note => !string.IsNullOrWhiteSpace(note.Key) && note.Content is not null))
+            {
+                await memoryStore.SaveNoteAsync(note.Key, note.Content!, ctx.RequestAborted);
+                notesImported++;
+            }
+
+            foreach (var profile in bundle.Profiles.Where(static profile => !string.IsNullOrWhiteSpace(profile.ActorId)))
+            {
+                await profileStore.SaveProfileAsync(NormalizeProfile(profile), ctx.RequestAborted);
+                profilesImported++;
+            }
+
+            foreach (var proposal in bundle.Proposals.Where(static proposal => !string.IsNullOrWhiteSpace(proposal.Id)))
+            {
+                await proposalStore.SaveProposalAsync(proposal, ctx.RequestAborted);
+                proposalsImported++;
+            }
+
+            foreach (var automation in bundle.Automations.Where(static automation => !string.IsNullOrWhiteSpace(automation.Id)))
+            {
+                await automationService.SaveAsync(automation, ctx.RequestAborted);
+                automationsImported++;
+            }
+
+            operations.RuntimeEvents.Append(new RuntimeEventEntry
+            {
+                Id = $"evt_{Guid.NewGuid():N}"[..20],
+                TimestampUtc = DateTimeOffset.UtcNow,
+                Component = "memory",
+                Action = "imported",
+                Severity = "info",
+                Summary = $"Imported {notesImported} memory notes, {profilesImported} profiles, {proposalsImported} proposals, and {automationsImported} automations."
+            });
+            RecordOperatorAudit(
+                ctx,
+                operations,
+                auth,
+                "memory_import",
+                "memory-bundle",
+                $"Imported {notesImported} notes, {profilesImported} profiles, {proposalsImported} proposals, and {automationsImported} automations.",
+                success: true,
+                before: null,
+                after: new { notesImported, profilesImported, proposalsImported, automationsImported });
+
+            return Results.Json(
+                new MemoryConsoleImportResponse
+                {
+                    Success = true,
+                    NotesImported = notesImported,
+                    ProfilesImported = profilesImported,
+                    ProposalsImported = proposalsImported,
+                    AutomationsImported = automationsImported,
+                    Message = "Memory bundle imported."
+                },
+                CoreJsonContext.Default.MemoryConsoleImportResponse);
+        });
+
+        app.MapGet("/admin/profiles", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.profiles");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var profiles = await profileStore.ListProfilesAsync(ctx.RequestAborted);
+            return Results.Json(
+                new IntegrationProfilesResponse { Items = profiles },
+                CoreJsonContext.Default.IntegrationProfilesResponse);
+        });
+
+        app.MapGet("/admin/profiles/export", async (HttpContext ctx, string? actorId = null, bool includeProposals = true) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.profiles.export");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var normalizedActorId = string.IsNullOrWhiteSpace(actorId) ? null : actorId.Trim();
+            var profiles = await profileStore.ListProfilesAsync(ctx.RequestAborted);
+            if (!string.IsNullOrWhiteSpace(normalizedActorId))
+            {
+                profiles = profiles
+                    .Where(profile => string.Equals(profile.ActorId, normalizedActorId, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+            }
+
+            IReadOnlyList<LearningProposal> proposals = [];
+            if (includeProposals)
+            {
+                proposals = await proposalStore.ListProposalsAsync(status: null, kind: null, ctx.RequestAborted);
+                if (!string.IsNullOrWhiteSpace(normalizedActorId))
+                {
+                    proposals = proposals
+                        .Where(item => ProposalMatchesActor(item, normalizedActorId))
+                        .ToArray();
+                }
+            }
+
+            return Results.Json(
+                new ProfileExportBundle
+                {
+                    ExportedAtUtc = DateTimeOffset.UtcNow,
+                    Profiles = profiles,
+                    Proposals = proposals
+                },
+                CoreJsonContext.Default.ProfileExportBundle);
+        });
+
+        app.MapPost("/admin/profiles/import", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.profiles.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.ProfileExportBundle);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+
+            var bundle = requestPayload.Value;
+            if (bundle is null)
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = "Profile import payload is required."
+                });
+            }
+
+            var importedProfiles = 0;
+            var importedProposals = 0;
+
+            foreach (var profile in bundle.Profiles.Where(static profile => !string.IsNullOrWhiteSpace(profile.ActorId)))
+            {
+                await profileStore.SaveProfileAsync(NormalizeProfile(profile), ctx.RequestAborted);
+                importedProfiles++;
+            }
+
+            foreach (var proposal in bundle.Proposals.Where(static proposal => !string.IsNullOrWhiteSpace(proposal.Id)))
+            {
+                await proposalStore.SaveProposalAsync(proposal, ctx.RequestAborted);
+                importedProposals++;
+            }
+
+            operations.RuntimeEvents.Append(new RuntimeEventEntry
+            {
+                Id = $"evt_{Guid.NewGuid():N}"[..20],
+                TimestampUtc = DateTimeOffset.UtcNow,
+                Component = "profiles",
+                Action = "imported",
+                Severity = "info",
+                Summary = $"Imported {importedProfiles} profiles and {importedProposals} learning proposals."
+            });
+            RecordOperatorAudit(
+                ctx,
+                operations,
+                auth,
+                "profiles_import",
+                string.IsNullOrWhiteSpace(bundle.Profiles.FirstOrDefault()?.ActorId) ? "bulk" : bundle.Profiles.First().ActorId,
+                $"Imported {importedProfiles} profiles and {importedProposals} learning proposals.",
+                success: true,
+                before: null,
+                after: new { importedProfiles, importedProposals });
+
+            return Results.Json(
+                new ProfileImportResponse
+                {
+                    Success = true,
+                    ProfilesImported = importedProfiles,
+                    ProposalsImported = importedProposals,
+                    Message = "Profiles imported."
+                },
+                CoreJsonContext.Default.ProfileImportResponse);
+        });
+
+        app.MapGet("/admin/profiles/{actorId}", async (HttpContext ctx, string actorId) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.profiles");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var profile = await profileStore.GetProfileAsync(actorId, ctx.RequestAborted);
+            if (profile is null)
+            {
+                return Results.NotFound(new OperationStatusResponse
+                {
+                    Success = false,
+                    Error = "Profile not found."
+                });
+            }
+
+            return Results.Json(
+                new IntegrationProfileResponse { Profile = profile },
+                CoreJsonContext.Default.IntegrationProfileResponse);
+        });
+
         app.MapGet("/admin/learning/proposals", async (HttpContext ctx) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.learning");
@@ -696,11 +1225,27 @@ internal static class AdminEndpoints
                 CoreJsonContext.Default.LearningProposalListResponse);
         });
 
+        app.MapGet("/admin/learning/proposals/{id}", async (HttpContext ctx, string id) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.learning");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var detail = await learningService.GetDetailAsync(id, ctx.RequestAborted);
+            if (detail is null)
+                return Results.NotFound(new MutationResponse { Success = false, Error = "Proposal not found." });
+
+            return Results.Json(detail, CoreJsonContext.Default.LearningProposalDetailResponse);
+        });
+
         app.MapPost("/admin/learning/proposals/{id}/approve", async (HttpContext ctx, string id) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.learning.mutate");
             if (authResult.Failure is not null)
                 return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var before = await learningService.GetDetailAsync(id, ctx.RequestAborted);
 
             var approved = await learningService.ApproveAsync(id, runtime.AgentRuntime, ctx.RequestAborted);
             if (approved is null)
@@ -717,6 +1262,7 @@ internal static class AdminEndpoints
                 Severity = "info",
                 Summary = $"Learning proposal '{approved.Id}' approved."
             });
+            RecordOperatorAudit(ctx, operations, auth, "learning_approve", approved.Id, $"Approved learning proposal '{approved.Id}'.", success: true, before, after: approved);
 
             return Results.Json(approved, CoreJsonContext.Default.LearningProposal);
         });
@@ -726,11 +1272,13 @@ internal static class AdminEndpoints
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.learning.mutate");
             if (authResult.Failure is not null)
                 return authResult.Failure;
+            var auth = authResult.Authorization!;
 
             var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.LearningProposalReviewRequest);
             if (requestPayload.Failure is not null)
                 return requestPayload.Failure;
 
+            var before = await learningService.GetDetailAsync(id, ctx.RequestAborted);
             var rejected = await learningService.RejectAsync(id, requestPayload.Value?.Reason, ctx.RequestAborted);
             if (rejected is null)
                 return Results.NotFound(new MutationResponse { Success = false, Error = "Proposal not found." });
@@ -746,8 +1294,62 @@ internal static class AdminEndpoints
                 Severity = "info",
                 Summary = $"Learning proposal '{rejected.Id}' rejected."
             });
+            RecordOperatorAudit(ctx, operations, auth, "learning_reject", rejected.Id, $"Rejected learning proposal '{rejected.Id}'.", success: true, before, after: rejected);
 
             return Results.Json(rejected, CoreJsonContext.Default.LearningProposal);
+        });
+
+        app.MapPost("/admin/learning/proposals/{id}/rollback", async (HttpContext ctx, string id) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.learning.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.LearningProposalReviewRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+
+            var before = await learningService.GetDetailAsync(id, ctx.RequestAborted);
+            if (before?.Proposal is null)
+                return Results.NotFound(new MutationResponse { Success = false, Error = "Proposal not found." });
+
+            if (!string.Equals(before.Proposal.Kind, LearningProposalKind.ProfileUpdate, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = "Only profile update proposals support rollback."
+                });
+            }
+
+            if (!before.CanRollback)
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = "Proposal is not in a rollbackable state."
+                });
+            }
+
+            var rolledBack = await learningService.RollbackAsync(id, requestPayload.Value?.Reason, ctx.RequestAborted);
+            if (rolledBack is null)
+                return Results.NotFound(new MutationResponse { Success = false, Error = "Proposal not found." });
+
+            operations.RuntimeEvents.Append(new RuntimeEventEntry
+            {
+                Id = $"evt_{Guid.NewGuid():N}"[..20],
+                TimestampUtc = DateTimeOffset.UtcNow,
+                ChannelId = rolledBack.ProfileUpdate?.ChannelId,
+                SenderId = rolledBack.ProfileUpdate?.SenderId,
+                Component = "learning",
+                Action = "rolled_back",
+                Severity = "warning",
+                Summary = $"Learning proposal '{rolledBack.Id}' rolled back."
+            });
+            RecordOperatorAudit(ctx, operations, auth, "learning_rollback", rolledBack.Id, $"Rolled back learning proposal '{rolledBack.Id}'.", success: true, before, after: rolledBack);
+
+            return Results.Json(rolledBack, CoreJsonContext.Default.LearningProposal);
         });
 
         app.MapGet("/tools/approvals", (HttpContext ctx, string? channelId, string? senderId) =>
@@ -1671,6 +2273,220 @@ internal static class AdminEndpoints
             After = SerializeAuditValue(after),
             Success = success
         });
+    }
+
+    private static async Task<IReadOnlyList<MemoryNoteItem>> ListMemoryNotesAsync(
+        IMemoryNoteCatalog catalog,
+        string? prefix,
+        string? memoryClass,
+        string? projectId,
+        int limit,
+        CancellationToken ct)
+    {
+        var normalizedClass = NormalizeMemoryClass(memoryClass);
+        var normalizedProjectId = NormalizeOptionalValue(projectId);
+        var prefixFilter = BuildMemoryPrefix(normalizedClass, normalizedProjectId, NormalizeOptionalValue(prefix));
+        var entries = await catalog.ListNotesAsync(prefixFilter, Math.Clamp(limit, 1, 500), ct);
+        return entries
+            .Select(static entry => MapMemoryNoteItem(entry.Key, entry.PreviewContent, entry.UpdatedAt))
+            .Where(item => MatchesMemoryNoteFilter(item, normalizedClass, normalizedProjectId))
+            .ToArray();
+    }
+
+    private static async Task<IReadOnlyList<MemoryNoteItem>> MaterializeMemoryNoteItemsAsync(
+        IMemoryStore memoryStore,
+        IReadOnlyList<MemoryNoteCatalogEntry> entries,
+        bool includeContent,
+        CancellationToken ct)
+    {
+        var items = new List<MemoryNoteItem>(entries.Count);
+        foreach (var entry in entries)
+        {
+            ct.ThrowIfCancellationRequested();
+            string? content = null;
+            if (includeContent)
+                content = await memoryStore.LoadNoteAsync(entry.Key, ct) ?? entry.PreviewContent;
+
+            items.Add(MapMemoryNoteItem(entry.Key, content ?? entry.PreviewContent, entry.UpdatedAt, includeContent));
+        }
+
+        return items;
+    }
+
+    private static MemoryNoteItem MapMemoryNoteItem(string key, string content, DateTimeOffset updatedAt, bool includeContent = false)
+    {
+        var classification = ClassifyMemoryNoteKey(key);
+        var preview = content.Length <= 512 ? content : content[..512] + "…";
+        return new MemoryNoteItem
+        {
+            Key = key,
+            DisplayKey = classification.DisplayKey,
+            MemoryClass = classification.MemoryClass,
+            ProjectId = classification.ProjectId,
+            Preview = preview,
+            Content = includeContent ? content : null,
+            UpdatedAtUtc = updatedAt
+        };
+    }
+
+    private static bool MatchesMemoryNoteFilter(MemoryNoteItem item, string? memoryClass, string? projectId)
+    {
+        if (!string.IsNullOrWhiteSpace(memoryClass) &&
+            !string.Equals(item.MemoryClass, memoryClass, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(projectId) &&
+            !string.Equals(item.ProjectId, projectId, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string? NormalizeMemoryClass(string? memoryClass)
+    {
+        if (string.IsNullOrWhiteSpace(memoryClass))
+            return null;
+
+        return memoryClass.Trim().ToLowerInvariant() switch
+        {
+            MemoryNoteClass.General => MemoryNoteClass.General,
+            MemoryNoteClass.ProjectFact => MemoryNoteClass.ProjectFact,
+            MemoryNoteClass.OperationalRunbook => MemoryNoteClass.OperationalRunbook,
+            MemoryNoteClass.ApprovedSkill => MemoryNoteClass.ApprovedSkill,
+            MemoryNoteClass.ApprovedAutomation => MemoryNoteClass.ApprovedAutomation,
+            _ => null
+        };
+    }
+
+    private static string? NormalizeOptionalValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string BuildMemoryPrefix(string? memoryClass, string? projectId, string? prefixSuffix)
+    {
+        var prefix = memoryClass switch
+        {
+            MemoryNoteClass.ProjectFact when !string.IsNullOrWhiteSpace(projectId) => $"project:{projectId}:",
+            MemoryNoteClass.ProjectFact => "project:",
+            MemoryNoteClass.OperationalRunbook => "runbook:",
+            MemoryNoteClass.ApprovedSkill => "skill:",
+            MemoryNoteClass.ApprovedAutomation => "automation:",
+            _ => string.Empty
+        };
+
+        if (string.IsNullOrWhiteSpace(prefixSuffix))
+            return prefix;
+
+        return string.Concat(prefix, prefixSuffix.Trim());
+    }
+
+    private static string? BuildMemoryNoteKey(string? key, string? memoryClass, string? projectId, out string? error)
+    {
+        error = null;
+        var normalizedClass = memoryClass ?? MemoryNoteClass.General;
+        var normalizedKey = NormalizeOptionalValue(key);
+        var normalizedProjectId = NormalizeOptionalValue(projectId);
+
+        if (normalizedClass == MemoryNoteClass.ProjectFact)
+        {
+            if (string.IsNullOrWhiteSpace(normalizedProjectId))
+            {
+                error = "projectId is required for project_fact memory.";
+                return null;
+            }
+
+            var projectError = InputSanitizer.CheckMemoryKey(normalizedProjectId);
+            if (projectError is not null)
+            {
+                error = projectError;
+                return null;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedKey))
+        {
+            error = "key is required.";
+            return null;
+        }
+
+        var keyError = InputSanitizer.CheckMemoryKey(normalizedKey);
+        if (keyError is not null)
+        {
+            error = keyError;
+            return null;
+        }
+
+        return normalizedClass switch
+        {
+            MemoryNoteClass.ProjectFact => $"project:{normalizedProjectId}:{normalizedKey}",
+            MemoryNoteClass.OperationalRunbook => $"runbook:{normalizedKey}",
+            MemoryNoteClass.ApprovedSkill => $"skill:{normalizedKey}",
+            MemoryNoteClass.ApprovedAutomation => $"automation:{normalizedKey}",
+            _ => normalizedKey
+        };
+    }
+
+    private static (string MemoryClass, string? ProjectId, string DisplayKey) ClassifyMemoryNoteKey(string key)
+    {
+        if (key.StartsWith("project:", StringComparison.Ordinal))
+        {
+            var segments = key.Split(':', 3, StringSplitOptions.None);
+            if (segments.Length == 3)
+            {
+                return (MemoryNoteClass.ProjectFact, segments[1], segments[2]);
+            }
+        }
+
+        if (key.StartsWith("runbook:", StringComparison.Ordinal))
+            return (MemoryNoteClass.OperationalRunbook, null, key["runbook:".Length..]);
+
+        if (key.StartsWith("skill:", StringComparison.Ordinal))
+            return (MemoryNoteClass.ApprovedSkill, null, key["skill:".Length..]);
+
+        if (key.StartsWith("automation:", StringComparison.Ordinal))
+            return (MemoryNoteClass.ApprovedAutomation, null, key["automation:".Length..]);
+
+        return (MemoryNoteClass.General, null, key);
+    }
+
+    private static bool ProposalMatchesActor(LearningProposal proposal, string actorId)
+    {
+        if (string.Equals(proposal.ActorId, actorId, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (string.Equals(proposal.ProfileUpdate?.ActorId, actorId, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return string.Equals(proposal.AppliedProfileBefore?.ActorId, actorId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static UserProfile NormalizeProfile(UserProfile profile)
+    {
+        var normalizedActorId = string.IsNullOrWhiteSpace(profile.ActorId) ? $"{profile.ChannelId}:{profile.SenderId}" : profile.ActorId.Trim();
+        var parts = normalizedActorId.Split(':', 2, StringSplitOptions.TrimEntries);
+        var channelId = !string.IsNullOrWhiteSpace(profile.ChannelId)
+            ? profile.ChannelId.Trim()
+            : (parts.Length > 0 ? parts[0] : "unknown");
+        var senderId = !string.IsNullOrWhiteSpace(profile.SenderId)
+            ? profile.SenderId.Trim()
+            : (parts.Length > 1 ? parts[1] : normalizedActorId);
+
+        return new UserProfile
+        {
+            ActorId = normalizedActorId,
+            ChannelId = channelId,
+            SenderId = senderId,
+            Summary = profile.Summary,
+            Tone = profile.Tone,
+            Facts = profile.Facts,
+            Preferences = profile.Preferences,
+            ActiveProjects = profile.ActiveProjects,
+            RecentIntents = profile.RecentIntents,
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        };
     }
 
     private static ChannelAuthStatusItem MapChannelAuthStatusItem(BridgeChannelAuthEvent evt)

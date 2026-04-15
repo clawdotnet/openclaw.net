@@ -1,61 +1,74 @@
-# Plugin Compatibility Guide
+# Compatibility Guide
 
-OpenClaw.NET keeps plugin compatibility explicit by runtime mode. The goal is to support the mainstream tool/skill path in AOT mode, then offer a broader compatibility lane in JIT mode without pretending the two modes are equivalent.
+This is the canonical compatibility matrix for OpenClaw.NET. It covers runtime modes, upstream `SKILL.md` reuse, plugin compatibility, channel operator parity, and the current limitations you should plan around.
+
+## Status Legend
+
+- `Supported`: intended production path, backed by automated tests
+- `Supported with caveats`: works today, but there are important scope limits or mode requirements
+- `Not supported`: fails fast with explicit diagnostics instead of loading partially
 
 ## Runtime Modes
 
 - `OpenClaw:Runtime:Mode=auto` resolves to `jit` when dynamic code is available and `aot` when it is not.
-- `OpenClaw:Runtime:Mode=aot` forces the strict low-memory compatibility lane even on a JIT-capable build.
-- `OpenClaw:Runtime:Mode=jit` requires dynamic code support and enables the expanded plugin lane.
+- `OpenClaw:Runtime:Mode=aot` forces the strict trim-safe lane even on a JIT-capable build.
+- `OpenClaw:Runtime:Mode=jit` enables the expanded plugin and dynamic-native lane.
 
-## Bridge Matrix
+## Upstream Skill Compatibility
 
 | Surface | Status | Notes |
 | --- | --- | --- |
-| `api.registerTool()` | Supported in `aot` and `jit` | Tool registration and execution are covered by hermetic bridge tests. |
-| `api.registerService()` | Supported in `aot` and `jit` | `start` / `stop` lifecycle is covered by integration tests. |
-| `api.registerChannel()` | Supported in `jit` only | AOT mode blocks the plugin with `jit_mode_required`. |
-| `api.registerCommand()` | Supported in `jit` only | Registered as dynamic chat commands (e.g. `/mycommand`). |
-| `api.on(...)` | Supported in `jit` only | Event hooks for `tool:before` / `tool:after`. 5-second timeout on `before` with fallback to allow. |
-| `api.registerProvider()` | Supported in `jit` only | Plugin-provided LLM backends, registered as dynamic providers in `LlmClientFactory`. |
-| Plugin-packaged skills (`manifest.skills[]`) | Supported | Loaded into the skill pipeline with precedence `extra < bundled < managed < plugin < workspace`. |
-| Standalone ClawHub `SKILL.md` packages | Supported | No bridge required; this is the most plug-and-play compatibility path. |
-| Standalone `.js`, `.mjs`, `.ts` in `.openclaw/extensions` | Supported | `.ts` requires local `jiti`. |
+| Standalone `SKILL.md` packages | Supported | This is the cleanest upstream reuse path. No bridge is required. |
+| ClawHub skill install flow | Supported | Use `openclaw clawhub install <slug>` with workspace or managed skill locations. |
+| Plugin-packaged skills (`manifest.skills[]`) | Supported | Skills load into the normal precedence chain: `extra < bundled < managed < plugin < workspace`. |
+| Workspace / managed / bundled skill precedence | Supported | Workspace overrides remain the highest-priority operator-controlled layer. |
+| Runtime reload expectations | Supported with caveats | Newly installed skills are picked up on restart; do not assume hot-reload for every deployment shape. |
+
+## Plugin Package Compatibility
+
+OpenClaw.NET keeps plugin compatibility explicit by runtime mode. The goal is to support the mainstream tool-and-skill path in `aot`, then offer a broader compatibility lane in `jit` without pretending the two modes are equivalent.
+
+| Surface | Status | Notes |
+| --- | --- | --- |
+| `api.registerTool()` | Supported | Available in both `aot` and `jit`. Covered by hermetic bridge tests. |
+| `api.registerService()` | Supported | Available in both `aot` and `jit`, including `start` / `stop` lifecycle coverage. |
+| `api.registerChannel()` | Supported with caveats | `jit` only. `aot` fails fast with `jit_mode_required`. |
+| `api.registerCommand()` | Supported with caveats | `jit` only. Registered as dynamic chat commands. |
+| `api.on(...)` | Supported with caveats | `jit` only. `tool:before` / `tool:after` hooks are bridged with timeout protections. |
+| `api.registerProvider()` | Supported with caveats | `jit` only. Plugin-provided LLMs are wired through the dynamic provider seam. |
+| Standalone `.js`, `.mjs`, `.ts` in `.openclaw/extensions` | Supported with caveats | `.ts` requires local `jiti`. |
 | Manifest/package discovery via `Plugins:Load:Paths` | Supported | Includes `openclaw.plugin.json` and `package.json` `openclaw.extensions`. |
-| Plugin config validation | Supported subset | Validated before bridge startup against the supported JSON Schema subset below. |
+| Plugin config validation | Supported with caveats | Validated against the documented JSON Schema subset below before startup. |
 | Plugin diagnostics in `/doctor` | Supported | Discovery, load, config, and compatibility failures are reported explicitly. |
 | `Plugins:Transport:Mode=stdio` | Supported | JSON-RPC over child process stdin/stdout. |
-| `Plugins:Transport:Mode=socket` | Supported | JSON-RPC over local IPC: Unix domain sockets on Unix, named pipes on Windows. Local IPC now uses an authenticated handshake and private runtime socket directories by default. |
-| `Plugins:Transport:Mode=hybrid` | Supported | `init` over stdio, then runtime RPC/notifications over the local IPC socket transport. Socket handoff uses the same authenticated local IPC path. |
+| `Plugins:Transport:Mode=socket` | Supported | Local IPC with authenticated handshake and private runtime socket directories. |
+| `Plugins:Transport:Mode=hybrid` | Supported | `init` over stdio, then runtime RPC/notifications over the local IPC socket transport. |
+| Native dynamic .NET plugins | Supported with caveats | `jit` only through `OpenClaw:Plugins:DynamicNative`. AOT fails fast before load. |
 
 ## Unsupported Today
 
-These APIs are not bridged. If a plugin uses them, plugin initialization fails fast with structured diagnostics instead of loading partially:
+These APIs are not bridged. If a plugin uses them, initialization fails fast with structured diagnostics instead of loading partially:
 
-| Surface | Failure code |
-| --- | --- |
-| `api.registerGatewayMethod()` | `unsupported_gateway_method` |
-| `api.registerCli()` | `unsupported_cli_registration` |
+| Surface | Status | Failure code |
+| --- | --- | --- |
+| `api.registerGatewayMethod()` | Not supported | `unsupported_gateway_method` |
+| `api.registerCli()` | Not supported | `unsupported_cli_registration` |
 
-## Native Dynamic Plugins
+## Channel Compatibility
 
-JIT mode also supports in-process native dynamic plugins through `OpenClaw:Plugins:DynamicNative`.
+The messaging channels below now share the same operator model for DM policy, recent senders, diagnostics, and dynamic allowlist administration.
 
-- Discovery manifest: `openclaw.native-plugin.json`
-- Standard locations: configured `Plugins:DynamicNative:Load:Paths`, workspace `.openclaw/native-plugins`, global `~/.openclaw/native-plugins`
-- Capability model: `native_dynamic` plus the declared/registered surfaces (`tools`, `services`, `commands`, `channels`, `providers`, `hooks`, `skills`)
-- AOT behavior: fail fast before load with `jit_mode_required`
-- Assembly paths must resolve under the discovered plugin root; out-of-root paths fail with structured diagnostics.
-
-## Plugin Root Containment
-
-Discovered plugin manifests do not get to escape their plugin root.
-
-- package entry files must resolve under the discovered plugin directory
-- manifest entry files must resolve under the discovered plugin directory
-- native dynamic plugin assembly paths must resolve under the discovered plugin directory
-
-Out-of-root targets fail explicitly during discovery or load instead of being executed.
+| Channel | Status | Operator surface |
+| --- | --- | --- |
+| Telegram | Supported | DM policy, dynamic allowlists, recent senders, readiness and diagnostics |
+| Twilio SMS | Supported | DM policy, dynamic allowlists, recent senders, readiness and diagnostics |
+| WhatsApp | Supported | DM policy, dynamic allowlists, recent senders, readiness and diagnostics |
+| Teams | Supported | DM policy, dynamic allowlists, recent senders, readiness and diagnostics |
+| Slack | Supported | DM policy, dynamic allowlists, recent senders, readiness and diagnostics |
+| Discord | Supported | DM policy, dynamic allowlists, recent senders, readiness and diagnostics, including slash-command ingress parity |
+| Signal | Supported | DM policy, dynamic allowlists, recent senders, readiness and diagnostics |
+| Email | Supported with caveats | Email is an inbound transport, but it does not use the same sender-allowlist model as the chat channels above. Treat it as a separate operational surface. |
+| Generic webhooks | Supported with caveats | Webhooks support authenticated inbound triggers, but they are not a DM-policy / allowlist channel. |
 
 ## TypeScript Requirements
 
@@ -93,34 +106,33 @@ If `jiti` is missing, plugin load fails with an actionable error instead of fall
 
 Unsupported schema keywords are rejected with `unsupported_schema_keyword`.
 
-## What Failure Looks Like
+## Known Limitations
 
-- Discovery problems such as invalid manifests, duplicate plugin ids, or missing entry files produce structured plugin reports.
-- Out-of-root manifest or assembly paths fail with explicit diagnostics instead of silently resolving elsewhere on disk.
-- Config problems fail before Node startup with field-specific diagnostics.
-- Unsupported bridge APIs fail plugin initialization with explicit compatibility codes.
-- JIT-only capabilities in AOT mode fail before wiring with explicit runtime-mode diagnostics.
+- Public-bind setup defaults intentionally disable bridge plugins and shell until you opt into the relevant trust settings.
+- JIT-only capabilities remain JIT-only; `aot` does not attempt partial dynamic fallback.
+- TypeScript plugin loading depends on `jiti`; OpenClaw.NET does not bundle a TypeScript runtime automatically.
+- Out-of-root plugin entry files, manifests, and native dynamic assemblies fail explicitly instead of being resolved elsewhere on disk.
 - Tool-name collisions are deterministic: the first tool wins, later duplicates are skipped and reported.
 
 ## Automated Proof
 
-The compatibility claim is backed by two layers of automated validation:
+The compatibility claim is backed by automated validation in `src/OpenClaw.Tests`:
 
-- Hermetic bridge tests in `src/OpenClaw.Tests/PluginBridgeIntegrationTests.cs`
+- `PluginBridgeIntegrationTests.cs`
   - `.js`, `.mjs`, `.ts` loading
-  - `jiti` success/failure
+  - `jiti` success and failure paths
   - `registerService()`
   - `aot` vs `jit` capability gating
   - `registerChannel()` / `registerCommand()` / `registerProvider()` / `api.on(...)`
   - plugin-packaged skills
   - config validation, including `oneOf`
   - unsupported-surface failure modes
-- Hermetic native dynamic tests in `src/OpenClaw.Tests/NativeDynamicPluginHostTests.cs`
+- `NativeDynamicPluginHostTests.cs`
   - JIT-mode in-process plugin loading
-  - command + service lifecycle
+  - command and service lifecycle
   - plugin-packaged skills
   - AOT rejection before load
-- Public smoke manifest in `compat/public-smoke.json`
+- `PublicCompatibilitySmokeTests.cs`
   - pinned ClawHub skill package
   - pinned JS plugin package
   - pinned TS + `jiti` plugin package

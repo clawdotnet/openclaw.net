@@ -82,13 +82,16 @@ See [Prompt Caching](docs/PROMPT_CACHING.md) for configuration, provider behavio
 - The runtime can observe completed sessions and create **pending learning proposals** instead of auto-mutating behavior
 - Proposal kinds include **`profile_update`**, **`automation_suggestion`**, and **`skill_draft`**
 - Approving a proposal can update a user profile, create a disabled automation draft, or write a managed skill draft and reload skills
-- Rejections, approvals, and source-session references are preserved so operators can audit what the system learned and why
+- Rejections, approvals, rollbacks, and source-session references are preserved so operators can audit what the system learned and why
+- Operators can fetch proposal detail with provenance and computed profile diffs before approving or reverting a learned profile update
 - Learning proposals are available over the admin API, `OpenClaw.Client`, and the TUI review flow
 
 ### Memory, Profiles, and Automation
 
 - **Session search** spans persisted conversation content for recall and operator lookup
 - **User profiles** store stable facts, preferences, projects, tone, and recent intent, with native `profile_read` / `profile_write` tools
+- **Memory console** in the built-in admin UI can search note memory, inspect project-scoped entries, edit/delete notes, and export/import portable bundles
+- **Profile export/import** supports portability between deployments through the admin API
 - **Automations** support list/get/preview/create/update/pause/resume/run flows and integrate with cron-backed delivery
 - **Todos** are persisted per session and available through the native `todo` tool and operator surfaces
 
@@ -162,11 +165,12 @@ Install community plugins directly from npm/ClawHub:
 ```bash
 openclaw plugins install @sliverp/qqbot
 openclaw plugins install @opik/opik-openclaw
+openclaw plugins install @sliverp/qqbot --dry-run
 openclaw plugins list
 openclaw plugins search openclaw dingtalk
 ```
 
-Supports JS/TS bridge plugins, native dynamic .NET plugins (`jit` mode), and standalone `SKILL.md` packages. See [Plugin Compatibility Guide](docs/COMPATIBILITY.md).
+Supports JS/TS bridge plugins, native dynamic .NET plugins (`jit` mode), and standalone `SKILL.md` packages. See the [Compatibility Guide](docs/COMPATIBILITY.md).
 
 ### Integrations
 
@@ -258,16 +262,50 @@ graph LR
 git clone https://github.com/clawdotnet/openclaw.net
 cd openclaw.net
 
-export OpenClaw__Llm__Provider="openai"   # or: anthropic / claude / gemini
-export OpenClaw__Llm__Model="gpt-4.1"
-export MODEL_PROVIDER_KEY="your-api-key"
+# Guided local bootstrap
+dotnet run --project src/OpenClaw.Cli -c Release -- setup
 
-# Validate config (optional)
-dotnet run --project src/OpenClaw.Gateway -c Release -- --doctor
-
-# Start the gateway
-dotnet run --project src/OpenClaw.Gateway -c Release
+# Or automate the same path
+dotnet run --project src/OpenClaw.Cli -c Release -- setup \
+  --non-interactive \
+  --profile local \
+  --workspace "$PWD/workspace" \
+  --provider openai \
+  --model gpt-4o \
+  --api-key env:MODEL_PROVIDER_KEY
 ```
+
+For a reverse-proxy/public deployment:
+
+```bash
+dotnet run --project src/OpenClaw.Cli -c Release -- setup --profile public
+```
+
+For raw bootstrap files instead of the guided flow:
+
+```bash
+dotnet run --project src/OpenClaw.Cli -c Release -- init --preset both
+```
+
+`setup` writes an external config file, an adjacent env example, and prints the exact gateway launch, `--doctor`, and `admin posture` commands for the generated config.
+
+If the CLI is already on your `PATH`, the same guided entrypoint is simply:
+
+```bash
+openclaw setup
+```
+
+After the base config exists, common channel onboarding is also CLI-driven:
+
+```bash
+openclaw setup channel telegram --config ~/.openclaw/config/openclaw.settings.json
+openclaw setup channel slack --config ~/.openclaw/config/openclaw.settings.json
+openclaw setup channel discord --config ~/.openclaw/config/openclaw.settings.json
+openclaw setup channel teams --config ~/.openclaw/config/openclaw.settings.json
+openclaw setup channel whatsapp --config ~/.openclaw/config/openclaw.settings.json
+```
+
+See [Quickstart Guide](docs/QUICKSTART.md), [Compatibility Guide](docs/COMPATIBILITY.md), and [User Guide](docs/USER_GUIDE.md) for the full onboarding path and supported compatibility surface.
 
 Then open one of:
 
@@ -490,7 +528,7 @@ All operations emit structured logs and `.NET Activity` traces with correlation 
 | [Quickstart Guide](docs/QUICKSTART.md) | Local setup and first usage |
 | [User Guide](docs/USER_GUIDE.md) | Runtime concepts, providers, tools, skills, memory, channels |
 | [Tool Guide](docs/TOOLS_GUIDE.md) | Built-in tools, native integrations, approval guidance |
-| [Plugin Compatibility Guide](docs/COMPATIBILITY.md) | Plugin surfaces, mode gating, failure modes |
+| [Compatibility Guide](docs/COMPATIBILITY.md) | Skills, plugin surfaces, channel parity, known limitations |
 | [Security Guide](SECURITY.md) | Hardening guidance for public deployments |
 | [Sandboxing Guide](docs/sandboxing.md) | Sandbox routing, build flags, config |
 | [Semantic Kernel Guide](docs/SEMANTIC_KERNEL.md) | Hosting SK tools/agents behind OpenClaw.NET |

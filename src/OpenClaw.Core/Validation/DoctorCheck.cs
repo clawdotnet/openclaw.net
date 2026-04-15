@@ -56,7 +56,7 @@ public static class DoctorCheck
             warnOnly: false,
             detail: "Do not mix '*' with explicit roots, and use absolute paths for explicit filesystem roots.");
 
-        if (config.BindAddress != "127.0.0.1" && config.BindAddress != "localhost")
+        if (!BindAddressClassifier.IsLoopbackBind(config.BindAddress))
         {
             allPassed &= Check("Public Bind: Auth Token is set", () => !string.IsNullOrWhiteSpace(config.AuthToken),
                 warnOnly: false, "Binding to 0.0.0.0 without an AuthToken is extremely dangerous.");

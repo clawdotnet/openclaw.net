@@ -21,6 +21,7 @@ public static class LearningProposalStatus
     public const string Pending = "pending";
     public const string Approved = "approved";
     public const string Rejected = "rejected";
+    public const string RolledBack = "rolled_back";
 }
 
 public sealed class LearningProposal
@@ -35,6 +36,7 @@ public sealed class LearningProposal
     public string? DraftContent { get; init; }
     public string? DraftContentHash { get; init; }
     public UserProfile? ProfileUpdate { get; init; }
+    public UserProfile? AppliedProfileBefore { get; init; }
     public AutomationDefinition? AutomationDraft { get; init; }
     public IReadOnlyList<string> SourceSessionIds { get; init; } = [];
     public float Confidence { get; init; }
@@ -42,4 +44,7 @@ public sealed class LearningProposal
     public DateTimeOffset UpdatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ReviewedAtUtc { get; init; }
     public string? ReviewNotes { get; init; }
+    public bool RolledBack { get; init; }
+    public DateTimeOffset? RolledBackAtUtc { get; init; }
+    public string? RollbackReason { get; init; }
 }

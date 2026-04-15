@@ -1,19 +1,14 @@
-using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Gateway;
 
 internal static class GatewaySecurity
 {
     public static bool IsLoopbackBind(string bindAddress)
-    {
-        if (IPAddress.TryParse(bindAddress, out var ip))
-            return IPAddress.IsLoopback(ip);
-
-        return string.Equals(bindAddress, "localhost", StringComparison.OrdinalIgnoreCase);
-    }
+        => BindAddressClassifier.IsLoopbackBind(bindAddress);
 
     public static string? GetBearerToken(HttpContext ctx)
     {

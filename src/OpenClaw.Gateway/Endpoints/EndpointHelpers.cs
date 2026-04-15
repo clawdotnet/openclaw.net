@@ -161,6 +161,10 @@ internal static class EndpointHelpers
                 AllowedFrom = config.Channels.Sms.Twilio.AllowedFromNumbers,
                 AllowedTo = config.Channels.Sms.Twilio.AllowedToNumbers
             },
+            "teams" => new ChannelAllowlistFile { AllowedFrom = config.Channels.Teams.AllowedFromIds },
+            "slack" => new ChannelAllowlistFile { AllowedFrom = config.Channels.Slack.AllowedFromUserIds },
+            "discord" => new ChannelAllowlistFile { AllowedFrom = config.Channels.Discord.AllowedFromUserIds },
+            "signal" => new ChannelAllowlistFile { AllowedFrom = config.Channels.Signal.AllowedFromNumbers },
             _ => new ChannelAllowlistFile()
         };
     }

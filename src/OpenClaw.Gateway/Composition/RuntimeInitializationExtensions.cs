@@ -196,6 +196,7 @@ internal static class RuntimeInitializationExtensions
             var mdns = new Integrations.MdnsDiscoveryService(
                 config.Mdns,
                 config.Port,
+                authRequired: !string.IsNullOrWhiteSpace(config.AuthToken),
                 loggerFactory.CreateLogger<Integrations.MdnsDiscoveryService>());
             mdns.Start(app.Lifetime.ApplicationStopping);
             app.Lifetime.ApplicationStopping.Register(() => mdns.DisposeAsync().AsTask().GetAwaiter().GetResult());

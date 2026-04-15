@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Channels;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Security;
 
 namespace OpenClaw.Gateway;
@@ -15,14 +16,23 @@ namespace OpenClaw.Gateway;
 internal sealed class DiscordWebhookHandler
 {
     private readonly DiscordChannelConfig _config;
+    private readonly AllowlistManager _allowlists;
+    private readonly RecentSendersStore _recentSenders;
+    private readonly AllowlistSemantics _allowlistSemantics;
     private readonly byte[]? _publicKeyBytes;
     private readonly ILogger<DiscordWebhookHandler> _logger;
 
     public DiscordWebhookHandler(
         DiscordChannelConfig config,
+        AllowlistManager allowlists,
+        RecentSendersStore recentSenders,
+        AllowlistSemantics allowlistSemantics,
         ILogger<DiscordWebhookHandler> logger)
     {
         _config = config;
+        _allowlists = allowlists;
+        _recentSenders = recentSenders;
+        _allowlistSemantics = allowlistSemantics;
         _logger = logger;
 
         var publicKeyHex = SecretResolver.Resolve(config.PublicKeyRef) ?? config.PublicKey;
@@ -92,11 +102,14 @@ internal sealed class DiscordWebhookHandler
                     return new WebhookResponse(403, """{"error":"channel not allowed"}""");
             }
 
-            if (_config.AllowedFromUserIds.Length > 0)
+            await _recentSenders.RecordAsync("discord", userId, username, ct);
+
+            var effective = _allowlists.GetEffective("discord", new ChannelAllowlistFile
             {
-                if (!Array.Exists(_config.AllowedFromUserIds, id => string.Equals(id, userId, StringComparison.Ordinal)))
-                    return new WebhookResponse(403, """{"error":"user not allowed"}""");
-            }
+                AllowedFrom = _config.AllowedFromUserIds
+            });
+            if (!AllowlistPolicy.IsAllowed(effective.AllowedFrom, userId, _allowlistSemantics))
+                return new WebhookResponse(403, """{"error":"user not allowed"}""");
 
             // Extract command text from options
             var text = "";

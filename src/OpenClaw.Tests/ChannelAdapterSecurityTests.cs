@@ -35,12 +35,21 @@ public sealed class ChannelAdapterSecurityTests
     [Fact]
     public async Task DiscordWebhookHandler_RejectsDisallowedGuild()
     {
+        var allowlists = new AllowlistManager(
+            Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")),
+            NullLogger<AllowlistManager>.Instance);
+        var recentSenders = new RecentSendersStore(
+            Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")),
+            NullLogger<RecentSendersStore>.Instance);
         var handler = new DiscordWebhookHandler(
             new DiscordChannelConfig
             {
                 ValidateSignature = false,
                 AllowedGuildIds = ["allowed-guild"]
             },
+            allowlists,
+            recentSenders,
+            AllowlistSemantics.Legacy,
             NullLogger<DiscordWebhookHandler>.Instance);
 
         var payload = """
@@ -68,6 +77,46 @@ public sealed class ChannelAdapterSecurityTests
 
         Assert.Equal(403, result.StatusCode);
         Assert.False(enqueued);
+    }
+
+    [Fact]
+    public async Task DiscordWebhookHandler_UsesDynamicAllowlistForUserChecks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var allowlists = new AllowlistManager(root, NullLogger<AllowlistManager>.Instance);
+        allowlists.SetAllowedFrom("discord", ["allowed-user"]);
+        var recentSenders = new RecentSendersStore(root, NullLogger<RecentSendersStore>.Instance);
+        var handler = new DiscordWebhookHandler(
+            new DiscordChannelConfig
+            {
+                ValidateSignature = false,
+                AllowedFromUserIds = ["stale-config-user"]
+            },
+            allowlists,
+            recentSenders,
+            AllowlistSemantics.Strict,
+            NullLogger<DiscordWebhookHandler>.Instance);
+
+        var payload = """
+            {
+              "id":"1",
+              "type":2,
+              "guild_id":"guild-1",
+              "channel_id":"channel-1",
+              "member":{"user":{"id":"blocked-user","username":"tester"}},
+              "data":{"name":"claw","options":[{"name":"message","value":"hello"}]}
+            }
+            """;
+
+        var result = await handler.HandleAsync(
+            payload,
+            signatureHeader: null,
+            timestampHeader: null,
+            (msg, ct) => ValueTask.CompletedTask,
+            CancellationToken.None);
+
+        Assert.Equal(403, result.StatusCode);
+        Assert.Equal("blocked-user", recentSenders.TryGetLatest("discord")?.SenderId);
     }
 
     [Fact]

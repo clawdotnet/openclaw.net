@@ -371,6 +371,7 @@
     <nav class="section-nav">
         <a href="#overview-section">Overview</a>
         <a href="#heartbeat-section">Heartbeat</a>
+        <a href="#memory-section">Memory</a>
         <a href="#integration-section">Integration</a>
         <a href="#ops-section">Ops</a>
         <a href="#sessions-section">Sessions</a>
@@ -482,6 +483,70 @@
                 <pre id="heartbeat-status-output">Loading…</pre>
                 <h3 style="margin-top:1rem;">Generated HEARTBEAT.md</h3>
                 <pre id="heartbeat-preview-output">Loading…</pre>
+            </div>
+        </section>
+
+        <section id="memory-section" class="grid">
+            <div class="card">
+                <div class="section-title">
+                    <div>
+                        <h2>Memory Console</h2>
+                        <div class="muted">Search and inspect durable notes, including project-scoped memory.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="memory-refresh-button" class="secondary">Reload</button>
+                        <button id="memory-export-button">Export Bundle</button>
+                    </div>
+                </div>
+                <div class="filters">
+                    <input id="memory-search-input" type="text" placeholder="Search memory notes">
+                    <input id="memory-prefix-input" type="text" placeholder="Key prefix (optional)">
+                    <select id="memory-class-filter-input">
+                        <option value="">All memory classes</option>
+                        <option value="general">General</option>
+                        <option value="project_fact">Project facts</option>
+                        <option value="operational_runbook">Runbooks</option>
+                        <option value="approved_skill">Approved skills</option>
+                        <option value="approved_automation">Approved automations</option>
+                    </select>
+                    <input id="memory-project-filter-input" type="text" placeholder="Project ID (optional)">
+                </div>
+                <div class="actions" style="margin-bottom:0.75rem;">
+                    <button id="memory-search-button" class="secondary">Search</button>
+                </div>
+                <div id="memory-notes-output" class="muted">Loading…</div>
+            </div>
+            <div class="card">
+                <div class="section-title">
+                    <div>
+                        <h2>Memory Editor</h2>
+                        <div class="muted">Load, update, delete, export, or import memory bundles.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="memory-load-button" class="secondary">Load Note</button>
+                        <button id="memory-save-button">Save Note</button>
+                        <button id="memory-delete-button" class="secondary">Delete Note</button>
+                    </div>
+                </div>
+                <div class="filters">
+                    <input id="memory-note-key-input" type="text" placeholder="Note key">
+                    <select id="memory-note-class-input">
+                        <option value="general">General</option>
+                        <option value="project_fact">Project fact</option>
+                        <option value="operational_runbook">Runbook</option>
+                        <option value="approved_skill">Approved skill</option>
+                        <option value="approved_automation">Approved automation</option>
+                    </select>
+                    <input id="memory-note-project-id-input" type="text" placeholder="Project ID (for project facts)">
+                </div>
+                <textarea id="memory-note-content-input" rows="9" placeholder="Memory note content"></textarea>
+                <pre id="memory-note-detail-output">Ready.</pre>
+                <h3 style="margin-top:1rem;">Export / Import</h3>
+                <textarea id="memory-import-input" rows="8" placeholder="Paste exported memory bundle JSON here to import."></textarea>
+                <div class="actions" style="margin-top:0.75rem;">
+                    <button id="memory-import-button">Import Bundle</button>
+                </div>
+                <pre id="memory-export-output">No bundle exported yet.</pre>
             </div>
         </section>
 
@@ -1026,6 +1091,18 @@
         const heartbeatTasks = document.getElementById('heartbeat-tasks');
         const heartbeatStatusOutput = document.getElementById('heartbeat-status-output');
         const heartbeatPreviewOutput = document.getElementById('heartbeat-preview-output');
+        const memorySearchInput = document.getElementById('memory-search-input');
+        const memoryPrefixInput = document.getElementById('memory-prefix-input');
+        const memoryClassFilterInput = document.getElementById('memory-class-filter-input');
+        const memoryProjectFilterInput = document.getElementById('memory-project-filter-input');
+        const memoryNotesOutput = document.getElementById('memory-notes-output');
+        const memoryNoteKeyInput = document.getElementById('memory-note-key-input');
+        const memoryNoteClassInput = document.getElementById('memory-note-class-input');
+        const memoryNoteProjectIdInput = document.getElementById('memory-note-project-id-input');
+        const memoryNoteContentInput = document.getElementById('memory-note-content-input');
+        const memoryNoteDetailOutput = document.getElementById('memory-note-detail-output');
+        const memoryImportInput = document.getElementById('memory-import-input');
+        const memoryExportOutput = document.getElementById('memory-export-output');
         const heartbeatInputs = {
             enabled: document.getElementById('heartbeat-enabled-input'),
             cronExpression: document.getElementById('heartbeat-cron-input'),
@@ -1128,6 +1205,9 @@
         };
         let settingsState = null;
         let heartbeatState = null;
+        let memoryState = {
+            selectedKey: null
+        };
         let approvalsPollTimer = null;
         let whatsAppSetupState = null;
         let whatsAppAuthState = new Map();
@@ -1203,6 +1283,15 @@
             await mutate('/auth/session', { method: 'DELETE' });
             csrfToken = null;
             sessionStatus.textContent = 'Logged out';
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;');
         }
 
         function renderJson(target, value) {
@@ -1922,6 +2011,202 @@
             await loadSummary();
         }
 
+        function buildMemoryStorageKey() {
+            const rawKey = memoryNoteKeyInput.value.trim();
+            const memoryClass = memoryNoteClassInput.value;
+            const projectId = memoryNoteProjectIdInput.value.trim();
+
+            if (!rawKey) {
+                return null;
+            }
+
+            if (memoryClass === 'project_fact') {
+                if (!projectId) {
+                    return null;
+                }
+
+                return `project:${projectId}:${rawKey}`;
+            }
+
+            if (memoryClass === 'operational_runbook') {
+                return `runbook:${rawKey}`;
+            }
+
+            if (memoryClass === 'approved_skill') {
+                return `skill:${rawKey}`;
+            }
+
+            if (memoryClass === 'approved_automation') {
+                return `automation:${rawKey}`;
+            }
+
+            return rawKey;
+        }
+
+        function applyMemoryNote(note) {
+            memoryState.selectedKey = note.key;
+            memoryNoteKeyInput.value = note.displayKey || note.key;
+            memoryNoteClassInput.value = note.memoryClass || 'general';
+            memoryNoteProjectIdInput.value = note.projectId || '';
+            memoryNoteContentInput.value = note.content || '';
+            memoryNoteDetailOutput.textContent = [
+                `key: ${note.key}`,
+                `class: ${note.memoryClass}`,
+                `project_id: ${note.projectId || '(none)'}`,
+                `updated_at: ${note.updatedAtUtc}`,
+                '',
+                note.content || note.preview || ''
+            ].join('\n');
+        }
+
+        async function loadMemoryNotes() {
+            const params = new URLSearchParams();
+            const query = memorySearchInput.value.trim();
+            const prefix = memoryPrefixInput.value.trim();
+            const memoryClass = memoryClassFilterInput.value.trim();
+            const projectId = memoryProjectFilterInput.value.trim();
+
+            if (memoryClass) params.set('memoryClass', memoryClass);
+            if (projectId) params.set('projectId', projectId);
+            if (query) params.set('query', query);
+            if (!query && prefix) params.set('prefix', prefix);
+
+            const path = query
+                ? `/admin/memory/search?${params.toString()}`
+                : `/admin/memory/notes?${params.toString()}`;
+            const { resp, data } = await api(path);
+            if (!resp.ok) {
+                memoryNotesOutput.textContent = `Memory request failed (${resp.status})`;
+                return;
+            }
+
+            if (!data.items.length) {
+                memoryNotesOutput.textContent = 'No memory notes matched the current filters.';
+                return;
+            }
+
+            memoryNotesOutput.innerHTML = data.items.map(item => `
+                <div class="card" style="margin-bottom:0.75rem;">
+                    <strong>${escapeHtml(item.displayKey || item.key)}</strong>
+                    <div class="muted">${escapeHtml(item.memoryClass)}${item.projectId ? ` · project=${escapeHtml(item.projectId)}` : ''}</div>
+                    <div class="muted">${escapeHtml(item.updatedAtUtc)}</div>
+                    <pre>${escapeHtml(item.preview || '')}</pre>
+                    <div class="actions">
+                        <button data-memory-inspect="${encodeURIComponent(item.key)}">Inspect</button>
+                        <button class="secondary" data-memory-edit="${encodeURIComponent(item.key)}">Edit</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadMemoryNote(key) {
+            const { resp, data } = await api(`/admin/memory/notes/${encodeURIComponent(key)}`);
+            if (!resp.ok) {
+                memoryNoteDetailOutput.textContent = `Memory note request failed (${resp.status})`;
+                return;
+            }
+
+            if (data.note) {
+                applyMemoryNote(data.note);
+            }
+        }
+
+        async function saveMemoryNote() {
+            const payload = {
+                key: memoryNoteKeyInput.value.trim() || null,
+                memoryClass: memoryNoteClassInput.value || 'general',
+                projectId: memoryNoteProjectIdInput.value.trim() || null,
+                content: memoryNoteContentInput.value
+            };
+
+            const { resp, data } = await mutate('/admin/memory/notes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!resp.ok) {
+                memoryNoteDetailOutput.textContent = data?.error || `Save failed (${resp.status})`;
+                showFlash(data?.error || `Memory save failed (${resp.status}).`, 'error');
+                return;
+            }
+
+            if (data.note) {
+                applyMemoryNote(data.note);
+            }
+            showFlash('Memory note saved.', 'ok');
+            await loadMemoryNotes();
+        }
+
+        async function deleteMemoryNote() {
+            const key = memoryState.selectedKey || buildMemoryStorageKey();
+            if (!key) {
+                showFlash('Select or enter a memory note first.', 'warn');
+                return;
+            }
+
+            const { resp, data } = await mutate(`/admin/memory/notes/${encodeURIComponent(key)}`, {
+                method: 'DELETE'
+            });
+
+            if (!resp.ok) {
+                showFlash(data?.error || `Memory delete failed (${resp.status}).`, 'error');
+                return;
+            }
+
+            memoryState.selectedKey = null;
+            memoryNoteContentInput.value = '';
+            memoryNoteDetailOutput.textContent = 'Memory note deleted.';
+            showFlash('Memory note deleted.', 'warn');
+            await loadMemoryNotes();
+        }
+
+        async function exportMemoryBundle() {
+            const params = new URLSearchParams();
+            const projectId = memoryProjectFilterInput.value.trim();
+            if (projectId) params.set('projectId', projectId);
+
+            const { resp, data } = await api(`/admin/memory/export?${params.toString()}`);
+            if (!resp.ok) {
+                memoryExportOutput.textContent = `Memory export failed (${resp.status})`;
+                showFlash(`Memory export failed (${resp.status}).`, 'error');
+                return;
+            }
+
+            renderJson(memoryExportOutput, data);
+            memoryImportInput.value = JSON.stringify(data, null, 2);
+            showFlash('Memory bundle exported.', 'ok');
+        }
+
+        async function importMemoryBundle() {
+            const raw = memoryImportInput.value.trim();
+            if (!raw) {
+                showFlash('Paste a memory bundle JSON payload first.', 'warn');
+                return;
+            }
+
+            let payload;
+            try {
+                payload = JSON.parse(raw);
+            } catch (error) {
+                showFlash(`Invalid JSON: ${error.message}`, 'error');
+                return;
+            }
+
+            const { resp, data } = await mutate('/admin/memory/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            renderJson(memoryExportOutput, resp.ok ? data : `Memory import failed (${resp.status})`);
+            showFlash(resp.ok ? 'Memory bundle imported.' : `Memory import failed (${resp.status}).`, resp.ok ? 'ok' : 'error');
+            if (resp.ok) {
+                await loadMemoryNotes();
+                await loadSummary();
+            }
+        }
+
         async function loadSummary() {
             const { resp, data } = await api('/api/integration/dashboard');
             if (!resp.ok) {
@@ -2328,6 +2613,9 @@
                 integrationMessageOutput.textContent = 'Login required.';
                 doctorOutput.textContent = 'Login required.';
                 retentionOutput.textContent = 'Login required.';
+                memoryNotesOutput.textContent = 'Login required.';
+                memoryNoteDetailOutput.textContent = 'Login required.';
+                memoryExportOutput.textContent = 'Login required.';
                 approvalsOutput.textContent = 'Login required.';
                 approvalsHistoryOutput.textContent = 'Login required.';
                 sessionsOutput.textContent = 'Login required.';
@@ -2363,6 +2651,7 @@
                 loadSummary(),
                 loadDoctor(),
                 loadRetention(),
+                loadMemoryNotes(),
                 loadApprovals(),
                 loadApprovalHistory(),
                 loadProviders(),
@@ -2408,6 +2697,20 @@
 
         refreshButton.addEventListener('click', refreshAll);
         document.getElementById('retention-status-button').addEventListener('click', loadRetention);
+        document.getElementById('memory-refresh-button').addEventListener('click', loadMemoryNotes);
+        document.getElementById('memory-search-button').addEventListener('click', loadMemoryNotes);
+        document.getElementById('memory-load-button').addEventListener('click', async () => {
+            const key = memoryState.selectedKey || buildMemoryStorageKey();
+            if (!key) {
+                showFlash('Enter a memory note key first.', 'warn');
+                return;
+            }
+            await loadMemoryNote(key);
+        });
+        document.getElementById('memory-save-button').addEventListener('click', saveMemoryNote);
+        document.getElementById('memory-delete-button').addEventListener('click', deleteMemoryNote);
+        document.getElementById('memory-export-button').addEventListener('click', exportMemoryBundle);
+        document.getElementById('memory-import-button').addEventListener('click', importMemoryBundle);
         document.getElementById('whatsapp-reload-button').addEventListener('click', async () => {
             await loadWhatsAppSetup();
             showFlash('WhatsApp setup reloaded.', 'ok');
@@ -2466,6 +2769,12 @@
                 await loadSessions();
             });
         });
+        [memorySearchInput, memoryPrefixInput, memoryProjectFilterInput].forEach(input => {
+            input.addEventListener('keydown', async (event) => {
+                if (event.key !== 'Enter') return;
+                await loadMemoryNotes();
+            });
+        });
 
         approvalsOutput.addEventListener('click', async (event) => {
             const button = event.target.closest('button[data-approval]');
@@ -2477,6 +2786,16 @@
             await loadApprovals();
             await loadApprovalHistory();
             showFlash(resp.ok ? `Approval ${approved ? 'granted' : 'denied'} for ${approvalId}.` : `Approval update failed (${resp.status}).`, resp.ok ? 'ok' : 'error');
+        });
+
+        memoryNotesOutput.addEventListener('click', async (event) => {
+            const inspectButton = event.target.closest('button[data-memory-inspect], button[data-memory-edit]');
+            if (!inspectButton) return;
+
+            const encodedKey = inspectButton.getAttribute('data-memory-inspect') || inspectButton.getAttribute('data-memory-edit');
+            if (!encodedKey) return;
+
+            await loadMemoryNote(decodeURIComponent(encodedKey));
         });
 
         pluginsOutput.addEventListener('click', async (event) => {

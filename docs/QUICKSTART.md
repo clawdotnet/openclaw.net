@@ -1,59 +1,46 @@
 # Quickstart Guide
 
-This guide gets OpenClaw.NET running locally with the fewest moving parts.
+This guide gets OpenClaw.NET to a first working agent with the supported setup path.
 
 ## Prerequisites
 
 - .NET 10 SDK
 - Optional: Node.js 20+ if you want upstream-style TS/JS plugin support
 
+Examples below use `openclaw ...`. From a source checkout, replace that with `dotnet run --project src/OpenClaw.Cli -c Release -- ...`.
+
+## Choose The Right Entrypoint
+
+| Command | Use when |
+| --- | --- |
+| `openclaw setup` | You want the guided onboarding flow that writes config, prints launch commands, and gives you `--doctor` plus `admin posture` follow-ups. |
+| `openclaw init` | You want raw bootstrap files to edit manually before running the gateway. |
+| Direct config editing | You already know the runtime shape you want and do not need the guided path. |
+
 ## Fastest Local Start
 
-1. Set your model key:
+1. Run the guided setup flow:
 
 ```bash
-export MODEL_PROVIDER_KEY="sk-..."
+openclaw setup
 ```
 
-2. Optional but recommended: set a workspace directory for file tools and workspace skills:
+2. Accept the local defaults or supply your preferred provider, model, API key reference, workspace path, and optional execution backend.
+
+3. Start the gateway with the printed command, for example:
 
 ```bash
-export OPENCLAW_WORKSPACE="$PWD/workspace"
-mkdir -p "$OPENCLAW_WORKSPACE"
+dotnet run --project src/OpenClaw.Gateway -c Release -- --config ~/.openclaw/config/openclaw.settings.json
 ```
 
-3. Choose a runtime lane:
-
-- Trim-safe lane:
+4. Run the printed verification commands after the gateway is up:
 
 ```bash
-export OpenClaw__Runtime__Mode="aot"
+dotnet run --project src/OpenClaw.Gateway -c Release -- --config ~/.openclaw/config/openclaw.settings.json --doctor
 ```
 
-- Expanded compatibility lane:
-
 ```bash
-export OpenClaw__Runtime__Mode="jit"
-```
-
-- Or leave it unset and let `auto` decide.
-
-4. Validate startup config before running:
-
-```bash
-dotnet run --project src/OpenClaw.Gateway -c Release -- --doctor
-```
-
-5. Start the gateway:
-
-```bash
-dotnet run --project src/OpenClaw.Gateway -c Release
-```
-
-6. Optional but recommended: inspect the live admin posture once the gateway is running:
-
-```bash
-dotnet run --project src/OpenClaw.Cli -c Release -- admin posture
+OPENCLAW_BASE_URL=http://127.0.0.1:18789 OPENCLAW_AUTH_TOKEN=... openclaw admin posture
 ```
 
 Default local endpoints:
@@ -63,6 +50,56 @@ Default local endpoints:
 - Integration API: `http://127.0.0.1:18789/api/integration/status`
 - MCP endpoint: `http://127.0.0.1:18789/mcp`
 - Health: `http://127.0.0.1:18789/health`
+
+## Public / Reverse Proxy Start
+
+Use the public profile when the gateway will sit behind a real reverse proxy and TLS terminator:
+
+```bash
+openclaw setup --profile public
+```
+
+The public profile changes the defaults in ways that matter:
+
+- bind address defaults to `0.0.0.0`
+- `TrustForwardedHeaders=true`
+- requester-matched HTTP approvals are enabled
+- shell is disabled by default
+- bridge plugins are disabled by default until you opt into public-bind trust settings
+
+Run the exact `--doctor` and `admin posture` commands printed by `setup` before exposing the service.
+
+## Advanced Manual Bootstrap
+
+If you want editable starter files instead of the guided wizard:
+
+```bash
+openclaw init --preset both --output ./.openclaw-init
+```
+
+That writes:
+
+- `.env.example`
+- `config.local.json`
+- `config.public.json`
+- `deploy/Caddyfile.sample`
+- `deploy/docker-compose.override.sample.yml`
+
+Use `init` when you want to hand-edit the generated files before your first launch. Use `setup` when you want the supported guided path.
+
+## Channel Setup
+
+After the base config exists, configure common channels with the channel wizard:
+
+```bash
+openclaw setup channel telegram --config ~/.openclaw/config/openclaw.settings.json
+openclaw setup channel slack --config ~/.openclaw/config/openclaw.settings.json
+openclaw setup channel discord --config ~/.openclaw/config/openclaw.settings.json
+openclaw setup channel teams --config ~/.openclaw/config/openclaw.settings.json
+openclaw setup channel whatsapp --config ~/.openclaw/config/openclaw.settings.json
+```
+
+The wizard updates the existing external config, enables the selected channel, applies safe defaults such as signature or token validation where supported, and prints the endpoint hints you need to register with the provider.
 
 ## First Ways To Use It
 
@@ -108,20 +145,6 @@ curl -X POST http://127.0.0.1:18789/mcp \
 
 For .NET automation, use `OpenClaw.Client` for typed access to both the integration API and the MCP facade.
 
-## Using A Config File
-
-If you want to keep config outside the repo:
-
-```bash
-dotnet run --project src/OpenClaw.Gateway -c Release -- --config ~/.openclaw/config.json
-```
-
-You can also use:
-
-```bash
-export OPENCLAW_CONFIG_PATH="$HOME/.openclaw/config.json"
-```
-
 ## Runtime Modes
 
 ### `aot`
@@ -160,6 +183,7 @@ Additional support here includes:
 ## Next Docs
 
 - [README.md](../README.md) for the high-level overview
+- [COMPATIBILITY.md](COMPATIBILITY.md) for the supported upstream skill/plugin/channel surface
 - [USER_GUIDE.md](USER_GUIDE.md) for provider, tools, skills, and channels
 - [SECURITY.md](../SECURITY.md) before any public deployment
 - [architecture-startup-refactor.md](architecture-startup-refactor.md) for the current startup layout

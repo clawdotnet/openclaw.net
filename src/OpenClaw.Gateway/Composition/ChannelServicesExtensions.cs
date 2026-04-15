@@ -69,7 +69,13 @@ internal static class ChannelServicesExtensions
         if (config.Channels.Discord.Enabled)
         {
             services.AddSingleton(config.Channels.Discord);
-            services.AddSingleton<DiscordWebhookHandler>();
+            services.AddSingleton<DiscordWebhookHandler>(sp =>
+                new DiscordWebhookHandler(
+                    config.Channels.Discord,
+                    sp.GetRequiredService<OpenClaw.Core.Security.AllowlistManager>(),
+                    sp.GetRequiredService<OpenClaw.Core.Pipeline.RecentSendersStore>(),
+                    sp.GetRequiredService<OpenClaw.Core.Security.AllowlistSemantics>(),
+                    sp.GetRequiredService<ILogger<DiscordWebhookHandler>>()));
             services.AddSingleton<DiscordChannel>();
         }
 

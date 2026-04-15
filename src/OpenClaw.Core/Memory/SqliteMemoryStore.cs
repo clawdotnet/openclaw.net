@@ -8,7 +8,7 @@ using OpenClaw.Core.Models;
 
 namespace OpenClaw.Core.Memory;
 
-public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IDisposable
+public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNoteCatalog, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IDisposable
 {
     private readonly string _dbPath;
     private readonly bool _enableFtsRequested;
@@ -469,6 +469,71 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
             }
             return hits;
         }
+    }
+
+    public async ValueTask<IReadOnlyList<MemoryNoteCatalogEntry>> ListNotesAsync(string prefix, int limit, CancellationToken ct)
+    {
+        prefix ??= "";
+        limit = Math.Clamp(limit, 1, 500);
+
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT key, content, updated_at
+            FROM notes
+            WHERE key LIKE $prefix || '%'
+            ORDER BY updated_at DESC, key ASC
+            LIMIT $limit;
+            """;
+        cmd.Parameters.AddWithValue("$prefix", prefix);
+        cmd.Parameters.AddWithValue("$limit", limit);
+
+        var items = new List<MemoryNoteCatalogEntry>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var content = reader.GetString(1);
+            items.Add(new MemoryNoteCatalogEntry
+            {
+                Key = reader.GetString(0),
+                PreviewContent = content.Length <= 4_096 ? content : content[..4_096] + "…",
+                UpdatedAt = DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64(2))
+            });
+        }
+
+        return items;
+    }
+
+    public async ValueTask<MemoryNoteCatalogEntry?> GetNoteEntryAsync(string key, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return null;
+
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT key, content, updated_at
+            FROM notes
+            WHERE key = $key
+            LIMIT 1;
+            """;
+        cmd.Parameters.AddWithValue("$key", key);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+            return null;
+
+        var content = reader.GetString(1);
+        return new MemoryNoteCatalogEntry
+        {
+            Key = reader.GetString(0),
+            PreviewContent = content.Length <= 4_096 ? content : content[..4_096] + "…",
+            UpdatedAt = DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64(2))
+        };
     }
 
     public async ValueTask SaveBranchAsync(SessionBranch branch, CancellationToken ct)

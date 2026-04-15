@@ -2,12 +2,42 @@
 
 Welcome to the **OpenClaw.NET** User Guide! This document will walk you through the core concepts, configuring your preferred AI provider via API keys, and deploying your first agent.
 
+## Recommended First Run
+
+Start with the guided setup path:
+
+```bash
+openclaw setup
+```
+
+From a source checkout, use:
+
+```bash
+dotnet run --project src/OpenClaw.Cli -c Release -- setup
+```
+
+Use `--profile public` when you are preparing a reverse-proxy or internet-facing deployment. The setup flow writes an external config file, a matching env example, and prints the exact gateway launch, `--doctor`, and `openclaw admin posture` commands for that config.
+
+If you want raw starter files instead of the guided flow, use `openclaw init`. For the supported upstream skill, plugin, and channel compatibility surface, treat the [Compatibility Guide](COMPATIBILITY.md) as the source of truth.
+
+After the base config exists, use the channel-specific setup wizard for the common chat integrations:
+
+```bash
+openclaw setup channel telegram --config ~/.openclaw/config/openclaw.settings.json
+openclaw setup channel slack --config ~/.openclaw/config/openclaw.settings.json
+openclaw setup channel discord --config ~/.openclaw/config/openclaw.settings.json
+openclaw setup channel teams --config ~/.openclaw/config/openclaw.settings.json
+openclaw setup channel whatsapp --config ~/.openclaw/config/openclaw.settings.json
+```
+
+These wizards update the existing external config and keep the readiness and admin surfaces aligned with what the CLI generated.
+
 ## Core Concepts
 
 OpenClaw is split into three main logical layers:
 1. **The Gateway**: Handles WebSocket, HTTP, and Webhook connectivity (e.g. Telegram/Twilio). It performs authentication and passes messages.
 2. **The Agent Runtime**: The cognitive loop of the framework. It handles the "ReAct" (Reasoning and Acting) loop, executing tools like Shell, Browser, or File I/O until the goal is completed.
-3. **The Tools**: A set of native capabilities (15 included by default) that the Agent can invoke to interact with the world, such as Web Fetching, File Writing, or Git Operations.
+3. **The Tools**: A set of native capabilities (48 built-in at the time of writing) that the Agent can invoke to interact with the world, such as Web Fetching, File Writing, or Git Operations.
 
 ---
 
@@ -186,6 +216,19 @@ For operator workflows outside the chat UI, the gateway also exposes:
 - `GET /admin/posture`
 - `POST /admin/approvals/simulate`
 - `GET /admin/incident/export`
+- `GET /admin/memory/notes`
+- `GET /admin/memory/search`
+- `GET /admin/memory/notes/{key}`
+- `POST /admin/memory/notes`
+- `DELETE /admin/memory/notes/{key}`
+- `GET /admin/memory/export`
+- `POST /admin/memory/import`
+- `GET /admin/profiles`
+- `GET /admin/profiles/{actorId}`
+- `GET /admin/profiles/export`
+- `POST /admin/profiles/import`
+- `GET /admin/learning/proposals/{id}`
+- `POST /admin/learning/proposals/{id}/rollback`
 
 CLI mirrors:
 
@@ -194,6 +237,16 @@ CLI mirrors:
 - `openclaw admin incident export`
 
 These are useful for validating public-bind posture, approval-policy behavior, and exporting a redacted incident bundle during support/debugging.
+
+For memory and learning operations, the admin API now also supports:
+
+- searching durable note memory and inspecting project-scoped memory entries
+- editing and deleting memory notes from the operator surface
+- exporting/importing memory bundles that include notes, profiles, learning proposals, and automations
+- browsing stored user profiles directly
+- exporting/importing profile bundles for portability between deployments
+- inspecting a learning proposal with provenance and computed profile diffs before approval
+- rolling back an approved profile-update proposal when a learned preference should be reverted
 
 ### Memory Retention Sweeper (Sessions + Branches)
 Retention is opt-in and targets persisted sessions/branches only (not notes).
@@ -537,7 +590,7 @@ Minimal config example:
 
 OpenClaw.NET is designed to be compatible with the original [OpenClaw](https://github.com/openclaw/openclaw) TypeScript/JavaScript plugin ecosystem. This allows you to leverage hundreds of community plugins without rewriting them.
 
-For a detailed breakdown of supported features and implementation details, see the **[Plugin Compatibility Guide](COMPATIBILITY.md)**.
+For a detailed breakdown of supported features and implementation details, see the **[Compatibility Guide](COMPATIBILITY.md)**.
 
 ### How it works
 

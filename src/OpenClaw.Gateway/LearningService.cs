@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.AI;
@@ -43,6 +44,49 @@ internal sealed class LearningService
     public ValueTask<LearningProposal?> GetAsync(string proposalId, CancellationToken ct)
         => _proposalStore.GetProposalAsync(proposalId, ct);
 
+    public async ValueTask<LearningProposalDetailResponse?> GetDetailAsync(string proposalId, CancellationToken ct)
+    {
+        var proposal = await _proposalStore.GetProposalAsync(proposalId, ct);
+        if (proposal is null)
+            return null;
+
+        UserProfile? baselineProfile = null;
+        UserProfile? currentProfile = null;
+        IReadOnlyList<ProfileDiffEntry> profileDiff = [];
+        var canRollback = false;
+
+        if (proposal.ProfileUpdate is not null)
+        {
+            var actorId = proposal.ProfileUpdate.ActorId;
+            currentProfile = await _profileStore.GetProfileAsync(actorId, ct);
+            baselineProfile = string.Equals(proposal.Status, LearningProposalStatus.Pending, StringComparison.OrdinalIgnoreCase)
+                ? currentProfile
+                : proposal.AppliedProfileBefore;
+            profileDiff = BuildProfileDiff(baselineProfile, proposal.ProfileUpdate);
+            canRollback = string.Equals(proposal.Kind, LearningProposalKind.ProfileUpdate, StringComparison.OrdinalIgnoreCase) &&
+                          string.Equals(proposal.Status, LearningProposalStatus.Approved, StringComparison.OrdinalIgnoreCase) &&
+                          !proposal.RolledBack;
+        }
+
+        return new LearningProposalDetailResponse
+        {
+            Proposal = proposal,
+            BaselineProfile = baselineProfile,
+            CurrentProfile = currentProfile,
+            ProfileDiff = profileDiff,
+            Provenance = new LearningProposalProvenance
+            {
+                ActorId = proposal.ActorId,
+                SourceSessionIds = proposal.SourceSessionIds,
+                Confidence = proposal.Confidence,
+                CreatedAtUtc = proposal.CreatedAtUtc,
+                UpdatedAtUtc = proposal.UpdatedAtUtc,
+                ReviewedAtUtc = proposal.ReviewedAtUtc
+            },
+            CanRollback = canRollback
+        };
+    }
+
     public async ValueTask ObserveSessionAsync(Session session, CancellationToken ct)
     {
         if (!_config.Enabled || session.History.Count < 2)
@@ -68,14 +112,18 @@ internal sealed class LearningService
         if (proposal is null)
             return null;
 
+        if (!string.Equals(proposal.Status, LearningProposalStatus.Pending, StringComparison.OrdinalIgnoreCase))
+            return proposal;
+
+        UserProfile? appliedProfileBefore = proposal.AppliedProfileBefore;
+
         switch (proposal.Kind)
         {
             case LearningProposalKind.ProfileUpdate when proposal.ProfileUpdate is not null:
+                appliedProfileBefore = await _profileStore.GetProfileAsync(proposal.ProfileUpdate.ActorId, ct);
                 await _profileStore.SaveProfileAsync(proposal.ProfileUpdate, ct);
                 break;
             case LearningProposalKind.AutomationSuggestion when proposal.AutomationDraft is not null:
-                if (proposal.Status != LearningProposalStatus.Pending)
-                    break;
                 await _automationStore.SaveAutomationAsync(proposal.AutomationDraft, ct);
                 break;
             case LearningProposalKind.SkillDraft when !string.IsNullOrWhiteSpace(proposal.DraftContent):
@@ -101,13 +149,17 @@ internal sealed class LearningService
             DraftContent = proposal.DraftContent,
             DraftContentHash = proposal.DraftContentHash,
             ProfileUpdate = proposal.ProfileUpdate,
+            AppliedProfileBefore = appliedProfileBefore,
             AutomationDraft = proposal.AutomationDraft,
             SourceSessionIds = proposal.SourceSessionIds,
             Confidence = proposal.Confidence,
             CreatedAtUtc = proposal.CreatedAtUtc,
             UpdatedAtUtc = DateTimeOffset.UtcNow,
             ReviewedAtUtc = DateTimeOffset.UtcNow,
-            ReviewNotes = "approved"
+            ReviewNotes = "approved",
+            RolledBack = false,
+            RolledBackAtUtc = null,
+            RollbackReason = null
         };
         await _proposalStore.SaveProposalAsync(approved, ct);
         return approved;
@@ -118,6 +170,9 @@ internal sealed class LearningService
         var proposal = await _proposalStore.GetProposalAsync(proposalId, ct);
         if (proposal is null)
             return null;
+
+        if (!string.Equals(proposal.Status, LearningProposalStatus.Pending, StringComparison.OrdinalIgnoreCase))
+            return proposal;
 
         var rejected = new LearningProposal
         {
@@ -131,16 +186,68 @@ internal sealed class LearningService
             DraftContent = proposal.DraftContent,
             DraftContentHash = proposal.DraftContentHash,
             ProfileUpdate = proposal.ProfileUpdate,
+            AppliedProfileBefore = proposal.AppliedProfileBefore,
             AutomationDraft = proposal.AutomationDraft,
             SourceSessionIds = proposal.SourceSessionIds,
             Confidence = proposal.Confidence,
             CreatedAtUtc = proposal.CreatedAtUtc,
             UpdatedAtUtc = DateTimeOffset.UtcNow,
             ReviewedAtUtc = DateTimeOffset.UtcNow,
-            ReviewNotes = string.IsNullOrWhiteSpace(reason) ? "rejected" : reason.Trim()
+            ReviewNotes = string.IsNullOrWhiteSpace(reason) ? "rejected" : reason.Trim(),
+            RolledBack = proposal.RolledBack,
+            RolledBackAtUtc = proposal.RolledBackAtUtc,
+            RollbackReason = proposal.RollbackReason
         };
         await _proposalStore.SaveProposalAsync(rejected, ct);
         return rejected;
+    }
+
+    public async ValueTask<LearningProposal?> RollbackAsync(string proposalId, string? reason, CancellationToken ct)
+    {
+        var proposal = await _proposalStore.GetProposalAsync(proposalId, ct);
+        if (proposal is null)
+            return null;
+
+        if (!string.Equals(proposal.Kind, LearningProposalKind.ProfileUpdate, StringComparison.OrdinalIgnoreCase) ||
+            proposal.ProfileUpdate is null ||
+            !string.Equals(proposal.Status, LearningProposalStatus.Approved, StringComparison.OrdinalIgnoreCase) ||
+            proposal.RolledBack)
+        {
+            return proposal;
+        }
+
+        if (proposal.AppliedProfileBefore is null)
+            await _profileStore.DeleteProfileAsync(proposal.ProfileUpdate.ActorId, ct);
+        else
+            await _profileStore.SaveProfileAsync(proposal.AppliedProfileBefore, ct);
+
+        var rolledBack = new LearningProposal
+        {
+            Id = proposal.Id,
+            Kind = proposal.Kind,
+            Status = LearningProposalStatus.RolledBack,
+            ActorId = proposal.ActorId,
+            Title = proposal.Title,
+            Summary = proposal.Summary,
+            SkillName = proposal.SkillName,
+            DraftContent = proposal.DraftContent,
+            DraftContentHash = proposal.DraftContentHash,
+            ProfileUpdate = proposal.ProfileUpdate,
+            AppliedProfileBefore = proposal.AppliedProfileBefore,
+            AutomationDraft = proposal.AutomationDraft,
+            SourceSessionIds = proposal.SourceSessionIds,
+            Confidence = proposal.Confidence,
+            CreatedAtUtc = proposal.CreatedAtUtc,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+            ReviewedAtUtc = proposal.ReviewedAtUtc,
+            ReviewNotes = proposal.ReviewNotes,
+            RolledBack = true,
+            RolledBackAtUtc = DateTimeOffset.UtcNow,
+            RollbackReason = string.IsNullOrWhiteSpace(reason) ? "rollback requested" : reason.Trim()
+        };
+
+        await _proposalStore.SaveProposalAsync(rolledBack, ct);
+        return rolledBack;
     }
 
     private async Task EnsureProfileProposalAsync(Session session, string actorId, ChatTurn lastUser, CancellationToken ct)
@@ -185,6 +292,7 @@ internal sealed class LearningService
                 Title = "Profile update suggestion",
                 Summary = "Detected a possible stable user preference or identity hint.",
                 ProfileUpdate = profile,
+                AppliedProfileBefore = existingProfile,
                 SourceSessionIds = [session.Id],
                 Confidence = 0.55f
             }, ct);
@@ -201,6 +309,7 @@ internal sealed class LearningService
             Title = "Profile update suggestion",
             Summary = "Detected a possible stable user preference or identity hint.",
             ProfileUpdate = profile,
+            AppliedProfileBefore = existingProfile,
             SourceSessionIds = [session.Id],
             Confidence = 0.55f,
             ReviewedAtUtc = DateTimeOffset.UtcNow,
@@ -418,6 +527,121 @@ Use it when repeated requests resemble the sessions that produced this draft.
     public static string BuildActorId(string channelId, string senderId)
         => $"{channelId}:{senderId}";
 
+    private static IReadOnlyList<ProfileDiffEntry> BuildProfileDiff(UserProfile? baseline, UserProfile proposed)
+    {
+        var diff = new List<ProfileDiffEntry>();
+
+        AddScalarDiff(diff, "channelId", baseline?.ChannelId, proposed.ChannelId);
+        AddScalarDiff(diff, "senderId", baseline?.SenderId, proposed.SenderId);
+        AddScalarDiff(diff, "summary", baseline?.Summary, proposed.Summary);
+        AddScalarDiff(diff, "tone", baseline?.Tone, proposed.Tone);
+        AddSequenceDiff(diff, "preferences", baseline?.Preferences, proposed.Preferences);
+        AddSequenceDiff(diff, "activeProjects", baseline?.ActiveProjects, proposed.ActiveProjects);
+        AddSequenceDiff(diff, "recentIntents", baseline?.RecentIntents, proposed.RecentIntents);
+        AddFactsDiff(diff, baseline?.Facts, proposed.Facts);
+
+        return diff;
+    }
+
+    private static void AddScalarDiff(List<ProfileDiffEntry> diff, string path, string? before, string? after)
+    {
+        before ??= string.Empty;
+        after ??= string.Empty;
+        if (string.Equals(before, after, StringComparison.Ordinal))
+            return;
+
+        diff.Add(new ProfileDiffEntry
+        {
+            Path = path,
+            ChangeType = string.IsNullOrEmpty(before) ? "added" : string.IsNullOrEmpty(after) ? "removed" : "updated",
+            Before = string.IsNullOrEmpty(before) ? null : before,
+            After = string.IsNullOrEmpty(after) ? null : after
+        });
+    }
+
+    private static void AddSequenceDiff(List<ProfileDiffEntry> diff, string path, IReadOnlyList<string>? before, IReadOnlyList<string>? after)
+    {
+        var normalizedBefore = before ?? [];
+        var normalizedAfter = after ?? [];
+        if (normalizedBefore.SequenceEqual(normalizedAfter, StringComparer.Ordinal))
+            return;
+
+        diff.Add(new ProfileDiffEntry
+        {
+            Path = path,
+            ChangeType = normalizedBefore.Count == 0 ? "added" : normalizedAfter.Count == 0 ? "removed" : "updated",
+            Before = normalizedBefore.Count == 0 ? null : SerializeStringList(normalizedBefore),
+            After = normalizedAfter.Count == 0 ? null : SerializeStringList(normalizedAfter)
+        });
+    }
+
+    private static void AddFactsDiff(List<ProfileDiffEntry> diff, IReadOnlyList<UserProfileFact>? before, IReadOnlyList<UserProfileFact>? after)
+    {
+        var normalizedBefore = before ?? [];
+        var normalizedAfter = after ?? [];
+        if (FactsEqual(normalizedBefore, normalizedAfter))
+            return;
+
+        diff.Add(new ProfileDiffEntry
+        {
+            Path = "facts",
+            ChangeType = normalizedBefore.Count == 0 ? "added" : normalizedAfter.Count == 0 ? "removed" : "updated",
+            Before = normalizedBefore.Count == 0 ? null : SerializeFacts(normalizedBefore),
+            After = normalizedAfter.Count == 0 ? null : SerializeFacts(normalizedAfter)
+        });
+    }
+
+    private static bool FactsEqual(IReadOnlyList<UserProfileFact> before, IReadOnlyList<UserProfileFact> after)
+    {
+        var normalizedBefore = NormalizeFacts(before);
+        var normalizedAfter = NormalizeFacts(after);
+        if (normalizedBefore.Count != normalizedAfter.Count)
+            return false;
+
+        for (var i = 0; i < normalizedBefore.Count; i++)
+        {
+            var left = normalizedBefore[i];
+            var right = normalizedAfter[i];
+            if (!string.Equals(left.Key, right.Key, StringComparison.Ordinal) ||
+                !string.Equals(left.Value, right.Value, StringComparison.Ordinal) ||
+                left.ConfidenceBits != right.ConfidenceBits ||
+                !left.SourceSessionIds.SequenceEqual(right.SourceSessionIds, StringComparer.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string SerializeStringList(IReadOnlyList<string> items)
+        => "[" + string.Join(", ", items.Select(static item => $"\"{EscapeValue(item)}\"")) + "]";
+
+    private static string SerializeFacts(IReadOnlyList<UserProfileFact> facts)
+        => "[" + string.Join(", ", NormalizeFacts(facts).Select(static fact =>
+            $"{{key:\"{EscapeValue(fact.Key)}\", value:\"{EscapeValue(fact.Value)}\", confidence:{fact.Confidence.ToString("R", CultureInfo.InvariantCulture)}, sessions:{SerializeStringList(fact.SourceSessionIds)}}}")) + "]";
+
+    private static IReadOnlyList<NormalizedFact> NormalizeFacts(IReadOnlyList<UserProfileFact> facts)
+        => facts
+            .Select(static fact => new NormalizedFact
+            {
+                Key = fact.Key,
+                Value = fact.Value,
+                Confidence = fact.Confidence,
+                ConfidenceBits = BitConverter.SingleToInt32Bits(fact.Confidence),
+                SourceSessionIds = fact.SourceSessionIds.OrderBy(static item => item, StringComparer.Ordinal).ToArray()
+            })
+            .OrderBy(static fact => fact.Key, StringComparer.Ordinal)
+            .ThenBy(static fact => fact.Value, StringComparer.Ordinal)
+            .ThenBy(static fact => fact.ConfidenceBits)
+            .ThenBy(static fact => string.Join("\u001F", fact.SourceSessionIds), StringComparer.Ordinal)
+            .ToArray();
+
+    private static string EscapeValue(string value)
+        => value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal);
+
     private static string Slugify(string value)
     {
         var chars = value
@@ -425,5 +649,14 @@ Use it when repeated requests resemble the sessions that produced this draft.
             .Select(static ch => char.IsLetterOrDigit(ch) ? ch : '-')
             .ToArray();
         return string.Join("-", new string(chars).Split('-', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    private sealed class NormalizedFact
+    {
+        public required string Key { get; init; }
+        public required string Value { get; init; }
+        public required float Confidence { get; init; }
+        public required int ConfidenceBits { get; init; }
+        public required IReadOnlyList<string> SourceSessionIds { get; init; }
     }
 }

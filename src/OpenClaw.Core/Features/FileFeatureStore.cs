@@ -62,6 +62,9 @@ public sealed class FileFeatureStore : IAutomationStore, IUserProfileStore, ILea
     public ValueTask SaveProfileAsync(UserProfile profile, CancellationToken ct)
         => SaveOneAsync(Path.Combine(_profilesPath, $"{EncodeKey(profile.ActorId)}.json"), profile, CoreJsonContext.Default.UserProfile, ct);
 
+    public ValueTask DeleteProfileAsync(string actorId, CancellationToken ct)
+        => DeleteOneAsync(Path.Combine(_profilesPath, $"{EncodeKey(actorId)}.json"));
+
     public async ValueTask<IReadOnlyList<LearningProposal>> ListProposalsAsync(string? status, string? kind, CancellationToken ct)
     {
         var all = await LoadAllAsync(_proposalsPath, CoreJsonContext.Default.LearningProposal, ct);

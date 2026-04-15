@@ -73,6 +73,17 @@ internal sealed class AdminSettingsService
             TelegramEnabled = config.Channels.Telegram.Enabled,
             TelegramValidateSignature = config.Channels.Telegram.ValidateSignature,
             TelegramDmPolicy = config.Channels.Telegram.DmPolicy,
+            TeamsEnabled = config.Channels.Teams.Enabled,
+            TeamsValidateToken = config.Channels.Teams.ValidateToken,
+            TeamsDmPolicy = config.Channels.Teams.DmPolicy,
+            SlackEnabled = config.Channels.Slack.Enabled,
+            SlackValidateSignature = config.Channels.Slack.ValidateSignature,
+            SlackDmPolicy = config.Channels.Slack.DmPolicy,
+            DiscordEnabled = config.Channels.Discord.Enabled,
+            DiscordValidateSignature = config.Channels.Discord.ValidateSignature,
+            DiscordDmPolicy = config.Channels.Discord.DmPolicy,
+            SignalEnabled = config.Channels.Signal.Enabled,
+            SignalDmPolicy = config.Channels.Signal.DmPolicy,
             WhatsAppEnabled = config.Channels.WhatsApp.Enabled,
             WhatsAppValidateSignature = config.Channels.WhatsApp.ValidateSignature,
             WhatsAppDmPolicy = config.Channels.WhatsApp.DmPolicy,
@@ -158,6 +169,17 @@ internal sealed class AdminSettingsService
         config.Channels.Telegram.Enabled = snapshot.TelegramEnabled;
         config.Channels.Telegram.ValidateSignature = snapshot.TelegramValidateSignature;
         config.Channels.Telegram.DmPolicy = snapshot.TelegramDmPolicy;
+        config.Channels.Teams.Enabled = snapshot.TeamsEnabled;
+        config.Channels.Teams.ValidateToken = snapshot.TeamsValidateToken;
+        config.Channels.Teams.DmPolicy = snapshot.TeamsDmPolicy;
+        config.Channels.Slack.Enabled = snapshot.SlackEnabled;
+        config.Channels.Slack.ValidateSignature = snapshot.SlackValidateSignature;
+        config.Channels.Slack.DmPolicy = snapshot.SlackDmPolicy;
+        config.Channels.Discord.Enabled = snapshot.DiscordEnabled;
+        config.Channels.Discord.ValidateSignature = snapshot.DiscordValidateSignature;
+        config.Channels.Discord.DmPolicy = snapshot.DiscordDmPolicy;
+        config.Channels.Signal.Enabled = snapshot.SignalEnabled;
+        config.Channels.Signal.DmPolicy = snapshot.SignalDmPolicy;
         config.Channels.WhatsApp.Enabled = snapshot.WhatsAppEnabled;
         config.Channels.WhatsApp.ValidateSignature = snapshot.WhatsAppValidateSignature;
         config.Channels.WhatsApp.DmPolicy = snapshot.WhatsAppDmPolicy;
@@ -273,6 +295,10 @@ internal sealed class AdminSettingsService
         "security.browserRememberDays",
         "channels.sms.dmPolicy",
         "channels.telegram.dmPolicy",
+        "channels.teams.dmPolicy",
+        "channels.slack.dmPolicy",
+        "channels.discord.dmPolicy",
+        "channels.signal.dmPolicy",
         "channels.whatsapp.dmPolicy"
     ];
 
@@ -307,6 +333,13 @@ internal sealed class AdminSettingsService
         "channels.sms.validateSignature",
         "channels.telegram.enabled",
         "channels.telegram.validateSignature",
+        "channels.teams.enabled",
+        "channels.teams.validateToken",
+        "channels.slack.enabled",
+        "channels.slack.validateSignature",
+        "channels.discord.enabled",
+        "channels.discord.validateSignature",
+        "channels.signal.enabled",
         "channels.whatsapp.enabled",
         "channels.whatsapp.validateSignature",
         "channels.whatsapp.type",
@@ -389,6 +422,13 @@ internal sealed class AdminSettingsService
         AddIfChanged(changed, "channels.sms.validateSignature", before.SmsValidateSignature, after.SmsValidateSignature);
         AddIfChanged(changed, "channels.telegram.enabled", before.TelegramEnabled, after.TelegramEnabled);
         AddIfChanged(changed, "channels.telegram.validateSignature", before.TelegramValidateSignature, after.TelegramValidateSignature);
+        AddIfChanged(changed, "channels.teams.enabled", before.TeamsEnabled, after.TeamsEnabled);
+        AddIfChanged(changed, "channels.teams.validateToken", before.TeamsValidateToken, after.TeamsValidateToken);
+        AddIfChanged(changed, "channels.slack.enabled", before.SlackEnabled, after.SlackEnabled);
+        AddIfChanged(changed, "channels.slack.validateSignature", before.SlackValidateSignature, after.SlackValidateSignature);
+        AddIfChanged(changed, "channels.discord.enabled", before.DiscordEnabled, after.DiscordEnabled);
+        AddIfChanged(changed, "channels.discord.validateSignature", before.DiscordValidateSignature, after.DiscordValidateSignature);
+        AddIfChanged(changed, "channels.signal.enabled", before.SignalEnabled, after.SignalEnabled);
         AddIfChanged(changed, "channels.whatsapp.enabled", before.WhatsAppEnabled, after.WhatsAppEnabled);
         AddIfChanged(changed, "channels.whatsapp.validateSignature", before.WhatsAppValidateSignature, after.WhatsAppValidateSignature);
         AddIfChanged(changed, "channels.whatsapp.type", before.WhatsAppType, after.WhatsAppType);
@@ -467,6 +507,17 @@ internal sealed class AdminSettingsService
             TelegramEnabled = source.TelegramEnabled,
             TelegramValidateSignature = source.TelegramValidateSignature,
             TelegramDmPolicy = source.TelegramDmPolicy,
+            TeamsEnabled = source.TeamsEnabled,
+            TeamsValidateToken = source.TeamsValidateToken,
+            TeamsDmPolicy = source.TeamsDmPolicy,
+            SlackEnabled = source.SlackEnabled,
+            SlackValidateSignature = source.SlackValidateSignature,
+            SlackDmPolicy = source.SlackDmPolicy,
+            DiscordEnabled = source.DiscordEnabled,
+            DiscordValidateSignature = source.DiscordValidateSignature,
+            DiscordDmPolicy = source.DiscordDmPolicy,
+            SignalEnabled = source.SignalEnabled,
+            SignalDmPolicy = source.SignalDmPolicy,
             WhatsAppEnabled = request.Enabled,
             WhatsAppValidateSignature = request.ValidateSignature,
             WhatsAppDmPolicy = request.DmPolicy,

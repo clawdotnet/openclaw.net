@@ -28,7 +28,7 @@ public sealed class MemoryStoreCorruptionException : IOException
 /// Sessions and notes are stored as JSON files with URL-safe base64 encoded filenames
 /// to prevent path traversal attacks. Includes in-memory LRU cache for sessions.
 /// </summary>
-public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IAsyncDisposable, IDisposable
+public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNoteCatalog, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IAsyncDisposable, IDisposable
 {
     private const int SessionLoadStripeCount = 64;
 
@@ -376,6 +376,57 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryRe
         catch
         {
             return [];
+        }
+    }
+
+    public async ValueTask<IReadOnlyList<MemoryNoteCatalogEntry>> ListNotesAsync(string prefix, int limit, CancellationToken ct)
+    {
+        prefix ??= "";
+        limit = Math.Clamp(limit, 1, 500);
+
+        try
+        {
+            await EnsureNoteIndexLoadedAsync(ct);
+            return _noteIndex.Values
+                .Where(entry => string.IsNullOrEmpty(prefix) || entry.Key.StartsWith(prefix, StringComparison.Ordinal))
+                .OrderByDescending(static entry => entry.UpdatedAt)
+                .ThenBy(static entry => entry.Key, StringComparer.Ordinal)
+                .Take(limit)
+                .Select(static entry => new MemoryNoteCatalogEntry
+                {
+                    Key = entry.Key,
+                    PreviewContent = entry.PreviewContent,
+                    UpdatedAt = entry.UpdatedAt
+                })
+                .ToArray();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    public async ValueTask<MemoryNoteCatalogEntry?> GetNoteEntryAsync(string key, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return null;
+
+        try
+        {
+            await EnsureNoteIndexLoadedAsync(ct);
+            if (!_noteIndex.TryGetValue(key, out var entry))
+                return null;
+
+            return new MemoryNoteCatalogEntry
+            {
+                Key = entry.Key,
+                PreviewContent = entry.PreviewContent,
+                UpdatedAt = entry.UpdatedAt
+            };
+        }
+        catch
+        {
+            return null;
         }
     }
 

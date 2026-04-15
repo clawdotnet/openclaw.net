@@ -286,6 +286,110 @@ public sealed class OperatorAuditListResponse
     public IReadOnlyList<OperatorAuditEntry> Items { get; init; } = [];
 }
 
+public static class MemoryNoteClass
+{
+    public const string General = "general";
+    public const string ProjectFact = "project_fact";
+    public const string OperationalRunbook = "operational_runbook";
+    public const string ApprovedSkill = "approved_skill";
+    public const string ApprovedAutomation = "approved_automation";
+}
+
+public sealed class MemoryNoteItem
+{
+    public required string Key { get; init; }
+    public required string DisplayKey { get; init; }
+    public string MemoryClass { get; init; } = MemoryNoteClass.General;
+    public string? ProjectId { get; init; }
+    public string Preview { get; init; } = "";
+    public string? Content { get; init; }
+    public DateTimeOffset UpdatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class MemoryNoteListResponse
+{
+    public string? Prefix { get; init; }
+    public string? Query { get; init; }
+    public string? MemoryClass { get; init; }
+    public string? ProjectId { get; init; }
+    public IReadOnlyList<MemoryNoteItem> Items { get; init; } = [];
+}
+
+public sealed class MemoryNoteDetailResponse
+{
+    public MemoryNoteItem? Note { get; init; }
+}
+
+public sealed class MemoryNoteUpsertRequest
+{
+    public string? Key { get; init; }
+    public string? MemoryClass { get; init; }
+    public string? ProjectId { get; init; }
+    public string Content { get; init; } = "";
+}
+
+public sealed class MemoryConsoleExportBundle
+{
+    public DateTimeOffset ExportedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    public IReadOnlyList<MemoryNoteItem> Notes { get; init; } = [];
+    public IReadOnlyList<UserProfile> Profiles { get; init; } = [];
+    public IReadOnlyList<LearningProposal> Proposals { get; init; } = [];
+    public IReadOnlyList<AutomationDefinition> Automations { get; init; } = [];
+}
+
+public sealed class MemoryConsoleImportResponse
+{
+    public bool Success { get; init; }
+    public int NotesImported { get; init; }
+    public int ProfilesImported { get; init; }
+    public int ProposalsImported { get; init; }
+    public int AutomationsImported { get; init; }
+    public string Message { get; init; } = "";
+}
+
+public sealed class LearningProposalProvenance
+{
+    public string? ActorId { get; init; }
+    public IReadOnlyList<string> SourceSessionIds { get; init; } = [];
+    public float Confidence { get; init; }
+    public DateTimeOffset CreatedAtUtc { get; init; }
+    public DateTimeOffset UpdatedAtUtc { get; init; }
+    public DateTimeOffset? ReviewedAtUtc { get; init; }
+}
+
+public sealed class ProfileDiffEntry
+{
+    public required string Path { get; init; }
+    public required string ChangeType { get; init; }
+    public string? Before { get; init; }
+    public string? After { get; init; }
+}
+
+public sealed class LearningProposalDetailResponse
+{
+    public LearningProposal? Proposal { get; init; }
+    public UserProfile? BaselineProfile { get; init; }
+    public UserProfile? CurrentProfile { get; init; }
+    public IReadOnlyList<ProfileDiffEntry> ProfileDiff { get; init; } = [];
+    public LearningProposalProvenance? Provenance { get; init; }
+    public bool CanRollback { get; init; }
+}
+
+public sealed class ProfileExportBundle
+{
+    public DateTimeOffset ExportedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    public IReadOnlyList<UserProfile> Profiles { get; init; } = [];
+    public IReadOnlyList<LearningProposal> Proposals { get; init; } = [];
+}
+
+public sealed class ProfileImportResponse
+{
+    public bool Success { get; init; }
+    public int ProfilesImported { get; init; }
+    public int ProposalsImported { get; init; }
+    public string Message { get; init; } = "";
+}
+
 public sealed class SessionMetadataSnapshot
 {
     public required string SessionId { get; init; }

@@ -12,6 +12,8 @@ internal static class DiagnosticsEndpoints
         GatewayStartupContext startup,
         GatewayAppRuntime runtime)
     {
+        static string[] AllowlistsChannels() => ["telegram", "sms", "whatsapp", "teams", "slack", "discord", "signal"];
+
         var browserSessions = app.Services.GetRequiredService<BrowserSessionAuthService>();
 
         app.MapGet("/health", (HttpContext ctx) =>
@@ -135,32 +137,24 @@ internal static class DiagnosticsEndpoints
                     allowlistSemantics = startup.Config.Channels.AllowlistSemantics,
                     sms = new { enabled = startup.Config.Channels.Sms.Twilio.Enabled, dmPolicy = startup.Config.Channels.Sms.DmPolicy },
                     telegram = new { enabled = startup.Config.Channels.Telegram.Enabled, dmPolicy = startup.Config.Channels.Telegram.DmPolicy },
-                    whatsapp = new { enabled = startup.Config.Channels.WhatsApp.Enabled, dmPolicy = startup.Config.Channels.WhatsApp.DmPolicy }
+                    whatsapp = new { enabled = startup.Config.Channels.WhatsApp.Enabled, dmPolicy = startup.Config.Channels.WhatsApp.DmPolicy },
+                    teams = new { enabled = startup.Config.Channels.Teams.Enabled, dmPolicy = startup.Config.Channels.Teams.DmPolicy },
+                    slack = new { enabled = startup.Config.Channels.Slack.Enabled, dmPolicy = startup.Config.Channels.Slack.DmPolicy },
+                    discord = new { enabled = startup.Config.Channels.Discord.Enabled, dmPolicy = startup.Config.Channels.Discord.DmPolicy },
+                    signal = new { enabled = startup.Config.Channels.Signal.Enabled, dmPolicy = startup.Config.Channels.Signal.DmPolicy }
                 },
-                allowlists = new
-                {
-                    sms = new
+                allowlists = AllowlistsChannels().ToDictionary(
+                    channel => channel,
+                    channel => new
                     {
-                        dynamic = runtime.Allowlists.TryGetDynamic("sms"),
-                        effective = runtime.Allowlists.GetEffective("sms", EndpointHelpers.GetConfigAllowlist(startup.Config, "sms"))
+                        dynamic = runtime.Allowlists.TryGetDynamic(channel),
+                        effective = runtime.Allowlists.GetEffective(channel, EndpointHelpers.GetConfigAllowlist(startup.Config, channel))
                     },
-                    telegram = new
-                    {
-                        dynamic = runtime.Allowlists.TryGetDynamic("telegram"),
-                        effective = runtime.Allowlists.GetEffective("telegram", EndpointHelpers.GetConfigAllowlist(startup.Config, "telegram"))
-                    },
-                    whatsapp = new
-                    {
-                        dynamic = runtime.Allowlists.TryGetDynamic("whatsapp"),
-                        effective = runtime.Allowlists.GetEffective("whatsapp", EndpointHelpers.GetConfigAllowlist(startup.Config, "whatsapp"))
-                    }
-                },
-                recentSenders = new
-                {
-                    sms = runtime.RecentSenders.GetSnapshot("sms").Senders.Take(10).ToArray(),
-                    telegram = runtime.RecentSenders.GetSnapshot("telegram").Senders.Take(10).ToArray(),
-                    whatsapp = runtime.RecentSenders.GetSnapshot("whatsapp").Senders.Take(10).ToArray()
-                },
+                    StringComparer.Ordinal),
+                recentSenders = AllowlistsChannels().ToDictionary(
+                    channel => channel,
+                    channel => runtime.RecentSenders.GetSnapshot(channel).Senders.Take(10).ToArray(),
+                    StringComparer.Ordinal),
                 pairing = new
                 {
                     approved = runtime.PairingManager.GetApprovedList().ToArray()
@@ -332,7 +326,7 @@ internal static class DiagnosticsEndpoints
 
             sb.AppendLine("Allowlists");
             sb.AppendLine($"- semantics: {startup.Config.Channels.AllowlistSemantics}");
-            foreach (var channel in new[] { "telegram", "sms", "whatsapp" })
+            foreach (var channel in AllowlistsChannels())
             {
                 var dynamicAllowlist = runtime.Allowlists.TryGetDynamic(channel);
                 var effective = runtime.Allowlists.GetEffective(channel, EndpointHelpers.GetConfigAllowlist(startup.Config, channel));
