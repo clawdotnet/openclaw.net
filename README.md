@@ -21,7 +21,7 @@ Most agent stacks assume Python- or Node-first runtimes. That works until you wa
 OpenClaw.NET takes a different path:
 
 - **NativeAOT-friendly runtime and gateway** for .NET agent workloads
-- **Practical reuse of existing OpenClaw TS/JS plugins and `SKILL.md` packages** — install directly with `openclaw plugins install`
+- **Practical reuse of existing OpenClaw TS/JS plugins and `SKILL.md` packages** — inspect and install with `openclaw plugins install --dry-run` and `openclaw skills install`
 - A real **tool execution layer** with approval hooks, timeout handling, usage tracking, and optional sandbox routing
 - **48 native tools** covering file ops, sessions, memory, web search, messaging, home automation, databases, email, calendar, and more
 - **9 channel adapters** (Telegram, SMS, WhatsApp, Teams, Slack, Discord, Signal, email, webhooks) with DM policy, allowlists, and signature validation
@@ -170,7 +170,28 @@ openclaw plugins list
 openclaw plugins search openclaw dingtalk
 ```
 
+The installer now classifies each candidate as `first-party`, `upstream-compatible`, `third-party-reviewed`, or `untrusted`, reports compatibility diagnostics, and blocks installs when manifest-backed checks fail.
+
+Operators can review a loaded plugin from the built-in admin UI or the admin API:
+
+- `POST /admin/plugins/{id}/review`
+- `POST /admin/plugins/{id}/unreview`
+- `GET /admin/plugins`
+
 Supports JS/TS bridge plugins, native dynamic .NET plugins (`jit` mode), and standalone `SKILL.md` packages. See the [Compatibility Guide](docs/COMPATIBILITY.md).
+
+### Skill Packages
+
+Inspect and install standalone upstream-style skill folders without going through ClawHub:
+
+```bash
+openclaw skills inspect ./skills/my-skill
+openclaw skills install ./skills/my-skill --dry-run
+openclaw skills install ./skills/my-skill
+openclaw skills list
+```
+
+The admin UI also exposes a live skill inventory through `GET /admin/skills`, including trust level, requirements, dispatch mode, and install location.
 
 ### Integrations
 

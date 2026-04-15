@@ -11,6 +11,7 @@ using OpenClaw.Core.Models;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Security;
+using OpenClaw.Core.Skills;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
@@ -1656,6 +1657,21 @@ internal static class AdminEndpoints
             }, CoreJsonContext.Default.PluginListResponse);
         });
 
+        app.MapGet("/admin/skills", (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.skills");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            return Results.Json(new SkillListResponse
+            {
+                Items = runtime.LoadedSkills
+                    .Select(MapSkillHealthSnapshot)
+                    .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToArray()
+            }, CoreJsonContext.Default.SkillListResponse);
+        });
+
         app.MapGet("/admin/plugins/{id}", (HttpContext ctx, string id) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.plugins");
@@ -1700,6 +1716,40 @@ internal static class AdminEndpoints
             var state = operations.PluginHealth.SetDisabled(id, disabled: false, request?.Reason);
             RecordOperatorAudit(ctx, operations, auth, "plugin_enable", id, $"Enabled plugin '{id}'.", success: true, before: null, after: state);
             return Results.Json(new MutationResponse { Success = true, Message = "Plugin enabled.", RestartRequired = true }, CoreJsonContext.Default.MutationResponse);
+        });
+
+        app.MapPost("/admin/plugins/{id}/review", async (HttpContext ctx, string id) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.plugins.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.PluginMutationRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+
+            var request = requestPayload.Value;
+            var state = operations.PluginHealth.SetReviewed(id, reviewed: true, request?.Reason);
+            RecordOperatorAudit(ctx, operations, auth, "plugin_review", id, $"Marked plugin '{id}' as reviewed.", success: true, before: null, after: state);
+            return Results.Json(new MutationResponse { Success = true, Message = "Plugin marked as reviewed.", RestartRequired = false }, CoreJsonContext.Default.MutationResponse);
+        });
+
+        app.MapPost("/admin/plugins/{id}/unreview", async (HttpContext ctx, string id) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.plugins.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.PluginMutationRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+
+            var request = requestPayload.Value;
+            var state = operations.PluginHealth.SetReviewed(id, reviewed: false, request?.Reason);
+            RecordOperatorAudit(ctx, operations, auth, "plugin_unreview", id, $"Removed review mark from plugin '{id}'.", success: true, before: null, after: state);
+            return Results.Json(new MutationResponse { Success = true, Message = "Plugin review mark cleared.", RestartRequired = false }, CoreJsonContext.Default.MutationResponse);
         });
 
         app.MapPost("/admin/plugins/{id}/quarantine", async (HttpContext ctx, string id) =>
@@ -2311,6 +2361,48 @@ internal static class AdminEndpoints
         }
 
         return items;
+    }
+
+    private static SkillHealthSnapshot MapSkillHealthSnapshot(SkillDefinition skill)
+    {
+        var warnings = new List<string>();
+        if (string.IsNullOrWhiteSpace(skill.Description))
+            warnings.Add("Description is empty.");
+        if (skill.Metadata.RequireBins.Length == 0 &&
+            skill.Metadata.RequireAnyBins.Length == 0 &&
+            skill.Metadata.RequireEnv.Length == 0 &&
+            skill.Metadata.RequireConfig.Length == 0)
+        {
+            warnings.Add("No host requirements declared.");
+        }
+
+        var trustLevel = skill.Source == SkillSource.Bundled ? "first-party" : "upstream-compatible";
+        var trustReason = skill.Source == SkillSource.Bundled
+            ? "Skill ships with OpenClaw.NET."
+            : "Skill document parsed successfully and follows the OpenClaw skill format.";
+
+        return new SkillHealthSnapshot
+        {
+            Name = skill.Name,
+            Description = skill.Description,
+            Source = skill.Source.ToString().ToLowerInvariant(),
+            Location = skill.Location,
+            TrustLevel = trustLevel,
+            TrustReason = trustReason,
+            Always = skill.Metadata.Always,
+            UserInvocable = skill.UserInvocable,
+            DisableModelInvocation = skill.DisableModelInvocation,
+            CommandDispatch = skill.CommandDispatch,
+            CommandTool = skill.CommandTool,
+            CommandArgMode = skill.CommandArgMode,
+            Homepage = skill.Metadata.Homepage,
+            PrimaryEnv = skill.Metadata.PrimaryEnv,
+            RequiredBins = skill.Metadata.RequireBins,
+            RequiredAnyBins = skill.Metadata.RequireAnyBins,
+            RequiredEnv = skill.Metadata.RequireEnv,
+            RequiredConfig = skill.Metadata.RequireConfig,
+            Warnings = warnings.ToArray()
+        };
     }
 
     private static MemoryNoteItem MapMemoryNoteItem(string key, string content, DateTimeOffset updatedAt, bool includeContent = false)

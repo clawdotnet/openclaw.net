@@ -462,6 +462,7 @@ internal static class RuntimeInitializationExtensions
             RuntimeMetrics = services.RuntimeMetrics,
             ProviderUsage = services.ProviderUsage,
             Heartbeat = services.HeartbeatService,
+            LoadedSkills = skills,
             SkillWatcher = skillWatcher,
             PluginReports = GetCombinedPluginReports(
                 pluginComposition.PluginHost,

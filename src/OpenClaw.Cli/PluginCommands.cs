@@ -120,6 +120,8 @@ internal static class PluginCommands
             }
 
             PrintInspection(inspection);
+            if (!inspection.CanInstall)
+                return 1;
             if (dryRun)
                 return 0;
 
@@ -190,6 +192,8 @@ internal static class PluginCommands
                 }
 
                 PrintInspection(inspection);
+                if (!inspection.CanInstall)
+                    return 1;
                 if (dryRun)
                     return 0;
 
@@ -218,6 +222,8 @@ internal static class PluginCommands
             }
 
             PrintInspection(inspection);
+            if (!inspection.CanInstall)
+                return 1;
             if (dryRun)
                 return 0;
 
@@ -294,9 +300,16 @@ internal static class PluginCommands
             var name = plugin.Manifest.Name ?? plugin.Manifest.Id ?? Path.GetFileName(plugin.RootPath);
             var version = plugin.Manifest.Version ?? "?";
             var desc = plugin.Manifest.Description ?? "";
+            var hasStructuredSurface =
+                plugin.Manifest.Channels.Length > 0 ||
+                plugin.Manifest.Providers.Length > 0 ||
+                plugin.Manifest.Skills.Length > 0 ||
+                plugin.Manifest.ConfigSchema is not null;
+            var trustLevel = DetermineTrustLevel(plugin.RootPath, sourceIsNpm: false, errorCount: 0, hasStructuredSurface);
             Console.WriteLine($"  {name} ({version}) - {desc}");
             Console.WriteLine($"    Path: {plugin.RootPath}");
-            Console.WriteLine($"    Trust: {DetermineTrustLevel(plugin.RootPath, plugin.Manifest)}");
+            Console.WriteLine($"    Trust: {trustLevel}");
+            Console.WriteLine($"    Trust reason: {DetermineTrustReason(trustLevel, errorCount: 0, hasStructuredSurface)}");
             Console.WriteLine($"    Declared: {BuildDeclaredSurfaceSummary(plugin.Manifest)}");
         }
 
@@ -555,21 +568,93 @@ internal static class PluginCommands
         };
 
         var warnings = new List<string>();
+        var diagnostics = new List<PluginCompatibilityDiagnostic>();
         if (!hasManifest)
             warnings.Add("No openclaw.plugin.json manifest was found. Install is allowed, but declared capabilities and config validation metadata are limited.");
         if (!hasExtensionsConfig && !hasManifest)
             warnings.Add("Package relies on standalone entry-file discovery. Review the source before enabling it on a public bind.");
 
+        var declaredChannels = effectiveManifest.Channels ?? [];
+        var declaredProviders = effectiveManifest.Providers ?? [];
+        var declaredSkills = effectiveManifest.Skills ?? [];
+
+        if (effectiveManifest.ConfigSchema is not null)
+            diagnostics.AddRange(PluginConfigValidator.Validate(effectiveManifest, config: null));
+
+        foreach (var skillDir in declaredSkills)
+        {
+            if (!PluginDiscovery.TryResolveContainedPath(rootPath, skillDir, out var resolvedSkillDir))
+            {
+                diagnostics.Add(new PluginCompatibilityDiagnostic
+                {
+                    Severity = "error",
+                    Code = "skill_path_outside_root",
+                    Message = $"Skill directory '{skillDir}' resolves outside the plugin root.",
+                    Surface = "skills",
+                    Path = rootPath
+                });
+                continue;
+            }
+
+            if (!Directory.Exists(resolvedSkillDir))
+            {
+                diagnostics.Add(new PluginCompatibilityDiagnostic
+                {
+                    Severity = "error",
+                    Code = "skill_directory_missing",
+                    Message = $"Declared skill directory '{skillDir}' does not exist.",
+                    Surface = "skills",
+                    Path = resolvedSkillDir
+                });
+                continue;
+            }
+
+            var rootSkillFile = Path.Combine(resolvedSkillDir, "SKILL.md");
+            var nestedSkillFiles = Directory.GetFiles(resolvedSkillDir, "SKILL.md", SearchOption.AllDirectories);
+            if (!File.Exists(rootSkillFile) && nestedSkillFiles.Length == 0)
+            {
+                diagnostics.Add(new PluginCompatibilityDiagnostic
+                {
+                    Severity = "warning",
+                    Code = "skill_directory_empty",
+                    Message = $"Declared skill directory '{skillDir}' does not currently contain a SKILL.md file.",
+                    Surface = "skills",
+                    Path = resolvedSkillDir
+                });
+            }
+        }
+
+        var errorCount = diagnostics.Count(static diagnostic => string.Equals(diagnostic.Severity, "error", StringComparison.OrdinalIgnoreCase));
+        var warningCount = diagnostics.Count - errorCount;
+        var compatibilityStatus = errorCount > 0
+            ? "errors"
+            : warningCount > 0
+                ? "warnings"
+                : "verified";
+        var hasStructuredSurface =
+            declaredChannels.Length > 0 ||
+            declaredProviders.Length > 0 ||
+            declaredSkills.Length > 0 ||
+            effectiveManifest.ConfigSchema is not null;
+        var trustLevel = DetermineTrustLevel(sourceLabel, sourceIsNpm, errorCount, hasStructuredSurface);
+        var trustReason = DetermineTrustReason(trustLevel, errorCount, hasStructuredSurface);
+
         return new PluginInstallInspection
         {
             Success = true,
+            CanInstall = errorCount == 0,
             PluginId = effectiveManifest.Id,
             DisplayName = effectiveManifest.Name ?? effectiveManifest.Id,
             Version = effectiveManifest.Version ?? version ?? "?",
             Description = effectiveManifest.Description ?? description ?? "",
             EntryPath = entryPath,
-            TrustLevel = DetermineTrustLevel(sourceIsNpm ? sourceLabel : rootPath, effectiveManifest, sourceIsNpm),
+            TrustLevel = trustLevel,
+            TrustReason = trustReason,
+            CompatibilityStatus = compatibilityStatus,
+            ErrorCount = errorCount,
+            WarningCount = warningCount,
             DeclaredSurface = BuildDeclaredSurfaceSummary(effectiveManifest),
+            Diagnostics = diagnostics,
             Warnings = warnings
         };
     }
@@ -581,13 +666,19 @@ internal static class PluginCommands
         if (!string.IsNullOrWhiteSpace(inspection.Description))
             Console.WriteLine($"Description: {inspection.Description}");
         Console.WriteLine($"Trust: {inspection.TrustLevel}");
+        Console.WriteLine($"Trust reason: {inspection.TrustReason}");
+        Console.WriteLine($"Compatibility: {inspection.CompatibilityStatus} (errors={inspection.ErrorCount}, warnings={inspection.WarningCount})");
         Console.WriteLine($"Declared: {inspection.DeclaredSurface}");
         Console.WriteLine($"Entry: {inspection.EntryPath}");
         foreach (var warning in inspection.Warnings)
             Console.WriteLine($"Warning: {warning}");
+        foreach (var diagnostic in inspection.Diagnostics)
+            Console.WriteLine($"{(string.Equals(diagnostic.Severity, "error", StringComparison.OrdinalIgnoreCase) ? "Error" : "Warning")}: [{diagnostic.Code}] {diagnostic.Message}");
+        if (!inspection.CanInstall)
+            Console.WriteLine("Install blocked: compatibility verification reported one or more errors.");
     }
 
-    private static string DetermineTrustLevel(string sourceLabel, PluginManifest manifest, bool sourceIsNpm = false)
+    private static string DetermineTrustLevel(string sourceLabel, bool sourceIsNpm, int errorCount, bool hasStructuredSurface)
     {
         if (sourceIsNpm &&
             (sourceLabel.StartsWith("@clawdotnet/", StringComparison.OrdinalIgnoreCase) ||
@@ -596,8 +687,7 @@ internal static class PluginCommands
             return "first-party";
         }
 
-        if (!string.IsNullOrWhiteSpace(manifest.Id) &&
-            (manifest.Channels.Length > 0 || manifest.Providers.Length > 0 || manifest.Skills.Length > 0 || manifest.ConfigSchema is not null))
+        if (hasStructuredSurface && errorCount == 0)
         {
             return "upstream-compatible";
         }
@@ -605,15 +695,27 @@ internal static class PluginCommands
         return "untrusted";
     }
 
+    private static string DetermineTrustReason(string trustLevel, int errorCount, bool hasStructuredSurface)
+        => trustLevel switch
+        {
+            "first-party" => "Package source matches an official OpenClaw or ClawDotNet scope.",
+            "upstream-compatible" => "Plugin declares structured OpenClaw surfaces and passed install-time compatibility checks.",
+            _ when hasStructuredSurface && errorCount > 0 => "Plugin declares OpenClaw surfaces, but compatibility verification reported blocking errors.",
+            _ => "Plugin relies on entry discovery without a structured manifest-backed capability declaration."
+        };
+
     private static string BuildDeclaredSurfaceSummary(PluginManifest manifest)
     {
         var items = new List<string>();
-        if (manifest.Channels.Length > 0)
-            items.Add($"channels={string.Join(",", manifest.Channels)}");
-        if (manifest.Providers.Length > 0)
-            items.Add($"providers={string.Join(",", manifest.Providers)}");
-        if (manifest.Skills.Length > 0)
-            items.Add($"skills={manifest.Skills.Length}");
+        var channels = manifest.Channels ?? [];
+        var providers = manifest.Providers ?? [];
+        var skills = manifest.Skills ?? [];
+        if (channels.Length > 0)
+            items.Add($"channels={string.Join(",", channels)}");
+        if (providers.Length > 0)
+            items.Add($"providers={string.Join(",", providers)}");
+        if (skills.Length > 0)
+            items.Add($"skills={skills.Length}");
         if (manifest.ConfigSchema is not null)
             items.Add("config_schema");
 
@@ -667,6 +769,7 @@ internal static class PluginCommands
     internal sealed class PluginInstallInspection
     {
         public required bool Success { get; init; }
+        public bool CanInstall { get; init; }
         public string? ErrorMessage { get; init; }
         public string PluginId { get; init; } = "";
         public string DisplayName { get; init; } = "";
@@ -674,7 +777,12 @@ internal static class PluginCommands
         public string Description { get; init; } = "";
         public string EntryPath { get; init; } = "";
         public string TrustLevel { get; init; } = "";
+        public string TrustReason { get; init; } = "";
+        public string CompatibilityStatus { get; init; } = "";
+        public int ErrorCount { get; init; }
+        public int WarningCount { get; init; }
         public string DeclaredSurface { get; init; } = "";
+        public IReadOnlyList<PluginCompatibilityDiagnostic> Diagnostics { get; init; } = [];
         public IReadOnlyList<string> Warnings { get; init; } = [];
 
         public static PluginInstallInspection Failure(string errorMessage)

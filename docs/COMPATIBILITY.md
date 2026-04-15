@@ -38,6 +38,7 @@ OpenClaw.NET keeps plugin compatibility explicit by runtime mode. The goal is to
 | `api.registerProvider()` | Supported with caveats | `jit` only. Plugin-provided LLMs are wired through the dynamic provider seam. |
 | Standalone `.js`, `.mjs`, `.ts` in `.openclaw/extensions` | Supported with caveats | `.ts` requires local `jiti`. |
 | Manifest/package discovery via `Plugins:Load:Paths` | Supported | Includes `openclaw.plugin.json` and `package.json` `openclaw.extensions`. |
+| `openclaw plugins install --dry-run` trust inspection | Supported | Prints trust level, declared surface, diagnostics, and blocks install when compatibility errors are present. |
 | Plugin config validation | Supported with caveats | Validated against the documented JSON Schema subset below before startup. |
 | Plugin diagnostics in `/doctor` | Supported | Discovery, load, config, and compatibility failures are reported explicitly. |
 | `Plugins:Transport:Mode=stdio` | Supported | JSON-RPC over child process stdin/stdout. |
@@ -105,6 +106,14 @@ If `jiti` is missing, plugin load fails with an actionable error instead of fall
 - documentation-only fields such as `title`, `description`, and `default`
 
 Unsupported schema keywords are rejected with `unsupported_schema_keyword`.
+
+## Operator Trust Workflow
+
+- Plugin install candidates are classified as `first-party`, `upstream-compatible`, or `untrusted` at install time.
+- Operators can promote a loaded plugin to `third-party-reviewed` from the admin UI or `POST /admin/plugins/{id}/review`.
+- `GET /admin/plugins` exposes trust level, compatibility status, declared surface, diagnostics counts, review notes, and source paths.
+- `GET /admin/skills` exposes the loaded skill inventory with trust level, host requirements, dispatch metadata, and source location.
+- Local `SKILL.md` folders or `.tgz` bundles can be inspected and installed with `openclaw skills inspect` and `openclaw skills install`.
 
 ## Known Limitations
 

@@ -28,6 +28,7 @@ using OpenClaw.Core.Features;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
+using OpenClaw.Core.Skills;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Backends;
 using OpenClaw.Gateway.Bootstrap;
@@ -1310,6 +1311,88 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task PluginTrustReview_AndSkillListing_AreServed()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        harness.Runtime.Operations.PluginHealth.SetRuntimeReports(
+            [
+                new PluginLoadReport
+                {
+                    PluginId = "qqbot",
+                    SourcePath = "/tmp/plugins/qqbot",
+                    EntryPath = "/tmp/plugins/qqbot/index.js",
+                    Origin = "bridge",
+                    Loaded = true,
+                    EffectiveRuntimeMode = "jit",
+                    RequestedCapabilities = ["tools", "channels"],
+                    ToolCount = 2,
+                    ChannelCount = 1,
+                    CommandCount = 0,
+                    ProviderCount = 0,
+                    SkillDirectories = ["skills"],
+                    Diagnostics = []
+                }
+            ],
+            pluginHost: null,
+            nativeDynamicPluginHost: null);
+        harness.Runtime.LoadedSkills =
+        [
+            new SkillDefinition
+            {
+                Name = "Incident Followup",
+                Description = "Handle incident follow-up tasks.",
+                Instructions = "Follow the incident checklist.",
+                Location = "/tmp/skills/incident-followup",
+                Source = SkillSource.Managed,
+                Metadata = new SkillMetadata
+                {
+                    Homepage = "https://example.com/incident-followup",
+                    RequireEnv = ["OPENAI_API_KEY"]
+                },
+                UserInvocable = true,
+                DisableModelInvocation = false,
+                CommandDispatch = "incident-followup"
+            }
+        ];
+
+        using var pluginRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/plugins/qqbot");
+        pluginRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var pluginResponse = await harness.Client.SendAsync(pluginRequest);
+        Assert.Equal(HttpStatusCode.OK, pluginResponse.StatusCode);
+        using var pluginPayload = await ReadJsonAsync(pluginResponse);
+        Assert.Equal("upstream-compatible", pluginPayload.RootElement.GetProperty("trustLevel").GetString());
+        Assert.False(pluginPayload.RootElement.GetProperty("reviewed").GetBoolean());
+
+        using var reviewRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/plugins/qqbot/review")
+        {
+            Content = JsonContent("""{"reason":"validated in staging"}""")
+        };
+        reviewRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var reviewResponse = await harness.Client.SendAsync(reviewRequest);
+        Assert.Equal(HttpStatusCode.OK, reviewResponse.StatusCode);
+
+        using var reviewedPluginRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/plugins/qqbot");
+        reviewedPluginRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var reviewedPluginResponse = await harness.Client.SendAsync(reviewedPluginRequest);
+        Assert.Equal(HttpStatusCode.OK, reviewedPluginResponse.StatusCode);
+        using var reviewedPluginPayload = await ReadJsonAsync(reviewedPluginResponse);
+        Assert.Equal("third-party-reviewed", reviewedPluginPayload.RootElement.GetProperty("trustLevel").GetString());
+        Assert.True(reviewedPluginPayload.RootElement.GetProperty("reviewed").GetBoolean());
+        Assert.Equal("validated in staging", reviewedPluginPayload.RootElement.GetProperty("reviewNotes").GetString());
+
+        using var skillsRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/skills");
+        skillsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var skillsResponse = await harness.Client.SendAsync(skillsRequest);
+        Assert.Equal(HttpStatusCode.OK, skillsResponse.StatusCode);
+        using var skillsPayload = await ReadJsonAsync(skillsResponse);
+        var skills = skillsPayload.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Single(skills);
+        Assert.Equal("Incident Followup", skills[0].GetProperty("name").GetString());
+        Assert.Equal("upstream-compatible", skills[0].GetProperty("trustLevel").GetString());
+        Assert.Contains("OPENAI_API_KEY", skills[0].GetProperty("requiredEnv").EnumerateArray().Select(static item => item.GetString()));
+    }
+
+    [Fact]
     public async Task AdminSummary_IncludesRuntimeOrchestrator()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: false);
@@ -2312,9 +2395,12 @@ public sealed class GatewayAdminEndpointTests
             "/admin/sessions/{id}/export",
             "/admin/branches/{id}/restore",
             "/admin/plugins",
+            "/admin/skills",
             "/admin/plugins/{id}",
             "/admin/plugins/{id}/disable",
             "/admin/plugins/{id}/enable",
+            "/admin/plugins/{id}/review",
+            "/admin/plugins/{id}/unreview",
             "/admin/plugins/{id}/quarantine",
             "/admin/plugins/{id}/clear-quarantine",
             "/admin/audit",
@@ -2646,6 +2732,7 @@ public sealed class GatewayAdminEndpointTests
             RuntimeMetrics = runtimeMetrics,
             ProviderUsage = providerUsage,
             Heartbeat = heartbeatService,
+            LoadedSkills = Array.Empty<SkillDefinition>(),
             SkillWatcher = skillWatcher,
             PluginReports = Array.Empty<PluginLoadReport>(),
             Operations = new RuntimeOperationsState

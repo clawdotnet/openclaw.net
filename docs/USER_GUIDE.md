@@ -179,6 +179,18 @@ Install into managed skills (shared across workspaces):
 
 Note: start a new Gateway session (or restart the Gateway) to pick up newly installed skills.
 
+### Inspecting and installing local skill packages
+
+When you already have a local upstream-style skill folder or tarball, use the built-in skill installer:
+
+- `openclaw skills inspect ./path/to/skill`
+- `openclaw skills install ./path/to/skill --dry-run`
+- `openclaw skills install ./path/to/skill`
+- `openclaw skills install ./path/to/skill.tgz --managed`
+- `openclaw skills list`
+
+`inspect` and `install --dry-run` report trust classification, install slug, requirements, command dispatch metadata, and warnings before any files are copied.
+
 This repo ships a bundled set of powerful personas and capabilities out-of-the-box (Software Developer, Deep Researcher, Data Analyst, daily news digest, email triage, Home Assistant + MQTT operations). You can disable any skill via:
 ```json
 {
@@ -227,6 +239,11 @@ For operator workflows outside the chat UI, the gateway also exposes:
 - `GET /admin/profiles/{actorId}`
 - `GET /admin/profiles/export`
 - `POST /admin/profiles/import`
+- `GET /admin/plugins`
+- `GET /admin/plugins/{id}`
+- `POST /admin/plugins/{id}/review`
+- `POST /admin/plugins/{id}/unreview`
+- `GET /admin/skills`
 - `GET /admin/learning/proposals/{id}`
 - `POST /admin/learning/proposals/{id}/rollback`
 
@@ -247,6 +264,15 @@ For memory and learning operations, the admin API now also supports:
 - exporting/importing profile bundles for portability between deployments
 - inspecting a learning proposal with provenance and computed profile diffs before approval
 - rolling back an approved profile-update proposal when a learned preference should be reverted
+- reviewing bridge or dynamic plugins after operator validation and clearing that review state later
+- browsing the currently loaded skills with trust level, required env/config/bin dependencies, and command dispatch metadata
+
+Plugin trust levels shown in the admin UI and CLI are:
+
+- `first-party`
+- `upstream-compatible`
+- `third-party-reviewed`
+- `untrusted`
 
 ### Memory Retention Sweeper (Sessions + Branches)
 Retention is opt-in and targets persisted sessions/branches only (not notes).

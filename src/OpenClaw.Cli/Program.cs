@@ -37,6 +37,7 @@ internal static class Program
                 "backends" => await BackendsAsync(rest),
                 "admin" => await AdminAsync(rest),
                 "plugins" => await PluginCommands.RunAsync(rest),
+                "skills" => await SkillCommands.RunAsync(rest),
                 "clawhub" => await ClawHubCommand.RunAsync(rest),
                 "version" or "--version" or "-v" => PrintVersion(),
                 _ => UnknownCommand(command)
@@ -87,6 +88,7 @@ internal static class Program
               openclaw accounts <list|add|remove|probe> [options]
               openclaw backends <list|probe|run|session send> [options]
               openclaw admin <posture|incident export|approvals simulate> [options]
+              openclaw skills <inspect|install|list> [options]
               openclaw clawhub [wrapper options] [--] <clawhub args...>
 
             Common options:
@@ -138,6 +140,12 @@ internal static class Program
               openclaw plugins remove <plugin-name>       Remove a plugin
               openclaw plugins list                       List installed plugins
               openclaw plugins search <query>             Search npm for plugins
+
+            Skill management:
+              openclaw skills inspect ./my-skill          Inspect a local skill package
+              openclaw skills install ./my-skill --dry-run
+              openclaw skills install ./my-skill --managed
+              openclaw skills list --managed
 
             ClawHub wrapper:
               # Forward --help to ClawHub itself:

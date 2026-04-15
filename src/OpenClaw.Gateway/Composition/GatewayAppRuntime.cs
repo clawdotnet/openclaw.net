@@ -37,6 +37,7 @@ internal sealed class GatewayAppRuntime
     public required RuntimeMetrics RuntimeMetrics { get; init; }
     public required ProviderUsageTracker ProviderUsage { get; init; }
     public required HeartbeatService Heartbeat { get; init; }
+    public required IReadOnlyList<SkillDefinition> LoadedSkills { get; set; }
     public required SkillWatcherService SkillWatcher { get; init; }
     public required IReadOnlyList<PluginLoadReport> PluginReports { get; init; }
     public required RuntimeOperationsState Operations { get; init; }

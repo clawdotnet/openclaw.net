@@ -119,7 +119,9 @@ public sealed class PluginOperatorState
     public required string PluginId { get; init; }
     public bool Disabled { get; init; }
     public bool Quarantined { get; init; }
+    public bool Reviewed { get; init; }
     public string? Reason { get; init; }
+    public string? ReviewNotes { get; init; }
     public DateTimeOffset UpdatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
 }
 
@@ -131,9 +133,20 @@ public sealed class PluginHealthSnapshot
     public bool BlockedByRuntimeMode { get; init; }
     public bool Disabled { get; init; }
     public bool Quarantined { get; init; }
+    public bool Reviewed { get; init; }
     public string? PendingReason { get; init; }
+    public string? ReviewNotes { get; init; }
     public string? EffectiveRuntimeMode { get; init; }
+    public string TrustLevel { get; init; } = "untrusted";
+    public string TrustReason { get; init; } = "";
+    public string CompatibilityStatus { get; init; } = "unknown";
+    public int ErrorCount { get; init; }
+    public int WarningCount { get; init; }
+    public string DeclaredSurface { get; init; } = "";
+    public string? SourcePath { get; init; }
+    public string? EntryPath { get; init; }
     public string[] RequestedCapabilities { get; init; } = [];
+    public string[] SkillDirectories { get; init; } = [];
     public string? LastError { get; init; }
     public DateTimeOffset? LastActivityAtUtc { get; init; }
     public int RestartCount { get; init; }
@@ -147,6 +160,34 @@ public sealed class PluginHealthSnapshot
 public sealed class PluginListResponse
 {
     public IReadOnlyList<PluginHealthSnapshot> Items { get; init; } = [];
+}
+
+public sealed class SkillHealthSnapshot
+{
+    public required string Name { get; init; }
+    public string Description { get; init; } = "";
+    public required string Source { get; init; }
+    public required string Location { get; init; }
+    public string TrustLevel { get; init; } = "untrusted";
+    public string TrustReason { get; init; } = "";
+    public bool Always { get; init; }
+    public bool UserInvocable { get; init; } = true;
+    public bool DisableModelInvocation { get; init; }
+    public string? CommandDispatch { get; init; }
+    public string? CommandTool { get; init; }
+    public string? CommandArgMode { get; init; }
+    public string? Homepage { get; init; }
+    public string? PrimaryEnv { get; init; }
+    public string[] RequiredBins { get; init; } = [];
+    public string[] RequiredAnyBins { get; init; } = [];
+    public string[] RequiredEnv { get; init; } = [];
+    public string[] RequiredConfig { get; init; } = [];
+    public string[] Warnings { get; init; } = [];
+}
+
+public sealed class SkillListResponse
+{
+    public IReadOnlyList<SkillHealthSnapshot> Items { get; init; } = [];
 }
 
 public sealed class ChannelAuthStatusResponse
