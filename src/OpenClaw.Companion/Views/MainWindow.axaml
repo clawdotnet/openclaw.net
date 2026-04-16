@@ -19,22 +19,27 @@
     <Grid RowDefinitions="Auto,*" Margin="12" RowSpacing="12">
         <Border Grid.Row="0" Padding="10" CornerRadius="8" BorderThickness="1"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
-            <Grid ColumnDefinitions="2*,*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
+            <Grid ColumnDefinitions="2*,*,*,Auto,Auto,Auto,1.3*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Gateway" FontWeight="SemiBold" />
-                <TextBlock Grid.Row="0" Grid.Column="1" Text="Auth Token" FontWeight="SemiBold" />
-                <TextBlock Grid.Row="0" Grid.Column="2" Text="Remember" FontWeight="SemiBold" />
-                <TextBlock Grid.Row="0" Grid.Column="3" Text="Plaintext" FontWeight="SemiBold" />
-                <TextBlock Grid.Row="0" Grid.Column="4" Text="Debug" FontWeight="SemiBold" />
-                <TextBlock Grid.Row="0" Grid.Column="5" Text="Status" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="Operator User" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="Operator Token" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="0" Grid.Column="3" Text="Remember" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="0" Grid.Column="4" Text="Plaintext" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="0" Grid.Column="5" Text="Debug" FontWeight="SemiBold" />
+                <TextBlock Grid.Row="0" Grid.Column="6" Text="Status" FontWeight="SemiBold" />
 
                 <TextBox Grid.Row="1" Grid.Column="0" Text="{Binding ServerUrl}" Watermark="ws://127.0.0.1:18789/ws" />
-                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding AuthToken}" PasswordChar="•" Watermark="Bearer token (optional on localhost)" />
-                <CheckBox Grid.Row="1" Grid.Column="2" IsChecked="{Binding RememberToken}" />
-                <CheckBox Grid.Row="1" Grid.Column="3" IsChecked="{Binding AllowPlaintextTokenFallback}" />
-                <CheckBox Grid.Row="1" Grid.Column="4" IsChecked="{Binding DebugMode}" />
-                <TextBlock Grid.Row="1" Grid.Column="5" Text="{Binding Status}" VerticalAlignment="Center" />
+                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Username}" Watermark="viewer1 / operator1 / admin1" />
+                <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding AuthToken}" PasswordChar="•" Watermark="Operator account token (bootstrap only for breakglass)" />
+                <CheckBox Grid.Row="1" Grid.Column="3" IsChecked="{Binding RememberToken}" />
+                <CheckBox Grid.Row="1" Grid.Column="4" IsChecked="{Binding AllowPlaintextTokenFallback}" />
+                <CheckBox Grid.Row="1" Grid.Column="5" IsChecked="{Binding DebugMode}" />
+                <StackPanel Grid.Row="1" Grid.Column="6" Spacing="2">
+                    <TextBlock Text="{Binding Status}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding OperatorIdentity}" FontSize="11" Opacity="0.75" TextWrapping="Wrap" />
+                </StackPanel>
 
-                <StackPanel Grid.Row="1" Grid.Column="6" Orientation="Horizontal" Spacing="8">
+                <StackPanel Grid.Row="1" Grid.Column="7" Orientation="Horizontal" Spacing="8">
                     <Button Content="Connect" Command="{Binding ConnectCommand}"
                             IsVisible="{Binding IsConnected, Converter={StaticResource InverseBool}}"
                             IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" />
@@ -71,6 +76,45 @@
                 </Grid>
             </TabItem>
 
+            <TabItem Header="Admin">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="12" Margin="0,4,0,0">
+                        <Border Padding="10" CornerRadius="8" BorderThickness="1"
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Operator Access" FontWeight="SemiBold" />
+                                <TextBlock Text="Browser admin uses account-backed sessions. Companion should use operator account tokens and only fall back to the shared bootstrap token for breakglass work." TextWrapping="Wrap" />
+                                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                                    <TextBox Grid.Column="0" Text="{Binding Username}" Watermark="Username" />
+                                    <TextBox Grid.Column="1" Text="{Binding Password}" PasswordChar="•" Watermark="Password" />
+                                    <TextBox Grid.Column="2" Text="{Binding OperatorTokenLabel}" Watermark="Token label" />
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Issue Operator Token" Command="{Binding IssueOperatorTokenCommand}"
+                                            IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" />
+                                    <Button Content="Reload Status" Command="{Binding LoadAdminStatusCommand}"
+                                            IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding AdminStatus}" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding OperatorIdentity, StringFormat=Identity: {0}}" />
+                                <TextBlock Text="{Binding OperatorRole, StringFormat=Role: {0}}" />
+                                <TextBlock Text="{Binding OperatorAuthMode, StringFormat=Auth mode: {0}}" />
+                                <TextBlock Text="{Binding IsBootstrapAdmin, StringFormat=Bootstrap admin: {0}}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Padding="10" CornerRadius="8" BorderThickness="1"
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Deployment Status" FontWeight="SemiBold" />
+                                <TextBox Text="{Binding DeploymentStatus}" IsReadOnly="True" AcceptsReturn="True"
+                                         TextWrapping="Wrap" MinHeight="160" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <TabItem Header="WhatsApp">
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="12" Margin="0,4,0,0">
@@ -82,9 +126,9 @@
                                     <Button Grid.Column="1" Content="Reload" Command="{Binding LoadWhatsAppSetupCommand}"
                                             IsEnabled="{Binding IsWhatsAppBusy, Converter={StaticResource InverseBool}}" />
                                     <Button Grid.Column="2" Content="Save" Command="{Binding SaveWhatsAppSetupCommand}"
-                                            IsEnabled="{Binding IsWhatsAppBusy, Converter={StaticResource InverseBool}}" />
+                                            IsEnabled="{Binding CanManageAdmin}" />
                                     <Button Grid.Column="3" Content="Restart" Command="{Binding RestartWhatsAppCommand}"
-                                            IsEnabled="{Binding IsConnected}" />
+                                            IsEnabled="{Binding CanManageAdmin}" />
                                 </Grid>
                                 <TextBlock Text="{Binding WhatsAppActiveBackend, StringFormat=Active backend: {0}}" />
                                 <TextBlock Text="{Binding WhatsAppDerivedWebhookUrl, StringFormat=Derived webhook URL: {0}}" TextWrapping="Wrap" />

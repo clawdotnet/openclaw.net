@@ -14,7 +14,12 @@ internal sealed class BrowserSessionAuthService
         string SessionId,
         string CsrfToken,
         DateTimeOffset ExpiresAtUtc,
-        bool Persistent);
+        bool Persistent,
+        string Role,
+        string? AccountId,
+        string? Username,
+        string? DisplayName,
+        bool IsBootstrapAdmin);
 
     private readonly ConcurrentDictionary<string, SessionState> _sessions = new(StringComparer.Ordinal);
     private readonly GatewayConfig _config;
@@ -24,7 +29,7 @@ internal sealed class BrowserSessionAuthService
         _config = config;
     }
 
-    public BrowserSessionTicket Create(bool remember)
+    public BrowserSessionTicket Create(bool remember, OperatorIdentitySnapshot? identity = null)
     {
         CleanupExpired();
 
@@ -32,9 +37,32 @@ internal sealed class BrowserSessionAuthService
         var csrfToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         var lifetime = GetLifetime(remember);
         var expiresAtUtc = DateTimeOffset.UtcNow.Add(lifetime);
+        var effectiveIdentity = identity ?? new OperatorIdentitySnapshot
+        {
+            AuthMode = "browser-session",
+            Role = OperatorRoleNames.Admin
+        };
 
-        _sessions[sessionId] = new SessionState(sessionId, csrfToken, expiresAtUtc, remember);
-        return new BrowserSessionTicket(sessionId, csrfToken, expiresAtUtc, remember);
+        _sessions[sessionId] = new SessionState(
+            sessionId,
+            csrfToken,
+            expiresAtUtc,
+            remember,
+            OperatorRoleNames.Normalize(effectiveIdentity.Role),
+            effectiveIdentity.AccountId,
+            effectiveIdentity.Username,
+            effectiveIdentity.DisplayName,
+            effectiveIdentity.IsBootstrapAdmin);
+        return new BrowserSessionTicket(
+            sessionId,
+            csrfToken,
+            expiresAtUtc,
+            remember,
+            OperatorRoleNames.Normalize(effectiveIdentity.Role),
+            effectiveIdentity.AccountId,
+            effectiveIdentity.Username,
+            effectiveIdentity.DisplayName,
+            effectiveIdentity.IsBootstrapAdmin);
     }
 
     public bool TryAuthorize(HttpContext ctx, bool requireCsrf, out BrowserSessionTicket? ticket)
@@ -65,7 +93,16 @@ internal sealed class BrowserSessionAuthService
         var lifetime = GetLifetime(state.Persistent);
         var refreshed = state with { ExpiresAtUtc = DateTimeOffset.UtcNow.Add(lifetime) };
         _sessions[sessionId] = refreshed;
-        ticket = new BrowserSessionTicket(refreshed.SessionId, refreshed.CsrfToken, refreshed.ExpiresAtUtc, refreshed.Persistent);
+        ticket = new BrowserSessionTicket(
+            refreshed.SessionId,
+            refreshed.CsrfToken,
+            refreshed.ExpiresAtUtc,
+            refreshed.Persistent,
+            refreshed.Role,
+            refreshed.AccountId,
+            refreshed.Username,
+            refreshed.DisplayName,
+            refreshed.IsBootstrapAdmin);
         return true;
     }
 
@@ -134,4 +171,9 @@ internal sealed record BrowserSessionTicket(
     string SessionId,
     string CsrfToken,
     DateTimeOffset ExpiresAtUtc,
-    bool Persistent);
+    bool Persistent,
+    string Role,
+    string? AccountId,
+    string? Username,
+    string? DisplayName,
+    bool IsBootstrapAdmin);

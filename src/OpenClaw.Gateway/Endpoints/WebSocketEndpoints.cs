@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using OpenClaw.Core.Security;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
 using OpenClaw.Core.Models;
@@ -77,7 +78,7 @@ internal static class WebSocketEndpoints
             return false;
         }
 
-        if (startup.IsNonLoopbackBind && !EndpointHelpers.IsAuthorizedRequest(ctx, startup.Config, startup.IsNonLoopbackBind))
+        if (startup.IsNonLoopbackBind && !IsAuthorizedTokenRequest(ctx, startup))
         {
             ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return false;
@@ -90,6 +91,29 @@ internal static class WebSocketEndpoints
         }
 
         return true;
+    }
+
+    private static bool IsAuthorizedTokenRequest(HttpContext ctx, GatewayStartupContext startup)
+    {
+        if (!startup.IsNonLoopbackBind)
+            return true;
+
+        var token = GatewaySecurity.GetToken(ctx, startup.Config.Security.AllowQueryStringToken);
+        if (string.IsNullOrWhiteSpace(token))
+            return false;
+
+        var policy = ctx.RequestServices.GetService<OrganizationPolicyService>()?.GetSnapshot() ?? new OrganizationPolicySnapshot();
+        if (policy.BootstrapTokenEnabled &&
+            policy.AllowedAuthModes.Any(mode => string.Equals(mode, OrganizationAuthModeNames.BootstrapToken, StringComparison.OrdinalIgnoreCase)) &&
+            GatewaySecurity.IsTokenValid(token, startup.Config.AuthToken!))
+        {
+            return true;
+        }
+
+        var operatorAccounts = ctx.RequestServices.GetService<OperatorAccountService>();
+        return operatorAccounts is not null &&
+               policy.AllowedAuthModes.Any(mode => string.Equals(mode, OrganizationAuthModeNames.AccountToken, StringComparison.OrdinalIgnoreCase)) &&
+               operatorAccounts.TryAuthenticateToken(token, out _);
     }
 
     private static bool IsOriginAllowed(HttpContext ctx, GatewayAppRuntime runtime)

@@ -324,6 +324,19 @@ dotnet run --project src/OpenClaw.Cli -c Release -- init --preset both
 
 `setup` writes an external config file, an adjacent env example, and prints the exact gateway launch, `--doctor`, and `admin posture` commands for the generated config.
 
+For the supported local-first launch path, continue with:
+
+```bash
+openclaw setup launch --config ~/.openclaw/config/openclaw.settings.json
+```
+
+For generated deploy artifacts on Linux and macOS:
+
+```bash
+openclaw setup service --config ~/.openclaw/config/openclaw.settings.json --platform all
+openclaw setup status --config ~/.openclaw/config/openclaw.settings.json
+```
+
 If the CLI is already on your `PATH`, the same guided entrypoint is simply:
 
 ```bash
@@ -342,6 +355,8 @@ openclaw setup channel whatsapp --config ~/.openclaw/config/openclaw.settings.js
 
 See [Quickstart Guide](docs/QUICKSTART.md), [Compatibility Guide](docs/COMPATIBILITY.md), and [User Guide](docs/USER_GUIDE.md) for the full onboarding path and supported compatibility surface.
 
+> **Breaking change**: `OPENCLAW_AUTH_TOKEN` is now the bootstrap and breakglass path, not the recommended day-to-day operator login. Use named operator accounts for browser admin access, and use operator account tokens for Companion, CLI, API, and websocket clients.
+
 Then open one of:
 
 | Surface | URL |
@@ -352,6 +367,22 @@ Then open one of:
 | Integration API | `http://127.0.0.1:18789/api/integration/status` |
 | MCP endpoint | `http://127.0.0.1:18789/mcp` |
 | OpenAI-compatible | `http://127.0.0.1:18789/v1/responses` |
+
+## Operator Auth And Deployment Surfaces
+
+- Browser admin UI at `/admin` is now account/session-first. Sign in with an operator account username and password, or use an operator account token if you are automating browser login.
+- Companion, CLI, API, and websocket clients should use operator account tokens. The gateway now exposes `POST /auth/operator-token` for credential-to-token exchange.
+- `OPENCLAW_AUTH_TOKEN` still matters on non-loopback binds, but it is intended for first-account bootstrap and emergency access.
+- Mutation access is role-gated: `viewer` is read-only, `operator` can run approvals/memory/automation/session mutations, and `admin` can manage settings, plugins, provider policy, accounts, and deployment policy.
+
+Operator setup and deploy status surfaces:
+
+- `GET /admin/setup/status`
+- `GET /admin/observability/summary`
+- `GET /admin/observability/series`
+- `GET /admin/audit/export`
+
+The built-in admin UI now includes setup status, operator accounts, organization policy, observability, audit export, and a local migration report viewer.
 
 **Other entry points:**
 
@@ -389,8 +420,23 @@ dotnet run --project src/OpenClaw.Cli -c Release -- tui
 | `OpenClaw__Llm__Provider` | `openai` | Built-in provider id (`openai`, `anthropic`, `claude`, `gemini`, `google`, `azure-openai`, `ollama`) |
 | `OpenClaw__Llm__Model` | provider-specific | Default model id for the selected provider |
 | `OPENCLAW_WORKSPACE` | — | Workspace directory for file tools |
-| `OPENCLAW_AUTH_TOKEN` | — | Auth token (required for non-loopback) |
+| `OPENCLAW_AUTH_TOKEN` | — | Bootstrap / breakglass token for non-loopback deployments |
 | `OpenClaw__Runtime__Mode` | `auto` | Runtime lane (`aot`, `jit`, or `auto`) |
+
+## Upstream Migration
+
+Use the upstream migration flow when you are translating an upstream-style OpenClaw repo into an external OpenClaw.NET config:
+
+```bash
+openclaw migrate upstream \
+  --source ./upstream-agent \
+  --target-config ~/.openclaw/config/openclaw.settings.json \
+  --report ./migration-report.json
+```
+
+Dry-run is the default. `--apply` writes translated config, imports managed `SKILL.md` packages, and writes a plugin review plan next to the target config.
+
+> **Breaking change**: bare `openclaw migrate` still exists for the legacy automation migration path. The new upstream translation flow is `openclaw migrate upstream`.
 
 **Common provider examples:**
 
@@ -553,6 +599,9 @@ See [Security Guide](SECURITY.md) for full hardening guidance and [Sandboxing Gu
 | `GET /metrics` | Runtime counters (requests, tokens, tool calls, circuit breaker) |
 | `GET /memory/retention/status` | Retention config + last sweep |
 | `POST /memory/retention/sweep` | Manual retention sweep (`?dryRun=true`) |
+| `GET /admin/observability/summary` | Aggregated approval, automation, provider, channel, and operator activity summary |
+| `GET /admin/observability/series` | Time-bucketed observability series for the same metrics |
+| `GET /admin/audit/export` | Zip bundle with tamper-evident operator audit metadata and JSONL review artifacts |
 
 All operations emit structured logs and `.NET Activity` traces with correlation IDs, exportable to OTLP collectors.
 

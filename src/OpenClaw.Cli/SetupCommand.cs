@@ -21,6 +21,12 @@ internal static class SetupCommand
         string currentDirectory,
         bool canPrompt)
     {
+        if (args.Length > 0 && string.Equals(args[0], "launch", StringComparison.OrdinalIgnoreCase))
+            return await SetupLifecycleCommand.RunLaunchAsync(args[1..], output, error, currentDirectory);
+        if (args.Length > 0 && string.Equals(args[0], "service", StringComparison.OrdinalIgnoreCase))
+            return await SetupLifecycleCommand.RunServiceAsync(args[1..], output, error, currentDirectory);
+        if (args.Length > 0 && string.Equals(args[0], "status", StringComparison.OrdinalIgnoreCase))
+            return SetupLifecycleCommand.RunStatus(args[1..], output, error);
         if (args.Length > 0 && string.Equals(args[0], "channel", StringComparison.OrdinalIgnoreCase))
             return await ChannelSetupCommand.RunAsync(args[1..], input, output, error, canPrompt);
 
@@ -346,7 +352,7 @@ internal static class SetupCommand
         return Path.Combine(directory, $"{stem}.env.example");
     }
 
-    private static string BuildReachableBaseUrl(string bindAddress, int port)
+    internal static string BuildReachableBaseUrl(string bindAddress, int port)
     {
         if (string.Equals(bindAddress, "0.0.0.0", StringComparison.Ordinal) ||
             string.Equals(bindAddress, "::", StringComparison.Ordinal) ||

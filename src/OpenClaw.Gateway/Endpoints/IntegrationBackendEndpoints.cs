@@ -21,7 +21,7 @@ internal static class IntegrationBackendEndpoints
 
         group.MapGet("", (HttpContext ctx) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration_http", requireCsrf: false);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration.read", requireCsrf: false);
             if (failure is not null)
                 return failure;
 
@@ -30,7 +30,7 @@ internal static class IntegrationBackendEndpoints
 
         group.MapGet("/{id}", (HttpContext ctx, string id) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration_http", requireCsrf: false);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration.read", requireCsrf: false);
             if (failure is not null)
                 return failure;
 
@@ -43,7 +43,7 @@ internal static class IntegrationBackendEndpoints
 
         group.MapPost("/{id}/probe", async (HttpContext ctx, string id) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration_http", requireCsrf: true);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration.mutate", requireCsrf: true);
             if (failure is not null)
                 return failure;
 
@@ -61,7 +61,7 @@ internal static class IntegrationBackendEndpoints
 
         group.MapPost("/{id}/sessions", async (HttpContext ctx, string id) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration_http", requireCsrf: true);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration.mutate", requireCsrf: true);
             if (failure is not null)
                 return failure;
 
@@ -82,7 +82,7 @@ internal static class IntegrationBackendEndpoints
 
         group.MapPost("/{id}/sessions/{sessionId}/input", async (HttpContext ctx, string id, string sessionId) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration_http", requireCsrf: true);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration.mutate", requireCsrf: true);
             if (failure is not null)
                 return failure;
 
@@ -104,7 +104,7 @@ internal static class IntegrationBackendEndpoints
 
         group.MapDelete("/{id}/sessions/{sessionId}", async (HttpContext ctx, string id, string sessionId) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration_http", requireCsrf: true);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration.mutate", requireCsrf: true);
             if (failure is not null)
                 return failure;
 
@@ -114,7 +114,7 @@ internal static class IntegrationBackendEndpoints
 
         group.MapGet("/{id}/sessions/{sessionId}", async (HttpContext ctx, string id, string sessionId) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration_http", requireCsrf: false);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration.read", requireCsrf: false);
             if (failure is not null)
                 return failure;
 
@@ -127,7 +127,7 @@ internal static class IntegrationBackendEndpoints
 
         group.MapGet("/{id}/sessions/{sessionId}/events", async (HttpContext ctx, string id, string sessionId) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration_http", requireCsrf: false);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration.read", requireCsrf: false);
             if (failure is not null)
                 return failure;
 
@@ -150,7 +150,7 @@ internal static class IntegrationBackendEndpoints
 
         group.MapGet("/{id}/sessions/{sessionId}/events/stream", async (HttpContext ctx, string id, string sessionId) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration_http", requireCsrf: false);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, "integration.read", requireCsrf: false);
             if (failure is not null)
                 return failure;
 
@@ -240,6 +240,14 @@ internal static class IntegrationBackendEndpoints
         var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf);
         if (!auth.IsAuthorized)
             return Results.Unauthorized();
+
+        if (!EndpointHelpers.IsRoleAllowed(auth.Role, endpointScope, out var requiredRole))
+        {
+            return Results.Json(
+                new OperationStatusResponse { Success = false, Error = $"Endpoint '{endpointScope}' requires role '{requiredRole}'." },
+                CoreJsonContext.Default.OperationStatusResponse,
+                statusCode: StatusCodes.Status403Forbidden);
+        }
 
         if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, runtime.Operations, auth, endpointScope, out var blockedByPolicyId))
         {

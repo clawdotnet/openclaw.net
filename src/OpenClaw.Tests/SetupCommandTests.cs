@@ -205,10 +205,95 @@ public sealed class SetupCommandTests
         }
     }
 
+    [Fact]
+    public async Task RunAsync_ServiceAndStatus_WriteAndReportArtifacts()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var configPath = Path.Combine(root, "config", "openclaw.settings.json");
+            var workspace = Path.Combine(root, "workspace");
+            using var setupOutput = new StringWriter();
+            using var setupError = new StringWriter();
+
+            var setupExitCode = await SetupCommand.RunAsync(
+                [
+                    "--non-interactive",
+                    "--profile", "public",
+                    "--config", configPath,
+                    "--workspace", workspace,
+                    "--provider", "openai",
+                    "--model", "gpt-4o",
+                    "--api-key", "env:OPENAI_API_KEY"
+                ],
+                new StringReader(string.Empty),
+                setupOutput,
+                setupError,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, setupExitCode);
+
+            using var serviceOutput = new StringWriter();
+            using var serviceError = new StringWriter();
+            var serviceExitCode = await SetupCommand.RunAsync(
+                ["service", "--config", configPath, "--platform", "all"],
+                new StringReader(string.Empty),
+                serviceOutput,
+                serviceError,
+                LocateRepoRoot(),
+                canPrompt: false);
+
+            Assert.Equal(0, serviceExitCode);
+            Assert.Equal(string.Empty, serviceError.ToString());
+
+            var deployDir = Path.Combine(root, "config", "deploy");
+            Assert.True(File.Exists(Path.Combine(deployDir, "openclaw-gateway.service")));
+            Assert.True(File.Exists(Path.Combine(deployDir, "openclaw-companion.service")));
+            Assert.True(File.Exists(Path.Combine(deployDir, "ai.openclaw.gateway.plist")));
+            Assert.True(File.Exists(Path.Combine(deployDir, "ai.openclaw.companion.plist")));
+            Assert.True(File.Exists(Path.Combine(deployDir, "Caddyfile")));
+
+            using var statusOutput = new StringWriter();
+            using var statusError = new StringWriter();
+            var statusExitCode = await SetupCommand.RunAsync(
+                ["status", "--config", configPath],
+                new StringReader(string.Empty),
+                statusOutput,
+                statusError,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, statusExitCode);
+            Assert.Equal(string.Empty, statusError.ToString());
+            var statusText = statusOutput.ToString();
+            Assert.Contains("Gateway systemd unit: present", statusText, StringComparison.Ordinal);
+            Assert.Contains("Caddy reverse proxy recipe: present", statusText, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTempRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "openclaw-setup-tests", Guid.NewGuid().ToString("n"));
         Directory.CreateDirectory(root);
         return root;
+    }
+
+    private static string LocateRepoRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "src", "OpenClaw.Gateway", "OpenClaw.Gateway.csproj")))
+                return directory.FullName;
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not locate the repository root.");
     }
 }

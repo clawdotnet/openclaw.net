@@ -128,6 +128,14 @@ internal static class AdminBackendEndpoints
         if (!auth.IsAuthorized)
             return Results.Unauthorized();
 
+        if (!EndpointHelpers.IsRoleAllowed(auth.Role, endpointScope, out var requiredRole))
+        {
+            return Results.Json(
+                new OperationStatusResponse { Success = false, Error = $"Endpoint '{endpointScope}' requires role '{requiredRole}'." },
+                CoreJsonContext.Default.OperationStatusResponse,
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
         if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, runtime.Operations, auth, endpointScope, out var blockedByPolicyId))
         {
             return Results.Json(

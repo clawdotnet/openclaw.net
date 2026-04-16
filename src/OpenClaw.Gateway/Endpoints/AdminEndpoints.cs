@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using System.Globalization;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Plugins;
@@ -32,6 +33,8 @@ internal static class AdminEndpoints
         GatewayAppRuntime runtime)
     {
         var browserSessions = app.Services.GetRequiredService<BrowserSessionAuthService>();
+        var operatorAccounts = app.Services.GetRequiredService<OperatorAccountService>();
+        var organizationPolicy = app.Services.GetRequiredService<OrganizationPolicyService>();
         var adminSettings = app.Services.GetRequiredService<AdminSettingsService>();
         var pluginAdminSettings = app.Services.GetRequiredService<PluginAdminSettingsService>();
         var heartbeat = app.Services.GetRequiredService<HeartbeatService>();
@@ -44,6 +47,7 @@ internal static class AdminEndpoints
         var automationService = FeatureFallbackServices.ResolveAutomationService(startup, app.Services, heartbeat, fallbackFeatureStore);
         var learningService = FeatureFallbackServices.ResolveLearningService(startup, app.Services, fallbackFeatureStore);
         var facade = IntegrationApiFacade.Create(startup, runtime, app.Services);
+        var observability = new AdminObservabilityService(startup, runtime, automationService, organizationPolicy);
         var sessionAdminStore = app.Services.GetRequiredService<ISessionAdminStore>();
         var operations = runtime.Operations;
         var modelEvaluationRunner = app.Services.GetService<ModelEvaluationRunner>()
@@ -55,43 +59,15 @@ internal static class AdminEndpoints
 
         app.MapGet("/auth/session", (HttpContext ctx) =>
         {
-            if (!startup.IsNonLoopbackBind)
-            {
-                return Results.Json(new AuthSessionResponse
-                {
-                    AuthMode = "loopback-open",
-                    Persistent = false
-                }, CoreJsonContext.Default.AuthSessionResponse);
-            }
-
-            if (browserSessions.TryAuthorize(ctx, requireCsrf: false, out var browserTicket))
-            {
-                return Results.Json(new AuthSessionResponse
-                {
-                    AuthMode = "browser-session",
-                    CsrfToken = browserTicket!.CsrfToken,
-                    ExpiresAtUtc = browserTicket.ExpiresAtUtc,
-                    Persistent = browserTicket.Persistent
-                }, CoreJsonContext.Default.AuthSessionResponse);
-            }
-
-            var token = GatewaySecurity.GetToken(ctx, startup.Config.Security.AllowQueryStringToken);
-            if (!GatewaySecurity.IsTokenValid(token, startup.Config.AuthToken!))
+            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
+            if (!auth.IsAuthorized)
                 return Results.Unauthorized();
 
-            return Results.Json(new AuthSessionResponse
-            {
-                AuthMode = "bearer",
-                Persistent = false
-            }, CoreJsonContext.Default.AuthSessionResponse);
+            return Results.Json(MapAuthSessionResponse(auth), CoreJsonContext.Default.AuthSessionResponse);
         });
 
         app.MapPost("/auth/session", async (HttpContext ctx) =>
         {
-            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
-            if (!auth.IsAuthorized || (startup.IsNonLoopbackBind && !string.Equals(auth.AuthMode, "bearer", StringComparison.Ordinal)))
-                return Results.Unauthorized();
-
             AuthSessionRequest? request = null;
             if (ctx.Request.ContentLength is > 0)
             {
@@ -102,16 +78,119 @@ internal static class AdminEndpoints
                 request = authRequest.Value;
             }
 
-            var ticket = browserSessions.Create(request?.Remember ?? false);
+            var policy = organizationPolicy.GetSnapshot();
+            if (!policy.AllowedAuthModes.Any(mode => string.Equals(mode, OrganizationAuthModeNames.BrowserSession, StringComparison.OrdinalIgnoreCase)))
+            {
+                return Results.Json(
+                    new OperationStatusResponse
+                    {
+                        Success = false,
+                        Error = "Browser sessions are disabled by organization policy."
+                    },
+                    CoreJsonContext.Default.OperationStatusResponse,
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            OperatorIdentitySnapshot? identity = null;
+            if (!string.IsNullOrWhiteSpace(request?.Username) || !string.IsNullOrWhiteSpace(request?.Password))
+            {
+                if (!operatorAccounts.TryAuthenticatePassword(request?.Username ?? "", request?.Password ?? "", out identity))
+                    return Results.Unauthorized();
+            }
+            else if (!string.IsNullOrWhiteSpace(request?.AccountToken))
+            {
+                if (!policy.AllowedAuthModes.Any(mode => string.Equals(mode, OrganizationAuthModeNames.AccountToken, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return Results.Json(
+                        new OperationStatusResponse
+                        {
+                            Success = false,
+                            Error = "Account token login is disabled by organization policy."
+                        },
+                        CoreJsonContext.Default.OperationStatusResponse,
+                        statusCode: StatusCodes.Status403Forbidden);
+                }
+
+                if (!operatorAccounts.TryAuthenticateToken(request.AccountToken, out identity))
+                    return Results.Unauthorized();
+            }
+            else
+            {
+                var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
+                if (!auth.IsAuthorized)
+                    return Results.Unauthorized();
+
+                identity = auth.ToIdentity();
+            }
+
+            var ticket = browserSessions.Create(request?.Remember ?? false, identity);
             browserSessions.WriteCookie(ctx, ticket);
 
-            return Results.Json(new AuthSessionResponse
+            return Results.Json(
+                new AuthSessionResponse
+                {
+                    AuthMode = "browser-session",
+                    CsrfToken = ticket.CsrfToken,
+                    ExpiresAtUtc = ticket.ExpiresAtUtc,
+                    Persistent = ticket.Persistent,
+                    Role = ticket.Role,
+                    AccountId = ticket.AccountId,
+                    Username = ticket.Username,
+                    DisplayName = ticket.DisplayName,
+                    IsBootstrapAdmin = ticket.IsBootstrapAdmin
+                },
+                CoreJsonContext.Default.AuthSessionResponse);
+        });
+
+        app.MapPost("/auth/operator-token", async (HttpContext ctx) =>
+        {
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.OperatorTokenExchangeRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+            if (requestPayload.Value is null)
+                return Results.BadRequest(new OperationStatusResponse { Success = false, Error = "Username and password are required." });
+
+            var policy = organizationPolicy.GetSnapshot();
+            if (!policy.AllowedAuthModes.Any(mode => string.Equals(mode, OrganizationAuthModeNames.AccountToken, StringComparison.OrdinalIgnoreCase)))
             {
-                AuthMode = "browser-session",
-                CsrfToken = ticket.CsrfToken,
-                ExpiresAtUtc = ticket.ExpiresAtUtc,
-                Persistent = ticket.Persistent
-            }, CoreJsonContext.Default.AuthSessionResponse);
+                return Results.Json(
+                    new OperationStatusResponse
+                    {
+                        Success = false,
+                        Error = "Account token auth is disabled by organization policy."
+                    },
+                    CoreJsonContext.Default.OperationStatusResponse,
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            OperatorTokenExchangeResponse? created;
+            try
+            {
+                created = operatorAccounts.CreateTokenFromCredentials(requestPayload.Value);
+            }
+            catch (InvalidOperationException)
+            {
+                created = null;
+            }
+
+            if (created is null || created.Account is null)
+                return Results.Unauthorized();
+
+            operations.OperatorAudit.Append(new OperatorAuditEntry
+            {
+                Id = $"audit_{Guid.NewGuid():N}"[..20],
+                TimestampUtc = DateTimeOffset.UtcNow,
+                ActorId = $"account:{created.Account.Id}",
+                ActorRole = created.Account.Role,
+                ActorDisplayName = string.IsNullOrWhiteSpace(created.Account.DisplayName) ? created.Account.Username : created.Account.DisplayName,
+                AuthMode = OrganizationAuthModeNames.AccountToken,
+                ActionType = "operator_token_exchange",
+                TargetId = created.Account.Id,
+                Summary = $"Issued operator token '{created.TokenInfo?.Id}' for '{created.Account.Username}'.",
+                Success = true
+            });
+
+            return Results.Json(created, CoreJsonContext.Default.OperatorTokenExchangeResponse);
         });
 
         app.MapDelete("/auth/session", (HttpContext ctx) =>
@@ -127,6 +206,212 @@ internal static class AdminEndpoints
                 Success = true,
                 Message = "Browser session cleared."
             });
+        });
+
+        app.MapGet("/admin/operator-accounts", (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.operator-accounts");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            return Results.Json(
+                new OperatorAccountListResponse { Items = operatorAccounts.List() },
+                CoreJsonContext.Default.OperatorAccountListResponse);
+        });
+
+        app.MapPost("/admin/operator-accounts", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.operator-accounts.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.OperatorAccountCreateRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+            if (requestPayload.Value is null)
+                return Results.BadRequest(new MutationResponse { Success = false, Error = "Request body is required." });
+
+            try
+            {
+                var created = operatorAccounts.Create(requestPayload.Value);
+                RecordOperatorAudit(ctx, operations, auth, "operator_account_create", created.Id, $"Created operator account '{created.Username}'.", success: true, before: null, after: created);
+                return Results.Json(
+                    new OperatorAccountDetailResponse
+                    {
+                        Account = created,
+                        Tokens = []
+                    },
+                    CoreJsonContext.Default.OperatorAccountDetailResponse,
+                    statusCode: StatusCodes.Status201Created);
+            }
+            catch (Exception ex)
+            {
+                RecordOperatorAudit(ctx, operations, auth, "operator_account_create", requestPayload.Value.Username ?? "unknown", ex.Message, success: false, before: null, after: requestPayload.Value);
+                return Results.Json(
+                    new MutationResponse { Success = false, Error = ex.Message },
+                    CoreJsonContext.Default.MutationResponse,
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+        });
+
+        app.MapGet("/admin/operator-accounts/{id}", (HttpContext ctx, string id) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.operator-accounts");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var detail = operatorAccounts.Get(id);
+            if (detail is null)
+            {
+                return Results.Json(
+                    new MutationResponse { Success = false, Error = "Operator account not found." },
+                    CoreJsonContext.Default.MutationResponse,
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
+            return Results.Json(detail, CoreJsonContext.Default.OperatorAccountDetailResponse);
+        });
+
+        app.MapPut("/admin/operator-accounts/{id}", async (HttpContext ctx, string id) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.operator-accounts.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var before = operatorAccounts.Get(id);
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.OperatorAccountUpdateRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+            if (requestPayload.Value is null)
+                return Results.BadRequest(new MutationResponse { Success = false, Error = "Request body is required." });
+
+            try
+            {
+                var updated = operatorAccounts.Update(id, requestPayload.Value);
+                if (updated is null)
+                {
+                    return Results.Json(
+                        new MutationResponse { Success = false, Error = "Operator account not found." },
+                        CoreJsonContext.Default.MutationResponse,
+                        statusCode: StatusCodes.Status404NotFound);
+                }
+
+                RecordOperatorAudit(ctx, operations, auth, "operator_account_update", id, $"Updated operator account '{updated.Username}'.", success: true, before, after: updated);
+                return Results.Json(
+                    new OperatorAccountDetailResponse
+                    {
+                        Account = updated,
+                        Tokens = operatorAccounts.Get(id)?.Tokens ?? []
+                    },
+                    CoreJsonContext.Default.OperatorAccountDetailResponse);
+            }
+            catch (Exception ex)
+            {
+                RecordOperatorAudit(ctx, operations, auth, "operator_account_update", id, ex.Message, success: false, before, after: requestPayload.Value);
+                return Results.Json(
+                    new MutationResponse { Success = false, Error = ex.Message },
+                    CoreJsonContext.Default.MutationResponse,
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+        });
+
+        app.MapDelete("/admin/operator-accounts/{id}", (HttpContext ctx, string id) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.operator-accounts.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var before = operatorAccounts.Get(id);
+            var deleted = operatorAccounts.Delete(id);
+            RecordOperatorAudit(ctx, operations, auth, "operator_account_delete", id, deleted ? $"Deleted operator account '{id}'." : $"Operator account '{id}' was not found.", deleted, before, after: null);
+            return Results.Json(
+                new MutationResponse { Success = deleted, Error = deleted ? null : "Operator account not found." },
+                CoreJsonContext.Default.MutationResponse,
+                statusCode: deleted ? StatusCodes.Status200OK : StatusCodes.Status404NotFound);
+        });
+
+        app.MapPost("/admin/operator-accounts/{id}/tokens", async (HttpContext ctx, string id) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.operator-accounts.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.OperatorAccountTokenCreateRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+            if (requestPayload.Value is null)
+                return Results.BadRequest(new MutationResponse { Success = false, Error = "Request body is required." });
+
+            var created = operatorAccounts.CreateToken(id, requestPayload.Value);
+            if (created is null)
+            {
+                return Results.Json(
+                    new MutationResponse { Success = false, Error = "Operator account not found." },
+                    CoreJsonContext.Default.MutationResponse,
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
+            RecordOperatorAudit(ctx, operations, auth, "operator_account_token_create", id, $"Created operator token '{created.TokenInfo?.Id}' for '{id}'.", success: true, before: null, after: created.TokenInfo);
+            return Results.Json(created, CoreJsonContext.Default.OperatorAccountTokenCreateResponse, statusCode: StatusCodes.Status201Created);
+        });
+
+        app.MapDelete("/admin/operator-accounts/{id}/tokens/{tokenId}", (HttpContext ctx, string id, string tokenId) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.operator-accounts.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var revoked = operatorAccounts.RevokeToken(id, tokenId);
+            RecordOperatorAudit(ctx, operations, auth, "operator_account_token_revoke", id, revoked ? $"Revoked operator token '{tokenId}'." : $"Operator token '{tokenId}' was not found.", revoked, before: null, after: null);
+            return Results.Json(
+                new MutationResponse { Success = revoked, Error = revoked ? null : "Operator token not found." },
+                CoreJsonContext.Default.MutationResponse,
+                statusCode: revoked ? StatusCodes.Status200OK : StatusCodes.Status404NotFound);
+        });
+
+        app.MapGet("/admin/organization-policy", (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.organization-policy");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            return Results.Json(
+                new OrganizationPolicyResponse
+                {
+                    Policy = organizationPolicy.GetSnapshot(),
+                    Message = "Organization policy loaded."
+                },
+                CoreJsonContext.Default.OrganizationPolicyResponse);
+        });
+
+        app.MapPut("/admin/organization-policy", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.organization-policy.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.OrganizationPolicySnapshot);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+            if (requestPayload.Value is null)
+                return Results.BadRequest(new MutationResponse { Success = false, Error = "Request body is required." });
+
+            var before = organizationPolicy.GetSnapshot();
+            var updated = organizationPolicy.Update(requestPayload.Value);
+            RecordOperatorAudit(ctx, operations, auth, "organization_policy_update", "organization-policy", "Updated organization policy.", success: true, before, after: updated);
+            return Results.Json(
+                new OrganizationPolicyResponse
+                {
+                    Policy = updated,
+                    Message = "Organization policy updated."
+                },
+                CoreJsonContext.Default.OrganizationPolicyResponse);
         });
 
         app.MapGet("/admin/summary", async (HttpContext ctx) =>
@@ -194,6 +479,58 @@ internal static class AdminEndpoints
             };
 
             return Results.Json(response, CoreJsonContext.Default.AdminSummaryResponse);
+        });
+
+        app.MapGet("/admin/setup/status", (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.setup.status");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            return Results.Json(
+                BuildSetupStatusResponse(startup, organizationPolicy),
+                CoreJsonContext.Default.SetupStatusResponse);
+        });
+
+        app.MapGet("/admin/observability/summary", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.observability");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var summary = await observability.BuildSummaryAsync(
+                GetQueryDateTimeOffset(ctx.Request, "fromUtc"),
+                GetQueryDateTimeOffset(ctx.Request, "toUtc"),
+                ctx.RequestAborted);
+            return Results.Json(summary, CoreJsonContext.Default.ObservabilitySummaryResponse);
+        });
+
+        app.MapGet("/admin/observability/series", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.observability");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var series = await observability.BuildSeriesAsync(
+                GetQueryDateTimeOffset(ctx.Request, "fromUtc"),
+                GetQueryDateTimeOffset(ctx.Request, "toUtc"),
+                GetQueryInt32(ctx.Request, "bucketMinutes") ?? 60,
+                ctx.RequestAborted);
+            return Results.Json(series, CoreJsonContext.Default.ObservabilitySeriesResponse);
+        });
+
+        app.MapGet("/admin/audit/export", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.audit.export");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var bytes = await observability.ExportAuditBundleAsync(
+                GetQueryDateTimeOffset(ctx.Request, "fromUtc"),
+                GetQueryDateTimeOffset(ctx.Request, "toUtc"),
+                ctx.RequestAborted);
+            var fileName = $"openclaw-audit-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.zip";
+            return Results.File(bytes, "application/zip", fileName);
         });
 
         app.MapGet("/admin/posture", (HttpContext ctx) =>
@@ -1259,6 +1596,252 @@ internal static class AdminEndpoints
                 CoreJsonContext.Default.MemoryConsoleImportResponse);
         });
 
+        app.MapGet("/admin/agent-bundle/export", async (HttpContext ctx, string? actorId = null, string? projectId = null, bool includeSettings = true, bool includeNotes = true, bool includeProfiles = true, bool includeProposals = true, bool includeAutomations = true, bool includePolicies = true, bool includeManagedSkills = true) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.agent-bundle.export");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var normalizedActorId = NormalizeOptionalValue(actorId);
+            var normalizedProjectId = NormalizeOptionalValue(projectId);
+
+            IReadOnlyList<UserProfile> profiles = [];
+            if (includeProfiles)
+            {
+                profiles = await profileStore.ListProfilesAsync(ctx.RequestAborted);
+                if (!string.IsNullOrWhiteSpace(normalizedActorId))
+                {
+                    profiles = profiles
+                        .Where(profile => string.Equals(profile.ActorId, normalizedActorId, StringComparison.OrdinalIgnoreCase))
+                        .ToArray();
+                }
+            }
+
+            IReadOnlyList<LearningProposal> proposals = [];
+            if (includeProposals)
+            {
+                proposals = await proposalStore.ListProposalsAsync(status: null, kind: null, ctx.RequestAborted);
+                if (!string.IsNullOrWhiteSpace(normalizedActorId))
+                {
+                    proposals = proposals
+                        .Where(item => ProposalMatchesActor(item, normalizedActorId))
+                        .ToArray();
+                }
+            }
+
+            IReadOnlyList<AutomationDefinition> automations = [];
+            if (includeAutomations)
+                automations = await automationService.ListAsync(ctx.RequestAborted);
+
+            IReadOnlyList<MemoryNoteItem> notes = [];
+            if (includeNotes && memoryCatalog is not null)
+            {
+                var prefixFilter = BuildMemoryPrefix(memoryClass: null, normalizedProjectId, prefixSuffix: null);
+                var entries = await memoryCatalog.ListNotesAsync(prefixFilter, 1_000, ctx.RequestAborted);
+                notes = await MaterializeMemoryNoteItemsAsync(memoryStore, entries, includeContent: true, ctx.RequestAborted);
+            }
+
+            var bundle = new AgentBundleExportBundle
+            {
+                ExportedAtUtc = DateTimeOffset.UtcNow,
+                Settings = includeSettings ? adminSettings.GetSnapshot() : null,
+                Notes = notes,
+                Profiles = profiles,
+                Proposals = proposals,
+                Automations = automations,
+                ProviderPolicies = includePolicies ? operations.ProviderPolicies.List() : [],
+                ManagedSkills = includeManagedSkills
+                    ? await ListManagedSkillBundleItemsAsync(ctx.RequestAborted)
+                    : []
+            };
+
+            return Results.Json(bundle, CoreJsonContext.Default.AgentBundleExportBundle);
+        });
+
+        app.MapPost("/admin/agent-bundle/import", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.agent-bundle.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.AgentBundleExportBundle);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+
+            var bundle = requestPayload.Value;
+            if (bundle is null)
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = "Agent bundle payload is required."
+                });
+            }
+
+            if (!string.Equals(bundle.Format, "openclaw-agent-bundle", StringComparison.Ordinal))
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = $"Unsupported agent bundle format '{bundle.Format}'."
+                });
+            }
+
+            if (bundle.Version != 1)
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = $"Unsupported agent bundle version '{bundle.Version}'."
+                });
+            }
+
+            var invalidNoteKeys = bundle.Notes
+                .Where(static note => !string.IsNullOrWhiteSpace(note.Key) && note.Content is not null)
+                .Select(static note => new { note.Key, Error = InputSanitizer.CheckMemoryKey(note.Key) })
+                .Where(static item => item.Error is not null)
+                .ToArray();
+            if (invalidNoteKeys.Length > 0)
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = $"Agent bundle contains invalid note keys: {string.Join(", ", invalidNoteKeys.Select(static item => item.Key))}."
+                });
+            }
+
+            if (bundle.ManagedSkills.Any(static skill => string.IsNullOrWhiteSpace(skill.Name) || string.IsNullOrWhiteSpace(skill.Content)))
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = "Agent bundle contains managed skills with missing name or content."
+                });
+            }
+
+            var settingsImported = false;
+            if (bundle.Settings is not null)
+            {
+                var settingsResult = adminSettings.Update(bundle.Settings);
+                if (!settingsResult.Success)
+                {
+                    return Results.Json(
+                        new AgentBundleImportResponse
+                        {
+                            Success = false,
+                            Version = bundle.Version,
+                            Message = settingsResult.Errors.Count > 0
+                                ? string.Join("; ", settingsResult.Errors)
+                                : "Agent bundle settings validation failed."
+                        },
+                        CoreJsonContext.Default.AgentBundleImportResponse,
+                        statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                settingsImported = true;
+            }
+
+            var notesImported = 0;
+            var profilesImported = 0;
+            var proposalsImported = 0;
+            var automationsImported = 0;
+            var providerPoliciesImported = 0;
+            var managedSkillsImported = 0;
+
+            foreach (var note in bundle.Notes.Where(static note => !string.IsNullOrWhiteSpace(note.Key) && note.Content is not null))
+            {
+                await memoryStore.SaveNoteAsync(note.Key, note.Content!, ctx.RequestAborted);
+                notesImported++;
+            }
+
+            foreach (var profile in bundle.Profiles.Where(static profile => !string.IsNullOrWhiteSpace(profile.ActorId)))
+            {
+                await profileStore.SaveProfileAsync(NormalizeProfile(profile), ctx.RequestAborted);
+                profilesImported++;
+            }
+
+            foreach (var proposal in bundle.Proposals.Where(static proposal => !string.IsNullOrWhiteSpace(proposal.Id)))
+            {
+                await proposalStore.SaveProposalAsync(proposal, ctx.RequestAborted);
+                proposalsImported++;
+            }
+
+            foreach (var automation in bundle.Automations.Where(static automation => !string.IsNullOrWhiteSpace(automation.Id)))
+            {
+                await automationService.SaveAsync(automation, ctx.RequestAborted);
+                automationsImported++;
+            }
+
+            foreach (var policy in bundle.ProviderPolicies.Where(static policy => !string.IsNullOrWhiteSpace(policy.ProviderId) && !string.IsNullOrWhiteSpace(policy.ModelId)))
+            {
+                operations.ProviderPolicies.AddOrUpdate(policy);
+                providerPoliciesImported++;
+            }
+
+            var shouldReloadSkills = false;
+            foreach (var managedSkill in bundle.ManagedSkills)
+            {
+                await SaveManagedSkillBundleItemAsync(managedSkill, ctx.RequestAborted);
+                managedSkillsImported++;
+                shouldReloadSkills = true;
+            }
+
+            if (shouldReloadSkills)
+            {
+                await runtime.AgentRuntime.ReloadSkillsAsync(ctx.RequestAborted);
+                runtime.LoadedSkills = LoadCurrentSkillDefinitions(startup, runtime);
+            }
+
+            operations.RuntimeEvents.Append(new RuntimeEventEntry
+            {
+                Id = $"evt_{Guid.NewGuid():N}"[..20],
+                TimestampUtc = DateTimeOffset.UtcNow,
+                Component = "agent-bundle",
+                Action = "imported",
+                Severity = "info",
+                Summary = $"Imported agent bundle v{bundle.Version} with {notesImported} notes, {profilesImported} profiles, {proposalsImported} proposals, {automationsImported} automations, {providerPoliciesImported} provider policies, and {managedSkillsImported} managed skills."
+            });
+            RecordOperatorAudit(
+                ctx,
+                operations,
+                auth,
+                "agent_bundle_import",
+                "agent-bundle",
+                $"Imported agent bundle v{bundle.Version}.",
+                success: true,
+                before: null,
+                after: new
+                {
+                    bundle.Version,
+                    settingsImported,
+                    notesImported,
+                    profilesImported,
+                    proposalsImported,
+                    automationsImported,
+                    providerPoliciesImported,
+                    managedSkillsImported,
+                    skillsReloaded = shouldReloadSkills
+                });
+
+            return Results.Json(
+                new AgentBundleImportResponse
+                {
+                    Success = true,
+                    Version = bundle.Version,
+                    SettingsImported = settingsImported,
+                    NotesImported = notesImported,
+                    ProfilesImported = profilesImported,
+                    ProposalsImported = proposalsImported,
+                    AutomationsImported = automationsImported,
+                    ProviderPoliciesImported = providerPoliciesImported,
+                    ManagedSkillsImported = managedSkillsImported,
+                    SkillsReloaded = shouldReloadSkills,
+                    Message = "Agent bundle imported."
+                },
+                CoreJsonContext.Default.AgentBundleImportResponse);
+        });
+
         app.MapGet("/admin/profiles", async (HttpContext ctx) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.profiles");
@@ -1551,7 +2134,7 @@ internal static class AdminEndpoints
                 CoreJsonContext.Default.ApprovalListResponse);
         });
 
-        app.MapGet("/tools/approvals/history", (HttpContext ctx, int limit = 50, string? channelId = null, string? senderId = null, string? toolName = null) =>
+        app.MapGet("/tools/approvals/history", (HttpContext ctx, int limit = 50, string? channelId = null, string? senderId = null, string? toolName = null, DateTimeOffset? fromUtc = null, DateTimeOffset? toUtc = null) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.approvals.history");
             if (authResult.Failure is not null)
@@ -1562,7 +2145,9 @@ internal static class AdminEndpoints
                 Limit = limit,
                 ChannelId = channelId,
                 SenderId = senderId,
-                ToolName = toolName
+                ToolName = toolName,
+                FromUtc = fromUtc,
+                ToUtc = toUtc
             });
 
             return Results.Json(new ApprovalHistoryResponse { Items = items }, CoreJsonContext.Default.ApprovalHistoryResponse);
@@ -1702,7 +2287,7 @@ internal static class AdminEndpoints
             return Results.Json(new MutationResponse { Success = true, Message = "Provider circuit reset." }, CoreJsonContext.Default.MutationResponse);
         });
 
-        app.MapGet("/admin/events", (HttpContext ctx, int limit = 100, string? sessionId = null, string? channelId = null, string? senderId = null, string? component = null, string? action = null) =>
+        app.MapGet("/admin/events", (HttpContext ctx, int limit = 100, string? sessionId = null, string? channelId = null, string? senderId = null, string? component = null, string? action = null, DateTimeOffset? fromUtc = null, DateTimeOffset? toUtc = null) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.events");
             if (authResult.Failure is not null)
@@ -1715,7 +2300,9 @@ internal static class AdminEndpoints
                 ChannelId = channelId,
                 SenderId = senderId,
                 Component = component,
-                Action = action
+                Action = action,
+                FromUtc = fromUtc,
+                ToUtc = toUtc
             });
 
             return Results.Json(new RuntimeEventListResponse { Items = items }, CoreJsonContext.Default.RuntimeEventListResponse);
@@ -1847,9 +2434,11 @@ internal static class AdminEndpoints
             if (authResult.Failure is not null)
                 return authResult.Failure;
 
+            var loadedSkills = LoadCurrentSkillDefinitions(startup, runtime);
+            runtime.LoadedSkills = loadedSkills;
             return Results.Json(new SkillListResponse
             {
-                Items = runtime.LoadedSkills
+                Items = loadedSkills
                     .Select(MapSkillHealthSnapshot)
                     .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
                     .ToArray()
@@ -2064,7 +2653,7 @@ internal static class AdminEndpoints
             }
         });
 
-        app.MapGet("/admin/audit", (HttpContext ctx, int limit = 100, string? actorId = null, string? actionType = null, string? targetId = null) =>
+        app.MapGet("/admin/audit", (HttpContext ctx, int limit = 100, string? actorId = null, string? actionType = null, string? targetId = null, DateTimeOffset? fromUtc = null, DateTimeOffset? toUtc = null) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.audit");
             if (authResult.Failure is not null)
@@ -2077,7 +2666,9 @@ internal static class AdminEndpoints
                     Limit = limit,
                     ActorId = actorId,
                     ActionType = actionType,
-                    TargetId = targetId
+                    TargetId = targetId,
+                    FromUtc = fromUtc,
+                    ToUtc = toUtc
                 })
             }, CoreJsonContext.Default.OperatorAuditListResponse);
         });
@@ -2300,7 +2891,7 @@ internal static class AdminEndpoints
 
         app.MapPut("/admin/channels/whatsapp/setup", async (HttpContext ctx) =>
         {
-            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.channels.auth");
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.channels.auth.mutate");
             if (authResult.Failure is not null)
                 return authResult.Failure;
             var auth = authResult.Authorization!;
@@ -2364,7 +2955,7 @@ internal static class AdminEndpoints
 
         app.MapPost("/admin/channels/whatsapp/restart", async (HttpContext ctx) =>
         {
-            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.channels.auth");
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.channels.auth.restart");
             if (authResult.Failure is not null)
                 return authResult.Failure;
             var auth = authResult.Authorization!;
@@ -2490,6 +3081,18 @@ internal static class AdminEndpoints
         if (!auth.IsAuthorized)
             return (null, Results.Unauthorized());
 
+        if (!EndpointHelpers.IsRoleAllowed(auth.Role, endpointScope, out var requiredRole))
+        {
+            return (null, Results.Json(
+                new OperationStatusResponse
+                {
+                    Success = false,
+                    Error = $"Endpoint '{endpointScope}' requires role '{requiredRole}'."
+                },
+                CoreJsonContext.Default.OperationStatusResponse,
+                statusCode: StatusCodes.Status403Forbidden));
+        }
+
         if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, endpointScope, out var blockedByPolicyId))
         {
             return (null, Results.Json(
@@ -2521,6 +3124,8 @@ internal static class AdminEndpoints
             Id = $"audit_{Guid.NewGuid():N}"[..20],
             ActorId = EndpointHelpers.GetOperatorActorId(ctx, auth),
             AuthMode = auth.AuthMode,
+            ActorRole = auth.Role,
+            ActorDisplayName = auth.DisplayName ?? auth.Username,
             ActionType = actionType,
             TargetId = string.IsNullOrWhiteSpace(targetId) ? "unknown" : targetId,
             Summary = summary,
@@ -2528,6 +3133,107 @@ internal static class AdminEndpoints
             After = SerializeAuditValue(after),
             Success = success
         });
+    }
+
+    private static AuthSessionResponse MapAuthSessionResponse(EndpointHelpers.OperatorAuthorizationResult auth)
+        => new()
+        {
+            AuthMode = auth.AuthMode,
+            CsrfToken = auth.BrowserSession?.CsrfToken,
+            ExpiresAtUtc = auth.BrowserSession?.ExpiresAtUtc,
+            Persistent = auth.BrowserSession?.Persistent ?? false,
+            Role = auth.Role,
+            AccountId = auth.AccountId,
+            Username = auth.Username,
+            DisplayName = auth.DisplayName,
+            IsBootstrapAdmin = auth.IsBootstrapAdmin
+        };
+
+    private static DateTimeOffset? GetQueryDateTimeOffset(HttpRequest request, string key)
+    {
+        if (!request.Query.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        return DateTimeOffset.TryParse(raw.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static int? GetQueryInt32(HttpRequest request, string key)
+    {
+        if (!request.Query.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        return int.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static SetupStatusResponse BuildSetupStatusResponse(
+        GatewayStartupContext startup,
+        OrganizationPolicyService organizationPolicy)
+    {
+        var policy = organizationPolicy.GetSnapshot();
+        var publicBind = startup.IsNonLoopbackBind;
+        var configDirectory = Path.GetDirectoryName(startup.Config.Memory.StoragePath)
+            ?? startup.Config.Memory.StoragePath;
+        var deployDirectory = Path.Combine(configDirectory, "deploy");
+        var warnings = new List<string>();
+        if (publicBind)
+            warnings.Add("Reverse proxy and TLS are recommended for public bind deployments.");
+        if (string.IsNullOrWhiteSpace(startup.Config.AuthToken))
+            warnings.Add("No auth token is configured.");
+
+        return new SetupStatusResponse
+        {
+            Profile = publicBind ? "public" : "local",
+            BindAddress = startup.Config.BindAddress,
+            Port = startup.Config.Port,
+            PublicBind = publicBind,
+            AuthTokenConfigured = !string.IsNullOrWhiteSpace(startup.Config.AuthToken),
+            BootstrapTokenEnabled = policy.BootstrapTokenEnabled,
+            AllowedAuthModes = [.. policy.AllowedAuthModes],
+            MinimumPluginTrustLevel = policy.MinimumPluginTrustLevel,
+            ReverseProxyRecommended = publicBind,
+            ReachableBaseUrl = BuildReachableBaseUrl(startup.Config.BindAddress, startup.Config.Port),
+            ChannelReadiness = MapChannelReadiness(ChannelReadinessEvaluator.Evaluate(startup.Config, startup.IsNonLoopbackBind)),
+            Artifacts = BuildSetupArtifacts(deployDirectory),
+            Warnings = warnings
+        };
+    }
+
+    private static IReadOnlyList<SetupArtifactStatusItem> BuildSetupArtifacts(string deployDirectory)
+    {
+        return new[]
+        {
+            ("gateway-systemd", "Gateway systemd unit", Path.Combine(deployDirectory, "openclaw-gateway.service")),
+            ("companion-systemd", "Companion systemd unit", Path.Combine(deployDirectory, "openclaw-companion.service")),
+            ("gateway-launchd", "Gateway launchd plist", Path.Combine(deployDirectory, "ai.openclaw.gateway.plist")),
+            ("companion-launchd", "Companion launchd plist", Path.Combine(deployDirectory, "ai.openclaw.companion.plist")),
+            ("caddy", "Caddy reverse proxy recipe", Path.Combine(deployDirectory, "Caddyfile"))
+        }.Select(static item => new SetupArtifactStatusItem
+        {
+            Id = item.Item1,
+            Label = item.Item2,
+            Path = item.Item3,
+            Exists = File.Exists(item.Item3),
+            Status = File.Exists(item.Item3) ? "present" : "missing"
+        }).ToArray();
+    }
+
+    private static string BuildReachableBaseUrl(string bindAddress, int port)
+    {
+        if (string.Equals(bindAddress, "0.0.0.0", StringComparison.Ordinal) ||
+            string.Equals(bindAddress, "::", StringComparison.Ordinal) ||
+            string.Equals(bindAddress, "[::]", StringComparison.Ordinal))
+        {
+            return $"http://127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        if (bindAddress.Contains(':') && !bindAddress.StartsWith("[", StringComparison.Ordinal))
+            return $"http://[{bindAddress}]:{port.ToString(CultureInfo.InvariantCulture)}";
+
+        return $"http://{bindAddress}:{port.ToString(CultureInfo.InvariantCulture)}";
     }
 
     private static async Task<IReadOnlyList<MemoryNoteItem>> ListMemoryNotesAsync(
@@ -3013,6 +3719,130 @@ internal static class AdminEndpoints
 
     private static string TrimToMaxLength(string value, int maxLength)
         => value.Length <= maxLength ? value : value[..maxLength];
+
+    private static string GetManagedSkillRoot()
+        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills");
+
+    private static async Task<IReadOnlyList<ManagedSkillBundleItem>> ListManagedSkillBundleItemsAsync(CancellationToken ct)
+    {
+        var root = GetManagedSkillRoot();
+        if (!Directory.Exists(root))
+            return [];
+
+        var items = new List<ManagedSkillBundleItem>();
+        foreach (var directory in Directory.EnumerateDirectories(root))
+        {
+            ct.ThrowIfCancellationRequested();
+            var skillPath = Path.Combine(directory, "SKILL.md");
+            if (!File.Exists(skillPath))
+                continue;
+
+            var content = await File.ReadAllTextAsync(skillPath, ct);
+            ParseManagedSkillFrontmatter(content, out var name, out var description);
+            var info = new FileInfo(skillPath);
+            items.Add(new ManagedSkillBundleItem
+            {
+                Name = string.IsNullOrWhiteSpace(name) ? Path.GetFileName(directory) : name,
+                Slug = Path.GetFileName(directory),
+                Description = description ?? string.Empty,
+                Content = content,
+                RootPath = directory,
+                UpdatedAtUtc = info.Exists ? new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero) : null
+            });
+        }
+
+        return items
+            .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static async Task SaveManagedSkillBundleItemAsync(ManagedSkillBundleItem item, CancellationToken ct)
+    {
+        var slug = SlugifySkillName(item.Slug, item.Name);
+        var root = Path.Combine(GetManagedSkillRoot(), slug);
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "SKILL.md"), item.Content, ct);
+    }
+
+    private static void ParseManagedSkillFrontmatter(string content, out string? name, out string? description)
+    {
+        name = null;
+        description = null;
+
+        var lines = content.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        if (lines.Length < 3 || !string.Equals(lines[0], "---", StringComparison.Ordinal))
+            return;
+
+        for (var i = 1; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            if (string.Equals(line, "---", StringComparison.Ordinal))
+                break;
+
+            if (line.StartsWith("name:", StringComparison.OrdinalIgnoreCase))
+                name = line["name:".Length..].Trim();
+            else if (line.StartsWith("description:", StringComparison.OrdinalIgnoreCase))
+                description = line["description:".Length..].Trim();
+        }
+    }
+
+    private static string SlugifySkillName(string? preferredSlug, string? fallbackName)
+    {
+        var source = !string.IsNullOrWhiteSpace(preferredSlug) ? preferredSlug : fallbackName;
+        if (string.IsNullOrWhiteSpace(source))
+            return "skill";
+
+        Span<char> buffer = stackalloc char[source.Length];
+        var length = 0;
+        var previousDash = false;
+
+        foreach (var ch in source)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                buffer[length++] = char.ToLowerInvariant(ch);
+                previousDash = false;
+            }
+            else if (!previousDash && length > 0)
+            {
+                buffer[length++] = '-';
+                previousDash = true;
+            }
+        }
+
+        while (length > 0 && buffer[length - 1] == '-')
+            length--;
+
+        return length == 0 ? "skill" : new string(buffer[..length]);
+    }
+
+    private static IReadOnlyList<SkillDefinition> LoadCurrentSkillDefinitions(
+        GatewayStartupContext startup,
+        GatewayAppRuntime runtime)
+    {
+        var pluginSkillDirs = runtime.LoadedSkills
+            .Where(static skill => skill.Source == SkillSource.Plugin && !string.IsNullOrWhiteSpace(skill.Location))
+            .Select(static skill => skill.Location)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var loaded = SkillLoader.LoadAll(
+            startup.Config.Skills,
+            startup.WorkspacePath,
+            NullLogger.Instance,
+            pluginSkillDirs);
+
+        var byName = loaded.ToDictionary(static skill => skill.Name, StringComparer.OrdinalIgnoreCase);
+        foreach (var skill in runtime.LoadedSkills)
+        {
+            if (!byName.ContainsKey(skill.Name))
+                byName[skill.Name] = skill;
+        }
+
+        return byName.Values
+            .OrderBy(static skill => skill.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
 
     private static bool ProposalMatchesActor(LearningProposal proposal, string actorId)
     {

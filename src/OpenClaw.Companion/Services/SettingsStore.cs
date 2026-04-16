@@ -53,6 +53,8 @@ public sealed class SettingsStore
         var toSave = new CompanionSettings
         {
             ServerUrl = settings.ServerUrl,
+            Username = settings.Username,
+            OperatorTokenLabel = settings.OperatorTokenLabel,
             RememberToken = settings.RememberToken,
             AllowPlaintextTokenFallback = settings.AllowPlaintextTokenFallback,
             DebugMode = settings.DebugMode

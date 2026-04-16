@@ -10,6 +10,8 @@ Registry mirrors for the same published image:
 
 This image runs the gateway on port `18789` and persists memory under `/app/memory`.
 
+> **Breaking change**: `OPENCLAW_AUTH_TOKEN` is now the bootstrap and breakglass credential for the container, not the recommended day-to-day operator login. After first start, create a named operator account and use that for browser admin sessions and operator account tokens.
+
 ## Quick start
 
 ```bash
@@ -22,7 +24,16 @@ docker run -d --name openclaw \
   tellikoroma/openclaw.net:latest
 ```
 
-Open WebChat at `http://127.0.0.1:18789/chat` and paste your `OPENCLAW_AUTH_TOKEN`.
+Open the admin UI at `http://127.0.0.1:18789/admin`, use the bootstrap token once to create your first operator account, then sign in with that account for normal browser admin use.
+
+For chat-only local usage, `/chat` can still use the token flow it prompts for.
+
+If you are deploying outside Docker, the supported bootstrap path is:
+
+- `openclaw setup`
+- `openclaw setup launch`
+- `openclaw setup service`
+- `openclaw setup status`
 
 If you prefer a different registry, the equivalent commands are:
 
@@ -49,7 +60,7 @@ docker run -d --name openclaw \
 ## Required environment variables
 
 - `MODEL_PROVIDER_KEY`: your LLM provider API key.
-- `OPENCLAW_AUTH_TOKEN`: required when binding to non-loopback (the container binds `0.0.0.0` by default).
+- `OPENCLAW_AUTH_TOKEN`: bootstrap / breakglass token for the non-loopback container bind.
 
 ## Common optional environment variables
 
@@ -108,3 +119,10 @@ volumes:
 
 WebChat connects to `/ws` with a query token (`?token=`). For non-loopback binds, enable legacy query tokens if you use the built-in WebChat:
 - `OpenClaw__Security__AllowQueryStringToken=true`
+
+## Operator Auth Notes
+
+- Browser admin UI is account/session-first.
+- Companion, CLI automation, API clients, and websocket clients should use operator account tokens.
+- The gateway exposes `POST /auth/operator-token` for credential-to-token exchange.
+- Mutation access is role-gated across `viewer`, `operator`, and `admin`.

@@ -89,6 +89,10 @@ internal sealed class ApprovalAuditStore
                 if (!string.IsNullOrWhiteSpace(query.ToolName) &&
                     !string.Equals(entry.ToolName, query.ToolName, StringComparison.OrdinalIgnoreCase))
                     return false;
+                if (query.FromUtc is { } fromUtc && entry.TimestampUtc < fromUtc)
+                    return false;
+                if (query.ToUtc is { } toUtc && entry.TimestampUtc > toUtc)
+                    return false;
 
                 return true;
             },

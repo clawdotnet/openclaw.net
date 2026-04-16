@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Threading.Channels;
@@ -118,6 +119,397 @@ public sealed class GatewayAdminEndpointTests
         Assert.Equal(HttpStatusCode.OK, allowedResponse.StatusCode);
         var payload = await ReadJsonAsync(allowedResponse);
         Assert.Equal("tokens", payload.RootElement.GetProperty("settings").GetProperty("usageFooter").GetString());
+    }
+
+    [Fact]
+    public async Task AuthSession_AccountTokenFlow_ReportsIdentity()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var created = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "viewer",
+            Password = "viewer-pass",
+            Role = OperatorRoleNames.Viewer,
+            DisplayName = "Viewer One"
+        });
+        var token = operatorAccounts.CreateToken(created.Id, new OperatorAccountTokenCreateRequest { Label = "cli" });
+        Assert.NotNull(token);
+
+        using var bearerRequest = new HttpRequestMessage(HttpMethod.Get, "/auth/session");
+        bearerRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token!.Token);
+        var bearerResponse = await harness.Client.SendAsync(bearerRequest);
+        bearerResponse.EnsureSuccessStatusCode();
+        using var bearerPayload = await ReadJsonAsync(bearerResponse);
+        Assert.Equal("account_token", bearerPayload.RootElement.GetProperty("authMode").GetString());
+        Assert.Equal("viewer", bearerPayload.RootElement.GetProperty("role").GetString());
+        Assert.Equal(created.Id, bearerPayload.RootElement.GetProperty("accountId").GetString());
+        Assert.Equal("viewer", bearerPayload.RootElement.GetProperty("username").GetString());
+
+        using var loginRequest = new HttpRequestMessage(HttpMethod.Post, "/auth/session")
+        {
+            Content = JsonContent($$"""{"accountToken":"{{token.Token}}","remember":true}""")
+        };
+        var loginResponse = await harness.Client.SendAsync(loginRequest);
+        loginResponse.EnsureSuccessStatusCode();
+        using var loginPayload = await ReadJsonAsync(loginResponse);
+        Assert.Equal("browser-session", loginPayload.RootElement.GetProperty("authMode").GetString());
+        Assert.Equal("viewer", loginPayload.RootElement.GetProperty("role").GetString());
+    }
+
+    [Fact]
+    public async Task AuthOperatorToken_ExchangeAndRevocation_Work()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var created = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "operator-one",
+            Password = "operator-pass",
+            Role = OperatorRoleNames.Operator,
+            DisplayName = "Operator One"
+        });
+
+        using var exchangeRequest = new HttpRequestMessage(HttpMethod.Post, "/auth/operator-token")
+        {
+            Content = JsonContent("""{"username":"operator-one","password":"operator-pass","label":"desktop"}""")
+        };
+        var exchangeResponse = await harness.Client.SendAsync(exchangeRequest);
+        exchangeResponse.EnsureSuccessStatusCode();
+        using var exchangePayload = await ReadJsonAsync(exchangeResponse);
+        var issuedToken = exchangePayload.RootElement.GetProperty("token").GetString();
+        var tokenId = exchangePayload.RootElement.GetProperty("tokenInfo").GetProperty("id").GetString();
+        Assert.Equal("account_token", exchangePayload.RootElement.GetProperty("authMode").GetString());
+        Assert.Equal(created.Id, exchangePayload.RootElement.GetProperty("account").GetProperty("id").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(issuedToken));
+        Assert.False(string.IsNullOrWhiteSpace(tokenId));
+
+        using var sessionRequest = new HttpRequestMessage(HttpMethod.Get, "/auth/session");
+        sessionRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", issuedToken);
+        var sessionResponse = await harness.Client.SendAsync(sessionRequest);
+        sessionResponse.EnsureSuccessStatusCode();
+        using var sessionPayload = await ReadJsonAsync(sessionResponse);
+        Assert.Equal("account_token", sessionPayload.RootElement.GetProperty("authMode").GetString());
+        Assert.Equal("operator", sessionPayload.RootElement.GetProperty("role").GetString());
+        Assert.Equal("operator-one", sessionPayload.RootElement.GetProperty("username").GetString());
+
+        Assert.True(operatorAccounts.RevokeToken(created.Id, tokenId!));
+
+        using var revokedRequest = new HttpRequestMessage(HttpMethod.Get, "/auth/session");
+        revokedRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", issuedToken);
+        var revokedResponse = await harness.Client.SendAsync(revokedRequest);
+        Assert.Equal(HttpStatusCode.Unauthorized, revokedResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task ViewerRole_CannotManageOperatorAccounts()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var created = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "viewer-only",
+            Password = "viewer-pass",
+            Role = OperatorRoleNames.Viewer
+        });
+        var token = operatorAccounts.CreateToken(created.Id, new OperatorAccountTokenCreateRequest { Label = "viewer" });
+        Assert.NotNull(token);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/operator-accounts");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token!.Token);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminSetupStatus_ReportsArtifactsAndPolicy()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var policyService = harness.App.Services.GetRequiredService<OrganizationPolicyService>();
+        var admin = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "admin-user",
+            Password = "admin-pass",
+            Role = OperatorRoleNames.Admin
+        });
+        var token = operatorAccounts.CreateToken(admin.Id, new OperatorAccountTokenCreateRequest { Label = "admin" });
+        Assert.NotNull(token);
+
+        var deployDir = Path.Combine(Path.GetDirectoryName(harness.StoragePath)!, "deploy");
+        Directory.CreateDirectory(deployDir);
+        await File.WriteAllTextAsync(Path.Combine(deployDir, "Caddyfile"), "example");
+        policyService.Update(new OrganizationPolicySnapshot
+        {
+            BootstrapTokenEnabled = false,
+            AllowedAuthModes = [OrganizationAuthModeNames.BrowserSession, OrganizationAuthModeNames.AccountToken],
+            MinimumPluginTrustLevel = "reviewed",
+            ExportRetentionDays = 45
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/setup/status");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token!.Token);
+        var response = await harness.Client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        using var payload = await ReadJsonAsync(response);
+        Assert.False(payload.RootElement.GetProperty("bootstrapTokenEnabled").GetBoolean());
+        Assert.Equal("reviewed", payload.RootElement.GetProperty("minimumPluginTrustLevel").GetString());
+        Assert.Contains(
+            payload.RootElement.GetProperty("artifacts").EnumerateArray().Select(static item => item.GetProperty("id").GetString()).OfType<string>(),
+            id => id == "caddy");
+        var caddy = payload.RootElement.GetProperty("artifacts").EnumerateArray().First(item => item.GetProperty("id").GetString() == "caddy");
+        Assert.True(caddy.GetProperty("exists").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ViewerRole_CanReadObservabilityAndAuditExport_ButCannotMutateWhatsAppSetup()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Channels.WhatsApp.Enabled = true;
+        });
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var created = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "viewer-audit",
+            Password = "viewer-pass",
+            Role = OperatorRoleNames.Viewer
+        });
+        var token = operatorAccounts.CreateToken(created.Id, new OperatorAccountTokenCreateRequest { Label = "viewer" });
+        Assert.NotNull(token);
+
+        using var observabilityRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/observability/summary");
+        observabilityRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token!.Token);
+        var observabilityResponse = await harness.Client.SendAsync(observabilityRequest);
+        observabilityResponse.EnsureSuccessStatusCode();
+
+        using var exportRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/audit/export");
+        exportRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+        var exportResponse = await harness.Client.SendAsync(exportRequest);
+        exportResponse.EnsureSuccessStatusCode();
+
+        using var mutateRequest = new HttpRequestMessage(HttpMethod.Put, "/admin/channels/whatsapp/setup")
+        {
+            Content = JsonContent("""{"enabled":true,"type":"official"}""")
+        };
+        mutateRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+        var mutateResponse = await harness.Client.SendAsync(mutateRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, mutateResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminAudit_AssignsSequenceHashAndHonorsTimeFilters()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var firstTimestamp = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var secondTimestamp = DateTimeOffset.UtcNow.AddMinutes(-1);
+        harness.Runtime.Operations.OperatorAudit.Append(new OperatorAuditEntry
+        {
+            Id = "audit_first",
+            TimestampUtc = firstTimestamp,
+            ActorId = "operator:first",
+            AuthMode = "bearer",
+            ActionType = "first",
+            TargetId = "target:first",
+            Summary = "first entry",
+            Success = true
+        });
+        harness.Runtime.Operations.OperatorAudit.Append(new OperatorAuditEntry
+        {
+            Id = "audit_second",
+            TimestampUtc = secondTimestamp,
+            ActorId = "operator:second",
+            AuthMode = "bearer",
+            ActionType = "second",
+            TargetId = "target:second",
+            Summary = "second entry",
+            Success = true
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/admin/audit?fromUtc={Uri.EscapeDataString(DateTimeOffset.UtcNow.AddMinutes(-5).ToString("O"))}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        using var payload = await ReadJsonAsync(response);
+        var items = payload.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Single(items);
+        Assert.Equal("audit_second", items[0].GetProperty("id").GetString());
+        Assert.True(items[0].GetProperty("sequence").GetInt64() >= 2);
+        Assert.False(string.IsNullOrWhiteSpace(items[0].GetProperty("entryHash").GetString()));
+    }
+
+    [Fact]
+    public async Task AdminObservability_SummaryAndSeries_AggregateExistingStores()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var created = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "viewer-observe",
+            Password = "viewer-pass",
+            Role = OperatorRoleNames.Viewer,
+            DisplayName = "Viewer Observe"
+        });
+        var token = operatorAccounts.CreateToken(created.Id, new OperatorAccountTokenCreateRequest { Label = "viewer" });
+        Assert.NotNull(token);
+
+        var now = DateTimeOffset.UtcNow;
+        var request = new ToolApprovalRequest
+        {
+            ApprovalId = "approval-1",
+            SessionId = "sess-1",
+            ChannelId = "telegram",
+            SenderId = "user-1",
+            ToolName = "shell",
+            Arguments = "{\"cmd\":\"pwd\"}",
+            Action = "execute",
+            IsMutation = true,
+            Summary = "Run shell",
+            CreatedAt = now.AddMinutes(-20)
+        };
+        Assert.True(harness.Runtime.ApprovalAuditStore.RecordCreated(request));
+        Assert.True(harness.Runtime.ApprovalAuditStore.RecordDecision(request, approved: true, decisionSource: "admin_ui", actorChannelId: "web", actorSenderId: "viewer-observe"));
+
+        harness.Runtime.Operations.RuntimeEvents.Append(new RuntimeEventEntry
+        {
+            Id = "evt-1",
+            TimestampUtc = now.AddMinutes(-15),
+            SessionId = "sess-1",
+            ChannelId = "telegram",
+            SenderId = "user-1",
+            Component = "gateway",
+            Action = "provider_error",
+            Severity = "error",
+            Summary = "provider failed"
+        });
+        harness.Runtime.Operations.OperatorAudit.Append(new OperatorAuditEntry
+        {
+            Id = "audit-observe",
+            TimestampUtc = now.AddMinutes(-10),
+            ActorId = $"account:{created.Id}",
+            ActorRole = created.Role,
+            ActorDisplayName = created.DisplayName,
+            AuthMode = OrganizationAuthModeNames.AccountToken,
+            ActionType = "approval_review",
+            TargetId = "approval-1",
+            Summary = "Reviewed approval",
+            Success = true
+        });
+        harness.Runtime.Operations.WebhookDeliveries.RecordDeadLetter(new WebhookDeadLetterRecord
+        {
+            Entry = new WebhookDeadLetterEntry
+            {
+                Id = "dead-1",
+                Source = "slack",
+                DeliveryKey = "dead-key",
+                EndpointName = "slack",
+                ChannelId = "slack",
+                SenderId = "sender-1",
+                SessionId = "sess-1",
+                CreatedAtUtc = now.AddMinutes(-5),
+                Error = "signature invalid",
+                PayloadPreview = "{}"
+            }
+        });
+        harness.Runtime.ProviderUsage.RecordError("openai", "gpt-4o");
+        harness.Runtime.ProviderUsage.RecordRetry("openai", "gpt-4o");
+
+        var range = $"fromUtc={Uri.EscapeDataString(now.AddHours(-1).ToString("O"))}&toUtc={Uri.EscapeDataString(now.AddMinutes(1).ToString("O"))}";
+        using var summaryRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/observability/summary?{range}");
+        summaryRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token!.Token);
+        var summaryResponse = await harness.Client.SendAsync(summaryRequest);
+        summaryResponse.EnsureSuccessStatusCode();
+        using var summaryPayload = await ReadJsonAsync(summaryResponse);
+        var cards = summaryPayload.RootElement.GetProperty("cards").EnumerateArray().ToArray();
+        Assert.Contains(cards, item => item.GetProperty("id").GetString() == "operator-actions" && item.GetProperty("value").GetInt32() >= 1);
+        Assert.Contains(cards, item => item.GetProperty("id").GetString() == "dead-letters" && item.GetProperty("value").GetInt32() >= 1);
+        Assert.Contains(
+            summaryPayload.RootElement.GetProperty("operatorActions").EnumerateArray().Select(static item => item.GetProperty("label").GetString()).OfType<string>(),
+            value => value == "approval_review");
+
+        using var seriesRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/observability/series?{range}&bucketMinutes=30");
+        seriesRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+        var seriesResponse = await harness.Client.SendAsync(seriesRequest);
+        seriesResponse.EnsureSuccessStatusCode();
+        using var seriesPayload = await ReadJsonAsync(seriesResponse);
+        var points = seriesPayload.RootElement.GetProperty("points").EnumerateArray().ToArray();
+        Assert.NotEmpty(points);
+        Assert.Contains(points, item => item.GetProperty("operatorActions").GetInt32() >= 1);
+    }
+
+    [Fact]
+    public async Task AdminAuditExport_WritesExpectedBundleAndClampsToRetentionWindow()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var policyService = harness.App.Services.GetRequiredService<OrganizationPolicyService>();
+        var created = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "viewer-export",
+            Password = "viewer-pass",
+            Role = OperatorRoleNames.Viewer
+        });
+        var token = operatorAccounts.CreateToken(created.Id, new OperatorAccountTokenCreateRequest { Label = "viewer" });
+        Assert.NotNull(token);
+        policyService.Update(new OrganizationPolicySnapshot
+        {
+            BootstrapTokenEnabled = true,
+            AllowedAuthModes = [OrganizationAuthModeNames.BootstrapToken, OrganizationAuthModeNames.BrowserSession, OrganizationAuthModeNames.AccountToken],
+            MinimumPluginTrustLevel = "reviewed",
+            ExportRetentionDays = 1,
+            PublicDeploymentGuardrails = true
+        });
+
+        harness.Runtime.Operations.OperatorAudit.Append(new OperatorAuditEntry
+        {
+            Id = "audit-old",
+            TimestampUtc = DateTimeOffset.UtcNow.AddDays(-5),
+            ActorId = "operator:old",
+            AuthMode = "bearer",
+            ActionType = "old",
+            TargetId = "old",
+            Summary = "old",
+            Success = true
+        });
+        harness.Runtime.Operations.OperatorAudit.Append(new OperatorAuditEntry
+        {
+            Id = "audit-new",
+            TimestampUtc = DateTimeOffset.UtcNow.AddHours(-1),
+            ActorId = "operator:new",
+            AuthMode = "bearer",
+            ActionType = "new",
+            TargetId = "new",
+            Summary = "new",
+            Success = true
+        });
+
+        using var exportRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/audit/export?fromUtc={Uri.EscapeDataString(DateTimeOffset.UtcNow.AddDays(-30).ToString("O"))}");
+        exportRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token!.Token);
+        var exportResponse = await harness.Client.SendAsync(exportRequest);
+        exportResponse.EnsureSuccessStatusCode();
+        var bytes = await exportResponse.Content.ReadAsByteArrayAsync();
+
+        using var archive = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
+        var names = archive.Entries.Select(static entry => entry.FullName).OrderBy(static item => item, StringComparer.Ordinal).ToArray();
+        Assert.Contains("manifest.json", names);
+        Assert.Contains("operator-audit.jsonl", names);
+        Assert.Contains("runtime-events.jsonl", names);
+        Assert.Contains("approval-history.jsonl", names);
+        Assert.Contains("provider-usage.json", names);
+        Assert.Contains("provider-routes.json", names);
+        Assert.Contains("dead-letter.jsonl", names);
+        Assert.Contains("session-metadata.json", names);
+
+        using var manifestStream = archive.GetEntry("manifest.json")!.Open();
+        using var manifestDoc = await JsonDocument.ParseAsync(manifestStream);
+        Assert.Equal(1, manifestDoc.RootElement.GetProperty("retentionDays").GetInt32());
+        Assert.Contains(
+            manifestDoc.RootElement.GetProperty("warnings").EnumerateArray().Select(static item => item.GetString()).OfType<string>(),
+            value => value.Contains("retention window", StringComparison.OrdinalIgnoreCase));
+        Assert.True(manifestDoc.RootElement.GetProperty("fileEntryCounts").GetProperty("operator-audit.jsonl").GetInt32() >= 1);
     }
 
     [Fact]
@@ -633,6 +1025,180 @@ public sealed class GatewayAdminEndpointTests
         importRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
         var importResponse = await harness.Client.SendAsync(importRequest);
         Assert.Equal(HttpStatusCode.BadRequest, importResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task AgentBundleExportImport_RoundTripsSettingsPoliciesSkillsAndMemoryState()
+    {
+        const string actorId = "telegram:agent-bundle-user";
+        var skillSlug = $"bundle-skill-{Guid.NewGuid():N}";
+        var managedSkillRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills", skillSlug);
+
+        if (Directory.Exists(managedSkillRoot))
+            Directory.Delete(managedSkillRoot, recursive: true);
+
+        try
+        {
+            await using var targetHarness = await CreateHarnessAsync(nonLoopbackBind: true);
+            await using var sourceHarness = await CreateHarnessAsync(nonLoopbackBind: true);
+            var sourceFeatureStore = new FileFeatureStore(sourceHarness.StoragePath);
+
+            using (var currentSettingsRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/settings"))
+            {
+                currentSettingsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", sourceHarness.AuthToken);
+                using var currentSettingsResponse = await sourceHarness.Client.SendAsync(currentSettingsRequest);
+                currentSettingsResponse.EnsureSuccessStatusCode();
+                using var currentSettings = await ReadJsonAsync(currentSettingsResponse);
+                var settingsPayload = currentSettings.RootElement.GetProperty("settings").Clone();
+                var settingsDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(settingsPayload.GetRawText(), CoreJsonContext.Default.BridgeDictionaryStringJsonElement)!;
+                settingsDict["usageFooter"] = JsonSerializer.SerializeToElement("tokens");
+                settingsDict["allowlistSemantics"] = JsonSerializer.SerializeToElement("strict");
+
+                using var updateSettingsRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/settings")
+                {
+                    Content = JsonContent(JsonSerializer.Serialize(settingsDict, CoreJsonContext.Default.BridgeDictionaryStringJsonElement))
+                };
+                updateSettingsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", sourceHarness.AuthToken);
+                using var updateSettingsResponse = await sourceHarness.Client.SendAsync(updateSettingsRequest);
+                Assert.Equal(HttpStatusCode.OK, updateSettingsResponse.StatusCode);
+            }
+
+            await sourceHarness.MemoryStore.SaveNoteAsync("project:apollo:runbook", "Escalate incidents through the launch room.", CancellationToken.None);
+            await sourceFeatureStore.SaveProfileAsync(new UserProfile
+            {
+                ActorId = actorId,
+                ChannelId = "telegram",
+                SenderId = "agent-bundle-user",
+                Summary = "Portable operator profile",
+                Tone = "direct",
+                Preferences = ["daily-summary"]
+            }, CancellationToken.None);
+            await sourceFeatureStore.SaveProposalAsync(new LearningProposal
+            {
+                Id = "lp_agent_bundle",
+                Kind = LearningProposalKind.SkillDraft,
+                Status = LearningProposalStatus.Pending,
+                ActorId = actorId,
+                Title = "Skill draft bundle item",
+                Summary = "Draft captured in agent bundle export.",
+                SkillName = "incident-followup",
+                DraftContent = "---\nname: incident-followup\ndescription: Follow up incidents\n---\nUse after incidents.",
+                DraftContentHash = "hash",
+                SourceSessionIds = ["sess-agent-bundle"],
+                Confidence = 0.7f
+            }, CancellationToken.None);
+            await sourceFeatureStore.SaveAutomationAsync(new AutomationDefinition
+            {
+                Id = "auto_agent_bundle",
+                Name = "Daily bundle digest",
+                Enabled = false,
+                Schedule = "@daily",
+                Prompt = "Summarize bundle changes.",
+                DeliveryChannelId = "cron",
+                IsDraft = true,
+                Source = "learning",
+                TemplateKey = "custom"
+            }, CancellationToken.None);
+
+            using (var providerPolicyRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/providers/policies")
+            {
+                Content = JsonContent("""{"id":"pp_bundle","priority":250,"enabled":true,"providerId":"openai","modelId":"gpt-4.1-mini","fallbackModels":["gpt-4o-mini"]}""")
+            })
+            {
+                providerPolicyRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", sourceHarness.AuthToken);
+                using var providerPolicyResponse = await sourceHarness.Client.SendAsync(providerPolicyRequest);
+                Assert.Equal(HttpStatusCode.OK, providerPolicyResponse.StatusCode);
+            }
+
+            Directory.CreateDirectory(managedSkillRoot);
+            await File.WriteAllTextAsync(
+                Path.Combine(managedSkillRoot, "SKILL.md"),
+                """
+                ---
+                name: portable-bundle-skill
+                description: Validate portable bundle skills
+                ---
+
+                Use when validating imported agent bundle skills.
+                """);
+
+            using var exportRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/agent-bundle/export?projectId=apollo");
+            exportRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", sourceHarness.AuthToken);
+            using var exportResponse = await sourceHarness.Client.SendAsync(exportRequest);
+            Assert.Equal(HttpStatusCode.OK, exportResponse.StatusCode);
+            var exportJson = await exportResponse.Content.ReadAsStringAsync();
+
+            using var importRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/agent-bundle/import")
+            {
+                Content = new StringContent(exportJson, Encoding.UTF8, "application/json")
+            };
+            importRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+            using var importResponse = await targetHarness.Client.SendAsync(importRequest);
+            Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+            using var importPayload = await ReadJsonAsync(importResponse);
+            Assert.True(importPayload.RootElement.GetProperty("success").GetBoolean());
+            Assert.True(importPayload.RootElement.GetProperty("settingsImported").GetBoolean());
+            Assert.Equal(1, importPayload.RootElement.GetProperty("notesImported").GetInt32());
+            Assert.Equal(1, importPayload.RootElement.GetProperty("profilesImported").GetInt32());
+            Assert.Equal(1, importPayload.RootElement.GetProperty("proposalsImported").GetInt32());
+            Assert.True(importPayload.RootElement.GetProperty("automationsImported").GetInt32() >= 1);
+            Assert.True(importPayload.RootElement.GetProperty("providerPoliciesImported").GetInt32() >= 1);
+            Assert.True(importPayload.RootElement.GetProperty("managedSkillsImported").GetInt32() >= 1);
+            Assert.True(importPayload.RootElement.GetProperty("skillsReloaded").GetBoolean());
+
+            using var targetSettingsRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/settings");
+            targetSettingsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+            using var targetSettingsResponse = await targetHarness.Client.SendAsync(targetSettingsRequest);
+            Assert.Equal(HttpStatusCode.OK, targetSettingsResponse.StatusCode);
+            using var targetSettingsPayload = await ReadJsonAsync(targetSettingsResponse);
+            Assert.Equal("tokens", targetSettingsPayload.RootElement.GetProperty("settings").GetProperty("usageFooter").GetString());
+            Assert.Equal("strict", targetSettingsPayload.RootElement.GetProperty("settings").GetProperty("allowlistSemantics").GetString());
+
+            using var policyListRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/providers/policies");
+            policyListRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+            using var policyListResponse = await targetHarness.Client.SendAsync(policyListRequest);
+            Assert.Equal(HttpStatusCode.OK, policyListResponse.StatusCode);
+            using var policyPayload = await ReadJsonAsync(policyListResponse);
+            Assert.Contains(
+                policyPayload.RootElement.GetProperty("items").EnumerateArray().Select(static item => item.GetProperty("id").GetString()),
+                static id => string.Equals(id, "pp_bundle", StringComparison.Ordinal));
+
+            using var skillsRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/skills");
+            skillsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+            using var skillsResponse = await targetHarness.Client.SendAsync(skillsRequest);
+            Assert.Equal(HttpStatusCode.OK, skillsResponse.StatusCode);
+            using var skillsPayload = await ReadJsonAsync(skillsResponse);
+            Assert.Contains(
+                skillsPayload.RootElement.GetProperty("items").EnumerateArray().Select(static item => item.GetProperty("name").GetString()),
+                static name => string.Equals(name, "portable-bundle-skill", StringComparison.Ordinal));
+
+            using var noteRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/notes?memoryClass=project_fact&projectId=apollo");
+            noteRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+            using var noteResponse = await targetHarness.Client.SendAsync(noteRequest);
+            Assert.Equal(HttpStatusCode.OK, noteResponse.StatusCode);
+            using var notePayload = await ReadJsonAsync(noteResponse);
+            Assert.Single(notePayload.RootElement.GetProperty("items").EnumerateArray());
+
+            using var profileRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/profiles/{Uri.EscapeDataString(actorId)}");
+            profileRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+            using var profileResponse = await targetHarness.Client.SendAsync(profileRequest);
+            Assert.Equal(HttpStatusCode.OK, profileResponse.StatusCode);
+
+            using var proposalRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/learning/proposals/lp_agent_bundle");
+            proposalRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+            using var proposalResponse = await targetHarness.Client.SendAsync(proposalRequest);
+            Assert.Equal(HttpStatusCode.OK, proposalResponse.StatusCode);
+
+            using var automationRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/automations/auto_agent_bundle");
+            automationRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", targetHarness.AuthToken);
+            using var automationResponse = await targetHarness.Client.SendAsync(automationRequest);
+            Assert.Equal(HttpStatusCode.OK, automationResponse.StatusCode);
+        }
+        finally
+        {
+            if (Directory.Exists(managedSkillRoot))
+                Directory.Delete(managedSkillRoot, recursive: true);
+        }
     }
 
     [Fact]
@@ -1386,10 +1952,9 @@ public sealed class GatewayAdminEndpointTests
         Assert.Equal(HttpStatusCode.OK, skillsResponse.StatusCode);
         using var skillsPayload = await ReadJsonAsync(skillsResponse);
         var skills = skillsPayload.RootElement.GetProperty("items").EnumerateArray().ToArray();
-        Assert.Single(skills);
-        Assert.Equal("Incident Followup", skills[0].GetProperty("name").GetString());
-        Assert.Equal("upstream-compatible", skills[0].GetProperty("trustLevel").GetString());
-        Assert.Contains("OPENAI_API_KEY", skills[0].GetProperty("requiredEnv").EnumerateArray().Select(static item => item.GetString()));
+        var incidentSkill = Assert.Single(skills, static item => string.Equals(item.GetProperty("name").GetString(), "Incident Followup", StringComparison.Ordinal));
+        Assert.Equal("upstream-compatible", incidentSkill.GetProperty("trustLevel").GetString());
+        Assert.Contains("OPENAI_API_KEY", incidentSkill.GetProperty("requiredEnv").EnumerateArray().Select(static item => item.GetString()));
 
         using var compatibilityRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/compatibility/catalog?compatibilityStatus=compatible&kind=npm-plugin");
         compatibilityRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -2593,6 +3158,48 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task CompanionViewModel_IssueOperatorTokenCommand_PersistsTokenAndLoadsRoleAwareStatus()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "ops-user",
+            Password = "ops-pass",
+            Role = OperatorRoleNames.Operator,
+            DisplayName = "Ops User"
+        });
+
+        var settingsDir = Path.Combine(harness.StoragePath, "companion-token");
+        var settingsStore = new SettingsStore(settingsDir, new ProtectedTokenStore(settingsDir, new InMemoryCompanionSecretStore()));
+        var viewModel = new MainWindowViewModel(
+            settingsStore,
+            new GatewayWebSocketClient(),
+            (_, token) => new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), token, harness.Client))
+        {
+            ServerUrl = "ws://127.0.0.1:18789/ws",
+            Username = "ops-user",
+            Password = "ops-pass",
+            OperatorTokenLabel = "desktop"
+        };
+
+        await viewModel.IssueOperatorTokenCommand.ExecuteAsync(null);
+
+        Assert.False(string.IsNullOrWhiteSpace(viewModel.AuthToken));
+        Assert.Equal(OperatorRoleNames.Operator, viewModel.OperatorRole);
+        Assert.Equal(OrganizationAuthModeNames.AccountToken, viewModel.OperatorAuthMode);
+        Assert.False(viewModel.IsBootstrapAdmin);
+        Assert.True(viewModel.CanManageAdmin);
+        Assert.Contains("Ops User", viewModel.OperatorIdentity, StringComparison.Ordinal);
+        Assert.Contains("Allowed auth modes", viewModel.DeploymentStatus, StringComparison.Ordinal);
+
+        var persisted = settingsStore.Load();
+        Assert.Equal(viewModel.AuthToken, persisted.AuthToken);
+        Assert.Equal("ops-user", persisted.Username);
+        Assert.Equal("desktop", persisted.OperatorTokenLabel);
+    }
+
+    [Fact]
     public async Task OpenApi_Document_IsExposed()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: false);
@@ -2620,6 +3227,7 @@ public sealed class GatewayAdminEndpointTests
         var expectedRoutes = new[]
         {
             "/auth/session",
+            "/auth/operator-token",
             "/openapi/{documentName}.json",
             "/api/integration/dashboard",
             "/api/integration/status",
@@ -2641,6 +3249,15 @@ public sealed class GatewayAdminEndpointTests
             "/mcp/",
             "/admin",
             "/admin/summary",
+            "/admin/setup/status",
+            "/admin/operator-accounts",
+            "/admin/operator-accounts/{id}",
+            "/admin/operator-accounts/{id}/tokens",
+            "/admin/operator-accounts/{id}/tokens/{tokenId}",
+            "/admin/organization-policy",
+            "/admin/observability/summary",
+            "/admin/observability/series",
+            "/admin/audit/export",
             "/admin/providers",
             "/admin/providers/policies",
             "/admin/providers/{providerId}/circuit/reset",
@@ -2729,6 +3346,30 @@ public sealed class GatewayAdminEndpointTests
 
         foreach (var route in staticRoutes)
             Assert.Contains(route, routePatterns);
+    }
+
+    [Fact]
+    public async Task CliMigrate_Help_NotesBareAliasRemainsLegacy()
+    {
+        var previousOut = Console.Out;
+        var previousErr = Console.Error;
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        try
+        {
+            Console.SetOut(output);
+            Console.SetError(error);
+
+            var exitCode = await OpenClaw.Cli.Program.Main(["migrate", "--help"]);
+
+            Assert.Equal(0, exitCode);
+            Assert.Contains("Bare 'openclaw migrate' remains the legacy automation migration alias.", output.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Console.SetOut(previousOut);
+            Console.SetError(previousErr);
+        }
     }
 
     private static async Task<(string Cookie, string CsrfToken)> LoginAsync(HttpClient client, string authToken)
@@ -2876,6 +3517,12 @@ public sealed class GatewayAdminEndpointTests
         builder.Services.AddSingleton(sessionManager);
         builder.Services.AddSingleton(heartbeatService);
         builder.Services.AddSingleton(new BrowserSessionAuthService(config));
+        builder.Services.AddSingleton(new OperatorAccountService(
+            storagePath,
+            NullLogger<OperatorAccountService>.Instance));
+        builder.Services.AddSingleton(new OrganizationPolicyService(
+            storagePath,
+            NullLogger<OrganizationPolicyService>.Instance));
         builder.Services.AddSingleton(new AdminSettingsService(
             config,
             AdminSettingsService.CreateSnapshot(config),
@@ -3071,6 +3718,33 @@ public sealed class GatewayAdminEndpointTests
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class InMemoryCompanionSecretStore : ICompanionSecretStore
+    {
+        private string? _secret;
+
+        public string StorageDescription => "memory";
+
+        public bool IsAvailable => true;
+
+        public string? LoadSecret(out string? warning)
+        {
+            warning = null;
+            return _secret;
+        }
+
+        public bool SaveSecret(string secret, out string? warning)
+        {
+            _secret = secret;
+            warning = null;
+            return true;
+        }
+
+        public void ClearSecret()
+        {
+            _secret = null;
+        }
     }
 
     private sealed class FailingSaveMemoryStore(IMemoryStore inner) : IMemoryStore, ISessionAdminStore, ISessionSearchStore, IAsyncDisposable, IDisposable

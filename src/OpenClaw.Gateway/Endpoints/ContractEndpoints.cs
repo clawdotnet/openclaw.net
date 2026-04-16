@@ -20,7 +20,7 @@ internal static class ContractEndpoints
         // POST /api/contracts/validate — pre-flight validation without creating
         group.MapPost("/validate", async (HttpContext ctx) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "contract_http", requireCsrf: true);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "contract.mutate", requireCsrf: true);
             if (failure is not null)
                 return failure;
 
@@ -70,7 +70,7 @@ internal static class ContractEndpoints
         // POST /api/contracts — create contract and attach to session
         group.MapPost("/", async (HttpContext ctx) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "contract_http", requireCsrf: true);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "contract.mutate", requireCsrf: true);
             if (failure is not null)
                 return failure;
 
@@ -121,7 +121,7 @@ internal static class ContractEndpoints
         // GET /api/contracts — list contracts
         group.MapGet("/", (HttpContext ctx) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "contract_http", requireCsrf: false);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "contract.read", requireCsrf: false);
             if (failure is not null)
                 return failure;
 
@@ -135,7 +135,7 @@ internal static class ContractEndpoints
         // GET /api/contracts/{id} — get single contract
         group.MapGet("/{id}", (HttpContext ctx, string id) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "contract_http", requireCsrf: false);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "contract.read", requireCsrf: false);
             if (failure is not null)
                 return failure;
 
@@ -155,7 +155,7 @@ internal static class ContractEndpoints
         // POST /api/contracts/{id}/cancel — cancel a contract
         group.MapPost("/{id}/cancel", async (HttpContext ctx, string id) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "contract_http", requireCsrf: true);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "contract.mutate", requireCsrf: true);
             if (failure is not null)
                 return failure;
 
@@ -203,6 +203,18 @@ internal static class ContractEndpoints
         var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf);
         if (!auth.IsAuthorized)
             return Results.Unauthorized();
+
+        if (!EndpointHelpers.IsRoleAllowed(auth.Role, endpointScope, out var requiredRole))
+        {
+            return Results.Json(
+                new OperationStatusResponse
+                {
+                    Success = false,
+                    Error = $"Endpoint '{endpointScope}' requires role '{requiredRole}'."
+                },
+                CoreJsonContext.Default.OperationStatusResponse,
+                statusCode: StatusCodes.Status403Forbidden);
+        }
 
         if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, runtime.Operations, auth, endpointScope, out var blockedByPolicyId))
         {
@@ -255,6 +267,8 @@ internal static class ContractEndpoints
             Id = $"audit_{Guid.NewGuid():N}"[..20],
             ActorId = EndpointHelpers.GetOperatorActorId(ctx, auth),
             AuthMode = auth.AuthMode,
+            ActorRole = auth.Role,
+            ActorDisplayName = auth.DisplayName ?? auth.Username,
             ActionType = actionType,
             TargetId = targetId,
             Summary = summary,

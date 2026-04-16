@@ -18,6 +18,14 @@ dotnet run --project src/OpenClaw.Cli -c Release -- setup
 
 Use `--profile public` when you are preparing a reverse-proxy or internet-facing deployment. The setup flow writes an external config file, a matching env example, and prints the exact gateway launch, `--doctor`, and `openclaw admin posture` commands for that config.
 
+Continue the supported bootstrap flow with:
+
+```bash
+openclaw setup launch --config ~/.openclaw/config/openclaw.settings.json
+openclaw setup service --config ~/.openclaw/config/openclaw.settings.json --platform all
+openclaw setup status --config ~/.openclaw/config/openclaw.settings.json
+```
+
 If you want raw starter files instead of the guided flow, use `openclaw init`. For the supported upstream skill, plugin, and channel compatibility surface, treat the [Compatibility Guide](COMPATIBILITY.md) as the source of truth.
 
 After the base config exists, use the channel-specific setup wizard for the common chat integrations:
@@ -31,6 +39,30 @@ openclaw setup channel whatsapp --config ~/.openclaw/config/openclaw.settings.js
 ```
 
 These wizards update the existing external config and keep the readiness and admin surfaces aligned with what the CLI generated.
+
+## Breaking Changes
+
+- `OPENCLAW_AUTH_TOKEN` is now the bootstrap and breakglass credential, not the recommended day-to-day operator login.
+- Browser admin usage is now account/session-first.
+- Companion, CLI, API, and websocket clients should use operator account tokens instead of the shared bootstrap token.
+- Mutation access is role-gated. A read-only `viewer` account can no longer rely on the old “any authenticated operator can mutate” assumption.
+- Bare `openclaw migrate` remains the legacy automation migration alias in this release. Upstream translation now lives under `openclaw migrate upstream`.
+
+## Operator Auth Model
+
+OpenClaw.NET now has three fixed operator roles:
+
+- `viewer`: read-only dashboard, audit, setup status, observability, and export access
+- `operator`: viewer permissions plus approvals, memory/profile/learning changes, automation execution, session promotion, and webhook replay
+- `admin`: operator permissions plus settings, plugins, provider policies, accounts, and organization policy
+
+Recommended auth flow:
+
+1. Use `OPENCLAW_AUTH_TOKEN` once on a non-loopback deployment to bootstrap the first operator account.
+2. Sign into `/admin` with the operator account username and password.
+3. Exchange credentials for an operator account token when setting up Companion, API clients, CLI automation, or websocket integrations.
+
+Operator token exchange is available at `POST /auth/operator-token`.
 
 ## Core Concepts
 
@@ -222,7 +254,7 @@ This repo ships a bundled set of powerful personas and capabilities out-of-the-b
 The easiest way to interact with OpenClaw locally is via the embedded frontend:
 1. Start the Gateway: `dotnet run --project src/OpenClaw.Gateway`
 2. Open your browser to `http://127.0.0.1:18789/chat`
-3. Enter your `OPENCLAW_AUTH_TOKEN` value into the **Auth Token** field at the top of the page.
+3. For chat-only local usage, load the token the UI asks for. For operator/admin workflows, use `/admin` and sign in with an operator account.
 
 WebChat token details:
 - The browser client authenticates WebSocket using `?token=<value>` on the `/ws` URL.
@@ -233,11 +265,27 @@ WebChat includes a **Doctor** button which fetches `GET /doctor/text` and prints
 
 ### Admin operator surfaces
 
+The built-in admin UI at `/admin` is now the primary browser operator surface. It supports:
+
+- username/password browser-session login
+- operator account token login
+- bootstrap token fallback for first-account setup and emergency access
+- setup/deploy status, operator accounts, organization policy, observability, audit export, and local migration report review
+
 For operator workflows outside the chat UI, the gateway also exposes:
 
 - `GET /admin/posture`
+- `GET /admin/setup/status`
+- `GET /admin/observability/summary`
+- `GET /admin/observability/series`
+- `GET /admin/audit/export`
 - `POST /admin/approvals/simulate`
 - `GET /admin/incident/export`
+- `GET /admin/operator-accounts`
+- `POST /admin/operator-accounts`
+- `POST /admin/operator-accounts/{id}/tokens`
+- `GET /admin/organization-policy`
+- `PUT /admin/organization-policy`
 - `GET /admin/memory/notes`
 - `GET /admin/memory/search`
 - `GET /admin/memory/notes/{key}`
@@ -264,6 +312,8 @@ CLI mirrors:
 - `openclaw admin approvals simulate`
 - `openclaw admin incident export`
 - `openclaw compatibility catalog`
+
+Companion and other non-browser clients should authenticate with operator account tokens. The Companion now has an **Admin** tab that exchanges account credentials for a token and persists it through the OS-backed secret store.
 
 These are useful for validating public-bind posture, approval-policy behavior, and exporting a redacted incident bundle during support/debugging.
 
@@ -316,6 +366,8 @@ You can also interact via the C# desktop interface:
 2. Start the UI: `dotnet run --project src/OpenClaw.Companion`
 The app will connect to `ws://127.0.0.1:18789/ws` automatically.
 
+> **Breaking change**: Companion should now use an operator account token as its primary credential. Use the **Admin** tab to exchange username/password for a token instead of reusing the shared bootstrap token.
+
 ### Typed integration API and MCP facade
 The gateway also exposes two typed automation surfaces alongside the browser UI, WebSocket endpoint, and OpenAI-compatible routes:
 
@@ -357,7 +409,20 @@ using var emptyArguments = JsonDocument.Parse("{}");
 var status = await client.CallMcpToolAsync("openclaw.get_status", emptyArguments.RootElement.Clone(), CancellationToken.None);
 ```
 
-On non-loopback/public binds, authenticate these surfaces with `Authorization: Bearer <token>`.
+On non-loopback/public binds, authenticate these surfaces with `Authorization: Bearer <operator-account-token>` for normal automation, or the bootstrap token only for first-run recovery flows.
+
+## Upstream Migration
+
+Use the upstream migration flow to translate an upstream-style OpenClaw tree into an external OpenClaw.NET config:
+
+```bash
+openclaw migrate upstream \
+  --source ./upstream-agent \
+  --target-config ~/.openclaw/config/openclaw.settings.json \
+  --report ./migration-report.json
+```
+
+Dry-run is the default. `--apply` writes the translated config, imports managed `SKILL.md` packages, and writes the plugin review plan next to the target config.
 
 ### Webhook Channels
 You can configure OpenClaw to listen to messages in the background natively.
@@ -387,7 +452,7 @@ If you keep `DmPolicy="pairing"` (recommended for internet-facing deployments), 
 ```bash
 curl -X POST "http://127.0.0.1:18789/pairing/approve?channelId=telegram&senderId=<chatId>&code=<code>"
 ```
-If your gateway is bound to a non-loopback address and `OpenClaw:AuthToken` is set, include `-H "Authorization: Bearer $OPENCLAW_AUTH_TOKEN"`.
+If your gateway is bound to a non-loopback address, include `-H "Authorization: Bearer $OPENCLAW_OPERATOR_TOKEN"` for normal operator automation, or use the bootstrap token only when you are still bootstrapping accounts.
 
 Once you’ve verified the right senders, you can tighten allowlists:
 - `POST /allowlists/{channelId}/tighten` (replaces wildcard with paired senders for that channel)

@@ -17,6 +17,8 @@ Examples below use `openclaw ...`. From a source checkout, replace that with `do
 | `openclaw init` | You want raw bootstrap files to edit manually before running the gateway. |
 | Direct config editing | You already know the runtime shape you want and do not need the guided path. |
 
+> **Breaking change**: `OPENCLAW_AUTH_TOKEN` is now the bootstrap and breakglass credential for non-loopback deployments. Browser admin usage is account/session-first, and Companion, CLI, API, and websocket clients should use operator account tokens.
+
 ## Fastest Local Start
 
 1. Run the guided setup flow:
@@ -27,7 +29,13 @@ openclaw setup
 
 2. Accept the local defaults or supply your preferred provider, model, API key reference, workspace path, and optional execution backend.
 
-3. Start the gateway with the printed command, for example:
+3. Start the supported local launch runner for that config:
+
+```bash
+openclaw setup launch --config ~/.openclaw/config/openclaw.settings.json
+```
+
+If you prefer to run the gateway process directly, use the printed command, for example:
 
 ```bash
 dotnet run --project src/OpenClaw.Gateway -c Release -- --config ~/.openclaw/config/openclaw.settings.json
@@ -68,6 +76,13 @@ The public profile changes the defaults in ways that matter:
 - bridge plugins are disabled by default until you opt into public-bind trust settings
 
 Run the exact `--doctor` and `admin posture` commands printed by `setup` before exposing the service.
+
+Generate deploy artifacts and inspect the resulting posture before you put a proxy in front of it:
+
+```bash
+openclaw setup service --config ~/.openclaw/config/openclaw.settings.json --platform all
+openclaw setup status --config ~/.openclaw/config/openclaw.settings.json
+```
 
 ## Advanced Manual Bootstrap
 
@@ -111,6 +126,14 @@ Open:
 http://127.0.0.1:18789/chat
 ```
 
+For operator workflows, use the admin UI at `http://127.0.0.1:18789/admin`.
+
+Recommended auth flow:
+
+1. Use the bootstrap token once to create your first operator account on a non-loopback deployment.
+2. Sign into `/admin` with the operator account username and password.
+3. Exchange credentials for an operator account token when setting up Companion, CLI automation, API clients, or websocket integrations.
+
 ### CLI Chat
 
 ```bash
@@ -128,6 +151,23 @@ dotnet run --project src/OpenClaw.Cli -c Release -- run "summarize this reposito
 ```bash
 dotnet run --project src/OpenClaw.Companion -c Release
 ```
+
+Use the **Admin** tab to exchange account credentials for an operator token and persist it into the OS-backed secret store.
+
+## Upstream Migration
+
+Translate an upstream-style OpenClaw checkout into an external OpenClaw.NET config with:
+
+```bash
+openclaw migrate upstream \
+  --source ./upstream-agent \
+  --target-config ~/.openclaw/config/openclaw.settings.json \
+  --report ./migration-report.json
+```
+
+Add `--apply` when you are ready to write the translated config, import managed skills, and create the plugin review plan.
+
+> **Breaking change**: bare `openclaw migrate` remains the legacy automation migration alias in this release. Use `openclaw migrate upstream` for upstream config and skill translation.
 
 ### Typed integration API and MCP
 

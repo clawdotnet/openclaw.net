@@ -81,8 +81,10 @@ internal static class Program
               openclaw live [options]
               openclaw tui [options]
               openclaw setup [options]
+              openclaw setup <launch|service|status|channel> [options]
               openclaw init [options]
               openclaw migrate [options]
+              openclaw migrate <legacy|upstream> [options]
               openclaw heartbeat <wizard|preview|status> [options]
               openclaw models <list|doctor> [options]
               openclaw eval <run|compare> [options]
@@ -120,8 +122,11 @@ internal static class Program
               openclaw tui
               openclaw setup
               openclaw setup --non-interactive --profile local --workspace ./workspace --provider openai --model gpt-4o --api-key env:MODEL_PROVIDER_KEY
+              openclaw setup service --config ~/.openclaw/config/openclaw.settings.json --platform all
+              openclaw setup status --config ~/.openclaw/config/openclaw.settings.json
               openclaw init --preset public
               openclaw migrate --apply
+              openclaw migrate upstream --source ./upstream-agent --target-config ~/.openclaw/config/openclaw.settings.json --report ./migration-report.json
               openclaw heartbeat status
               openclaw models list
               openclaw models doctor
@@ -258,10 +263,16 @@ internal static class Program
                               [--config <path>] [--workspace <path>] [--provider <id>] [--model <id>] [--api-key <secret-or-envref>]
                               [--bind <address>] [--port <n>] [--auth-token <token>]
                               [--docker-image <image>] [--opensandbox-endpoint <url>] [--ssh-host <host>] [--ssh-user <user>] [--ssh-key <path>]
+              openclaw setup launch [--config <path>]
+              openclaw setup service [--config <path>] [--platform <linux|macos|all>]
+              openclaw setup status [--config <path>]
               openclaw setup channel <telegram|slack|discord|teams|whatsapp> [--config <path>] [--non-interactive] [...]
 
             Notes:
               - Bare 'openclaw setup' launches a guided onboarding flow.
+              - 'openclaw setup launch' starts gateway and Companion in the current repo checkout and streams logs until Ctrl-C.
+              - 'openclaw setup service' writes systemd/launchd/Caddy deployment artifacts next to the config.
+              - 'openclaw setup status' summarizes bind/auth posture and deploy artifact presence.
               - 'openclaw setup channel ...' updates an existing external config with channel-specific settings.
               - Use --non-interactive for automation or CI.
               - Writes an external JSON config file plus an adjacent env example.
@@ -277,10 +288,13 @@ internal static class Program
 
             Usage:
               openclaw migrate [--apply] [--url <url>] [--token <token>]
+              openclaw migrate legacy [--apply] [--url <url>] [--token <token>]
+              openclaw migrate upstream --source <path> --target-config <path> [--apply] [--report <path>]
 
             Notes:
-              - Without --apply, this previews legacy cron/heartbeat migrations.
-              - With --apply, canonical automation definitions are written through the admin API.
+              - Bare 'openclaw migrate' remains the legacy automation migration alias.
+              - 'openclaw migrate upstream' performs upstream config + skill + plugin-manifest migration.
+              - Upstream dry-run is the default; apply mode writes translated config, managed skills, and a plugin review plan.
             """);
     }
 
@@ -504,6 +518,12 @@ internal static class Program
 
     private static async Task<int> MigrateAsync(string[] args)
     {
+        if (args.Length > 0 && string.Equals(args[0], "upstream", StringComparison.OrdinalIgnoreCase))
+            return await UpstreamMigrationCommand.RunAsync(args[1..], Console.Out, Console.Error, Directory.GetCurrentDirectory());
+
+        if (args.Length > 0 && string.Equals(args[0], "legacy", StringComparison.OrdinalIgnoreCase))
+            args = args[1..];
+
         var parsed = CliArgs.Parse(args);
         if (parsed.ShowHelp)
         {

@@ -16,6 +16,14 @@ internal static class SecurityServicesExtensions
                 sp.GetRequiredService<ILogger<PairingManager>>()));
         services.AddSingleton(sp => new BrowserSessionAuthService(startup.Config));
         services.AddSingleton(sp =>
+            new OperatorAccountService(
+                startup.Config.Memory.StoragePath,
+                sp.GetRequiredService<ILogger<OperatorAccountService>>()));
+        services.AddSingleton(sp =>
+            new OrganizationPolicyService(
+                startup.Config.Memory.StoragePath,
+                sp.GetRequiredService<ILogger<OrganizationPolicyService>>()));
+        services.AddSingleton(sp =>
             new AdminSettingsService(
                 startup.Config,
                 AdminSettingsService.CreateSnapshot(startup.Config),

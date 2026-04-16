@@ -17,10 +17,10 @@ internal sealed class RuntimeEventStore
 
     public RuntimeEventStore(string storagePath, ILogger<RuntimeEventStore> logger, RuntimeMetrics? metrics = null)
     {
-        var rootedStoragePath = Path.IsPathRooted(storagePath)
+        var rootedStoragePath = System.IO.Path.IsPathRooted(storagePath)
             ? storagePath
-            : Path.GetFullPath(storagePath);
-        _path = Path.Combine(rootedStoragePath, DirectoryName, FileName);
+            : System.IO.Path.GetFullPath(storagePath);
+        _path = System.IO.Path.Combine(rootedStoragePath, DirectoryName, FileName);
         _logger = logger;
         _metrics = metrics;
     }
@@ -29,7 +29,7 @@ internal sealed class RuntimeEventStore
     {
         try
         {
-            var directory = Path.GetDirectoryName(_path);
+            var directory = System.IO.Path.GetDirectoryName(_path);
             if (!string.IsNullOrWhiteSpace(directory))
                 Directory.CreateDirectory(directory);
 
@@ -45,6 +45,8 @@ internal sealed class RuntimeEventStore
             _logger.LogWarning(ex, "Failed to append runtime event to {Path}", _path);
         }
     }
+
+    public string Path => _path;
 
     public IReadOnlyList<RuntimeEventEntry> Query(RuntimeEventQuery query)
     {
@@ -70,6 +72,10 @@ internal sealed class RuntimeEventStore
                     return false;
                 if (!string.IsNullOrWhiteSpace(query.Action) &&
                     !string.Equals(item.Action, query.Action, StringComparison.OrdinalIgnoreCase))
+                    return false;
+                if (query.FromUtc is { } fromUtc && item.TimestampUtc < fromUtc)
+                    return false;
+                if (query.ToUtc is { } toUtc && item.TimestampUtc > toUtc)
                     return false;
 
                 return true;

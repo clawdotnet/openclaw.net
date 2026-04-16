@@ -92,6 +92,8 @@ public sealed class RuntimeEventQuery
     public string? SenderId { get; init; }
     public string? Component { get; init; }
     public string? Action { get; init; }
+    public DateTimeOffset? FromUtc { get; init; }
+    public DateTimeOffset? ToUtc { get; init; }
 }
 
 public sealed class RuntimeEventEntry
@@ -306,17 +308,24 @@ public sealed class OperatorAuditQuery
     public string? ActorId { get; init; }
     public string? ActionType { get; init; }
     public string? TargetId { get; init; }
+    public DateTimeOffset? FromUtc { get; init; }
+    public DateTimeOffset? ToUtc { get; init; }
 }
 
 public sealed class OperatorAuditEntry
 {
     public required string Id { get; init; }
+    public long Sequence { get; init; }
     public DateTimeOffset TimestampUtc { get; init; } = DateTimeOffset.UtcNow;
     public required string ActorId { get; init; }
+    public string ActorRole { get; init; } = OperatorRoleNames.Viewer;
+    public string? ActorDisplayName { get; init; }
     public required string AuthMode { get; init; }
     public required string ActionType { get; init; }
     public required string TargetId { get; init; }
     public required string Summary { get; init; }
+    public string? PreviousEntryHash { get; init; }
+    public string? EntryHash { get; init; }
     public string? Before { get; init; }
     public string? After { get; init; }
     public bool Success { get; init; }
@@ -385,6 +394,45 @@ public sealed class MemoryConsoleImportResponse
     public int ProfilesImported { get; init; }
     public int ProposalsImported { get; init; }
     public int AutomationsImported { get; init; }
+    public string Message { get; init; } = "";
+}
+
+public sealed class ManagedSkillBundleItem
+{
+    public required string Name { get; init; }
+    public required string Slug { get; init; }
+    public string Description { get; init; } = "";
+    public required string Content { get; init; }
+    public string RootPath { get; init; } = "";
+    public DateTimeOffset? UpdatedAtUtc { get; init; }
+}
+
+public sealed class AgentBundleExportBundle
+{
+    public string Format { get; init; } = "openclaw-agent-bundle";
+    public int Version { get; init; } = 1;
+    public DateTimeOffset ExportedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    public AdminSettingsSnapshot? Settings { get; init; }
+    public IReadOnlyList<MemoryNoteItem> Notes { get; init; } = [];
+    public IReadOnlyList<UserProfile> Profiles { get; init; } = [];
+    public IReadOnlyList<LearningProposal> Proposals { get; init; } = [];
+    public IReadOnlyList<AutomationDefinition> Automations { get; init; } = [];
+    public IReadOnlyList<ProviderPolicyRule> ProviderPolicies { get; init; } = [];
+    public IReadOnlyList<ManagedSkillBundleItem> ManagedSkills { get; init; } = [];
+}
+
+public sealed class AgentBundleImportResponse
+{
+    public bool Success { get; init; }
+    public int Version { get; init; }
+    public bool SettingsImported { get; init; }
+    public int NotesImported { get; init; }
+    public int ProfilesImported { get; init; }
+    public int ProposalsImported { get; init; }
+    public int AutomationsImported { get; init; }
+    public int ProviderPoliciesImported { get; init; }
+    public int ManagedSkillsImported { get; init; }
+    public bool SkillsReloaded { get; init; }
     public string Message { get; init; } = "";
 }
 

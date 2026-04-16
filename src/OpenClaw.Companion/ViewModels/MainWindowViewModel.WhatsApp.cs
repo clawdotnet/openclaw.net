@@ -161,6 +161,11 @@ public sealed partial class MainWindowViewModel
     {
         if (IsWhatsAppBusy)
             return;
+        if (!CanManageAdmin)
+        {
+            WhatsAppMessage = "Your current role is read-only. Use an operator or admin token to update WhatsApp settings.";
+            return;
+        }
 
         IsWhatsAppBusy = true;
         try
@@ -193,6 +198,11 @@ public sealed partial class MainWindowViewModel
     {
         if (IsWhatsAppBusy)
             return;
+        if (!CanManageAdmin)
+        {
+            WhatsAppMessage = "Your current role is read-only. Use an operator or admin token to restart WhatsApp.";
+            return;
+        }
 
         IsWhatsAppBusy = true;
         try
@@ -337,6 +347,9 @@ public sealed partial class MainWindowViewModel
     }
 
     private OpenClawHttpClient? CreateAdminClient(out string? error)
+        => CreateAdminClient(string.IsNullOrWhiteSpace(AuthToken) ? null : AuthToken, out error);
+
+    private OpenClawHttpClient? CreateAdminClient(string? authToken, out string? error)
     {
         error = null;
         if (!GatewayEndpointResolver.TryResolveHttpBaseUrl(ServerUrl, out var baseUrl) || string.IsNullOrWhiteSpace(baseUrl))
@@ -345,7 +358,7 @@ public sealed partial class MainWindowViewModel
             return null;
         }
 
-        return _adminClientFactory(baseUrl, string.IsNullOrWhiteSpace(AuthToken) ? null : AuthToken);
+        return _adminClientFactory(baseUrl, authToken);
     }
 
     private WhatsAppSetupRequest BuildWhatsAppSetupRequest()

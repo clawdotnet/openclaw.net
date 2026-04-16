@@ -384,7 +384,14 @@
         </div>
         <div class="toolbar">
             <span id="session-status" class="muted">Checking auth…</span>
-            <input id="token-input" type="password" placeholder="Auth token for public deployments">
+            <select id="login-mode-input">
+                <option value="credentials">Username + password</option>
+                <option value="account_token">Account token</option>
+                <option value="bootstrap">Bootstrap token</option>
+            </select>
+            <input id="username-input" type="text" placeholder="Operator username">
+            <input id="password-input" type="password" placeholder="Password">
+            <input id="token-input" type="password" placeholder="Account token or bootstrap token">
             <label><input id="remember-token" type="checkbox"> Remember</label>
             <button id="login-button">Login</button>
             <button id="logout-button">Logout</button>
@@ -395,6 +402,9 @@
 
     <nav class="section-nav">
         <a href="#overview-section">Overview</a>
+        <a href="#governance-section">Governance</a>
+        <a href="#observability-section">Observability</a>
+        <a href="#migration-section">Migration</a>
         <a href="#heartbeat-section">Heartbeat</a>
         <a href="#automation-section">Automations</a>
         <a href="#learning-section">Learning</a>
@@ -424,6 +434,134 @@
             <div class="card">
                 <h2>Doctor</h2>
                 <pre id="doctor-output">Loading…</pre>
+            </div>
+        </section>
+
+        <section id="governance-section" class="grid">
+            <div class="card">
+                <div class="section-title">
+                    <div>
+                        <h2>Setup And Deploy Status</h2>
+                        <div class="muted">Current bind/auth posture, generated service artifacts, and production-path warnings.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="setup-status-refresh-button" class="secondary">Reload</button>
+                    </div>
+                </div>
+                <pre id="setup-status-output">Loading…</pre>
+            </div>
+            <div id="operator-accounts-card" class="card" data-min-role="admin">
+                <div class="section-title">
+                    <div>
+                        <h2>Operator Accounts</h2>
+                        <div class="muted">Named viewer/operator/admin identities for browser sessions and desktop/API tokens.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="operator-accounts-refresh-button" class="secondary">Reload</button>
+                    </div>
+                </div>
+                <div class="filters">
+                    <input id="operator-account-username-input" type="text" placeholder="Username">
+                    <input id="operator-account-display-name-input" type="text" placeholder="Display name">
+                    <select id="operator-account-role-input">
+                        <option value="viewer">viewer</option>
+                        <option value="operator">operator</option>
+                        <option value="admin">admin</option>
+                    </select>
+                    <input id="operator-account-password-input" type="password" placeholder="Password">
+                </div>
+                <div class="actions" style="margin-bottom:0.75rem;">
+                    <button id="operator-account-create-button">Create Account</button>
+                </div>
+                <div id="operator-accounts-output" class="muted">Loading…</div>
+            </div>
+            <div id="organization-policy-card" class="card" data-min-role="admin">
+                <div class="section-title">
+                    <div>
+                        <h2>Organization Policy</h2>
+                        <div class="muted">Deployment-scoped auth, export retention, and public-bind guardrails.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="organization-policy-refresh-button" class="secondary">Reload</button>
+                        <button id="organization-policy-save-button">Save Policy</button>
+                    </div>
+                </div>
+                <div class="settings-grid">
+                    <div class="field checkbox">
+                        <input id="policy-bootstrap-enabled-input" type="checkbox">
+                        <label for="policy-bootstrap-enabled-input">Bootstrap token enabled</label>
+                    </div>
+                    <div class="field">
+                        <label for="policy-auth-modes-input">Allowed auth modes</label>
+                        <input id="policy-auth-modes-input" type="text" placeholder="browser_session,account_token">
+                    </div>
+                    <div class="field">
+                        <label for="policy-min-plugin-trust-input">Minimum plugin trust</label>
+                        <input id="policy-min-plugin-trust-input" type="text" placeholder="reviewed">
+                    </div>
+                    <div class="field">
+                        <label for="policy-export-retention-input">Export retention days</label>
+                        <input id="policy-export-retention-input" type="number" min="1" step="1">
+                    </div>
+                    <div class="field checkbox">
+                        <input id="policy-high-risk-guard-input" type="checkbox">
+                        <label for="policy-high-risk-guard-input">Require interactive admin for high-risk mutations</label>
+                    </div>
+                    <div class="field checkbox">
+                        <input id="policy-public-guardrails-input" type="checkbox">
+                        <label for="policy-public-guardrails-input">Public deployment guardrails</label>
+                    </div>
+                </div>
+                <pre id="organization-policy-output">Loading…</pre>
+            </div>
+        </section>
+
+        <section id="observability-section" class="grid">
+            <div class="card">
+                <div class="section-title">
+                    <div>
+                        <h2>Observability</h2>
+                        <div class="muted">Approval pressure, provider health, dead-letter backlog, and operator activity in one time-filtered view.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="observability-refresh-button" class="secondary">Reload</button>
+                    </div>
+                </div>
+                <div class="filters">
+                    <input id="observability-from-input" type="datetime-local">
+                    <input id="observability-to-input" type="datetime-local">
+                    <input id="observability-bucket-input" type="number" min="5" step="5" value="60" placeholder="Bucket minutes">
+                </div>
+                <div id="observability-cards" class="metric-grid"></div>
+                <pre id="observability-summary-output">Loading…</pre>
+                <pre id="observability-series-output">Loading…</pre>
+            </div>
+            <div class="card">
+                <div class="section-title">
+                    <div>
+                        <h2>Audit Export</h2>
+                        <div class="muted">Export a retention-aware zip bundle with operator audit, runtime events, approval history, dead-letter items, provider snapshots, and session metadata.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="audit-export-button">Download Bundle</button>
+                    </div>
+                </div>
+                <pre id="audit-export-output">Ready.</pre>
+            </div>
+        </section>
+
+        <section id="migration-section" class="grid">
+            <div class="card">
+                <div class="section-title">
+                    <div>
+                        <h2>Migration Report Viewer</h2>
+                        <div class="muted">Load a local `openclaw migrate upstream --report ...` JSON file to review translated config status, imported skills, plugin review plans, and skipped settings.</div>
+                    </div>
+                </div>
+                <div class="actions">
+                    <input id="migration-report-input" type="file" accept="application/json,.json">
+                </div>
+                <div id="migration-report-output" class="muted">Load a migration report JSON file.</div>
             </div>
         </section>
 
@@ -1215,6 +1353,9 @@
 
     <script>
         const tokenInput = document.getElementById('token-input');
+        const loginModeInput = document.getElementById('login-mode-input');
+        const usernameInput = document.getElementById('username-input');
+        const passwordInput = document.getElementById('password-input');
         const rememberToken = document.getElementById('remember-token');
         const loginButton = document.getElementById('login-button');
         const logoutButton = document.getElementById('logout-button');
@@ -1226,6 +1367,28 @@
         const dashboardCards = document.getElementById('dashboard-cards');
         const operatorDashboardOutput = document.getElementById('operator-dashboard-output');
         const doctorOutput = document.getElementById('doctor-output');
+        const setupStatusOutput = document.getElementById('setup-status-output');
+        const operatorAccountsOutput = document.getElementById('operator-accounts-output');
+        const operatorAccountUsernameInput = document.getElementById('operator-account-username-input');
+        const operatorAccountDisplayNameInput = document.getElementById('operator-account-display-name-input');
+        const operatorAccountRoleInput = document.getElementById('operator-account-role-input');
+        const operatorAccountPasswordInput = document.getElementById('operator-account-password-input');
+        const policyBootstrapEnabledInput = document.getElementById('policy-bootstrap-enabled-input');
+        const policyAuthModesInput = document.getElementById('policy-auth-modes-input');
+        const policyMinPluginTrustInput = document.getElementById('policy-min-plugin-trust-input');
+        const policyExportRetentionInput = document.getElementById('policy-export-retention-input');
+        const policyHighRiskGuardInput = document.getElementById('policy-high-risk-guard-input');
+        const policyPublicGuardrailsInput = document.getElementById('policy-public-guardrails-input');
+        const organizationPolicyOutput = document.getElementById('organization-policy-output');
+        const observabilityFromInput = document.getElementById('observability-from-input');
+        const observabilityToInput = document.getElementById('observability-to-input');
+        const observabilityBucketInput = document.getElementById('observability-bucket-input');
+        const observabilityCards = document.getElementById('observability-cards');
+        const observabilitySummaryOutput = document.getElementById('observability-summary-output');
+        const observabilitySeriesOutput = document.getElementById('observability-series-output');
+        const auditExportOutput = document.getElementById('audit-export-output');
+        const migrationReportInput = document.getElementById('migration-report-input');
+        const migrationReportOutput = document.getElementById('migration-report-output');
         const integrationDashboardOutput = document.getElementById('integration-dashboard-output');
         const mcpOutput = document.getElementById('mcp-output');
         const integrationChannelInput = document.getElementById('integration-channel-input');
@@ -1399,6 +1562,7 @@
         };
 
         let csrfToken = null;
+        let currentAuth = null;
         let sessionsState = {
             page: 1,
             pageSize: 25,
@@ -1455,30 +1619,121 @@
             });
         }
 
+        function roleRank(role) {
+            switch ((role || '').toLowerCase()) {
+                case 'admin': return 3;
+                case 'operator': return 2;
+                default: return 1;
+            }
+        }
+
+        function hasRole(requiredRole) {
+            if (!requiredRole) return true;
+            if (currentAuth?.isBootstrapAdmin) return true;
+            return roleRank(currentAuth?.role) >= roleRank(requiredRole);
+        }
+
+        function requireRole(requiredRole, actionLabel) {
+            if (hasRole(requiredRole)) {
+                return true;
+            }
+
+            showFlash(`${actionLabel} requires ${requiredRole} access.`, 'warn');
+            return false;
+        }
+
+        function applyRoleGates() {
+            document.querySelectorAll('[data-min-role]').forEach(element => {
+                element.hidden = !hasRole(element.getAttribute('data-min-role'));
+            });
+
+            const operatorButtons = [
+                'heartbeat-save-button',
+                'automation-save-button',
+                'automation-run-button',
+                'automation-dry-run-button',
+                'automation-delete-button',
+                'learning-approve-button',
+                'learning-reject-button',
+                'learning-rollback-button',
+                'memory-save-button',
+                'memory-delete-button',
+                'memory-import-button',
+                'session-promote-button',
+                'whatsapp-save-button',
+                'whatsapp-restart-button'
+            ];
+            const adminButtons = [
+                'settings-save-button',
+                'settings-reset-button',
+                'operator-account-create-button',
+                'organization-policy-save-button'
+            ];
+
+            operatorButtons.forEach(id => {
+                const button = document.getElementById(id);
+                if (button) button.disabled = !hasRole('operator');
+            });
+            adminButtons.forEach(id => {
+                const button = document.getElementById(id);
+                if (button) button.disabled = !hasRole('admin');
+            });
+        }
+
+        function updateLoginModeUi() {
+            const mode = loginModeInput.value;
+            const usingCredentials = mode === 'credentials';
+            usernameInput.hidden = !usingCredentials;
+            passwordInput.hidden = !usingCredentials;
+            tokenInput.hidden = usingCredentials;
+            tokenInput.placeholder = mode === 'bootstrap'
+                ? 'Bootstrap/breakglass token'
+                : 'Operator account token';
+        }
+
         async function syncAuth() {
             const { resp, data } = await api('/auth/session');
             if (!resp.ok) {
                 csrfToken = null;
+                currentAuth = null;
                 sessionStatus.textContent = 'Login required';
+                applyRoleGates();
                 return false;
             }
 
             csrfToken = data.csrfToken || null;
+            currentAuth = data;
             sessionStatus.textContent = data.authMode === 'loopback-open'
                 ? 'Local mode'
-                : (data.authMode === 'browser-session' ? 'Browser session active' : 'Bearer auth ready');
+                : `${data.displayName || data.username || 'operator'} · ${data.role}${data.isBootstrapAdmin ? ' · bootstrap' : ''} · ${data.authMode}`;
+            applyRoleGates();
             return true;
         }
 
         async function login() {
+            const mode = loginModeInput.value;
             const token = tokenInput.value.trim();
+            const payload = { remember: rememberToken.checked };
+            const headers = { 'Content-Type': 'application/json' };
+
+            if (mode === 'credentials') {
+                payload.username = usernameInput.value.trim();
+                payload.password = passwordInput.value;
+            } else if (mode === 'account_token') {
+                payload.accountToken = token;
+            }
+
+            if (mode !== 'credentials' && !token) {
+                sessionStatus.textContent = 'Login token required';
+                return false;
+            }
+
             const { resp, data } = await api('/auth/session', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ remember: rememberToken.checked })
+                headers: mode === 'bootstrap'
+                    ? { ...headers, 'Authorization': `Bearer ${token}` }
+                    : headers,
+                body: JSON.stringify(payload)
             });
 
             if (!resp.ok) {
@@ -1487,15 +1742,22 @@
             }
 
             csrfToken = data.csrfToken || null;
-            tokenInput.value = '';
-            sessionStatus.textContent = rememberToken.checked ? 'Persistent browser session active' : 'Browser session active';
+            currentAuth = data;
+            passwordInput.value = '';
+            if (mode !== 'bootstrap') {
+                tokenInput.value = '';
+            }
+            sessionStatus.textContent = `${data.displayName || data.username || 'operator'} · ${data.role}${data.isBootstrapAdmin ? ' · bootstrap' : ''} · browser session`;
+            applyRoleGates();
             return true;
         }
 
         async function logout() {
             await mutate('/auth/session', { method: 'DELETE' });
             csrfToken = null;
+            currentAuth = null;
             sessionStatus.textContent = 'Logged out';
+            applyRoleGates();
         }
 
         function escapeHtml(value) {
@@ -1720,6 +1982,293 @@
                     params: {}
                 }
             });
+        }
+
+        function toQueryDateTime(value) {
+            if (!value) return null;
+            const parsed = new Date(value);
+            return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+        }
+
+        function buildDateRangeQuery() {
+            const params = new URLSearchParams();
+            const fromUtc = toQueryDateTime(observabilityFromInput.value);
+            const toUtc = toQueryDateTime(observabilityToInput.value);
+            if (fromUtc) params.set('fromUtc', fromUtc);
+            if (toUtc) params.set('toUtc', toUtc);
+            return params;
+        }
+
+        function renderObservabilitySummary(summary) {
+            const cards = summary?.cards || [];
+            observabilityCards.innerHTML = cards.length
+                ? cards.map(card => `
+                    <div class="metric-card">
+                        <strong>${escapeHtml(card.value)}</strong>
+                        <div>${escapeHtml(card.label)}</div>
+                        <div class="muted">${escapeHtml(card.note || '')}</div>
+                    </div>
+                `).join('')
+                : '<div class="muted">No observability cards yet.</div>';
+
+            renderJson(observabilitySummaryOutput, {
+                generatedAtUtc: summary?.generatedAtUtc,
+                approvalLatencyBuckets: summary?.approvalLatencyBuckets || [],
+                providerErrorsByRoute: summary?.providerErrorsByRoute || [],
+                providerRetriesByRoute: summary?.providerRetriesByRoute || [],
+                operatorActions: summary?.operatorActions || [],
+                operatorActionsByRole: summary?.operatorActionsByRole || [],
+                operatorActionsByAccount: summary?.operatorActionsByAccount || [],
+                channelDrift: summary?.channelDrift || []
+            });
+        }
+
+        function prependOperatorTokenNotice(tokenResponse) {
+            if (!tokenResponse?.token) {
+                return;
+            }
+
+            const accountLabel = tokenResponse.account?.displayName || tokenResponse.account?.username || 'operator';
+            const tokenCard = document.createElement('div');
+            tokenCard.className = 'card';
+            tokenCard.style.marginBottom = '0.75rem';
+            tokenCard.innerHTML = `
+                <strong>New operator token for ${escapeHtml(accountLabel)}</strong>
+                <div class="muted">Copy this token now. It will not be shown again after this page reloads.</div>
+                <pre>${escapeHtml(tokenResponse.token)}</pre>
+            `;
+            operatorAccountsOutput.prepend(tokenCard);
+        }
+
+        async function loadSetupStatus() {
+            const { resp, data } = await api('/admin/setup/status');
+            renderJson(setupStatusOutput, resp.ok ? data : `Setup status failed (${resp.status})`);
+        }
+
+        async function loadOperatorAccounts() {
+            const { resp, data } = await api('/admin/operator-accounts');
+            if (!resp.ok) {
+                operatorAccountsOutput.textContent = `Operator account load failed (${resp.status})`;
+                return;
+            }
+
+            const items = data.items || [];
+            if (!items.length) {
+                operatorAccountsOutput.innerHTML = '<div class="muted">No operator accounts yet.</div>';
+                return;
+            }
+
+            operatorAccountsOutput.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Role</th>
+                            <th>Display</th>
+                            <th>Enabled</th>
+                            <th>Tokens</th>
+                            <th>Last login</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${items.map(item => `
+                            <tr>
+                                <td>${escapeHtml(item.username)}</td>
+                                <td>${escapeHtml(item.role)}</td>
+                                <td>${escapeHtml(item.displayName || '')}</td>
+                                <td>${item.enabled ? 'yes' : 'no'}</td>
+                                <td>${escapeHtml(item.tokenCount)}</td>
+                                <td>${escapeHtml(formatDateTime(item.lastLoginAtUtc))}</td>
+                                <td class="actions">
+                                    <button data-operator-token-create="${escapeHtml(item.id)}">Create Token</button>
+                                    <button class="secondary" data-operator-account-delete="${escapeHtml(item.id)}">Delete</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        async function createOperatorAccount() {
+            if (!requireRole('admin', 'Creating operator accounts')) return;
+
+            const payload = {
+                username: operatorAccountUsernameInput.value.trim(),
+                displayName: operatorAccountDisplayNameInput.value.trim() || null,
+                role: operatorAccountRoleInput.value,
+                password: operatorAccountPasswordInput.value,
+                enabled: true
+            };
+            const { resp, data } = await mutate('/admin/operator-accounts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!resp.ok) {
+                showFlash(data?.error || `Operator account create failed (${resp.status}).`, 'error');
+                return;
+            }
+
+            operatorAccountPasswordInput.value = '';
+            operatorAccountUsernameInput.value = '';
+            operatorAccountDisplayNameInput.value = '';
+            await loadOperatorAccounts();
+            showFlash(`Created operator account ${data.account?.username || payload.username}.`, 'ok');
+        }
+
+        async function loadOrganizationPolicy() {
+            const { resp, data } = await api('/admin/organization-policy');
+            if (!resp.ok) {
+                organizationPolicyOutput.textContent = `Organization policy load failed (${resp.status})`;
+                return;
+            }
+
+            policyBootstrapEnabledInput.checked = Boolean(data.policy?.bootstrapTokenEnabled);
+            policyAuthModesInput.value = (data.policy?.allowedAuthModes || []).join(',');
+            policyMinPluginTrustInput.value = data.policy?.minimumPluginTrustLevel || 'untrusted';
+            policyExportRetentionInput.value = data.policy?.exportRetentionDays ?? 30;
+            policyHighRiskGuardInput.checked = Boolean(data.policy?.requireInteractiveAdminForHighRiskMutations);
+            policyPublicGuardrailsInput.checked = Boolean(data.policy?.publicDeploymentGuardrails);
+            renderJson(organizationPolicyOutput, data);
+        }
+
+        function collectOrganizationPolicy() {
+            return {
+                bootstrapTokenEnabled: policyBootstrapEnabledInput.checked,
+                allowedAuthModes: policyAuthModesInput.value.split(',').map(value => value.trim()).filter(Boolean),
+                minimumPluginTrustLevel: policyMinPluginTrustInput.value.trim() || 'untrusted',
+                exportRetentionDays: toInt(policyExportRetentionInput.value, 30),
+                requireInteractiveAdminForHighRiskMutations: policyHighRiskGuardInput.checked,
+                publicDeploymentGuardrails: policyPublicGuardrailsInput.checked
+            };
+        }
+
+        async function saveOrganizationPolicy() {
+            if (!requireRole('admin', 'Saving organization policy')) return;
+
+            const payload = collectOrganizationPolicy();
+            const { resp, data } = await mutate('/admin/organization-policy', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!resp.ok) {
+                showFlash(data?.error || `Organization policy save failed (${resp.status}).`, 'error');
+                return;
+            }
+
+            renderJson(organizationPolicyOutput, data);
+            showFlash(data.message || 'Organization policy saved.', 'ok');
+            await loadSetupStatus();
+        }
+
+        async function createOperatorAccountToken(accountId) {
+            if (!requireRole('admin', 'Creating operator account tokens')) return;
+
+            const label = window.prompt('Token label', 'browser')?.trim() || 'browser';
+            const { resp, data } = await mutate(`/admin/operator-accounts/${encodeURIComponent(accountId)}/tokens`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ label })
+            });
+
+            if (!resp.ok) {
+                showFlash(data?.error || `Operator token create failed (${resp.status}).`, 'error');
+                return;
+            }
+
+            await loadOperatorAccounts();
+            prependOperatorTokenNotice(data);
+            showFlash(`Created operator token ${data.tokenInfo?.id || ''}.`, 'warn');
+        }
+
+        async function deleteOperatorAccount(accountId) {
+            if (!requireRole('admin', 'Deleting operator accounts')) return;
+            if (!window.confirm(`Delete operator account ${accountId}?`)) return;
+
+            const { resp, data } = await mutate(`/admin/operator-accounts/${encodeURIComponent(accountId)}`, {
+                method: 'DELETE'
+            });
+
+            if (!resp.ok) {
+                showFlash(data?.error || `Operator account delete failed (${resp.status}).`, 'error');
+                return;
+            }
+
+            await loadOperatorAccounts();
+            showFlash(`Deleted operator account ${accountId}.`, 'ok');
+        }
+
+        async function loadObservability() {
+            const params = buildDateRangeQuery();
+            const bucketMinutes = toInt(observabilityBucketInput.value, 60);
+            const [summaryResult, seriesResult] = await Promise.all([
+                api(`/admin/observability/summary?${params.toString()}`),
+                api(`/admin/observability/series?${new URLSearchParams([...params.entries(), ['bucketMinutes', String(bucketMinutes)]])}`)
+            ]);
+
+            if (!summaryResult.resp.ok) {
+                observabilityCards.innerHTML = '';
+                observabilitySummaryOutput.textContent = `Observability summary failed (${summaryResult.resp.status})`;
+            } else {
+                renderObservabilitySummary(summaryResult.data);
+            }
+
+            renderJson(observabilitySeriesOutput, seriesResult.resp.ok ? seriesResult.data : `Observability series failed (${seriesResult.resp.status})`);
+        }
+
+        async function exportAuditBundle() {
+            const params = buildDateRangeQuery();
+            const url = `/admin/audit/export${params.toString() ? `?${params.toString()}` : ''}`;
+            const resp = await fetch(url, { credentials: 'same-origin' });
+            if (!resp.ok) {
+                auditExportOutput.textContent = `Audit export failed (${resp.status})`;
+                showFlash(`Audit export failed (${resp.status}).`, 'error');
+                return;
+            }
+
+            const blob = await resp.blob();
+            const href = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = href;
+            link.download = `openclaw-audit-${Date.now()}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(href);
+            auditExportOutput.textContent = `Downloaded audit bundle (${blob.size} bytes).`;
+            showFlash('Audit bundle downloaded.', 'ok');
+        }
+
+        async function loadMigrationReportFromFile(file) {
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                const report = JSON.parse(text);
+                migrationReportOutput.innerHTML = `
+                    <div class="stack">
+                        <div><strong>Source:</strong> ${escapeHtml(report.sourcePath || '')}</div>
+                        <div><strong>Target config:</strong> ${escapeHtml(report.targetConfigPath || '')}</div>
+                        <div><strong>Applied:</strong> ${escapeHtml(Boolean(report.applied))}</div>
+                        <div><strong>Managed skills root:</strong> ${escapeHtml(report.managedSkillRootPath || '')}</div>
+                        <div><strong>Plugin review plan:</strong> ${escapeHtml(report.pluginReviewPlanPath || '')}</div>
+                        <pre>${escapeHtml(JSON.stringify({
+                            compatibility: report.compatibility || [],
+                            skills: report.skills || [],
+                            plugins: report.plugins || [],
+                            warnings: report.warnings || [],
+                            skippedSettings: report.skippedSettings || []
+                        }, null, 2))}</pre>
+                    </div>
+                `;
+            } catch (err) {
+                migrationReportOutput.textContent = `Failed to load migration report: ${err.message}`;
+            }
         }
 
         function toInt(value, fallback = 0) {
@@ -3469,6 +4018,14 @@
                 automationPreviewOutput.textContent = 'Login required.';
                 learningListOutput.textContent = 'Login required.';
                 learningDetailOutput.innerHTML = '<div class="muted">Login required.</div>';
+                setupStatusOutput.textContent = 'Login required.';
+                operatorAccountsOutput.textContent = 'Login required.';
+                organizationPolicyOutput.textContent = 'Login required.';
+                observabilityCards.innerHTML = '';
+                observabilitySummaryOutput.textContent = 'Login required.';
+                observabilitySeriesOutput.textContent = 'Login required.';
+                auditExportOutput.textContent = 'Login required.';
+                migrationReportOutput.textContent = 'Load a local migration report after login.';
                 if (approvalsPollTimer) {
                     clearInterval(approvalsPollTimer);
                     approvalsPollTimer = null;
@@ -3476,8 +4033,9 @@
                 return;
             }
 
-            await Promise.all([
+            const tasks = [
                 loadSummary(),
+                loadSetupStatus(),
                 loadDoctor(),
                 loadRetention(),
                 loadMemoryNotes(),
@@ -3500,8 +4058,18 @@
                 loadSettings(),
                 loadWhatsAppSetup(),
                 loadPairing(),
-                loadAllowlists()
-            ]);
+                loadAllowlists(),
+                loadObservability()
+            ];
+
+            if (hasRole('admin')) {
+                tasks.push(loadOperatorAccounts(), loadOrganizationPolicy());
+            } else {
+                operatorAccountsOutput.textContent = 'Admin access required.';
+                organizationPolicyOutput.textContent = 'Admin access required.';
+            }
+
+            await Promise.all(tasks);
 
             if (!approvalsPollTimer) {
                 approvalsPollTimer = setInterval(() => {
@@ -3529,7 +4097,19 @@
             await refreshAll();
         });
 
+        loginModeInput.addEventListener('change', updateLoginModeUi);
         refreshButton.addEventListener('click', refreshAll);
+        document.getElementById('setup-status-refresh-button').addEventListener('click', loadSetupStatus);
+        document.getElementById('operator-accounts-refresh-button').addEventListener('click', loadOperatorAccounts);
+        document.getElementById('operator-account-create-button').addEventListener('click', createOperatorAccount);
+        document.getElementById('organization-policy-refresh-button').addEventListener('click', loadOrganizationPolicy);
+        document.getElementById('organization-policy-save-button').addEventListener('click', saveOrganizationPolicy);
+        document.getElementById('observability-refresh-button').addEventListener('click', loadObservability);
+        document.getElementById('audit-export-button').addEventListener('click', exportAuditBundle);
+        migrationReportInput.addEventListener('change', async event => {
+            const file = event.target.files?.[0];
+            await loadMigrationReportFromFile(file);
+        });
         document.getElementById('retention-status-button').addEventListener('click', loadRetention);
         document.getElementById('automation-refresh-button').addEventListener('click', async () => {
             await loadAutomationTemplates();
@@ -3660,6 +4240,19 @@
             if (!encodedKey) return;
 
             await loadMemoryNote(decodeURIComponent(encodedKey));
+        });
+
+        operatorAccountsOutput.addEventListener('click', async event => {
+            const createButton = event.target.closest('button[data-operator-token-create]');
+            if (createButton) {
+                await createOperatorAccountToken(createButton.getAttribute('data-operator-token-create'));
+                return;
+            }
+
+            const deleteButton = event.target.closest('button[data-operator-account-delete]');
+            if (deleteButton) {
+                await deleteOperatorAccount(deleteButton.getAttribute('data-operator-account-delete'));
+            }
         });
 
         pluginsOutput.addEventListener('click', async (event) => {
@@ -3924,6 +4517,7 @@
             }
         });
 
+        updateLoginModeUi();
         refreshAll();
     </script>
 </body>

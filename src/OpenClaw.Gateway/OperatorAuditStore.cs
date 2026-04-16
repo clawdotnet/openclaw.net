@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Models;
@@ -14,13 +16,16 @@ internal sealed class OperatorAuditStore
     private readonly object _gate = new();
     private readonly ILogger<OperatorAuditStore> _logger;
     private readonly RuntimeMetrics? _metrics;
+    private bool _chainInitialized;
+    private long _lastSequence;
+    private string? _lastEntryHash;
 
     public OperatorAuditStore(string storagePath, ILogger<OperatorAuditStore> logger, RuntimeMetrics? metrics = null)
     {
-        var rootedStoragePath = Path.IsPathRooted(storagePath)
+        var rootedStoragePath = System.IO.Path.IsPathRooted(storagePath)
             ? storagePath
-            : Path.GetFullPath(storagePath);
-        _path = Path.Combine(rootedStoragePath, DirectoryName, FileName);
+            : System.IO.Path.GetFullPath(storagePath);
+        _path = System.IO.Path.Combine(rootedStoragePath, DirectoryName, FileName);
         _logger = logger;
         _metrics = metrics;
     }
@@ -29,14 +34,55 @@ internal sealed class OperatorAuditStore
     {
         try
         {
-            var directory = Path.GetDirectoryName(_path);
+            var directory = System.IO.Path.GetDirectoryName(_path);
             if (!string.IsNullOrWhiteSpace(directory))
                 Directory.CreateDirectory(directory);
 
-            var line = JsonSerializer.Serialize(entry, CoreJsonContext.Default.OperatorAuditEntry);
             lock (_gate)
             {
+                EnsureChainInitializedUnsafe();
+                var sequence = _lastSequence + 1;
+                var timestamp = entry.TimestampUtc == default ? DateTimeOffset.UtcNow : entry.TimestampUtc;
+                var actorRole = string.IsNullOrWhiteSpace(entry.ActorRole) ? OperatorRoleNames.Viewer : entry.ActorRole;
+                var previousEntryHash = _lastEntryHash;
+                var entryHash = ComputeEntryHash(
+                    sequence,
+                    timestamp,
+                    entry.ActorId,
+                    actorRole,
+                    entry.ActorDisplayName,
+                    entry.AuthMode,
+                    entry.ActionType,
+                    entry.TargetId,
+                    entry.Summary,
+                    previousEntryHash,
+                    entry.Before,
+                    entry.After,
+                    entry.Success);
+
+                var effectiveEntry = new OperatorAuditEntry
+                {
+                    Id = entry.Id,
+                    Sequence = sequence,
+                    TimestampUtc = timestamp,
+                    ActorId = entry.ActorId,
+                    ActorRole = actorRole,
+                    ActorDisplayName = entry.ActorDisplayName,
+                    AuthMode = entry.AuthMode,
+                    ActionType = entry.ActionType,
+                    TargetId = entry.TargetId,
+                    Summary = entry.Summary,
+                    PreviousEntryHash = previousEntryHash,
+                    Before = entry.Before,
+                    After = entry.After,
+                    Success = entry.Success,
+                    EntryHash = entryHash
+                };
+
+                var line = JsonSerializer.Serialize(effectiveEntry, CoreJsonContext.Default.OperatorAuditEntry);
                 File.AppendAllText(_path, line + Environment.NewLine);
+                _lastSequence = effectiveEntry.Sequence;
+                _lastEntryHash = effectiveEntry.EntryHash;
             }
         }
         catch (Exception ex)
@@ -45,6 +91,8 @@ internal sealed class OperatorAuditStore
             _logger.LogWarning(ex, "Failed to append operator audit entry to {Path}", _path);
         }
     }
+
+    public string Path => _path;
 
     public IReadOnlyList<OperatorAuditEntry> Query(OperatorAuditQuery query)
     {
@@ -65,10 +113,79 @@ internal sealed class OperatorAuditStore
                 if (!string.IsNullOrWhiteSpace(query.TargetId) &&
                     !string.Equals(item.TargetId, query.TargetId, StringComparison.Ordinal))
                     return false;
+                if (query.FromUtc is { } fromUtc && item.TimestampUtc < fromUtc)
+                    return false;
+                if (query.ToUtc is { } toUtc && item.TimestampUtc > toUtc)
+                    return false;
 
                 return true;
             },
             _logger,
             "Failed to parse operator audit line from {Path}");
+    }
+
+    private void EnsureChainInitializedUnsafe()
+    {
+        if (_chainInitialized)
+            return;
+
+        _lastSequence = 0;
+        _lastEntryHash = null;
+        if (File.Exists(_path))
+        {
+            foreach (var line in File.ReadLines(_path))
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+
+                try
+                {
+                    var entry = JsonSerializer.Deserialize(line, CoreJsonContext.Default.OperatorAuditEntry);
+                    if (entry is null)
+                        continue;
+
+                    _lastSequence = Math.Max(_lastSequence, entry.Sequence);
+                    _lastEntryHash = entry.EntryHash;
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        _chainInitialized = true;
+    }
+
+    private static string ComputeEntryHash(
+        long sequence,
+        DateTimeOffset timestampUtc,
+        string actorId,
+        string actorRole,
+        string? actorDisplayName,
+        string authMode,
+        string actionType,
+        string targetId,
+        string summary,
+        string? previousEntryHash,
+        string? before,
+        string? after,
+        bool success)
+    {
+        var material = string.Join(
+            "|",
+            sequence.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            timestampUtc.ToString("O"),
+            actorId,
+            actorRole,
+            actorDisplayName ?? "",
+            authMode,
+            actionType,
+            targetId,
+            summary,
+            previousEntryHash ?? "",
+            before ?? "",
+            after ?? "",
+            success ? "1" : "0");
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
     }
 }

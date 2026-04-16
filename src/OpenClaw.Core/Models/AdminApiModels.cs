@@ -3,6 +3,25 @@ namespace OpenClaw.Core.Models;
 public sealed class AuthSessionRequest
 {
     public bool Remember { get; init; }
+    public string? Username { get; init; }
+    public string? Password { get; init; }
+    public string? AccountToken { get; init; }
+}
+
+public sealed class OperatorTokenExchangeRequest
+{
+    public string? Username { get; init; }
+    public string? Password { get; init; }
+    public string? Label { get; init; }
+    public DateTimeOffset? ExpiresAtUtc { get; init; }
+}
+
+public sealed class OperatorTokenExchangeResponse
+{
+    public string AuthMode { get; init; } = OrganizationAuthModeNames.AccountToken;
+    public OperatorAccountSummary? Account { get; init; }
+    public OperatorAccountTokenSummary? TokenInfo { get; init; }
+    public string Token { get; init; } = "";
 }
 
 public sealed class AuthSessionResponse
@@ -11,6 +30,11 @@ public sealed class AuthSessionResponse
     public string? CsrfToken { get; init; }
     public DateTimeOffset? ExpiresAtUtc { get; init; }
     public bool Persistent { get; init; }
+    public string Role { get; init; } = OperatorRoleNames.Viewer;
+    public string? AccountId { get; init; }
+    public string? Username { get; init; }
+    public string? DisplayName { get; init; }
+    public bool IsBootstrapAdmin { get; init; }
 }
 
 public sealed class ApprovalListResponse
@@ -24,6 +48,8 @@ public sealed class ApprovalHistoryQuery
     public string? ChannelId { get; init; }
     public string? SenderId { get; init; }
     public string? ToolName { get; init; }
+    public DateTimeOffset? FromUtc { get; init; }
+    public DateTimeOffset? ToUtc { get; init; }
 }
 
 public sealed class ApprovalHistoryEntry
@@ -42,6 +68,8 @@ public sealed class ApprovalHistoryEntry
     public DateTimeOffset? DecisionAtUtc { get; init; }
     public string? ActorChannelId { get; init; }
     public string? ActorSenderId { get; init; }
+    public string? ActorRole { get; init; }
+    public string? ActorDisplayName { get; init; }
     public string? DecisionSource { get; init; }
     public bool? Approved { get; init; }
 }
