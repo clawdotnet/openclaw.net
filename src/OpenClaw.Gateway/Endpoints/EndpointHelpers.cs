@@ -37,8 +37,11 @@ internal static class EndpointHelpers
         if (!isNonLoopbackBind)
             return true;
 
+        if (string.IsNullOrWhiteSpace(config.AuthToken))
+            return false;
+
         var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
-        return GatewaySecurity.IsTokenValid(token, config.AuthToken!);
+        return GatewaySecurity.IsTokenValid(token, config.AuthToken);
     }
 
     public static OperatorAuthorizationResult AuthorizeOperatorRequest(
@@ -68,7 +71,8 @@ internal static class EndpointHelpers
         var token = GatewaySecurity.GetToken(ctx, startup.Config.Security.AllowQueryStringToken);
         if (policy.BootstrapTokenEnabled &&
             IsAllowedAuthMode(policy, OrganizationAuthModeNames.BootstrapToken) &&
-            GatewaySecurity.IsTokenValid(token, startup.Config.AuthToken!))
+            !string.IsNullOrWhiteSpace(startup.Config.AuthToken) &&
+            GatewaySecurity.IsTokenValid(token, startup.Config.AuthToken))
         {
             return new OperatorAuthorizationResult(
                 true,

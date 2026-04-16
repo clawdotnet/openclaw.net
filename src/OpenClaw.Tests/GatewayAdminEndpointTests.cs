@@ -223,6 +223,34 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task MissingBootstrapToken_FailsClosed_WithoutThrowing()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.AuthToken = "";
+        });
+        var policyService = harness.App.Services.GetRequiredService<OrganizationPolicyService>();
+        policyService.Update(new OrganizationPolicySnapshot
+        {
+            BootstrapTokenEnabled = true,
+            AllowedAuthModes = [OrganizationAuthModeNames.BootstrapToken]
+        });
+
+        using var adminRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/settings");
+        adminRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "not-a-real-token");
+        var adminResponse = await harness.Client.SendAsync(adminRequest);
+        Assert.Equal(HttpStatusCode.Unauthorized, adminResponse.StatusCode);
+
+        using var openAiRequest = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        {
+            Content = JsonContent("""{"messages":[{"role":"user","content":"hello"}]}""")
+        };
+        openAiRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "not-a-real-token");
+        var openAiResponse = await harness.Client.SendAsync(openAiRequest);
+        Assert.Equal(HttpStatusCode.Unauthorized, openAiResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task AdminSetupStatus_ReportsArtifactsAndPolicy()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -438,6 +466,10 @@ public sealed class GatewayAdminEndpointTests
         var points = seriesPayload.RootElement.GetProperty("points").EnumerateArray().ToArray();
         Assert.NotEmpty(points);
         Assert.Contains(points, item => item.GetProperty("operatorActions").GetInt32() >= 1);
+        var expectedProviderErrors = points[0].GetProperty("providerErrors").GetInt32();
+        var expectedProviderRetries = points[0].GetProperty("providerRetries").GetInt32();
+        Assert.All(points, item => Assert.Equal(expectedProviderErrors, item.GetProperty("providerErrors").GetInt32()));
+        Assert.All(points, item => Assert.Equal(expectedProviderRetries, item.GetProperty("providerRetries").GetInt32()));
     }
 
     [Fact]
@@ -510,6 +542,74 @@ public sealed class GatewayAdminEndpointTests
             manifestDoc.RootElement.GetProperty("warnings").EnumerateArray().Select(static item => item.GetString()).OfType<string>(),
             value => value.Contains("retention window", StringComparison.OrdinalIgnoreCase));
         Assert.True(manifestDoc.RootElement.GetProperty("fileEntryCounts").GetProperty("operator-audit.jsonl").GetInt32() >= 1);
+    }
+
+    [Fact]
+    public void OperatorAuditStore_AppendUsesHashForHighestExistingSequence()
+    {
+        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-audit-store-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var store = new OperatorAuditStore(storagePath, NullLogger<OperatorAuditStore>.Instance);
+            Directory.CreateDirectory(Path.GetDirectoryName(store.Path)!);
+
+            var highest = new OperatorAuditEntry
+            {
+                Id = "existing-high",
+                Sequence = 5,
+                TimestampUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+                ActorId = "operator:high",
+                ActorRole = OperatorRoleNames.Admin,
+                AuthMode = "bearer",
+                ActionType = "high",
+                TargetId = "target-high",
+                Summary = "highest sequence",
+                PreviousEntryHash = "hash-four",
+                EntryHash = "hash-five",
+                Success = true
+            };
+            var older = new OperatorAuditEntry
+            {
+                Id = "existing-old",
+                Sequence = 3,
+                TimestampUtc = DateTimeOffset.UtcNow.AddMinutes(-4),
+                ActorId = "operator:old",
+                ActorRole = OperatorRoleNames.Admin,
+                AuthMode = "bearer",
+                ActionType = "old",
+                TargetId = "target-old",
+                Summary = "older sequence",
+                PreviousEntryHash = "hash-two",
+                EntryHash = "hash-three",
+                Success = true
+            };
+
+            File.WriteAllText(
+                store.Path,
+                JsonSerializer.Serialize(highest, CoreJsonContext.Default.OperatorAuditEntry) + Environment.NewLine +
+                JsonSerializer.Serialize(older, CoreJsonContext.Default.OperatorAuditEntry) + Environment.NewLine);
+
+            store.Append(new OperatorAuditEntry
+            {
+                Id = "new-entry",
+                TimestampUtc = DateTimeOffset.UtcNow,
+                ActorId = "operator:new",
+                AuthMode = "bearer",
+                ActionType = "new",
+                TargetId = "target-new",
+                Summary = "new sequence",
+                Success = true
+            });
+
+            var latest = Assert.Single(store.Query(new OperatorAuditQuery { Limit = 1 }));
+            Assert.Equal(6, latest.Sequence);
+            Assert.Equal("hash-five", latest.PreviousEntryHash);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
     }
 
     [Fact]

@@ -41,6 +41,7 @@ internal sealed class OperatorAccountService
     private const int Pbkdf2Iterations = 120_000;
     private const int SaltBytes = 16;
     private const int HashBytes = 32;
+    private const int TokenPrefixLength = 12;
     private const string DirectoryName = "admin";
     private const string FileName = "operator-accounts.json";
 
@@ -261,6 +262,7 @@ internal sealed class OperatorAccountService
         if (string.IsNullOrWhiteSpace(token))
             return false;
 
+        var tokenPrefix = GetTokenPrefix(token);
         lock (_gate)
         {
             var state = LoadUnsafe();
@@ -274,6 +276,8 @@ internal sealed class OperatorAccountService
                     if (tokenRecord.RevokedAtUtc is not null)
                         continue;
                     if (tokenRecord.ExpiresAtUtc is not null && tokenRecord.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+                        continue;
+                    if (!string.Equals(tokenRecord.TokenPrefix, tokenPrefix, StringComparison.Ordinal))
                         continue;
                     if (!SecretMatches(token, tokenRecord.SecretSalt, tokenRecord.SecretHash))
                         continue;
@@ -356,7 +360,7 @@ internal sealed class OperatorAccountService
         {
             Id = $"optok_{Guid.NewGuid():N}"[..20],
             Label = label?.Trim() ?? "",
-            TokenPrefix = token[..Math.Min(token.Length, 12)],
+            TokenPrefix = GetTokenPrefix(token),
             SecretSalt = salt,
             SecretHash = HashSecret(token, salt),
             CreatedAtUtc = DateTimeOffset.UtcNow,
@@ -387,6 +391,9 @@ internal sealed class OperatorAccountService
 
     private static string GenerateSalt()
         => Convert.ToHexString(RandomNumberGenerator.GetBytes(SaltBytes));
+
+    private static string GetTokenPrefix(string token)
+        => token[..Math.Min(token.Length, TokenPrefixLength)];
 
     private static string HashSecret(string secret, string saltHex)
     {

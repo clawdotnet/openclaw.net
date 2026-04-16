@@ -144,8 +144,11 @@ internal sealed class OperatorAuditStore
                     if (entry is null)
                         continue;
 
-                    _lastSequence = Math.Max(_lastSequence, entry.Sequence);
-                    _lastEntryHash = entry.EntryHash;
+                    if (entry.Sequence > _lastSequence)
+                    {
+                        _lastSequence = entry.Sequence;
+                        _lastEntryHash = entry.EntryHash;
+                    }
                 }
                 catch
                 {

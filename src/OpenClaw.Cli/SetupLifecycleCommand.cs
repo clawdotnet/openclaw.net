@@ -234,8 +234,8 @@ internal static class SetupLifecycleCommand
 
         if (platform is "macos" or "all")
         {
-            deployItems.Add(("ai.openclaw.gateway.plist", BuildLaunchdPlist("ai.openclaw.gateway", repoRoot, "src/OpenClaw.Gateway", $"--config {configPath}", null)));
-            deployItems.Add(("ai.openclaw.companion.plist", BuildLaunchdPlist("ai.openclaw.companion", repoRoot, "src/OpenClaw.Companion", "", new Dictionary<string, string>
+            deployItems.Add(("ai.openclaw.gateway.plist", BuildLaunchdPlist("ai.openclaw.gateway", repoRoot, "src/OpenClaw.Gateway", ["--config", configPath], null)));
+            deployItems.Add(("ai.openclaw.companion.plist", BuildLaunchdPlist("ai.openclaw.companion", repoRoot, "src/OpenClaw.Companion", [], new Dictionary<string, string>
             {
                 ["OPENCLAW_BASE_URL"] = baseUrl,
                 ["OPENCLAW_AUTH_TOKEN"] = config.AuthToken ?? ""
@@ -293,7 +293,7 @@ internal static class SetupLifecycleCommand
             """;
     }
 
-    private static string BuildLaunchdPlist(string label, string repoRoot, string projectDirectory, string extraArgs, IReadOnlyDictionary<string, string>? environment)
+    private static string BuildLaunchdPlist(string label, string repoRoot, string projectDirectory, IEnumerable<string> extraArgs, IReadOnlyDictionary<string, string>? environment)
     {
         var args = new List<string>
         {
@@ -305,11 +305,9 @@ internal static class SetupLifecycleCommand
             "-c",
             "Release"
         };
-        if (!string.IsNullOrWhiteSpace(extraArgs))
-        {
+        if (extraArgs.Any())
             args.Add("--");
-            args.AddRange(extraArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-        }
+        args.AddRange(extraArgs);
 
         var argLines = string.Join(Environment.NewLine, args.Select(static item => $"    <string>{System.Security.SecurityElement.Escape(item)}</string>"));
         var envLines = environment is null

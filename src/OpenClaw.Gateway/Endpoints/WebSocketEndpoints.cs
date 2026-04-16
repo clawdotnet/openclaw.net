@@ -105,7 +105,8 @@ internal static class WebSocketEndpoints
         var policy = ctx.RequestServices.GetService<OrganizationPolicyService>()?.GetSnapshot() ?? new OrganizationPolicySnapshot();
         if (policy.BootstrapTokenEnabled &&
             policy.AllowedAuthModes.Any(mode => string.Equals(mode, OrganizationAuthModeNames.BootstrapToken, StringComparison.OrdinalIgnoreCase)) &&
-            GatewaySecurity.IsTokenValid(token, startup.Config.AuthToken!))
+            !string.IsNullOrWhiteSpace(startup.Config.AuthToken) &&
+            GatewaySecurity.IsTokenValid(token, startup.Config.AuthToken))
         {
             return true;
         }

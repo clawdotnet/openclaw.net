@@ -276,6 +276,60 @@ public sealed class SetupCommandTests
         }
     }
 
+    [Fact]
+    public async Task RunAsync_ServiceWithConfigPathContainingSpaces_KeepsLaunchdArgumentsIntact()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var configDirectory = Path.Combine(root, "config dir");
+            var configPath = Path.Combine(configDirectory, "openclaw settings.json");
+            var workspace = Path.Combine(root, "workspace");
+            using var setupOutput = new StringWriter();
+            using var setupError = new StringWriter();
+
+            var setupExitCode = await SetupCommand.RunAsync(
+                [
+                    "--non-interactive",
+                    "--profile", "public",
+                    "--config", configPath,
+                    "--workspace", workspace,
+                    "--provider", "openai",
+                    "--model", "gpt-4o",
+                    "--api-key", "env:OPENAI_API_KEY"
+                ],
+                new StringReader(string.Empty),
+                setupOutput,
+                setupError,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, setupExitCode);
+
+            using var serviceOutput = new StringWriter();
+            using var serviceError = new StringWriter();
+            var serviceExitCode = await SetupCommand.RunAsync(
+                ["service", "--config", configPath, "--platform", "macos"],
+                new StringReader(string.Empty),
+                serviceOutput,
+                serviceError,
+                LocateRepoRoot(),
+                canPrompt: false);
+
+            Assert.Equal(0, serviceExitCode);
+            Assert.Equal(string.Empty, serviceError.ToString());
+
+            var plistPath = Path.Combine(configDirectory, "deploy", "ai.openclaw.gateway.plist");
+            var plist = await File.ReadAllTextAsync(plistPath);
+            Assert.Contains("<string>--config</string>", plist, StringComparison.Ordinal);
+            Assert.Contains($"<string>{System.Security.SecurityElement.Escape(configPath)}</string>", plist, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTempRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "openclaw-setup-tests", Guid.NewGuid().ToString("n"));
