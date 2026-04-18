@@ -159,7 +159,7 @@ internal static class RuntimeInitializationExtensions
         skillWatcher.Start(app.Lifetime.ApplicationStopping);
 
         await services.AutomationService.RefreshCacheAsync(app.Lifetime.ApplicationStopping);
-        var cronTask = StartCronIfEnabled(loggerFactory, services.Pipeline, services.CronJobSource, app.Lifetime.ApplicationStopping);
+        var cronTask = app.Services.GetRequiredService<CronScheduler>();
         StartNativeEventBridges(config, loggerFactory, services.Pipeline, app.Lifetime.ApplicationStopping);
 
         var profile = app.Services.GetRequiredService<IRuntimeProfile>();
@@ -699,20 +699,6 @@ internal static class RuntimeInitializationExtensions
             costChecker: costChecker));
 
         return new MiddlewarePipeline(middlewareList);
-    }
-
-    private static CronScheduler? StartCronIfEnabled(
-        ILoggerFactory loggerFactory,
-        MessagePipeline pipeline,
-        ICronJobSource jobSource,
-        CancellationToken stoppingToken)
-    {
-        var logger = loggerFactory.CreateLogger<CronScheduler>();
-        var cronTask = new CronScheduler(jobSource, logger, pipeline.InboundWriter);
-        _ = cronTask.StartAsync(stoppingToken).ContinueWith(
-            t => logger.LogError(t.Exception!.InnerException, "CronScheduler failed to start"),
-            TaskContinuationOptions.OnlyOnFaulted);
-        return cronTask;
     }
 
     private static void StartNativeEventBridges(

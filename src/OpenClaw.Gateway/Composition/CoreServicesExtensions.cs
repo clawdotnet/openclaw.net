@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using OpenClaw.Channels;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Execution;
@@ -13,7 +14,10 @@ using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Models;
+using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.PromptCaching;
+using TickerQ.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace OpenClaw.Gateway.Composition;
 
@@ -23,6 +27,7 @@ internal static class CoreServicesExtensions
     {
         var config = startup.Config;
 
+        services.TryAddSingleton<IConfiguration>(_ => new ConfigurationBuilder().Build());
         services.AddSingleton(config);
         services.AddSingleton(config.Learning);
         services.AddSingleton(typeof(AllowlistSemantics), AllowlistPolicy.ParseSemantics(config.Channels.AllowlistSemantics));
@@ -101,6 +106,8 @@ internal static class CoreServicesExtensions
             return svc;
         });
         services.AddSingleton<HeartbeatService>();
+        services.AddTickerQ();
+        services.AddSingleton<CronSchedulerTickerFunction>();
         services.AddSingleton<GatewayAutomationService>();
         services.AddSingleton<LearningService>();
         services.AddSingleton<ICronJobSource, GatewayCronJobSource>();
@@ -124,6 +131,13 @@ internal static class CoreServicesExtensions
         services.AddSingleton<IMemoryRetentionCoordinator>(sp => sp.GetRequiredService<MemoryRetentionSweeperService>());
         services.AddHostedService(sp => sp.GetRequiredService<MemoryRetentionSweeperService>());
         services.AddSingleton<MessagePipeline>();
+        services.AddSingleton(sp =>
+            new CronScheduler(
+                sp.GetRequiredService<ICronJobSource>(),
+                sp.GetRequiredService<ILogger<CronScheduler>>(),
+                sp.GetRequiredService<MessagePipeline>().InboundWriter));
+        services.AddSingleton<CronSchedulerStartupService>();
+        services.AddHostedService(sp => sp.GetRequiredService<CronSchedulerStartupService>());
         services.AddSingleton(new WebSocketChannel(config.WebSocket));
         services.AddSingleton<ChatCommandProcessor>();
         services.AddSingleton<GatewayLlmExecutionService>();

@@ -5,6 +5,7 @@ using OpenClaw.Gateway.Endpoints;
 using OpenClaw.Gateway.Mcp;
 using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.Profiles;
+using TickerQ.DependencyInjection;
 #if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using OpenClaw.Gateway.A2A;
 using OpenClaw.MicrosoftAgentFrameworkAdapter;
@@ -43,6 +44,7 @@ builder.Services.AddOpenSandboxIntegration(builder.Configuration);
 #endif
 
 var app = builder.Build();
+app.UseTickerQ();
 var runtime = await app.InitializeOpenClawRuntimeAsync(startup);
 
 app.InitializeMcpRuntime(runtime);
