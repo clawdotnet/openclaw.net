@@ -44,7 +44,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton<ProviderUsageTracker>();
         services.AddSingleton<ToolUsageTracker>();
         services.AddSingleton(sp => new ToolAuditLog(
-            Path.Combine(config.Memory.StoragePath, "audit", "tool-audit.jsonl"),
+            Path.Combine(Path.GetFullPath(config.Memory.StoragePath), "audit", "tool-audit.jsonl"),
             sp.GetRequiredService<ILogger<ToolAuditLog>>()));
         services.AddSingleton<LlmProviderRegistry>();
         services.AddSingleton<ConfiguredModelProfileRegistry>();

@@ -38,43 +38,51 @@ public sealed class ToolAuditLog : IDisposable
 
     public ToolAuditLog(string? filePath, ILogger<ToolAuditLog>? logger = null)
     {
-        _filePath = string.IsNullOrWhiteSpace(filePath) ? null : filePath;
         _logger = logger;
 
-        if (_filePath is not null)
+        var configuredFilePath = string.IsNullOrWhiteSpace(filePath) ? null : filePath;
+        if (configuredFilePath is not null)
         {
             try
             {
-                var dir = Path.GetDirectoryName(_filePath);
+                var dir = Path.GetDirectoryName(configuredFilePath);
                 if (!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
                     Directory.CreateDirectory(dir);
             }
-            catch (IOException ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
             {
-                _logger?.LogWarning(ex, "Failed to create audit log directory for {Path}", _filePath);
+                _logger?.LogWarning(ex,
+                    "Failed to initialize audit log directory for {Path}; file logging will be disabled",
+                    configuredFilePath);
+                configuredFilePath = null;
             }
         }
+
+        _filePath = configuredFilePath;
     }
 
     public void Record(ToolAuditEntry entry)
     {
+        string? filePath;
         lock (_gate)
         {
             if (_recent.Count >= RecentBufferCapacity)
                 _recent.RemoveAt(0);
             _recent.Add(entry);
 
-            if (_filePath is null) return;
+            filePath = _filePath;
+        }
 
-            try
-            {
-                var json = JsonSerializer.Serialize(entry, ToolAuditJsonContext.Default.ToolAuditEntry);
-                File.AppendAllText(_filePath, json + "\n");
-            }
-            catch (IOException ex)
-            {
-                _logger?.LogWarning(ex, "Failed to append tool audit entry to {Path}", _filePath);
-            }
+        if (filePath is null) return;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(entry, ToolAuditJsonContext.Default.ToolAuditEntry);
+            File.AppendAllText(filePath, json + "\n");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+        {
+            _logger?.LogWarning(ex, "Failed to append tool audit entry to {Path}", filePath);
         }
     }
 

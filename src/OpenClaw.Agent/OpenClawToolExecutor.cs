@@ -272,8 +272,8 @@ public sealed class OpenClawToolExecutor
             DurationMs = sw.Elapsed.TotalMilliseconds,
             Failed = toolFailed,
             TimedOut = toolTimedOut,
-            ArgumentsBytes = argsJson.Length,
-            ResultBytes = result.Length
+            ArgumentsBytes = Encoding.UTF8.GetByteCount(argsJson),
+            ResultBytes = Encoding.UTF8.GetByteCount(result)
         });
         _logger?.LogDebug("[{CorrelationId}] Tool {Tool} completed in {Duration}ms ok={Ok}",
             turnCtx.CorrelationId,

@@ -58,6 +58,8 @@ public class SecurityTests
         Assert.Equal("OPENCLAW_NONEXISTENT_VAR_XYZ", result);
         Assert.Single(logger.Warnings);
         Assert.Contains("environment variable name", logger.Warnings[0]);
+        // Warning must not leak the actual secret ref value
+        Assert.DoesNotContain("OPENCLAW_NONEXISTENT_VAR_XYZ", logger.Warnings[0]);
     }
 
     [Fact]

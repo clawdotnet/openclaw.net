@@ -46,9 +46,9 @@ public static class SecretResolver
 
         if (logger is not null && LooksLikeEnvVarName(secretRef))
             logger.LogWarning(
-                "Secret ref '{SecretRef}' looks like an environment variable name but no such variable is set. " +
-                "Using the literal value. Prefix with 'env:' for strict resolution.",
-                secretRef);
+                "A secret ref with {Length} chars looks like an environment variable name but no such variable is set. " +
+                "Falling back to the literal value. Prefix with 'env:' for strict resolution.",
+                secretRef.Length);
 
         return secretRef;
     }
