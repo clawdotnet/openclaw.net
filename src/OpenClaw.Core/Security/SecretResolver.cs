@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace OpenClaw.Core.Security;
 
 /// <summary>
@@ -20,6 +22,13 @@ public static class SecretResolver
     /// referenced environment variable is unset.
     /// </summary>
     public static string? Resolve(string? secretRef)
+        => Resolve(secretRef, logger: null);
+
+    /// <summary>
+    /// Resolve a secret reference to its actual value, logging a warning when a bare
+    /// string that looks like an environment variable name falls back to a literal.
+    /// </summary>
+    public static string? Resolve(string? secretRef, ILogger? logger)
     {
         if (string.IsNullOrWhiteSpace(secretRef))
             return null;
@@ -31,7 +40,17 @@ public static class SecretResolver
             return secretRef[RawPrefix.Length..];
 
         // Default: treat as env var name, fall back to literal
-        return Environment.GetEnvironmentVariable(secretRef) ?? secretRef;
+        var envValue = Environment.GetEnvironmentVariable(secretRef);
+        if (envValue is not null)
+            return envValue;
+
+        if (logger is not null && LooksLikeEnvVarName(secretRef))
+            logger.LogWarning(
+                "Secret ref '{SecretRef}' looks like an environment variable name but no such variable is set. " +
+                "Using the literal value. Prefix with 'env:' for strict resolution.",
+                secretRef);
+
+        return secretRef;
     }
 
     /// <summary>
@@ -40,4 +59,7 @@ public static class SecretResolver
     /// </summary>
     public static bool IsRawRef(string? secretRef)
         => secretRef is not null && secretRef.StartsWith(RawPrefix, StringComparison.OrdinalIgnoreCase);
+
+    private static bool LooksLikeEnvVarName(string value)
+        => value.Length >= 3 && value.All(c => c is (>= 'A' and <= 'Z') or (>= '0' and <= '9') or '_');
 }

@@ -121,6 +121,22 @@ public sealed class ToolPathPolicyTests
         Assert.StartsWith(outsideDir, resolved, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ResolveRealPath_NonExistentFileUnderExistingDir_ResolvesUnderRealParent()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var root = CreateTempDir();
+        var nonExistentFile = Path.Combine(root, "does-not-exist.txt");
+
+        var resolved = ToolPathPolicy.ResolveRealPath(nonExistentFile);
+
+        // Should resolve under the real root directory with the correct filename
+        Assert.StartsWith(root, resolved, StringComparison.Ordinal);
+        Assert.EndsWith("does-not-exist.txt", resolved, StringComparison.Ordinal);
+    }
+
     private static string CreateTempDir()
     {
         var path = Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("n"));

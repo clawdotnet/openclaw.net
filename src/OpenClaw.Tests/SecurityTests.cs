@@ -49,6 +49,50 @@ public class SecurityTests
     public void IsRawRef_Null_False()
         => Assert.False(SecretResolver.IsRawRef(null));
 
+    [Fact]
+    public void Resolve_WithLogger_BareEnvVarLikeName_LogsWarning()
+    {
+        var logger = new TestLogger();
+        var result = SecretResolver.Resolve("OPENCLAW_NONEXISTENT_VAR_XYZ", logger);
+
+        Assert.Equal("OPENCLAW_NONEXISTENT_VAR_XYZ", result);
+        Assert.Single(logger.Warnings);
+        Assert.Contains("environment variable name", logger.Warnings[0]);
+    }
+
+    [Fact]
+    public void Resolve_WithLogger_LowercaseBareString_NoWarning()
+    {
+        var logger = new TestLogger();
+        var result = SecretResolver.Resolve("some-value", logger);
+
+        Assert.Equal("some-value", result);
+        Assert.Empty(logger.Warnings);
+    }
+
+    [Fact]
+    public void Resolve_WithLogger_EnvPrefix_NoWarning()
+    {
+        var logger = new TestLogger();
+        var result = SecretResolver.Resolve("env:OPENCLAW_NONEXISTENT_VAR_XYZ", logger);
+
+        Assert.Null(result);
+        Assert.Empty(logger.Warnings);
+    }
+
+    private sealed class TestLogger : Microsoft.Extensions.Logging.ILogger
+    {
+        public List<string> Warnings { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == Microsoft.Extensions.Logging.LogLevel.Warning)
+                Warnings.Add(formatter(state, exception));
+        }
+    }
+
     // ── InputSanitizer ─────────────────────────────────────────────
 
     [Theory]

@@ -184,6 +184,18 @@ public sealed class ToolApprovalService
 
             // Timeout => deny by default and drain the pending request.
             _pending.TryRemove(approvalId, out _);
+            p.Tcs.TrySetCanceled();
+
+            // Re-check: TrySetDecision may have won the race before TrySetCanceled
+            if (p.Tcs.Task.IsCompletedSuccessfully)
+            {
+                return new ToolApprovalWaitOutcome
+                {
+                    Result = p.Tcs.Task.Result ? ToolApprovalWaitResult.Approved : ToolApprovalWaitResult.Denied,
+                    Request = p.Request
+                };
+            }
+
             return new ToolApprovalWaitOutcome
             {
                 Result = ToolApprovalWaitResult.TimedOut,

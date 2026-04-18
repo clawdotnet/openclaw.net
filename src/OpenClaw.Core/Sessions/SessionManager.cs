@@ -66,9 +66,12 @@ public sealed class SessionManager : IAsyncDisposable, IDisposable
             return session;
         }
 
-        await _admissionGate.WaitAsync(ct);
+        var gateAcquired = false;
         try
         {
+            await _admissionGate.WaitAsync(ct);
+            gateAcquired = true;
+
             if (_active.TryGetValue(key, out var activeSession))
             {
                 activeSession.LastActiveAt = now;
@@ -122,7 +125,7 @@ public sealed class SessionManager : IAsyncDisposable, IDisposable
         }
         finally
         {
-            _admissionGate.Release();
+            if (gateAcquired) _admissionGate.Release();
         }
     }
 

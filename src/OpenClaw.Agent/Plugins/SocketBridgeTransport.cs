@@ -116,6 +116,7 @@ public sealed class SocketBridgeTransport : BridgeTransportBase
                 var authenticated = await TryAuthenticateStreamAsync(stream, connectCts.Token);
                 if (authenticated.Reader is null || authenticated.Writer is null)
                 {
+                    await stream.DisposeAsync();
                     acceptedSocket.Dispose();
                     continue;
                 }

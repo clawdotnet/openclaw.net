@@ -178,6 +178,27 @@ public sealed class SessionManagerTests
         }
     }
 
+    [Fact]
+    public async Task GetOrCreateAsync_CancelledToken_DoesNotCorruptSemaphore()
+    {
+        var store = new InMemoryStore();
+        var manager = new SessionManager(store, new GatewayConfig
+        {
+            MaxConcurrentSessions = 8,
+            SessionTimeoutMinutes = 30
+        });
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => manager.GetOrCreateAsync("websocket", "alice", cts.Token).AsTask());
+
+        // Semaphore must not be corrupted — subsequent call should succeed
+        var session = await manager.GetOrCreateAsync("websocket", "alice", CancellationToken.None);
+        Assert.NotNull(session);
+    }
+
     private sealed class DelayedMemoryStore : IMemoryStore
     {
         public async ValueTask<Session?> GetSessionAsync(string sessionId, CancellationToken ct)

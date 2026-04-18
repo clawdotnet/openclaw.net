@@ -41,16 +41,15 @@ internal static class ToolPathPolicy
     {
         var full = Path.GetFullPath(path);
 
-        // If the path exists, resolve symlinks based on actual entry type
-        if (File.Exists(full))
-        {
-            return ResolveFileLinkOrSelf(full);
-        }
+        // Try resolving as a symlink first, without checking existence.
+        // This eliminates the TOCTOU window between File.Exists and ResolveLinkTarget.
+        var resolved = TryResolveLinkTarget(full);
+        if (resolved is not null)
+            return resolved;
 
-        if (Directory.Exists(full))
-        {
-            return ResolveDirectoryLinkOrSelf(full);
-        }
+        // Not a symlink — if the path exists as-is, return it directly
+        if (File.Exists(full) || Directory.Exists(full))
+            return full;
 
         // Path doesn't exist yet — resolve the deepest existing ancestor
         // and append the remaining tail. This prevents writing through a
@@ -69,45 +68,36 @@ internal static class ToolPathPolicy
             if (IsPathRoot(dir))
                 return Path.Combine(dir, tail);
 
-            var realDir = ResolveDirectoryLinkOrSelf(dir);
+            var realDir = TryResolveLinkTarget(dir) ?? dir;
             return Path.Combine(realDir, tail);
         }
 
         return full;
     }
 
-    private static string ResolveFileLinkOrSelf(string path)
+    /// <summary>
+    /// Attempts to resolve a symlink target for the given path.
+    /// Returns null if the path is not a symlink, does not exist, or cannot be accessed.
+    /// </summary>
+    private static string? TryResolveLinkTarget(string path)
     {
         try
         {
-            var resolved = File.ResolveLinkTarget(path, returnFinalTarget: true);
-            return resolved?.FullName ?? path;
+            var target = File.ResolveLinkTarget(path, returnFinalTarget: true);
+            if (target is not null) return target.FullName;
         }
-        catch (IOException)
-        {
-            return path;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return path;
-        }
-    }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
 
-    private static string ResolveDirectoryLinkOrSelf(string path)
-    {
         try
         {
-            var resolved = Directory.ResolveLinkTarget(path, returnFinalTarget: true);
-            return resolved?.FullName ?? path;
+            var target = Directory.ResolveLinkTarget(path, returnFinalTarget: true);
+            if (target is not null) return target.FullName;
         }
-        catch (IOException)
-        {
-            return path;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return path;
-        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+
+        return null;
     }
 
     private static bool IsPathRoot(string path)
