@@ -51,6 +51,7 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="TickerQ" Version="10.3.0" />
   </ItemGroup>
 
   <ItemGroup>
