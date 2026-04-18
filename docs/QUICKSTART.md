@@ -2,6 +2,8 @@
 
 This guide gets OpenClaw.NET to a first working agent with the supported setup path.
 
+If you want the broader overview first, start with [GETTING_STARTED.md](GETTING_STARTED.md). That guide explains what each project is, how the runtime layers fit together, and which parts most contributors actually need.
+
 ## Prerequisites
 
 - .NET 10 SDK
@@ -220,8 +222,41 @@ Additional support here includes:
 6. Switch to `jit` only when you actually need expanded plugin compatibility
 7. On any non-loopback deployment, also check `openclaw admin posture` after the real proxy and TLS settings are in place
 
+## Debugging First-Run Problems
+
+If your first launch feels unclear, use this sequence:
+
+1. Watch the logs through the supported launch helper:
+
+```bash
+openclaw setup launch --config ~/.openclaw/config/openclaw.settings.json
+```
+
+2. Run the gateway doctor command for the generated config:
+
+```bash
+dotnet run --project src/OpenClaw.Gateway -c Release -- --config ~/.openclaw/config/openclaw.settings.json --doctor
+```
+
+3. Check the summarized setup posture:
+
+```bash
+openclaw setup status --config ~/.openclaw/config/openclaw.settings.json
+```
+
+4. Validate the security posture that the running gateway sees:
+
+```bash
+OPENCLAW_BASE_URL=http://127.0.0.1:18789 OPENCLAW_AUTH_TOKEN=... openclaw admin posture
+```
+
+5. Use the browser UI Doctor view or fetch `/doctor/text` after the gateway is up for a readable report.
+
+When in doubt, do not skip back and forth between several manual entrypoints. `setup`, `setup launch`, `--doctor`, and `admin posture` are the intended onboarding loop.
+
 ## Next Docs
 
+- [GETTING_STARTED.md](GETTING_STARTED.md) for the mental model, repository map, and debugging flow
 - [README.md](../README.md) for the high-level overview
 - [COMPATIBILITY.md](COMPATIBILITY.md) for the supported upstream skill/plugin/channel surface
 - [USER_GUIDE.md](USER_GUIDE.md) for provider, tools, skills, and channels

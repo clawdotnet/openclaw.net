@@ -27,7 +27,24 @@ dotnet test
 dotnet test src/OpenClaw.Tests
 ```
 
-### Run the Gateway
+### First Local Run
+
+The supported onboarding path is the CLI setup flow, not hand-editing `appsettings.json` first:
+
+```bash
+export MODEL_PROVIDER_KEY="sk-..."
+dotnet run --project src/OpenClaw.Cli -c Release -- setup
+dotnet run --project src/OpenClaw.Cli -c Release -- setup launch --config ~/.openclaw/config/openclaw.settings.json
+```
+
+Use these when something is unclear:
+
+```bash
+dotnet run --project src/OpenClaw.Gateway -c Release -- --config ~/.openclaw/config/openclaw.settings.json --doctor
+dotnet run --project src/OpenClaw.Cli -c Release -- setup status --config ~/.openclaw/config/openclaw.settings.json
+```
+
+### Run The Gateway Directly
 
 ```bash
 export MODEL_PROVIDER_KEY="sk-..."
@@ -38,12 +55,24 @@ dotnet run --project src/OpenClaw.Gateway -c Release
 
 ```
 src/
-  OpenClaw.Core/        # Shared models, abstractions, pipeline, sessions, memory
-  OpenClaw.Agent/       # Agent runtime, tool implementations
-  OpenClaw.Channels/    # WebSocket + Twilio SMS channel adapters
-  OpenClaw.Gateway/     # ASP.NET host, endpoints, Program.cs
-  OpenClaw.Tests/       # All unit tests
+  OpenClaw.Gateway/                     # ASP.NET host, HTTP/WebSocket/webhook endpoints, /chat, /admin, /mcp
+  OpenClaw.Core/                        # Config, models, memory, sessions, security, validation, observability
+  OpenClaw.Agent/                       # Agent loop, tool execution, delegation, plugin bridge
+  OpenClaw.Channels/                    # Channel adapters and transport-facing logic
+  OpenClaw.Cli/                         # openclaw CLI: setup, launch, status, admin, plugins, skills, run/chat
+  OpenClaw.Companion/                   # Desktop operator app
+  OpenClaw.Tui/                         # Terminal UI
+  OpenClaw.Client/                      # Typed .NET client for integration API and MCP
+  OpenClaw.PluginKit/                   # Plugin integration and authoring support
+  OpenClaw.SemanticKernelAdapter/       # Semantic Kernel adapter
+  OpenClaw.MicrosoftAgentFrameworkAdapter/ # Optional Microsoft Agent Framework adapter
+  OpenClaw.WhatsApp.BaileysWorker/      # .NET-facing WhatsApp worker project
+  whatsapp-baileys-worker/              # Node.js WhatsApp bridge worker
+  whatsapp-whatsmeow-worker/            # Go-based WhatsApp worker
+  OpenClaw.Tests/                       # Test suite
 ```
+
+Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) if you want the runtime mental model before changing code.
 
 ## Code Style
 
@@ -128,13 +157,13 @@ PRs need at least one approval before merging. Reviewers will check for:
 
 1. Create a class implementing `ITool` in `src/OpenClaw.Agent/Tools/`
 2. Register the tool's JSON types in `CoreJsonContext`
-3. Wire it up in `Program.cs`
+3. Wire it up through the current gateway/runtime composition path rather than assuming everything lives in `Program.cs`
 4. Add tests in `src/OpenClaw.Tests/`
 5. Document it in `README.md`
 
 ## Adding a New LLM Provider
 
-Providers are handled through `Microsoft.Extensions.AI`. If your provider has an `IChatClient` implementation, it can be added to the provider factory in `Program.cs`.
+Providers are handled through `Microsoft.Extensions.AI` and the current gateway/runtime composition pipeline. If your provider has an `IChatClient` implementation, add it through the active provider registration path instead of assuming a single `Program.cs` factory.
 
 ## Reporting Bugs
 

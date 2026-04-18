@@ -220,37 +220,38 @@ Operators can inspect the same catalog through `GET /admin/compatibility/catalog
 
 ## Architecture
 
+### System view
+
 ```mermaid
 flowchart TB
 
 subgraph Clients
-A1[Web UI / CLI / TUI / Companion]
-A2[WebSocket / HTTP / SDK]
+A1["Browser UI / CLI / TUI / Companion"]
+A2["HTTP / WebSocket / SDK clients"]
 A3["Channels: Telegram, SMS, WhatsApp,<br/>Teams, Slack, Discord, Signal, Email"]
 end
 
 subgraph "OpenClaw.NET Gateway"
-B1[HTTP / WebSocket Endpoints]
-B2[Message Pipeline]
-B3[Session Manager]
-B4[Agent Runtime]
-B5[Tool Execution + Presets]
-B6[Policy / Approval / Routing]
-B7[Observability + Metrics]
+B1["Endpoints and Auth"]
+B2["Routing and Policy"]
+B3["Sessions and Memory"]
+B4["Agent Runtime"]
+B5["Tool Execution and Presets"]
+B6["Admin / Diagnostics / Observability"]
 end
 
-subgraph "Tool Backends"
+subgraph "Execution Backends"
 C1["48 Native Tools"]
 C2[TS/JS Plugin Bridge]
 C3["Native Dynamic Plugins (JIT)"]
 C4[Sandbox / Docker / SSH]
 end
 
-subgraph Infrastructure
-D1[LLM Providers]
-D2[Memory Store + Sessions]
-D3[Cron + Automations]
-D4[External APIs]
+subgraph "State and External Systems"
+D1["LLM Providers"]
+D2["Memory Store / Session Store"]
+D3["Cron / Automations"]
+D4["External APIs and Services"]
 end
 
 Clients --> B1
@@ -259,28 +260,53 @@ B2 --> B3
 B3 --> B4
 B4 --> B5
 B5 --> C1 & C2 & C3 & C4
-B4 --> D1
+B2 --> B6
 B3 --> D2
+B4 --> D1
 B4 --> D3
 C1 & C2 & C3 --> D4
 B1 --> B6
-B1 --> B7
-B4 --> B7
+B4 --> B6
 ```
 
 ### Runtime flow
 
 ```mermaid
-graph LR
-    Inbound["Inbound Message"] --> Route["Route Resolution"]
-    Route --> Session["Session Get/Create"]
-    Session --> Middleware["Middleware Pipeline"]
-    Middleware --> Agent["Agent Runtime"]
-    Agent --> LLM["LLM Call"]
-    LLM --> Tools["Tool Execution"]
-    Tools --> Agent
-    Agent --> Outbound["Outbound Message"]
-    Outbound --> Channel["Channel Adapter"]
+sequenceDiagram
+    participant Inbound as UI / CLI / Channel
+    participant Gateway as Gateway
+    participant Session as Sessions / Memory
+    participant Agent as Agent Runtime
+    participant LLM as LLM Provider
+    participant Tools as Tools / Plugins
+
+    Inbound->>Gateway: Message or request
+    Gateway->>Session: Resolve route and session
+    Session-->>Gateway: Session state
+    Gateway->>Agent: Run turn
+    Agent->>LLM: Prompt + history + tool schema
+    LLM-->>Agent: Response or tool call request
+    Agent->>Tools: Execute tool calls
+    Tools-->>Agent: Tool outputs
+    Agent->>LLM: Continue with results
+    LLM-->>Agent: Final answer
+    Agent-->>Gateway: Output + telemetry
+    Gateway-->>Inbound: Response or stream
+```
+
+### Startup flow
+
+```mermaid
+flowchart LR
+    Args["Args / config path"] --> Bootstrap["Bootstrap"]
+    Bootstrap --> Config["Resolve config and secrets"]
+    Config --> Checks["Doctor / health-check / hardening"]
+    Checks --> Services["Register services"]
+    Services --> Build["builder.Build()"]
+    Build --> Runtime["Initialize runtime"]
+    Runtime --> Load["Load providers, skills, plugins, workers"]
+    Load --> Map["Apply pipeline and map endpoints"]
+    Map --> Run["Run gateway"]
 ```
 
 ### Runtime modes
@@ -292,6 +318,8 @@ graph LR
 | `auto` | Selects `jit` when dynamic code is available, `aot` otherwise. |
 
 ## Quickstart
+
+If you want the architecture and repository map before running commands, start with [Getting Started](docs/GETTING_STARTED.md). If you want the shortest supported path to a working local instance, continue below and then use the [Quickstart Guide](docs/QUICKSTART.md).
 
 ```bash
 git clone https://github.com/clawdotnet/openclaw.net
@@ -609,6 +637,7 @@ All operations emit structured logs and `.NET Activity` traces with correlation 
 
 | Document | Description |
 |----------|-------------|
+| [Getting Started](docs/GETTING_STARTED.md) | Project overview, repository map, setup flow, and first-run debugging |
 | [Quickstart Guide](docs/QUICKSTART.md) | Local setup and first usage |
 | [User Guide](docs/USER_GUIDE.md) | Runtime concepts, providers, tools, skills, memory, channels |
 | [Tool Guide](docs/TOOLS_GUIDE.md) | Built-in tools, native integrations, approval guidance |
