@@ -1,5 +1,6 @@
 using OpenClaw.Companion.Services;
 using OpenClaw.Companion.ViewModels;
+using OpenClaw.Core.Models;
 using OpenClaw.Core.Pipeline;
 using Xunit;
 
@@ -164,6 +165,158 @@ public sealed class CompanionApprovalsTests : IDisposable
 
         viewModel.MergePendingApprovals([]);
         Assert.False(viewModel.HasPendingApprovals);
+    }
+
+    [Fact]
+    public void QueueSeverity_TiersFromCount()
+    {
+        var viewModel = CreateViewModel();
+        Assert.Equal(ApprovalQueueSeverity.None, viewModel.QueueSeverity);
+
+        viewModel.MergePendingApprovals([NewItem("apr_1")]);
+        Assert.Equal(ApprovalQueueSeverity.Light, viewModel.QueueSeverity);
+        Assert.True(viewModel.QueueSeverityIsLight);
+        Assert.False(viewModel.QueueSeverityIsHeavy);
+
+        viewModel.MergePendingApprovals([NewItem("apr_1"), NewItem("apr_2")]);
+        Assert.Equal(ApprovalQueueSeverity.Light, viewModel.QueueSeverity);
+
+        viewModel.MergePendingApprovals([NewItem("apr_1"), NewItem("apr_2"), NewItem("apr_3")]);
+        Assert.Equal(ApprovalQueueSeverity.Heavy, viewModel.QueueSeverity);
+        Assert.True(viewModel.QueueSeverityIsHeavy);
+        Assert.False(viewModel.QueueSeverityIsLight);
+    }
+
+    [Fact]
+    public void PollingMode_ActiveWhenWindowFocusedAndTabActive()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.IsWindowActive = true;
+        viewModel.IsWindowMinimized = false;
+        viewModel.IsApprovalsTabActive = true;
+
+        Assert.Equal(ApprovalsPollingMode.Active, viewModel.ApprovalsPollingMode);
+    }
+
+    [Fact]
+    public void PollingMode_BackgroundWhenAnotherTabActiveButWindowFocused()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.IsWindowActive = true;
+        viewModel.IsWindowMinimized = false;
+        viewModel.IsApprovalsTabActive = false;
+
+        Assert.Equal(ApprovalsPollingMode.Background, viewModel.ApprovalsPollingMode);
+    }
+
+    [Fact]
+    public void PollingMode_BackgroundWhenWindowNotFocused()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.IsWindowActive = false;
+        viewModel.IsWindowMinimized = false;
+        viewModel.IsApprovalsTabActive = true;
+
+        Assert.Equal(ApprovalsPollingMode.Background, viewModel.ApprovalsPollingMode);
+    }
+
+    [Fact]
+    public void PollingMode_PausedWhenMinimized()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.IsWindowActive = true;
+        viewModel.IsApprovalsTabActive = true;
+        viewModel.IsWindowMinimized = true;
+
+        Assert.Equal(ApprovalsPollingMode.Paused, viewModel.ApprovalsPollingMode);
+    }
+
+    [Fact]
+    public void DetectNewApprovals_FirstCallSeedsSilently()
+    {
+        var viewModel = CreateViewModel();
+
+        var newItems = viewModel.DetectNewApprovals([NewItem("apr_1"), NewItem("apr_2")]);
+
+        Assert.Empty(newItems);
+    }
+
+    [Fact]
+    public void DetectNewApprovals_ReportsNewcomersAfterSeed()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.DetectNewApprovals([NewItem("apr_1")]);
+
+        var newItems = viewModel.DetectNewApprovals([NewItem("apr_1"), NewItem("apr_2"), NewItem("apr_3")]);
+
+        Assert.Equal(2, newItems.Count);
+        Assert.Contains(newItems, i => i.ApprovalId == "apr_2");
+        Assert.Contains(newItems, i => i.ApprovalId == "apr_3");
+    }
+
+    [Fact]
+    public void DetectNewApprovals_PrunesResolvedIds()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.DetectNewApprovals([NewItem("apr_1"), NewItem("apr_2")]);
+        viewModel.DetectNewApprovals([]); // apr_1 and apr_2 resolved; pruned.
+
+        var newItems = viewModel.DetectNewApprovals([NewItem("apr_1")]);
+
+        Assert.Single(newItems);
+        Assert.Equal("apr_1", newItems[0].ApprovalId);
+    }
+
+    [Fact]
+    public void ApprovalHistoryItem_FromEntry_MapsApprovedDecision()
+    {
+        var entry = new ApprovalHistoryEntry
+        {
+            EventType = "decision",
+            ApprovalId = "apr_1",
+            SessionId = "sess",
+            ChannelId = "websocket",
+            SenderId = "user@example.com",
+            ToolName = "shell",
+            ArgumentsPreview = "{}",
+            TimestampUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+            DecisionAtUtc = DateTimeOffset.UtcNow.AddMinutes(-4),
+            ActorDisplayName = "admin1",
+            DecisionSource = "http_admin",
+            Approved = true
+        };
+
+        var item = ApprovalHistoryItem.FromEntry(entry);
+
+        Assert.Equal("apr_1", item.ApprovalId);
+        Assert.Equal("shell", item.ToolName);
+        Assert.Contains("websocket", item.Origin);
+        Assert.Contains("user@example.com", item.Origin);
+        Assert.True(item.Approved);
+        Assert.Equal("Approved", item.OutcomeLabel);
+        Assert.Equal("admin1", item.Actor);
+    }
+
+    [Fact]
+    public void ApprovalHistoryItem_FromEntry_MapsDeniedDecision()
+    {
+        var entry = new ApprovalHistoryEntry
+        {
+            EventType = "decision",
+            ApprovalId = "apr_2",
+            SessionId = "sess",
+            ChannelId = "websocket",
+            SenderId = "sender",
+            ToolName = "write_file",
+            ArgumentsPreview = "{}",
+            TimestampUtc = DateTimeOffset.UtcNow,
+            Approved = false
+        };
+
+        var item = ApprovalHistoryItem.FromEntry(entry);
+
+        Assert.False(item.Approved);
+        Assert.Equal("Denied", item.OutcomeLabel);
     }
 
     private MainWindowViewModel CreateViewModel()

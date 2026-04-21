@@ -3,14 +3,42 @@ using System.Text.Json;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using OpenClaw.Companion.Services;
+using OpenClaw.Core.Models;
 using OpenClaw.Core.Pipeline;
 
 namespace OpenClaw.Companion.ViewModels;
 
+public enum ApprovalsPollingMode
+{
+    Paused,
+    Background,
+    Active
+}
+
+public enum ApprovalQueueSeverity
+{
+    None,
+    Light,
+    Heavy
+}
+
 public sealed partial class MainWindowViewModel
 {
+    // Polling cadence thresholds used by ResolvePollingInterval; mirrors the v2 scope:
+    // active tab + focused window => 1.5s, otherwise 5s when running, Paused when minimized.
+    private static readonly TimeSpan ActivePollInterval = TimeSpan.FromMilliseconds(1500);
+    private static readonly TimeSpan BackgroundPollInterval = TimeSpan.FromSeconds(5);
+
+    // Severity tiers for the tab-badge color. 1-2 = light, 3+ = heavy (operator should act).
+    private const int HeavyQueueThreshold = 3;
+
     private CancellationTokenSource? _approvalsPollCts;
     private readonly SemaphoreSlim _approvalsRefreshLock = new(1, 1);
+    private readonly object _knownApprovalsGate = new();
+    private readonly HashSet<string> _knownApprovalIds = new(StringComparer.Ordinal);
+    private bool _hasSeededKnownApprovals;
+    private IDesktopNotifier? _desktopNotifier;
 
     [ObservableProperty]
     private bool _isApprovalsBusy;
@@ -21,24 +49,83 @@ public sealed partial class MainWindowViewModel
     [ObservableProperty]
     private DateTimeOffset? _approvalsLastPolled;
 
+    [ObservableProperty]
+    private bool _isApprovalsTabActive;
+
+    [ObservableProperty]
+    private bool _isWindowActive = true;
+
+    [ObservableProperty]
+    private bool _isWindowMinimized;
+
+    [ObservableProperty]
+    private ApprovalsPollingMode _approvalsPollingMode = ApprovalsPollingMode.Background;
+
+    [ObservableProperty]
+    private string _approvalHistoryStatus = "History not loaded.";
+
+    [ObservableProperty]
+    private bool _isHistoryBusy;
+
     public ObservableCollection<PendingApprovalItem> PendingApprovals { get; } = [];
+
+    public ObservableCollection<ApprovalHistoryItem> ApprovalHistory { get; } = [];
 
     public int PendingApprovalsCount => PendingApprovals.Count;
 
     public bool HasPendingApprovals => PendingApprovals.Count > 0;
 
+    public ApprovalQueueSeverity QueueSeverity => PendingApprovals.Count switch
+    {
+        0 => ApprovalQueueSeverity.None,
+        < HeavyQueueThreshold => ApprovalQueueSeverity.Light,
+        _ => ApprovalQueueSeverity.Heavy
+    };
+
+    public bool QueueSeverityIsLight => QueueSeverity == ApprovalQueueSeverity.Light;
+
+    public bool QueueSeverityIsHeavy => QueueSeverity == ApprovalQueueSeverity.Heavy;
+
+    public bool DesktopNotifierAvailable => _desktopNotifier?.IsAvailable ?? false;
+
+    public string DesktopNotifierDescription => _desktopNotifier?.PlatformDescription ?? "not configured";
+
+    internal void AttachDesktopNotifier(IDesktopNotifier notifier)
+    {
+        _desktopNotifier = notifier;
+        OnPropertyChanged(nameof(DesktopNotifierAvailable));
+        OnPropertyChanged(nameof(DesktopNotifierDescription));
+    }
+
     partial void OnIsApprovalsBusyChanged(bool value) => RefreshApprovalsCommand.NotifyCanExecuteChanged();
+
+    partial void OnIsHistoryBusyChanged(bool value) => LoadApprovalHistoryCommand.NotifyCanExecuteChanged();
+
+    partial void OnIsApprovalsTabActiveChanged(bool value) => RecomputeApprovalsPollingMode();
+
+    partial void OnIsWindowActiveChanged(bool value) => RecomputeApprovalsPollingMode();
+
+    partial void OnIsWindowMinimizedChanged(bool value) => RecomputeApprovalsPollingMode();
 
     private void NotifyPendingApprovalsChanged()
     {
         OnPropertyChanged(nameof(PendingApprovalsCount));
         OnPropertyChanged(nameof(HasPendingApprovals));
+        OnPropertyChanged(nameof(QueueSeverity));
+        OnPropertyChanged(nameof(QueueSeverityIsLight));
+        OnPropertyChanged(nameof(QueueSeverityIsHeavy));
     }
 
-    [RelayCommand(CanExecute = nameof(CanInteractWithApprovals))]
+    [RelayCommand(CanExecute = nameof(CanRefreshApprovals))]
     private async Task RefreshApprovalsAsync()
     {
         await RefreshApprovalsInternalAsync(CancellationToken.None);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanLoadApprovalHistory))]
+    private async Task LoadApprovalHistoryAsync()
+    {
+        await LoadApprovalHistoryInternalAsync();
     }
 
     [RelayCommand]
@@ -57,11 +144,9 @@ public sealed partial class MainWindowViewModel
         await SubmitApprovalDecisionAsync(item, approved: false);
     }
 
-    public void StartApprovalsPolling(TimeSpan interval)
+    public void StartApprovalsPolling()
     {
         StopApprovalsPolling();
-        if (interval <= TimeSpan.Zero)
-            return;
 
         _approvalsPollCts = new CancellationTokenSource();
         var token = _approvalsPollCts.Token;
@@ -71,9 +156,24 @@ public sealed partial class MainWindowViewModel
             await RefreshApprovalsInternalAsync(token);
             while (!token.IsCancellationRequested)
             {
+                var interval = ResolvePollingInterval();
+                if (interval is null)
+                {
+                    // Paused: wait a short probe interval before re-checking state.
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(2), token);
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        return;
+                    }
+                    continue;
+                }
+
                 try
                 {
-                    await Task.Delay(interval, token);
+                    await Task.Delay(interval.Value, token);
                 }
                 catch (TaskCanceledException)
                 {
@@ -95,13 +195,31 @@ public sealed partial class MainWindowViewModel
         _approvalsPollCts = null;
     }
 
-    private bool CanInteractWithApprovals() => !IsApprovalsBusy;
+    private TimeSpan? ResolvePollingInterval()
+        => ApprovalsPollingMode switch
+        {
+            ApprovalsPollingMode.Paused => null,
+            ApprovalsPollingMode.Active => ActivePollInterval,
+            _ => BackgroundPollInterval
+        };
+
+    private void RecomputeApprovalsPollingMode()
+    {
+        ApprovalsPollingMode = (IsWindowMinimized, IsWindowActive && IsApprovalsTabActive) switch
+        {
+            (true, _) => ApprovalsPollingMode.Paused,
+            (false, true) => ApprovalsPollingMode.Active,
+            _ => ApprovalsPollingMode.Background
+        };
+    }
+
+    private bool CanRefreshApprovals() => !IsApprovalsBusy;
+
+    private bool CanLoadApprovalHistory() => !IsHistoryBusy;
 
     private async Task RefreshApprovalsInternalAsync(CancellationToken ct)
     {
         // Skip if another refresh (poll tick or manual click) is already in flight.
-        // Pass CancellationToken.None because TimeSpan.Zero never blocks; we just want
-        // a non-throwing try-acquire.
         if (!await _approvalsRefreshLock.WaitAsync(TimeSpan.Zero, CancellationToken.None))
             return;
 
@@ -115,6 +233,7 @@ public sealed partial class MainWindowViewModel
                 {
                     ApprovalsStatus = error ?? "Invalid gateway URL.";
                     PendingApprovals.Clear();
+                    ResetKnownApprovals();
                     NotifyPendingApprovalsChanged();
                 });
                 return;
@@ -126,6 +245,7 @@ public sealed partial class MainWindowViewModel
                 {
                     ApprovalsStatus = "Operator token required to load approvals.";
                     PendingApprovals.Clear();
+                    ResetKnownApprovals();
                     NotifyPendingApprovalsChanged();
                 });
                 return;
@@ -136,6 +256,8 @@ public sealed partial class MainWindowViewModel
                 .Select(PendingApprovalItem.FromRequest)
                 .ToList();
 
+            var newlyArrived = DetectNewApprovals(items);
+
             Dispatcher.UIThread.Post(() =>
             {
                 MergePendingApprovals(items);
@@ -145,6 +267,9 @@ public sealed partial class MainWindowViewModel
                     : $"{items.Count} pending approval{(items.Count == 1 ? "" : "s")}.";
                 NotifyPendingApprovalsChanged();
             });
+
+            if (newlyArrived.Count > 0)
+                await FireNotificationsForAsync(newlyArrived, ct);
         }
         catch (OperationCanceledException)
         {
@@ -162,6 +287,61 @@ public sealed partial class MainWindowViewModel
             Dispatcher.UIThread.Post(() => IsApprovalsBusy = false);
             _approvalsRefreshLock.Release();
         }
+    }
+
+    internal IReadOnlyList<PendingApprovalItem> DetectNewApprovals(IReadOnlyList<PendingApprovalItem> latest)
+    {
+        // HashSet is not thread-safe. DetectNewApprovals runs on the polling task
+        // thread while other sites mutate from the UI thread, so all accesses go
+        // through _knownApprovalsGate.
+        lock (_knownApprovalsGate)
+        {
+            // The first poll seeds the "known" set silently — we don't want to fire a
+            // flurry of notifications for items that already existed when the Companion started.
+            if (!_hasSeededKnownApprovals)
+            {
+                foreach (var item in latest)
+                    _knownApprovalIds.Add(item.ApprovalId);
+                _hasSeededKnownApprovals = true;
+                return [];
+            }
+
+            var newItems = latest.Where(item => !_knownApprovalIds.Contains(item.ApprovalId)).ToList();
+            foreach (var item in newItems)
+                _knownApprovalIds.Add(item.ApprovalId);
+
+            // Prune known ids that are no longer pending so the set doesn't grow unboundedly.
+            var stillPending = latest.Select(static i => i.ApprovalId).ToHashSet(StringComparer.Ordinal);
+            _knownApprovalIds.RemoveWhere(id => !stillPending.Contains(id));
+
+            return newItems;
+        }
+    }
+
+    private async Task FireNotificationsForAsync(IReadOnlyList<PendingApprovalItem> newItems, CancellationToken ct)
+    {
+        var notifier = _desktopNotifier;
+        if (notifier is null || !notifier.IsAvailable)
+            return;
+        if (!ApprovalDesktopNotificationsEnabled)
+            return;
+        if (ApprovalDesktopNotificationsOnlyWhenUnfocused && IsWindowActive && !IsWindowMinimized)
+            return;
+
+        // Coalesce into one notification when multiple arrive at once.
+        if (newItems.Count == 1)
+        {
+            var item = newItems[0];
+            var title = $"Approval needed: {item.ToolName}";
+            var body = $"from {item.Origin}";
+            await notifier.NotifyAsync(title, body, ct);
+            return;
+        }
+
+        var combinedTitle = $"{newItems.Count} approvals pending";
+        var preview = string.Join(", ", newItems.Take(3).Select(i => i.ToolName));
+        var combinedBody = newItems.Count > 3 ? $"{preview}, and {newItems.Count - 3} more" : preview;
+        await notifier.NotifyAsync(combinedTitle, combinedBody, ct);
     }
 
     internal void MergePendingApprovals(IReadOnlyList<PendingApprovalItem> latest)
@@ -200,6 +380,7 @@ public sealed partial class MainWindowViewModel
         var index = PendingApprovals.IndexOf(item);
         if (index >= 0)
             PendingApprovals.RemoveAt(index);
+        RemoveKnownApproval(item.ApprovalId);
         NotifyPendingApprovalsChanged();
 
         try
@@ -219,6 +400,7 @@ public sealed partial class MainWindowViewModel
                 ApprovalsStatus = $"Decision failed: {response.Error ?? "server rejected the request"}.";
                 if (index >= 0 && index <= PendingApprovals.Count)
                     PendingApprovals.Insert(index, item);
+                AddKnownApproval(item.ApprovalId);
                 NotifyPendingApprovalsChanged();
             }
         }
@@ -227,7 +409,69 @@ public sealed partial class MainWindowViewModel
             ApprovalsStatus = $"Decision failed: {ex.Message}";
             if (index >= 0 && index <= PendingApprovals.Count)
                 PendingApprovals.Insert(index, item);
+            AddKnownApproval(item.ApprovalId);
             NotifyPendingApprovalsChanged();
+        }
+    }
+
+    private void ResetKnownApprovals()
+    {
+        lock (_knownApprovalsGate)
+        {
+            _knownApprovalIds.Clear();
+            _hasSeededKnownApprovals = false;
+        }
+    }
+
+    private void AddKnownApproval(string approvalId)
+    {
+        lock (_knownApprovalsGate)
+            _knownApprovalIds.Add(approvalId);
+    }
+
+    private void RemoveKnownApproval(string approvalId)
+    {
+        lock (_knownApprovalsGate)
+            _knownApprovalIds.Remove(approvalId);
+    }
+
+    private async Task LoadApprovalHistoryInternalAsync()
+    {
+        using var client = CreateAdminClient(out var error);
+        if (client is null)
+        {
+            ApprovalHistoryStatus = error ?? "Invalid gateway URL.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(AuthToken))
+        {
+            ApprovalHistoryStatus = "Operator token required to load history.";
+            return;
+        }
+
+        IsHistoryBusy = true;
+        try
+        {
+            var query = new ApprovalHistoryQuery { Limit = 100 };
+            var response = await client.GetIntegrationApprovalHistoryAsync(query, CancellationToken.None);
+            var items = response.Items.Select(ApprovalHistoryItem.FromEntry).ToList();
+
+            ApprovalHistory.Clear();
+            foreach (var item in items)
+                ApprovalHistory.Add(item);
+
+            ApprovalHistoryStatus = items.Count == 0
+                ? "No history yet."
+                : $"{items.Count} decision{(items.Count == 1 ? "" : "s")} loaded.";
+        }
+        catch (Exception ex)
+        {
+            ApprovalHistoryStatus = $"History load failed: {ex.Message}";
+        }
+        finally
+        {
+            IsHistoryBusy = false;
         }
     }
 }
@@ -262,7 +506,7 @@ public sealed class PendingApprovalItem
             Summary = request.Summary ?? ""
         };
 
-    private static string BuildPreview(string arguments)
+    internal static string BuildPreview(string arguments)
     {
         if (string.IsNullOrWhiteSpace(arguments))
             return "(no arguments)";
@@ -279,5 +523,51 @@ public sealed class PendingApprovalItem
         {
             return arguments.Length > 500 ? arguments[..500] + "…" : arguments;
         }
+    }
+}
+
+public sealed class ApprovalHistoryItem
+{
+    public required string ApprovalId { get; init; }
+    public required string ToolName { get; init; }
+    public required string Origin { get; init; }
+    public required DateTimeOffset TimestampUtc { get; init; }
+    public bool? Approved { get; init; }
+    public string? Actor { get; init; }
+    public string? DecisionSource { get; init; }
+
+    public string OutcomeLabel => Approved switch
+    {
+        true => "Approved",
+        false => "Denied",
+        _ => "Recorded"
+    };
+
+    public string OutcomeColor => Approved switch
+    {
+        true => "#30d158",
+        false => "#ff453a",
+        _ => "#8e8e93"
+    };
+
+    public static ApprovalHistoryItem FromEntry(ApprovalHistoryEntry entry)
+    {
+        var origin = string.IsNullOrWhiteSpace(entry.SenderId)
+            ? entry.ChannelId
+            : $"{entry.ChannelId} · {entry.SenderId}";
+        var actor = string.IsNullOrWhiteSpace(entry.ActorDisplayName)
+            ? entry.ActorSenderId ?? entry.ActorChannelId
+            : entry.ActorDisplayName;
+
+        return new ApprovalHistoryItem
+        {
+            ApprovalId = entry.ApprovalId,
+            ToolName = entry.ToolName,
+            Origin = origin,
+            TimestampUtc = entry.DecisionAtUtc ?? entry.TimestampUtc,
+            Approved = entry.Approved,
+            Actor = actor,
+            DecisionSource = entry.DecisionSource
+        };
     }
 }

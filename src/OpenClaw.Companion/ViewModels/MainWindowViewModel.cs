@@ -44,6 +44,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private bool _debugMode;
 
     [ObservableProperty]
+    private bool _approvalDesktopNotificationsEnabled = true;
+
+    [ObservableProperty]
+    private bool _approvalDesktopNotificationsOnlyWhenUnfocused = true;
+
+    [ObservableProperty]
     private bool _isConnected;
 
     [ObservableProperty]
@@ -111,6 +117,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             AllowPlaintextTokenFallback = settings.AllowPlaintextTokenFallback;
             AuthToken = settings.AuthToken ?? "";
             DebugMode = settings.DebugMode;
+            ApprovalDesktopNotificationsEnabled = settings.ApprovalDesktopNotificationsEnabled;
+            ApprovalDesktopNotificationsOnlyWhenUnfocused = settings.ApprovalDesktopNotificationsOnlyWhenUnfocused;
         }
         finally
         {
@@ -130,6 +138,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             RememberToken = RememberToken,
             AllowPlaintextTokenFallback = AllowPlaintextTokenFallback,
             DebugMode = DebugMode,
+            ApprovalDesktopNotificationsEnabled = ApprovalDesktopNotificationsEnabled,
+            ApprovalDesktopNotificationsOnlyWhenUnfocused = ApprovalDesktopNotificationsOnlyWhenUnfocused,
             AuthToken = string.IsNullOrWhiteSpace(AuthToken) ? null : AuthToken
         });
         ShowSettingsWarningIfNeeded();
@@ -339,6 +349,20 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         if (value)
             ClearActiveAssistantMessage(replyToMessageId: null);
 
+        SaveSettings();
+    }
+
+    partial void OnApprovalDesktopNotificationsEnabledChanged(bool value)
+    {
+        if (_isLoadingSettings)
+            return;
+        SaveSettings();
+    }
+
+    partial void OnApprovalDesktopNotificationsOnlyWhenUnfocusedChanged(bool value)
+    {
+        if (_isLoadingSettings)
+            return;
         SaveSettings();
     }
 

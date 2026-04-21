@@ -30,12 +30,14 @@ public partial class App : Application
             _client = new GatewayWebSocketClient();
             var settings = new SettingsStore();
             var viewModel = new MainWindowViewModel(settings, _client);
+            viewModel.AttachDesktopNotifier(new DesktopNotifier());
+
             desktop.MainWindow = new MainWindow
             {
                 DataContext = viewModel,
             };
 
-            viewModel.StartApprovalsPolling(TimeSpan.FromSeconds(5));
+            viewModel.StartApprovalsPolling();
 
             desktop.Exit += async (_, _) =>
             {

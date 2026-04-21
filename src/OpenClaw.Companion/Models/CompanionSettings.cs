@@ -10,6 +10,8 @@ public sealed class CompanionSettings
     public bool RememberToken { get; set; } = false;
     public bool AllowPlaintextTokenFallback { get; set; } = false;
     public bool DebugMode { get; set; } = false;
+    public bool ApprovalDesktopNotificationsEnabled { get; set; } = true;
+    public bool ApprovalDesktopNotificationsOnlyWhenUnfocused { get; set; } = true;
 
     [JsonIgnore]
     public string? AuthToken { get; set; }
