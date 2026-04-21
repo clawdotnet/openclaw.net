@@ -4,7 +4,7 @@
 >
 > OpenSandbox is an optional, advanced integration. If you are setting up OpenClaw.NET for the first time, trying to get the gateway running locally, or working through the [QUICKSTART](QUICKSTART.md), **close this page and go back**. Sandboxing is not part of the first-run path.
 >
-> The checked-in config mentions `OpenSandbox`, but the default gateway build does **not** include the integration. It only becomes active when you intentionally build with `-p:OpenClawEnableOpenSandbox=true`. You can ignore every sandbox-related setting until you decide you need isolated execution for the `shell`, `code_exec`, or `browser` tools.
+> The codebase includes an optional OpenSandbox integration, but the default gateway configs start with `OpenClaw:Sandbox:Provider=None` and the default gateway build does **not** include the integration. It only becomes active when you intentionally build with `-p:OpenClawEnableOpenSandbox=true`. You can ignore every sandbox-related setting until you decide you need isolated execution for the `shell`, `code_exec`, or `browser` tools.
 >
 > If you are running from a raw config and the mere presence of sandbox settings is confusing you, set this and move on:
 >
@@ -66,11 +66,11 @@ Or run tests for the sandbox-enabled build:
 dotnet test -c Release -p:OpenClawEnableOpenSandbox=true src/OpenClaw.Tests
 ```
 
-If you are using Visual Studio or a direct `dotnet run` on `OpenClaw.Gateway` without this build flag, do not expect OpenSandbox to be available even if a checked-in config mentions it.
+If you are using Visual Studio or a direct `dotnet run` on `OpenClaw.Gateway` without this build flag, do not expect OpenSandbox to be available unless you also explicitly turn it on in config.
 
 ## Configuration
 
-Shipped gateway default:
+Example OpenSandbox config:
 
 ```json
 {

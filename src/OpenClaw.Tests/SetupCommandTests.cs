@@ -7,6 +7,20 @@ namespace OpenClaw.Tests;
 public sealed class SetupCommandTests
 {
     [Fact]
+    public void BuildLaunchUrls_IncludesChatAndAdminRoutes()
+    {
+        var urls = SetupLifecycleCommand.BuildLaunchUrls("http://127.0.0.1:18789/");
+
+        Assert.Equal(
+            [
+                ("Gateway URL", "http://127.0.0.1:18789"),
+                ("Chat URL", "http://127.0.0.1:18789/chat"),
+                ("Admin URL", "http://127.0.0.1:18789/admin")
+            ],
+            urls);
+    }
+
+    [Fact]
     public async Task RunAsync_NonInteractiveLocalProfile_WritesConfigAndEnvExample()
     {
         var root = CreateTempRoot();

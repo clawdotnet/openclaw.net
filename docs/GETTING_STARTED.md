@@ -243,9 +243,9 @@ For a default local setup:
 
 Important:
 
-- the browser chat entrypoint is `/chat`, not `/`
+- the browser chat entrypoint is `/chat`
 - the operator/admin entrypoint is `/admin`
-- the root URL is not the main browser UI entrypoint
+- the root URL currently redirects to `/chat`, but `/chat` is the explicit browser UI entrypoint
 
 ### If You Start The Gateway Directly From Visual Studio
 
@@ -255,7 +255,7 @@ If you launch `OpenClaw.Gateway` directly without an external config:
 
 - the gateway still serves the browser chat UI at `/chat`
 - `wwwroot/webchat.html` and `wwwroot/admin.html` are bundled in normal source builds
-- you are now relying on the checked-in `appsettings.json`, which includes optional sandbox settings that are not the recommended beginner path
+- you are now relying on the checked-in `appsettings.json`, which is a repo default rather than the generated onboarding config
 
 For the least confusing Visual Studio/source setup, prefer one of these:
 
@@ -294,7 +294,7 @@ Use:
 - `http://127.0.0.1:18789/chat` for browser chat
 - `http://127.0.0.1:18789/admin` for the admin UI
 
-Do not expect the root URL (`/`) to be the chat UI.
+The root URL (`/`) currently redirects to `/chat`, but `/chat` is still the canonical browser UI route.
 
 ### Do I need sandboxing to get started locally?
 
@@ -313,11 +313,11 @@ OpenSandbox only matters when you explicitly want isolated execution for high-ri
 
 ### Why do I see OpenSandbox in the repo if it is optional?
 
-Because the codebase supports an optional OpenSandbox integration, but the default gateway build does not include that integration unless you compile with the sandbox flag enabled.
+Because the codebase still contains an optional OpenSandbox integration, but the default gateway configs start with sandboxing disabled and the default gateway build does not include that integration unless you compile with the sandbox flag enabled.
 
 That means these two things are both true:
 
-- the repo contains sandbox configuration and sandbox docs
+- the repo contains sandbox code and sandbox docs
 - a standard source build can still be used locally without OpenSandbox
 
 See [sandboxing.md](sandboxing.md) for the advanced path. For onboarding, it is fine to ignore it or disable it explicitly.

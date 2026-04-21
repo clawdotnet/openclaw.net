@@ -103,6 +103,7 @@ OPENCLAW_BASE_URL=http://127.0.0.1:18789 OPENCLAW_AUTH_TOKEN=... openclaw admin 
 Default local endpoints:
 
 - Web UI: `http://127.0.0.1:18789/chat`
+- Root redirect: `http://127.0.0.1:18789/` -> `/chat`
 - WebSocket: `ws://127.0.0.1:18789/ws`
 - Integration API: `http://127.0.0.1:18789/api/integration/status`
 - MCP endpoint: `http://127.0.0.1:18789/mcp`
@@ -317,6 +318,7 @@ If you are running from Visual Studio or directly starting `OpenClaw.Gateway`, s
 What is true in the current codebase:
 
 - OpenSandbox support is optional
+- the default gateway configs start with `OpenClaw:Sandbox:Provider=None`
 - the default gateway build does not include the OpenSandbox integration unless you compile with `-p:OpenClawEnableOpenSandbox=true`
 - `shell`, `code_exec`, and `browser` are the sandbox-capable native tools
 - the easiest local path is to ignore sandboxing entirely

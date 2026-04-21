@@ -52,7 +52,9 @@ internal static class GatewayBootstrapExtensions
             throw new InvalidOperationException(message);
         }
 
-        var configErrors = ConfigValidator.Validate(config);
+        var configErrors = ConfigValidator.Validate(config).ToList();
+        foreach (var featureError in ValidateOptionalFeatureCompatibility(config))
+            configErrors.Add(featureError);
         if (configErrors.Count > 0)
         {
             foreach (var err in configErrors)
@@ -132,6 +134,18 @@ internal static class GatewayBootstrapExtensions
         ApplyExecutionCompatibility(config);
         NormalizeCodingBackendConfig(config);
         return config;
+    }
+
+    internal static IReadOnlyList<string> ValidateOptionalFeatureCompatibility(GatewayConfig config)
+    {
+        var errors = new List<string>();
+        if (ToolSandboxPolicy.IsOpenSandboxProviderConfigured(config) &&
+            !OptionalFeatureSupport.OpenSandboxEnabled)
+        {
+            errors.Add("Sandbox.Provider='OpenSandbox' requires a gateway build compiled with -p:OpenClawEnableOpenSandbox=true. Rebuild with that flag or set Sandbox.Provider='None'.");
+        }
+
+        return errors;
     }
 
     private static void ApplyConfigFileOverride(WebApplicationBuilder builder, string[] args)
