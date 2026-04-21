@@ -47,6 +47,7 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _adminModelsDoctorUri;
     private readonly Uri _adminModelEvaluationsUri;
     private readonly Uri _adminApprovalSimulationUri;
+    private readonly Uri _toolsApproveUri;
     private readonly Uri _adminAccountResolutionUri;
     private readonly Uri _adminBackendsUri;
     private readonly Uri _adminIncidentExportUri;
@@ -107,6 +108,7 @@ public sealed class OpenClawHttpClient : IDisposable
         _adminModelsDoctorUri = new Uri(baseUri, "/admin/models/doctor");
         _adminModelEvaluationsUri = new Uri(baseUri, "/admin/models/evaluations");
         _adminApprovalSimulationUri = new Uri(baseUri, "/admin/approvals/simulate");
+        _toolsApproveUri = new Uri(baseUri, "/tools/approve");
         _adminAccountResolutionUri = new Uri(baseUri, "/admin/accounts/test-resolution");
         _adminBackendsUri = new Uri(baseUri, "/admin/backends");
         _adminIncidentExportUri = new Uri(baseUri, "/admin/incident/export");
@@ -282,6 +284,24 @@ public sealed class OpenClawHttpClient : IDisposable
         ApprovalHistoryQuery query,
         CancellationToken cancellationToken)
         => GetAsync(BuildApprovalHistoryUri(query), CoreJsonContext.Default.IntegrationApprovalHistoryResponse, cancellationToken);
+
+    public Task<OperationStatusResponse> ApproveToolRequestAsync(string approvalId, CancellationToken cancellationToken)
+        => PostApprovalDecisionAsync(approvalId, approved: true, cancellationToken);
+
+    public Task<OperationStatusResponse> DenyToolRequestAsync(string approvalId, CancellationToken cancellationToken)
+        => PostApprovalDecisionAsync(approvalId, approved: false, cancellationToken);
+
+    private async Task<OperationStatusResponse> PostApprovalDecisionAsync(string approvalId, bool approved, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(approvalId))
+            throw new ArgumentException("approvalId is required.", nameof(approvalId));
+
+        var uri = new Uri(
+            $"{_toolsApproveUri}?approvalId={Uri.EscapeDataString(approvalId)}&approved={(approved ? "true" : "false")}",
+            UriKind.RelativeOrAbsolute);
+        using var req = new HttpRequestMessage(HttpMethod.Post, uri);
+        return await SendAsync(req, CoreJsonContext.Default.OperationStatusResponse, cancellationToken);
+    }
 
     public Task<IntegrationProvidersResponse> GetIntegrationProvidersAsync(int recentTurnsLimit, CancellationToken cancellationToken)
         => GetAsync(new Uri($"{_integrationProvidersUri}?recentTurnsLimit={Math.Clamp(recentTurnsLimit, 1, 256)}", UriKind.RelativeOrAbsolute), CoreJsonContext.Default.IntegrationProvidersResponse, cancellationToken);

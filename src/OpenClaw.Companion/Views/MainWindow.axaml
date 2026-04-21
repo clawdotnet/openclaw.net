@@ -76,6 +76,89 @@
                 </Grid>
             </TabItem>
 
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="Approvals" VerticalAlignment="Center" />
+                        <Border Background="{DynamicResource SystemControlBackgroundAccentBrush}"
+                                CornerRadius="9" Padding="6,1"
+                                IsVisible="{Binding PendingApprovalsCount}">
+                            <TextBlock Text="{Binding PendingApprovalsCount}"
+                                       FontSize="11" FontWeight="SemiBold"
+                                       Foreground="White" VerticalAlignment="Center" />
+                        </Border>
+                    </StackPanel>
+                </TabItem.Header>
+                <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                    <Border Grid.Row="0" Padding="10" CornerRadius="8" BorderThickness="1"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                            <StackPanel Grid.Column="0" Spacing="2">
+                                <TextBlock Text="{Binding ApprovalsStatus}" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding ApprovalsLastPolled, StringFormat='Last polled: {0:HH:mm:ss} UTC'}"
+                                           FontSize="11" Opacity="0.65"
+                                           IsVisible="{Binding ApprovalsLastPolled, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="Refresh"
+                                    Command="{Binding RefreshApprovalsCommand}"
+                                    IsEnabled="{Binding IsApprovalsBusy, Converter={StaticResource InverseBool}}" />
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="1" Padding="10" CornerRadius="8" BorderThickness="1"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                        <Grid>
+                            <TextBlock Text="No pending approvals. Tools that require operator approval will appear here."
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Opacity="0.55" TextWrapping="Wrap" TextAlignment="Center"
+                                       IsVisible="{Binding !PendingApprovalsCount}" />
+                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                                          IsVisible="{Binding PendingApprovalsCount}">
+                                <ItemsControl ItemsSource="{Binding PendingApprovals}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="vm:PendingApprovalItem">
+                                            <Border Margin="0,0,0,8" Padding="10" CornerRadius="6" BorderThickness="1"
+                                                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+                                                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock Text="{Binding ToolName}" FontWeight="SemiBold" FontSize="14" />
+                                                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                                                CornerRadius="4" Padding="5,1"
+                                                                IsVisible="{Binding IsMutation}">
+                                                            <TextBlock Text="mutation" FontSize="10" />
+                                                        </Border>
+                                                        <TextBlock Text="{Binding Action}" Opacity="0.7"
+                                                                   IsVisible="{Binding Action, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                        <Button Content="Approve"
+                                                                Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).ApproveApprovalCommand}"
+                                                                CommandParameter="{Binding}" />
+                                                        <Button Content="Deny"
+                                                                Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).DenyApprovalCommand}"
+                                                                CommandParameter="{Binding}" />
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="12">
+                                                        <TextBlock Text="{Binding Origin}" FontSize="11" Opacity="0.7" />
+                                                        <TextBlock Text="{Binding SessionId, StringFormat=session {0}}" FontSize="11" Opacity="0.7" />
+                                                        <TextBlock Text="{Binding CreatedAt, StringFormat='queued {0:HH:mm:ss} UTC'}" FontSize="11" Opacity="0.7" />
+                                                    </StackPanel>
+                                                    <TextBox Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                                                             Text="{Binding ArgumentsPreview, Mode=OneWay}"
+                                                             IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                                                             FontFamily="Consolas, Menlo, monospace" FontSize="12"
+                                                             MaxHeight="160" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
             <TabItem Header="Admin">
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="12" Margin="0,4,0,0">
