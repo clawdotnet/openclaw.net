@@ -119,8 +119,8 @@ internal static class SetupLifecycleCommand
 
         try
         {
-            output.WriteLine($"Gateway URL: {baseUrl}");
-            output.WriteLine($"Admin URL: {baseUrl}/admin");
+            foreach (var (label, url) in BuildLaunchUrls(baseUrl))
+                output.WriteLine($"{label}: {url}");
             output.WriteLine($"Auth mode: {(BindAddressClassifier.IsLoopbackBind(config.BindAddress) ? "loopback-open" : "token-or-session")}");
             output.WriteLine("Streaming logs. Press Ctrl-C to stop.");
 
@@ -173,6 +173,17 @@ internal static class SetupLifecycleCommand
 
     internal static string GetDeployDirectory(string configPath)
         => Path.Combine(Path.GetDirectoryName(configPath) ?? throw new InvalidOperationException("Config path must have a directory."), "deploy");
+
+    internal static IReadOnlyList<(string Label, string Url)> BuildLaunchUrls(string baseUrl)
+    {
+        var normalizedBaseUrl = baseUrl.TrimEnd('/');
+        return
+        [
+            ("Gateway URL", normalizedBaseUrl),
+            ("Chat URL", $"{normalizedBaseUrl}/chat"),
+            ("Admin URL", $"{normalizedBaseUrl}/admin")
+        ];
+    }
 
     private static string ResolveConfigPath(CliArgs parsed)
         => Path.GetFullPath(GatewayConfigFile.ExpandPath(parsed.GetOption("--config") ?? GatewayConfigFile.DefaultConfigPath));

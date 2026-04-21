@@ -121,6 +121,9 @@ OPENCLAW_WORKSPACE={Path.GetFullPath(".openclaw-init/workspace")}
       "AllowedReadRoots": [ "./workspace" ],
       "AllowedWriteRoots": [ "./workspace" ]
     },
+    "Sandbox": {
+      "Provider": "None"
+    },
     "Plugins": {
       "Enabled": false
     }
@@ -150,6 +153,9 @@ OPENCLAW_WORKSPACE={Path.GetFullPath(".openclaw-init/workspace")}
       "AllowShell": false,
       "AllowedReadRoots": [ "/app/workspace" ],
       "AllowedWriteRoots": [ "/app/workspace" ]
+    },
+    "Sandbox": {
+      "Provider": "None"
     },
     "Plugins": {
       "Enabled": false

@@ -6,7 +6,7 @@ namespace OpenClaw.Tests;
 public sealed class InitCommandTests
 {
     [Fact]
-    public void Run_GeneratesBootstrapFiles()
+    public async Task Run_GeneratesBootstrapFiles()
     {
         var root = Path.Combine(Path.GetTempPath(), "openclaw-init-tests", Guid.NewGuid().ToString("n"));
         Directory.CreateDirectory(root);
@@ -22,6 +22,14 @@ public sealed class InitCommandTests
             Assert.True(File.Exists(Path.Combine(root, "deploy", "Caddyfile.sample")));
             Assert.True(Directory.Exists(Path.Combine(root, "workspace")));
             Assert.True(Directory.Exists(Path.Combine(root, "memory")));
+
+            var localConfig = await File.ReadAllTextAsync(Path.Combine(root, "config.local.json"));
+            Assert.Contains(@"""Sandbox"": {", localConfig, StringComparison.Ordinal);
+            Assert.Contains(@"""Provider"": ""None""", localConfig, StringComparison.Ordinal);
+
+            var publicConfig = await File.ReadAllTextAsync(Path.Combine(root, "config.public.json"));
+            Assert.Contains(@"""Sandbox"": {", publicConfig, StringComparison.Ordinal);
+            Assert.Contains(@"""Provider"": ""None""", publicConfig, StringComparison.Ordinal);
         }
         finally
         {

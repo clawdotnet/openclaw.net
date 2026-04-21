@@ -438,7 +438,9 @@ public sealed class AgentRuntime : IAgentRuntime
 
         if (_requireToolApproval && approvalCallback is null)
         {
-            _logger?.LogWarning("[{CorrelationId}] Streaming session has RequireToolApproval=true but no approval callback — protected tools will be auto-denied",
+            _logger?.LogWarning(
+                "[{CorrelationId}] Streaming session has RequireToolApproval=true but no approval callback is registered — protected tools will be auto-denied. " +
+                "Connect through /chat for interactive approvals, or set OpenClaw:Tooling:RequireToolApproval=false for trusted local sessions.",
                 turnCtx.CorrelationId);
         }
 
