@@ -35,6 +35,7 @@ public sealed partial class MainWindowViewModel
 
     private CancellationTokenSource? _approvalsPollCts;
     private readonly SemaphoreSlim _approvalsRefreshLock = new(1, 1);
+    private readonly object _knownApprovalsGate = new();
     private readonly HashSet<string> _knownApprovalIds = new(StringComparer.Ordinal);
     private bool _hasSeededKnownApprovals;
     private IDesktopNotifier? _desktopNotifier;
@@ -98,6 +99,8 @@ public sealed partial class MainWindowViewModel
 
     partial void OnIsApprovalsBusyChanged(bool value) => RefreshApprovalsCommand.NotifyCanExecuteChanged();
 
+    partial void OnIsHistoryBusyChanged(bool value) => LoadApprovalHistoryCommand.NotifyCanExecuteChanged();
+
     partial void OnIsApprovalsTabActiveChanged(bool value) => RecomputeApprovalsPollingMode();
 
     partial void OnIsWindowActiveChanged(bool value) => RecomputeApprovalsPollingMode();
@@ -113,13 +116,13 @@ public sealed partial class MainWindowViewModel
         OnPropertyChanged(nameof(QueueSeverityIsHeavy));
     }
 
-    [RelayCommand(CanExecute = nameof(CanInteractWithApprovals))]
+    [RelayCommand(CanExecute = nameof(CanRefreshApprovals))]
     private async Task RefreshApprovalsAsync()
     {
         await RefreshApprovalsInternalAsync(CancellationToken.None);
     }
 
-    [RelayCommand(CanExecute = nameof(CanInteractWithApprovals))]
+    [RelayCommand(CanExecute = nameof(CanLoadApprovalHistory))]
     private async Task LoadApprovalHistoryAsync()
     {
         await LoadApprovalHistoryInternalAsync();
@@ -210,7 +213,9 @@ public sealed partial class MainWindowViewModel
         };
     }
 
-    private bool CanInteractWithApprovals() => !IsApprovalsBusy;
+    private bool CanRefreshApprovals() => !IsApprovalsBusy;
+
+    private bool CanLoadApprovalHistory() => !IsHistoryBusy;
 
     private async Task RefreshApprovalsInternalAsync(CancellationToken ct)
     {
@@ -228,8 +233,7 @@ public sealed partial class MainWindowViewModel
                 {
                     ApprovalsStatus = error ?? "Invalid gateway URL.";
                     PendingApprovals.Clear();
-                    _knownApprovalIds.Clear();
-                    _hasSeededKnownApprovals = false;
+                    ResetKnownApprovals();
                     NotifyPendingApprovalsChanged();
                 });
                 return;
@@ -241,8 +245,7 @@ public sealed partial class MainWindowViewModel
                 {
                     ApprovalsStatus = "Operator token required to load approvals.";
                     PendingApprovals.Clear();
-                    _knownApprovalIds.Clear();
-                    _hasSeededKnownApprovals = false;
+                    ResetKnownApprovals();
                     NotifyPendingApprovalsChanged();
                 });
                 return;
@@ -288,25 +291,31 @@ public sealed partial class MainWindowViewModel
 
     internal IReadOnlyList<PendingApprovalItem> DetectNewApprovals(IReadOnlyList<PendingApprovalItem> latest)
     {
-        // The first poll seeds the "known" set silently — we don't want to fire a
-        // flurry of notifications for items that already existed when the Companion started.
-        if (!_hasSeededKnownApprovals)
+        // HashSet is not thread-safe. DetectNewApprovals runs on the polling task
+        // thread while other sites mutate from the UI thread, so all accesses go
+        // through _knownApprovalsGate.
+        lock (_knownApprovalsGate)
         {
-            foreach (var item in latest)
+            // The first poll seeds the "known" set silently — we don't want to fire a
+            // flurry of notifications for items that already existed when the Companion started.
+            if (!_hasSeededKnownApprovals)
+            {
+                foreach (var item in latest)
+                    _knownApprovalIds.Add(item.ApprovalId);
+                _hasSeededKnownApprovals = true;
+                return [];
+            }
+
+            var newItems = latest.Where(item => !_knownApprovalIds.Contains(item.ApprovalId)).ToList();
+            foreach (var item in newItems)
                 _knownApprovalIds.Add(item.ApprovalId);
-            _hasSeededKnownApprovals = true;
-            return [];
+
+            // Prune known ids that are no longer pending so the set doesn't grow unboundedly.
+            var stillPending = latest.Select(static i => i.ApprovalId).ToHashSet(StringComparer.Ordinal);
+            _knownApprovalIds.RemoveWhere(id => !stillPending.Contains(id));
+
+            return newItems;
         }
-
-        var newItems = latest.Where(item => !_knownApprovalIds.Contains(item.ApprovalId)).ToList();
-        foreach (var item in newItems)
-            _knownApprovalIds.Add(item.ApprovalId);
-
-        // Prune known ids that are no longer pending so the set doesn't grow unboundedly.
-        var stillPending = latest.Select(static i => i.ApprovalId).ToHashSet(StringComparer.Ordinal);
-        _knownApprovalIds.RemoveWhere(id => !stillPending.Contains(id));
-
-        return newItems;
     }
 
     private async Task FireNotificationsForAsync(IReadOnlyList<PendingApprovalItem> newItems, CancellationToken ct)
@@ -371,7 +380,7 @@ public sealed partial class MainWindowViewModel
         var index = PendingApprovals.IndexOf(item);
         if (index >= 0)
             PendingApprovals.RemoveAt(index);
-        _knownApprovalIds.Remove(item.ApprovalId);
+        RemoveKnownApproval(item.ApprovalId);
         NotifyPendingApprovalsChanged();
 
         try
@@ -391,7 +400,7 @@ public sealed partial class MainWindowViewModel
                 ApprovalsStatus = $"Decision failed: {response.Error ?? "server rejected the request"}.";
                 if (index >= 0 && index <= PendingApprovals.Count)
                     PendingApprovals.Insert(index, item);
-                _knownApprovalIds.Add(item.ApprovalId);
+                AddKnownApproval(item.ApprovalId);
                 NotifyPendingApprovalsChanged();
             }
         }
@@ -400,9 +409,30 @@ public sealed partial class MainWindowViewModel
             ApprovalsStatus = $"Decision failed: {ex.Message}";
             if (index >= 0 && index <= PendingApprovals.Count)
                 PendingApprovals.Insert(index, item);
-            _knownApprovalIds.Add(item.ApprovalId);
+            AddKnownApproval(item.ApprovalId);
             NotifyPendingApprovalsChanged();
         }
+    }
+
+    private void ResetKnownApprovals()
+    {
+        lock (_knownApprovalsGate)
+        {
+            _knownApprovalIds.Clear();
+            _hasSeededKnownApprovals = false;
+        }
+    }
+
+    private void AddKnownApproval(string approvalId)
+    {
+        lock (_knownApprovalsGate)
+            _knownApprovalIds.Add(approvalId);
+    }
+
+    private void RemoveKnownApproval(string approvalId)
+    {
+        lock (_knownApprovalsGate)
+            _knownApprovalIds.Remove(approvalId);
     }
 
     private async Task LoadApprovalHistoryInternalAsync()

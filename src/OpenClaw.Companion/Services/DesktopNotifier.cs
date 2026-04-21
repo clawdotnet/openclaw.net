@@ -14,35 +14,91 @@ public interface IDesktopNotifier
 
 public sealed class DesktopNotifier : IDesktopNotifier
 {
-    public bool IsAvailable => Platform is NotifierPlatform.MacOs or NotifierPlatform.Linux;
+    // Bound each notification attempt so a misbehaving child can't leak forever.
+    private static readonly TimeSpan NotifyTimeout = TimeSpan.FromSeconds(5);
 
-    public string PlatformDescription => Platform switch
+    private readonly NotifierPlatform _platform;
+    private readonly bool _toolPresent;
+
+    public DesktopNotifier()
     {
-        NotifierPlatform.MacOs => "macOS Notification Center (osascript)",
-        NotifierPlatform.Linux => "libnotify (notify-send)",
-        NotifierPlatform.Windows => "not supported on Windows in this release",
+        _platform = DetectPlatform();
+        _toolPresent = ResolveToolPresent(_platform);
+    }
+
+    public bool IsAvailable => _toolPresent;
+
+    public string PlatformDescription => (_platform, _toolPresent) switch
+    {
+        (NotifierPlatform.MacOs, true) => "macOS Notification Center (osascript)",
+        (NotifierPlatform.MacOs, false) => "macOS detected but osascript is not on PATH",
+        (NotifierPlatform.Linux, true) => "libnotify (notify-send)",
+        (NotifierPlatform.Linux, false) => "Linux detected but notify-send is not on PATH",
+        (NotifierPlatform.Windows, _) => "not supported on Windows in this release",
         _ => "unsupported platform"
     };
 
     public Task NotifyAsync(string title, string body, CancellationToken cancellationToken = default)
-        => Platform switch
+    {
+        if (!_toolPresent)
+            return Task.CompletedTask;
+
+        return _platform switch
         {
             NotifierPlatform.MacOs => NotifyMacOsAsync(title, body, cancellationToken),
             NotifierPlatform.Linux => NotifyLinuxAsync(title, body, cancellationToken),
             _ => Task.CompletedTask
         };
+    }
 
-    private static NotifierPlatform Platform
+    private static NotifierPlatform DetectPlatform()
     {
-        get
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            return NotifierPlatform.MacOs;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            return NotifierPlatform.Linux;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return NotifierPlatform.Windows;
+        return NotifierPlatform.Unknown;
+    }
+
+    private static bool ResolveToolPresent(NotifierPlatform platform)
+        => platform switch
         {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                return NotifierPlatform.MacOs;
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                return NotifierPlatform.Linux;
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                return NotifierPlatform.Windows;
-            return NotifierPlatform.Unknown;
+            NotifierPlatform.MacOs => IsOnPath("osascript"),
+            NotifierPlatform.Linux => IsOnPath("notify-send"),
+            _ => false
+        };
+
+    private static bool IsOnPath(string executable)
+    {
+        try
+        {
+            var info = new ProcessStartInfo("/usr/bin/env")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            info.ArgumentList.Add("which");
+            info.ArgumentList.Add(executable);
+
+            using var proc = Process.Start(info);
+            if (proc is null)
+                return false;
+
+            if (!proc.WaitForExit(1000))
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { /* best-effort */ }
+                return false;
+            }
+
+            return proc.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -57,6 +113,7 @@ public sealed class DesktopNotifier : IDesktopNotifier
 
     private static async Task RunProcessAsync(string fileName, string[] arguments, CancellationToken ct)
     {
+        Process? proc = null;
         try
         {
             var info = new ProcessStartInfo
@@ -70,16 +127,38 @@ public sealed class DesktopNotifier : IDesktopNotifier
             foreach (var arg in arguments)
                 info.ArgumentList.Add(arg);
 
-            using var proc = Process.Start(info);
+            proc = Process.Start(info);
             if (proc is null)
                 return;
 
-            await proc.WaitForExitAsync(ct);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            linked.CancelAfter(NotifyTimeout);
+
+            // Drain stdout/stderr concurrently so a chatty tool can't deadlock us
+            // by filling the pipe buffer. Wait for exit as a third parallel task.
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync(linked.Token);
+            var stderrTask = proc.StandardError.ReadToEndAsync(linked.Token);
+            var exitTask = proc.WaitForExitAsync(linked.Token);
+
+            try
+            {
+                await Task.WhenAll(stdoutTask, stderrTask, exitTask);
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancellation or timeout: kill the orphan so we don't leak processes.
+                try { proc.Kill(entireProcessTree: true); } catch { /* best-effort */ }
+            }
         }
         catch
         {
-            // Best-effort. Missing tools, perms issues, or cancellation should not bubble
-            // into the caller — notifications are a nice-to-have, not load-bearing.
+            // Missing tools, perms issues, and similar should not bubble into callers —
+            // notifications are nice-to-have, not load-bearing.
+            try { proc?.Kill(entireProcessTree: true); } catch { /* best-effort */ }
+        }
+        finally
+        {
+            proc?.Dispose();
         }
     }
 
