@@ -10,6 +10,7 @@ namespace OpenClaw.Companion.ViewModels;
 public sealed partial class MainWindowViewModel
 {
     private CancellationTokenSource? _approvalsPollCts;
+    private readonly SemaphoreSlim _approvalsRefreshLock = new(1, 1);
 
     [ObservableProperty]
     private bool _isApprovalsBusy;
@@ -24,7 +25,15 @@ public sealed partial class MainWindowViewModel
 
     public int PendingApprovalsCount => PendingApprovals.Count;
 
+    public bool HasPendingApprovals => PendingApprovals.Count > 0;
+
     partial void OnIsApprovalsBusyChanged(bool value) => RefreshApprovalsCommand.NotifyCanExecuteChanged();
+
+    private void NotifyPendingApprovalsChanged()
+    {
+        OnPropertyChanged(nameof(PendingApprovalsCount));
+        OnPropertyChanged(nameof(HasPendingApprovals));
+    }
 
     [RelayCommand(CanExecute = nameof(CanInteractWithApprovals))]
     private async Task RefreshApprovalsAsync()
@@ -90,6 +99,12 @@ public sealed partial class MainWindowViewModel
 
     private async Task RefreshApprovalsInternalAsync(CancellationToken ct)
     {
+        // Skip if another refresh (poll tick or manual click) is already in flight.
+        // Pass CancellationToken.None because TimeSpan.Zero never blocks; we just want
+        // a non-throwing try-acquire.
+        if (!await _approvalsRefreshLock.WaitAsync(TimeSpan.Zero, CancellationToken.None))
+            return;
+
         Dispatcher.UIThread.Post(() => IsApprovalsBusy = true);
         try
         {
@@ -100,7 +115,7 @@ public sealed partial class MainWindowViewModel
                 {
                     ApprovalsStatus = error ?? "Invalid gateway URL.";
                     PendingApprovals.Clear();
-                    OnPropertyChanged(nameof(PendingApprovalsCount));
+                    NotifyPendingApprovalsChanged();
                 });
                 return;
             }
@@ -111,7 +126,7 @@ public sealed partial class MainWindowViewModel
                 {
                     ApprovalsStatus = "Operator token required to load approvals.";
                     PendingApprovals.Clear();
-                    OnPropertyChanged(nameof(PendingApprovalsCount));
+                    NotifyPendingApprovalsChanged();
                 });
                 return;
             }
@@ -128,7 +143,7 @@ public sealed partial class MainWindowViewModel
                 ApprovalsStatus = items.Count == 0
                     ? "No pending approvals."
                     : $"{items.Count} pending approval{(items.Count == 1 ? "" : "s")}.";
-                OnPropertyChanged(nameof(PendingApprovalsCount));
+                NotifyPendingApprovalsChanged();
             });
         }
         catch (OperationCanceledException)
@@ -145,6 +160,7 @@ public sealed partial class MainWindowViewModel
         finally
         {
             Dispatcher.UIThread.Post(() => IsApprovalsBusy = false);
+            _approvalsRefreshLock.Release();
         }
     }
 
@@ -184,7 +200,7 @@ public sealed partial class MainWindowViewModel
         var index = PendingApprovals.IndexOf(item);
         if (index >= 0)
             PendingApprovals.RemoveAt(index);
-        OnPropertyChanged(nameof(PendingApprovalsCount));
+        NotifyPendingApprovalsChanged();
 
         try
         {
@@ -203,7 +219,7 @@ public sealed partial class MainWindowViewModel
                 ApprovalsStatus = $"Decision failed: {response.Error ?? "server rejected the request"}.";
                 if (index >= 0 && index <= PendingApprovals.Count)
                     PendingApprovals.Insert(index, item);
-                OnPropertyChanged(nameof(PendingApprovalsCount));
+                NotifyPendingApprovalsChanged();
             }
         }
         catch (Exception ex)
@@ -211,7 +227,7 @@ public sealed partial class MainWindowViewModel
             ApprovalsStatus = $"Decision failed: {ex.Message}";
             if (index >= 0 && index <= PendingApprovals.Count)
                 PendingApprovals.Insert(index, item);
-            OnPropertyChanged(nameof(PendingApprovalsCount));
+            NotifyPendingApprovalsChanged();
         }
     }
 }

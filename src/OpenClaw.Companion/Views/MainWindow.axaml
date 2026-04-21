@@ -82,7 +82,7 @@
                         <TextBlock Text="Approvals" VerticalAlignment="Center" />
                         <Border Background="{DynamicResource SystemControlBackgroundAccentBrush}"
                                 CornerRadius="9" Padding="6,1"
-                                IsVisible="{Binding PendingApprovalsCount}">
+                                IsVisible="{Binding HasPendingApprovals}">
                             <TextBlock Text="{Binding PendingApprovalsCount}"
                                        FontSize="11" FontWeight="SemiBold"
                                        Foreground="White" VerticalAlignment="Center" />
@@ -111,9 +111,9 @@
                             <TextBlock Text="No pending approvals. Tools that require operator approval will appear here."
                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                        Opacity="0.55" TextWrapping="Wrap" TextAlignment="Center"
-                                       IsVisible="{Binding !PendingApprovalsCount}" />
+                                       IsVisible="{Binding !HasPendingApprovals}" />
                             <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
-                                          IsVisible="{Binding PendingApprovalsCount}">
+                                          IsVisible="{Binding HasPendingApprovals}">
                                 <ItemsControl ItemsSource="{Binding PendingApprovals}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="vm:PendingApprovalItem">

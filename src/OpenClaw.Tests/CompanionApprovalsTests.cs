@@ -5,8 +5,19 @@ using Xunit;
 
 namespace OpenClaw.Tests;
 
-public sealed class CompanionApprovalsTests
+public sealed class CompanionApprovalsTests : IDisposable
 {
+    private readonly List<string> _tempDirs = [];
+
+    public void Dispose()
+    {
+        foreach (var dir in _tempDirs)
+        {
+            try { Directory.Delete(dir, recursive: true); }
+            catch { /* best-effort cleanup */ }
+        }
+    }
+
     [Fact]
     public void FromRequest_CopiesCoreFields()
     {
@@ -142,10 +153,24 @@ public sealed class CompanionApprovalsTests
         Assert.Equal(0, viewModel.PendingApprovalsCount);
     }
 
-    private static MainWindowViewModel CreateViewModel()
+    [Fact]
+    public void HasPendingApprovals_TracksQueueState()
+    {
+        var viewModel = CreateViewModel();
+        Assert.False(viewModel.HasPendingApprovals);
+
+        viewModel.MergePendingApprovals([NewItem("apr_1")]);
+        Assert.True(viewModel.HasPendingApprovals);
+
+        viewModel.MergePendingApprovals([]);
+        Assert.False(viewModel.HasPendingApprovals);
+    }
+
+    private MainWindowViewModel CreateViewModel()
     {
         var dir = Path.Combine(Path.GetTempPath(), "openclaw-companion-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
+        _tempDirs.Add(dir);
         var settings = new SettingsStore(dir);
         return new MainWindowViewModel(settings, new GatewayWebSocketClient());
     }
