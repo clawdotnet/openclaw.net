@@ -15,12 +15,14 @@ internal sealed class GatewayTool : ITool
     private readonly RuntimeMetrics _metrics;
     private readonly SessionManager _sessions;
     private readonly GatewayConfig _config;
+    private readonly GatewayRuntimeState _runtimeState;
 
-    public GatewayTool(RuntimeMetrics metrics, SessionManager sessions, GatewayConfig config)
+    public GatewayTool(RuntimeMetrics metrics, SessionManager sessions, GatewayConfig config, GatewayRuntimeState runtimeState)
     {
         _metrics = metrics;
         _sessions = sessions;
         _config = config;
+        _runtimeState = runtimeState;
     }
 
     public string Name => "gateway";
@@ -61,6 +63,7 @@ internal sealed class GatewayTool : ITool
 
     private string GetConfig()
     {
+        var browserAvailability = BrowserToolSupport.Evaluate(_config, _runtimeState);
         var sb = new StringBuilder();
         sb.AppendLine("Gateway Configuration:");
         sb.AppendLine($"  Bind: {_config.BindAddress}:{_config.Port}");
@@ -71,7 +74,7 @@ internal sealed class GatewayTool : ITool
         sb.AppendLine($"  Session timeout: {_config.SessionTimeoutMinutes}m");
         sb.AppendLine($"  Autonomy: {_config.Tooling.AutonomyMode}");
         sb.AppendLine($"  Tool approval: {_config.Tooling.RequireToolApproval}");
-        sb.AppendLine($"  Browser: {_config.Tooling.EnableBrowserTool}");
+        sb.AppendLine($"  Browser: configured={browserAvailability.ConfiguredEnabled} registered={browserAvailability.Registered} local_supported={browserAvailability.LocalExecutionSupported} backend_configured={browserAvailability.ExecutionBackendConfigured}");
         sb.AppendLine($"  Shell: {_config.Tooling.AllowShell}");
         sb.AppendLine($"  Cron: {_config.Cron.Enabled} ({_config.Cron.Jobs.Count} jobs)");
         return sb.ToString().TrimEnd();

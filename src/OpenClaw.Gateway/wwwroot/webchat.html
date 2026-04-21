@@ -1009,6 +1009,20 @@
             scrollToBottom();
         }
 
+        function isToolFailureMessage(text) {
+            const normalized = (text || '').trim().toLowerCase();
+            if (!normalized) {
+                return false;
+            }
+
+            return normalized.startsWith('error:')
+                || normalized.startsWith('browser action failed:')
+                || normalized.includes('requires approval')
+                || normalized.includes('denied')
+                || normalized.includes('timed out')
+                || normalized.includes('failed');
+        }
+
         function isLiveMode() {
             return modeSelect.value === 'live';
         }
@@ -1381,6 +1395,9 @@
                             break;
 
                         case 'tool_result':
+                            if (isToolFailureMessage(env.text ?? env.content ?? '')) {
+                                appendSystem(env.text ?? env.content ?? 'Tool execution failed.', true);
+                            }
                             break;
 
                         case 'tool_approval_required': {

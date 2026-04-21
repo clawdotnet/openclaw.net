@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Agent.Execution;
+using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
@@ -397,7 +398,12 @@ public sealed class OpenClawToolExecutor
         CancellationToken ct)
     {
         if (!_executionRouter.TryResolveRoute(tool, out var route, out var template, out var legacySandboxRoute, out var sandboxMode))
+        {
+            if (IsLocalExecutionDisabled(tool))
+                throw new ToolSandboxException(BrowserTool.LocalExecutionUnavailableMessage);
+
             return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
+        }
 
         if (tool is not ISandboxCapableTool sandboxCapableTool)
             return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
@@ -410,6 +416,9 @@ public sealed class OpenClawToolExecutor
             throw new ToolSandboxException(
                 $"Error: Tool '{tool.Name}' requires sandboxing but no sandbox provider is configured.");
         }
+
+        if (string.Equals(backendName, "local", StringComparison.OrdinalIgnoreCase) && IsLocalExecutionDisabled(tool))
+            throw new ToolSandboxException(BrowserTool.LocalExecutionUnavailableMessage);
 
         if (string.Equals(backendName, "local", StringComparison.OrdinalIgnoreCase) && !legacySandboxRoute)
             return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
@@ -453,7 +462,8 @@ public sealed class OpenClawToolExecutor
                 WorkingDirectory = sandboxRequest.WorkingDirectory,
                 Template = sandboxRequest.Template,
                 TimeToLiveSeconds = sandboxRequest.TimeToLiveSeconds,
-                RequireWorkspace = route?.RequireWorkspace ?? true
+                RequireWorkspace = route?.RequireWorkspace ?? true,
+                AllowLocalFallback = !IsLocalExecutionDisabled(tool)
             }, route?.FallbackBackend, ct);
 
             var sandboxResult = new SandboxResult
@@ -466,6 +476,15 @@ public sealed class OpenClawToolExecutor
         }
         catch (ToolSandboxUnavailableException ex) when (legacySandboxRoute || !string.IsNullOrWhiteSpace(route?.FallbackBackend))
         {
+            if (IsLocalExecutionDisabled(tool))
+            {
+                throw new ToolSandboxException(
+                    legacySandboxRoute
+                        ? $"Error: Tool '{tool.Name}' requires sandboxing but the sandbox provider is unavailable."
+                        : $"Error: Tool '{tool.Name}' requires execution backend '{backendName}' but the provider is unavailable.",
+                    ex);
+            }
+
             if (sandboxMode == ToolSandboxMode.Require)
             {
                 throw new ToolSandboxException(
@@ -488,6 +507,9 @@ public sealed class OpenClawToolExecutor
                 ex);
         }
     }
+
+    private static bool IsLocalExecutionDisabled(ITool tool)
+        => tool is BrowserTool { LocalExecutionSupported: false };
 
     private async Task<string> ExecuteToolWithTimeoutAsync(
         ITool tool,

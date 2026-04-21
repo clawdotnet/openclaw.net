@@ -110,6 +110,74 @@ public sealed class ToolPresetResolverTests
         Assert.Contains("session_search", resolved.AllowedTools, StringComparer.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Resolve_OpenAiHttp_DefaultsToWebPreset()
+    {
+        var resolver = new ToolPresetResolver(new GatewayConfig(), CreateMetadataStore());
+        var resolved = resolver.Resolve(
+            new Session
+            {
+                Id = "sess_openai_http",
+                ChannelId = "openai-http",
+                SenderId = "user1"
+            },
+            ["shell", "session_search"]);
+
+        Assert.Equal("web", resolved.PresetId);
+        Assert.DoesNotContain("shell", resolved.AllowedTools, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("session_search", resolved.AllowedTools, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Resolve_OpenAiHttp_SurfaceBinding_OverridesDefaultPreset()
+    {
+        var config = new GatewayConfig();
+        config.Tooling.SurfaceBindings["openai-http"] = "readonly";
+
+        var resolver = new ToolPresetResolver(config, CreateMetadataStore());
+        var resolved = resolver.Resolve(
+            new Session
+            {
+                Id = "sess_openai_http_bound",
+                ChannelId = "openai-http",
+                SenderId = "user1"
+            },
+            ["shell", "write_file", "session_search"]);
+
+        Assert.Equal("readonly", resolved.PresetId);
+        Assert.DoesNotContain("shell", resolved.AllowedTools, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("write_file", resolved.AllowedTools, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("session_search", resolved.AllowedTools, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Resolve_OpenAiResponses_UsesOpenAiHttpAliasBinding()
+    {
+        var config = new GatewayConfig();
+        config.Tooling.SurfaceBindings["openai-http"] = "readonly";
+
+        var resolver = new ToolPresetResolver(config, CreateMetadataStore());
+        var resolved = resolver.Resolve(
+            new Session
+            {
+                Id = "sess_openai_responses",
+                ChannelId = "openai-responses",
+                SenderId = "user1"
+            },
+            ["shell", "write_file", "session_search"]);
+
+        Assert.Equal("readonly", resolved.PresetId);
+        Assert.DoesNotContain("shell", resolved.AllowedTools, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("write_file", resolved.AllowedTools, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("session_search", resolved.AllowedTools, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static SessionMetadataStore CreateMetadataStore()
+    {
+        var storagePath = CreateStoragePath();
+        return new SessionMetadataStore(storagePath, NullLogger<SessionMetadataStore>.Instance);
+    }
+
     private static string CreateStoragePath()
     {
         var path = Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"));

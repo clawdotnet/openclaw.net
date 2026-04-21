@@ -640,6 +640,10 @@ public sealed class SecurityPostureResponse
     public bool AuthTokenConfigured { get; init; }
     public bool BrowserSessionCookieSecureEffective { get; init; }
     public bool BrowserSessionsEnabled { get; init; }
+    public bool BrowserToolConfigured { get; init; }
+    public bool BrowserToolRegistered { get; init; }
+    public bool BrowserLocalExecutionSupported { get; init; }
+    public bool BrowserExecutionBackendConfigured { get; init; }
     public bool TrustForwardedHeaders { get; init; }
     public bool RequireRequesterMatchForHttpToolApproval { get; init; }
     public bool ToolApprovalRequired { get; init; }

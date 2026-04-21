@@ -115,6 +115,12 @@ internal static class OpenAiEndpoints
                     ActivePresetId = presetHeader.Trim()
                 });
             }
+            var approvalCallback = ToolApprovalCallbackFactory.Create(
+                startup.Config,
+                runtime,
+                session,
+                approvalChannelId: "openai-http",
+                senderId: requesterKey);
 
             try
             {
@@ -211,7 +217,11 @@ internal static class OpenAiEndpoints
                     await ctx.Response.WriteAsync($"data: {roleJson}\n\n", ctx.RequestAborted);
                     await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 
-                    await foreach (var evt in runtime.AgentRuntime.RunStreamingAsync(session, userText ?? "", ctx.RequestAborted))
+                    await foreach (var evt in runtime.AgentRuntime.RunStreamingAsync(
+                        session,
+                        userText ?? "",
+                        ctx.RequestAborted,
+                        approvalCallback: approvalCallback))
                     {
                         if (evt.Type == AgentStreamEventType.TextDelta && !string.IsNullOrEmpty(evt.Content))
                         {
@@ -286,7 +296,11 @@ internal static class OpenAiEndpoints
                 }
                 else
                 {
-                    var result = await runtime.AgentRuntime.RunAsync(session, userText ?? "", ctx.RequestAborted);
+                    var result = await runtime.AgentRuntime.RunAsync(
+                        session,
+                        userText ?? "",
+                        ctx.RequestAborted,
+                        approvalCallback: approvalCallback);
 
                     var response = new OpenAiChatCompletionResponse
                     {
@@ -410,6 +424,12 @@ internal static class OpenAiEndpoints
                     ActivePresetId = responsesPresetHeader.Trim()
                 });
             }
+            var approvalCallback = ToolApprovalCallbackFactory.Create(
+                startup.Config,
+                runtime,
+                session,
+                approvalChannelId: "openai-http",
+                senderId: requesterKey);
 
             try
             {
@@ -653,7 +673,11 @@ internal static class OpenAiEndpoints
 
                     try
                     {
-                        await foreach (var evt in runtime.AgentRuntime.RunStreamingAsync(session, req.Input, ctx.RequestAborted))
+                        await foreach (var evt in runtime.AgentRuntime.RunStreamingAsync(
+                            session,
+                            req.Input,
+                            ctx.RequestAborted,
+                            approvalCallback: approvalCallback))
                         {
                         if (evt.Type == AgentStreamEventType.TextDelta && !string.IsNullOrEmpty(evt.Content))
                         {
@@ -844,7 +868,11 @@ internal static class OpenAiEndpoints
                 }
                 else
                 {
-                    var result = await runtime.AgentRuntime.RunAsync(session, req.Input, ctx.RequestAborted);
+                    var result = await runtime.AgentRuntime.RunAsync(
+                        session,
+                        req.Input,
+                        ctx.RequestAborted,
+                        approvalCallback: approvalCallback);
                     var addedTurns = session.History.Skip(historyStartIndex).ToArray();
 
                     var response = new OpenAiResponseResponse

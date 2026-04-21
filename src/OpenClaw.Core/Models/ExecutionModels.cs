@@ -71,6 +71,7 @@ public sealed class ExecutionRequest
     public string? Template { get; init; }
     public int? TimeToLiveSeconds { get; init; }
     public bool RequireWorkspace { get; init; } = true;
+    public bool AllowLocalFallback { get; init; } = true;
 }
 
 public sealed class ExecutionResult

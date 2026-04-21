@@ -301,6 +301,7 @@ internal static class DiagnosticsEndpoints
             sb.AppendLine($"- public_bind: {EndpointHelpers.ToBoolWord(posture.PublicBind)} auth_token_set={EndpointHelpers.ToBoolWord(posture.AuthTokenConfigured)}");
             sb.AppendLine($"- requester_match_http_tool_approval: {EndpointHelpers.ToBoolWord(posture.RequireRequesterMatchForHttpToolApproval)}");
             sb.AppendLine($"- browser_sessions_enabled: {EndpointHelpers.ToBoolWord(posture.BrowserSessionsEnabled)} cookie_secure_effective={EndpointHelpers.ToBoolWord(posture.BrowserSessionCookieSecureEffective)} forwarded_headers_trusted={EndpointHelpers.ToBoolWord(posture.TrustForwardedHeaders)}");
+            sb.AppendLine($"- browser_tool: configured={EndpointHelpers.ToBoolWord(posture.BrowserToolConfigured)} registered={EndpointHelpers.ToBoolWord(posture.BrowserToolRegistered)} local_supported={EndpointHelpers.ToBoolWord(posture.BrowserLocalExecutionSupported)} backend_configured={EndpointHelpers.ToBoolWord(posture.BrowserExecutionBackendConfigured)}");
             sb.AppendLine($"- plugin_bridge: enabled={EndpointHelpers.ToBoolWord(posture.PluginBridgeEnabled)} transport={posture.PluginBridgeTransportMode} security={posture.PluginBridgeSecurityMode}");
             sb.AppendLine($"- sandbox_configured: {EndpointHelpers.ToBoolWord(posture.SandboxConfigured)}");
             if (posture.RiskFlags.Count > 0)

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text.RegularExpressions;
 using System.Text;
@@ -736,6 +737,35 @@ public sealed class GatewayAdminEndpointTests
         Assert.Contains("- slack:", text, StringComparison.Ordinal);
         Assert.Contains("- discord:", text, StringComparison.Ordinal);
         Assert.Contains("- signal:", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DoctorText_ReportsBrowserToolAvailability_WhenLocalExecutionIsUnavailable()
+    {
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configure: config => config.Tooling.EnableBrowserTool = true,
+            runtimeStateOverride: new GatewayRuntimeState
+            {
+                RequestedMode = "aot",
+                EffectiveMode = GatewayRuntimeMode.Aot,
+                DynamicCodeSupported = false
+            });
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/doctor/text");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var text = await response.Content.ReadAsStringAsync();
+        Assert.Contains(
+            "- browser_tool: configured=yes registered=no local_supported=no backend_configured=no",
+            text,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Configure a non-local execution backend or sandbox for the browser tool, or disable Tooling.EnableBrowserTool.",
+            text,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1768,6 +1798,173 @@ public sealed class GatewayAdminEndpointTests
         Assert.Equal("ok", GetResponsesAssistantText(payload.RootElement));
 
         Assert.True(harness.Runtime.SessionManager.RemoveActive("stable-responses-save-failure"));
+    }
+
+    [Fact]
+    public async Task ChatCompletions_NonStreaming_OpenAiHttpApprovalWaitsForApprovalAndResumes()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Security.RequireRequesterMatchForHttpToolApproval = true;
+        });
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns(callInfo => WaitForToolApprovalAsync(
+                callInfo.ArgAt<ToolApprovalCallback?>(3),
+                callInfo.ArgAt<CancellationToken>(2),
+                approvedText: "approved via openai-http",
+                deniedText: "denied via openai-http"));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        {
+            Content = JsonContent("""{"messages":[{"role":"user","content":"hello"}]}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+
+        var responseTask = harness.Client.SendAsync(request);
+        var approval = await WaitForPendingApprovalAsync(harness.Runtime.ToolApprovalService, "openai-http");
+
+        Assert.Equal("openai-http", approval.ChannelId);
+        Assert.Equal("shell", approval.ToolName);
+
+        using var approvalResponse = await SubmitApprovalDecisionAsync(harness.Client, harness.AuthToken, approval, approved: true);
+        Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+
+        using var response = await responseTask;
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        Assert.Equal(
+            "approved via openai-http",
+            payload.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString());
+
+        var decision = harness.Runtime.ApprovalAuditStore.Query(new ApprovalHistoryQuery { Limit = 10, ChannelId = "openai-http" })
+            .Single(item => item.EventType == "decision");
+        Assert.Equal("http_requester", decision.DecisionSource);
+        Assert.True(decision.Approved);
+    }
+
+    [Fact]
+    public async Task ChatCompletions_Streaming_OpenAiHttpApprovalDenialReturnsToolFailureContent()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Security.RequireRequesterMatchForHttpToolApproval = true;
+        });
+        harness.Runtime.AgentRuntime.RunStreamingAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>())
+            .Returns(callInfo => StreamToolApprovalAsync(
+                callInfo.ArgAt<ToolApprovalCallback?>(3),
+                callInfo.ArgAt<CancellationToken>(2),
+                approvedText: "tool approved by reviewer",
+                deniedText: "tool denied by reviewer"));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        {
+            Content = JsonContent("""{"messages":[{"role":"user","content":"hello"}],"stream":true}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+
+        var responseTask = harness.Client.SendAsync(request);
+        var approval = await WaitForPendingApprovalAsync(harness.Runtime.ToolApprovalService, "openai-http");
+
+        using var denialResponse = await SubmitApprovalDecisionAsync(harness.Client, harness.AuthToken, approval, approved: false);
+        Assert.Equal(HttpStatusCode.OK, denialResponse.StatusCode);
+
+        using var response = await responseTask;
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("text/event-stream", response.Content.Headers.ContentType?.MediaType);
+        var payload = await response.Content.ReadAsStringAsync();
+        Assert.Contains("tool denied by reviewer", payload, StringComparison.Ordinal);
+        Assert.Contains("openclaw_tool_result", payload, StringComparison.Ordinal);
+        Assert.Contains("data: [DONE]", payload, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Responses_NonStreaming_OpenAiHttpApprovalTimeoutReturnsDeniedResultAndRecordsTimeout()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Security.RequireRequesterMatchForHttpToolApproval = true;
+            config.Tooling.ToolApprovalTimeoutSeconds = 5;
+        });
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns(callInfo => WaitForToolApprovalAsync(
+                callInfo.ArgAt<ToolApprovalCallback?>(3),
+                callInfo.ArgAt<CancellationToken>(2),
+                approvedText: "approved via responses",
+                deniedText: "approval timed out"));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/responses")
+        {
+            Content = JsonContent("""{"input":"hello"}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+
+        var responseTask = harness.Client.SendAsync(request);
+        var approval = await WaitForPendingApprovalAsync(harness.Runtime.ToolApprovalService, "openai-http");
+
+        Assert.Equal("openai-http", approval.ChannelId);
+
+        using var response = await responseTask;
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        Assert.Equal("approval timed out", GetResponsesAssistantText(payload.RootElement));
+
+        var decision = harness.Runtime.ApprovalAuditStore.Query(new ApprovalHistoryQuery { Limit = 10, ChannelId = "openai-http" })
+            .Single(item => item.EventType == "decision");
+        Assert.Equal("timeout", decision.DecisionSource);
+        Assert.False(decision.Approved);
+    }
+
+    [Fact]
+    public async Task Responses_Streaming_OpenAiHttpApprovalWaitsForApprovalAndResumes()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Security.RequireRequesterMatchForHttpToolApproval = true;
+        });
+        harness.Runtime.AgentRuntime.RunStreamingAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>())
+            .Returns(callInfo => StreamToolApprovalAsync(
+                callInfo.ArgAt<ToolApprovalCallback?>(3),
+                callInfo.ArgAt<CancellationToken>(2),
+                approvedText: "tool approved by reviewer",
+                deniedText: "tool denied by reviewer"));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/responses")
+        {
+            Content = JsonContent("""{"input":"hello","stream":true}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+
+        var responseTask = harness.Client.SendAsync(request);
+        var approval = await WaitForPendingApprovalAsync(harness.Runtime.ToolApprovalService, "openai-http");
+
+        using var approvalResponse = await SubmitApprovalDecisionAsync(harness.Client, harness.AuthToken, approval, approved: true);
+        Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+
+        using var response = await responseTask;
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("text/event-stream", response.Content.Headers.ContentType?.MediaType);
+        var payload = await response.Content.ReadAsStringAsync();
+        Assert.Contains("response.openclaw_tool_result", payload, StringComparison.Ordinal);
+        Assert.Contains("tool approved by reviewer", payload, StringComparison.Ordinal);
+        Assert.Contains("response.completed", payload, StringComparison.Ordinal);
     }
 
     private static string GetResponsesAssistantText(JsonElement root)
@@ -3449,6 +3646,18 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task WebChat_ToolFailures_AreRenderedInTranscript()
+    {
+        var webChatHtmlPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/OpenClaw.Gateway/wwwroot/webchat.html"));
+        var html = await File.ReadAllTextAsync(webChatHtmlPath);
+
+        Assert.Contains("function isToolFailureMessage", html, StringComparison.Ordinal);
+        Assert.Contains("case 'tool_result':", html, StringComparison.Ordinal);
+        Assert.Contains("if (isToolFailureMessage(env.text ?? env.content ?? ''))", html, StringComparison.Ordinal);
+        Assert.Contains("appendSystem(env.text ?? env.content ?? 'Tool execution failed.', true);", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task CliMigrate_Help_NotesBareAliasRemainsLegacy()
     {
         var previousOut = Console.Out;
@@ -3487,6 +3696,8 @@ public sealed class GatewayAdminEndpointTests
             payload.RootElement.GetProperty("csrfToken").GetString()!);
     }
 
+    private const string ShellApprovalArgumentsJson = """{"command":"pwd"}""";
+
     private static StringContent JsonContent(string json)
         => new(json, Encoding.UTF8, "application/json");
 
@@ -3504,6 +3715,83 @@ public sealed class GatewayAdminEndpointTests
     {
         var payload = await response.Content.ReadAsStringAsync();
         return JsonDocument.Parse(payload);
+    }
+
+    private static async Task<string> WaitForToolApprovalAsync(
+        ToolApprovalCallback? approvalCallback,
+        CancellationToken ct,
+        string approvedText,
+        string deniedText)
+    {
+        Assert.NotNull(approvalCallback);
+        var approved = await approvalCallback!("shell", ShellApprovalArgumentsJson, ct);
+        return approved ? approvedText : deniedText;
+    }
+
+    private static async IAsyncEnumerable<AgentStreamEvent> StreamToolApprovalAsync(
+        ToolApprovalCallback? approvalCallback,
+        [EnumeratorCancellation] CancellationToken ct,
+        string approvedText,
+        string deniedText)
+    {
+        Assert.NotNull(approvalCallback);
+
+        yield return new AgentStreamEvent
+        {
+            Type = AgentStreamEventType.ToolStart,
+            Content = "shell",
+            ToolName = "shell",
+            ToolArguments = ShellApprovalArgumentsJson
+        };
+
+        var approved = await approvalCallback!("shell", ShellApprovalArgumentsJson, ct);
+        var content = approved ? approvedText : deniedText;
+
+        yield return new AgentStreamEvent
+        {
+            Type = AgentStreamEventType.ToolResult,
+            Content = content,
+            ToolName = "shell",
+            ToolArguments = ShellApprovalArgumentsJson
+        };
+
+        yield return AgentStreamEvent.TextDelta(content);
+        yield return AgentStreamEvent.Complete();
+    }
+
+    private static async Task<ToolApprovalRequest> WaitForPendingApprovalAsync(
+        ToolApprovalService service,
+        string channelId,
+        TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(2));
+        while (DateTime.UtcNow < deadline)
+        {
+            var pending = service.ListPending(channelId);
+            if (pending.Count > 0)
+                return pending[0];
+
+            await Task.Delay(10);
+        }
+
+        throw new TimeoutException($"Pending approval for channel '{channelId}' was not created in time.");
+    }
+
+    private static async Task<HttpResponseMessage> SubmitApprovalDecisionAsync(
+        HttpClient client,
+        string authToken,
+        ToolApprovalRequest approval,
+        bool approved)
+    {
+        var requestUri =
+            $"/tools/approve?approvalId={Uri.EscapeDataString(approval.ApprovalId)}" +
+            $"&approved={(approved ? "true" : "false")}" +
+            $"&requesterChannelId={Uri.EscapeDataString(approval.ChannelId)}" +
+            $"&requesterSenderId={Uri.EscapeDataString(approval.SenderId)}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authToken);
+        return await client.SendAsync(request);
     }
 
     private static async Task WaitForAsync(Func<object?, bool> condition, object? state, TimeSpan timeout)
@@ -3551,16 +3839,18 @@ public sealed class GatewayAdminEndpointTests
         bool nonLoopbackBind,
         Action<GatewayConfig>? configure = null,
         Func<string, IMemoryStore>? memoryStoreFactory = null,
-        Action<IServiceCollection, GatewayConfig>? configureServices = null)
+        Action<IServiceCollection, GatewayConfig>? configureServices = null,
+        GatewayRuntimeState? runtimeStateOverride = null)
     {
-        return await CreateHarnessAsyncInternal(nonLoopbackBind, configure, memoryStoreFactory, configureServices);
+        return await CreateHarnessAsyncInternal(nonLoopbackBind, configure, memoryStoreFactory, configureServices, runtimeStateOverride);
     }
 
     private static async Task<GatewayTestHarness> CreateHarnessAsyncInternal(
         bool nonLoopbackBind,
         Action<GatewayConfig>? configure,
         Func<string, IMemoryStore>? memoryStoreFactory,
-        Action<IServiceCollection, GatewayConfig>? configureServices)
+        Action<IServiceCollection, GatewayConfig>? configureServices,
+        GatewayRuntimeState? runtimeStateOverride)
     {
         var storagePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "openclaw-admin-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(storagePath);
@@ -3593,10 +3883,12 @@ public sealed class GatewayAdminEndpointTests
         };
         configure?.Invoke(config);
 
+        var runtimeState = runtimeStateOverride ?? RuntimeModeResolver.Resolve(config.Runtime);
+
         var startup = new GatewayStartupContext
         {
             Config = config,
-            RuntimeState = RuntimeModeResolver.Resolve(config.Runtime),
+            RuntimeState = runtimeState,
             IsNonLoopbackBind = nonLoopbackBind,
             WorkspacePath = null
         };
@@ -3649,7 +3941,7 @@ public sealed class GatewayAdminEndpointTests
             var contractStartup = new GatewayStartupContext
             {
                 Config = config,
-                RuntimeState = RuntimeModeResolver.Resolve(config.Runtime),
+                RuntimeState = runtimeState,
                 IsNonLoopbackBind = nonLoopbackBind,
                 WorkspacePath = null
             };

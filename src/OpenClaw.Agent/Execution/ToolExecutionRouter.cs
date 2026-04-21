@@ -116,7 +116,8 @@ public sealed class ToolExecutionRouter
                 return await backend.ExecuteAsync(request, ct);
             }
             catch when (!string.IsNullOrWhiteSpace(fallbackBackend) &&
-                         _backends.TryGetValue(fallbackBackend, out var fallback))
+                         _backends.TryGetValue(fallbackBackend, out var fallback) &&
+                         (request.AllowLocalFallback || !string.Equals(fallbackBackend, "local", StringComparison.OrdinalIgnoreCase)))
             {
                 var fallbackResult = await fallback.ExecuteAsync(new ExecutionRequest
                 {
@@ -129,7 +130,8 @@ public sealed class ToolExecutionRouter
                     Environment = new Dictionary<string, string>(request.Environment, StringComparer.Ordinal),
                     Template = request.Template,
                     TimeToLiveSeconds = request.TimeToLiveSeconds,
-                    RequireWorkspace = request.RequireWorkspace
+                    RequireWorkspace = request.RequireWorkspace,
+                    AllowLocalFallback = request.AllowLocalFallback
                 }, ct);
                 return new ExecutionResult
                 {

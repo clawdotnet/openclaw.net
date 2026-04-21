@@ -520,88 +520,37 @@ internal static class GatewayWorkers
                             }
                             var useStreaming = msg.ChannelId == "websocket" && wsChannel.IsClientUsingEnvelopes(msg.SenderId);
 
-                            var approvalTimeout = TimeSpan.FromSeconds(Math.Clamp(config.Tooling.ToolApprovalTimeoutSeconds, 5, 3600));
-                            async ValueTask<bool> ApprovalCallback(string toolName, string argsJson, CancellationToken ct)
-                            {
-                                var actionDescriptor = ToolActionPolicyResolver.Resolve(toolName, argsJson);
-                                var grant = operations.ApprovalGrants.TryConsume(session.Id, msg.ChannelId, msg.SenderId, toolName);
-                                if (grant is not null)
+                            var approvalCallback = ToolApprovalCallbackFactory.Create(
+                                config,
+                                toolApprovalService,
+                                approvalAuditStore,
+                                operations,
+                                session,
+                                msg.ChannelId,
+                                msg.SenderId,
+                                async (request, preview, ct) =>
                                 {
-                                    operations.RuntimeEvents.Append(new RuntimeEventEntry
+                                    if (msg.ChannelId == "websocket" && wsChannel.IsClientUsingEnvelopes(msg.SenderId))
                                     {
-                                        Id = $"evt_{Guid.NewGuid():N}"[..20],
-                                        SessionId = session.Id,
-                                        ChannelId = msg.ChannelId,
-                                        SenderId = msg.SenderId,
-                                        Component = "approval",
-                                        Action = "grant_consumed",
-                                        Severity = "info",
-                                        Summary = $"Reusable approval grant '{grant.Id}' applied for tool '{toolName}'.",
-                                        Metadata = new Dictionary<string, string>
+                                        await wsChannel.SendEnvelopeAsync(msg.SenderId, new WsServerEnvelope
                                         {
-                                            ["toolName"] = toolName,
-                                            ["grantId"] = grant.Id,
-                                            ["scope"] = grant.Scope
-                                        }
-                                    });
-                                    return true;
-                                }
-
-                                var req = toolApprovalService.Create(
-                                    session.Id,
-                                    msg.ChannelId,
-                                    msg.SenderId,
-                                    toolName,
-                                    argsJson,
-                                    approvalTimeout,
-                                    action: actionDescriptor.Action,
-                                    isMutation: actionDescriptor.IsMutation,
-                                    summary: actionDescriptor.Summary);
-                                approvalAuditStore.RecordCreated(req);
-                                operations.RuntimeEvents.Append(new RuntimeEventEntry
-                                {
-                                    Id = $"evt_{Guid.NewGuid():N}"[..20],
-                                    SessionId = session.Id,
-                                    ChannelId = msg.ChannelId,
-                                    SenderId = msg.SenderId,
-                                    Component = "approval",
-                                    Action = "requested",
-                                    Severity = "info",
-                                    Summary = string.IsNullOrWhiteSpace(actionDescriptor.Summary)
-                                        ? $"Tool approval requested for '{toolName}'."
-                                        : actionDescriptor.Summary,
-                                    Metadata = new Dictionary<string, string>
-                                    {
-                                        ["toolName"] = toolName,
-                                        ["approvalId"] = req.ApprovalId,
-                                        ["action"] = actionDescriptor.Action,
-                                        ["isMutation"] = actionDescriptor.IsMutation ? "true" : "false"
+                                            Type = "tool_approval_required",
+                                            ApprovalId = request.ApprovalId,
+                                            ToolName = request.ToolName,
+                                            ArgumentsPreview = preview,
+                                            InReplyToMessageId = msg.MessageId,
+                                            Text = string.IsNullOrWhiteSpace(request.Summary) ? "Tool approval required." : request.Summary
+                                        }, ct);
+                                        return;
                                     }
-                                });
 
-                                var preview = argsJson.Length <= 800 ? argsJson : argsJson[..800] + "…";
-
-                                if (msg.ChannelId == "websocket" && wsChannel.IsClientUsingEnvelopes(msg.SenderId))
-                                {
-                                    await wsChannel.SendEnvelopeAsync(msg.SenderId, new WsServerEnvelope
-                                    {
-                                        Type = "tool_approval_required",
-                                        ApprovalId = req.ApprovalId,
-                                        ToolName = toolName,
-                                        ArgumentsPreview = preview,
-                                        InReplyToMessageId = msg.MessageId,
-                                        Text = string.IsNullOrWhiteSpace(req.Summary) ? "Tool approval required." : req.Summary
-                                    }, ct);
-                                }
-                                else
-                                {
                                     var prompt = $"Tool approval required.\n" +
-                                                 $"- id: {req.ApprovalId}\n" +
-                                                 $"- tool: {toolName}\n" +
-                                                 $"{(string.IsNullOrWhiteSpace(req.Action) ? "" : $"- action: {req.Action}\n")}" +
-                                                 $"{(string.IsNullOrWhiteSpace(req.Summary) ? "" : $"- summary: {req.Summary}\n")}" +
+                                                 $"- id: {request.ApprovalId}\n" +
+                                                 $"- tool: {request.ToolName}\n" +
+                                                 $"{(string.IsNullOrWhiteSpace(request.Action) ? "" : $"- action: {request.Action}\n")}" +
+                                                 $"{(string.IsNullOrWhiteSpace(request.Summary) ? "" : $"- summary: {request.Summary}\n")}" +
                                                  $"- args: {preview}\n\n" +
-                                                 $"Reply with: /approve {req.ApprovalId} yes|no";
+                                                 $"Reply with: /approve {request.ApprovalId} yes|no";
 
                                     await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
                                     {
@@ -611,22 +560,7 @@ internal static class GatewayWorkers
                                         Text = prompt,
                                         ReplyToMessageId = msg.MessageId
                                     }, ct);
-                                }
-
-                                var outcome = await toolApprovalService.WaitForDecisionOutcomeAsync(req.ApprovalId, approvalTimeout, ct);
-                                if (outcome.Result == ToolApprovalWaitResult.TimedOut && outcome.Request is not null)
-                                {
-                                    approvalAuditStore.RecordDecision(
-                                        outcome.Request,
-                                        approved: false,
-                                        "timeout",
-                                        actorChannelId: null,
-                                        actorSenderId: null);
-                                    RecordApprovalTimedOutEvent(operations, outcome.Request);
-                                }
-
-                                return outcome.Result == ToolApprovalWaitResult.Approved;
-                            }
+                                });
 
                             if (useStreaming)
                             {
@@ -634,7 +568,7 @@ internal static class GatewayWorkers
 
                                 AgentStreamEvent? doneEvent = null;
                                 await foreach (var evt in agentRuntime.RunStreamingAsync(
-                                    session, messageText, processingCt, approvalCallback: ApprovalCallback))
+                                    session, messageText, processingCt, approvalCallback: approvalCallback))
                                 {
                                     if (string.Equals(evt.EnvelopeType, "assistant_done", StringComparison.Ordinal))
                                     {
@@ -706,7 +640,7 @@ internal static class GatewayWorkers
                                     bridgedTypingStarted = true;
                                 }
 
-                                var responseText = await agentRuntime.RunAsync(session, messageText, processingCt, approvalCallback: ApprovalCallback);
+                                var responseText = await agentRuntime.RunAsync(session, messageText, processingCt, approvalCallback: approvalCallback);
                                 await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
                                 if (learningService is not null)
                                     await learningService.ObserveSessionAsync(session, processingCt);
@@ -989,28 +923,6 @@ internal static class GatewayWorkers
             Severity = "warning",
             Summary = $"Rejected approval decision attempt for '{approvalId}'.",
             Metadata = metadata
-        });
-    }
-
-    private static void RecordApprovalTimedOutEvent(
-        RuntimeOperationsState operations,
-        ToolApprovalRequest request)
-    {
-        operations.RuntimeEvents.Append(new RuntimeEventEntry
-        {
-            Id = $"evt_{Guid.NewGuid():N}"[..20],
-            SessionId = request.SessionId,
-            ChannelId = request.ChannelId,
-            SenderId = request.SenderId,
-            Component = "approval",
-            Action = "timed_out",
-            Severity = "warning",
-            Summary = $"Tool approval timed out for '{request.ToolName}'.",
-            Metadata = new Dictionary<string, string>
-            {
-                ["approvalId"] = request.ApprovalId,
-                ["toolName"] = request.ToolName
-            }
         });
     }
 

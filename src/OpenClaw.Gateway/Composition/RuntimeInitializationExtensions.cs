@@ -36,12 +36,18 @@ internal static class RuntimeInitializationExtensions
         var config = startup.Config;
         var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
         var startupLogger = loggerFactory.CreateLogger("Startup");
+        var browserAvailability = BrowserToolSupport.Evaluate(config, startup.RuntimeState);
         startupLogger.LogInformation(
             "Runtime mode resolved: requested={RequestedMode}, effective={EffectiveMode}, dynamicCodeSupported={DynamicCodeSupported}, orchestrator={Orchestrator}.",
             startup.RuntimeState.RequestedMode,
             startup.RuntimeState.EffectiveModeName,
             startup.RuntimeState.DynamicCodeSupported,
             RuntimeOrchestrator.Normalize(config.Runtime.Orchestrator));
+        if (browserAvailability.ConfiguredEnabled && !browserAvailability.Registered)
+        {
+            startupLogger.LogWarning(
+                "Browser tool was not registered because local execution is unavailable in this runtime and no execution backend or sandbox route is configured.");
+        }
         if (startup.IsNonLoopbackBind && !config.Security.RequireRequesterMatchForHttpToolApproval)
         {
             startupLogger.LogWarning(
@@ -58,7 +64,8 @@ internal static class RuntimeInitializationExtensions
         var builtInTools = CreateBuiltInTools(
             config,
             services,
-            startup.WorkspacePath);
+            startup.WorkspacePath,
+            startup.RuntimeState);
         if (config.Plugins.Mcp.Enabled)
             await services.McpRegistry.RegisterToolsAsync(services.NativeRegistry, app.Lifetime.ApplicationStopping);
 
@@ -497,11 +504,13 @@ internal static class RuntimeInitializationExtensions
     private static IReadOnlyList<ITool> CreateBuiltInTools(
         GatewayConfig config,
         RuntimeServices services,
-        string? workspacePath)
+        string? workspacePath,
+        GatewayRuntimeState runtimeState)
     {
         var projectId = config.Memory.ProjectId
             ?? Environment.GetEnvironmentVariable("OPENCLAW_PROJECT")
             ?? "default";
+        var browserAvailability = BrowserToolSupport.Evaluate(config, runtimeState);
 
         var tools = new List<ITool>
         {
@@ -533,7 +542,7 @@ internal static class RuntimeInitializationExtensions
 
             // System management tools
             new CronTool(services.CronJobSource, services.Pipeline),
-            new GatewayTool(services.RuntimeMetrics, services.SessionManager, config),
+            new GatewayTool(services.RuntimeMetrics, services.SessionManager, config, runtimeState),
 
             // Communication & data tools
             new MessageTool(services.Pipeline),
@@ -543,8 +552,8 @@ internal static class RuntimeInitializationExtensions
             new SessionsYieldTool(services.SessionManager, services.Pipeline, services.MemoryStore),
         };
 
-        if (config.Tooling.EnableBrowserTool)
-            tools.Add(new BrowserTool(config.Tooling, services.RuntimeMetrics));
+        if (browserAvailability.Registered)
+            tools.Add(new BrowserTool(config.Tooling, services.RuntimeMetrics, browserAvailability.LocalExecutionSupported));
 
         if (string.Equals(Environment.GetEnvironmentVariable("OPENCLAW_ENABLE_STREAMING_SMOKE_TOOL"), "1", StringComparison.Ordinal))
             tools.Add(new StreamingSmokeEchoTool());

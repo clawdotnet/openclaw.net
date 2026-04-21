@@ -16,6 +16,8 @@ namespace OpenClaw.Agent.Tools;
 public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
 {
     private const string SandboxProfileDir = "/tmp/openclaw-browser-profile";
+    internal const string LocalExecutionUnavailableMessage =
+        "Error: Browser tool requires a configured execution backend or sandbox in this runtime. Local Playwright execution is unavailable.";
     private const string SandboxRunnerScript = """
         const { chromium } = require('playwright');
 
@@ -88,6 +90,7 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
         """;
 
     private readonly ToolingConfig _config;
+    public bool LocalExecutionSupported { get; }
     private IPlaywright? _playwright;
     private IBrowser? _browser;
     private IPage? _page;
@@ -96,10 +99,11 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
     private bool _initialized;
     private bool _disposed;
 
-    public BrowserTool(ToolingConfig config, RuntimeMetrics? metrics = null)
+    public BrowserTool(ToolingConfig config, RuntimeMetrics? metrics = null, bool localExecutionSupported = true)
     {
         _config = config;
         _metrics = metrics;
+        LocalExecutionSupported = localExecutionSupported;
     }
 
     public string Name => "browser";
@@ -138,6 +142,8 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
                 throw new ObjectDisposedException(nameof(BrowserTool));
 
             if (_initialized) return;
+            if (!LocalExecutionSupported)
+                throw new InvalidOperationException(LocalExecutionUnavailableMessage);
 
             // Ensure Chromium is installed locally before proceeding
             var exitCode = await Task.Run(() => Microsoft.Playwright.Program.Main(["install", "chromium"]), ct);
@@ -164,6 +170,9 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
 
     public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
     {
+        if (!LocalExecutionSupported)
+            return LocalExecutionUnavailableMessage;
+
         // Setup playwright lazily
         await EnsureInitializedAsync(ct);
 

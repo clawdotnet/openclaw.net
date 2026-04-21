@@ -102,6 +102,12 @@ internal sealed class ToolPresetResolver : IToolPresetResolver
 
     private string InferSurface(Session session)
     {
+        var aliasedSurface = session.ChannelId switch
+        {
+            "openai-http" or "openai-responses" => "openai-http",
+            _ => session.ChannelId
+        };
+
         if (_config.Tooling.SurfaceBindings.Count > 0 &&
             _config.Tooling.SurfaceBindings.TryGetValue(session.ChannelId, out var mappedPreset) &&
             !string.IsNullOrWhiteSpace(mappedPreset))
@@ -109,8 +115,15 @@ internal sealed class ToolPresetResolver : IToolPresetResolver
             return session.ChannelId;
         }
 
-        if (string.Equals(session.ChannelId, "openai-http", StringComparison.OrdinalIgnoreCase))
-            return "cli";
+        if (!string.Equals(aliasedSurface, session.ChannelId, StringComparison.OrdinalIgnoreCase) &&
+            _config.Tooling.SurfaceBindings.TryGetValue(aliasedSurface, out mappedPreset) &&
+            !string.IsNullOrWhiteSpace(mappedPreset))
+        {
+            return aliasedSurface;
+        }
+
+        if (string.Equals(aliasedSurface, "openai-http", StringComparison.OrdinalIgnoreCase))
+            return "openai-http";
         if (string.Equals(session.ChannelId, "websocket", StringComparison.OrdinalIgnoreCase))
             return "web";
         if (session.ChannelId.Contains("telegram", StringComparison.OrdinalIgnoreCase))
@@ -119,7 +132,7 @@ internal sealed class ToolPresetResolver : IToolPresetResolver
             || session.Id.StartsWith("automation:", StringComparison.OrdinalIgnoreCase))
             return "automation";
 
-        return session.ChannelId;
+        return aliasedSurface;
     }
 
     private string ResolvePresetIdForSurface(string surface)
@@ -131,6 +144,7 @@ internal sealed class ToolPresetResolver : IToolPresetResolver
         return surface switch
         {
             "cli" => "cli",
+            "openai-http" => "web",
             "web" => "web",
             "telegram" => "telegram",
             "automation" => "automation",

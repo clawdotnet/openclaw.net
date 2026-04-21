@@ -17,6 +17,7 @@ internal static class SecurityPostureBuilder
         var securityMode = transportMode == "stdio" ? "stdio" : "hardened_local_ipc";
         var browserSessionCookieSecureEffective = !publicBind || config.Security.TrustForwardedHeaders;
         var sandboxConfigured = ToolSandboxPolicy.IsOpenSandboxProviderConfigured(config);
+        var browserAvailability = BrowserToolSupport.Evaluate(config, startup.RuntimeState);
         var riskFlags = new List<string>();
         var recommendations = new List<string>();
 
@@ -56,6 +57,12 @@ internal static class SecurityPostureBuilder
             recommendations.Add("Require sandboxing for shell on public binds or disable shell tooling entirely.");
         }
 
+        if (browserAvailability.ConfiguredEnabled && !browserAvailability.Registered)
+        {
+            riskFlags.Add("browser_tool_unavailable");
+            recommendations.Add("Configure a non-local execution backend or sandbox for the browser tool, or disable Tooling.EnableBrowserTool.");
+        }
+
         if (runtime.EffectiveRequireToolApproval && runtime.EffectiveApprovalRequiredTools.Count == 0)
         {
             riskFlags.Add("approval_mode_without_tool_list");
@@ -71,6 +78,10 @@ internal static class SecurityPostureBuilder
             AuthTokenConfigured = !string.IsNullOrWhiteSpace(config.AuthToken),
             BrowserSessionCookieSecureEffective = browserSessionCookieSecureEffective,
             BrowserSessionsEnabled = publicBind,
+            BrowserToolConfigured = browserAvailability.ConfiguredEnabled,
+            BrowserToolRegistered = browserAvailability.Registered,
+            BrowserLocalExecutionSupported = browserAvailability.LocalExecutionSupported,
+            BrowserExecutionBackendConfigured = browserAvailability.ExecutionBackendConfigured,
             TrustForwardedHeaders = config.Security.TrustForwardedHeaders,
             RequireRequesterMatchForHttpToolApproval = config.Security.RequireRequesterMatchForHttpToolApproval,
             ToolApprovalRequired = runtime.EffectiveRequireToolApproval,
