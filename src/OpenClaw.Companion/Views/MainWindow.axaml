@@ -76,28 +76,39 @@
                 </Grid>
             </TabItem>
 
-            <TabItem>
+            <TabItem x:Name="ApprovalsTab">
                 <TabItem.Header>
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock Text="Approvals" VerticalAlignment="Center" />
                         <Border Background="{DynamicResource SystemControlBackgroundAccentBrush}"
                                 CornerRadius="9" Padding="6,1"
-                                IsVisible="{Binding HasPendingApprovals}">
+                                IsVisible="{Binding QueueSeverityIsLight}">
                             <TextBlock Text="{Binding PendingApprovalsCount}"
                                        FontSize="11" FontWeight="SemiBold"
                                        Foreground="White" VerticalAlignment="Center" />
                         </Border>
+                        <Border Background="#ff9f0a"
+                                CornerRadius="9" Padding="6,1"
+                                IsVisible="{Binding QueueSeverityIsHeavy}">
+                            <TextBlock Text="{Binding PendingApprovalsCount}"
+                                       FontSize="11" FontWeight="SemiBold"
+                                       Foreground="#1c1c1e" VerticalAlignment="Center" />
+                        </Border>
                     </StackPanel>
                 </TabItem.Header>
-                <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="10">
                     <Border Grid.Row="0" Padding="10" CornerRadius="8" BorderThickness="1"
                             BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                             <StackPanel Grid.Column="0" Spacing="2">
                                 <TextBlock Text="{Binding ApprovalsStatus}" TextWrapping="Wrap" />
-                                <TextBlock Text="{Binding ApprovalsLastPolled, StringFormat='Last polled: {0:HH:mm:ss} UTC'}"
-                                           FontSize="11" Opacity="0.65"
-                                           IsVisible="{Binding ApprovalsLastPolled, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="{Binding ApprovalsLastPolled, StringFormat='Last polled: {0:HH:mm:ss} UTC'}"
+                                               FontSize="11" Opacity="0.65"
+                                               IsVisible="{Binding ApprovalsLastPolled, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                    <TextBlock Text="{Binding ApprovalsPollingMode, StringFormat=Polling: {0}}"
+                                               FontSize="11" Opacity="0.55" />
+                                </StackPanel>
                             </StackPanel>
                             <Button Grid.Column="1" Content="Refresh"
                                     Command="{Binding RefreshApprovalsCommand}"
@@ -156,6 +167,48 @@
                             </ScrollViewer>
                         </Grid>
                     </Border>
+
+                    <Border Grid.Row="2" Padding="10" CornerRadius="8" BorderThickness="1"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                            <StackPanel Grid.Column="0" Spacing="2">
+                                <TextBlock Text="Decision history" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding ApprovalHistoryStatus}" FontSize="11" Opacity="0.65" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="Load History"
+                                    Command="{Binding LoadApprovalHistoryCommand}"
+                                    IsEnabled="{Binding IsHistoryBusy, Converter={StaticResource InverseBool}}" />
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="3" Padding="10" CornerRadius="8" BorderThickness="1"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                            MaxHeight="260">
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding ApprovalHistory}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="vm:ApprovalHistoryItem">
+                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,0,0,4">
+                                            <Border Grid.Column="0" CornerRadius="3" Padding="5,1"
+                                                    Background="{Binding OutcomeColor}">
+                                                <TextBlock Text="{Binding OutcomeLabel}" FontSize="10"
+                                                           FontWeight="SemiBold" Foreground="White" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="{Binding ToolName}" FontWeight="SemiBold" FontSize="12" />
+                                                <TextBlock Text="{Binding Origin}" FontSize="11" Opacity="0.7" />
+                                                <TextBlock Text="{Binding Actor, StringFormat=by {0}}" FontSize="11" Opacity="0.55"
+                                                           IsVisible="{Binding Actor, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2"
+                                                       Text="{Binding TimestampUtc, StringFormat='{}{0:HH:mm:ss} UTC'}"
+                                                       FontSize="11" Opacity="0.55" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
                 </Grid>
             </TabItem>
 
@@ -183,6 +236,23 @@
                                 <TextBlock Text="{Binding OperatorRole, StringFormat=Role: {0}}" />
                                 <TextBlock Text="{Binding OperatorAuthMode, StringFormat=Auth mode: {0}}" />
                                 <TextBlock Text="{Binding IsBootstrapAdmin, StringFormat=Bootstrap admin: {0}}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Padding="10" CornerRadius="8" BorderThickness="1"
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Desktop Notifications" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding DesktopNotifierDescription, StringFormat=Platform: {0}}"
+                                           FontSize="11" Opacity="0.65" TextWrapping="Wrap" />
+                                <CheckBox Content="Notify on new approval"
+                                          IsChecked="{Binding ApprovalDesktopNotificationsEnabled}"
+                                          IsEnabled="{Binding DesktopNotifierAvailable}" />
+                                <CheckBox Content="Only when Companion is not focused"
+                                          IsChecked="{Binding ApprovalDesktopNotificationsOnlyWhenUnfocused}"
+                                          IsEnabled="{Binding DesktopNotifierAvailable}" />
+                                <TextBlock Text="Desktop notifications are best-effort; they require the OS notification tool to be available (osascript on macOS, notify-send on Linux)."
+                                           FontSize="11" Opacity="0.55" TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
 
