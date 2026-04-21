@@ -63,13 +63,18 @@ internal static class RuntimeInitializationExtensions
             await services.McpRegistry.RegisterToolsAsync(services.NativeRegistry, app.Lifetime.ApplicationStopping);
 
         LlmClientFactory.ResetDynamicProviders();
+        string? builtInInitError = null;
         try
         {
             services.ProviderRegistry.RegisterDefault(config.Llm, LlmClientFactory.CreateChatClient(config.Llm));
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
-            // Dynamic/plugin-backed providers may become available after plugin loading.
+            builtInInitError = ex.Message;
+            startupLogger.LogInformation(
+                "Built-in provider '{Provider}' did not initialize at startup: {Reason}. Waiting for plugin-backed providers.",
+                config.Llm.Provider,
+                ex.Message);
         }
 
         var pluginComposition = await LoadPluginCompositionAsync(
@@ -82,8 +87,11 @@ internal static class RuntimeInitializationExtensions
 
         if (!services.ProviderRegistry.MarkDefault(config.Llm.Provider) && !services.ProviderRegistry.TryGet(config.Llm.Provider, out _))
         {
+            var suffix = builtInInitError is null
+                ? string.Empty
+                : $" Built-in provider initialization failed: {builtInInitError}.";
             throw new InvalidOperationException(
-                $"Configured provider '{config.Llm.Provider}' is not available. " +
+                $"Configured provider '{config.Llm.Provider}' is not available.{suffix} " +
                 "Register it as the built-in provider or via a compatible plugin.");
         }
 

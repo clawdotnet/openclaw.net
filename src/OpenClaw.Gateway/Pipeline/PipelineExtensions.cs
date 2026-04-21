@@ -256,6 +256,15 @@ internal static class PipelineExtensions
             startup.RuntimeState.EffectiveModeName,
             isAot ? "Yes" : "No");
 
+        if (startup.Config.Port <= 0)
+        {
+            app.Logger.LogInformation(
+                "Gateway ready. Bind address {BindAddress} resolved to port {Port} — URLs not shown because a valid port was not configured.",
+                startup.Config.BindAddress,
+                startup.Config.Port);
+            return;
+        }
+
         var host = ResolveBannerHost(startup.Config.BindAddress);
         var baseUrl = $"http://{host}:{startup.Config.Port}";
         app.Logger.LogInformation(
@@ -282,10 +291,19 @@ internal static class PipelineExtensions
         if (string.IsNullOrWhiteSpace(bindAddress))
             return "127.0.0.1";
 
-        return bindAddress switch
+        switch (bindAddress)
         {
-            "0.0.0.0" or "*" or "+" or "::" => "127.0.0.1",
-            _ => bindAddress,
-        };
+            case "0.0.0.0":
+            case "*":
+            case "+":
+            case "::":
+            case "[::]":
+                return "127.0.0.1";
+        }
+
+        if (bindAddress.Contains(':') && !bindAddress.StartsWith('['))
+            return $"[{bindAddress}]";
+
+        return bindAddress;
     }
 }

@@ -40,7 +40,10 @@ internal static class CoreServicesExtensions
             new AllowlistManager(config.Memory.StoragePath, sp.GetRequiredService<ILogger<AllowlistManager>>()));
 
         services.AddSingleton<RuntimeMetrics>();
-        services.AddSingleton<IMemoryStore>(sp => CreateMemoryStore(config, sp.GetRequiredService<RuntimeMetrics>()));
+        services.AddSingleton<IMemoryStore>(sp => CreateMemoryStore(
+            config,
+            sp.GetRequiredService<RuntimeMetrics>(),
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("MemoryStore")));
         services.AddSingleton<ISessionAdminStore>(sp =>
         {
             var memory = sp.GetRequiredService<IMemoryStore>();
@@ -186,7 +189,7 @@ internal static class CoreServicesExtensions
         return Path.GetFullPath(dbPath);
     }
 
-    private static IMemoryStore CreateMemoryStore(OpenClaw.Core.Models.GatewayConfig config, RuntimeMetrics metrics)
+    private static IMemoryStore CreateMemoryStore(OpenClaw.Core.Models.GatewayConfig config, RuntimeMetrics metrics, ILogger logger)
     {
         if (string.Equals(config.Memory.Provider, "sqlite", StringComparison.OrdinalIgnoreCase))
         {
@@ -207,8 +210,17 @@ internal static class CoreServicesExtensions
             {
                 _ = Task.Run(async () =>
                 {
-                    try { await store.BackfillEmbeddingsAsync(); }
-                    catch { /* fire-and-forget */ }
+                    try
+                    {
+                        await store.BackfillEmbeddingsAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(
+                            "Embedding backfill failed ({Type}): {Reason}. Memory vector search may be incomplete until resolved.",
+                            ex.GetType().Name,
+                            ex.Message);
+                    }
                 });
             }
 
