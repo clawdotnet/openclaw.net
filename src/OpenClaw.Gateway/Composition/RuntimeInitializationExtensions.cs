@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Execution;
@@ -55,10 +56,23 @@ internal static class RuntimeInitializationExtensions
 
         var blockedPluginIds = services.PluginHealth.GetBlockedPluginIds();
         var channelComposition = await BuildChannelCompositionAsync(app, startup, services, loggerFactory);
+
+        var effectiveBrowserEnabled = config.Tooling.EnableBrowserTool;
+        if (effectiveBrowserEnabled && !RuntimeFeature.IsDynamicCodeSupported)
+        {
+            startupLogger.LogWarning(
+                "Browser tool is enabled (OpenClaw:Tooling:EnableBrowserTool=true) but this gateway is running without dynamic-code support (NativeAOT/trimmed). " +
+                "Microsoft.Playwright uses reflection-based JSON serialization and will crash on first use. " +
+                "Skipping browser tool registration. To use the browser tool, run a JIT build (OpenClaw:Runtime:Mode=jit) or publish without PublishAot; " +
+                "to silence this warning, set OpenClaw:Tooling:EnableBrowserTool=false.");
+            effectiveBrowserEnabled = false;
+        }
+
         var builtInTools = CreateBuiltInTools(
             config,
             services,
-            startup.WorkspacePath);
+            startup.WorkspacePath,
+            effectiveBrowserEnabled);
         if (config.Plugins.Mcp.Enabled)
             await services.McpRegistry.RegisterToolsAsync(services.NativeRegistry, app.Lifetime.ApplicationStopping);
 
@@ -505,7 +519,8 @@ internal static class RuntimeInitializationExtensions
     private static IReadOnlyList<ITool> CreateBuiltInTools(
         GatewayConfig config,
         RuntimeServices services,
-        string? workspacePath)
+        string? workspacePath,
+        bool browserToolEnabled)
     {
         var projectId = config.Memory.ProjectId
             ?? Environment.GetEnvironmentVariable("OPENCLAW_PROJECT")
@@ -551,7 +566,7 @@ internal static class RuntimeInitializationExtensions
             new SessionsYieldTool(services.SessionManager, services.Pipeline, services.MemoryStore),
         };
 
-        if (config.Tooling.EnableBrowserTool)
+        if (browserToolEnabled)
             tools.Add(new BrowserTool(config.Tooling, services.RuntimeMetrics));
 
         if (string.Equals(Environment.GetEnvironmentVariable("OPENCLAW_ENABLE_STREAMING_SMOKE_TOOL"), "1", StringComparison.Ordinal))

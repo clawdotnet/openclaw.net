@@ -211,7 +211,9 @@ public sealed class OpenClawToolExecutor
                 return CreateImmediateResult(
                     toolName,
                     argsJson,
-                    "Tool requires approval but no approval channel is available. Please confirm you want to execute this action.");
+                    $"Tool '{tool.Name}' requires approval but this session has no approval channel — auto-denied. " +
+                    "To enable this tool: connect through the browser chat at /chat (it supports interactive approvals) " +
+                    "or set OpenClaw:Tooling:RequireToolApproval=false for trusted local sessions.");
             }
         }
 
