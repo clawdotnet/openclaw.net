@@ -272,7 +272,11 @@ internal static class OpenAiEndpoints
                                 {
                                     CallId = toolCall.CallId,
                                     ToolName = evt.ToolName,
-                                    Content = evt.Content
+                                    Content = evt.Content,
+                                    ResultStatus = evt.ResultStatus ?? ToolResultStatuses.Completed,
+                                    FailureCode = evt.FailureCode,
+                                    FailureMessage = evt.FailureMessage,
+                                    NextStep = evt.NextStep
                                 },
                                 ToolCalls =
                                 [
@@ -802,7 +806,11 @@ internal static class OpenAiEndpoints
                                 ItemId = toolState.ResultItemId!,
                                 CallId = toolState.CallId,
                                 ToolName = toolState.ToolName,
-                                Content = evt.Content
+                                Content = evt.Content,
+                                ResultStatus = evt.ResultStatus ?? ToolResultStatuses.Completed,
+                                FailureCode = evt.FailureCode,
+                                FailureMessage = evt.FailureMessage,
+                                NextStep = evt.NextStep
                             };
                             await WriteResponsesEventAsync(
                                 resultEvent.Type,

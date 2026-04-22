@@ -35,7 +35,7 @@ internal sealed class CliArgs
                 continue;
             }
 
-            if (a is "--no-stream" or "--apply" or "--non-interactive")
+            if (a is "--no-stream" or "--apply" or "--non-interactive" or "--offline" or "--require-provider" or "--with-companion" or "--open-browser" or "--skip-verify" or "--json")
             {
                 parsed._flags.Add(a);
                 continue;
@@ -43,7 +43,7 @@ internal sealed class CliArgs
 
             if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal))
             {
-                if (a is "--no-stream" or "--apply" or "--non-interactive")
+                if (a is "--no-stream" or "--apply" or "--non-interactive" or "--offline" or "--require-provider" or "--with-companion" or "--open-browser" or "--skip-verify" or "--json")
                 {
                     parsed._flags.Add(a);
                     continue;

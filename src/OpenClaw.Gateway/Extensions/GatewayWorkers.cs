@@ -577,7 +577,9 @@ internal static class GatewayWorkers
                                     }
 
                                     await wsChannel.SendStreamEventAsync(
-                                        msg.SenderId, evt.EnvelopeType, evt.Content, msg.MessageId,
+                                        msg.SenderId,
+                                        evt,
+                                        msg.MessageId,
                                         processingCt);
                                 }
                                 await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
@@ -606,8 +608,7 @@ internal static class GatewayWorkers
                                 {
                                     await wsChannel.SendStreamEventAsync(
                                         msg.SenderId,
-                                        completedEvent.EnvelopeType,
-                                        completedEvent.Content,
+                                        completedEvent,
                                         msg.MessageId,
                                         processingCt);
                                 }

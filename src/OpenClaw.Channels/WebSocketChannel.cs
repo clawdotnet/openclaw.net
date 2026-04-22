@@ -247,6 +247,35 @@ public sealed class WebSocketChannel : IChannelAdapter
         await SendPayloadAsync(recipientId, state, payload, ct);
     }
 
+    public async ValueTask SendStreamEventAsync(
+        string recipientId,
+        AgentStreamEvent streamEvent,
+        string? inReplyToMessageId,
+        CancellationToken ct)
+    {
+        if (!_connections.TryGetValue(recipientId, out var state))
+            return;
+
+        if (!state.UseJsonEnvelope)
+            return;
+
+        var payload = JsonSerializer.SerializeToUtf8Bytes(
+            new WsServerEnvelope
+            {
+                Type = streamEvent.EnvelopeType,
+                Text = streamEvent.Content,
+                InReplyToMessageId = inReplyToMessageId,
+                ToolName = streamEvent.ToolName,
+                ResultStatus = streamEvent.ResultStatus,
+                FailureCode = streamEvent.FailureCode,
+                FailureMessage = streamEvent.FailureMessage,
+                NextStep = streamEvent.NextStep
+            },
+            CoreJsonContext.Default.WsServerEnvelope);
+
+        await SendPayloadAsync(recipientId, state, payload, ct);
+    }
+
     public async ValueTask DisposeAsync()
     {
         foreach (var kvp in _connections)

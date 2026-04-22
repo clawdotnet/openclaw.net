@@ -1,4 +1,6 @@
-using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using OpenClaw.Core.Models;
 
 namespace OpenClaw.Cli;
 
@@ -49,8 +51,7 @@ internal static class InitCommand
         Directory.CreateDirectory(Path.Combine(outputDir, "memory"));
         Directory.CreateDirectory(Path.Combine(outputDir, "deploy"));
 
-        var authToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-        Write(Path.Combine(outputDir, ".env.example"), BuildEnvExample(authToken));
+        Write(Path.Combine(outputDir, ".env.example"), BuildEnvExample(outputDir));
 
         if (preset is "local" or "both")
             Write(Path.Combine(outputDir, "config.local.json"), BuildLocalConfig());
@@ -63,10 +64,9 @@ internal static class InitCommand
 
         Console.WriteLine($"Initialized OpenClaw bootstrap files in {outputDir}");
         Console.WriteLine($"- preset: {preset}");
-        Console.WriteLine($"- auth token: {authToken}");
         Console.WriteLine("- workspace/: ready for file tools");
         Console.WriteLine("- memory/: ready for memory/session persistence");
-        Console.WriteLine("- .env.example: provider/auth placeholders");
+        Console.WriteLine("- .env.example: provider/auth placeholders (fill in secrets there instead of passing them on the CLI)");
         Console.WriteLine("- config.local.json/config.public.json: ready-to-edit presets");
         return 0;
     }
@@ -92,77 +92,48 @@ internal static class InitCommand
         File.WriteAllText(path, contents);
     }
 
-    private static string BuildEnvExample(string authToken)
+    private static string BuildEnvExample(string outputDir)
         => $"""
 MODEL_PROVIDER_KEY=replace-me
-OPENCLAW_AUTH_TOKEN={authToken}
-OPENCLAW_WORKSPACE={Path.GetFullPath(".openclaw-init/workspace")}
+OPENCLAW_AUTH_TOKEN=replace-me
+OPENCLAW_WORKSPACE={Path.Combine(outputDir, "workspace")}
 """;
 
     private static string BuildLocalConfig()
-        => """
-{
-  "OpenClaw": {
-    "BindAddress": "127.0.0.1",
-    "Port": 18789,
-    "Memory": {
-      "Provider": "file",
-      "StoragePath": "./memory"
-    },
-    "Security": {
-      "AllowQueryStringToken": false,
-      "BrowserSessionIdleMinutes": 60,
-      "BrowserRememberDays": 30
-    },
-    "Tooling": {
-      "WorkspaceRoot": "./workspace",
-      "WorkspaceOnly": true,
-      "AllowShell": true,
-      "AllowedReadRoots": [ "./workspace" ],
-      "AllowedWriteRoots": [ "./workspace" ]
-    },
-    "Sandbox": {
-      "Provider": "None"
-    },
-    "Plugins": {
-      "Enabled": false
-    }
-  }
-}
-""";
+        => SerializeConfig(
+            BootstrapConfigFactory.CreateProfileConfig(
+                "local",
+                "127.0.0.1",
+                18789,
+                authToken: "",
+                workspacePath: "./workspace",
+                memoryPath: "./memory",
+                provider: "openai",
+                model: new GatewayConfig().Llm.Model,
+                apiKey: "env:MODEL_PROVIDER_KEY"));
 
     private static string BuildPublicConfig()
-        => """
-{
-  "OpenClaw": {
-    "BindAddress": "0.0.0.0",
-    "Port": 18789,
-    "Memory": {
-      "Provider": "file",
-      "StoragePath": "/app/memory"
-    },
-    "Security": {
-      "AllowQueryStringToken": false,
-      "BrowserSessionIdleMinutes": 60,
-      "BrowserRememberDays": 30,
-      "TrustForwardedHeaders": true
-    },
-    "Tooling": {
-      "WorkspaceRoot": "/app/workspace",
-      "WorkspaceOnly": true,
-      "AllowShell": false,
-      "AllowedReadRoots": [ "/app/workspace" ],
-      "AllowedWriteRoots": [ "/app/workspace" ]
-    },
-    "Sandbox": {
-      "Provider": "None"
-    },
-    "Plugins": {
-      "Enabled": false
+        => SerializeConfig(
+            BootstrapConfigFactory.CreateProfileConfig(
+                "public",
+                "0.0.0.0",
+                18789,
+                authToken: "",
+                workspacePath: "/app/workspace",
+                memoryPath: "/app/memory",
+                provider: "openai",
+                model: new GatewayConfig().Llm.Model,
+                apiKey: "env:MODEL_PROVIDER_KEY"));
+
+    private static string SerializeConfig(GatewayConfig config)
+    {
+        var payload = new JsonObject
+        {
+            ["OpenClaw"] = JsonNode.Parse(JsonSerializer.Serialize(config, CoreJsonContext.Default.GatewayConfig))
+        };
+
+        return payload.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
     }
-  }
-}
-""";
 
     private static string BuildCaddyfileSample()
         => """

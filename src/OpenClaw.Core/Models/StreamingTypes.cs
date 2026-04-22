@@ -35,6 +35,10 @@ public readonly record struct AgentStreamEvent
     public string? ToolName { get; init; }
     public string? ToolArguments { get; init; }
     public string? ErrorCode { get; init; }
+    public string? ResultStatus { get; init; }
+    public string? FailureCode { get; init; }
+    public string? FailureMessage { get; init; }
+    public string? NextStep { get; init; }
 
     public static AgentStreamEvent TextDelta(string text) =>
         new() { Type = AgentStreamEventType.TextDelta, Content = text };
@@ -45,8 +49,23 @@ public readonly record struct AgentStreamEvent
     public static AgentStreamEvent ToolDelta(string toolName, string chunk) =>
         new() { Type = AgentStreamEventType.ToolDelta, Content = chunk, ToolName = toolName };
 
-    public static AgentStreamEvent ToolCompleted(string toolName, string result) =>
-        new() { Type = AgentStreamEventType.ToolResult, Content = result, ToolName = toolName };
+    public static AgentStreamEvent ToolCompleted(
+        string toolName,
+        string result,
+        string resultStatus = ToolResultStatuses.Completed,
+        string? failureCode = null,
+        string? failureMessage = null,
+        string? nextStep = null) =>
+        new()
+        {
+            Type = AgentStreamEventType.ToolResult,
+            Content = result,
+            ToolName = toolName,
+            ResultStatus = resultStatus,
+            FailureCode = failureCode,
+            FailureMessage = failureMessage,
+            NextStep = nextStep
+        };
 
     public static AgentStreamEvent ErrorOccurred(string error, string? errorCode = null) =>
         new() { Type = AgentStreamEventType.Error, Content = error, ErrorCode = errorCode };

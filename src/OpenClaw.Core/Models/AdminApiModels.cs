@@ -35,6 +35,15 @@ public sealed class AuthSessionResponse
     public string? Username { get; init; }
     public string? DisplayName { get; init; }
     public bool IsBootstrapAdmin { get; init; }
+    public bool PublicBind { get; init; }
+    public string[] AllowedAuthModes { get; init; } = [];
+    public string EffectiveToolSurface { get; init; } = "web";
+    public string EffectiveToolPresetId { get; init; } = "web";
+    public string? EffectiveToolPresetDescription { get; init; }
+    public bool BrowserToolRegistered { get; init; }
+    public bool BrowserExecutionBackendConfigured { get; init; }
+    public string BrowserCapabilityReason { get; init; } = "";
+    public string[] CapabilitySummary { get; init; } = [];
 }
 
 public sealed class ApprovalListResponse

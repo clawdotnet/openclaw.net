@@ -19,6 +19,7 @@ using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Core.Skills;
+using OpenClaw.Core.Validation;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
@@ -55,6 +56,7 @@ internal static class RuntimeInitializationExtensions
                 "Requester-matched HTTP tool approvals are disabled on a non-loopback bind. Enable OpenClaw:Security:RequireRequesterMatchForHttpToolApproval for safer public deployments.");
         }
         var services = ResolveRuntimeServices(app);
+        var providerSmokeRegistry = app.Services.GetRequiredService<ProviderSmokeRegistry>();
 
         // Register observability gauge for pending tool approvals
         var approvalService = app.Services.GetRequiredService<ToolApprovalService>();
@@ -91,6 +93,7 @@ internal static class RuntimeInitializationExtensions
             startup,
             services,
             loggerFactory,
+            providerSmokeRegistry,
             channelComposition.ChannelAdapters,
             blockedPluginIds);
 
@@ -370,6 +373,7 @@ internal static class RuntimeInitializationExtensions
         GatewayStartupContext startup,
         RuntimeServices services,
         ILoggerFactory loggerFactory,
+        ProviderSmokeRegistry providerSmokeRegistry,
         IDictionary<string, IChannelAdapter> channelAdapters,
         IReadOnlyCollection<string> blockedPluginIds)
     {
@@ -396,7 +400,7 @@ internal static class RuntimeInitializationExtensions
 
             RegisterBridgeChannels(channelAdapters, pluginHost, runtimeDiagnostics);
             RegisterBridgeCommands(services.CommandProcessor, pluginHost, runtimeDiagnostics);
-            RegisterBridgeProviders(loggerFactory, services.ProviderRegistry, pluginHost, runtimeDiagnostics, dynamicProviderOwners);
+            RegisterBridgeProviders(loggerFactory, services.ProviderRegistry, providerSmokeRegistry, pluginHost, runtimeDiagnostics, dynamicProviderOwners);
         }
 
         if (config.Plugins.DynamicNative.Enabled)
@@ -410,7 +414,7 @@ internal static class RuntimeInitializationExtensions
 
             RegisterNativeDynamicChannels(channelAdapters, nativeDynamicPluginHost, runtimeDiagnostics);
             RegisterNativeDynamicCommands(services.CommandProcessor, nativeDynamicPluginHost, runtimeDiagnostics);
-            RegisterNativeDynamicProviders(services.ProviderRegistry, nativeDynamicPluginHost, runtimeDiagnostics, dynamicProviderOwners);
+            RegisterNativeDynamicProviders(services.ProviderRegistry, providerSmokeRegistry, nativeDynamicPluginHost, runtimeDiagnostics, dynamicProviderOwners);
         }
 
         return new PluginComposition
@@ -901,6 +905,7 @@ internal static class RuntimeInitializationExtensions
     private static void RegisterBridgeProviders(
         ILoggerFactory loggerFactory,
         LlmProviderRegistry providerRegistry,
+        ProviderSmokeRegistry providerSmokeRegistry,
         PluginHost pluginHost,
         IDictionary<string, List<PluginCompatibilityDiagnostic>> runtimeDiagnostics,
         ISet<string> dynamicProviderOwners)
@@ -915,6 +920,10 @@ internal static class RuntimeInitializationExtensions
 
             if (providerRegistry.TryRegisterDynamic(providerId, bridgedProvider, ownerId, []))
             {
+                providerSmokeRegistry.RegisterMetadata(
+                    providerId,
+                    treatAsConfigured: true,
+                    skipReason: $"Dynamic provider '{providerId}' is registered through a plugin bridge and does not expose a smoke probe.");
                 dynamicProviderOwners.Add(ownerId);
                 continue;
             }
@@ -931,6 +940,7 @@ internal static class RuntimeInitializationExtensions
 
     private static void RegisterNativeDynamicProviders(
         LlmProviderRegistry providerRegistry,
+        ProviderSmokeRegistry providerSmokeRegistry,
         NativeDynamicPluginHost nativeDynamicPluginHost,
         IDictionary<string, List<PluginCompatibilityDiagnostic>> runtimeDiagnostics,
         ISet<string> dynamicProviderOwners)
@@ -940,6 +950,10 @@ internal static class RuntimeInitializationExtensions
             var ownerId = $"native_dynamic:{pluginId}";
             if (providerRegistry.TryRegisterDynamic(providerId, client, ownerId, []))
             {
+                providerSmokeRegistry.RegisterMetadata(
+                    providerId,
+                    treatAsConfigured: true,
+                    skipReason: $"Dynamic provider '{providerId}' is registered through a native plugin and does not expose a smoke probe.");
                 dynamicProviderOwners.Add(ownerId);
                 continue;
             }

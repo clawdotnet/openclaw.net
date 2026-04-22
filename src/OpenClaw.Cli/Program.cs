@@ -81,7 +81,7 @@ internal static class Program
               openclaw live [options]
               openclaw tui [options]
               openclaw setup [options]
-              openclaw setup <launch|service|status|channel> [options]
+              openclaw setup <launch|service|status|verify|channel> [options]
               openclaw init [options]
               openclaw migrate [options]
               openclaw migrate <legacy|upstream> [options]
@@ -122,6 +122,8 @@ internal static class Program
               openclaw tui
               openclaw setup
               openclaw setup --non-interactive --profile local --workspace ./workspace --provider openai --model gpt-4o --api-key env:MODEL_PROVIDER_KEY
+              openclaw setup verify --config ~/.openclaw/config/openclaw.settings.json
+              openclaw setup launch --config ~/.openclaw/config/openclaw.settings.json --with-companion --open-browser
               openclaw setup service --config ~/.openclaw/config/openclaw.settings.json --platform all
               openclaw setup status --config ~/.openclaw/config/openclaw.settings.json
               openclaw init --preset public
@@ -263,16 +265,19 @@ internal static class Program
                               [--config <path>] [--workspace <path>] [--provider <id>] [--model <id>] [--api-key <secret-or-envref>]
                               [--bind <address>] [--port <n>] [--auth-token <token>]
                               [--docker-image <image>] [--opensandbox-endpoint <url>] [--ssh-host <host>] [--ssh-user <user>] [--ssh-key <path>]
-              openclaw setup launch [--config <path>]
+              openclaw setup launch [--config <path>] [--with-companion] [--open-browser] [--skip-verify] [--offline] [--require-provider]
               openclaw setup service [--config <path>] [--platform <linux|macos|all>]
               openclaw setup status [--config <path>]
+              openclaw setup verify [--config <path>] [--offline] [--require-provider] [--json]
               openclaw setup channel <telegram|slack|discord|teams|whatsapp> [--config <path>] [--non-interactive] [...]
 
             Notes:
               - Bare 'openclaw setup' launches a guided onboarding flow.
-              - 'openclaw setup launch' starts gateway and Companion in the current repo checkout and streams logs until Ctrl-C.
+              - 'openclaw setup launch' starts the gateway in the current repo checkout, runs verification, and streams logs until Ctrl-C.
+              - Use --with-companion to start Companion too.
               - 'openclaw setup service' writes systemd/launchd/Caddy deployment artifacts next to the config.
               - 'openclaw setup status' summarizes bind/auth posture and deploy artifact presence.
+              - 'openclaw setup verify' runs the first-run verification checks without launching the gateway.
               - 'openclaw setup channel ...' updates an existing external config with channel-specific settings.
               - Use --non-interactive for automation or CI.
               - Writes an external JSON config file plus an adjacent env example.

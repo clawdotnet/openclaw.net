@@ -17,6 +17,7 @@ using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.PromptCaching;
+using OpenClaw.Core.Validation;
 using TickerQ.DependencyInjection;
 
 namespace OpenClaw.Gateway.Composition;
@@ -54,6 +55,8 @@ internal static class CoreServicesExtensions
         AddFeatureStores(services, config);
         services.AddSingleton<ProviderUsageTracker>();
         services.AddSingleton<ToolUsageTracker>();
+        services.AddSingleton<ProviderSmokeRegistry>();
+        services.AddSingleton(sp => new SetupVerificationSnapshotStore(config.Memory.StoragePath));
         services.AddSingleton(sp => new ToolAuditLog(
             Path.Combine(Path.GetFullPath(config.Memory.StoragePath), "audit", "tool-audit.jsonl"),
             sp.GetRequiredService<ILogger<ToolAuditLog>>()));

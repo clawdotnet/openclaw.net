@@ -148,6 +148,10 @@ public sealed record ToolInvocation
     public required string Arguments { get; init; }
     public string? Result { get; init; }
     public TimeSpan Duration { get; init; }
+    public string? ResultStatus { get; init; }
+    public string? FailureCode { get; init; }
+    public string? FailureMessage { get; init; }
+    public string? NextStep { get; init; }
 }
 
 public sealed class SessionDelegationMetadata
@@ -628,7 +632,15 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(OrganizationPolicyResponse))]
 [JsonSerializable(typeof(SetupArtifactStatusItem))]
 [JsonSerializable(typeof(List<SetupArtifactStatusItem>))]
+[JsonSerializable(typeof(BrowserToolCapabilitySummary))]
 [JsonSerializable(typeof(SetupStatusResponse))]
+[JsonSerializable(typeof(SetupVerificationCheck))]
+[JsonSerializable(typeof(List<SetupVerificationCheck>))]
+[JsonSerializable(typeof(SetupVerificationResponse))]
+[JsonSerializable(typeof(SetupVerificationSnapshot))]
+[JsonSerializable(typeof(DoctorCheckItem))]
+[JsonSerializable(typeof(List<DoctorCheckItem>))]
+[JsonSerializable(typeof(DoctorReportResponse))]
 [JsonSerializable(typeof(ObservabilityMetricPoint))]
 [JsonSerializable(typeof(List<ObservabilityMetricPoint>))]
 [JsonSerializable(typeof(ObservabilitySummaryCard))]

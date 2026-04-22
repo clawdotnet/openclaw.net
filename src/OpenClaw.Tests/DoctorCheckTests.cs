@@ -24,9 +24,8 @@ public sealed class DoctorCheckTests
                 },
                 Llm = new LlmProviderConfig
                 {
-                    Provider = "openai",
-                    ApiKey = "test-key",
-                    Model = "gpt-4o"
+                    Provider = "ollama",
+                    Model = "llama3.2"
                 }
             };
 

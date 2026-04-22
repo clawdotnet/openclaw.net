@@ -138,6 +138,65 @@ public sealed class SetupArtifactStatusItem
     public string Status { get; init; } = "missing";
 }
 
+public static class SetupCheckStates
+{
+    public const string Pass = "pass";
+    public const string Warn = "warn";
+    public const string Fail = "fail";
+    public const string Skip = "skip";
+    public const string NotRun = "not_run";
+}
+
+public static class DoctorCheckCategories
+{
+    public const string Config = "config";
+    public const string Workspace = "workspace";
+    public const string Security = "security";
+    public const string Browser = "browser";
+    public const string Operator = "operator";
+    public const string ModelDoctor = "model_doctor";
+    public const string ProviderSmoke = "provider_smoke";
+    public const string Runtime = "runtime";
+    public const string Storage = "storage";
+    public const string Network = "network";
+    public const string Plugins = "plugins";
+    public const string Channels = "channels";
+}
+
+public static class SetupVerificationSources
+{
+    public const string Cli = "cli";
+    public const string Admin = "admin";
+    public const string LaunchStartup = "launch-startup";
+}
+
+public static class ToolResultStatuses
+{
+    public const string Completed = "completed";
+    public const string Failed = "failed";
+    public const string Blocked = "blocked";
+}
+
+public static class ToolFailureCodes
+{
+    public const string PresetBlocked = "preset_blocked";
+    public const string OperatorAuthRequired = "operator_auth_required";
+    public const string ApprovalRequired = "approval_required";
+    public const string RuntimeCapabilityUnavailable = "runtime_capability_unavailable";
+    public const string BrowserBackendMissing = "browser_backend_missing";
+    public const string Timeout = "timeout";
+    public const string ToolFailed = "tool_failed";
+}
+
+public sealed class BrowserToolCapabilitySummary
+{
+    public bool ConfiguredEnabled { get; init; }
+    public bool LocalExecutionSupported { get; init; }
+    public bool ExecutionBackendConfigured { get; init; }
+    public bool Registered { get; init; }
+    public string Reason { get; init; } = "";
+}
+
 public sealed class SetupStatusResponse
 {
     public string Profile { get; init; } = "local";
@@ -150,9 +209,79 @@ public sealed class SetupStatusResponse
     public string MinimumPluginTrustLevel { get; init; } = "untrusted";
     public bool ReverseProxyRecommended { get; init; }
     public string ReachableBaseUrl { get; init; } = "";
+    public string? WorkspacePath { get; init; }
+    public bool WorkspaceExists { get; init; }
+    public bool HasOperatorAccounts { get; init; }
+    public int OperatorAccountCount { get; init; }
+    public bool ProviderConfigured { get; init; }
+    public string ProviderSmokeStatus { get; init; } = SetupCheckStates.NotRun;
+    public string ModelDoctorStatus { get; init; } = SetupCheckStates.Skip;
+    public bool BrowserToolRegistered { get; init; }
+    public bool BrowserExecutionBackendConfigured { get; init; }
+    public string BrowserCapabilityReason { get; init; } = "";
+    public DateTimeOffset? LastVerificationAtUtc { get; init; }
+    public string? LastVerificationSource { get; init; }
+    public string LastVerificationStatus { get; init; } = SetupCheckStates.NotRun;
+    public bool LastVerificationHasFailures { get; init; }
+    public bool LastVerificationHasWarnings { get; init; }
+    public string BootstrapGuidanceState { get; init; } = "not_applicable";
+    public IReadOnlyList<string> RecommendedNextActions { get; init; } = [];
     public IReadOnlyList<ChannelReadinessDto> ChannelReadiness { get; init; } = [];
     public IReadOnlyList<SetupArtifactStatusItem> Artifacts { get; init; } = [];
     public IReadOnlyList<string> Warnings { get; init; } = [];
+}
+
+public sealed class SetupVerificationCheck
+{
+    public required string Id { get; init; }
+    public required string Label { get; init; }
+    public string Category { get; init; } = DoctorCheckCategories.Config;
+    public string Status { get; init; } = SetupCheckStates.Pass;
+    public string Summary { get; init; } = "";
+    public string? Detail { get; init; }
+    public string? NextStep { get; init; }
+}
+
+public sealed class SetupVerificationResponse
+{
+    public DateTimeOffset GeneratedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    public string OverallStatus { get; init; } = SetupCheckStates.Pass;
+    public bool HasFailures { get; init; }
+    public bool HasWarnings { get; init; }
+    public bool HasSkips { get; init; }
+    public IReadOnlyList<SetupVerificationCheck> Checks { get; init; } = [];
+    public IReadOnlyList<string> RecommendedNextActions { get; init; } = [];
+}
+
+public sealed class SetupVerificationSnapshot
+{
+    public DateTimeOffset RecordedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    public string Source { get; init; } = "";
+    public bool Offline { get; init; }
+    public bool RequireProvider { get; init; }
+    public required SetupVerificationResponse Verification { get; init; }
+}
+
+public sealed class DoctorCheckItem
+{
+    public required string Id { get; init; }
+    public required string Label { get; init; }
+    public string Category { get; init; } = DoctorCheckCategories.Config;
+    public string Status { get; init; } = SetupCheckStates.Pass;
+    public string Summary { get; init; } = "";
+    public string? Detail { get; init; }
+    public string? NextStep { get; init; }
+}
+
+public sealed class DoctorReportResponse
+{
+    public DateTimeOffset GeneratedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    public string OverallStatus { get; init; } = SetupCheckStates.Pass;
+    public bool HasFailures { get; init; }
+    public bool HasWarnings { get; init; }
+    public bool HasSkips { get; init; }
+    public IReadOnlyList<DoctorCheckItem> Checks { get; init; } = [];
+    public IReadOnlyList<string> RecommendedNextActions { get; init; } = [];
 }
 
 public sealed class ObservabilityMetricPoint

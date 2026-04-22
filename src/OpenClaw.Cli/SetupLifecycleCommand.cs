@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
+using OpenClaw.Core.Validation;
 
 namespace OpenClaw.Cli;
 
@@ -29,6 +31,36 @@ internal static class SetupLifecycleCommand
         var status = BuildStatus(configPath, config);
         WriteStatus(output, status);
         return 0;
+    }
+
+    public static async Task<int> RunVerifyAsync(string[] args, TextWriter output, TextWriter error)
+    {
+        var parsed = CliArgs.Parse(args);
+        var configPath = ResolveConfigPath(parsed);
+        GatewayConfig config;
+        try
+        {
+            config = GatewayConfigFile.Load(configPath);
+        }
+        catch (Exception ex)
+        {
+            error.WriteLine(ex.Message);
+            return 1;
+        }
+
+        var response = await RunLocalVerificationAsync(
+            configPath,
+            config,
+            offline: parsed.HasFlag("--offline"),
+            requireProvider: parsed.HasFlag("--require-provider"),
+            source: SetupVerificationSources.Cli,
+            CancellationToken.None);
+
+        if (parsed.HasFlag("--json"))
+            output.WriteLine(JsonSerializer.Serialize(response, CoreJsonContext.Default.SetupVerificationResponse));
+        else
+            WriteVerification(output, response);
+        return response.HasFailures ? 1 : 0;
     }
 
     public static async Task<int> RunServiceAsync(string[] args, TextWriter output, TextWriter error, string currentDirectory)
@@ -70,6 +102,11 @@ internal static class SetupLifecycleCommand
     {
         var parsed = CliArgs.Parse(args);
         var configPath = ResolveConfigPath(parsed);
+        var withCompanion = parsed.HasFlag("--with-companion");
+        var openBrowser = parsed.HasFlag("--open-browser");
+        var skipVerify = parsed.HasFlag("--skip-verify");
+        var offline = parsed.HasFlag("--offline");
+        var requireProvider = parsed.HasFlag("--require-provider");
 
         GatewayConfig config;
         try
@@ -91,7 +128,7 @@ internal static class SetupLifecycleCommand
 
         var gatewayProjectPath = Path.Combine(repoRoot, GatewayProjectRelativePath);
         var companionProjectPath = Path.Combine(repoRoot, CompanionProjectRelativePath);
-        if (!File.Exists(gatewayProjectPath) || !File.Exists(companionProjectPath))
+        if (!File.Exists(gatewayProjectPath) || (withCompanion && !File.Exists(companionProjectPath)))
         {
             error.WriteLine("Gateway or Companion project could not be found from the repository root.");
             return 2;
@@ -107,7 +144,36 @@ internal static class SetupLifecycleCommand
             return 1;
         }
 
-        using var companion = StartCompanionProcess(repoRoot, companionProjectPath, baseUrl, config.AuthToken ?? "");
+        if (!skipVerify)
+        {
+            var verification = await RunLocalVerificationAsync(
+                configPath,
+                config,
+                offline: offline,
+                requireProvider: requireProvider,
+                source: SetupVerificationSources.LaunchStartup,
+                CancellationToken.None);
+            WriteVerification(output, verification);
+            if (verification.HasFailures)
+            {
+                TryStopProcess(gateway);
+                error.WriteLine("Gateway started, but first-run verification found blocking issues.");
+                return 1;
+            }
+        }
+
+        Process? companion = null;
+        if (withCompanion)
+            companion = StartCompanionProcess(repoRoot, companionProjectPath, baseUrl, config.AuthToken ?? "");
+
+        if (openBrowser)
+        {
+            if (BindAddressClassifier.IsLoopbackBind(config.BindAddress))
+                TryOpenBrowser($"{baseUrl.TrimEnd('/')}/chat");
+            else
+                output.WriteLine("Skipping --open-browser because the configured bind is not loopback-local.");
+        }
+
         using var cts = new CancellationTokenSource();
         ConsoleCancelEventHandler? cancelHandler = null;
         cancelHandler = (_, eventArgs) =>
@@ -122,12 +188,18 @@ internal static class SetupLifecycleCommand
             foreach (var (label, url) in BuildLaunchUrls(baseUrl))
                 output.WriteLine($"{label}: {url}");
             output.WriteLine($"Auth mode: {(BindAddressClassifier.IsLoopbackBind(config.BindAddress) ? "loopback-open" : "token-or-session")}");
-            output.WriteLine("Streaming logs. Press Ctrl-C to stop.");
+            output.WriteLine(withCompanion
+                ? "Streaming gateway and companion logs. Press Ctrl-C to stop."
+                : "Streaming gateway logs. Press Ctrl-C to stop.");
 
             var gatewayStdout = PumpProcessOutputAsync(gateway.StandardOutput, "gateway", output, cts.Token);
             var gatewayStderr = PumpProcessOutputAsync(gateway.StandardError, "gateway", output, cts.Token);
-            var companionStdout = PumpProcessOutputAsync(companion.StandardOutput, "companion", output, cts.Token);
-            var companionStderr = PumpProcessOutputAsync(companion.StandardError, "companion", output, cts.Token);
+            var companionStdout = companion is null
+                ? Task.CompletedTask
+                : PumpProcessOutputAsync(companion.StandardOutput, "companion", output, cts.Token);
+            var companionStderr = companion is null
+                ? Task.CompletedTask
+                : PumpProcessOutputAsync(companion.StandardError, "companion", output, cts.Token);
 
             await WaitForExitOrCancelAsync(gateway, companion, cts.Token);
             cts.Cancel();
@@ -136,7 +208,8 @@ internal static class SetupLifecycleCommand
         finally
         {
             Console.CancelKeyPress -= cancelHandler;
-            TryStopProcess(companion);
+            if (companion is not null)
+                TryStopProcess(companion);
             TryStopProcess(gateway);
         }
 
@@ -145,8 +218,15 @@ internal static class SetupLifecycleCommand
 
     internal static SetupStatusResponse BuildStatus(string configPath, GatewayConfig config, OrganizationPolicySnapshot? policy = null)
     {
-        var effectivePolicy = policy ?? new OrganizationPolicySnapshot();
+        var localState = LocalSetupStateLoader.Load(config.Memory.StoragePath);
+        var effectivePolicy = policy ?? localState.Policy ?? new OrganizationPolicySnapshot();
         var publicBind = !BindAddressClassifier.IsLoopbackBind(config.BindAddress);
+        var workspacePath = ResolveWorkspacePath(config);
+        var workspaceExists = !string.IsNullOrWhiteSpace(workspacePath) && Directory.Exists(workspacePath);
+        var runtimeState = RuntimeModeResolver.Resolve(config.Runtime);
+        var browser = BrowserToolCapabilityEvaluator.Evaluate(config, runtimeState);
+        var modelDoctor = ModelDoctorEvaluator.Build(config);
+        var snapshot = localState.VerificationSnapshot;
         var warnings = new List<string>();
         if (publicBind)
             warnings.Add("Reverse proxy and TLS are recommended for public bind deployments.");
@@ -165,6 +245,29 @@ internal static class SetupLifecycleCommand
             MinimumPluginTrustLevel = effectivePolicy.MinimumPluginTrustLevel,
             ReverseProxyRecommended = publicBind,
             ReachableBaseUrl = SetupCommand.BuildReachableBaseUrl(config.BindAddress, config.Port),
+            WorkspacePath = workspacePath,
+            WorkspaceExists = workspaceExists,
+            HasOperatorAccounts = localState.OperatorAccountCount > 0,
+            OperatorAccountCount = localState.OperatorAccountCount,
+            ProviderConfigured = ProviderSmokeProbe.IsProviderConfigured(config.Llm),
+            ProviderSmokeStatus = SetupVerificationService.GetCheckStatus(snapshot, "provider_smoke"),
+            ModelDoctorStatus = SetupVerificationService.GetModelDoctorStatus(modelDoctor),
+            BrowserToolRegistered = browser.Registered,
+            BrowserExecutionBackendConfigured = browser.ExecutionBackendConfigured,
+            BrowserCapabilityReason = browser.Reason,
+            LastVerificationAtUtc = snapshot?.RecordedAtUtc,
+            LastVerificationSource = snapshot?.Source,
+            LastVerificationStatus = snapshot?.Verification.OverallStatus ?? SetupCheckStates.NotRun,
+            LastVerificationHasFailures = snapshot?.Verification.HasFailures ?? false,
+            LastVerificationHasWarnings = snapshot?.Verification.HasWarnings ?? false,
+            BootstrapGuidanceState = SetupVerificationService.GetBootstrapGuidanceState(publicBind, effectivePolicy.BootstrapTokenEnabled, localState.OperatorAccountCount),
+            RecommendedNextActions = SetupVerificationService.BuildRecommendedNextActions(
+                config,
+                effectivePolicy,
+                localState.OperatorAccountCount,
+                browser,
+                workspaceExists,
+                publicBind),
             ChannelReadiness = [],
             Artifacts = BuildArtifactItems(GetDeployDirectory(configPath)),
             Warnings = warnings
@@ -448,11 +551,11 @@ internal static class SetupLifecycleCommand
         }
     }
 
-    private static async Task WaitForExitOrCancelAsync(Process gateway, Process companion, CancellationToken cancellationToken)
+    private static async Task WaitForExitOrCancelAsync(Process gateway, Process? companion, CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            if (gateway.HasExited || companion.HasExited)
+            if (gateway.HasExited || (companion is not null && companion.HasExited))
                 return;
 
             await Task.Delay(500, cancellationToken);
@@ -485,11 +588,26 @@ internal static class SetupLifecycleCommand
         output.WriteLine($"Allowed auth modes: {string.Join(", ", status.AllowedAuthModes)}");
         output.WriteLine($"Minimum plugin trust: {status.MinimumPluginTrustLevel}");
         output.WriteLine($"Reverse proxy recommended: {status.ReverseProxyRecommended.ToString().ToLowerInvariant()}");
+        output.WriteLine($"Workspace: {status.WorkspacePath} exists={status.WorkspaceExists.ToString().ToLowerInvariant()}");
+        output.WriteLine($"Operator accounts: {status.OperatorAccountCount}");
+        output.WriteLine($"Provider configured: {status.ProviderConfigured.ToString().ToLowerInvariant()} smoke={status.ProviderSmokeStatus}");
+        output.WriteLine($"Model doctor: {status.ModelDoctorStatus}");
+        output.WriteLine($"Browser tool: registered={status.BrowserToolRegistered.ToString().ToLowerInvariant()} backend_configured={status.BrowserExecutionBackendConfigured.ToString().ToLowerInvariant()} reason={status.BrowserCapabilityReason}");
+        output.WriteLine($"Last verification: {(status.LastVerificationAtUtc.HasValue ? $"{status.LastVerificationStatus} at {status.LastVerificationAtUtc:O} via {status.LastVerificationSource}" : SetupCheckStates.NotRun)}");
+        output.WriteLine($"Bootstrap guidance: {status.BootstrapGuidanceState}");
 
         output.WriteLine();
         output.WriteLine("Artifacts:");
         foreach (var artifact in status.Artifacts)
             output.WriteLine($"- {artifact.Label}: {artifact.Status} ({artifact.Path})");
+
+        if (status.RecommendedNextActions.Count > 0)
+        {
+            output.WriteLine();
+            output.WriteLine("Recommended next actions:");
+            foreach (var action in status.RecommendedNextActions)
+                output.WriteLine($"- {action}");
+        }
 
         if (status.Warnings.Count > 0)
         {
@@ -498,5 +616,90 @@ internal static class SetupLifecycleCommand
             foreach (var warning in status.Warnings)
                 output.WriteLine($"- {warning}");
         }
+    }
+
+    private static async Task<SetupVerificationResponse> RunLocalVerificationAsync(
+        string configPath,
+        GatewayConfig config,
+        bool offline,
+        bool requireProvider,
+        string source,
+        CancellationToken ct)
+    {
+        _ = configPath;
+        var localState = LocalSetupStateLoader.Load(config.Memory.StoragePath);
+        var verification = await SetupVerificationService.VerifyAsync(new SetupVerificationRequest
+        {
+            Config = config,
+            RuntimeState = RuntimeModeResolver.Resolve(config.Runtime),
+            Policy = localState.Policy,
+            OperatorAccountCount = localState.OperatorAccountCount,
+            Offline = offline,
+            RequireProvider = requireProvider,
+            WorkspacePath = ResolveWorkspacePath(config),
+            ModelDoctor = ModelDoctorEvaluator.Build(config)
+        }, ct);
+
+        _ = new SetupVerificationSnapshotStore(config.Memory.StoragePath).Save(new SetupVerificationSnapshot
+        {
+            Source = source,
+            Offline = offline,
+            RequireProvider = requireProvider,
+            Verification = verification
+        });
+
+        return verification;
+    }
+
+    private static void WriteVerification(TextWriter output, SetupVerificationResponse verification)
+    {
+        output.WriteLine();
+        output.WriteLine("Setup verification:");
+        foreach (var check in verification.Checks)
+        {
+            output.WriteLine($"- [{check.Status}] {check.Label}: {check.Summary}");
+            if (!string.IsNullOrWhiteSpace(check.Detail))
+                output.WriteLine($"  {check.Detail!.Replace(Environment.NewLine, Environment.NewLine + "  ", StringComparison.Ordinal)}");
+        }
+
+        if (verification.RecommendedNextActions.Count > 0)
+        {
+            output.WriteLine();
+            output.WriteLine("Verification next actions:");
+            foreach (var action in verification.RecommendedNextActions)
+                output.WriteLine($"- {action}");
+        }
+
+        output.WriteLine();
+        output.WriteLine($"Verification result: {verification.OverallStatus}");
+    }
+
+    private static void TryOpenBrowser(string url)
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                }
+            };
+            process.Start();
+        }
+        catch
+        {
+        }
+    }
+
+    private static string? ResolveWorkspacePath(GatewayConfig config)
+    {
+        var workspace = config.Tooling.WorkspaceRoot;
+        if (string.IsNullOrWhiteSpace(workspace))
+            return null;
+
+        var resolved = SecretResolver.Resolve(workspace) ?? workspace;
+        return Path.IsPathRooted(resolved) ? resolved : Path.GetFullPath(resolved);
     }
 }

@@ -445,10 +445,27 @@
                         <div class="muted">Current bind/auth posture, generated service artifacts, and production-path warnings.</div>
                     </div>
                     <div class="actions">
+                        <button id="setup-verify-button">Verify</button>
                         <button id="setup-status-refresh-button" class="secondary">Reload</button>
                     </div>
                 </div>
                 <pre id="setup-status-output">Loading…</pre>
+                <div id="setup-recommended-output" class="muted" style="margin-top:0.75rem;">Loading…</div>
+                <div id="setup-verify-output" class="muted" style="margin-top:0.75rem;">Verification has not been run yet.</div>
+                <div class="card" style="margin-top:0.9rem;" data-min-role="admin">
+                    <h3>First Operator Wizard</h3>
+                    <div class="muted">Create the first admin account, mint an operator token, start a browser session, and optionally retire the bootstrap token.</div>
+                    <div class="filters" style="margin-top:0.75rem;">
+                        <input id="setup-wizard-username-input" type="text" placeholder="Admin username">
+                        <input id="setup-wizard-display-name-input" type="text" placeholder="Display name">
+                        <input id="setup-wizard-password-input" type="password" placeholder="Password">
+                    </div>
+                    <div class="actions" style="margin-top:0.75rem;">
+                        <label><input id="setup-wizard-disable-bootstrap-input" type="checkbox" checked> Disable bootstrap after sign-in</label>
+                        <button id="setup-wizard-run-button">Complete First-Run</button>
+                    </div>
+                    <div id="setup-wizard-output" class="muted" style="margin-top:0.75rem;">Use this after the gateway is reachable and before exposing a public bind broadly.</div>
+                </div>
             </div>
             <div id="operator-accounts-card" class="card" data-min-role="admin">
                 <div class="section-title">
@@ -1368,6 +1385,15 @@
         const operatorDashboardOutput = document.getElementById('operator-dashboard-output');
         const doctorOutput = document.getElementById('doctor-output');
         const setupStatusOutput = document.getElementById('setup-status-output');
+        const setupRecommendedOutput = document.getElementById('setup-recommended-output');
+        const setupVerifyOutput = document.getElementById('setup-verify-output');
+        const setupWizardOutput = document.getElementById('setup-wizard-output');
+        const setupWizardInputs = {
+            username: document.getElementById('setup-wizard-username-input'),
+            displayName: document.getElementById('setup-wizard-display-name-input'),
+            password: document.getElementById('setup-wizard-password-input'),
+            disableBootstrap: document.getElementById('setup-wizard-disable-bootstrap-input')
+        };
         const operatorAccountsOutput = document.getElementById('operator-accounts-output');
         const operatorAccountUsernameInput = document.getElementById('operator-account-username-input');
         const operatorAccountDisplayNameInput = document.getElementById('operator-account-display-name-input');
@@ -2042,7 +2068,164 @@
 
         async function loadSetupStatus() {
             const { resp, data } = await api('/admin/setup/status');
-            renderJson(setupStatusOutput, resp.ok ? data : `Setup status failed (${resp.status})`);
+            if (!resp.ok) {
+                setupStatusOutput.textContent = `Setup status failed (${resp.status})`;
+                setupRecommendedOutput.textContent = 'Unable to load recommended actions.';
+                return;
+            }
+
+            renderSetupStatus(data);
+        }
+
+        function renderSetupStatus(data) {
+            const lines = [
+                `Profile: ${data.profile}`,
+                `Bind: ${data.bindAddress}:${data.port}`,
+                `Reachable base URL: ${data.reachableBaseUrl}`,
+                `Workspace: ${data.workspacePath || '(unset)'} (${data.workspaceExists ? 'present' : 'missing'})`,
+                `Provider configured: ${Boolean(data.providerConfigured)} (${data.providerSmokeStatus || 'not_run'})`,
+                `Model doctor: ${data.modelDoctorStatus || 'skip'}`,
+                `Operator accounts: ${data.operatorAccountCount || 0}`,
+                `Bootstrap token enabled: ${Boolean(data.bootstrapTokenEnabled)}`,
+                `Browser tool registered: ${Boolean(data.browserToolRegistered)} (${data.browserCapabilityReason || 'n/a'})`,
+                `Last verification: ${data.lastVerificationAtUtc ? `${data.lastVerificationStatus} via ${data.lastVerificationSource || 'unknown'} at ${data.lastVerificationAtUtc}` : 'not_run'}`
+            ];
+            setupStatusOutput.textContent = lines.join('\n');
+
+            const actions = data.recommendedNextActions || [];
+            if (!actions.length) {
+                setupRecommendedOutput.innerHTML = '<div class="muted">No immediate first-run actions are pending.</div>';
+            } else {
+                setupRecommendedOutput.innerHTML = `
+                    <strong>Recommended next actions</strong>
+                    <ul class="list">${actions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+                `;
+            }
+        }
+
+        async function loadSetupVerification() {
+            setupVerifyOutput.textContent = 'Running setup verification…';
+            const { resp, data } = await api('/admin/setup/verify');
+            if (!resp.ok) {
+                setupVerifyOutput.textContent = `Setup verification failed (${resp.status})`;
+                return;
+            }
+
+            const checks = data.checks || [];
+            const sections = [
+                ['Failed checks', checks.filter(item => item.status === 'fail')],
+                ['Warnings', checks.filter(item => item.status === 'warn')],
+                ['Skipped checks', checks.filter(item => item.status === 'skip')]
+            ];
+            setupVerifyOutput.innerHTML = `
+                <strong>Verification: ${escapeHtml(data.overallStatus || 'unknown')}</strong>
+                ${sections.map(([title, items]) => `
+                    <div style="margin-top:0.75rem;">
+                        <strong>${escapeHtml(title)}</strong>
+                        ${items.length
+                            ? `<ul class="list">${items.map(item => `<li>[${escapeHtml(item.status)}] ${escapeHtml(item.label)}: ${escapeHtml(item.summary)}${item.nextStep ? ` Next: ${escapeHtml(item.nextStep)}` : ''}</li>`).join('')}</ul>`
+                            : '<div class="muted">None.</div>'}
+                    </div>
+                `).join('')}
+                <div style="margin-top:0.75rem;">
+                    <strong>Recommended next actions</strong>
+                    ${(data.recommendedNextActions || []).length
+                        ? `<ul class="list">${(data.recommendedNextActions || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+                        : '<div class="muted">No immediate next actions.</div>'}
+                </div>
+            `;
+        }
+
+        async function runFirstOperatorWizard() {
+            if (!requireRole('admin', 'Completing first-run operator setup')) return;
+
+            const username = setupWizardInputs.username.value.trim();
+            const displayName = setupWizardInputs.displayName.value.trim();
+            const password = setupWizardInputs.password.value;
+            if (!username || !password) {
+                showFlash('Wizard username and password are required.', 'warn');
+                return;
+            }
+
+            setupWizardOutput.textContent = 'Creating admin account…';
+            const createResp = await mutate('/admin/operator-accounts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username,
+                    displayName: displayName || null,
+                    role: 'admin',
+                    password,
+                    enabled: true
+                })
+            });
+
+            if (!createResp.resp.ok) {
+                setupWizardOutput.textContent = createResp.data?.error || `Account create failed (${createResp.resp.status}).`;
+                return;
+            }
+
+            setupWizardOutput.textContent = 'Creating operator token…';
+            const tokenResp = await api('/auth/operator-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username,
+                    password,
+                    label: 'first-run-browser'
+                })
+            });
+
+            if (!tokenResp.resp.ok) {
+                setupWizardOutput.textContent = tokenResp.data?.error || `Token exchange failed (${tokenResp.resp.status}).`;
+                return;
+            }
+
+            prependOperatorTokenNotice(tokenResp.data);
+
+            setupWizardOutput.textContent = 'Starting browser session…';
+            const sessionResp = await api('/auth/session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    accountToken: tokenResp.data.token,
+                    remember: true
+                })
+            });
+
+            if (!sessionResp.resp.ok) {
+                setupWizardOutput.textContent = sessionResp.data?.error || `Browser session create failed (${sessionResp.resp.status}).`;
+                return;
+            }
+
+            csrfToken = sessionResp.data.csrfToken || null;
+            currentAuth = sessionResp.data;
+            applyRoleGates();
+
+            if (setupWizardInputs.disableBootstrap.checked) {
+                const policyResp = await api('/admin/organization-policy');
+                if (policyResp.resp.ok) {
+                    const payload = {
+                        ...(policyResp.data.policy || {}),
+                        bootstrapTokenEnabled: false
+                    };
+                    await mutate('/admin/organization-policy', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                }
+            }
+
+            setupWizardInputs.password.value = '';
+            setupWizardOutput.textContent = 'First-run wizard completed. Browser session is active and setup status has been refreshed.';
+            await Promise.all([
+                loadSetupStatus(),
+                loadSetupVerification(),
+                loadOperatorAccounts(),
+                loadOrganizationPolicy(),
+                syncAuth()
+            ]);
         }
 
         async function loadOperatorAccounts() {
@@ -4021,6 +4204,8 @@
                 setupStatusOutput.textContent = 'Login required.';
                 operatorAccountsOutput.textContent = 'Login required.';
                 organizationPolicyOutput.textContent = 'Login required.';
+                setupVerifyOutput.textContent = 'Login required.';
+                setupWizardOutput.textContent = 'Login required.';
                 observabilityCards.innerHTML = '';
                 observabilitySummaryOutput.textContent = 'Login required.';
                 observabilitySeriesOutput.textContent = 'Login required.';
@@ -4036,6 +4221,7 @@
             const tasks = [
                 loadSummary(),
                 loadSetupStatus(),
+                loadSetupVerification(),
                 loadDoctor(),
                 loadRetention(),
                 loadMemoryNotes(),
@@ -4100,6 +4286,8 @@
         loginModeInput.addEventListener('change', updateLoginModeUi);
         refreshButton.addEventListener('click', refreshAll);
         document.getElementById('setup-status-refresh-button').addEventListener('click', loadSetupStatus);
+        document.getElementById('setup-verify-button').addEventListener('click', loadSetupVerification);
+        document.getElementById('setup-wizard-run-button').addEventListener('click', runFirstOperatorWizard);
         document.getElementById('operator-accounts-refresh-button').addEventListener('click', loadOperatorAccounts);
         document.getElementById('operator-account-create-button').addEventListener('click', createOperatorAccount);
         document.getElementById('organization-policy-refresh-button').addEventListener('click', loadOrganizationPolicy);

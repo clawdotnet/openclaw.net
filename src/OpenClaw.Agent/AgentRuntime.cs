@@ -576,13 +576,19 @@ public sealed class AgentRuntime : IAgentRuntime
                         FullMode = BoundedChannelFullMode.Wait
                     });
 
-                    async Task<(ToolInvocation, FunctionResultContent)> RunToolAsync()
+                    async Task<(ToolExecutionResult, FunctionResultContent)> RunToolAsync()
                     {
                         try
                         {
-                            return await ExecuteSingleToolCallAsync(
-                                call, session, turnCtx, isStreaming: true, approvalCallback, ct,
+                            var execution = await _toolExecutor.ExecuteAsync(
+                                call,
+                                session,
+                                turnCtx,
+                                isStreaming: true,
+                                approvalCallback,
+                                ct,
                                 onDelta: async chunk => await channel.Writer.WriteAsync(chunk, ct));
+                            return (execution, execution.ToFunctionResultContent(call.CallId));
                         }
                         finally
                         {
@@ -595,11 +601,17 @@ public sealed class AgentRuntime : IAgentRuntime
                     await foreach (var chunk in channel.Reader.ReadAllAsync(ct))
                         yield return AgentStreamEvent.ToolDelta(call.Name, chunk);
 
-                    var (inv, res) = await task;
-                    invocations.Add(inv);
+                    var (execution, res) = await task;
+                    invocations.Add(execution.Invocation);
                     toolResults.Add(res);
 
-                    yield return AgentStreamEvent.ToolCompleted(inv.ToolName, inv.Result ?? "");
+                    yield return AgentStreamEvent.ToolCompleted(
+                        execution.Invocation.ToolName,
+                        execution.ResultText,
+                        resultStatus: execution.ResultStatus,
+                        failureCode: execution.FailureCode,
+                        failureMessage: execution.FailureMessage,
+                        nextStep: execution.NextStep);
                 }
             }
             else

@@ -125,6 +125,10 @@ public sealed class OpenAiToolResultDelta
     public string? CallId { get; init; }
     public required string ToolName { get; init; }
     public required string Content { get; init; }
+    public string ResultStatus { get; init; } = ToolResultStatuses.Completed;
+    public string? FailureCode { get; init; }
+    public string? FailureMessage { get; init; }
+    public string? NextStep { get; init; }
 }
 
 public sealed class OpenAiToolOutputDelta
@@ -408,4 +412,12 @@ public sealed class OpenAiResponseToolResultEvent
     [JsonPropertyName("tool_name")]
     public required string ToolName { get; init; }
     public required string Content { get; init; }
+    [JsonPropertyName("result_status")]
+    public string ResultStatus { get; init; } = ToolResultStatuses.Completed;
+    [JsonPropertyName("failure_code")]
+    public string? FailureCode { get; init; }
+    [JsonPropertyName("failure_message")]
+    public string? FailureMessage { get; init; }
+    [JsonPropertyName("next_step")]
+    public string? NextStep { get; init; }
 }

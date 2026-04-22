@@ -1,5 +1,6 @@
 using System.Text.Json;
 using OpenClaw.Cli;
+using OpenClaw.Core.Models;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -72,8 +73,9 @@ public sealed class SetupCommandTests
 
             var stdout = output.ToString();
             Assert.Contains("Config validation: passed", stdout, StringComparison.Ordinal);
+            Assert.Contains("openclaw setup verify", stdout, StringComparison.Ordinal);
             Assert.Contains("--doctor", stdout, StringComparison.Ordinal);
-            Assert.Contains("admin posture", stdout, StringComparison.Ordinal);
+            Assert.DoesNotContain("OPENCLAW_AUTH_TOKEN=", stdout, StringComparison.Ordinal);
         }
         finally
         {
@@ -283,6 +285,117 @@ public sealed class SetupCommandTests
             var statusText = statusOutput.ToString();
             Assert.Contains("Gateway systemd unit: present", statusText, StringComparison.Ordinal);
             Assert.Contains("Caddy reverse proxy recipe: present", statusText, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_VerifyOffline_SucceedsWithoutLiveProviderProbe()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var configPath = Path.Combine(root, "config", "openclaw.settings.json");
+            var workspace = Path.Combine(root, "workspace");
+            using var setupOutput = new StringWriter();
+            using var setupError = new StringWriter();
+
+            var setupExitCode = await SetupCommand.RunAsync(
+                [
+                    "--non-interactive",
+                    "--profile", "local",
+                    "--config", configPath,
+                    "--workspace", workspace,
+                    "--provider", "openai",
+                    "--model", "gpt-4o",
+                    "--api-key", "env:OPENAI_API_KEY"
+                ],
+                new StringReader(string.Empty),
+                setupOutput,
+                setupError,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, setupExitCode);
+
+            using var verifyOutput = new StringWriter();
+            using var verifyError = new StringWriter();
+            var verifyExitCode = await SetupCommand.RunAsync(
+                ["verify", "--config", configPath, "--offline"],
+                new StringReader(string.Empty),
+                verifyOutput,
+                verifyError,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, verifyExitCode);
+            Assert.Equal(string.Empty, verifyError.ToString());
+            Assert.Contains("Setup verification:", verifyOutput.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Provider smoke skipped because offline mode is enabled.", verifyOutput.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_VerifyJson_PersistsSnapshotIntoSetupStatus()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var configPath = Path.Combine(root, "config", "openclaw.settings.json");
+            var workspace = Path.Combine(root, "workspace");
+            Directory.CreateDirectory(workspace);
+            using var setupOutput = new StringWriter();
+            using var setupError = new StringWriter();
+
+            var setupExitCode = await SetupCommand.RunAsync(
+                [
+                    "--non-interactive",
+                    "--profile", "local",
+                    "--config", configPath,
+                    "--workspace", workspace,
+                    "--provider", "openai",
+                    "--model", "gpt-4o",
+                    "--api-key", "env:OPENAI_API_KEY"
+                ],
+                new StringReader(string.Empty),
+                setupOutput,
+                setupError,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, setupExitCode);
+
+            using var verifyOutput = new StringWriter();
+            using var verifyError = new StringWriter();
+            var verifyExitCode = await SetupCommand.RunAsync(
+                ["verify", "--config", configPath, "--offline", "--json"],
+                new StringReader(string.Empty),
+                verifyOutput,
+                verifyError,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, verifyExitCode);
+            Assert.Equal(string.Empty, verifyError.ToString());
+
+            var verification = JsonSerializer.Deserialize(verifyOutput.ToString(), CoreJsonContext.Default.SetupVerificationResponse);
+            Assert.NotNull(verification);
+            var providerSmoke = Assert.Single(verification!.Checks, static item => item.Id == "provider_smoke");
+            Assert.Equal(SetupCheckStates.Skip, providerSmoke.Status);
+
+            var status = SetupLifecycleCommand.BuildStatus(configPath, GatewayConfigFile.Load(configPath));
+            Assert.Equal(SetupVerificationSources.Cli, status.LastVerificationSource);
+            Assert.Equal(verification.OverallStatus, status.LastVerificationStatus);
+            Assert.Equal(SetupCheckStates.Skip, status.ProviderSmokeStatus);
+            Assert.True(status.LastVerificationAtUtc.HasValue);
+            Assert.False(status.LastVerificationHasFailures);
         }
         finally
         {

@@ -266,6 +266,32 @@
             background: var(--bg);
         }
 
+        #chat-state-bar {
+            width: 100%;
+            max-width: 780px;
+            padding: 0.75rem 1.5rem 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .state-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.45rem 0.75rem;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+        }
+
+        .state-pill strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
         #chat-container {
             width: 100%;
             max-width: 780px;
@@ -707,6 +733,7 @@
 
     <div id="chat-wrapper">
         <div id="chat-container">
+            <div id="chat-state-bar"></div>
             <!-- Messages will render here -->
             <div class="message-row typing-row" id="typing-row">
                 <div class="agent-avatar"><img src="image.png" alt="Agent" /></div>
@@ -779,6 +806,7 @@
         const liveMicButton = document.getElementById('live-mic-button');
         const liveInterruptButton = document.getElementById('live-interrupt-button');
         const liveStatusBadge = document.getElementById('live-status-badge');
+        const chatStateBar = document.getElementById('chat-state-bar');
         const typingRow = document.getElementById('typing-row');
         const TOKEN_KEY_PERSIST = 'openclaw_token';
         const TOKEN_KEY_SESSION = 'openclaw_token_session';
@@ -822,6 +850,82 @@
                 localStorage.setItem(TOKEN_KEY_PERSIST, token);
             } else {
                 localStorage.removeItem(TOKEN_KEY_PERSIST);
+            }
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;');
+        }
+
+        async function refreshChatState() {
+            try {
+                const token = getCurrentToken();
+                const headers = {};
+                if (token && token !== 'bypass') {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+
+                const resp = await fetch('/auth/session', { method: 'GET', headers });
+                if (!resp.ok) {
+                    renderChatState({
+                        authMode: resp.status === 401 ? 'unauthorized' : 'unknown',
+                        publicBind: true,
+                        effectiveToolSurface: 'web',
+                        effectiveToolPresetId: 'web',
+                        capabilitySummary: ['Provide a valid bootstrap or operator token to use protected chat surfaces.']
+                    });
+                    return;
+                }
+
+                renderChatState(await resp.json());
+            } catch (_) {
+                renderChatState({
+                    authMode: 'unknown',
+                    effectiveToolSurface: 'web',
+                    effectiveToolPresetId: 'web',
+                    capabilitySummary: ['Unable to load chat status right now.']
+                });
+            }
+        }
+
+        function renderChatState(data) {
+            const pills = [];
+            const authMode = data?.authMode || 'unknown';
+            const presetId = data?.effectiveToolPresetId || 'web';
+            const surface = data?.effectiveToolSurface || 'web';
+            const remembered = rememberToken.checked || Boolean(localStorage.getItem(TOKEN_KEY_PERSIST));
+            const capabilities = Array.isArray(data?.capabilitySummary) ? data.capabilitySummary : [];
+
+            pills.push(`<span class="state-pill"><strong>Auth</strong>${escapeHtml(formatAuthMode(authMode, data))}</span>`);
+            pills.push(`<span class="state-pill"><strong>Preset</strong>${escapeHtml(`${surface}/${presetId}`)}</span>`);
+            pills.push(`<span class="state-pill"><strong>Remember</strong>${remembered ? 'on' : 'off'}</span>`);
+
+            for (const item of capabilities.slice(0, 2)) {
+                pills.push(`<span class="state-pill">${escapeHtml(item)}</span>`);
+            }
+
+            chatStateBar.innerHTML = pills.join('');
+        }
+
+        function formatAuthMode(authMode, data) {
+            switch ((authMode || '').toLowerCase()) {
+                case 'loopback-open':
+                    return 'loopback local';
+                case 'browser-session':
+                    return 'browser session';
+                case 'account_token':
+                    return 'operator token';
+                case 'bearer':
+                    return data?.isBootstrapAdmin ? 'bootstrap token' : 'bearer';
+                case 'unauthorized':
+                    return data?.publicBind ? 'token required' : 'not signed in';
+                default:
+                    return authMode || 'unknown';
             }
         }
 
@@ -995,8 +1099,13 @@
             scrollToBottom();
         }
 
-        function isToolFailureMessage(text) {
-            const normalized = (text || '').trim().toLowerCase();
+        function isToolFailureEnvelope(env) {
+            const resultStatus = (env?.resultStatus || '').trim().toLowerCase();
+            if (resultStatus && resultStatus !== 'completed') {
+                return true;
+            }
+
+            const normalized = ((env?.failureMessage || env?.text || env?.content) || '').trim().toLowerCase();
             if (!normalized) {
                 return false;
             }
@@ -1007,6 +1116,53 @@
                 || normalized.includes('denied')
                 || normalized.includes('timed out')
                 || normalized.includes('failed');
+        }
+
+        function explainToolFailure(env) {
+            const code = (env?.failureCode || '').trim().toLowerCase();
+            const nextStep = (env?.nextStep || '').trim();
+            const toolName = (env?.toolName || 'tool').trim();
+            const raw = ((env?.failureMessage || env?.text || env?.content) || '').trim();
+
+            if (code === 'preset_blocked') {
+                return `${toolName} is blocked by the active preset on this surface.${nextStep ? ` ${nextStep}` : ''}`.trim();
+            }
+
+            if (code === 'approval_required') {
+                return `This tool requires operator approval before it can run.${nextStep ? ` ${nextStep}` : ''}`.trim();
+            }
+
+            if (code === 'operator_auth_required') {
+                return `This tool requires operator authentication on the current surface.${nextStep ? ` ${nextStep}` : ''}`.trim();
+            }
+
+            if (code === 'browser_backend_missing' || code === 'runtime_capability_unavailable') {
+                return `This tool is unavailable in the current runtime.${nextStep ? ` ${nextStep}` : ''}`.trim();
+            }
+
+            if (code === 'timeout') {
+                return `This tool timed out before it completed.${nextStep ? ` ${nextStep}` : ''}`.trim();
+            }
+
+            const presetMatch = raw.match(/Tool '([^']+)' is not allowed for preset '([^']+)'/i);
+            if (presetMatch) {
+                return `Tool '${presetMatch[1]}' is blocked by preset '${presetMatch[2]}' on this chat surface. Use a broader preset on an HTTP surface, or change the web surface binding if that access is intentional.`;
+            }
+
+            const normalized = raw.toLowerCase();
+            if (normalized.includes('requires approval')) {
+                return 'This tool requires operator approval before it can run.';
+            }
+
+            if (normalized.includes('operator auth') || normalized.includes('forbidden') || normalized.includes('unauthorized')) {
+                return 'This tool requires operator authentication on the current surface.';
+            }
+
+            if (normalized.includes('browser') && (normalized.includes('unavailable') || normalized.includes('backend'))) {
+                return 'Browser is unavailable in this runtime. Configure a browser backend or sandbox, or disable the browser tool.';
+            }
+
+            return raw || 'Tool execution failed.';
         }
 
         function isLiveMode() {
@@ -1326,6 +1482,7 @@
                     clearTimeout(reconnectTimer);
                     reconnectTimer = null;
                 }
+                refreshChatState();
                 appendSystem('Connected successfully.');
                 updateComposerAvailability();
                 messageInput.focus();
@@ -1381,8 +1538,8 @@
                             break;
 
                         case 'tool_result':
-                            if (isToolFailureMessage(env.text ?? env.content ?? '')) {
-                                appendSystem(env.text ?? env.content ?? 'Tool execution failed.', true);
+                            if (isToolFailureEnvelope(env)) {
+                                appendSystem(explainToolFailure(env), true);
                             }
                             break;
 
@@ -1425,6 +1582,7 @@
 
                 const isAuthClose = event.code === 1008 || (event.code >= 4000 && event.code < 5000);
                 if (isAuthClose && !WEBCHAT_CONFIG.retryOnAuthCloseCodes) {
+                    refreshChatState();
                     appendSystem('Connection closed due to authentication/authorization. Update token and reconnect.', true);
                     return;
                 }
@@ -1554,7 +1712,10 @@
             } else if (!rememberToken.checked) {
                 localStorage.removeItem(TOKEN_KEY_PERSIST);
             }
+            refreshChatState();
         });
+        tokenInput.addEventListener('change', refreshChatState);
+        tokenInput.addEventListener('blur', refreshChatState);
 
         doctorButton.addEventListener('click', async () => {
             try {
@@ -1575,6 +1736,7 @@
             }
         });
 
+        refreshChatState();
         connect();
         updateComposerAvailability();
     </script>

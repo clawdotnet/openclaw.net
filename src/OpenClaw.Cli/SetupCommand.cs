@@ -27,6 +27,8 @@ internal static class SetupCommand
             return await SetupLifecycleCommand.RunServiceAsync(args[1..], output, error, currentDirectory);
         if (args.Length > 0 && string.Equals(args[0], "status", StringComparison.OrdinalIgnoreCase))
             return SetupLifecycleCommand.RunStatus(args[1..], output, error);
+        if (args.Length > 0 && string.Equals(args[0], "verify", StringComparison.OrdinalIgnoreCase))
+            return await SetupLifecycleCommand.RunVerifyAsync(args[1..], output, error);
         if (args.Length > 0 && string.Equals(args[0], "channel", StringComparison.OrdinalIgnoreCase))
             return await ChannelSetupCommand.RunAsync(args[1..], input, output, error, canPrompt);
 
@@ -93,14 +95,19 @@ internal static class SetupCommand
         }
 
         output.WriteLine();
-        output.WriteLine("Launch:");
-        output.WriteLine($"dotnet run --project src/OpenClaw.Gateway -c Release -- --config {GatewayConfigFile.QuoteIfNeeded(answers.ConfigPath)}");
-        output.WriteLine($"OPENCLAW_BASE_URL={BuildReachableBaseUrl(answers.BindAddress, answers.Port)} OPENCLAW_AUTH_TOKEN={answers.AuthToken} dotnet run --project src/OpenClaw.Companion -c Release");
-
-        output.WriteLine();
-        output.WriteLine("Verify:");
+        output.WriteLine("Next steps:");
+        output.WriteLine($"openclaw setup verify --config {GatewayConfigFile.QuoteIfNeeded(answers.ConfigPath)}");
+        output.WriteLine($"openclaw setup launch --config {GatewayConfigFile.QuoteIfNeeded(answers.ConfigPath)}");
         output.WriteLine($"dotnet run --project src/OpenClaw.Gateway -c Release -- --config {GatewayConfigFile.QuoteIfNeeded(answers.ConfigPath)} --doctor");
-        output.WriteLine($"OPENCLAW_BASE_URL={BuildReachableBaseUrl(answers.BindAddress, answers.Port)} OPENCLAW_AUTH_TOKEN={answers.AuthToken} dotnet run --project src/OpenClaw.Cli -c Release -- admin posture");
+
+        if (BindAddressClassifier.IsLoopbackBind(answers.BindAddress))
+        {
+            output.WriteLine($"dotnet run --project src/OpenClaw.Companion -c Release");
+        }
+        else
+        {
+            output.WriteLine("Companion/public launch guidance: set OPENCLAW_BASE_URL and OPENCLAW_AUTH_TOKEN from the generated config or env file before starting the Companion app.");
+        }
         return 0;
     }
 
@@ -120,7 +127,7 @@ internal static class SetupCommand
 
     private static SetupAnswers PromptForAnswers(CliArgs parsed, TextReader input, TextWriter output, string currentDirectory)
     {
-        var profile = NormalizeProfile(Prompt(output, input, "Deployment profile (local|public)", parsed.GetOption("--profile") ?? "local"));
+        var profile = BootstrapConfigFactory.NormalizeProfile(Prompt(output, input, "Deployment profile (local|public)", parsed.GetOption("--profile") ?? "local"));
         var configPath = Path.GetFullPath(GatewayConfigFile.ExpandPath(Prompt(output, input, "Config path", parsed.GetOption("--config") ?? DefaultConfigPath)));
         var workspace = Path.GetFullPath(GatewayConfigFile.ExpandPath(Prompt(output, input, "Workspace path", parsed.GetOption("--workspace") ?? Path.Combine(currentDirectory, "workspace"))));
         var provider = Prompt(output, input, "Provider", parsed.GetOption("--provider") ?? DefaultProvider);
@@ -184,7 +191,7 @@ internal static class SetupCommand
         if (requireProfile && string.IsNullOrWhiteSpace(rawProfile))
             throw new ArgumentException("--profile is required when --non-interactive is set.");
 
-        var profile = NormalizeProfile(rawProfile ?? "local");
+        var profile = BootstrapConfigFactory.NormalizeProfile(rawProfile ?? "local");
         return new SetupAnswers
         {
             Profile = profile,
@@ -210,52 +217,17 @@ internal static class SetupCommand
         var configDirectory = Path.GetDirectoryName(answers.ConfigPath)
             ?? throw new InvalidOperationException("Config path must contain a directory.");
         var memoryRoot = Path.Combine(configDirectory, "memory");
-
-        var config = new GatewayConfig
-        {
-            BindAddress = answers.BindAddress,
-            Port = answers.Port,
-            AuthToken = answers.AuthToken,
-            Llm = new LlmProviderConfig
-            {
-                Provider = answers.Provider,
-                Model = answers.Model,
-                ApiKey = answers.ApiKey
-            },
-            Memory = new MemoryConfig
-            {
-                Provider = "file",
-                StoragePath = memoryRoot,
-                Retention = new MemoryRetentionConfig
-                {
-                    ArchivePath = Path.Combine(memoryRoot, "archive")
-                }
-            },
-            Tooling = new ToolingConfig
-            {
-                WorkspaceRoot = answers.Workspace,
-                WorkspaceOnly = true,
-                AllowShell = answers.Profile == "local",
-                AllowedReadRoots = [answers.Workspace],
-                AllowedWriteRoots = [answers.Workspace],
-                RequireToolApproval = answers.Profile == "public"
-            },
-            Security = new SecurityConfig
-            {
-                AllowQueryStringToken = false,
-                TrustForwardedHeaders = answers.Profile == "public",
-                RequireRequesterMatchForHttpToolApproval = answers.Profile == "public"
-            }
-        };
-
-        if (answers.Profile == "public")
-        {
-            config.Plugins.Enabled = false;
-            warnings.Add("Public profile disables third-party bridge plugins by default. Re-enable them only after you have a proxy, TLS, and explicit public-bind trust settings in place.");
-        }
-
-        if (answers.Profile == "public" && !answers.ApiKey.StartsWith("env:", StringComparison.OrdinalIgnoreCase))
-            warnings.Add("Public profile is using a direct API key value in the config file. Prefer env:... references or OS-backed secret storage.");
+        var config = BootstrapConfigFactory.CreateProfileConfig(
+            answers.Profile,
+            answers.BindAddress,
+            answers.Port,
+            answers.AuthToken,
+            answers.Workspace,
+            memoryRoot,
+            answers.Provider,
+            answers.Model,
+            answers.ApiKey,
+            warnings);
 
         ApplyBackend(config, answers, warnings);
         return config;
@@ -379,14 +351,6 @@ internal static class SetupCommand
         if (!string.IsNullOrWhiteSpace(parsed.GetOption("--ssh-host")))
             return "ssh";
         return DefaultBackendChoice;
-    }
-
-    private static string NormalizeProfile(string profile)
-    {
-        var normalized = profile.Trim().ToLowerInvariant();
-        if (normalized is not ("local" or "public"))
-            throw new ArgumentException("Invalid value for --profile (expected: local|public).");
-        return normalized;
     }
 
     private static string NormalizeBackendChoice(string backendChoice)

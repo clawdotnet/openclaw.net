@@ -59,6 +59,8 @@ public sealed class GatewayAdminEndpointTests
         Assert.Equal(HttpStatusCode.OK, bearerResponse.StatusCode);
         var bearerPayload = await ReadJsonAsync(bearerResponse);
         Assert.Equal("bearer", bearerPayload.RootElement.GetProperty("authMode").GetString());
+        Assert.Equal("web", bearerPayload.RootElement.GetProperty("effectiveToolPresetId").GetString());
+        Assert.True(bearerPayload.RootElement.GetProperty("capabilitySummary").GetArrayLength() >= 1);
 
         using var loginRequest = new HttpRequestMessage(HttpMethod.Post, "/auth/session")
         {
@@ -69,6 +71,7 @@ public sealed class GatewayAdminEndpointTests
         Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
         var loginPayload = await ReadJsonAsync(loginResponse);
         Assert.Equal("browser-session", loginPayload.RootElement.GetProperty("authMode").GetString());
+        Assert.Equal("web", loginPayload.RootElement.GetProperty("effectiveToolSurface").GetString());
         var csrfToken = loginPayload.RootElement.GetProperty("csrfToken").GetString();
         Assert.False(string.IsNullOrWhiteSpace(csrfToken));
         var cookie = Assert.Single(loginResponse.Headers.GetValues("Set-Cookie"));
@@ -285,11 +288,33 @@ public sealed class GatewayAdminEndpointTests
         using var payload = await ReadJsonAsync(response);
         Assert.False(payload.RootElement.GetProperty("bootstrapTokenEnabled").GetBoolean());
         Assert.Equal("reviewed", payload.RootElement.GetProperty("minimumPluginTrustLevel").GetString());
+        Assert.True(payload.RootElement.GetProperty("hasOperatorAccounts").GetBoolean());
+        Assert.True(payload.RootElement.GetProperty("operatorAccountCount").GetInt32() >= 1);
+        Assert.Equal("complete", payload.RootElement.GetProperty("bootstrapGuidanceState").GetString());
+        Assert.True(payload.RootElement.GetProperty("recommendedNextActions").GetArrayLength() >= 1);
         Assert.Contains(
             payload.RootElement.GetProperty("artifacts").EnumerateArray().Select(static item => item.GetProperty("id").GetString()).OfType<string>(),
             id => id == "caddy");
         var caddy = payload.RootElement.GetProperty("artifacts").EnumerateArray().First(item => item.GetProperty("id").GetString() == "caddy");
         Assert.True(caddy.GetProperty("exists").GetBoolean());
+    }
+
+    [Fact]
+    public async Task AdminSetupVerify_ReturnsStructuredChecks()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: false);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/setup/verify");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        using var payload = await ReadJsonAsync(response);
+        Assert.True(payload.RootElement.TryGetProperty("overallStatus", out _));
+        Assert.True(payload.RootElement.GetProperty("checks").GetArrayLength() >= 5);
+        Assert.Contains(
+            payload.RootElement.GetProperty("checks").EnumerateArray().Select(static item => item.GetProperty("id").GetString()).OfType<string>(),
+            id => id == "provider_smoke");
     }
 
     [Fact]
@@ -3497,6 +3522,65 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public void CompanionViewModel_ToolResultFailures_RenderStructuredGuidance_AndSuccessRemainsQuiet()
+    {
+        var settingsDir = Path.Combine(Path.GetTempPath(), "openclaw-companion-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(settingsDir);
+
+        try
+        {
+            var viewModel = new MainWindowViewModel(new SettingsStore(settingsDir), new GatewayWebSocketClient());
+            var inboundEnvelopeType = typeof(MainWindowViewModel).GetNestedType("InboundEnvelope", System.Reflection.BindingFlags.NonPublic);
+            Assert.NotNull(inboundEnvelopeType);
+            var inboundEnvelopeCtor = inboundEnvelopeType!
+                .GetConstructors(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)
+                .Single(static ctor => ctor.GetParameters().Length == 8);
+
+            var applyEnvelope = typeof(MainWindowViewModel).GetMethod("ApplyEnvelope", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.NotNull(applyEnvelope);
+
+            var failureEnvelope = inboundEnvelopeCtor.Invoke(
+                [
+                "tool_result",
+                "Error: restricted tool call.",
+                null,
+                "browser",
+                ToolResultStatuses.Blocked,
+                ToolFailureCodes.OperatorAuthRequired,
+                "Operator authentication required.",
+                "Authenticate with an operator token and retry."
+                ]);
+            Assert.NotNull(failureEnvelope);
+
+            applyEnvelope!.Invoke(viewModel, [failureEnvelope]);
+
+            var failureMessage = Assert.Single(viewModel.Messages);
+            Assert.Equal(OpenClaw.Companion.Models.ChatRole.System, failureMessage.Role);
+            Assert.Contains("operator authentication", failureMessage.Text, StringComparison.OrdinalIgnoreCase);
+
+            var successEnvelope = inboundEnvelopeCtor.Invoke(
+                [
+                "tool_result",
+                "ok",
+                null,
+                "browser",
+                ToolResultStatuses.Completed,
+                null,
+                null,
+                null
+                ]);
+            Assert.NotNull(successEnvelope);
+
+            applyEnvelope.Invoke(viewModel, [successEnvelope]);
+            Assert.Single(viewModel.Messages);
+        }
+        finally
+        {
+            Directory.Delete(settingsDir, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task OpenApi_Document_IsExposed()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: false);
@@ -3651,10 +3735,26 @@ public sealed class GatewayAdminEndpointTests
         var webChatHtmlPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/OpenClaw.Gateway/wwwroot/webchat.html"));
         var html = await File.ReadAllTextAsync(webChatHtmlPath);
 
-        Assert.Contains("function isToolFailureMessage", html, StringComparison.Ordinal);
+        Assert.Contains("function isToolFailureEnvelope", html, StringComparison.Ordinal);
+        Assert.Contains("function explainToolFailure", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"chat-state-bar\"", html, StringComparison.Ordinal);
+        Assert.Contains("refreshChatState()", html, StringComparison.Ordinal);
         Assert.Contains("case 'tool_result':", html, StringComparison.Ordinal);
-        Assert.Contains("if (isToolFailureMessage(env.text ?? env.content ?? ''))", html, StringComparison.Ordinal);
-        Assert.Contains("appendSystem(env.text ?? env.content ?? 'Tool execution failed.', true);", html, StringComparison.Ordinal);
+        Assert.Contains("if (isToolFailureEnvelope(env))", html, StringComparison.Ordinal);
+        Assert.Contains("appendSystem(explainToolFailure(env), true);", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AdminHtml_ExposesSetupVerifyAndFirstOperatorWizard()
+    {
+        var adminHtmlPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/OpenClaw.Gateway/wwwroot/admin.html"));
+        var html = await File.ReadAllTextAsync(adminHtmlPath);
+
+        Assert.Contains("id=\"setup-verify-button\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"setup-wizard-run-button\"", html, StringComparison.Ordinal);
+        Assert.Contains("loadSetupVerification()", html, StringComparison.Ordinal);
+        Assert.Contains("runFirstOperatorWizard()", html, StringComparison.Ordinal);
+        Assert.Contains("/admin/setup/verify", html, StringComparison.Ordinal);
     }
 
     [Fact]

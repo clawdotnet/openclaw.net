@@ -32,4 +32,8 @@ public sealed record WsServerEnvelope
     public string? ToolName { get; init; }
     public string? ArgumentsPreview { get; init; }
     public bool? Approved { get; init; }
+    public string? ResultStatus { get; init; }
+    public string? FailureCode { get; init; }
+    public string? FailureMessage { get; init; }
+    public string? NextStep { get; init; }
 }

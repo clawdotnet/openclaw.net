@@ -15,6 +15,7 @@ using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Skills;
+using OpenClaw.Core.Validation;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
@@ -47,9 +48,19 @@ internal static class AdminEndpoints
         var automationService = FeatureFallbackServices.ResolveAutomationService(startup, app.Services, heartbeat, fallbackFeatureStore);
         var learningService = FeatureFallbackServices.ResolveLearningService(startup, app.Services, fallbackFeatureStore);
         var facade = IntegrationApiFacade.Create(startup, runtime, app.Services);
+        var sessionMetadataStore = app.Services.GetService<SessionMetadataStore>()
+            ?? new SessionMetadataStore(startup.Config.Memory.StoragePath, NullLogger<SessionMetadataStore>.Instance);
+        var toolPresetResolver = new ToolPresetResolver(startup.Config, sessionMetadataStore);
         var observability = new AdminObservabilityService(startup, runtime, automationService, organizationPolicy);
         var sessionAdminStore = app.Services.GetRequiredService<ISessionAdminStore>();
         var operations = runtime.Operations;
+        var providerSmokeRegistry = app.Services.GetService<ProviderSmokeRegistry>()
+            ?? new ProviderSmokeRegistry();
+        var setupVerificationSnapshots = app.Services.GetService<SetupVerificationSnapshotStore>()
+            ?? new SetupVerificationSnapshotStore(startup.Config.Memory.StoragePath);
+        var modelProfiles = app.Services.GetService<IModelProfileRegistry>()
+            ?? operations.ModelProfiles as IModelProfileRegistry
+            ?? new ConfiguredModelProfileRegistry(startup.Config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
         var modelEvaluationRunner = app.Services.GetService<ModelEvaluationRunner>()
             ?? new ModelEvaluationRunner(
                 operations.ModelProfiles as ConfiguredModelProfileRegistry
@@ -63,7 +74,9 @@ internal static class AdminEndpoints
             if (!auth.IsAuthorized)
                 return Results.Unauthorized();
 
-            return Results.Json(MapAuthSessionResponse(auth), CoreJsonContext.Default.AuthSessionResponse);
+            return Results.Json(
+                MapAuthSessionResponse(auth, startup, runtime, organizationPolicy.GetSnapshot(), toolPresetResolver),
+                CoreJsonContext.Default.AuthSessionResponse);
         });
 
         app.MapPost("/auth/session", async (HttpContext ctx) =>
@@ -125,20 +138,19 @@ internal static class AdminEndpoints
 
             var ticket = browserSessions.Create(request?.Remember ?? false, identity);
             browserSessions.WriteCookie(ctx, ticket);
+            var issuedAuth = new EndpointHelpers.OperatorAuthorizationResult(
+                true,
+                "browser-session",
+                UsedBrowserSession: true,
+                BrowserSession: ticket,
+                Role: ticket.Role,
+                AccountId: ticket.AccountId,
+                Username: ticket.Username,
+                DisplayName: ticket.DisplayName,
+                IsBootstrapAdmin: ticket.IsBootstrapAdmin);
 
             return Results.Json(
-                new AuthSessionResponse
-                {
-                    AuthMode = "browser-session",
-                    CsrfToken = ticket.CsrfToken,
-                    ExpiresAtUtc = ticket.ExpiresAtUtc,
-                    Persistent = ticket.Persistent,
-                    Role = ticket.Role,
-                    AccountId = ticket.AccountId,
-                    Username = ticket.Username,
-                    DisplayName = ticket.DisplayName,
-                    IsBootstrapAdmin = ticket.IsBootstrapAdmin
-                },
+                MapAuthSessionResponse(issuedAuth, startup, runtime, policy, toolPresetResolver),
                 CoreJsonContext.Default.AuthSessionResponse);
         });
 
@@ -488,8 +500,38 @@ internal static class AdminEndpoints
                 return authResult.Failure;
 
             return Results.Json(
-                BuildSetupStatusResponse(startup, organizationPolicy),
+                BuildSetupStatusResponse(startup, organizationPolicy, operatorAccounts, modelProfiles, providerSmokeRegistry, setupVerificationSnapshots),
                 CoreJsonContext.Default.SetupStatusResponse);
+        });
+
+        app.MapGet("/admin/setup/verify", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.setup.status");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var verification = await SetupVerificationService.VerifyAsync(new SetupVerificationRequest
+            {
+                Config = startup.Config,
+                RuntimeState = startup.RuntimeState,
+                Policy = organizationPolicy.GetSnapshot(),
+                OperatorAccountCount = operatorAccounts.List().Count,
+                Offline = false,
+                RequireProvider = false,
+                WorkspacePath = startup.Config.Tooling.WorkspaceRoot,
+                ModelDoctor = ModelDoctorEvaluator.Build(startup.Config, modelProfiles),
+                ModelProfiles = modelProfiles,
+                ProviderSmokeRegistry = providerSmokeRegistry
+            }, ctx.RequestAborted);
+            _ = setupVerificationSnapshots.Save(new SetupVerificationSnapshot
+            {
+                Source = SetupVerificationSources.Admin,
+                Offline = false,
+                RequireProvider = false,
+                Verification = verification
+            });
+
+            return Results.Json(verification, CoreJsonContext.Default.SetupVerificationResponse);
         });
 
         app.MapGet("/admin/observability/summary", async (HttpContext ctx) =>
@@ -3135,8 +3177,24 @@ internal static class AdminEndpoints
         });
     }
 
-    private static AuthSessionResponse MapAuthSessionResponse(EndpointHelpers.OperatorAuthorizationResult auth)
-        => new()
+    private static AuthSessionResponse MapAuthSessionResponse(
+        EndpointHelpers.OperatorAuthorizationResult auth,
+        GatewayStartupContext startup,
+        GatewayAppRuntime runtime,
+        OrganizationPolicySnapshot policy,
+        ToolPresetResolver toolPresetResolver)
+    {
+        var browser = BrowserToolCapabilityEvaluator.Evaluate(startup.Config, startup.RuntimeState);
+        var preset = toolPresetResolver.Resolve(
+            new Session
+            {
+                Id = "webchat:status",
+                ChannelId = "websocket",
+                SenderId = "webchat-status"
+            },
+            runtime.RegisteredToolNames);
+
+        return new AuthSessionResponse
         {
             AuthMode = auth.AuthMode,
             CsrfToken = auth.BrowserSession?.CsrfToken,
@@ -3146,8 +3204,18 @@ internal static class AdminEndpoints
             AccountId = auth.AccountId,
             Username = auth.Username,
             DisplayName = auth.DisplayName,
-            IsBootstrapAdmin = auth.IsBootstrapAdmin
+            IsBootstrapAdmin = auth.IsBootstrapAdmin,
+            PublicBind = startup.IsNonLoopbackBind,
+            AllowedAuthModes = [.. policy.AllowedAuthModes],
+            EffectiveToolSurface = preset.Surface,
+            EffectiveToolPresetId = preset.PresetId,
+            EffectiveToolPresetDescription = preset.Description,
+            BrowserToolRegistered = browser.Registered,
+            BrowserExecutionBackendConfigured = browser.ExecutionBackendConfigured,
+            BrowserCapabilityReason = browser.Reason,
+            CapabilitySummary = BuildCapabilitySummary(preset, browser)
         };
+    }
 
     private static DateTimeOffset? GetQueryDateTimeOffset(HttpRequest request, string key)
     {
@@ -3171,13 +3239,23 @@ internal static class AdminEndpoints
 
     private static SetupStatusResponse BuildSetupStatusResponse(
         GatewayStartupContext startup,
-        OrganizationPolicyService organizationPolicy)
+        OrganizationPolicyService organizationPolicy,
+        OperatorAccountService operatorAccounts,
+        IModelProfileRegistry modelProfiles,
+        ProviderSmokeRegistry providerSmokeRegistry,
+        SetupVerificationSnapshotStore setupVerificationSnapshots)
     {
         var policy = organizationPolicy.GetSnapshot();
         var publicBind = startup.IsNonLoopbackBind;
         var configDirectory = Path.GetDirectoryName(startup.Config.Memory.StoragePath)
             ?? startup.Config.Memory.StoragePath;
         var deployDirectory = Path.Combine(configDirectory, "deploy");
+        var workspacePath = ResolveConfiguredPath(startup.Config.Tooling.WorkspaceRoot);
+        var workspaceExists = !string.IsNullOrWhiteSpace(workspacePath) && Directory.Exists(workspacePath);
+        var operatorAccountCount = operatorAccounts.List().Count;
+        var browser = BrowserToolCapabilityEvaluator.Evaluate(startup.Config, startup.RuntimeState);
+        var modelDoctor = ModelDoctorEvaluator.Build(startup.Config, modelProfiles);
+        var snapshot = setupVerificationSnapshots.Load();
         var warnings = new List<string>();
         if (publicBind)
             warnings.Add("Reverse proxy and TLS are recommended for public bind deployments.");
@@ -3196,6 +3274,30 @@ internal static class AdminEndpoints
             MinimumPluginTrustLevel = policy.MinimumPluginTrustLevel,
             ReverseProxyRecommended = publicBind,
             ReachableBaseUrl = BuildReachableBaseUrl(startup.Config.BindAddress, startup.Config.Port),
+            WorkspacePath = workspacePath,
+            WorkspaceExists = workspaceExists,
+            HasOperatorAccounts = operatorAccountCount > 0,
+            OperatorAccountCount = operatorAccountCount,
+            ProviderConfigured = ProviderSmokeProbe.IsProviderConfigured(startup.Config.Llm, providerSmokeRegistry),
+            ProviderSmokeStatus = SetupVerificationService.GetCheckStatus(snapshot, "provider_smoke"),
+            ModelDoctorStatus = SetupVerificationService.GetModelDoctorStatus(modelDoctor),
+            BrowserToolRegistered = browser.Registered,
+            BrowserExecutionBackendConfigured = browser.ExecutionBackendConfigured,
+            BrowserCapabilityReason = browser.Reason,
+            LastVerificationAtUtc = snapshot?.RecordedAtUtc,
+            LastVerificationSource = snapshot?.Source,
+            LastVerificationStatus = snapshot?.Verification.OverallStatus ?? SetupCheckStates.NotRun,
+            LastVerificationHasFailures = snapshot?.Verification.HasFailures ?? false,
+            LastVerificationHasWarnings = snapshot?.Verification.HasWarnings ?? false,
+            BootstrapGuidanceState = SetupVerificationService.GetBootstrapGuidanceState(publicBind, policy.BootstrapTokenEnabled, operatorAccountCount),
+            RecommendedNextActions = SetupVerificationService.BuildRecommendedNextActions(
+                startup.Config,
+                policy,
+                operatorAccountCount,
+                browser,
+                workspaceExists,
+                publicBind,
+                providerSmokeRegistry),
             ChannelReadiness = MapChannelReadiness(ChannelReadinessEvaluator.Evaluate(startup.Config, startup.IsNonLoopbackBind)),
             Artifacts = BuildSetupArtifacts(deployDirectory),
             Warnings = warnings
@@ -3234,6 +3336,40 @@ internal static class AdminEndpoints
             return $"http://[{bindAddress}]:{port.ToString(CultureInfo.InvariantCulture)}";
 
         return $"http://{bindAddress}:{port.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    private static string[] BuildCapabilitySummary(ResolvedToolPreset preset, BrowserToolCapabilitySummary browser)
+    {
+        var items = new List<string>();
+        if (!preset.AllowedTools.Contains("shell") &&
+            !preset.AllowedTools.Contains("process") &&
+            !preset.AllowedTools.Contains("write_file"))
+        {
+            items.Add($"Preset '{preset.PresetId}' keeps coding and mutation tools off on the chat surface.");
+        }
+
+        if (!preset.AllowedTools.Contains("browser"))
+        {
+            items.Add($"Preset '{preset.PresetId}' does not allow the browser tool on this surface.");
+        }
+        else if (!browser.Registered)
+        {
+            items.Add("Browser is unavailable in this runtime because no supported execution backend is configured.");
+        }
+
+        if (preset.RequireToolApproval)
+            items.Add("This surface keeps approval requirements enabled for restricted tools.");
+
+        return items.ToArray();
+    }
+
+    private static string? ResolveConfiguredPath(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var resolved = SecretResolver.Resolve(value) ?? value;
+        return Path.IsPathRooted(resolved) ? resolved : Path.GetFullPath(resolved);
     }
 
     private static async Task<IReadOnlyList<MemoryNoteItem>> ListMemoryNotesAsync(
