@@ -13,7 +13,16 @@ internal static class BackendServicesExtensions
             ? startup.Config.Memory.StoragePath
             : Path.GetFullPath(startup.Config.Memory.StoragePath);
         var keysDir = new DirectoryInfo(Path.Combine(rootedStorage, "admin", "keys"));
-        keysDir.Create();
+        try
+        {
+            keysDir.Create();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidOperationException(
+                $"Memory.StoragePath '{rootedStorage}' is not writable. Failed to create '{keysDir.FullName}'.",
+                ex);
+        }
 
         services.AddDataProtection()
             .PersistKeysToFileSystem(keysDir)

@@ -31,7 +31,7 @@ internal static class PipelineExtensions
         StartWorkers(app, startup, runtime);
         StartChannels(app, runtime);
         RegisterShutdown(app, startup, runtime);
-        LogStartupBanner(app, startup);
+        StartupReadyReporter.Register(app, startup);
     }
 
     private static void ConfigureForwardedHeaders(WebApplication app, GatewayStartupContext startup)
@@ -234,87 +234,4 @@ internal static class PipelineExtensions
         }
     }
 
-    private static void LogStartupBanner(WebApplication app, GatewayStartupContext startup)
-    {
-        if (!app.Logger.IsEnabled(LogLevel.Information))
-            return;
-
-        var isAot = startup.RuntimeState.EffectiveMode == OpenClaw.Core.Models.GatewayRuntimeMode.Aot;
-        app.Logger.LogInformation(
-            """
-            ╔══════════════════════════════════════════╗
-            ║  OpenClaw.NET Gateway                    ║
-            ║  Listening: ws://{BindAddress}:{Port}/ws  ║
-            ║  Model: {Model}  ║
-            ║  Runtime Mode: {RuntimeMode}  ║
-            ║  NativeAOT: {NativeAOT}  ║
-            ╚══════════════════════════════════════════╝
-            """,
-            FormatBindAddressForUri(startup.Config.BindAddress),
-            startup.Config.Port,
-            startup.Config.Llm.Model,
-            startup.RuntimeState.EffectiveModeName,
-            isAot ? "Yes" : "No");
-
-        if (startup.Config.Port <= 0)
-        {
-            app.Logger.LogInformation(
-                "Gateway ready. Bind address {BindAddress} resolved to port {Port} — URLs not shown because a valid port was not configured.",
-                startup.Config.BindAddress,
-                startup.Config.Port);
-            return;
-        }
-
-        var host = ResolveBannerHost(startup.Config.BindAddress);
-        var baseUrl = $"http://{host}:{startup.Config.Port}";
-        app.Logger.LogInformation(
-            """
-            Gateway ready. Open one of:
-              Chat UI            {ChatUrl}
-              Admin UI           {AdminUrl}
-              Doctor (text)      {DoctorUrl}
-              Health             {HealthUrl}
-              MCP endpoint       {McpUrl}
-              Integration API    {IntegrationUrl}
-            Note: the root URL (/) redirects to /chat — it is not the UI itself.
-            """,
-            $"{baseUrl}/chat",
-            $"{baseUrl}/admin",
-            $"{baseUrl}/doctor/text",
-            $"{baseUrl}/health",
-            $"{baseUrl}/mcp",
-            $"{baseUrl}/api/integration/status");
-    }
-
-    private static string ResolveBannerHost(string bindAddress)
-    {
-        if (string.IsNullOrWhiteSpace(bindAddress))
-            return "127.0.0.1";
-
-        switch (bindAddress)
-        {
-            case "0.0.0.0":
-            case "*":
-            case "+":
-            case "::":
-            case "[::]":
-                return "127.0.0.1";
-        }
-
-        return FormatBindAddressForUri(bindAddress);
-    }
-
-    private static string FormatBindAddressForUri(string bindAddress)
-    {
-        if (string.IsNullOrWhiteSpace(bindAddress))
-            return bindAddress;
-
-        if (bindAddress.StartsWith('['))
-            return bindAddress;
-
-        if (bindAddress.Contains(':'))
-            return $"[{bindAddress}]";
-
-        return bindAddress;
-    }
 }
