@@ -290,7 +290,7 @@ public sealed class OpenClawToolExecutor
             failureCode = ClassifyToolFailureCode(tool.Name, ex.Message);
             failureMessage = ex.Message;
             toolFailed = true;
-            if (string.Equals(failureCode, ToolFailureCodes.OperatorAuthRequired, StringComparison.Ordinal))
+            if (failureCode is ToolFailureCodes.OperatorAuthRequired or ToolFailureCodes.BrowserBackendMissing or ToolFailureCodes.RuntimeCapabilityUnavailable)
             {
                 result = ex.Message.StartsWith("Error:", StringComparison.OrdinalIgnoreCase)
                     ? ex.Message
@@ -302,7 +302,6 @@ public sealed class OpenClawToolExecutor
             {
                 result = "Error: Tool execution failed.";
                 resultStatus = ToolResultStatuses.Failed;
-                failureCode = ToolFailureCodes.ToolFailed;
             }
             _metrics?.IncrementToolFailures();
             _logger?.LogWarning(ex, "[{CorrelationId}] Tool {Tool} failed", turnCtx.CorrelationId, tool.Name);

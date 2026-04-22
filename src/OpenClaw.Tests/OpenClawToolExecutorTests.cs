@@ -266,6 +266,29 @@ public sealed class OpenClawToolExecutorTests
         Assert.Contains("browser session or operator token", result.NextStep ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_RuntimeCapabilityFailure_PreservesStructuredClassification()
+    {
+        var tool = new ThrowingTool("Execution backend 'docker' is not configured.");
+        var executor = CreateExecutor([tool]);
+
+        var result = await executor.ExecuteAsync(
+            "auth_bound",
+            """{"action":"restricted"}""",
+            callId: null,
+            CreateSession(),
+            CreateTurnContext(),
+            isStreaming: false,
+            approvalCallback: null,
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
+        Assert.Equal(ToolFailureCodes.RuntimeCapabilityUnavailable, result.FailureCode);
+        Assert.Equal(ToolFailureCodes.RuntimeCapabilityUnavailable, result.Invocation.FailureCode);
+        Assert.Contains("execution backend", result.ResultText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Configure the required execution backend or sandbox", result.NextStep ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static OpenClawToolExecutor CreateExecutor(
         IReadOnlyList<ITool> tools,
         IToolSandbox? toolSandbox = null,

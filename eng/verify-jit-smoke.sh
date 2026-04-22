@@ -21,9 +21,14 @@ GATEWAY_CONFIG="$WORK_DIR/gateway.smoke.json"
 cat > "$GATEWAY_CONFIG" <<JSON
 {
   "OpenClaw": {
+    "BindAddress": "127.0.0.1",
     "Port": 19909,
     "Runtime": {
       "Mode": "jit"
+    },
+    "Llm": {
+      "Provider": "ollama",
+      "Model": "llama3.2"
     },
     "Memory": {
       "StoragePath": "$WORK_DIR/memory"

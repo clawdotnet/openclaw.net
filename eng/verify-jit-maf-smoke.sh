@@ -21,10 +21,15 @@ GATEWAY_CONFIG="$WORK_DIR/gateway.maf.smoke.json"
 cat > "$GATEWAY_CONFIG" <<JSON
 {
   "OpenClaw": {
+    "BindAddress": "127.0.0.1",
     "Port": 19919,
     "Runtime": {
       "Mode": "jit",
       "Orchestrator": "maf"
+    },
+    "Llm": {
+      "Provider": "ollama",
+      "Model": "llama3.2"
     },
     "Memory": {
       "StoragePath": "$WORK_DIR/memory"

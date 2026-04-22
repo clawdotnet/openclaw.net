@@ -1088,9 +1088,7 @@ public static class SetupVerificationService
         try
         {
             using var tcpClient = new TcpClient();
-            await tcpClient.ConnectAsync(
-                config.BindAddress == "0.0.0.0" ? "127.0.0.1" : config.BindAddress,
-                config.Port);
+            await tcpClient.ConnectAsync(NormalizePortProbeHost(config.BindAddress), config.Port);
             return new DoctorCheckItem
             {
                 Id = "port_availability",
@@ -1110,6 +1108,18 @@ public static class SetupVerificationService
                 Category = DoctorCheckCategories.Network,
                 Status = SetupCheckStates.Pass,
                 Summary = "The configured TCP port is available."
+            };
+        }
+        catch (Exception ex)
+        {
+            return new DoctorCheckItem
+            {
+                Id = "port_availability",
+                Label = "TCP port availability",
+                Category = DoctorCheckCategories.Network,
+                Status = SetupCheckStates.Skip,
+                Summary = "TCP port availability could not be determined.",
+                Detail = ex.Message
             };
         }
     }
@@ -1144,6 +1154,19 @@ public static class SetupVerificationService
     }
 
     private static string ToBoolWord(bool value) => value ? "yes" : "no";
+
+    private static string NormalizePortProbeHost(string? bindAddress)
+    {
+        if (string.IsNullOrWhiteSpace(bindAddress))
+            return "127.0.0.1";
+
+        return bindAddress.Trim() switch
+        {
+            "0.0.0.0" => "127.0.0.1",
+            "::" or "[::]" => "::1",
+            _ => bindAddress
+        };
+    }
 
     private static bool HasValidPromptCacheConfiguration(GatewayConfig config)
     {
