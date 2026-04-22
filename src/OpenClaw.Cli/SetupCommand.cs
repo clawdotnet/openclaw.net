@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Setup;
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Validation;
 
@@ -72,10 +73,14 @@ internal static class SetupCommand
 
         await GatewayConfigFile.SaveAsync(config, answers.ConfigPath);
 
-        var envExamplePath = BuildEnvExamplePath(answers.ConfigPath);
+        var envExamplePath = GatewaySetupArtifacts.BuildEnvExamplePath(answers.ConfigPath);
         await File.WriteAllTextAsync(
             envExamplePath,
-            BuildEnvExample(answers, BuildReachableBaseUrl(answers.BindAddress, answers.Port)),
+            GatewaySetupArtifacts.BuildEnvExample(
+                answers.ApiKey,
+                answers.AuthToken,
+                answers.Workspace,
+                BuildReachableBaseUrl(answers.BindAddress, answers.Port)),
             CancellationToken.None);
 
         output.WriteLine($"Wrote config: {answers.ConfigPath}");
@@ -295,49 +300,8 @@ internal static class SetupCommand
         }
     }
 
-    private static string BuildEnvExample(SetupAnswers answers, string baseUrl)
-    {
-        var lines = new List<string>
-        {
-            $"{ResolveProviderEnvVariable(answers.ApiKey)}=replace-me",
-            $"OPENCLAW_AUTH_TOKEN={answers.AuthToken}",
-            $"OPENCLAW_BASE_URL={baseUrl}",
-            $"OPENCLAW_WORKSPACE={answers.Workspace}"
-        };
-
-        return string.Join(Environment.NewLine, lines) + Environment.NewLine;
-    }
-
-    private static string ResolveProviderEnvVariable(string apiKey)
-    {
-        if (apiKey.StartsWith("env:", StringComparison.OrdinalIgnoreCase) && apiKey.Length > 4)
-            return apiKey[4..];
-
-        return "MODEL_PROVIDER_KEY";
-    }
-
-    private static string BuildEnvExamplePath(string configPath)
-    {
-        var directory = Path.GetDirectoryName(configPath)
-            ?? throw new InvalidOperationException("Config path must contain a directory.");
-        var stem = Path.GetFileNameWithoutExtension(configPath);
-        return Path.Combine(directory, $"{stem}.env.example");
-    }
-
     internal static string BuildReachableBaseUrl(string bindAddress, int port)
-    {
-        if (string.Equals(bindAddress, "0.0.0.0", StringComparison.Ordinal) ||
-            string.Equals(bindAddress, "::", StringComparison.Ordinal) ||
-            string.Equals(bindAddress, "[::]", StringComparison.Ordinal))
-        {
-            return $"http://127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}";
-        }
-
-        if (bindAddress.Contains(':') && !bindAddress.StartsWith("[", StringComparison.Ordinal))
-            return $"http://[{bindAddress}]:{port.ToString(CultureInfo.InvariantCulture)}";
-
-        return $"http://{bindAddress}:{port.ToString(CultureInfo.InvariantCulture)}";
-    }
+        => GatewaySetupArtifacts.BuildReachableBaseUrl(bindAddress, port);
 
     private static string GetDefaultBindAddress(string profile)
         => profile == "public" ? "0.0.0.0" : "127.0.0.1";

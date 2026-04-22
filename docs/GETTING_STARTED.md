@@ -217,6 +217,7 @@ What `setup` gives you:
 - an adjacent env example
 - the exact commands to launch the gateway
 - follow-up diagnostics commands such as `--doctor` and `openclaw admin posture`
+- a launch path that avoids the common local startup failures caused by raw production defaults
 
 Why this matters:
 
@@ -231,6 +232,14 @@ dotnet run --project src/OpenClaw.Cli -c Release -- setup launch --config ~/.ope
 ```
 
 `setup launch` is the easiest place to start because it boots the gateway, starts Companion, waits for readiness, and streams logs until you stop it.
+
+If you are starting `OpenClaw.Gateway` directly from a repo checkout and do not want to run `setup` first, the direct local fallback is:
+
+```bash
+dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart
+```
+
+That mode is interactive-only. It applies a loopback-local profile for the current process, prompts for missing provider inputs, retries on the common local startup failures, and can save the resulting config to `~/.openclaw/config/openclaw.settings.json` after the gateway is ready.
 
 ## What To Open After Startup
 
@@ -279,6 +288,16 @@ If you prefer direct server startup instead of the launch helper, use the comman
 dotnet run --project src/OpenClaw.Gateway -c Release -- --config ~/.openclaw/config/openclaw.settings.json
 ```
 
+The direct gateway path now prints startup phases and a clear ready block:
+
+- `Loading configuration`
+- `Building services`
+- `Initializing runtime`
+- `Starting listener`
+- `Ready`
+
+Then it prints `OpenClaw gateway ready.`, the working `/chat`, `/admin`, `/doctor/text`, `/health`, `/mcp`, and `/ws` URLs, `Ctrl-C to stop`, and a `Started with notices:` section for non-fatal startup advisories.
+
 ## Typical Setup Questions Answered
 
 ### Where does configuration live?
@@ -295,6 +314,23 @@ Use:
 - `http://127.0.0.1:18789/admin` for the admin UI
 
 The root URL (`/`) currently redirects to `/chat`, but `/chat` is still the canonical browser UI route.
+
+### What if the gateway fails before it starts listening?
+
+In an interactive local terminal, the gateway now classifies the common startup failures and offers a guided recovery path instead of exiting with a raw unhandled exception. This currently covers:
+
+- missing `OPENCLAW_AUTH_TOKEN` on a non-loopback bind
+- missing `MODEL_PROVIDER_KEY` or `MODEL_PROVIDER_ENDPOINT`
+- unwritable memory storage
+- port already in use
+
+For the shortest direct recovery path, rerun with:
+
+```bash
+dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart
+```
+
+Headless, redirected, `--doctor`, and `--health-check` runs still stay non-interactive and fail fast with actionable text.
 
 ### Do I need sandboxing to get started locally?
 

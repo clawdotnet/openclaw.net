@@ -38,6 +38,7 @@ internal static class RuntimeInitializationExtensions
         var config = startup.Config;
         var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
         var startupLogger = loggerFactory.CreateLogger("Startup");
+        var startupNoticeSink = app.Services.GetRequiredService<IStartupNoticeSink>();
         var browserAvailability = BrowserToolSupport.Evaluate(config, startup.RuntimeState);
         startupLogger.LogInformation(
             "Runtime mode resolved: requested={RequestedMode}, effective={EffectiveMode}, dynamicCodeSupported={DynamicCodeSupported}, orchestrator={Orchestrator}.",
@@ -47,8 +48,9 @@ internal static class RuntimeInitializationExtensions
             RuntimeOrchestrator.Normalize(config.Runtime.Orchestrator));
         if (browserAvailability.ConfiguredEnabled && !browserAvailability.Registered)
         {
-            startupLogger.LogWarning(
-                "Browser tool was not registered because local execution is unavailable in this runtime and no execution backend or sandbox route is configured.");
+            const string browserNotice = "Disabled: browser tool is unavailable because no execution backend or sandbox route is configured.";
+            startupLogger.LogInformation(browserNotice);
+            startupNoticeSink.Record(browserNotice);
         }
         if (startup.IsNonLoopbackBind && !config.Security.RequireRequesterMatchForHttpToolApproval)
         {

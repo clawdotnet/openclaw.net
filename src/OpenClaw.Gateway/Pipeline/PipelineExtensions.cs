@@ -16,7 +16,10 @@ internal static class PipelineExtensions
     public static void UseOpenClawPipeline(
         this WebApplication app,
         GatewayStartupContext startup,
-        GatewayAppRuntime runtime)
+        GatewayAppRuntime runtime,
+        StartupLaunchOptions launchOptions,
+        LocalStartupSession? localSession,
+        LocalStartupStateStore stateStore)
     {
         ConfigureForwardedHeaders(app, startup);
         ConfigureCors(app, runtime);
@@ -31,7 +34,7 @@ internal static class PipelineExtensions
         StartWorkers(app, startup, runtime);
         StartChannels(app, runtime);
         RegisterShutdown(app, startup, runtime);
-        StartupReadyReporter.Register(app, startup);
+        StartupReadyReporter.Register(app, startup, launchOptions, localSession, stateStore);
     }
 
     private static void ConfigureForwardedHeaders(WebApplication app, GatewayStartupContext startup)

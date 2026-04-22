@@ -1,33 +1,69 @@
 using System.Text;
+using OpenClaw.Core.Setup;
 using OpenClaw.Gateway.Bootstrap;
 
 namespace OpenClaw.Gateway.Pipeline;
 
 internal static class StartupReadyReporter
 {
-    public static void Register(WebApplication app, GatewayStartupContext startup)
+    private static readonly TimeSpan LiveNoticeWindow = TimeSpan.FromSeconds(5);
+
+    public static void Register(
+        WebApplication app,
+        GatewayStartupContext startup,
+        StartupLaunchOptions launchOptions,
+        LocalStartupSession? localSession,
+        LocalStartupStateStore stateStore)
     {
         app.Lifetime.ApplicationStarted.Register(() =>
         {
             try
             {
-                Write(startup);
+                var collector = app.Services.GetRequiredService<StartupNoticeCollector>();
+                var notices = collector.Snapshot();
+                Console.Out.WriteLine("Ready");
+                Write(
+                    startup,
+                    notices,
+                    ResolveKnownConfigPath(launchOptions, stateStore));
+                collector.EnableLiveOutput(
+                    Console.Out,
+                    LiveNoticeWindow,
+                    headerAlreadyWritten: notices.Count > 0);
             }
             catch (Exception ex)
             {
                 app.Logger.LogWarning(ex, "Failed to write startup readiness message.");
             }
+
+            if (localSession is not null && launchOptions.CanPrompt)
+            {
+                _ = Task.Run(() => LocalStartupPostReadyActions.RunAsync(
+                    startup,
+                    launchOptions,
+                    localSession,
+                    stateStore,
+                    app.Logger,
+                    app.Lifetime.ApplicationStopping));
+            }
         });
     }
 
-    internal static void Write(GatewayStartupContext startup, TextWriter? output = null)
+    internal static void Write(
+        GatewayStartupContext startup,
+        IReadOnlyList<StartupNoticeSnapshot>? notices = null,
+        string? knownConfigPath = null,
+        TextWriter? output = null)
     {
         var writer = output ?? Console.Out;
-        writer.WriteLine(Render(startup));
+        writer.WriteLine(Render(startup, notices, knownConfigPath));
         writer.Flush();
     }
 
-    internal static string Render(GatewayStartupContext startup)
+    internal static string Render(
+        GatewayStartupContext startup,
+        IReadOnlyList<StartupNoticeSnapshot>? notices = null,
+        string? knownConfigPath = null)
     {
         var bindAddress = FormatHostForUri(startup.Config.BindAddress);
         var sb = new StringBuilder();
@@ -51,6 +87,31 @@ internal static class StartupReadyReporter
         sb.AppendLine($"Health: {httpBase}/health");
         sb.AppendLine($"MCP: {httpBase}/mcp");
         sb.AppendLine($"WebSocket: {wsBase}/ws");
+        sb.AppendLine("Ctrl-C to stop");
+
+        if (notices is not null && notices.Count > 0)
+        {
+            sb.AppendLine("Started with notices:");
+            foreach (var notice in notices)
+            {
+                sb.Append("- ");
+                sb.Append(notice.Message);
+                if (notice.Count > 1)
+                    sb.Append($" (x{notice.Count})");
+                sb.AppendLine();
+            }
+        }
+
+        sb.AppendLine("Next useful commands:");
+        if (!string.IsNullOrWhiteSpace(knownConfigPath))
+        {
+            sb.AppendLine($"- openclaw setup verify --config {GatewaySetupPaths.QuoteIfNeeded(knownConfigPath)}");
+        }
+        else
+        {
+            sb.AppendLine("- dotnet run --project src/OpenClaw.Gateway -c Release -- --doctor");
+            sb.AppendLine("- openclaw models doctor");
+        }
 
         return sb.ToString().TrimEnd();
     }
@@ -83,4 +144,7 @@ internal static class StartupReadyReporter
 
         return bindAddress;
     }
+
+    private static string? ResolveKnownConfigPath(StartupLaunchOptions launchOptions, LocalStartupStateStore stateStore)
+        => launchOptions.ExternalConfigPath ?? stateStore.Load().LastSavedConfigPath;
 }

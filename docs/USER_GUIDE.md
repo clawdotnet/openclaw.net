@@ -28,6 +28,14 @@ openclaw setup service --config ~/.openclaw/config/openclaw.settings.json --plat
 openclaw setup status --config ~/.openclaw/config/openclaw.settings.json
 ```
 
+If you start the gateway directly from a local terminal instead of using `setup launch`, the direct fallback is:
+
+```bash
+dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart
+```
+
+That flow is interactive-only. It applies a minimal local loopback profile, prompts for missing provider inputs, retries on the common startup failures, and after a successful start can save the working config to `~/.openclaw/config/openclaw.settings.json`.
+
 If you want raw starter files instead of the guided flow, use `openclaw init`. For the supported upstream skill, plugin, and channel compatibility surface, treat the [Compatibility Guide](COMPATIBILITY.md) as the source of truth.
 
 After the base config exists, use the channel-specific setup wizard for the common chat integrations:
@@ -46,6 +54,7 @@ Important distinction:
 
 - `openclaw setup` and `openclaw init` generate the supported onboarding configs
 - directly editing `src/OpenClaw.Gateway/appsettings.json` is a lower-level path and can expose optional features that are not part of the easiest first run
+- direct gateway startup now prints explicit startup phases and a ready banner with `/chat`, `/admin`, `/doctor/text`, `/health`, `/mcp`, and `/ws`
 
 ## Operator Auth Model
 

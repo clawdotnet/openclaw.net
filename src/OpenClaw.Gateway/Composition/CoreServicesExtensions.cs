@@ -56,6 +56,8 @@ internal static class CoreServicesExtensions
         services.AddSingleton<ProviderUsageTracker>();
         services.AddSingleton<ToolUsageTracker>();
         services.AddSingleton<ProviderSmokeRegistry>();
+        services.AddSingleton<StartupNoticeCollector>();
+        services.AddSingleton<IStartupNoticeSink>(sp => sp.GetRequiredService<StartupNoticeCollector>());
         services.AddSingleton(sp => new SetupVerificationSnapshotStore(config.Memory.StoragePath));
         services.AddSingleton(sp => new ToolAuditLog(
             Path.Combine(Path.GetFullPath(config.Memory.StoragePath), "audit", "tool-audit.jsonl"),
@@ -144,6 +146,7 @@ internal static class CoreServicesExtensions
             new CronScheduler(
                 sp.GetRequiredService<ICronJobSource>(),
                 sp.GetRequiredService<ILogger<CronScheduler>>(),
+                sp.GetRequiredService<IStartupNoticeSink>(),
                 sp.GetRequiredService<MessagePipeline>().InboundWriter));
         services.AddSingleton<CronSchedulerStartupService>();
         services.AddHostedService(sp => sp.GetRequiredService<CronSchedulerStartupService>());

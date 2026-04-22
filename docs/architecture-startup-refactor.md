@@ -10,6 +10,7 @@ The gateway startup path is now split into three layers:
    - Applies environment overrides and explicit secret resolution.
    - Resolves `GatewayRuntimeState`.
    - Handles early exits for `--health-check` and `--doctor`.
+   - Handles interactive `--quickstart` and pre-listener startup recovery for local terminal launches.
    - Enforces non-loopback auth-token requirements and public-bind hardening.
 
 2. `Composition/` and `Profiles/`
@@ -26,6 +27,7 @@ The gateway startup path is now split into three layers:
 
 3. `Pipeline/` and `Endpoints/`
    - Applies forwarded headers, CORS, WebSockets, worker startup, channel startup, and shutdown handling.
+   - Prints the terminal-ready startup banner, startup notices, and post-ready local save/browser prompts.
    - Maps all HTTP/WebSocket routes outside `Program.cs`.
 
 ## AOT vs JIT
@@ -41,7 +43,7 @@ The gateway profile layer does not replace plugin/runtime capability enforcement
 ## Where Things Moved
 
 - `Program.cs`
-  - now only orchestrates bootstrap, service registration, runtime initialization, pipeline mapping, endpoint mapping, and `Run(...)`
+  - now orchestrates bootstrap, quickstart/recovery selection, service registration, runtime initialization, pipeline mapping, endpoint mapping, and `Run(...)`
 - `Bootstrap/GatewayBootstrapExtensions.cs`
   - config loading, validation, runtime-state resolution, and early exits
 - `Composition/*`

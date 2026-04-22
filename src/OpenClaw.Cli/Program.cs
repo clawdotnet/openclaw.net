@@ -144,6 +144,11 @@ internal static class Program
               openclaw admin incident export
               openclaw compatibility catalog --status compatible
 
+            Gateway direct-start fallback:
+              dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart
+              # Uses a minimal local loopback profile, prompts for missing provider inputs,
+              # retries in-process on common startup failures, and can save the working setup.
+
             Plugin management:
               openclaw plugins install <package-name>    Install from npm/ClawHub
               openclaw plugins install ./local-plugin     Install from local path
@@ -275,6 +280,7 @@ internal static class Program
               - Bare 'openclaw setup' launches a guided onboarding flow.
               - 'openclaw setup launch' starts the gateway in the current repo checkout, runs verification, and streams logs until Ctrl-C.
               - Use --with-companion to start Companion too.
+              - If you start the gateway directly and hit local startup friction, use: dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart
               - 'openclaw setup service' writes systemd/launchd/Caddy deployment artifacts next to the config.
               - 'openclaw setup status' summarizes bind/auth posture and deploy artifact presence.
               - 'openclaw setup verify' runs the first-run verification checks without launching the gateway.

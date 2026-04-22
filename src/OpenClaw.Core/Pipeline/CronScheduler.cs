@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using NCrontab;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 using TickerQ.Utilities;
 
 namespace OpenClaw.Core.Pipeline;
@@ -15,13 +16,15 @@ public sealed class CronScheduler
 
     private readonly ICronJobSource _jobSource;
     private readonly ILogger<CronScheduler> _logger;
+    private readonly IStartupNoticeSink _startupNoticeSink;
     private readonly ChannelWriter<InboundMessage> _pipelineChannel;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _runningJobs = new(StringComparer.OrdinalIgnoreCase);
 
-    public CronScheduler(ICronJobSource jobSource, ILogger<CronScheduler> logger, ChannelWriter<InboundMessage> pipelineChannel)
+    public CronScheduler(ICronJobSource jobSource, ILogger<CronScheduler> logger, IStartupNoticeSink startupNoticeSink, ChannelWriter<InboundMessage> pipelineChannel)
     {
         _jobSource = jobSource;
         _logger = logger;
+        _startupNoticeSink = startupNoticeSink;
         _pipelineChannel = pipelineChannel;
     }
 
@@ -106,7 +109,7 @@ public sealed class CronScheduler
         {
             if ((now - runningSince) <= MaxRunningDuration)
             {
-                _logger.LogWarning("Skipping cron job '{JobName}' because a previous invocation is still running.", jobName);
+                LogOverlap(jobName);
                 return;
             }
 
@@ -116,7 +119,7 @@ public sealed class CronScheduler
 
         if (!_runningJobs.TryAdd(jobName, now))
         {
-            _logger.LogWarning("Skipping cron job '{JobName}' because a previous invocation is still running.", jobName);
+            LogOverlap(jobName);
             return;
         }
 
@@ -219,5 +222,12 @@ public sealed class CronScheduler
                     nowUtc - kvp.Value);
             }
         }
+    }
+
+    private void LogOverlap(string jobName)
+    {
+        const string Template = "Background job '{JobName}' is still running from an earlier trigger; this tick was skipped.";
+        _logger.LogWarning(Template, jobName);
+        _startupNoticeSink.Record($"Background job '{jobName}' is still running from an earlier trigger; this tick was skipped.");
     }
 }

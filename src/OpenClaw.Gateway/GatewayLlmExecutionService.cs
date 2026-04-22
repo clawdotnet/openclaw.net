@@ -14,6 +14,8 @@ namespace OpenClaw.Gateway;
 
 internal sealed class GatewayLlmExecutionService : ILlmExecutionService
 {
+    internal sealed record ProviderRuntimeFailureClassification(string Code, string UserMessage, string OperatorMessage);
+
     private sealed class CompatibilityServices
     {
         public required ConfiguredModelProfileRegistry Registry { get; init; }
@@ -41,6 +43,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
     private readonly PromptCacheWarmRegistry _promptCacheWarmRegistry;
     private readonly ILogger<GatewayLlmExecutionService> _logger;
     private readonly ConcurrentDictionary<string, RouteState> _routes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, byte> _reportedProviderGuidance = new(StringComparer.OrdinalIgnoreCase);
 
     public GatewayLlmExecutionService(
         GatewayConfig config,
@@ -325,13 +328,14 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
                     }
                     catch (Exception ex)
                     {
-                        lastError = ex;
+                        var surfacedError = SurfaceProviderFailure(ex, candidate.Profile.ProviderId);
+                        lastError = surfacedError;
                         Interlocked.Increment(ref routeState.Errors);
-                        routeState.LastError = ex.Message;
+                        routeState.LastError = surfacedError.Message;
                         routeState.LastErrorAtUtc = DateTimeOffset.UtcNow;
                         _runtimeMetrics.IncrementLlmErrors();
                         _providerUsage.RecordError(candidate.Profile.ProviderId, modelId);
-                        RecordEvent(session, turnContext, "llm", "request_failed", "error", ex.Message, new()
+                        RecordEvent(session, turnContext, "llm", "request_failed", "error", surfacedError.Message, new()
                         {
                             ["providerId"] = candidate.Profile.ProviderId,
                             ["modelId"] = modelId,
@@ -468,21 +472,22 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
                 }
                 catch (Exception ex)
                 {
+                    var surfacedError = SurfaceProviderFailure(ex, providerId);
                     routeState.CircuitBreaker.RecordFailure();
                     Interlocked.Increment(ref routeState.Errors);
-                    routeState.LastError = ex.Message;
+                    routeState.LastError = surfacedError.Message;
                     routeState.LastErrorAtUtc = DateTimeOffset.UtcNow;
                     _runtimeMetrics.IncrementLlmErrors();
                     _providerUsage.RecordError(providerId, modelId);
                     _promptCacheCoordinator.RecordResponse(descriptor, 0, 0);
-                    RecordEvent(session, turnContext, "llm", "stream_failed", "error", ex.Message, new()
+                    RecordEvent(session, turnContext, "llm", "stream_failed", "error", surfacedError.Message, new()
                     {
                         ["providerId"] = providerId,
                         ["modelId"] = modelId,
                         ["profileId"] = profileId,
                         ["exceptionType"] = ex.GetType().Name
                     });
-                    throw;
+                    throw surfacedError;
                 }
 
                 foreach (var usage in current.Contents.OfType<UsageContent>())
@@ -676,11 +681,99 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         });
     }
 
+    private Exception SurfaceProviderFailure(Exception ex, string providerId)
+    {
+        var classification = ClassifyProviderFailure(ex, providerId);
+        if (classification is null)
+            return ex;
+
+        if (_reportedProviderGuidance.TryAdd($"{providerId}:{classification.Code}", 0))
+            _logger.LogWarning("Provider guidance: {Guidance}", classification.OperatorMessage);
+
+        return new InvalidOperationException(classification.UserMessage, ex);
+    }
+
+    internal static ProviderRuntimeFailureClassification? ClassifyProviderFailure(Exception ex, string providerId)
+    {
+        var message = ex.GetBaseException().Message;
+        var providerLabel = FormatProviderLabel(providerId);
+        var apiKeyHint = ResolveApiKeyHint(providerId);
+
+        if (Contains(message, "MODEL_PROVIDER_KEY must be set"))
+        {
+            return new ProviderRuntimeFailureClassification(
+                Code: "missing-key",
+                UserMessage: $"{providerLabel} credentials are missing. Set {apiKeyHint} and retry.",
+                OperatorMessage: $"{providerLabel} requests cannot run because the API key is missing. Set {apiKeyHint} before retrying.");
+        }
+
+        if (Contains(message, "MODEL_PROVIDER_ENDPOINT must be set") ||
+            Contains(message, "Endpoint must be set for provider"))
+        {
+            return new ProviderRuntimeFailureClassification(
+                Code: "missing-endpoint",
+                UserMessage: $"{providerLabel} endpoint is missing. Set MODEL_PROVIDER_ENDPOINT or OpenClaw:Llm:Endpoint and retry.",
+                OperatorMessage: $"{providerLabel} requests cannot run because the provider endpoint is missing. Set MODEL_PROVIDER_ENDPOINT or OpenClaw:Llm:Endpoint before retrying.");
+        }
+
+        if (Contains(message, "invalid_api_key") ||
+            Contains(message, "Incorrect API key provided") ||
+            Contains(message, "invalid api key") ||
+            Contains(message, "invalid api-key"))
+        {
+            return new ProviderRuntimeFailureClassification(
+                Code: "invalid-key",
+                UserMessage: $"{providerLabel} credentials were rejected. Update {apiKeyHint} and retry.",
+                OperatorMessage: $"{providerLabel} requests are failing because the configured API key was rejected. Update {apiKeyHint} and retry.");
+        }
+
+        if ((Contains(message, "401") || Contains(message, "403")) &&
+            (Contains(message, "auth") || Contains(message, "unauthorized") || Contains(message, "forbidden")))
+        {
+            return new ProviderRuntimeFailureClassification(
+                Code: "auth-rejected",
+                UserMessage: $"{providerLabel} credentials were rejected. Update {apiKeyHint} and retry.",
+                OperatorMessage: $"{providerLabel} requests are returning authorization failures. Verify {apiKeyHint} and retry.");
+        }
+
+        if (Contains(message, "Unsupported LLM provider") ||
+            Contains(message, "Configured provider '"))
+        {
+            return new ProviderRuntimeFailureClassification(
+                Code: "unsupported-provider",
+                UserMessage: $"{providerLabel} is not available in the current runtime. Update OpenClaw:Llm:Provider or enable the required plugin.",
+                OperatorMessage: $"{providerLabel} is not available in the current runtime. Update OpenClaw:Llm:Provider or enable the required provider plugin before retrying.");
+        }
+
+        return null;
+    }
+
     private static bool IsTransient(Exception ex)
         => ex is HttpRequestException
             || ex is TimeoutException
             || ex is TaskCanceledException
             || ex is CircuitOpenException;
+
+    private static string ResolveApiKeyHint(string providerId)
+        => providerId.Trim().ToLowerInvariant() switch
+        {
+            "openai" => "MODEL_PROVIDER_KEY or OPENAI_API_KEY",
+            _ => "MODEL_PROVIDER_KEY"
+        };
+
+    private static string FormatProviderLabel(string providerId)
+        => providerId.Trim().ToLowerInvariant() switch
+        {
+            "openai" => "OpenAI",
+            "azure-openai" => "Azure OpenAI",
+            "anthropic" or "claude" => "Anthropic",
+            "gemini" or "google" => "Gemini",
+            { Length: > 0 } => $"Provider '{providerId}'",
+            _ => "The configured provider"
+        };
+
+    private static bool Contains(string value, string fragment)
+        => value.Contains(fragment, StringComparison.OrdinalIgnoreCase);
 
     private RouteState GetRouteStateSnapshot(string profileId, string providerId, string modelId)
         => _routes.TryGetValue(BuildRouteKey(profileId, providerId, modelId), out var state)

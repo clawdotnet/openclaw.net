@@ -25,7 +25,7 @@ Accept the defaults. This writes `~/.openclaw/config/openclaw.settings.json`.
 dotnet run --project src/OpenClaw.Cli -c Release -- setup launch --config ~/.openclaw/config/openclaw.settings.json
 ```
 
-**Expected:** a log banner that ends with a "Gateway ready" block listing the working URLs. If you don't see that banner, the gateway is not ready — do not open a browser yet.
+**Expected:** startup phase lines (`Loading configuration`, `Building services`, `Initializing runtime`, `Starting listener`) followed by an `OpenClaw gateway ready.` block listing the working URLs. If you see `Started with notices:`, the gateway is still up; those are non-fatal startup advisories. If you do not see the ready block, the gateway is not ready yet.
 
 **4. Open the browser UI.**
 
@@ -38,6 +38,14 @@ dotnet run --project src/OpenClaw.Gateway -c Release -- --config ~/.openclaw/con
 ```
 
 That's the whole first run. Skip everything below until this works.
+
+If you intentionally skip the CLI flow and start the gateway process directly, use:
+
+```bash
+dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart
+```
+
+`--quickstart` is the direct terminal fallback. It keeps the gateway on `127.0.0.1`, prompts for missing provider values, retries in-process on the common local startup failures, and after a successful start can save the resulting config to the standard `~/.openclaw/config/openclaw.settings.json`.
 
 You explicitly do **not** need any of these to get started:
 
@@ -63,6 +71,7 @@ For a first run from source, prefer the generated external config from `openclaw
 | Command | Use when |
 | --- | --- |
 | `openclaw setup` | You want the guided onboarding flow that writes config, prints launch commands, and gives you `--doctor` plus `admin posture` follow-ups. |
+| `dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart` | You want to start the gateway directly from a repo checkout and let the gateway recover into a safe local profile instead of preparing config first. |
 | `openclaw init` | You want raw bootstrap files to edit manually before running the gateway. |
 | Direct config editing | You already know the runtime shape you want and do not need the guided path. |
 
@@ -90,6 +99,8 @@ If you prefer to run the gateway process directly, use the printed command, for 
 dotnet run --project src/OpenClaw.Gateway -c Release -- --config ~/.openclaw/config/openclaw.settings.json
 ```
 
+If that direct launch fails before the listener comes up and you are in an interactive terminal, the gateway now prints actionable guidance and offers a minimal local recovery flow instead of dropping straight to an unhandled exception. For the shortest direct path, prefer `--quickstart`.
+
 4. Run the printed verification commands after the gateway is up:
 
 ```bash
@@ -113,6 +124,7 @@ Important:
 
 - the browser chat UI is `/chat`, not the root URL
 - the admin UI is `http://127.0.0.1:18789/admin`
+- the ready banner also prints `Ctrl-C to stop`, startup notices, and follow-up commands
 
 ## Public / Reverse Proxy Start
 

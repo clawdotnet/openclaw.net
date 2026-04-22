@@ -9,10 +9,11 @@ internal static class StartupFailureReporter
         GatewayStartupContext? startup,
         string environmentName,
         bool isDoctorMode,
+        bool suggestQuickstart = false,
         TextWriter? error = null)
     {
         var writer = error ?? Console.Error;
-        writer.WriteLine(Render(ex, startup, environmentName, isDoctorMode));
+        writer.WriteLine(Render(ex, startup, environmentName, isDoctorMode, suggestQuickstart));
         writer.Flush();
     }
 
@@ -20,9 +21,10 @@ internal static class StartupFailureReporter
         Exception ex,
         GatewayStartupContext? startup,
         string environmentName,
-        bool isDoctorMode)
+        bool isDoctorMode,
+        bool suggestQuickstart = false)
     {
-        var report = Analyze(ex, startup, environmentName, isDoctorMode);
+        var report = Analyze(ex, startup, environmentName, isDoctorMode, suggestQuickstart);
         var sb = new StringBuilder();
         sb.AppendLine($"Startup failed: {report.Title}");
         sb.AppendLine();
@@ -51,15 +53,16 @@ internal static class StartupFailureReporter
         Exception ex,
         GatewayStartupContext? startup,
         string environmentName,
-        bool isDoctorMode)
+        bool isDoctorMode,
+        bool suggestQuickstart)
     {
         var message = ex.Message;
 
         if (Contains(message, "OPENCLAW_AUTH_TOKEN must be set when binding to a non-loopback address."))
-            return BuildAuthTokenReport(startup, environmentName, isDoctorMode);
+            return BuildAuthTokenReport(startup, environmentName, isDoctorMode, suggestQuickstart);
 
         if (IsPortInUse(ex))
-            return BuildPortInUseReport(ex, startup, isDoctorMode);
+            return BuildPortInUseReport(ex, startup, isDoctorMode, suggestQuickstart);
 
         if (Contains(message, "MODEL_PROVIDER_KEY must be set") ||
             Contains(message, "MODEL_PROVIDER_ENDPOINT must be set") ||
@@ -67,19 +70,20 @@ internal static class StartupFailureReporter
             Contains(message, "Configured provider '") ||
             Contains(message, "Unsupported LLM provider"))
         {
-            return BuildProviderReport(ex, startup, isDoctorMode);
+            return BuildProviderReport(ex, startup, isDoctorMode, suggestQuickstart);
         }
 
         if (Contains(message, "Memory.StoragePath") || IsStorageAccessError(ex))
-            return BuildStorageReport(ex, startup, environmentName, isDoctorMode);
+            return BuildStorageReport(ex, startup, environmentName, isDoctorMode, suggestQuickstart);
 
-        return BuildGenericReport(ex, startup, environmentName, isDoctorMode);
+        return BuildGenericReport(ex, startup, environmentName, isDoctorMode, suggestQuickstart);
     }
 
     private static StartupFailureReport BuildAuthTokenReport(
         GatewayStartupContext? startup,
         string environmentName,
-        bool isDoctorMode)
+        bool isDoctorMode,
+        bool suggestQuickstart)
     {
         var details = new List<string>();
         AddIfValue(details, "Current ASPNETCORE_ENVIRONMENT", environmentName);
@@ -97,7 +101,7 @@ internal static class StartupFailureReporter
             "If you are starting the gateway on your machine, set ASPNETCORE_ENVIRONMENT to Development so the repo-local defaults are used.",
             "If you do want a non-loopback bind, set OPENCLAW_AUTH_TOKEN to a strong random value before launch."
         };
-        AddDoctorStep(actions, isDoctorMode);
+        AddOperatorNextSteps(actions, isDoctorMode, suggestQuickstart);
 
         return new StartupFailureReport(
             Title: "authentication is required for a non-loopback bind.",
@@ -110,7 +114,8 @@ internal static class StartupFailureReporter
         Exception ex,
         GatewayStartupContext? startup,
         string environmentName,
-        bool isDoctorMode)
+        bool isDoctorMode,
+        bool suggestQuickstart)
     {
         var details = new List<string>();
         AddIfValue(details, "Current ASPNETCORE_ENVIRONMENT", environmentName);
@@ -138,7 +143,7 @@ internal static class StartupFailureReporter
         }
 
         actions.Add("Make sure the chosen directory exists or can be created by the current user.");
-        AddDoctorStep(actions, isDoctorMode);
+        AddOperatorNextSteps(actions, isDoctorMode, suggestQuickstart);
 
         return new StartupFailureReport(
             Title: "the configured memory storage path is not writable.",
@@ -150,7 +155,8 @@ internal static class StartupFailureReporter
     private static StartupFailureReport BuildProviderReport(
         Exception ex,
         GatewayStartupContext? startup,
-        bool isDoctorMode)
+        bool isDoctorMode,
+        bool suggestQuickstart)
     {
         var config = startup?.Config;
         var provider = config?.Llm.Provider ?? TryExtractQuotedValue(ex.Message, "Configured provider '");
@@ -192,7 +198,7 @@ internal static class StartupFailureReporter
             actions.Add("If this provider should come from a plugin, enable that plugin before launch.");
         }
 
-        AddDoctorStep(actions, isDoctorMode);
+        AddOperatorNextSteps(actions, isDoctorMode, suggestQuickstart);
 
         return new StartupFailureReport(
             Title: title,
@@ -204,7 +210,8 @@ internal static class StartupFailureReporter
     private static StartupFailureReport BuildPortInUseReport(
         Exception ex,
         GatewayStartupContext? startup,
-        bool isDoctorMode)
+        bool isDoctorMode,
+        bool suggestQuickstart)
     {
         var details = new List<string>();
         AddIfValue(details, "BindAddress", startup?.Config.BindAddress);
@@ -216,7 +223,7 @@ internal static class StartupFailureReporter
         {
             "Stop the process that is already using this port, or change OpenClaw__Port to a free port."
         };
-        AddDoctorStep(actions, isDoctorMode);
+        AddOperatorNextSteps(actions, isDoctorMode, suggestQuickstart);
 
         return new StartupFailureReport(
             Title: "the configured HTTP port is already in use.",
@@ -229,7 +236,8 @@ internal static class StartupFailureReporter
         Exception ex,
         GatewayStartupContext? startup,
         string environmentName,
-        bool isDoctorMode)
+        bool isDoctorMode,
+        bool suggestQuickstart)
     {
         var details = new List<string>
         {
@@ -248,7 +256,7 @@ internal static class StartupFailureReporter
         {
             "Review the startup settings above and correct the misconfiguration before retrying."
         };
-        AddDoctorStep(actions, isDoctorMode);
+        AddOperatorNextSteps(actions, isDoctorMode, suggestQuickstart);
 
         return new StartupFailureReport(
             Title: "an unexpected startup exception occurred.",
@@ -273,8 +281,11 @@ internal static class StartupFailureReporter
                baseException.Message.Contains("Only one usage of each socket address", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void AddDoctorStep(ICollection<string> actions, bool isDoctorMode)
+    private static void AddOperatorNextSteps(ICollection<string> actions, bool isDoctorMode, bool suggestQuickstart)
     {
+        if (suggestQuickstart)
+            actions.Add("For an interactive local bootstrap, rerun the gateway with --quickstart.");
+
         if (!isDoctorMode)
         {
             actions.Add("Run the preflight checks with: dotnet run --project src/OpenClaw.Gateway -c Release -- --doctor");

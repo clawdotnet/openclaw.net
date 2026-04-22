@@ -34,7 +34,7 @@ dotnet run --project src/OpenClaw.Cli -c Release -- setup
 dotnet run --project src/OpenClaw.Cli -c Release -- setup launch --config ~/.openclaw/config/openclaw.settings.json
 ```
 
-When the gateway prints its `Gateway ready` banner, open:
+When the gateway finishes startup it now prints explicit phase markers, a final `OpenClaw gateway ready.` block, the localhost URLs, `Ctrl-C to stop`, and any non-fatal startup notices under `Started with notices:`. Then open:
 
 | Surface | URL |
 |---------|-----|
@@ -44,6 +44,14 @@ When the gateway prints its `Gateway ready` banner, open:
 | MCP endpoint | `http://127.0.0.1:18789/mcp` |
 
 The root URL redirects to `/chat`. For the full first-run walkthrough (including the "First 10 Minutes" runbook and debugging flow), see [docs/QUICKSTART.md](docs/QUICKSTART.md). For the project shape and repository map before changing code, see [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
+
+If you want a direct gateway fallback instead of the full CLI onboarding flow, run:
+
+```bash
+dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart
+```
+
+`--quickstart` is interactive-only. It applies a minimal loopback-local profile for the current process, prompts for missing provider inputs, retries on the common first-run failures, and after a successful start can save the working setup to `~/.openclaw/config/openclaw.settings.json`.
 
 If the CLI is already on your `PATH`, the same guided entrypoints are:
 

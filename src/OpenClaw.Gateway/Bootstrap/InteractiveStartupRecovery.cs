@@ -2,13 +2,6 @@ using OpenClaw.Core.Models;
 
 namespace OpenClaw.Gateway.Bootstrap;
 
-internal enum StartupRecoveryResult
-{
-    NotHandled,
-    Recovered,
-    Declined
-}
-
 internal static class InteractiveStartupRecovery
 {
     private const string ModelProviderKeyEnv = "MODEL_PROVIDER_KEY";
@@ -21,46 +14,110 @@ internal static class InteractiveStartupRecovery
     private const string MemoryStoragePathEnv = "OpenClaw__Memory__StoragePath";
     private const string MemoryRetentionEnabledEnv = "OpenClaw__Memory__Retention__Enabled";
 
-    public static StartupRecoveryResult TryRecover(
+    public static StartupRecoveryOutcome TryQuickstart(
+        string currentDirectory,
+        LocalStartupStateStore stateStore,
+        TextReader? input = null,
+        TextWriter? output = null)
+    {
+        if (input is null || output is null)
+        {
+            if (!TerminalPrompts.IsInteractiveConsole())
+                return StartupRecoveryOutcome.NotHandled;
+
+            input = Console.In;
+            output = Console.Out;
+        }
+
+        var remembered = stateStore.Load();
+        var defaults = BuildQuickstartDefaults(currentDirectory, remembered);
+
+        output.WriteLine("Quickstart will apply a minimal local profile for this run.");
+        output.WriteLine($"Provider/model: {defaults.Provider}/{defaults.Model}");
+        output.WriteLine($"Workspace: {defaults.WorkspacePath}");
+        output.WriteLine($"Memory path: {defaults.MemoryPath}");
+        output.WriteLine($"Local bind: 127.0.0.1:{defaults.Port}");
+
+        var apiKey = ResolveApiKey(output, input, defaults.Provider, defaults.ApiKey);
+        var endpoint = ResolveEndpoint(output, input, defaults.Provider, defaults.Endpoint);
+
+        try
+        {
+            Directory.CreateDirectory(defaults.WorkspacePath);
+            Directory.CreateDirectory(defaults.MemoryPath);
+        }
+        catch (Exception createError) when (createError is IOException or UnauthorizedAccessException)
+        {
+            output.WriteLine($"Could not prepare the local workspace or memory path: {createError.Message}");
+            return StartupRecoveryOutcome.Declined;
+        }
+
+        var session = new LocalStartupSession(
+            Mode: "quickstart",
+            WorkspacePath: defaults.WorkspacePath,
+            MemoryPath: defaults.MemoryPath,
+            Port: defaults.Port,
+            Provider: defaults.Provider,
+            Model: defaults.Model,
+            ApiKeyReference: ResolveApiKeyReference(defaults.Provider),
+            Endpoint: endpoint);
+        ApplyLocalOverrides(session, apiKey);
+
+        output.WriteLine();
+        output.WriteLine("Applied quickstart local overrides for this process.");
+        output.WriteLine("The gateway will start on 127.0.0.1 with writable local storage.");
+        return StartupRecoveryOutcome.Recovered(session);
+    }
+
+    public static StartupRecoveryOutcome TryRecover(
         Exception ex,
         GatewayStartupContext? startup,
         string environmentName,
         string currentDirectory,
         bool canPrompt,
+        LocalStartupStateStore stateStore,
+        bool suggestQuickstart,
         TextReader? input = null,
         TextWriter? output = null)
     {
         if (!canPrompt)
-            return StartupRecoveryResult.NotHandled;
+            return StartupRecoveryOutcome.NotHandled;
 
         if (input is null || output is null)
         {
-            if (!IsInteractiveConsole())
-                return StartupRecoveryResult.NotHandled;
+            if (!TerminalPrompts.IsInteractiveConsole())
+                return StartupRecoveryOutcome.NotHandled;
 
             input = Console.In;
             output = Console.Out;
         }
 
         if (!IsRecoverable(ex))
-            return StartupRecoveryResult.NotHandled;
+            return StartupRecoveryOutcome.NotHandled;
 
         output.WriteLine();
-        output.WriteLine(StartupFailureReporter.Render(ex, startup, environmentName, isDoctorMode: false));
+        output.WriteLine(StartupFailureReporter.Render(ex, startup, environmentName, isDoctorMode: false, suggestQuickstart));
         output.WriteLine();
         output.WriteLine("A minimal local setup can apply safe defaults for this run and retry startup.");
-        output.WriteLine("It keeps the gateway on 127.0.0.1, uses file memory under a writable local path, and does not persist anything to your shell.");
-        if (!PromptYesNo(output, input, "Apply minimal local setup now?", defaultValue: true))
-            return StartupRecoveryResult.Declined;
+        output.WriteLine("It keeps the gateway on 127.0.0.1, uses file memory under a writable local path, and does not persist anything until you choose to save it.");
+        if (!TerminalPrompts.PromptYesNo(output, input, "Apply minimal local setup now?", defaultValue: true))
+            return StartupRecoveryOutcome.Declined;
 
-        var defaults = BuildDefaults(ex, startup, currentDirectory);
+        var defaults = BuildRecoveryDefaults(ex, startup, currentDirectory, stateStore.Load());
         output.WriteLine();
         output.WriteLine($"Provider/model: {defaults.Provider}/{defaults.Model}");
         output.WriteLine("Local bind: 127.0.0.1");
 
-        var workspacePath = Prompt(output, input, "Workspace path", defaults.WorkspacePath);
-        var memoryPath = Prompt(output, input, "Memory path", defaults.MemoryPath);
-        var port = PromptPort(output, input, defaults.Port);
+        if (IsPortInUse(ex) &&
+            defaults.Port < 65535 &&
+            TerminalPrompts.PromptYesNo(output, input, $"Port {defaults.Port} is busy. Use {defaults.Port + 1} instead?", defaultValue: true))
+        {
+            defaults = defaults with { Port = defaults.Port + 1 };
+        }
+
+        var workspacePath = TerminalPrompts.Prompt(output, input, "Workspace path", defaults.WorkspacePath);
+        var memoryPath = TerminalPrompts.Prompt(output, input, "Memory path", defaults.MemoryPath);
+        var port = TerminalPrompts.PromptPort(output, input, defaults.Port);
         var apiKey = ResolveApiKey(output, input, defaults.Provider, defaults.ApiKey);
         var endpoint = ResolveEndpoint(output, input, defaults.Provider, defaults.Endpoint);
 
@@ -72,59 +129,104 @@ internal static class InteractiveStartupRecovery
         catch (Exception createError) when (createError is IOException or UnauthorizedAccessException)
         {
             output.WriteLine($"Could not prepare the local workspace or memory path: {createError.Message}");
-            return StartupRecoveryResult.Declined;
+            return StartupRecoveryOutcome.Declined;
         }
 
-        ApplyLocalOverrides(workspacePath, memoryPath, port, apiKey, endpoint);
+        var session = new LocalStartupSession(
+            Mode: "recovery",
+            WorkspacePath: Path.GetFullPath(workspacePath),
+            MemoryPath: Path.GetFullPath(memoryPath),
+            Port: port,
+            Provider: defaults.Provider,
+            Model: defaults.Model,
+            ApiKeyReference: ResolveApiKeyReference(defaults.Provider),
+            Endpoint: endpoint);
+        ApplyLocalOverrides(session, apiKey);
 
         output.WriteLine();
         output.WriteLine("Applied local startup overrides for this process. Retrying gateway startup...");
         output.WriteLine("For a persistent setup later, run: openclaw setup");
-        return StartupRecoveryResult.Recovered;
+        return StartupRecoveryOutcome.Recovered(session);
     }
 
-    private static StartupRecoveryDefaults BuildDefaults(Exception ex, GatewayStartupContext? startup, string currentDirectory)
+    private static StartupRecoveryDefaults BuildQuickstartDefaults(string currentDirectory, LocalStartupState remembered)
+    {
+        var config = new GatewayConfig();
+        var workspacePath = ResolvePreferredPath(remembered.WorkspacePath, currentDirectory);
+        var memoryPath = ResolvePreferredPath(remembered.MemoryPath, Path.Combine(currentDirectory, "memory"));
+        var provider = string.IsNullOrWhiteSpace(remembered.Provider) ? config.Llm.Provider : remembered.Provider;
+        var model = string.IsNullOrWhiteSpace(remembered.Model) ? config.Llm.Model : remembered.Model;
+        var port = remembered.Port is >= 1 and <= 65535 ? remembered.Port.Value : 18789;
+        return new StartupRecoveryDefaults(
+            WorkspacePath: workspacePath,
+            MemoryPath: memoryPath,
+            Port: port,
+            Provider: provider,
+            Model: model,
+            ApiKey: ResolveExistingApiKey(provider),
+            Endpoint: ResolveExistingEndpoint(config));
+    }
+
+    private static StartupRecoveryDefaults BuildRecoveryDefaults(
+        Exception ex,
+        GatewayStartupContext? startup,
+        string currentDirectory,
+        LocalStartupState remembered)
     {
         var config = startup?.Config ?? new GatewayConfig();
-        var port = config.Port > 0 ? config.Port : 18789;
-        if (IsPortInUse(ex))
-            port++;
-
-        var workspacePath = Environment.GetEnvironmentVariable(WorkspaceEnv);
-        if (string.IsNullOrWhiteSpace(workspacePath))
-            workspacePath = startup?.WorkspacePath;
-        if (string.IsNullOrWhiteSpace(workspacePath))
-            workspacePath = currentDirectory;
+        var port = config.Port > 0 ? config.Port : (remembered.Port is >= 1 and <= 65535 ? remembered.Port.Value : 18789);
+        var workspacePath = ResolvePreferredPath(
+            remembered.WorkspacePath,
+            Environment.GetEnvironmentVariable(WorkspaceEnv) ?? startup?.WorkspacePath ?? currentDirectory);
+        var memoryPath = ResolvePreferredPath(remembered.MemoryPath, Path.Combine(currentDirectory, "memory"));
 
         var provider = string.IsNullOrWhiteSpace(config.Llm.Provider) ? new GatewayConfig().Llm.Provider : config.Llm.Provider;
         var model = string.IsNullOrWhiteSpace(config.Llm.Model) ? new GatewayConfig().Llm.Model : config.Llm.Model;
 
-        return new StartupRecoveryDefaults
-        {
-            WorkspacePath = Path.GetFullPath(workspacePath),
-            MemoryPath = Path.Combine(currentDirectory, "memory"),
-            Port = port,
-            Provider = provider,
-            Model = model,
-            ApiKey = ResolveExistingApiKey(provider),
-            Endpoint = ResolveExistingEndpoint(config)
-        };
+        return new StartupRecoveryDefaults(
+            WorkspacePath: workspacePath,
+            MemoryPath: memoryPath,
+            Port: port,
+            Provider: provider,
+            Model: model,
+            ApiKey: ResolveExistingApiKey(provider),
+            Endpoint: ResolveExistingEndpoint(config));
     }
 
-    private static void ApplyLocalOverrides(string workspacePath, string memoryPath, int port, string? apiKey, string? endpoint)
+    private static string ResolvePreferredPath(string? rememberedPath, string fallbackPath)
+    {
+        if (!string.IsNullOrWhiteSpace(rememberedPath))
+            return Path.GetFullPath(rememberedPath);
+
+        return Path.GetFullPath(fallbackPath);
+    }
+
+    private static void ApplyLocalOverrides(LocalStartupSession session, string? apiKey)
     {
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", Environments.Development);
-        Environment.SetEnvironmentVariable(WorkspaceEnv, workspacePath);
+        Environment.SetEnvironmentVariable(WorkspaceEnv, session.WorkspacePath);
         Environment.SetEnvironmentVariable(BindAddressEnv, "127.0.0.1");
-        Environment.SetEnvironmentVariable(PortEnv, port.ToString());
+        Environment.SetEnvironmentVariable(PortEnv, session.Port.ToString(System.Globalization.CultureInfo.InvariantCulture));
         Environment.SetEnvironmentVariable(MemoryProviderEnv, "file");
-        Environment.SetEnvironmentVariable(MemoryStoragePathEnv, memoryPath);
+        Environment.SetEnvironmentVariable(MemoryStoragePathEnv, session.MemoryPath);
         Environment.SetEnvironmentVariable(MemoryRetentionEnabledEnv, "false");
 
         if (!string.IsNullOrWhiteSpace(apiKey))
             Environment.SetEnvironmentVariable(ModelProviderKeyEnv, apiKey);
-        if (!string.IsNullOrWhiteSpace(endpoint))
-            Environment.SetEnvironmentVariable(ModelProviderEndpointEnv, endpoint);
+        if (!string.IsNullOrWhiteSpace(session.Endpoint))
+            Environment.SetEnvironmentVariable(ModelProviderEndpointEnv, session.Endpoint);
+    }
+
+    private static string ResolveApiKeyReference(string provider)
+    {
+        if (string.Equals(provider, "openai", StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(ModelProviderKeyEnv)) &&
+            !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(OpenAiApiKeyEnv)))
+        {
+            return "env:OPENAI_API_KEY";
+        }
+
+        return "env:MODEL_PROVIDER_KEY";
     }
 
     private static string? ResolveExistingApiKey(string provider)
@@ -163,7 +265,7 @@ internal static class InteractiveStartupRecovery
             return existingApiKey;
         }
 
-        return PromptRequiredSecret(output, input, $"{provider} API key");
+        return TerminalPrompts.PromptRequiredSecret(output, input, $"{provider} API key");
     }
 
     private static string? ResolveEndpoint(TextWriter output, TextReader input, string provider, string? existingEndpoint)
@@ -174,7 +276,7 @@ internal static class InteractiveStartupRecovery
         if (!string.IsNullOrWhiteSpace(existingEndpoint))
             return existingEndpoint;
 
-        return PromptRequired(output, input, $"{provider} endpoint");
+        return TerminalPrompts.PromptRequired(output, input, $"{provider} endpoint");
     }
 
     private static bool RequiresApiKey(string provider)
@@ -203,9 +305,6 @@ internal static class InteractiveStartupRecovery
                IsPortInUse(ex);
     }
 
-    private static bool IsInteractiveConsole()
-        => Environment.UserInteractive && !Console.IsInputRedirected && !Console.IsOutputRedirected;
-
     private static bool IsStorageAccessError(Exception ex)
     {
         var baseMessage = ex.GetBaseException().Message;
@@ -214,7 +313,7 @@ internal static class InteractiveStartupRecovery
                baseMessage.Contains("Access to the path", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsPortInUse(Exception ex)
+    internal static bool IsPortInUse(Exception ex)
     {
         var baseException = ex.GetBaseException();
         return string.Equals(baseException.GetType().Name, "AddressInUseException", StringComparison.Ordinal) ||
@@ -225,103 +324,12 @@ internal static class InteractiveStartupRecovery
     private static bool Contains(string value, string fragment)
         => value.Contains(fragment, StringComparison.OrdinalIgnoreCase);
 
-    private static string Prompt(TextWriter output, TextReader input, string label, string defaultValue)
-    {
-        output.Write($"{label} [{defaultValue}]: ");
-        var value = input.ReadLine();
-        return string.IsNullOrWhiteSpace(value) ? defaultValue : value.Trim();
-    }
-
-    private static string PromptRequired(TextWriter output, TextReader input, string label)
-    {
-        while (true)
-        {
-            output.Write($"{label}: ");
-            var value = input.ReadLine()?.Trim();
-            if (!string.IsNullOrWhiteSpace(value))
-                return value;
-
-            output.WriteLine("A value is required.");
-        }
-    }
-
-    private static string PromptRequiredSecret(TextWriter output, TextReader input, string label)
-    {
-        if (ReferenceEquals(input, Console.In) && ReferenceEquals(output, Console.Out) && !Console.IsInputRedirected)
-        {
-            return ReadSecretFromConsole(label);
-        }
-
-        return PromptRequired(output, input, label);
-    }
-
-    private static string ReadSecretFromConsole(string label)
-    {
-        while (true)
-        {
-            Console.Write($"{label}: ");
-            var buffer = new List<char>();
-            while (true)
-            {
-                var key = Console.ReadKey(intercept: true);
-                if (key.Key == ConsoleKey.Enter)
-                {
-                    Console.WriteLine();
-                    break;
-                }
-
-                if (key.Key == ConsoleKey.Backspace)
-                {
-                    if (buffer.Count == 0)
-                        continue;
-
-                    buffer.RemoveAt(buffer.Count - 1);
-                    continue;
-                }
-
-                if (!char.IsControl(key.KeyChar))
-                    buffer.Add(key.KeyChar);
-            }
-
-            var value = new string([.. buffer]).Trim();
-            if (!string.IsNullOrWhiteSpace(value))
-                return value;
-
-            Console.WriteLine("A value is required.");
-        }
-    }
-
-    private static bool PromptYesNo(TextWriter output, TextReader input, string label, bool defaultValue)
-    {
-        var suffix = defaultValue ? "[Y/n]" : "[y/N]";
-        output.Write($"{label} {suffix}: ");
-        var value = input.ReadLine()?.Trim().ToLowerInvariant();
-        if (string.IsNullOrWhiteSpace(value))
-            return defaultValue;
-
-        return value is "y" or "yes";
-    }
-
-    private static int PromptPort(TextWriter output, TextReader input, int defaultPort)
-    {
-        while (true)
-        {
-            var value = Prompt(output, input, "Port", defaultPort.ToString());
-            if (int.TryParse(value, out var port) && port is > 0 and <= 65535)
-                return port;
-
-            output.WriteLine("Port must be between 1 and 65535.");
-        }
-    }
-
-    private sealed class StartupRecoveryDefaults
-    {
-        public required string WorkspacePath { get; init; }
-        public required string MemoryPath { get; init; }
-        public required int Port { get; init; }
-        public required string Provider { get; init; }
-        public required string Model { get; init; }
-        public string? ApiKey { get; init; }
-        public string? Endpoint { get; init; }
-    }
+    private sealed record StartupRecoveryDefaults(
+        string WorkspacePath,
+        string MemoryPath,
+        int Port,
+        string Provider,
+        string Model,
+        string? ApiKey,
+        string? Endpoint);
 }
