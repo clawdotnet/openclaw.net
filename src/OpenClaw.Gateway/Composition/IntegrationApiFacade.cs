@@ -276,11 +276,12 @@ internal sealed class IntegrationApiFacade
         {
             var runState = await _automationService.GetRunStateAsync(automation.Id, cancellationToken);
             var outcome = runState?.Outcome ?? "never";
+            var lifecycle = runState?.LifecycleState ?? AutomationLifecycleStates.Never;
             var isQueuedOrRunning = runningAutomationIds.Contains(automation.Id) ||
-                string.Equals(outcome, "queued", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(outcome, "running", StringComparison.OrdinalIgnoreCase);
-            var isFailing = string.Equals(outcome, "failed", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(outcome, "error", StringComparison.OrdinalIgnoreCase);
+                string.Equals(lifecycle, AutomationLifecycleStates.Queued, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(lifecycle, AutomationLifecycleStates.Running, StringComparison.OrdinalIgnoreCase);
+            var isFailing = string.Equals(runState?.HealthState, AutomationHealthStates.Degraded, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(runState?.HealthState, AutomationHealthStates.Quarantined, StringComparison.OrdinalIgnoreCase);
 
             if (automation.Enabled)
                 enabledAutomations++;
@@ -310,6 +311,7 @@ internal sealed class IntegrationApiFacade
         {
             var runState = await _automationService.GetRunStateAsync(automation.Id, cancellationToken);
             var outcome = runState?.Outcome ?? "never";
+            var lifecycle = runState?.LifecycleState ?? AutomationLifecycleStates.Never;
             if (automation.Enabled)
                 enabledAutomations++;
             if (automation.IsDraft)
@@ -317,13 +319,13 @@ internal sealed class IntegrationApiFacade
             if (string.Equals(outcome, "never", StringComparison.OrdinalIgnoreCase))
                 neverRunAutomations++;
             if (runningAutomationIds.Contains(automation.Id) ||
-                string.Equals(outcome, "queued", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(outcome, "running", StringComparison.OrdinalIgnoreCase))
+                string.Equals(lifecycle, AutomationLifecycleStates.Queued, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(lifecycle, AutomationLifecycleStates.Running, StringComparison.OrdinalIgnoreCase))
             {
                 queuedOrRunningAutomations++;
             }
-            if (string.Equals(outcome, "failed", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(outcome, "error", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(runState?.HealthState, AutomationHealthStates.Degraded, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(runState?.HealthState, AutomationHealthStates.Quarantined, StringComparison.OrdinalIgnoreCase))
             {
                 failingAutomations++;
             }
@@ -527,6 +529,23 @@ internal sealed class IntegrationApiFacade
             RunState = await _automationService.GetRunStateAsync(automationId, cancellationToken)
         };
 
+    public async Task<IntegrationAutomationRunsResponse> GetAutomationRunsAsync(string automationId, CancellationToken cancellationToken)
+        => new()
+        {
+            AutomationId = automationId,
+            RunState = await _automationService.GetRunStateAsync(automationId, cancellationToken),
+            Items = await _automationService.ListRunRecordsAsync(automationId, limit: 50, cancellationToken)
+        };
+
+    public async Task<IntegrationAutomationRunDetailResponse> GetAutomationRunAsync(string automationId, string runId, CancellationToken cancellationToken)
+        => new()
+        {
+            AutomationId = automationId,
+            Automation = await _automationService.GetAsync(automationId, cancellationToken),
+            RunState = await _automationService.GetRunStateAsync(automationId, cancellationToken),
+            Run = await _automationService.GetRunRecordAsync(automationId, runId, cancellationToken)
+        };
+
     public AutomationTemplateListResponse ListAutomationTemplates()
         => new()
         {
@@ -555,31 +574,54 @@ internal sealed class IntegrationApiFacade
         }
 
         var result = await _automationService.RunNowAsync(automationId, _runtime.Pipeline, cancellationToken);
-        if (result == RunNowResult.Queued)
+        if (string.Equals(result.Status, "queued", StringComparison.Ordinal))
         {
-            await _automationService.SaveRunStateAsync(new AutomationRunState
-            {
-                AutomationId = automationId,
-                Outcome = "queued",
-                LastRunAtUtc = DateTimeOffset.UtcNow,
-                SessionId = string.IsNullOrWhiteSpace(automation.SessionId) ? $"automation:{automation.Id}" : automation.SessionId,
-                MessagePreview = automation.Prompt.Length > 180 ? automation.Prompt[..180] : automation.Prompt
-            }, cancellationToken);
-
             AppendRuntimeEvent(
                 component: "automations",
                 action: "queued",
-                summary: $"Automation '{automationId}' queued for execution.",
+                summary: string.IsNullOrWhiteSpace(result.RunId)
+                    ? $"Automation '{automationId}' queued for execution."
+                    : $"Automation '{automationId}' queued for execution as run '{result.RunId}'.",
                 sessionId: automation.SessionId,
                 channelId: automation.DeliveryChannelId,
                 senderId: automation.DeliveryRecipientId);
         }
 
-        return result switch
+        return result.Status switch
         {
-            RunNowResult.Queued => new MutationResponse { Success = true, Message = "Automation queued." },
-            RunNowResult.AlreadyRunning => new MutationResponse { Success = false, Error = "Automation is already running." },
+            "queued" => new MutationResponse { Success = true, Message = "Automation queued." },
+            "already_running" => new MutationResponse { Success = false, Error = "Automation is already running." },
+            "quarantined" => new MutationResponse { Success = false, Error = "Automation is quarantined and cannot be scheduled automatically." },
             _ => new MutationResponse { Success = false, Error = "Automation could not be queued." }
+        };
+    }
+
+    public async Task<MutationResponse> ReplayAutomationRunAsync(string automationId, string runId, CancellationToken cancellationToken)
+    {
+        var automation = await _automationService.GetAsync(automationId, cancellationToken);
+        if (automation is null)
+            return new MutationResponse { Success = false, Error = "Automation not found." };
+
+        var result = await _automationService.ReplayAsync(automationId, runId, _runtime.Pipeline, cancellationToken);
+        return result.Status switch
+        {
+            "queued" => new MutationResponse { Success = true, Message = "Automation replay queued." },
+            "already_running" => new MutationResponse { Success = false, Error = "Automation is already running." },
+            _ => new MutationResponse { Success = false, Error = "Automation replay could not be queued." }
+        };
+    }
+
+    public async Task<MutationResponse> ClearAutomationQuarantineAsync(string automationId, CancellationToken cancellationToken)
+    {
+        var automation = await _automationService.GetAsync(automationId, cancellationToken);
+        if (automation is null)
+            return new MutationResponse { Success = false, Error = "Automation not found." };
+
+        await _automationService.ClearQuarantineAsync(automationId, cancellationToken);
+        return new MutationResponse
+        {
+            Success = true,
+            Message = "Automation quarantine cleared."
         };
     }
 

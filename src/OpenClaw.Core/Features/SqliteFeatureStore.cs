@@ -43,6 +43,15 @@ public sealed class SqliteFeatureStore : IAutomationStore, IUserProfileStore, IL
               updated_at INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS automation_run_history (
+              automation_id TEXT NOT NULL,
+              run_id TEXT NOT NULL,
+              started_at INTEGER NOT NULL,
+              json TEXT NOT NULL,
+              updated_at INTEGER NOT NULL,
+              PRIMARY KEY(automation_id, run_id)
+            );
+
             CREATE TABLE IF NOT EXISTS user_profiles (
               actor_id TEXT PRIMARY KEY,
               json TEXT NOT NULL,
@@ -81,6 +90,7 @@ public sealed class SqliteFeatureStore : IAutomationStore, IUserProfileStore, IL
             );
 
             CREATE INDEX IF NOT EXISTS idx_learning_status ON learning_proposals(status, kind, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_automation_run_history_lookup ON automation_run_history(automation_id, started_at DESC, updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_connected_accounts_provider ON connected_accounts(provider, updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_backend_sessions_backend ON backend_sessions(backend_id, updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_backend_session_events_lookup ON backend_session_events(session_id, sequence);
@@ -99,8 +109,12 @@ public sealed class SqliteFeatureStore : IAutomationStore, IUserProfileStore, IL
             "INSERT INTO automations(id, json, updated_at) VALUES($id, $json, $updated_at) ON CONFLICT(id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at;",
             "$id", automation.Id, JsonSerializer.Serialize(automation, CoreJsonContext.Default.AutomationDefinition), ct);
 
-    public ValueTask DeleteAutomationAsync(string automationId, CancellationToken ct)
-        => ExecuteAsync("DELETE FROM automations WHERE id = $id;", "$id", automationId, ct);
+    public async ValueTask DeleteAutomationAsync(string automationId, CancellationToken ct)
+    {
+        await ExecuteAsync("DELETE FROM automations WHERE id = $id;", "$id", automationId, ct);
+        await ExecuteAsync("DELETE FROM automation_runs WHERE automation_id = $id;", "$id", automationId, ct);
+        await ExecuteAsync("DELETE FROM automation_run_history WHERE automation_id = $id;", "$id", automationId, ct);
+    }
 
     public ValueTask<AutomationRunState?> GetRunStateAsync(string automationId, CancellationToken ct)
         => QuerySingleAsync("SELECT json FROM automation_runs WHERE automation_id = $id LIMIT 1;", "$id", automationId, CoreJsonContext.Default.AutomationRunState, ct);
@@ -109,6 +123,85 @@ public sealed class SqliteFeatureStore : IAutomationStore, IUserProfileStore, IL
         => UpsertAsync(
             "INSERT INTO automation_runs(automation_id, json, updated_at) VALUES($id, $json, $updated_at) ON CONFLICT(automation_id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at;",
             "$id", runState.AutomationId, JsonSerializer.Serialize(runState, CoreJsonContext.Default.AutomationRunState), ct);
+
+    public async ValueTask<IReadOnlyList<AutomationRunRecord>> ListRunRecordsAsync(string automationId, int limit, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT json FROM automation_run_history
+            WHERE automation_id = $automation_id
+            ORDER BY started_at DESC, updated_at DESC
+            LIMIT $limit;
+            """;
+        cmd.Parameters.AddWithValue("$automation_id", automationId);
+        cmd.Parameters.AddWithValue("$limit", Math.Max(1, limit));
+
+        var results = new List<AutomationRunRecord>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var record = JsonSerializer.Deserialize(reader.GetString(0), CoreJsonContext.Default.AutomationRunRecord);
+            if (record is not null)
+                results.Add(record);
+        }
+
+        return results;
+    }
+
+    public ValueTask<AutomationRunRecord?> GetRunRecordAsync(string automationId, string runId, CancellationToken ct)
+        => QuerySingleAsync(
+            "SELECT json FROM automation_run_history WHERE automation_id = $id AND run_id = $run_id LIMIT 1;",
+            parameters =>
+            {
+                parameters.AddWithValue("$id", automationId);
+                parameters.AddWithValue("$run_id", runId);
+            },
+            CoreJsonContext.Default.AutomationRunRecord,
+            ct);
+
+    public async ValueTask SaveRunRecordAsync(AutomationRunRecord runRecord, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO automation_run_history(automation_id, run_id, started_at, json, updated_at)
+            VALUES($automation_id, $run_id, $started_at, $json, $updated_at)
+            ON CONFLICT(automation_id, run_id) DO UPDATE SET
+                started_at=excluded.started_at,
+                json=excluded.json,
+                updated_at=excluded.updated_at;
+            """;
+        cmd.Parameters.AddWithValue("$automation_id", runRecord.AutomationId);
+        cmd.Parameters.AddWithValue("$run_id", runRecord.RunId);
+        cmd.Parameters.AddWithValue("$started_at", runRecord.StartedAtUtc.ToUnixTimeSeconds());
+        cmd.Parameters.AddWithValue("$json", JsonSerializer.Serialize(runRecord, CoreJsonContext.Default.AutomationRunRecord));
+        cmd.Parameters.AddWithValue("$updated_at", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async ValueTask PruneRunRecordsAsync(string automationId, int retainCount, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            DELETE FROM automation_run_history
+            WHERE automation_id = $automation_id
+              AND run_id IN (
+                SELECT run_id
+                FROM automation_run_history
+                WHERE automation_id = $automation_id
+                ORDER BY started_at DESC, updated_at DESC
+                LIMIT -1 OFFSET $retain
+              );
+            """;
+        cmd.Parameters.AddWithValue("$automation_id", automationId);
+        cmd.Parameters.AddWithValue("$retain", Math.Max(1, retainCount));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
 
     public async ValueTask<IReadOnlyList<UserProfile>> ListProfilesAsync(CancellationToken ct)
         => await QueryJsonListAsync("SELECT json FROM user_profiles ORDER BY updated_at DESC;", CoreJsonContext.Default.UserProfile, ct);
@@ -340,6 +433,21 @@ public sealed class SqliteFeatureStore : IAutomationStore, IUserProfileStore, IL
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.Parameters.AddWithValue(idParamName, id);
+        var json = await cmd.ExecuteScalarAsync(ct) as string;
+        return string.IsNullOrWhiteSpace(json) ? default : JsonSerializer.Deserialize(json, typeInfo);
+    }
+
+    private async ValueTask<T?> QuerySingleAsync<T>(
+        string sql,
+        Action<SqliteParameterCollection> configureParameters,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo,
+        CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        configureParameters(cmd.Parameters);
         var json = await cmd.ExecuteScalarAsync(ct) as string;
         return string.IsNullOrWhiteSpace(json) ? default : JsonSerializer.Deserialize(json, typeInfo);
     }

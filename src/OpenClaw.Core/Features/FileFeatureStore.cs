@@ -9,6 +9,7 @@ public sealed class FileFeatureStore : IAutomationStore, IUserProfileStore, ILea
 {
     private readonly string _automationsPath;
     private readonly string _automationRunsPath;
+    private readonly string _automationRunHistoryPath;
     private readonly string _accountsPath;
     private readonly string _backendEventsPath;
     private readonly string _backendSessionsPath;
@@ -20,6 +21,7 @@ public sealed class FileFeatureStore : IAutomationStore, IUserProfileStore, ILea
         var root = Path.GetFullPath(storagePath);
         _automationsPath = Path.Combine(root, "automations");
         _automationRunsPath = Path.Combine(root, "automation-runs");
+        _automationRunHistoryPath = Path.Combine(root, "automation-run-history");
         _accountsPath = Path.Combine(root, "connected-accounts");
         _backendSessionsPath = Path.Combine(root, "backend-sessions");
         _backendEventsPath = Path.Combine(root, "backend-session-events");
@@ -28,6 +30,7 @@ public sealed class FileFeatureStore : IAutomationStore, IUserProfileStore, ILea
 
         Directory.CreateDirectory(_automationsPath);
         Directory.CreateDirectory(_automationRunsPath);
+        Directory.CreateDirectory(_automationRunHistoryPath);
         Directory.CreateDirectory(_accountsPath);
         Directory.CreateDirectory(_backendSessionsPath);
         Directory.CreateDirectory(_backendEventsPath);
@@ -44,14 +47,68 @@ public sealed class FileFeatureStore : IAutomationStore, IUserProfileStore, ILea
     public ValueTask SaveAutomationAsync(AutomationDefinition automation, CancellationToken ct)
         => SaveOneAsync(Path.Combine(_automationsPath, $"{EncodeKey(automation.Id)}.json"), automation, CoreJsonContext.Default.AutomationDefinition, ct);
 
-    public ValueTask DeleteAutomationAsync(string automationId, CancellationToken ct)
-        => DeleteOneAsync(Path.Combine(_automationsPath, $"{EncodeKey(automationId)}.json"));
+    public async ValueTask DeleteAutomationAsync(string automationId, CancellationToken ct)
+    {
+        await DeleteOneAsync(Path.Combine(_automationsPath, $"{EncodeKey(automationId)}.json"));
+        await DeleteOneAsync(Path.Combine(_automationRunsPath, $"{EncodeKey(automationId)}.json"));
+        DeleteDirectory(Path.Combine(_automationRunHistoryPath, EncodeKey(automationId)));
+    }
 
     public ValueTask<AutomationRunState?> GetRunStateAsync(string automationId, CancellationToken ct)
         => LoadOneAsync(Path.Combine(_automationRunsPath, $"{EncodeKey(automationId)}.json"), CoreJsonContext.Default.AutomationRunState, ct);
 
     public ValueTask SaveRunStateAsync(AutomationRunState runState, CancellationToken ct)
         => SaveOneAsync(Path.Combine(_automationRunsPath, $"{EncodeKey(runState.AutomationId)}.json"), runState, CoreJsonContext.Default.AutomationRunState, ct);
+
+    public async ValueTask<IReadOnlyList<AutomationRunRecord>> ListRunRecordsAsync(string automationId, int limit, CancellationToken ct)
+    {
+        var directory = Path.Combine(_automationRunHistoryPath, EncodeKey(automationId));
+        if (!Directory.Exists(directory))
+            return [];
+
+        var items = await LoadAllAsync(directory, CoreJsonContext.Default.AutomationRunRecord, ct);
+        return items
+            .OrderByDescending(static item => item.StartedAtUtc)
+            .ThenByDescending(static item => item.CompletedAtUtc ?? item.StartedAtUtc)
+            .Take(Math.Max(1, limit))
+            .ToArray();
+    }
+
+    public ValueTask<AutomationRunRecord?> GetRunRecordAsync(string automationId, string runId, CancellationToken ct)
+        => LoadOneAsync(
+            Path.Combine(_automationRunHistoryPath, EncodeKey(automationId), $"{EncodeKey(runId)}.json"),
+            CoreJsonContext.Default.AutomationRunRecord,
+            ct);
+
+    public async ValueTask SaveRunRecordAsync(AutomationRunRecord runRecord, CancellationToken ct)
+    {
+        var directory = Path.Combine(_automationRunHistoryPath, EncodeKey(runRecord.AutomationId));
+        Directory.CreateDirectory(directory);
+        await SaveOneAsync(
+            Path.Combine(directory, $"{EncodeKey(runRecord.RunId)}.json"),
+            runRecord,
+            CoreJsonContext.Default.AutomationRunRecord,
+            ct);
+    }
+
+    public async ValueTask PruneRunRecordsAsync(string automationId, int retainCount, CancellationToken ct)
+    {
+        var directory = Path.Combine(_automationRunHistoryPath, EncodeKey(automationId));
+        if (!Directory.Exists(directory))
+            return;
+
+        var retain = Math.Max(1, retainCount);
+        var records = await LoadAllAsync(directory, CoreJsonContext.Default.AutomationRunRecord, ct);
+        var toDelete = records
+            .OrderByDescending(static item => item.StartedAtUtc)
+            .ThenByDescending(static item => item.CompletedAtUtc ?? item.StartedAtUtc)
+            .Skip(retain)
+            .Select(item => Path.Combine(directory, $"{EncodeKey(item.RunId)}.json"))
+            .ToArray();
+
+        foreach (var path in toDelete)
+            await DeleteOneAsync(path);
+    }
 
     public async ValueTask<IReadOnlyList<UserProfile>> ListProfilesAsync(CancellationToken ct)
         => await LoadAllAsync(_profilesPath, CoreJsonContext.Default.UserProfile, ct);
@@ -192,6 +249,12 @@ public sealed class FileFeatureStore : IAutomationStore, IUserProfileStore, ILea
         if (File.Exists(path))
             File.Delete(path);
         return ValueTask.CompletedTask;
+    }
+
+    private static void DeleteDirectory(string path)
+    {
+        if (Directory.Exists(path))
+            Directory.Delete(path, recursive: true);
     }
 
     private static string EncodeKey(string key)

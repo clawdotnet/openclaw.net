@@ -251,9 +251,8 @@ internal sealed class AdminObservabilityService
             if (state is null)
                 continue;
 
-            if (!string.IsNullOrWhiteSpace(state.Outcome) &&
-                !string.Equals(state.Outcome, "success", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(state.Outcome, "ok", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(state.HealthState, AutomationHealthStates.Degraded, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(state.HealthState, AutomationHealthStates.Quarantined, StringComparison.OrdinalIgnoreCase))
             {
                 failing++;
             }

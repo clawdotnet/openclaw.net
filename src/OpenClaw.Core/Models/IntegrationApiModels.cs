@@ -165,6 +165,21 @@ public sealed class IntegrationAutomationDetailResponse
     public AutomationRunState? RunState { get; init; }
 }
 
+public sealed class IntegrationAutomationRunsResponse
+{
+    public required string AutomationId { get; init; }
+    public AutomationRunState? RunState { get; init; }
+    public IReadOnlyList<AutomationRunRecord> Items { get; init; } = [];
+}
+
+public sealed class IntegrationAutomationRunDetailResponse
+{
+    public required string AutomationId { get; init; }
+    public AutomationDefinition? Automation { get; init; }
+    public AutomationRunState? RunState { get; init; }
+    public AutomationRunRecord? Run { get; init; }
+}
+
 public sealed class LearningProposalListResponse
 {
     public IReadOnlyList<LearningProposal> Items { get; init; } = [];

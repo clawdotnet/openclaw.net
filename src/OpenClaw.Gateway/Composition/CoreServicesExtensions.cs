@@ -119,6 +119,8 @@ internal static class CoreServicesExtensions
         services.AddSingleton<HeartbeatService>();
         services.AddTickerQ();
         services.AddSingleton<CronSchedulerTickerFunction>();
+        services.AddSingleton<AutomationRunCoordinator>();
+        services.AddSingleton<IAutomationRunDispatcher>(sp => sp.GetRequiredService<AutomationRunCoordinator>());
         services.AddSingleton<GatewayAutomationService>();
         services.AddSingleton<LearningService>();
         services.AddSingleton<ICronJobSource, GatewayCronJobSource>();
@@ -147,7 +149,8 @@ internal static class CoreServicesExtensions
                 sp.GetRequiredService<ICronJobSource>(),
                 sp.GetRequiredService<ILogger<CronScheduler>>(),
                 sp.GetRequiredService<IStartupNoticeSink>(),
-                sp.GetRequiredService<MessagePipeline>().InboundWriter));
+                sp.GetRequiredService<MessagePipeline>().InboundWriter,
+                sp.GetRequiredService<IAutomationRunDispatcher>()));
         services.AddSingleton<CronSchedulerStartupService>();
         services.AddHostedService(sp => sp.GetRequiredService<CronSchedulerStartupService>());
         services.AddSingleton(new WebSocketChannel(config.WebSocket));

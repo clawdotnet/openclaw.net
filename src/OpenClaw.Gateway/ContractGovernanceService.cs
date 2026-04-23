@@ -12,6 +12,8 @@ namespace OpenClaw.Gateway;
 /// </summary>
 internal sealed class ContractGovernanceService
 {
+    private static readonly TimeSpan VerificationHttpTimeout = TimeSpan.FromSeconds(15);
+
     private readonly GatewayStartupContext _startup;
     private readonly ContractStore _contractStore;
     private readonly RuntimeEventStore _runtimeEvents;
@@ -115,6 +117,8 @@ internal sealed class ContractGovernanceService
                 warnings.Add($"ScopedCapability for '{scope.ToolName}' has no allowed paths.");
         }
 
+        ValidateVerificationPolicy(policy.Verification, errors, warnings);
+
         var isValid = errors.Count == 0;
 
         return new ContractValidationResult
@@ -151,6 +155,7 @@ internal sealed class ContractGovernanceService
             MaxToolCalls = request.MaxToolCalls,
             MaxRuntimeSeconds = request.MaxRuntimeSeconds,
             CreatedBy = request.CreatedBy,
+            Verification = request.Verification,
             CreatedAtUtc = DateTimeOffset.UtcNow
         };
 
@@ -207,7 +212,11 @@ internal sealed class ContractGovernanceService
         session.ContractBaselineToolCalls = CountToolCalls(session);
         session.ContractAccumulatedCostUsd = 0m;
 
-        _contractStore.Append(BuildSnapshot(session, status: "active"));
+        _contractStore.Append(BuildSnapshot(
+            session,
+            status: "active",
+            lifecycleState: AutomationLifecycleStates.Running,
+            verificationStatus: AutomationVerificationStatuses.NotRun));
     }
 
     public decimal ComputeSessionCostUsd(Session session)
@@ -280,12 +289,93 @@ internal sealed class ContractGovernanceService
         return true;
     }
 
-    public void AppendSnapshot(Session session, string status)
+    public void DetachFromSession(Session session)
     {
         if (session.ContractPolicy is null)
             return;
 
-        _contractStore.Append(BuildSnapshot(session, status));
+        session.ContractPolicy = null;
+        session.ContractAttachedAtUtc = null;
+        session.ContractBaselineInputTokens = 0;
+        session.ContractBaselineOutputTokens = 0;
+        session.ContractBaselineToolCalls = 0;
+        session.ContractAccumulatedCostUsd = 0m;
+    }
+
+    public void AppendSnapshot(
+        Session session,
+        string status,
+        string? lifecycleState = null,
+        string? verificationStatus = null,
+        string? verificationSummary = null,
+        IReadOnlyList<VerificationCheckResult>? verificationChecks = null)
+    {
+        if (session.ContractPolicy is null)
+            return;
+
+        _contractStore.Append(BuildSnapshot(
+            session,
+            status,
+            lifecycleState,
+            verificationStatus,
+            verificationSummary,
+            verificationChecks));
+    }
+
+    public async Task<(string VerificationStatus, string? VerificationSummary, IReadOnlyList<VerificationCheckResult> Checks)> EvaluateVerificationAsync(
+        VerificationPolicy? policy,
+        CancellationToken ct)
+    {
+        if (policy?.Checks is not { Length: > 0 })
+        {
+            return (
+                AutomationVerificationStatuses.NotVerified,
+                "Run completed but no verification policy was configured.",
+                []);
+        }
+
+        var checks = new List<VerificationCheckResult>(policy.Checks.Length);
+        using var httpClient = new HttpClient
+        {
+            Timeout = VerificationHttpTimeout
+        };
+
+        foreach (var check in policy.Checks)
+        {
+            checks.Add(await EvaluateCheckAsync(check, httpClient, ct));
+        }
+
+        var failed = checks.Where(static item => string.Equals(item.Status, AutomationVerificationStatuses.Failed, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (failed.Length > 0)
+        {
+            return (
+                AutomationVerificationStatuses.Failed,
+                failed[0].Summary,
+                checks);
+        }
+
+        var blocked = checks.Where(static item => string.Equals(item.Status, AutomationVerificationStatuses.Blocked, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (blocked.Length > 0)
+        {
+            return (
+                AutomationVerificationStatuses.Blocked,
+                blocked[0].Summary,
+                checks);
+        }
+
+        var notVerified = checks.Where(static item => string.Equals(item.Status, AutomationVerificationStatuses.NotVerified, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (notVerified.Length > 0)
+        {
+            return (
+                AutomationVerificationStatuses.NotVerified,
+                notVerified[0].Summary,
+                checks);
+        }
+
+        return (
+            AutomationVerificationStatuses.Verified,
+            "All verification checks passed.",
+            checks);
     }
 
     /// <summary>
@@ -315,13 +405,27 @@ internal sealed class ContractGovernanceService
         return (policy.MaxCostUsd, currentCost, currentCost >= policy.MaxCostUsd);
     }
 
-    public ContractExecutionSnapshot BuildSnapshot(Session session, string status)
+    public ContractExecutionSnapshot BuildSnapshot(
+        Session session,
+        string status,
+        string? lifecycleState = null,
+        string? verificationStatus = null,
+        string? verificationSummary = null,
+        IReadOnlyList<VerificationCheckResult>? verificationChecks = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         if (session.ContractPolicy is null)
             throw new InvalidOperationException("Session does not have a contract policy.");
 
         var attachedAt = session.ContractAttachedAtUtc ?? session.ContractPolicy.CreatedAtUtc;
+        var normalizedLifecycle = string.IsNullOrWhiteSpace(lifecycleState)
+            ? (status is "completed" or "cancelled" or "budget_exceeded"
+                ? AutomationLifecycleStates.Completed
+                : AutomationLifecycleStates.Running)
+            : lifecycleState;
+        var normalizedVerification = string.IsNullOrWhiteSpace(verificationStatus)
+            ? AutomationVerificationStatuses.NotRun
+            : verificationStatus;
         return new ContractExecutionSnapshot
         {
             ContractId = session.ContractPolicy.Id,
@@ -332,7 +436,12 @@ internal sealed class ContractGovernanceService
             ToolCallCount = GetContractToolCallUsage(session),
             ElapsedSeconds = Math.Max(0, (DateTimeOffset.UtcNow - attachedAt).TotalSeconds),
             StartedAtUtc = attachedAt,
-            EndedAtUtc = status is "completed" or "cancelled" or "budget_exceeded" ? DateTimeOffset.UtcNow : null
+            EndedAtUtc = status is "completed" or "cancelled" or "budget_exceeded" ? DateTimeOffset.UtcNow : null,
+            LifecycleState = normalizedLifecycle,
+            VerificationStatus = normalizedVerification,
+            VerificationSummary = verificationSummary,
+            VerificationCompletedAtUtc = normalizedVerification == AutomationVerificationStatuses.NotRun ? null : DateTimeOffset.UtcNow,
+            VerificationChecks = verificationChecks ?? []
         };
     }
 
@@ -381,6 +490,169 @@ internal sealed class ContractGovernanceService
 
     private static int GetContractToolCallUsage(Session session)
         => Math.Max(0, CountToolCalls(session) - session.ContractBaselineToolCalls);
+
+    private static void ValidateVerificationPolicy(VerificationPolicy? policy, List<string> errors, List<string> warnings)
+    {
+        if (policy is null)
+            return;
+
+        var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < policy.Checks.Length; index++)
+        {
+            var check = policy.Checks[index];
+            var label = string.IsNullOrWhiteSpace(check.Id) ? $"Verification check #{index + 1}" : $"Verification check '{check.Id}'";
+
+            if (string.IsNullOrWhiteSpace(check.Id))
+                warnings.Add($"{label} is missing an explicit Id and may be harder to troubleshoot.");
+            else if (!seenIds.Add(check.Id))
+                errors.Add($"{label} reuses a duplicate Id.");
+
+            if (string.IsNullOrWhiteSpace(check.Kind))
+            {
+                errors.Add($"{label} is missing Kind.");
+                continue;
+            }
+
+            switch (check.Kind)
+            {
+                case VerificationKinds.FileExists:
+                    if (string.IsNullOrWhiteSpace(check.Path))
+                        errors.Add($"{label} requires Path.");
+                    break;
+                case VerificationKinds.FileContains:
+                    if (string.IsNullOrWhiteSpace(check.Path))
+                        errors.Add($"{label} requires Path.");
+                    if (string.IsNullOrWhiteSpace(check.Contains))
+                        errors.Add($"{label} requires Contains.");
+                    break;
+                case VerificationKinds.HttpStatus:
+                    if (string.IsNullOrWhiteSpace(check.Url))
+                        errors.Add($"{label} requires Url.");
+                    if (check.ExpectedStatusCode is null)
+                        errors.Add($"{label} requires ExpectedStatusCode.");
+                    break;
+                case VerificationKinds.HttpBodyContains:
+                    if (string.IsNullOrWhiteSpace(check.Url))
+                        errors.Add($"{label} requires Url.");
+                    if (string.IsNullOrWhiteSpace(check.Contains))
+                        errors.Add($"{label} requires Contains.");
+                    break;
+                case VerificationKinds.OperatorConfirm:
+                    break;
+                default:
+                    errors.Add($"{label} has unsupported Kind '{check.Kind}'.");
+                    break;
+            }
+        }
+    }
+
+    private static async Task<VerificationCheckResult> EvaluateCheckAsync(
+        VerificationCheckDefinition check,
+        HttpClient httpClient,
+        CancellationToken ct)
+    {
+        var checkId = string.IsNullOrWhiteSpace(check.Id) ? check.Kind : check.Id;
+        var kind = check.Kind ?? "";
+        try
+        {
+            switch (kind)
+            {
+                case VerificationKinds.FileExists:
+                {
+                    var path = check.Path!;
+                    var exists = File.Exists(path);
+                    return BuildCheckResult(
+                        checkId,
+                        kind,
+                        exists ? AutomationVerificationStatuses.Verified : AutomationVerificationStatuses.NotVerified,
+                        exists ? $"Verified file exists: {path}" : $"Expected file does not exist: {path}");
+                }
+                case VerificationKinds.FileContains:
+                {
+                    var path = check.Path!;
+                    if (!File.Exists(path))
+                    {
+                        return BuildCheckResult(
+                            checkId,
+                            kind,
+                            AutomationVerificationStatuses.NotVerified,
+                            $"Expected file does not exist: {path}");
+                    }
+
+                    var contents = await File.ReadAllTextAsync(path, ct);
+                    var contains = contents.Contains(check.Contains!, StringComparison.Ordinal);
+                    return BuildCheckResult(
+                        checkId,
+                        kind,
+                        contains ? AutomationVerificationStatuses.Verified : AutomationVerificationStatuses.NotVerified,
+                        contains
+                            ? $"Verified file '{path}' contains the expected text."
+                            : $"File '{path}' did not contain the expected text.");
+                }
+                case VerificationKinds.HttpStatus:
+                {
+                    using var response = await httpClient.GetAsync(check.Url!, ct);
+                    var matches = (int)response.StatusCode == check.ExpectedStatusCode;
+                    return BuildCheckResult(
+                        checkId,
+                        kind,
+                        matches ? AutomationVerificationStatuses.Verified : AutomationVerificationStatuses.NotVerified,
+                        matches
+                            ? $"Verified {check.Url} returned HTTP {check.ExpectedStatusCode}."
+                            : $"Expected HTTP {check.ExpectedStatusCode} from {check.Url}, got {(int)response.StatusCode}.");
+                }
+                case VerificationKinds.HttpBodyContains:
+                {
+                    using var response = await httpClient.GetAsync(check.Url!, ct);
+                    var body = await response.Content.ReadAsStringAsync(ct);
+                    var contains = body.Contains(check.Contains!, StringComparison.Ordinal);
+                    return BuildCheckResult(
+                        checkId,
+                        kind,
+                        contains ? AutomationVerificationStatuses.Verified : AutomationVerificationStatuses.NotVerified,
+                        contains
+                            ? $"Verified {check.Url} response body contains the expected text."
+                            : $"Response body from {check.Url} did not contain the expected text.");
+                }
+                case VerificationKinds.OperatorConfirm:
+                    return BuildCheckResult(
+                        checkId,
+                        kind,
+                        AutomationVerificationStatuses.Blocked,
+                        string.IsNullOrWhiteSpace(check.Prompt)
+                            ? "Operator confirmation is required to verify this run."
+                            : check.Prompt!);
+                default:
+                    return BuildCheckResult(
+                        checkId,
+                        kind,
+                        AutomationVerificationStatuses.Failed,
+                        $"Unsupported verification kind '{kind}'.");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return BuildCheckResult(
+                checkId,
+                kind,
+                AutomationVerificationStatuses.Failed,
+                $"Verification check '{checkId}' failed: {ex.Message}");
+        }
+    }
+
+    private static VerificationCheckResult BuildCheckResult(string checkId, string kind, string status, string summary)
+        => new()
+        {
+            CheckId = checkId,
+            Kind = kind,
+            Status = status,
+            Summary = summary,
+            EvaluatedAtUtc = DateTimeOffset.UtcNow
+        };
 
     private static int CountToolCalls(Session session)
         => session.History

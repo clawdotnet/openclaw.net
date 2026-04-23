@@ -10,6 +10,8 @@ public sealed record InboundMessage
     public string? AccountId { get; init; }
     public string? SessionId { get; init; }
     public string? CronJobName { get; init; }
+    public string? AutomationRunId { get; init; }
+    public string? AutomationTriggerSource { get; init; }
     public string? Type { get; init; }
     public required string Text { get; init; }
     public string? SenderName { get; init; }
@@ -47,6 +49,7 @@ public sealed record OutboundMessage
     public string? AccountId { get; init; }
     public string? SessionId { get; init; }
     public string? CronJobName { get; init; }
+    public string? AutomationRunId { get; init; }
     public string? Subject { get; init; }
     public string? ReplyToMessageId { get; init; }
 }

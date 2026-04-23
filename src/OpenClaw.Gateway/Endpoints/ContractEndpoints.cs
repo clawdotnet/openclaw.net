@@ -59,7 +59,8 @@ internal static class ContractEndpoints
                 SoftCostWarningUsd = request.SoftCostWarningUsd,
                 MaxTokens = request.MaxTokens,
                 MaxToolCalls = request.MaxToolCalls,
-                MaxRuntimeSeconds = request.MaxRuntimeSeconds
+                MaxRuntimeSeconds = request.MaxRuntimeSeconds,
+                Verification = request.Verification
             };
 
             var result = governance.ValidatePreFlight(policy, runtime.RegisteredToolNames);

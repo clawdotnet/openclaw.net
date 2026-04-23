@@ -400,6 +400,8 @@ public sealed class GatewayAdminEndpointTests
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
         var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var heartbeatService = harness.App.Services.GetRequiredService<HeartbeatService>();
+        var store = new FileFeatureStore(harness.StoragePath);
         var created = operatorAccounts.Create(new OperatorAccountCreateRequest
         {
             Username = "viewer-observe",
@@ -471,6 +473,33 @@ public sealed class GatewayAdminEndpointTests
         harness.Runtime.ProviderUsage.RecordError("openai", "gpt-4o");
         harness.Runtime.ProviderUsage.RecordRetry("openai", "gpt-4o");
 
+        await store.SaveAutomationAsync(new AutomationDefinition
+        {
+            Id = "auto-observability-fail",
+            Name = "Observability Failure",
+            Enabled = true,
+            Schedule = "@daily",
+            Prompt = "Report failures.",
+            DeliveryChannelId = "cron",
+            RetryPolicy = new AutomationRetryPolicy()
+        }, CancellationToken.None);
+        await store.SaveRunStateAsync(new AutomationRunState
+        {
+            AutomationId = "auto-observability-fail",
+            Outcome = AutomationVerificationStatuses.Failed,
+            LifecycleState = AutomationLifecycleStates.Completed,
+            VerificationStatus = AutomationVerificationStatuses.Failed,
+            HealthState = AutomationHealthStates.Degraded,
+            LastRunAtUtc = now.AddMinutes(-8),
+            LastCompletedAtUtc = now.AddMinutes(-8),
+            LastRunId = "run-observe-1",
+            FailureStreak = 1,
+            VerificationSummary = "Expected report file was missing."
+        }, CancellationToken.None);
+
+        var heartbeatSession = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("heartbeat-observe", "web", "viewer-observe", CancellationToken.None);
+        heartbeatService.RecordResult(heartbeatSession, "Urgent competitor alert", suppressed: false, inputTokenDelta: 12, outputTokenDelta: 34);
+
         var range = $"fromUtc={Uri.EscapeDataString(now.AddHours(-1).ToString("O"))}&toUtc={Uri.EscapeDataString(now.AddMinutes(1).ToString("O"))}";
         using var summaryRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/observability/summary?{range}");
         summaryRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token!.Token);
@@ -480,6 +509,7 @@ public sealed class GatewayAdminEndpointTests
         var cards = summaryPayload.RootElement.GetProperty("cards").EnumerateArray().ToArray();
         Assert.Contains(cards, item => item.GetProperty("id").GetString() == "operator-actions" && item.GetProperty("value").GetInt32() >= 1);
         Assert.Contains(cards, item => item.GetProperty("id").GetString() == "dead-letters" && item.GetProperty("value").GetInt32() >= 1);
+        Assert.Contains(cards, item => item.GetProperty("id").GetString() == "automation-failures" && item.GetProperty("value").GetInt32() == 1);
         Assert.Contains(
             summaryPayload.RootElement.GetProperty("operatorActions").EnumerateArray().Select(static item => item.GetProperty("label").GetString()).OfType<string>(),
             value => value == "approval_review");
@@ -492,6 +522,7 @@ public sealed class GatewayAdminEndpointTests
         var points = seriesPayload.RootElement.GetProperty("points").EnumerateArray().ToArray();
         Assert.NotEmpty(points);
         Assert.Contains(points, item => item.GetProperty("operatorActions").GetInt32() >= 1);
+        Assert.All(points, item => Assert.Equal(1, item.GetProperty("automationFailures").GetInt32()));
         var expectedProviderErrors = points[0].GetProperty("providerErrors").GetInt32();
         var expectedProviderRetries = points[0].GetProperty("providerRetries").GetInt32();
         Assert.All(points, item => Assert.Equal(expectedProviderErrors, item.GetProperty("providerErrors").GetInt32()));
@@ -2721,6 +2752,166 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task AutomationRunEndpoints_Replay_And_ClearQuarantine_Work()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var store = new FileFeatureStore(harness.StoragePath);
+
+        await store.SaveAutomationAsync(new AutomationDefinition
+        {
+            Id = "auto_run_history",
+            Name = "Run history automation",
+            Enabled = true,
+            Schedule = "@daily",
+            Prompt = "Summarize alerts.",
+            DeliveryChannelId = "cron",
+            RetryPolicy = new AutomationRetryPolicy()
+        }, CancellationToken.None);
+
+        await store.SaveRunStateAsync(new AutomationRunState
+        {
+            AutomationId = "auto_run_history",
+            Outcome = AutomationVerificationStatuses.Failed,
+            LifecycleState = AutomationLifecycleStates.Completed,
+            VerificationStatus = AutomationVerificationStatuses.Failed,
+            HealthState = AutomationHealthStates.Quarantined,
+            LastRunAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+            LastCompletedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-4),
+            LastRunId = "run-1",
+            FailureStreak = 3,
+            QuarantinedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-4),
+            QuarantineReason = "Repeated failures."
+        }, CancellationToken.None);
+        await store.SaveRunRecordAsync(new AutomationRunRecord
+        {
+            RunId = "run-1",
+            AutomationId = "auto_run_history",
+            TriggerSource = AutomationRunTriggerSources.Schedule,
+            LifecycleState = AutomationLifecycleStates.Completed,
+            VerificationStatus = AutomationVerificationStatuses.Failed,
+            VerificationSummary = "Expected file does not exist.",
+            StartedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+            CompletedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-4)
+        }, CancellationToken.None);
+
+        using var runsRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/automations/auto_run_history/runs");
+        runsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var runsResponse = await harness.Client.SendAsync(runsRequest);
+        Assert.Equal(HttpStatusCode.OK, runsResponse.StatusCode);
+        using var runsPayload = await ReadJsonAsync(runsResponse);
+        Assert.Equal(1, runsPayload.RootElement.GetProperty("items").GetArrayLength());
+
+        using var runDetailRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/automations/auto_run_history/runs/run-1");
+        runDetailRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var runDetailResponse = await harness.Client.SendAsync(runDetailRequest);
+        Assert.Equal(HttpStatusCode.OK, runDetailResponse.StatusCode);
+        using var runDetailPayload = await ReadJsonAsync(runDetailResponse);
+        Assert.Equal("run-1", runDetailPayload.RootElement.GetProperty("run").GetProperty("runId").GetString());
+
+        using var replayRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/automations/auto_run_history/runs/run-1/replay");
+        replayRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var replayResponse = await harness.Client.SendAsync(replayRequest);
+        Assert.Equal(HttpStatusCode.Accepted, replayResponse.StatusCode);
+        using var replayPayload = await ReadJsonAsync(replayResponse);
+        Assert.True(replayPayload.RootElement.GetProperty("success").GetBoolean());
+
+        var replayed = await harness.Runtime.Pipeline.InboundReader.ReadAsync(CancellationToken.None);
+        Assert.Equal("auto_run_history", replayed.CronJobName);
+        Assert.Equal(AutomationRunTriggerSources.Replay, replayed.AutomationTriggerSource);
+        Assert.False(string.IsNullOrWhiteSpace(replayed.AutomationRunId));
+
+        using var clearRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/automations/auto_run_history/quarantine/clear");
+        clearRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var clearResponse = await harness.Client.SendAsync(clearRequest);
+        Assert.Equal(HttpStatusCode.OK, clearResponse.StatusCode);
+
+        var clearedState = await store.GetRunStateAsync("auto_run_history", CancellationToken.None);
+        Assert.NotNull(clearedState);
+        Assert.Null(clearedState!.QuarantinedAtUtc);
+        Assert.Equal(0, clearedState.FailureStreak);
+    }
+
+    [Fact]
+    public async Task IntegrationAutomationRunEndpoints_Replay_And_ClearQuarantine_Work()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var store = new FileFeatureStore(harness.StoragePath);
+
+        await store.SaveAutomationAsync(new AutomationDefinition
+        {
+            Id = "auto_integration_runs",
+            Name = "Integration runs",
+            Enabled = true,
+            Schedule = "@daily",
+            Prompt = "Summarize changes.",
+            DeliveryChannelId = "cron",
+            RetryPolicy = new AutomationRetryPolicy()
+        }, CancellationToken.None);
+
+        await store.SaveRunStateAsync(new AutomationRunState
+        {
+            AutomationId = "auto_integration_runs",
+            Outcome = AutomationVerificationStatuses.Failed,
+            LifecycleState = AutomationLifecycleStates.Completed,
+            VerificationStatus = AutomationVerificationStatuses.Failed,
+            HealthState = AutomationHealthStates.Quarantined,
+            LastRunAtUtc = DateTimeOffset.UtcNow.AddMinutes(-6),
+            LastCompletedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+            LastRunId = "run-int-1",
+            FailureStreak = 3,
+            QuarantinedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+            QuarantineReason = "Repeated failures."
+        }, CancellationToken.None);
+        await store.SaveRunRecordAsync(new AutomationRunRecord
+        {
+            RunId = "run-int-1",
+            AutomationId = "auto_integration_runs",
+            TriggerSource = AutomationRunTriggerSources.Schedule,
+            LifecycleState = AutomationLifecycleStates.Completed,
+            VerificationStatus = AutomationVerificationStatuses.Failed,
+            VerificationSummary = "Expected endpoint returned 500.",
+            StartedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-6),
+            CompletedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5)
+        }, CancellationToken.None);
+
+        using var runsRequest = new HttpRequestMessage(HttpMethod.Get, "/api/integration/automations/auto_integration_runs/runs");
+        runsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var runsResponse = await harness.Client.SendAsync(runsRequest);
+        Assert.Equal(HttpStatusCode.OK, runsResponse.StatusCode);
+        using var runsPayload = await ReadJsonAsync(runsResponse);
+        Assert.Equal(1, runsPayload.RootElement.GetProperty("items").GetArrayLength());
+
+        using var runDetailRequest = new HttpRequestMessage(HttpMethod.Get, "/api/integration/automations/auto_integration_runs/runs/run-int-1");
+        runDetailRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var runDetailResponse = await harness.Client.SendAsync(runDetailRequest);
+        Assert.Equal(HttpStatusCode.OK, runDetailResponse.StatusCode);
+        using var runDetailPayload = await ReadJsonAsync(runDetailResponse);
+        Assert.Equal("run-int-1", runDetailPayload.RootElement.GetProperty("run").GetProperty("runId").GetString());
+
+        using var replayRequest = new HttpRequestMessage(HttpMethod.Post, "/api/integration/automations/auto_integration_runs/runs/run-int-1/replay");
+        replayRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var replayResponse = await harness.Client.SendAsync(replayRequest);
+        Assert.Equal(HttpStatusCode.Accepted, replayResponse.StatusCode);
+        using var replayPayload = await ReadJsonAsync(replayResponse);
+        Assert.True(replayPayload.RootElement.GetProperty("success").GetBoolean());
+
+        var replayed = await harness.Runtime.Pipeline.InboundReader.ReadAsync(CancellationToken.None);
+        Assert.Equal("auto_integration_runs", replayed.CronJobName);
+        Assert.Equal(AutomationRunTriggerSources.Replay, replayed.AutomationTriggerSource);
+        Assert.False(string.IsNullOrWhiteSpace(replayed.AutomationRunId));
+
+        using var clearRequest = new HttpRequestMessage(HttpMethod.Post, "/api/integration/automations/auto_integration_runs/quarantine/clear");
+        clearRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var clearResponse = await harness.Client.SendAsync(clearRequest);
+        Assert.Equal(HttpStatusCode.OK, clearResponse.StatusCode);
+
+        var clearedState = await store.GetRunStateAsync("auto_integration_runs", CancellationToken.None);
+        Assert.NotNull(clearedState);
+        Assert.Null(clearedState!.QuarantinedAtUtc);
+        Assert.Equal(0, clearedState.FailureStreak);
+    }
+
+    [Fact]
     public async Task Mcp_Initialize_List_And_Call_AreServed()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -3624,7 +3815,11 @@ public sealed class GatewayAdminEndpointTests
             "/api/integration/automations",
             "/api/integration/automations/templates",
             "/api/integration/automations/{id}",
+            "/api/integration/automations/{id}/runs",
+            "/api/integration/automations/{id}/runs/{runId}",
             "/api/integration/automations/{id}/run",
+            "/api/integration/automations/{id}/runs/{runId}/replay",
+            "/api/integration/automations/{id}/quarantine/clear",
             "/api/integration/runtime-events",
             "/api/integration/messages",
             "/mcp/",
@@ -3677,7 +3872,11 @@ public sealed class GatewayAdminEndpointTests
             "/admin/automations/templates",
             "/admin/automations/preview",
             "/admin/automations/{id}",
+            "/admin/automations/{id}/runs",
+            "/admin/automations/{id}/runs/{runId}",
             "/admin/automations/{id}/run",
+            "/admin/automations/{id}/runs/{runId}/replay",
+            "/admin/automations/{id}/quarantine/clear",
             "/admin/learning/proposals",
             "/admin/learning/proposals/{id}",
             "/admin/channels/auth",

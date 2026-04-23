@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using NCrontab;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using TickerQ.Utilities;
@@ -18,14 +19,21 @@ public sealed class CronScheduler
     private readonly ILogger<CronScheduler> _logger;
     private readonly IStartupNoticeSink _startupNoticeSink;
     private readonly ChannelWriter<InboundMessage> _pipelineChannel;
+    private readonly IAutomationRunDispatcher? _runDispatcher;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _runningJobs = new(StringComparer.OrdinalIgnoreCase);
 
-    public CronScheduler(ICronJobSource jobSource, ILogger<CronScheduler> logger, IStartupNoticeSink startupNoticeSink, ChannelWriter<InboundMessage> pipelineChannel)
+    public CronScheduler(
+        ICronJobSource jobSource,
+        ILogger<CronScheduler> logger,
+        IStartupNoticeSink startupNoticeSink,
+        ChannelWriter<InboundMessage> pipelineChannel,
+        IAutomationRunDispatcher? runDispatcher = null)
     {
         _jobSource = jobSource;
         _logger = logger;
         _startupNoticeSink = startupNoticeSink;
         _pipelineChannel = pipelineChannel;
+        _runDispatcher = runDispatcher;
     }
 
     public async Task RunStartupJobsAsync(CancellationToken stoppingToken)
@@ -125,7 +133,9 @@ public sealed class CronScheduler
 
         try
         {
-            await EnqueueJobAsync(job, ct);
+            var queued = await EnqueueJobAsync(job, ct);
+            if (!queued)
+                _runningJobs.TryRemove(jobName, out _);
         }
         catch
         {
@@ -134,16 +144,38 @@ public sealed class CronScheduler
         }
     }
 
-    private async ValueTask EnqueueJobAsync(CronJobConfig job, CancellationToken ct)
+    private async ValueTask<bool> EnqueueJobAsync(CronJobConfig job, CancellationToken ct)
     {
-        var sessionId = job.SessionId ?? $"cron:{job.Name}";
+        var sessionId = string.IsNullOrWhiteSpace(job.SessionId)
+            ? $"cron:{(string.IsNullOrWhiteSpace(job.Name) ? "system" : job.Name)}"
+            : job.SessionId;
         var channelId = job.ChannelId ?? "cron";
 
         // If a delivery RecipientId is explicitly set, send responses to that recipient.
         // Otherwise, set a stable "pseudo recipient" so the cron channel can bucket outputs per job/session.
         var senderId = job.RecipientId ?? sessionId ?? job.Name ?? "system";
 
-        var msg = new InboundMessage
+        InboundMessage? msg = null;
+        if (_runDispatcher is not null && !string.IsNullOrWhiteSpace(job.AutomationId))
+        {
+            msg = await _runDispatcher.PrepareDispatchAsync(new AutomationDispatchRequest
+            {
+                AutomationId = job.AutomationId!,
+                TriggerSource = string.IsNullOrWhiteSpace(job.AutomationTriggerSource)
+                    ? AutomationRunTriggerSources.Schedule
+                    : job.AutomationTriggerSource!,
+                SessionId = sessionId!,
+                ChannelId = channelId,
+                SenderId = senderId!,
+                Prompt = job.Prompt,
+                Subject = job.Subject ?? (string.IsNullOrWhiteSpace(job.Name) ? null : $"OpenClaw Cron: {job.Name}")
+            }, ct);
+
+            if (msg is null)
+                return false;
+        }
+
+        msg ??= new InboundMessage
         {
             IsSystem = true,
             SessionId = sessionId,
@@ -155,6 +187,7 @@ public sealed class CronScheduler
         };
 
         await _pipelineChannel.WriteAsync(msg, ct);
+        return true;
     }
 
     /// <summary>

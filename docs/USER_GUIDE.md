@@ -385,6 +385,7 @@ For memory and learning operations, the admin API now also supports:
 - browsing the currently loaded skills with trust level, required env/config/bin dependencies, and command dispatch metadata
 - browsing the pinned public compatibility catalog with pass/fail scenarios, install guidance, config examples, and expected diagnostics
 - using the built-in operator dashboard to inspect session volume, approval pressure, automation health, memory activity, delegation usage, channel readiness, and plugin trust in one view
+- inspecting automation run history with separate lifecycle, verification, and health states, then replaying a past run or clearing automation quarantine from the operator surface
 - inspecting a session's delegated child agents, delegated tool usage, and proposed changes directly from the session detail pane
 - promoting a successful session into a disabled automation draft, a scoped provider policy, or a pending skill draft proposal without leaving the admin UI
 - using the built-in automation center to apply reusable templates such as inbox triage, daily summary, incident follow-up, channel moderation, and repo hygiene
@@ -436,6 +437,7 @@ Current integration API coverage includes:
 - provider and plugin health snapshots
 - operator audit events
 - session lists, session detail, and session timelines
+- automation definitions, latest run state, per-run history, replay, and quarantine clearing
 - runtime event queries
 - message enqueueing
 

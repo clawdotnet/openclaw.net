@@ -601,6 +601,8 @@ public sealed class CronJobConfig
     public string? ChannelId { get; set; }
     public string? RecipientId { get; set; }
     public string? Subject { get; set; }
+    public string? AutomationId { get; set; }
+    public string? AutomationTriggerSource { get; set; }
 
     /// <summary>IANA timezone ID (e.g. "America/New_York"). Null defaults to UTC.</summary>
     public string? Timezone { get; set; }

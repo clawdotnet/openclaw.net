@@ -1147,6 +1147,51 @@ internal static class AdminEndpoints
                 CoreJsonContext.Default.IntegrationAutomationDetailResponse);
         });
 
+        app.MapGet("/admin/automations/{id}/runs", async (HttpContext ctx, string id) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.automations.detail");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var automation = await automationService.GetAsync(id, ctx.RequestAborted);
+            if (automation is null)
+                return Results.NotFound(new MutationResponse { Success = false, Error = "Automation not found." });
+
+            return Results.Json(
+                new IntegrationAutomationRunsResponse
+                {
+                    AutomationId = id,
+                    RunState = await automationService.GetRunStateAsync(id, ctx.RequestAborted),
+                    Items = await automationService.ListRunRecordsAsync(id, 50, ctx.RequestAborted)
+                },
+                CoreJsonContext.Default.IntegrationAutomationRunsResponse);
+        });
+
+        app.MapGet("/admin/automations/{id}/runs/{runId}", async (HttpContext ctx, string id, string runId) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.automations.detail");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var automation = await automationService.GetAsync(id, ctx.RequestAborted);
+            if (automation is null)
+                return Results.NotFound(new MutationResponse { Success = false, Error = "Automation not found." });
+
+            var run = await automationService.GetRunRecordAsync(id, runId, ctx.RequestAborted);
+            if (run is null)
+                return Results.NotFound(new MutationResponse { Success = false, Error = "Automation run not found." });
+
+            return Results.Json(
+                new IntegrationAutomationRunDetailResponse
+                {
+                    AutomationId = id,
+                    Automation = automation,
+                    RunState = await automationService.GetRunStateAsync(id, ctx.RequestAborted),
+                    Run = run
+                },
+                CoreJsonContext.Default.IntegrationAutomationRunDetailResponse);
+        });
+
         app.MapPut("/admin/automations/{id}", async (HttpContext ctx, string id) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.automations.mutate");
@@ -1179,6 +1224,8 @@ internal static class AdminEndpoints
                 IsDraft = automation.IsDraft,
                 Source = automation.Source,
                 TemplateKey = automation.TemplateKey,
+                Verification = automation.Verification,
+                RetryPolicy = automation.RetryPolicy,
                 CreatedAtUtc = automation.CreatedAtUtc,
                 UpdatedAtUtc = automation.UpdatedAtUtc
             }, ctx.RequestAborted);
@@ -1225,6 +1272,32 @@ internal static class AdminEndpoints
                 result,
                 CoreJsonContext.Default.MutationResponse,
                 statusCode: result.Success ? StatusCodes.Status202Accepted : StatusCodes.Status400BadRequest);
+        });
+
+        app.MapPost("/admin/automations/{id}/runs/{runId}/replay", async (HttpContext ctx, string id, string runId) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.automations.run");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var result = await facade.ReplayAutomationRunAsync(id, runId, ctx.RequestAborted);
+            return Results.Json(
+                result,
+                CoreJsonContext.Default.MutationResponse,
+                statusCode: result.Success ? StatusCodes.Status202Accepted : StatusCodes.Status400BadRequest);
+        });
+
+        app.MapPost("/admin/automations/{id}/quarantine/clear", async (HttpContext ctx, string id) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.automations.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var result = await facade.ClearAutomationQuarantineAsync(id, ctx.RequestAborted);
+            return Results.Json(
+                result,
+                CoreJsonContext.Default.MutationResponse,
+                statusCode: result.Success ? StatusCodes.Status200OK : StatusCodes.Status404NotFound);
         });
 
         app.MapDelete("/admin/automations/{id}", async (HttpContext ctx, string id) =>

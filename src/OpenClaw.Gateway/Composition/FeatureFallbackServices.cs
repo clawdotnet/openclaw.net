@@ -3,6 +3,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Features;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
+using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 
 namespace OpenClaw.Gateway.Composition;
@@ -29,7 +31,18 @@ internal static class FeatureFallbackServices
            ?? new GatewayAutomationService(
                startup.Config,
                services.GetService<IAutomationStore>() ?? fallbackFeatureStore,
-               heartbeat);
+               heartbeat,
+               services.GetService<AutomationRunCoordinator>()
+               ?? new AutomationRunCoordinator(
+                   services.GetService<IAutomationStore>() ?? fallbackFeatureStore,
+                   services.GetService<ContractGovernanceService>()
+                   ?? new ContractGovernanceService(
+                       startup,
+                       new ContractStore(startup.Config.Memory.StoragePath, NullLogger<ContractStore>.Instance),
+                       new RuntimeEventStore(startup.Config.Memory.StoragePath, NullLogger<RuntimeEventStore>.Instance),
+                       services.GetService<ProviderUsageTracker>() ?? new ProviderUsageTracker(),
+                       NullLogger<ContractGovernanceService>.Instance),
+                   NullLogger<AutomationRunCoordinator>.Instance));
 
     public static LearningService ResolveLearningService(
         GatewayStartupContext startup,

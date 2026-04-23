@@ -701,7 +701,7 @@ internal static class RuntimeInitializationExtensions
             IsContractTokenBudgetExceeded = contractGovernance.IsTokenBudgetExceeded,
             IsContractRuntimeBudgetExceeded = contractGovernance.IsRuntimeBudgetExceeded,
             RecordContractTurnUsage = contractGovernance.RecordTurnUsage,
-            AppendContractSnapshot = contractGovernance.AppendSnapshot
+            AppendContractSnapshot = (session, status) => contractGovernance.AppendSnapshot(session, status)
         });
     }
 

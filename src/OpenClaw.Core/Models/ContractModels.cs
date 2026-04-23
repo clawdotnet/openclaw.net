@@ -1,5 +1,39 @@
 namespace OpenClaw.Core.Models;
 
+public static class VerificationKinds
+{
+    public const string FileExists = "file_exists";
+    public const string FileContains = "file_contains";
+    public const string HttpStatus = "http_status";
+    public const string HttpBodyContains = "http_body_contains";
+    public const string OperatorConfirm = "operator_confirm";
+}
+
+public sealed class VerificationPolicy
+{
+    public VerificationCheckDefinition[] Checks { get; init; } = [];
+}
+
+public sealed class VerificationCheckDefinition
+{
+    public string Id { get; init; } = "";
+    public string Kind { get; init; } = "";
+    public string? Path { get; init; }
+    public string? Url { get; init; }
+    public string? Contains { get; init; }
+    public int? ExpectedStatusCode { get; init; }
+    public string? Prompt { get; init; }
+}
+
+public sealed class VerificationCheckResult
+{
+    public string CheckId { get; init; } = "";
+    public string Kind { get; init; } = "";
+    public string Status { get; init; } = AutomationVerificationStatuses.NotRun;
+    public string Summary { get; init; } = "";
+    public DateTimeOffset EvaluatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+}
+
 /// <summary>
 /// Optional governance policy that can be attached to a session to enforce
 /// pre-flight capability validation, USD cost budgets, and scoped tool access.
@@ -38,6 +72,9 @@ public sealed class ContractPolicy
 
     /// <summary>Who created this contract (operator, API caller, etc.).</summary>
     public string? CreatedBy { get; init; }
+
+    /// <summary>Optional post-run verification checks for truthful completion reporting.</summary>
+    public VerificationPolicy? Verification { get; init; }
 
     public DateTimeOffset CreatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
 }
@@ -85,4 +122,9 @@ public sealed class ContractExecutionSnapshot
     public double ElapsedSeconds { get; init; }
     public DateTimeOffset StartedAtUtc { get; init; }
     public DateTimeOffset? EndedAtUtc { get; init; }
+    public string LifecycleState { get; init; } = AutomationLifecycleStates.Running;
+    public string VerificationStatus { get; init; } = AutomationVerificationStatuses.NotRun;
+    public string? VerificationSummary { get; init; }
+    public DateTimeOffset? VerificationCompletedAtUtc { get; init; }
+    public IReadOnlyList<VerificationCheckResult> VerificationChecks { get; init; } = [];
 }

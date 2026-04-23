@@ -18,6 +18,7 @@ public sealed class ContractCreateRequest
     public int MaxToolCalls { get; init; }
     public int MaxRuntimeSeconds { get; init; }
     public string? CreatedBy { get; init; }
+    public VerificationPolicy? Verification { get; init; }
 }
 
 /// <summary>
@@ -42,6 +43,7 @@ public sealed class ContractValidateRequest
     public long MaxTokens { get; init; }
     public int MaxToolCalls { get; init; }
     public int MaxRuntimeSeconds { get; init; }
+    public VerificationPolicy? Verification { get; init; }
 }
 
 /// <summary>
