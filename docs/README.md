@@ -17,6 +17,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | --- | --- |
 | [USER_GUIDE.md](USER_GUIDE.md) | Providers, tools, skills, channels, and the day-to-day operator surface. |
 | [TOOLS_GUIDE.md](TOOLS_GUIDE.md) | Native tool catalog, behavior, and configuration. |
+| [SESSIONS.md](SESSIONS.md) | Session lifecycle, the `SessionManager`, and the `sessions_spawn` / `sessions_yield` / `sessions` tools. |
 | [MODEL_PROFILES.md](MODEL_PROFILES.md) | Provider-agnostic named model profiles, including Gemma-family setups. |
 | [PROMPT_CACHING.md](PROMPT_CACHING.md) | Provider-aware prompt caching hints, dialects, diagnostics. |
 
