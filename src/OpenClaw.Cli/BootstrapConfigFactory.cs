@@ -15,6 +15,7 @@ internal static class BootstrapConfigFactory
         string provider,
         string model,
         string apiKey,
+        string? modelPresetId = null,
         List<string>? warnings = null)
     {
         return CoreGatewaySetupProfileFactory.CreateProfileConfig(
@@ -27,6 +28,7 @@ internal static class BootstrapConfigFactory
             provider,
             model,
             apiKey,
+            modelPresetId,
             warnings);
     }
 

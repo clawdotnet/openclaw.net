@@ -10,6 +10,7 @@ public sealed class OperatorDashboardSnapshot
     public required DashboardDelegationSummary Delegation { get; init; }
     public required DashboardChannelSummary Channels { get; init; }
     public required DashboardPluginSummary Plugins { get; init; }
+    public ReliabilitySnapshot Reliability { get; init; } = new();
 }
 
 public sealed class DashboardNamedMetric

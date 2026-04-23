@@ -139,6 +139,59 @@ public sealed class SetupCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_NonInteractiveOllamaPreset_WritesPresetBackedLocalProfile()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var configPath = Path.Combine(root, "config", "openclaw.ollama.json");
+            var workspace = Path.Combine(root, "workspace");
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+
+            var exitCode = await SetupCommand.RunAsync(
+                [
+                    "--non-interactive",
+                    "--profile", "local",
+                    "--config", configPath,
+                    "--workspace", workspace,
+                    "--provider", "ollama",
+                    "--model", "llama3.2",
+                    "--model-preset", "ollama-general"
+                ],
+                new StringReader(string.Empty),
+                output,
+                error,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(configPath));
+            var openClaw = document.RootElement.GetProperty("OpenClaw");
+            Assert.Equal("ollama", openClaw.GetProperty("llm").GetProperty("provider").GetString());
+            Assert.Equal("llama3.2", openClaw.GetProperty("llm").GetProperty("model").GetString());
+            Assert.Equal("http://127.0.0.1:11434", openClaw.GetProperty("llm").GetProperty("endpoint").GetString());
+
+            var models = openClaw.GetProperty("models");
+            Assert.Equal("local-primary", models.GetProperty("defaultProfile").GetString());
+            var profile = Assert.Single(models.GetProperty("profiles").EnumerateArray());
+            Assert.Equal("local-primary", profile.GetProperty("id").GetString());
+            Assert.Equal("ollama-general", profile.GetProperty("presetId").GetString());
+            Assert.Equal("http://127.0.0.1:11434", profile.GetProperty("baseUrl").GetString());
+
+            var envExample = await File.ReadAllTextAsync(Path.Combine(root, "config", "openclaw.ollama.env.example"));
+            Assert.DoesNotContain("MODEL_PROVIDER_KEY=replace-me", envExample, StringComparison.Ordinal);
+            Assert.Contains($"OPENCLAW_WORKSPACE={workspace}", envExample, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_NonInteractiveWithoutProfile_FailsFast()
     {
         var root = CreateTempRoot();

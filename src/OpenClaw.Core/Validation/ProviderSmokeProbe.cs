@@ -148,8 +148,9 @@ public static class ProviderSmokeProbe
     {
         return provider switch
         {
-            "openai" or "openai-compatible" or "groq" or "together" or "lmstudio" or "ollama" or "azure-openai"
+            "openai" or "openai-compatible" or "groq" or "together" or "lmstudio" or "azure-openai"
                 => BuildOpenAiStyleRequest(provider, config, apiKey),
+            "ollama" => BuildOllamaRequest(config),
             "anthropic" or "claude" or "anthropic-vertex" or "amazon-bedrock"
                 => BuildAnthropicStyleRequest(provider, config, apiKey),
             "gemini" or "google"
@@ -166,7 +167,6 @@ public static class ProviderSmokeProbe
             "groq" => AppendPath(config.Endpoint, "https://api.groq.com/openai/v1", "chat/completions"),
             "together" => AppendPath(config.Endpoint, "https://api.together.xyz/v1", "chat/completions"),
             "lmstudio" => AppendPath(config.Endpoint, "http://127.0.0.1:1234/v1", "chat/completions"),
-            "ollama" => AppendPath(config.Endpoint, "http://127.0.0.1:11434/v1", "chat/completions"),
             "azure-openai" => AppendPath(config.Endpoint, null, "chat/completions"),
             _ => AppendPath(config.Endpoint, null, "chat/completions")
         };
@@ -182,6 +182,16 @@ public static class ProviderSmokeProbe
             {"model":"{{EscapeJson(config.Model)}}","messages":[{"role":"user","content":"Reply with READY."}],"temperature":0,"max_tokens":8}
             """);
         return request;
+    }
+
+    private static HttpRequestMessage BuildOllamaRequest(LlmProviderConfig config)
+    {
+        var endpoint = $"{OllamaEndpointNormalizer.NormalizeBaseUrl(config.Endpoint).TrimEnd('/')}/api/chat";
+        return new HttpRequestMessage(HttpMethod.Post, endpoint)
+        {
+            Content = BuildJsonContent(
+                $"{{\"model\":\"{EscapeJson(config.Model)}\",\"stream\":false,\"messages\":[{{\"role\":\"user\",\"content\":\"Reply with READY.\"}}],\"options\":{{\"temperature\":0,\"num_predict\":8}}}}")
+        };
     }
 
     private static HttpRequestMessage BuildAnthropicStyleRequest(string provider, LlmProviderConfig config, string? apiKey)

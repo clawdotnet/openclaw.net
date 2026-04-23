@@ -176,6 +176,17 @@ internal sealed class DefaultModelSelectionPolicy : IModelSelectionPolicy
         if (request.Messages.SelectMany(static message => message.Contents).OfType<UriContent>().Any(static content => HasMediaPrefix(content.MediaType, "audio/")))
             combined.SupportsAudioInput = true;
 
+        var reservedOutputTokens = request.ReservedOutputTokens ?? 0;
+        var estimatedInputTokens = request.EstimatedInputTokens ?? 0;
+        var requiredContextTokens = estimatedInputTokens + reservedOutputTokens;
+        if (requiredContextTokens > 0)
+        {
+            var capped = (int)Math.Min(int.MaxValue, requiredContextTokens);
+            combined.MinContextTokens = combined.MinContextTokens.HasValue
+                ? Math.Max(combined.MinContextTokens.Value, capped)
+                : capped;
+        }
+
         return combined;
     }
 

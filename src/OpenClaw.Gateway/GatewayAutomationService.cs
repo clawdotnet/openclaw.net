@@ -534,12 +534,17 @@ internal sealed class GatewayAutomationService
             Timezone = string.IsNullOrWhiteSpace(automation.Timezone) ? null : automation.Timezone.Trim(),
             Prompt = automation.Prompt ?? "",
             ModelId = string.IsNullOrWhiteSpace(automation.ModelId) ? null : automation.ModelId.Trim(),
+            ResponseMode = NormalizeResponseMode(automation.ResponseMode),
             RunOnStartup = automation.RunOnStartup,
             SessionId = string.IsNullOrWhiteSpace(automation.SessionId) ? null : automation.SessionId.Trim(),
             DeliveryChannelId = string.IsNullOrWhiteSpace(automation.DeliveryChannelId) ? "cron" : automation.DeliveryChannelId.Trim(),
             DeliveryRecipientId = string.IsNullOrWhiteSpace(automation.DeliveryRecipientId) ? null : automation.DeliveryRecipientId.Trim(),
             DeliverySubject = string.IsNullOrWhiteSpace(automation.DeliverySubject) ? null : automation.DeliverySubject.Trim(),
-            Tags = automation.Tags.Where(static item => !string.IsNullOrWhiteSpace(item)).Select(static item => item.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            Tags = (automation.Tags ?? [])
+                .Where(static item => !string.IsNullOrWhiteSpace(item))
+                .Select(static item => item.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
             IsDraft = automation.IsDraft,
             Source = string.IsNullOrWhiteSpace(automation.Source) ? "managed" : automation.Source.Trim(),
             TemplateKey = string.IsNullOrWhiteSpace(automation.TemplateKey) ? null : automation.TemplateKey.Trim(),
@@ -561,6 +566,7 @@ internal sealed class GatewayAutomationService
             Prompt = job.Prompt ?? "",
             RunOnStartup = job.RunOnStartup,
             SessionId = job.SessionId,
+            ResponseMode = SessionResponseModes.ConciseOps,
             DeliveryChannelId = string.IsNullOrWhiteSpace(job.ChannelId) ? "cron" : job.ChannelId!,
             DeliveryRecipientId = job.RecipientId,
             DeliverySubject = job.Subject,
@@ -580,6 +586,7 @@ internal sealed class GatewayAutomationService
             Timezone = config.Timezone,
             Prompt = _heartbeat.BuildManagedPrompt(config, _heartbeat.RenderMarkdown(config)),
             ModelId = config.ModelId,
+            ResponseMode = SessionResponseModes.ConciseOps,
             DeliveryChannelId = config.DeliveryChannelId,
             DeliveryRecipientId = config.DeliveryRecipientId,
             DeliverySubject = config.DeliverySubject,
@@ -648,5 +655,17 @@ internal sealed class GatewayAutomationService
         if (string.Equals(schedule, "@monthly", StringComparison.OrdinalIgnoreCase))
             return 1;
         return 30;
+    }
+
+    private static string NormalizeResponseMode(string? responseMode)
+    {
+        var normalized = responseMode?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            SessionResponseModes.Default => SessionResponseModes.Default,
+            SessionResponseModes.ConciseOps => SessionResponseModes.ConciseOps,
+            SessionResponseModes.Full => SessionResponseModes.Full,
+            _ => SessionResponseModes.Default
+        };
     }
 }

@@ -117,6 +117,29 @@ That preflight now also captures a last-known-good snapshot of the generated con
 openclaw upgrade rollback --config ~/.openclaw/config/openclaw.settings.json --offline
 ```
 
+For a local Ollama-first setup, keep the native root endpoint and choose an explicit preset instead of the legacy `/v1` shim:
+
+```bash
+openclaw setup --non-interactive \
+  --profile local \
+  --workspace ./workspace \
+  --provider ollama \
+  --model llama3.2 \
+  --model-preset ollama-general
+
+openclaw models presets
+openclaw models doctor
+```
+
+The doctor now warns when an Ollama profile still points at `/v1` or when a local agentic profile is missing a deterministic fallback.
+
+After the first successful run, use the maintenance surface to keep the install healthy without touching user-authored prompt files:
+
+```bash
+openclaw maintenance scan --config ~/.openclaw/config/openclaw.settings.json
+openclaw maintenance fix --config ~/.openclaw/config/openclaw.settings.json --dry-run
+```
+
 Default local endpoints:
 
 - Web UI: `http://127.0.0.1:18789/chat`
@@ -131,6 +154,7 @@ Important:
 - the browser chat UI is `/chat`, not the root URL
 - the admin UI is `http://127.0.0.1:18789/admin`
 - the ready banner also prints `Ctrl-C to stop`, startup notices, and follow-up commands
+- operational sessions can use `/concise on|off|auto` to control terse repair and automation-style responses
 
 ## Public / Reverse Proxy Start
 

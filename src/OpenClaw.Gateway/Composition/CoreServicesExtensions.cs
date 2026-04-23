@@ -122,6 +122,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton<AutomationRunCoordinator>();
         services.AddSingleton<IAutomationRunDispatcher>(sp => sp.GetRequiredService<AutomationRunCoordinator>());
         services.AddSingleton<GatewayAutomationService>();
+        services.AddSingleton<GatewayMaintenanceRuntimeService>();
         services.AddSingleton<LearningService>();
         services.AddSingleton<ICronJobSource, GatewayCronJobSource>();
         services.AddSingleton<ActorRateLimitService>(sp =>

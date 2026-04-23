@@ -626,20 +626,32 @@ internal static class GatewayWorkers
                                 await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_start", "", msg.MessageId, processingCt);
 
                                 AgentStreamEvent? doneEvent = null;
-                                await foreach (var evt in agentRuntime.RunStreamingAsync(
-                                    session, messageText, processingCt, approvalCallback: approvalCallback))
-                                {
-                                    if (string.Equals(evt.EnvelopeType, "assistant_done", StringComparison.Ordinal))
-                                    {
-                                        doneEvent = evt;
-                                        continue;
-                                    }
+                                var originalResponseMode = session.ResponseMode;
+                                var effectiveResponseMode = ResolveOperationalResponseMode(session, automation);
+                                if (!string.IsNullOrWhiteSpace(effectiveResponseMode))
+                                    session.ResponseMode = effectiveResponseMode!;
 
-                                    await wsChannel.SendStreamEventAsync(
-                                        msg.SenderId,
-                                        evt,
-                                        msg.MessageId,
-                                        processingCt);
+                                try
+                                {
+                                    await foreach (var evt in agentRuntime.RunStreamingAsync(
+                                        session, messageText, processingCt, approvalCallback: approvalCallback))
+                                    {
+                                        if (string.Equals(evt.EnvelopeType, "assistant_done", StringComparison.Ordinal))
+                                        {
+                                            doneEvent = evt;
+                                            continue;
+                                        }
+
+                                        await wsChannel.SendStreamEventAsync(
+                                            msg.SenderId,
+                                            evt,
+                                            msg.MessageId,
+                                            processingCt);
+                                    }
+                                }
+                                finally
+                                {
+                                    session.ResponseMode = originalResponseMode;
                                 }
                                 await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
                                 if (learningService is not null)
@@ -711,7 +723,21 @@ internal static class GatewayWorkers
                                     bridgedTypingStarted = true;
                                 }
 
-                                var responseText = await agentRuntime.RunAsync(session, messageText, processingCt, approvalCallback: approvalCallback);
+                                var originalResponseMode = session.ResponseMode;
+                                var effectiveResponseMode = ResolveOperationalResponseMode(session, automation);
+                                if (!string.IsNullOrWhiteSpace(effectiveResponseMode))
+                                    session.ResponseMode = effectiveResponseMode!;
+
+                                string responseText;
+                                try
+                                {
+                                    responseText = await agentRuntime.RunAsync(session, messageText, processingCt, approvalCallback: approvalCallback);
+                                }
+                                finally
+                                {
+                                    session.ResponseMode = originalResponseMode;
+                                }
+
                                 await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
                                 if (learningService is not null)
                                     await learningService.ObserveSessionAsync(session, processingCt);
@@ -953,6 +979,25 @@ internal static class GatewayWorkers
             return null;
 
         return CancellationTokenSource.CreateLinkedTokenSource(requestCancellation, appStopping);
+    }
+
+    private static string? ResolveOperationalResponseMode(Session session, AutomationDefinition? automation)
+    {
+        if (automation is not null)
+        {
+            if (string.Equals(automation.ResponseMode, SessionResponseModes.Full, StringComparison.OrdinalIgnoreCase))
+                return SessionResponseModes.Full;
+
+            return SessionResponseModes.ConciseOps;
+        }
+
+        if (session.ContractPolicy is not null &&
+            string.Equals(session.ResponseMode, SessionResponseModes.Default, StringComparison.OrdinalIgnoreCase))
+        {
+            return SessionResponseModes.ConciseOps;
+        }
+
+        return null;
     }
 
     private static void ObserveBackgroundTask(Task task, ILogger logger, string operation)

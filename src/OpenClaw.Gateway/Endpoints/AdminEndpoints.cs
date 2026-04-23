@@ -52,6 +52,8 @@ internal static class AdminEndpoints
             ?? new SessionMetadataStore(startup.Config.Memory.StoragePath, NullLogger<SessionMetadataStore>.Instance);
         var toolPresetResolver = new ToolPresetResolver(startup.Config, sessionMetadataStore);
         var observability = new AdminObservabilityService(startup, runtime, automationService, organizationPolicy);
+        var maintenance = app.Services.GetService<GatewayMaintenanceRuntimeService>()
+            ?? new GatewayMaintenanceRuntimeService(startup, runtime, automationService);
         var sessionAdminStore = app.Services.GetRequiredService<ISessionAdminStore>();
         var operations = runtime.Operations;
         var providerSmokeRegistry = app.Services.GetService<ProviderSmokeRegistry>()
@@ -439,6 +441,17 @@ internal static class AdminEndpoints
             var retentionStatus = await runtime.RetentionCoordinator.GetStatusAsync(ctx.RequestAborted);
             var pluginHealth = operations.PluginHealth.ListSnapshots();
 
+            var setupStatus = await BuildSetupStatusResponseAsync(
+                startup,
+                organizationPolicy,
+                operatorAccounts,
+                modelProfiles,
+                providerSmokeRegistry,
+                setupVerificationSnapshots,
+                maintenance,
+                includeReliability: true,
+                ctx.RequestAborted);
+
             var response = new AdminSummaryResponse
             {
                 Auth = new AdminSummaryAuth
@@ -487,21 +500,75 @@ internal static class AdminEndpoints
                     Routes = operations.LlmExecution.SnapshotRoutes(),
                     RecentTurns = runtime.ProviderUsage.RecentTurns(limit: 20)
                 },
-                Dashboard = await facade.GetOperatorDashboardAsync(ctx.RequestAborted)
+                Dashboard = await facade.GetOperatorDashboardAsync(setupStatus.Reliability, ctx.RequestAborted),
+                Reliability = setupStatus.Reliability
             };
 
             return Results.Json(response, CoreJsonContext.Default.AdminSummaryResponse);
         });
 
-        app.MapGet("/admin/setup/status", (HttpContext ctx) =>
+        app.MapGet("/admin/setup/status", async (HttpContext ctx) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.setup.status");
             if (authResult.Failure is not null)
                 return authResult.Failure;
 
             return Results.Json(
-                BuildSetupStatusResponse(startup, organizationPolicy, operatorAccounts, modelProfiles, providerSmokeRegistry, setupVerificationSnapshots),
+                await BuildSetupStatusResponseAsync(
+                    startup,
+                    organizationPolicy,
+                    operatorAccounts,
+                    modelProfiles,
+                    providerSmokeRegistry,
+                    setupVerificationSnapshots,
+                    maintenance,
+                    includeReliability: true,
+                    ctx.RequestAborted),
                 CoreJsonContext.Default.SetupStatusResponse);
+        });
+
+        app.MapGet("/admin/maintenance", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.observability");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var setupStatus = await BuildSetupStatusResponseAsync(
+                startup,
+                organizationPolicy,
+                operatorAccounts,
+                modelProfiles,
+                providerSmokeRegistry,
+                setupVerificationSnapshots,
+                maintenance,
+                includeReliability: false,
+                ctx.RequestAborted);
+            var report = await maintenance.ScanAsync(setupStatus, ctx.RequestAborted);
+            return Results.Json(report, CoreJsonContext.Default.MaintenanceReportResponse);
+        });
+
+        app.MapPost("/admin/maintenance/fix", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.observability");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.MaintenanceFixRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+
+            var setupStatus = await BuildSetupStatusResponseAsync(
+                startup,
+                organizationPolicy,
+                operatorAccounts,
+                modelProfiles,
+                providerSmokeRegistry,
+                setupVerificationSnapshots,
+                maintenance,
+                includeReliability: false,
+                ctx.RequestAborted);
+            var result = await maintenance.FixAsync(requestPayload.Value ?? new MaintenanceFixRequest(), setupStatus, ctx.RequestAborted);
+            return Results.Json(result, CoreJsonContext.Default.MaintenanceFixResponse);
         });
 
         app.MapGet("/admin/setup/verify", async (HttpContext ctx) =>
@@ -3310,13 +3377,16 @@ internal static class AdminEndpoints
             : null;
     }
 
-    private static SetupStatusResponse BuildSetupStatusResponse(
+    private static async Task<SetupStatusResponse> BuildSetupStatusResponseAsync(
         GatewayStartupContext startup,
         OrganizationPolicyService organizationPolicy,
         OperatorAccountService operatorAccounts,
         IModelProfileRegistry modelProfiles,
         ProviderSmokeRegistry providerSmokeRegistry,
-        SetupVerificationSnapshotStore setupVerificationSnapshots)
+        SetupVerificationSnapshotStore setupVerificationSnapshots,
+        GatewayMaintenanceRuntimeService maintenance,
+        bool includeReliability,
+        CancellationToken ct)
     {
         var policy = organizationPolicy.GetSnapshot();
         var publicBind = startup.IsNonLoopbackBind;
@@ -3335,7 +3405,7 @@ internal static class AdminEndpoints
         if (string.IsNullOrWhiteSpace(startup.Config.AuthToken))
             warnings.Add("No auth token is configured.");
 
-        return new SetupStatusResponse
+        var status = new SetupStatusResponse
         {
             Profile = publicBind ? "public" : "local",
             BindAddress = startup.Config.BindAddress,
@@ -3374,6 +3444,45 @@ internal static class AdminEndpoints
             ChannelReadiness = MapChannelReadiness(ChannelReadinessEvaluator.Evaluate(startup.Config, startup.IsNonLoopbackBind)),
             Artifacts = BuildSetupArtifacts(deployDirectory),
             Warnings = warnings
+        };
+
+        if (!includeReliability)
+            return status;
+
+        var maintenanceReport = await maintenance.ScanAsync(status, ct);
+        return new SetupStatusResponse
+        {
+            Profile = status.Profile,
+            BindAddress = status.BindAddress,
+            Port = status.Port,
+            PublicBind = status.PublicBind,
+            AuthTokenConfigured = status.AuthTokenConfigured,
+            BootstrapTokenEnabled = status.BootstrapTokenEnabled,
+            AllowedAuthModes = status.AllowedAuthModes,
+            MinimumPluginTrustLevel = status.MinimumPluginTrustLevel,
+            ReverseProxyRecommended = status.ReverseProxyRecommended,
+            ReachableBaseUrl = status.ReachableBaseUrl,
+            WorkspacePath = status.WorkspacePath,
+            WorkspaceExists = status.WorkspaceExists,
+            HasOperatorAccounts = status.HasOperatorAccounts,
+            OperatorAccountCount = status.OperatorAccountCount,
+            ProviderConfigured = status.ProviderConfigured,
+            ProviderSmokeStatus = status.ProviderSmokeStatus,
+            ModelDoctorStatus = status.ModelDoctorStatus,
+            BrowserToolRegistered = status.BrowserToolRegistered,
+            BrowserExecutionBackendConfigured = status.BrowserExecutionBackendConfigured,
+            BrowserCapabilityReason = status.BrowserCapabilityReason,
+            LastVerificationAtUtc = status.LastVerificationAtUtc,
+            LastVerificationSource = status.LastVerificationSource,
+            LastVerificationStatus = status.LastVerificationStatus,
+            LastVerificationHasFailures = status.LastVerificationHasFailures,
+            LastVerificationHasWarnings = status.LastVerificationHasWarnings,
+            BootstrapGuidanceState = status.BootstrapGuidanceState,
+            RecommendedNextActions = status.RecommendedNextActions,
+            ChannelReadiness = status.ChannelReadiness,
+            Artifacts = status.Artifacts,
+            Warnings = status.Warnings,
+            Reliability = maintenanceReport.Reliability
         };
     }
 

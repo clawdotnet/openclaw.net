@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Net.Http;
 using System.Security.Cryptography;
+using System.Text.Json;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Setup;
 using OpenClaw.Core.Security;
@@ -12,6 +14,7 @@ internal static class SetupCommand
     private const string DefaultConfigPath = "~/.openclaw/config/openclaw.settings.json";
     private const string DefaultApiKeyRef = "env:MODEL_PROVIDER_KEY";
     private const string DefaultProvider = "openai";
+    private const string DefaultOllamaPresetId = "ollama-general";
     private const string DefaultBackendChoice = "none";
 
     internal static async Task<int> RunAsync(
@@ -136,11 +139,14 @@ internal static class SetupCommand
             "--profile",
             "--workspace",
             "--provider",
-            "--model",
-            "--api-key"
+            "--model"
         };
 
-        return required.Any(option => string.IsNullOrWhiteSpace(parsed.GetOption(option)));
+        if (required.Any(option => string.IsNullOrWhiteSpace(parsed.GetOption(option))))
+            return true;
+
+        return ProviderRequiresApiKey(parsed.GetOption("--provider")) &&
+               string.IsNullOrWhiteSpace(parsed.GetOption("--api-key"));
     }
 
     private static SetupAnswers PromptForAnswers(CliArgs parsed, TextReader input, TextWriter output, string currentDirectory)
@@ -148,9 +154,23 @@ internal static class SetupCommand
         var profile = BootstrapConfigFactory.NormalizeProfile(Prompt(output, input, "Deployment profile (local|public)", parsed.GetOption("--profile") ?? "local"));
         var configPath = Path.GetFullPath(GatewayConfigFile.ExpandPath(Prompt(output, input, "Config path", parsed.GetOption("--config") ?? DefaultConfigPath)));
         var workspace = Path.GetFullPath(GatewayConfigFile.ExpandPath(Prompt(output, input, "Workspace path", parsed.GetOption("--workspace") ?? Path.Combine(currentDirectory, "workspace"))));
-        var provider = Prompt(output, input, "Provider", parsed.GetOption("--provider") ?? DefaultProvider);
-        var model = Prompt(output, input, "Model", parsed.GetOption("--model") ?? new GatewayConfig().Llm.Model);
-        var apiKey = Prompt(output, input, "API key or env: reference", parsed.GetOption("--api-key") ?? DefaultApiKeyRef);
+        var discoveredOllama = TryDiscoverOllamaModels();
+        if (discoveredOllama.Models.Count > 0)
+            output.WriteLine($"Detected Ollama models: {string.Join(", ", discoveredOllama.Models)}");
+
+        var providerDefault = parsed.GetOption("--provider") ?? (discoveredOllama.IsAvailable ? "ollama" : DefaultProvider);
+        var provider = Prompt(output, input, "Provider", providerDefault);
+        var modelPresetId = string.Equals(provider, "ollama", StringComparison.OrdinalIgnoreCase)
+            ? Prompt(output, input, "Model preset", parsed.GetOption("--model-preset") ?? DefaultOllamaPresetId)
+            : null;
+        var modelDefault = parsed.GetOption("--model")
+            ?? (string.Equals(provider, "ollama", StringComparison.OrdinalIgnoreCase) && discoveredOllama.Models.Count > 0
+                ? discoveredOllama.Models[0]
+                : new GatewayConfig().Llm.Model);
+        var model = Prompt(output, input, "Model", modelDefault);
+        var apiKey = ProviderRequiresApiKey(provider)
+            ? Prompt(output, input, "API key or env: reference", parsed.GetOption("--api-key") ?? DefaultApiKeyRef)
+            : parsed.GetOption("--api-key");
 
         var bindDefault = parsed.GetOption("--bind") ?? GetDefaultBindAddress(profile);
         var bindAddress = Prompt(output, input, "Bind address", bindDefault);
@@ -189,8 +209,9 @@ internal static class SetupCommand
             ConfigPath = configPath,
             Workspace = workspace,
             Provider = provider,
+            ModelPresetId = string.IsNullOrWhiteSpace(modelPresetId) ? null : modelPresetId.Trim(),
             Model = model,
-            ApiKey = apiKey,
+            ApiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey.Trim(),
             BindAddress = bindAddress,
             Port = port,
             AuthToken = authToken,
@@ -216,8 +237,11 @@ internal static class SetupCommand
             ConfigPath = Path.GetFullPath(GatewayConfigFile.ExpandPath(parsed.GetOption("--config") ?? DefaultConfigPath)),
             Workspace = Path.GetFullPath(GatewayConfigFile.ExpandPath(parsed.GetOption("--workspace") ?? Path.Combine(currentDirectory, "workspace"))),
             Provider = parsed.GetOption("--provider") ?? DefaultProvider,
+            ModelPresetId = parsed.GetOption("--model-preset"),
             Model = parsed.GetOption("--model") ?? new GatewayConfig().Llm.Model,
-            ApiKey = parsed.GetOption("--api-key") ?? DefaultApiKeyRef,
+            ApiKey = ProviderRequiresApiKey(parsed.GetOption("--provider"))
+                ? parsed.GetOption("--api-key") ?? DefaultApiKeyRef
+                : parsed.GetOption("--api-key"),
             BindAddress = parsed.GetOption("--bind") ?? GetDefaultBindAddress(profile),
             Port = ParsePort(parsed.GetOption("--port") ?? "18789"),
             AuthToken = parsed.GetOption("--auth-token") ?? GenerateAuthToken(),
@@ -244,7 +268,8 @@ internal static class SetupCommand
             memoryRoot,
             answers.Provider,
             answers.Model,
-            answers.ApiKey,
+            answers.ApiKey ?? string.Empty,
+            answers.ModelPresetId,
             warnings);
 
         ApplyBackend(config, answers, warnings);
@@ -405,14 +430,57 @@ internal static class SetupCommand
         return [failureMessage];
     }
 
+    private static bool ProviderRequiresApiKey(string? provider)
+        => !string.Equals(provider?.Trim(), "ollama", StringComparison.OrdinalIgnoreCase);
+
+    private static OllamaDiscoveryResult TryDiscoverOllamaModels()
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+            var payload = http.GetStringAsync($"{OllamaEndpointNormalizer.DefaultBaseUrl}/api/tags").GetAwaiter().GetResult();
+            using var document = JsonDocument.Parse(payload);
+            if (!document.RootElement.TryGetProperty("models", out var modelsElement) ||
+                modelsElement.ValueKind != JsonValueKind.Array)
+            {
+                return OllamaDiscoveryResult.Empty;
+            }
+
+            var models = new List<string>();
+            foreach (var model in modelsElement.EnumerateArray())
+            {
+                if (model.TryGetProperty("name", out var nameElement) &&
+                    nameElement.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrWhiteSpace(nameElement.GetString()))
+                {
+                    models.Add(nameElement.GetString()!);
+                }
+            }
+
+            return new OllamaDiscoveryResult
+            {
+                IsAvailable = true,
+                Models = models
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(static item => item, StringComparer.OrdinalIgnoreCase)
+                    .ToArray()
+            };
+        }
+        catch
+        {
+            return OllamaDiscoveryResult.Empty;
+        }
+    }
+
     private sealed class SetupAnswers
     {
         public required string Profile { get; init; }
         public required string ConfigPath { get; init; }
         public required string Workspace { get; init; }
         public required string Provider { get; init; }
+        public string? ModelPresetId { get; init; }
         public required string Model { get; init; }
-        public required string ApiKey { get; init; }
+        public string? ApiKey { get; init; }
         public required string BindAddress { get; init; }
         public required int Port { get; init; }
         public required string AuthToken { get; init; }
@@ -422,6 +490,14 @@ internal static class SetupCommand
         public string? SshHost { get; init; }
         public string? SshUser { get; init; }
         public string? SshKey { get; init; }
+    }
+
+    private sealed class OllamaDiscoveryResult
+    {
+        public static OllamaDiscoveryResult Empty { get; } = new();
+
+        public bool IsAvailable { get; init; }
+        public IReadOnlyList<string> Models { get; init; } = [];
     }
 }
 

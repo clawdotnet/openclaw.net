@@ -220,7 +220,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         LlmExecutionEstimate estimate,
         CancellationToken ct)
     {
-        var selection = ResolveSelection(session, messages, options, streaming: false);
+        var selection = ResolveSelection(session, messages, options, estimate, streaming: false);
         var legacyPolicy = _policyService.Resolve(session, _config.Llm);
         if (!string.IsNullOrWhiteSpace(selection.Explanation))
             _logger.LogInformation("{Explanation}", selection.Explanation);
@@ -361,7 +361,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         LlmExecutionEstimate estimate,
         CancellationToken ct)
     {
-        var selection = ResolveSelection(session, messages, options, streaming: true);
+        var selection = ResolveSelection(session, messages, options, estimate, streaming: true);
         var legacyPolicy = _policyService.Resolve(session, _config.Llm);
         Exception? lastError = null;
         foreach (var candidate in selection.Candidates)
@@ -529,6 +529,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         Session session,
         IReadOnlyList<ChatMessage> messages,
         ChatOptions options,
+        LlmExecutionEstimate estimate,
         bool streaming)
     {
         var explicitProfileId = !string.IsNullOrWhiteSpace(session.ModelProfileId)
@@ -536,13 +537,20 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
             : (!string.IsNullOrWhiteSpace(session.ModelOverride) && _modelProfiles.TryGet(session.ModelOverride!, out _)
                 ? session.ModelOverride
                 : null);
+
+        var reservedOutputTokens = options.MaxOutputTokens
+            ?? session.ModelRequirements.MinOutputTokens
+            ?? _config.Llm.MaxTokens;
+
         return _selectionPolicy.Resolve(new ModelSelectionRequest
         {
             ExplicitProfileId = explicitProfileId,
             Session = session,
             Messages = messages,
             Options = options,
-            Streaming = streaming
+            Streaming = streaming,
+            EstimatedInputTokens = estimate.EstimatedInputTokens,
+            ReservedOutputTokens = reservedOutputTokens > 0 ? reservedOutputTokens : null
         });
     }
 
@@ -561,10 +569,11 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         if (legacyPolicy.MaxOutputTokens > 0)
             maxOutputTokens = maxOutputTokens is > 0 ? Math.Min(maxOutputTokens.Value, legacyPolicy.MaxOutputTokens) : legacyPolicy.MaxOutputTokens;
 
-        if (profile.Capabilities.MaxContextTokens > 0 && estimate.EstimatedInputTokens > profile.Capabilities.MaxContextTokens)
+        var estimatedTotalTokens = estimate.EstimatedInputTokens + (maxOutputTokens ?? 0);
+        if (profile.Capabilities.MaxContextTokens > 0 && estimatedTotalTokens > profile.Capabilities.MaxContextTokens)
         {
             profileLimitError =
-                $"Selected model profile '{profile.Id}' cannot satisfy this request because estimated input tokens ({estimate.EstimatedInputTokens}) exceed MaxContextTokens ({profile.Capabilities.MaxContextTokens}).";
+                $"Selected model profile '{profile.Id}' cannot satisfy this request because estimated prompt plus reserved output tokens ({estimatedTotalTokens}) exceed MaxContextTokens ({profile.Capabilities.MaxContextTokens}).";
             effectiveOptions = source;
             return false;
         }

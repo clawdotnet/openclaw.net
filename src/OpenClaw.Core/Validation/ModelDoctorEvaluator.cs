@@ -1,15 +1,20 @@
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
+using OpenClaw.Core.Setup;
+using OpenClaw.Core.Observability;
 
 namespace OpenClaw.Core.Validation;
 
 public static class ModelDoctorEvaluator
 {
-    public static ModelSelectionDoctorResponse Build(GatewayConfig config, IModelProfileRegistry? registry = null)
+    public static ModelSelectionDoctorResponse Build(
+        GatewayConfig config,
+        IModelProfileRegistry? registry = null,
+        IReadOnlyList<ProviderTurnUsageEntry>? recentTurns = null)
     {
         if (registry is not null)
-            return BuildFromRegistry(registry);
+            return BuildFromRegistry(registry, recentTurns);
 
         var statuses = BuildStatusesFromConfig(config);
         var warnings = new List<string>();
@@ -25,6 +30,7 @@ public static class ModelDoctorEvaluator
         {
             if (status.ValidationIssues.Length > 0)
                 warnings.Add($"Profile '{status.Id}' has validation issues: {string.Join("; ", status.ValidationIssues)}");
+            warnings.AddRange(BuildPresetWarnings(status, config, recentTurns));
         }
 
         return new ModelSelectionDoctorResponse
@@ -36,7 +42,9 @@ public static class ModelDoctorEvaluator
         };
     }
 
-    private static ModelSelectionDoctorResponse BuildFromRegistry(IModelProfileRegistry registry)
+    private static ModelSelectionDoctorResponse BuildFromRegistry(
+        IModelProfileRegistry registry,
+        IReadOnlyList<ProviderTurnUsageEntry>? recentTurns)
     {
         var statuses = registry.ListStatuses();
         var warnings = new List<string>();
@@ -51,6 +59,7 @@ public static class ModelDoctorEvaluator
         {
             if (status.ValidationIssues.Length > 0)
                 warnings.Add($"Profile '{status.Id}' has validation issues: {string.Join("; ", status.ValidationIssues)}");
+            warnings.AddRange(BuildPresetWarnings(status, config: null, recentTurns));
         }
 
         return new ModelSelectionDoctorResponse
@@ -79,17 +88,20 @@ public static class ModelDoctorEvaluator
             statuses.Add(new ModelProfileStatus
             {
                 Id = normalizedId,
+                PresetId = Normalize(profile.PresetId),
                 ProviderId = providerId,
                 ModelId = modelId,
                 IsDefault = string.Equals(normalizedId, defaultProfileId, StringComparison.OrdinalIgnoreCase),
                 IsImplicit = config.Models.Profiles.Count == 0 && string.Equals(normalizedId, "default", StringComparison.OrdinalIgnoreCase),
                 IsAvailable = validationIssues.Length == 0,
-                Tags = NormalizeDistinct(profile.Tags),
-                Capabilities = profile.Capabilities ?? GuessCapabilities(providerId),
+                Tags = ResolveTags(profile),
+                Capabilities = ResolveCapabilities(profile, providerId),
                 PromptCaching = MergePromptCaching(config.Llm.PromptCaching, profile.PromptCaching),
                 ValidationIssues = validationIssues,
                 FallbackProfileIds = NormalizeDistinct(profile.FallbackProfileIds),
-                FallbackModels = NormalizeDistinct(profile.FallbackModels)
+                FallbackModels = NormalizeDistinct(profile.FallbackModels),
+                CompatibilityNotes = ResolveCompatibilityNotes(profile, config),
+                UsesCompatibilityTransport = providerId == "ollama" && OllamaEndpointNormalizer.UsesCompatibilityEndpoint(ResolveSecretValue(profile.BaseUrl) ?? ResolveSecretValue(config.Llm.Endpoint))
             });
         }
 
@@ -218,4 +230,114 @@ public static class ModelDoctorEvaluator
 
     private static string? ResolveSecretValue(string? value)
         => string.IsNullOrWhiteSpace(value) ? value : SecretResolver.Resolve(value) ?? value;
+
+    private static ModelCapabilities ResolveCapabilities(ModelProfileConfig profile, string providerId)
+    {
+        if (profile.Capabilities is not null)
+            return profile.Capabilities;
+
+        if (LocalModelPresetCatalog.TryGet(profile.PresetId, out var preset) && preset is not null)
+            return preset.Capabilities;
+
+        return GuessCapabilities(providerId);
+    }
+
+    private static string[] ResolveTags(ModelProfileConfig profile)
+    {
+        var configured = NormalizeDistinct(profile.Tags);
+        if (!LocalModelPresetCatalog.TryGet(profile.PresetId, out var preset) || preset is null)
+            return configured;
+
+        return configured
+            .Concat(preset.Tags)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> ResolveCompatibilityNotes(ModelProfileConfig profile, GatewayConfig config)
+    {
+        var notes = new List<string>();
+        if ((Normalize(profile.Provider) ?? Normalize(config.Llm.Provider) ?? string.Empty) == "ollama" &&
+            OllamaEndpointNormalizer.UsesCompatibilityEndpoint(ResolveSecretValue(profile.BaseUrl) ?? ResolveSecretValue(config.Llm.Endpoint)))
+        {
+            notes.Add("Using legacy /v1 compatibility endpoint; migrate to the native Ollama base URL.");
+        }
+        if ((Normalize(profile.Provider) ?? Normalize(config.Llm.Provider) ?? string.Empty) == "ollama" &&
+            string.IsNullOrWhiteSpace(profile.PresetId))
+        {
+            notes.Add("No local preset is configured; setup and doctor guidance will be more limited until a PresetId is added.");
+        }
+
+        if (LocalModelPresetCatalog.TryGet(profile.PresetId, out var preset) && preset is not null)
+            notes.AddRange(preset.CompatibilityNotes);
+
+        return notes.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static IReadOnlyList<string> BuildPresetWarnings(
+        ModelProfileStatus status,
+        GatewayConfig? config,
+        IReadOnlyList<ProviderTurnUsageEntry>? recentTurns)
+    {
+        var warnings = new List<string>();
+        if (status.ProviderId.Equals("ollama", StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(status.PresetId))
+        {
+            warnings.Add($"Profile '{status.Id}' is an Ollama profile without a PresetId. Use a local preset so doctor and setup can apply local-model guidance.");
+        }
+
+        if (status.UsesCompatibilityTransport)
+        {
+            warnings.Add($"Profile '{status.Id}' is still using the legacy Ollama /v1 compatibility endpoint.");
+        }
+
+        if (status.ProviderId.Equals("ollama", StringComparison.OrdinalIgnoreCase) &&
+            status.Capabilities.SupportsTools &&
+            status.FallbackProfileIds.Length == 0 &&
+            status.FallbackModels.Length == 0)
+        {
+            warnings.Add($"Profile '{status.Id}' is local-agentic but has no fallback profile configured for unsupported features or context overflow.");
+        }
+
+        if (LocalModelPresetCatalog.TryGet(status.PresetId, out var preset) && preset is not null &&
+            recentTurns is { Count: > 0 })
+        {
+            var matchingTurns = recentTurns
+                .Where(turn => string.Equals(turn.ProviderId, status.ProviderId, StringComparison.OrdinalIgnoreCase) &&
+                               string.Equals(turn.ModelId, status.ModelId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(static turn => turn.TimestampUtc)
+                .Take(20)
+                .ToArray();
+
+            if (matchingTurns.Length > 0)
+            {
+                var p95 = matchingTurns
+                    .Select(static turn => turn.InputTokens)
+                    .OrderBy(static value => value)
+                    .ElementAt((int)Math.Floor((matchingTurns.Length - 1) * 0.95));
+                var threshold = (long)(preset.RecommendedContextTokens * 0.85);
+                if (p95 >= threshold)
+                {
+                    warnings.Add($"Profile '{status.Id}' is seeing recent prompt sizes near its effective context headroom (p95 {p95} tokens vs recommended {preset.RecommendedContextTokens}).");
+                }
+            }
+        }
+
+        if (config is not null && status.ProviderId.Equals("ollama", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var route in config.Routing.Routes.Where(static item => !string.IsNullOrWhiteSpace(item.Value.ModelProfileId)))
+            {
+                if (!string.Equals(route.Value.ModelProfileId, status.Id, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (route.Value.ModelRequirements.SupportsTools == true && !status.Capabilities.SupportsTools && status.FallbackProfileIds.Length == 0)
+                    warnings.Add($"Route '{route.Key}' selects local profile '{status.Id}' for tool-required traffic without a compatible fallback profile.");
+
+                if (route.Value.ModelRequirements.SupportsJsonSchema == true && !status.Capabilities.SupportsJsonSchema && status.FallbackProfileIds.Length == 0)
+                    warnings.Add($"Route '{route.Key}' selects local profile '{status.Id}' for structured-output traffic without a compatible fallback profile.");
+            }
+        }
+
+        return warnings;
+    }
 }

@@ -7,6 +7,7 @@ using GeminiDotnet;
 using GeminiDotnet.Extensions.AI;
 using Microsoft.Extensions.AI;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Validation;
 
 namespace OpenClaw.Gateway.Extensions;
 
@@ -97,14 +98,12 @@ public static class LlmClientFactory
                 })
                 .AsIChatClient(config.Model),
             "gemini" or "google" => CreateGeminiClient(config),
-            "ollama" => CreateOpenAiClient(new LlmProviderConfig
+            "ollama" => new OllamaChatClient(new LlmProviderConfig
                 {
-                    ApiKey = config.ApiKey ?? "ollama",
-                    Endpoint = config.Endpoint ?? "http://localhost:11434/v1",
+                    ApiKey = config.ApiKey,
+                    Endpoint = OllamaEndpointNormalizer.NormalizeBaseUrl(config.Endpoint),
                     Model = config.Model
-                })
-                .GetChatClient(config.Model)
-                .AsIChatClient(),
+                }),
             "azure-openai" => CreateAzureOpenAiClient(config)
                 .GetChatClient(config.Model)
                 .AsIChatClient(),
@@ -149,10 +148,10 @@ public static class LlmClientFactory
         return config.Provider.ToLowerInvariant() switch
         {
             "openai" or "azure-openai" => CreateOpenAiEmbeddingClient(config, embeddingModel!),
-            "ollama" => CreateOpenAiEmbeddingClient(new LlmProviderConfig
+            "ollama" => new OllamaEmbeddingGenerator(new LlmProviderConfig
             {
-                ApiKey = config.ApiKey ?? "ollama",
-                Endpoint = config.Endpoint ?? "http://localhost:11434/v1",
+                ApiKey = config.ApiKey,
+                Endpoint = OllamaEndpointNormalizer.NormalizeBaseUrl(config.Endpoint),
                 Model = config.Model
             }, embeddingModel!),
             "gemini" or "google" => CreateGeminiEmbeddingClient(config, embeddingModel!),

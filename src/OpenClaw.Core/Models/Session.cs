@@ -57,6 +57,9 @@ public sealed class Session
     /// <summary>When true, shows tool calls and token counts in responses. Set via /verbose command.</summary>
     public bool VerboseMode { get; set; }
 
+    /// <summary>Response style preference for this session.</summary>
+    public string ResponseMode { get; set; } = SessionResponseModes.Default;
+
     /// <summary>Total input tokens consumed across all turns in this session.</summary>
     public long TotalInputTokens
     {
@@ -226,6 +229,9 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(DiagnosticsConfig))]
 [JsonSerializable(typeof(PromptCacheTraceConfig))]
 [JsonSerializable(typeof(ModelsConfig))]
+[JsonSerializable(typeof(LocalModelPresetDefinition))]
+[JsonSerializable(typeof(List<LocalModelPresetDefinition>))]
+[JsonSerializable(typeof(LocalModelPresetListResponse))]
 [JsonSerializable(typeof(ModelProfileConfig))]
 [JsonSerializable(typeof(List<ModelProfileConfig>))]
 [JsonSerializable(typeof(ModelCapabilities))]
@@ -639,6 +645,23 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(List<SetupArtifactStatusItem>))]
 [JsonSerializable(typeof(BrowserToolCapabilitySummary))]
 [JsonSerializable(typeof(SetupStatusResponse))]
+[JsonSerializable(typeof(MaintenanceFinding))]
+[JsonSerializable(typeof(List<MaintenanceFinding>))]
+[JsonSerializable(typeof(MaintenancePromptBudgetSnapshot))]
+[JsonSerializable(typeof(MaintenanceStorageSnapshot))]
+[JsonSerializable(typeof(MaintenanceDriftSnapshot))]
+[JsonSerializable(typeof(MaintenanceReportResponse))]
+[JsonSerializable(typeof(MaintenanceFixRequest))]
+[JsonSerializable(typeof(MaintenanceFixAction))]
+[JsonSerializable(typeof(List<MaintenanceFixAction>))]
+[JsonSerializable(typeof(MaintenanceFixResponse))]
+[JsonSerializable(typeof(ReliabilityFactor))]
+[JsonSerializable(typeof(List<ReliabilityFactor>))]
+[JsonSerializable(typeof(ReliabilityRecommendation))]
+[JsonSerializable(typeof(List<ReliabilityRecommendation>))]
+[JsonSerializable(typeof(ReliabilitySnapshot))]
+[JsonSerializable(typeof(MaintenanceHistorySnapshot))]
+[JsonSerializable(typeof(List<MaintenanceHistorySnapshot>))]
 [JsonSerializable(typeof(SetupVerificationCheck))]
 [JsonSerializable(typeof(List<SetupVerificationCheck>))]
 [JsonSerializable(typeof(SetupVerificationResponse))]

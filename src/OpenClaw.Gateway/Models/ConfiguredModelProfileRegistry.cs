@@ -4,6 +4,8 @@ using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
+using OpenClaw.Core.Setup;
+using OpenClaw.Core.Validation;
 using OpenClaw.Gateway.Extensions;
 
 namespace OpenClaw.Gateway.Models;
@@ -72,7 +74,10 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
                 PromptCaching = item.Profile.PromptCaching,
                 ValidationIssues = item.ValidationIssues,
                 FallbackProfileIds = item.Profile.FallbackProfileIds,
-                FallbackModels = item.Profile.FallbackModels
+                FallbackModels = item.Profile.FallbackModels,
+                PresetId = item.Profile.PresetId,
+                CompatibilityNotes = BuildCompatibilityNotes(item.Profile),
+                UsesCompatibilityTransport = ProfileUsesCompatibilityTransport(item.Profile)
             })
             .ToArray();
 
@@ -145,6 +150,7 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
         => new()
         {
             Id = "default",
+            PresetId = null,
             Provider = config.Llm.Provider,
             Model = config.Llm.Model,
             BaseUrl = config.Llm.Endpoint,
@@ -186,14 +192,15 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
         => new()
         {
             Id = Normalize(model.Id) ?? "default",
+            PresetId = Normalize(model.PresetId),
             ProviderId = Normalize(model.Provider) ?? config.Llm.Provider,
             ModelId = Normalize(model.Model) ?? config.Llm.Model,
             BaseUrl = ResolveSecretValue(model.BaseUrl),
             ApiKey = ResolveSecretValue(model.ApiKey),
-            Tags = NormalizeDistinct(model.Tags),
+            Tags = MergeTags(model),
             FallbackProfileIds = NormalizeDistinct(model.FallbackProfileIds),
             FallbackModels = NormalizeDistinct(model.FallbackModels),
-            Capabilities = model.Capabilities ?? GuessCapabilities(Normalize(model.Provider) ?? config.Llm.Provider),
+            Capabilities = ResolveCapabilities(config, model),
             PromptCaching = MergePromptCaching(config.Llm.PromptCaching, model.PromptCaching),
             IsImplicit = string.Equals(model.Id, "default", StringComparison.OrdinalIgnoreCase)
                 && config.Models.Profiles.Count == 0
@@ -244,7 +251,7 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
             Provider = profile.ProviderId,
             Model = profile.ModelId,
             ApiKey = profile.ApiKey ?? config.Llm.ApiKey,
-            Endpoint = profile.BaseUrl ?? config.Llm.Endpoint,
+            Endpoint = ResolveEndpoint(config, profile),
             FallbackModels = profile.FallbackModels,
             MaxTokens = profile.Capabilities.MaxOutputTokens > 0 ? profile.Capabilities.MaxOutputTokens : config.Llm.MaxTokens,
             Temperature = config.Llm.Temperature,
@@ -265,6 +272,75 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
 
         var resolved = SecretResolver.Resolve(value);
         return string.IsNullOrWhiteSpace(resolved) ? null : resolved.Trim();
+    }
+
+    private static string[] MergeTags(ModelProfileConfig model)
+    {
+        var configured = NormalizeDistinct(model.Tags);
+        if (!LocalModelPresetCatalog.TryGet(model.PresetId, out var preset) || preset is null)
+            return configured;
+
+        return configured
+            .Concat(preset.Tags)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static ModelCapabilities ResolveCapabilities(GatewayConfig config, ModelProfileConfig model)
+    {
+        if (model.Capabilities is not null)
+            return model.Capabilities;
+
+        if (LocalModelPresetCatalog.TryGet(model.PresetId, out var preset) && preset is not null)
+        {
+            return new ModelCapabilities
+            {
+                SupportsTools = preset.Capabilities.SupportsTools,
+                SupportsVision = preset.Capabilities.SupportsVision,
+                SupportsJsonSchema = preset.Capabilities.SupportsJsonSchema,
+                SupportsStructuredOutputs = preset.Capabilities.SupportsStructuredOutputs,
+                SupportsStreaming = preset.Capabilities.SupportsStreaming,
+                SupportsParallelToolCalls = preset.Capabilities.SupportsParallelToolCalls,
+                SupportsReasoningEffort = preset.Capabilities.SupportsReasoningEffort,
+                SupportsSystemMessages = preset.Capabilities.SupportsSystemMessages,
+                SupportsImageInput = preset.Capabilities.SupportsImageInput,
+                SupportsAudioInput = preset.Capabilities.SupportsAudioInput,
+                SupportsPromptCaching = preset.Capabilities.SupportsPromptCaching,
+                SupportsExplicitCacheRetention = preset.Capabilities.SupportsExplicitCacheRetention,
+                ReportsCacheReadTokens = preset.Capabilities.ReportsCacheReadTokens,
+                ReportsCacheWriteTokens = preset.Capabilities.ReportsCacheWriteTokens,
+                MaxContextTokens = preset.Capabilities.MaxContextTokens,
+                MaxOutputTokens = preset.Capabilities.MaxOutputTokens
+            };
+        }
+
+        return GuessCapabilities(Normalize(model.Provider) ?? config.Llm.Provider);
+    }
+
+    private static string? ResolveEndpoint(GatewayConfig config, ModelProfile profile)
+    {
+        var endpoint = profile.BaseUrl ?? config.Llm.Endpoint;
+        return profile.ProviderId.Equals("ollama", StringComparison.OrdinalIgnoreCase)
+            ? OllamaEndpointNormalizer.NormalizeBaseUrl(endpoint)
+            : endpoint;
+    }
+
+    private static bool ProfileUsesCompatibilityTransport(ModelProfile profile)
+        => profile.ProviderId.Equals("ollama", StringComparison.OrdinalIgnoreCase) &&
+           OllamaEndpointNormalizer.UsesCompatibilityEndpoint(profile.BaseUrl);
+
+    private static IReadOnlyList<string> BuildCompatibilityNotes(ModelProfile profile)
+    {
+        var notes = new List<string>();
+        if (profile.ProviderId.Equals("ollama", StringComparison.OrdinalIgnoreCase) && ProfileUsesCompatibilityTransport(profile))
+            notes.Add("Using legacy /v1 compatibility endpoint; migrate to the native Ollama base URL.");
+        if (profile.ProviderId.Equals("ollama", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(profile.PresetId))
+            notes.Add("No local preset is configured; setup and doctor guidance will be more limited until a PresetId is added.");
+
+        if (LocalModelPresetCatalog.TryGet(profile.PresetId, out var preset) && preset is not null)
+            notes.AddRange(preset.CompatibilityNotes);
+
+        return notes.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
     private static string[] NormalizeDistinct(IEnumerable<string>? values)

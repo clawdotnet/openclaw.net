@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Setup;
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Validation;
 
@@ -233,7 +234,7 @@ internal static class SetupLifecycleCommand
         if (string.IsNullOrWhiteSpace(config.AuthToken))
             warnings.Add("No auth token is configured.");
 
-        return new SetupStatusResponse
+        var status = new SetupStatusResponse
         {
             Profile = publicBind ? "public" : "local",
             BindAddress = config.BindAddress,
@@ -271,6 +272,48 @@ internal static class SetupLifecycleCommand
             ChannelReadiness = [],
             Artifacts = BuildArtifactItems(GetDeployDirectory(configPath)),
             Warnings = warnings
+        };
+
+        var maintenance = MaintenanceCoordinator.ScanAsync(config, new MaintenanceScanInputs
+        {
+            ConfigPath = configPath,
+            SetupStatus = status,
+            ModelDoctor = modelDoctor
+        }, CancellationToken.None).GetAwaiter().GetResult();
+
+        return new SetupStatusResponse
+        {
+            Profile = status.Profile,
+            BindAddress = status.BindAddress,
+            Port = status.Port,
+            PublicBind = status.PublicBind,
+            AuthTokenConfigured = status.AuthTokenConfigured,
+            BootstrapTokenEnabled = status.BootstrapTokenEnabled,
+            AllowedAuthModes = status.AllowedAuthModes,
+            MinimumPluginTrustLevel = status.MinimumPluginTrustLevel,
+            ReverseProxyRecommended = status.ReverseProxyRecommended,
+            ReachableBaseUrl = status.ReachableBaseUrl,
+            WorkspacePath = status.WorkspacePath,
+            WorkspaceExists = status.WorkspaceExists,
+            HasOperatorAccounts = status.HasOperatorAccounts,
+            OperatorAccountCount = status.OperatorAccountCount,
+            ProviderConfigured = status.ProviderConfigured,
+            ProviderSmokeStatus = status.ProviderSmokeStatus,
+            ModelDoctorStatus = status.ModelDoctorStatus,
+            BrowserToolRegistered = status.BrowserToolRegistered,
+            BrowserExecutionBackendConfigured = status.BrowserExecutionBackendConfigured,
+            BrowserCapabilityReason = status.BrowserCapabilityReason,
+            LastVerificationAtUtc = status.LastVerificationAtUtc,
+            LastVerificationSource = status.LastVerificationSource,
+            LastVerificationStatus = status.LastVerificationStatus,
+            LastVerificationHasFailures = status.LastVerificationHasFailures,
+            LastVerificationHasWarnings = status.LastVerificationHasWarnings,
+            BootstrapGuidanceState = status.BootstrapGuidanceState,
+            RecommendedNextActions = status.RecommendedNextActions,
+            ChannelReadiness = status.ChannelReadiness,
+            Artifacts = status.Artifacts,
+            Warnings = status.Warnings,
+            Reliability = maintenance.Reliability
         };
     }
 
@@ -592,6 +635,7 @@ internal static class SetupLifecycleCommand
         output.WriteLine($"Operator accounts: {status.OperatorAccountCount}");
         output.WriteLine($"Provider configured: {status.ProviderConfigured.ToString().ToLowerInvariant()} smoke={status.ProviderSmokeStatus}");
         output.WriteLine($"Model doctor: {status.ModelDoctorStatus}");
+        output.WriteLine($"Reliability: {status.Reliability.Score}/100 ({status.Reliability.Status})");
         output.WriteLine($"Browser tool: registered={status.BrowserToolRegistered.ToString().ToLowerInvariant()} backend_configured={status.BrowserExecutionBackendConfigured.ToString().ToLowerInvariant()} reason={status.BrowserCapabilityReason}");
         output.WriteLine($"Last verification: {(status.LastVerificationAtUtc.HasValue ? $"{status.LastVerificationStatus} at {status.LastVerificationAtUtc:O} via {status.LastVerificationSource}" : SetupCheckStates.NotRun)}");
         output.WriteLine($"Bootstrap guidance: {status.BootstrapGuidanceState}");
@@ -607,6 +651,14 @@ internal static class SetupLifecycleCommand
             output.WriteLine("Recommended next actions:");
             foreach (var action in status.RecommendedNextActions)
                 output.WriteLine($"- {action}");
+        }
+
+        if (status.Reliability.Recommendations.Count > 0)
+        {
+            output.WriteLine();
+            output.WriteLine("Reliability recommendations:");
+            foreach (var recommendation in status.Reliability.Recommendations)
+                output.WriteLine($"- {recommendation.Summary}: {recommendation.Command}");
         }
 
         if (status.Warnings.Count > 0)

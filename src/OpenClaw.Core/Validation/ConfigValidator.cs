@@ -1,5 +1,6 @@
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Setup;
 using OpenClaw.Core.Plugins;
 
 namespace OpenClaw.Core.Validation;
@@ -583,6 +584,13 @@ public static class ConfigValidator
 
             if (string.IsNullOrWhiteSpace(profile.Model))
                 errors.Add($"Models.Profiles.{profile.Id}.Model must be set.");
+            if (!string.IsNullOrWhiteSpace(profile.PresetId))
+            {
+                if (!LocalModelPresetCatalog.TryGet(profile.PresetId, out _))
+                    errors.Add($"Models.Profiles.{profile.Id}.PresetId '{profile.PresetId}' is not a known local model preset.");
+                else if (!string.Equals(profile.Provider, "ollama", StringComparison.OrdinalIgnoreCase))
+                    errors.Add($"Models.Profiles.{profile.Id}.PresetId '{profile.PresetId}' currently requires Provider='ollama'.");
+            }
             if (profile.Capabilities?.MaxContextTokens < 0)
                 errors.Add($"Models.Profiles.{profile.Id}.Capabilities.MaxContextTokens must be >= 0.");
             if (profile.Capabilities?.MaxOutputTokens < 0)

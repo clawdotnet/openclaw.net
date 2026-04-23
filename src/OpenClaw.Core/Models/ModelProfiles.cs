@@ -9,6 +9,7 @@ public sealed class ModelsConfig
 public sealed class ModelProfileConfig
 {
     public string Id { get; set; } = "";
+    public string? PresetId { get; set; }
     public string Provider { get; set; } = "";
     public string Model { get; set; } = "";
     public string? BaseUrl { get; set; }
@@ -59,6 +60,7 @@ public sealed class ModelSelectionRequirements
 public sealed class ModelProfile
 {
     public required string Id { get; init; }
+    public string? PresetId { get; init; }
     public required string ProviderId { get; init; }
     public required string ModelId { get; init; }
     public string? BaseUrl { get; init; }
@@ -74,6 +76,7 @@ public sealed class ModelProfile
 public sealed class ModelProfileStatus
 {
     public required string Id { get; init; }
+    public string? PresetId { get; init; }
     public required string ProviderId { get; init; }
     public required string ModelId { get; init; }
     public bool IsDefault { get; init; }
@@ -85,6 +88,8 @@ public sealed class ModelProfileStatus
     public string[] ValidationIssues { get; init; } = [];
     public string[] FallbackProfileIds { get; init; } = [];
     public string[] FallbackModels { get; init; } = [];
+    public IReadOnlyList<string> CompatibilityNotes { get; init; } = [];
+    public bool UsesCompatibilityTransport { get; init; }
 }
 
 public sealed class ModelSelectionDescriptor

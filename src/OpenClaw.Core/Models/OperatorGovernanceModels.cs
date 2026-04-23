@@ -229,6 +229,7 @@ public sealed class SetupStatusResponse
     public IReadOnlyList<ChannelReadinessDto> ChannelReadiness { get; init; } = [];
     public IReadOnlyList<SetupArtifactStatusItem> Artifacts { get; init; } = [];
     public IReadOnlyList<string> Warnings { get; init; } = [];
+    public ReliabilitySnapshot Reliability { get; init; } = new();
 }
 
 public sealed class SetupVerificationCheck

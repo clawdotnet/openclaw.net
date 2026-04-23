@@ -5,6 +5,17 @@ namespace OpenClaw.Agent;
 
 internal static class AgentSystemPromptBuilder
 {
+    private const string ConciseOperationalInstructions =
+        """
+        [Operational Response Mode]
+        For this run, respond in a concise operator-facing format:
+        - state the action taken
+        - state the proof or verification result
+        - state any unresolved blocker
+        - include the next step only when needed
+        Avoid long rationale unless the user explicitly asks for it.
+        """;
+
     public static string BuildSystemPrompt(IReadOnlyList<SkillDefinition> skills, bool requireApproval)
     {
         var basePrompt = BuildBaseSystemPrompt(requireApproval);
@@ -84,5 +95,13 @@ internal static class AgentSystemPromptBuilder
         AppendOptionalPromptFile(ref basePrompt, "Agent Personality (SOUL.md)", soulFile, PromptFileMaxChars);
 
         return basePrompt;
+    }
+
+    public static string ApplyResponseMode(string prompt, string? responseMode)
+    {
+        if (!string.Equals(responseMode, OpenClaw.Core.Models.SessionResponseModes.ConciseOps, StringComparison.Ordinal))
+            return prompt;
+
+        return prompt + "\n\n" + ConciseOperationalInstructions;
     }
 }

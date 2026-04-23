@@ -191,6 +191,7 @@ public sealed class AdminSummaryResponse
     public required AdminSummaryPlugins Plugins { get; init; }
     public required AdminSummaryUsage Usage { get; init; }
     public required OperatorDashboardSnapshot Dashboard { get; init; }
+    public ReliabilitySnapshot Reliability { get; init; } = new();
 }
 
 public sealed class AdminSummaryAuth

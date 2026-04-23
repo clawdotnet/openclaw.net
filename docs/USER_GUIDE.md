@@ -31,6 +31,17 @@ openclaw upgrade check --config ~/.openclaw/config/openclaw.settings.json
 openclaw upgrade rollback --config ~/.openclaw/config/openclaw.settings.json --offline
 ```
 
+For local-model installs, the supported path is now:
+
+```bash
+openclaw setup --non-interactive --profile local --workspace ./workspace --provider ollama --model llama3.2 --model-preset ollama-general
+openclaw models presets
+openclaw models doctor
+openclaw maintenance scan --config ~/.openclaw/config/openclaw.settings.json
+```
+
+That gives you an explicit local preset, native Ollama routing, doctor guidance for compatibility or fallback gaps, and a maintenance scan that reports storage drift, prompt budget pressure, and top operator actions.
+
 If you start the gateway directly from a local terminal instead of using `setup launch`, the direct fallback is:
 
 ```bash
@@ -148,8 +159,9 @@ OpenClaw supports native routing for several providers out-of-the-box. Change th
 #### 3. Ollama (Local AI)
 - **Provider**: `"ollama"`
 - **Required**: `Model` (e.g., `"llama3"` or `"mistral"`)
-- **Default Endpoint**: `http://localhost:11434/v1`
-- **Notes**: OpenClaw connects to Ollama's OpenAI-compatible endpoint automatically.
+- **Default Endpoint**: `http://127.0.0.1:11434`
+- **Recommended Setup**: choose an explicit preset such as `ollama-general`, `ollama-agentic`, or `ollama-vision`
+- **Notes**: OpenClaw uses Ollama's native `/api/chat` and `/api/embed` endpoints. Legacy `/v1` compatibility URLs still load, but `openclaw models doctor` warns so you can migrate to the native base URL.
 
 #### 4. Claude / Anthropic
 - **Provider**: `"anthropic"` or `"claude"`
@@ -317,6 +329,39 @@ WebChat token details:
 - Tokens are stored in `sessionStorage` by default.
 - Enable the **Remember** checkbox to also store `openclaw_token` in `localStorage`.
 WebChat includes a **Doctor** button which fetches `GET /doctor/text` and prints a diagnostics report (helpful for onboarding and debugging).
+
+### Concise Operational Responses
+
+Operational runs such as automations, heartbeat-style workflows, and contract-governed repair/status flows default to a terse operator format. The runtime keeps ordinary chat unchanged, but for the current session you can override the behavior with:
+
+```text
+/concise on
+/concise off
+/concise auto
+```
+
+- `on` forces the concise operational format
+- `off` disables it for the current session
+- `auto` restores the default behavior, where only operational workflows become concise
+
+This is separate from `/verbose on|off`, which only controls the extra token and tool-call footer.
+
+### Maintenance And Reliability
+
+Use the maintenance surface to understand long-run drift and remove only safe generated artifacts:
+
+```bash
+openclaw maintenance scan --config ~/.openclaw/config/openclaw.settings.json
+openclaw maintenance fix --config ~/.openclaw/config/openclaw.settings.json --dry-run
+```
+
+The report now includes:
+
+- storage cleanup candidates such as orphaned session metadata, model evaluation artifacts, and managed prompt-cache traces
+- prompt budget pressure from recent turns plus large `AGENTS.md` or `SOUL.md` files
+- a reliability score with concrete next commands such as `openclaw models doctor` or `openclaw setup verify --require-provider`
+
+The gateway also exposes the same data in `/admin/maintenance`, `/admin/setup/status`, and the integration dashboard.
 
 ### Admin operator surfaces
 

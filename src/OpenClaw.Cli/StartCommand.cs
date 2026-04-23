@@ -55,7 +55,7 @@ internal static class StartCommand
             Usage:
               openclaw start [--config <path>] [--with-companion] [--open-browser] [--skip-verify] [--offline] [--require-provider]
                               [--profile <local|public>] [--non-interactive]
-                              [--workspace <path>] [--provider <id>] [--model <id>] [--api-key <secret-or-envref>]
+                              [--workspace <path>] [--provider <id>] [--model <id>] [--model-preset <id>] [--api-key <secret-or-envref>]
                               [--bind <address>] [--port <n>] [--auth-token <token>]
                               [--docker-image <image>] [--opensandbox-endpoint <url>] [--ssh-host <host>] [--ssh-user <user>] [--ssh-key <path>]
 

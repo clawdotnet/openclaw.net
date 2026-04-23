@@ -3188,7 +3188,8 @@
                 { label: 'Automations', value: operator.automations?.total ?? 0, note: `${operator.automations?.enabled ?? 0} enabled` },
                 { label: 'Learning Queue', value: operator.learning?.pending ?? 0, note: `${operator.learning?.approved ?? 0} approved` },
                 { label: 'Ready Channels', value: operator.channels?.ready ?? 0, note: `${operator.channels?.misconfigured ?? 0} misconfigured` },
-                { label: 'Needs Review', value: operator.plugins?.needsReview ?? 0, note: `${operator.plugins?.quarantined ?? 0} quarantined` }
+                { label: 'Needs Review', value: operator.plugins?.needsReview ?? 0, note: `${operator.plugins?.quarantined ?? 0} quarantined` },
+                { label: 'Reliability', value: `${operator.reliability?.score ?? 0}/100`, note: operator.reliability?.status ?? 'unknown' }
             ].map(item => `
                 <div class="metric-card">
                     <div class="muted">${escapeHtml(item.label)}</div>
@@ -3231,6 +3232,12 @@
                             <li>Profiles: ${escapeHtml((operator.delegation?.profiles || []).join(', ') || 'none')}</li>
                             <li>24h delegated sessions: ${escapeHtml(operator.delegation?.last24Hours ?? 0)}</li>
                         </ul>
+                    </div>
+                    <div class="readiness-card">
+                        <strong>Reliability Recommendations</strong>
+                        ${(operator.reliability?.recommendations || []).length
+                            ? `<ul class="list">${operator.reliability.recommendations.slice(0, 4).map(item => `<li>${escapeHtml(item.summary)}<br><code>${escapeHtml(item.command)}</code></li>`).join('')}</ul>`
+                            : '<div class="muted">No guided actions right now.</div>'}
                     </div>
                 </div>
             `;

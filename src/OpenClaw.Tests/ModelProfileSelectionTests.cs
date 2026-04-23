@@ -116,6 +116,69 @@ public sealed class ModelProfileSelectionTests
     }
 
     [Fact]
+    public void SelectionPolicy_FallsBackWhenEstimatedPromptExceedsContextWindow()
+    {
+        LlmClientFactory.ResetDynamicProviders();
+        LlmClientFactory.RegisterProvider("fake-profile-tests", new EvaluationChatClient());
+
+        var config = BuildProfileConfig();
+        var registry = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var policy = new DefaultModelSelectionPolicy(registry);
+        var session = new Session
+        {
+            Id = "s2-budget",
+            ChannelId = "test",
+            SenderId = "user",
+            ModelProfileId = "gemma4-local",
+            FallbackModelProfileIds = ["frontier-tools"]
+        };
+
+        var selection = policy.Resolve(new OpenClaw.Core.Abstractions.ModelSelectionRequest
+        {
+            Session = session,
+            Messages = [new ChatMessage(ChatRole.User, "Need a large-context answer")],
+            Options = new ChatOptions(),
+            EstimatedInputTokens = 130_000,
+            ReservedOutputTokens = 8_000,
+            Streaming = false
+        });
+
+        Assert.Equal("frontier-tools", selection.SelectedProfileId);
+        Assert.Contains("Falling back from 'gemma4-local'", selection.Explanation, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SelectionPolicy_DoesNotTreatReservedOutputBudgetAsHardMinimumOutputRequirement()
+    {
+        LlmClientFactory.ResetDynamicProviders();
+        LlmClientFactory.RegisterProvider("fake-profile-tests", new EvaluationChatClient());
+
+        var config = BuildProfileConfig();
+        var registry = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var policy = new DefaultModelSelectionPolicy(registry);
+        var session = new Session
+        {
+            Id = "s2-reserved-output",
+            ChannelId = "test",
+            SenderId = "user",
+            ModelProfileId = "gemma4-local",
+            FallbackModelProfileIds = ["frontier-tools"]
+        };
+
+        var selection = policy.Resolve(new OpenClaw.Core.Abstractions.ModelSelectionRequest
+        {
+            Session = session,
+            Messages = [new ChatMessage(ChatRole.User, "Need a short answer.")],
+            Options = new ChatOptions(),
+            EstimatedInputTokens = 2_000,
+            ReservedOutputTokens = 12_000,
+            Streaming = false
+        });
+
+        Assert.Equal("gemma4-local", selection.SelectedProfileId);
+    }
+
+    [Fact]
     public void ConfigValidator_RejectsUnknownDefaultModelProfile()
     {
         var config = new GatewayConfig
@@ -281,6 +344,80 @@ public sealed class ModelProfileSelectionTests
             Environment.SetEnvironmentVariable("MODEL_PROFILE_ENDPOINT", null);
             Environment.SetEnvironmentVariable("MODEL_PROFILE_KEY", null);
         }
+    }
+
+    [Fact]
+    public void ModelDoctor_WarnsForLegacyOllamaCompatibilityEndpoint()
+    {
+        var config = new GatewayConfig
+        {
+            Llm = new LlmProviderConfig
+            {
+                Provider = "ollama",
+                Model = "llama3.2",
+                Endpoint = "http://127.0.0.1:11434/v1"
+            },
+            Models = new ModelsConfig
+            {
+                DefaultProfile = "local-primary",
+                Profiles =
+                [
+                    new ModelProfileConfig
+                    {
+                        Id = "local-primary",
+                        Provider = "ollama",
+                        Model = "llama3.2",
+                        PresetId = "ollama-agentic",
+                        BaseUrl = "http://127.0.0.1:11434/v1"
+                    }
+                ]
+            }
+        };
+
+        var registry = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var doctor = ModelDoctorEvaluator.Build(config, registry);
+        var profile = Assert.Single(doctor.Profiles);
+
+        Assert.True(profile.UsesCompatibilityTransport);
+        Assert.True(profile.IsAvailable);
+        Assert.Contains(doctor.Warnings, warning => warning.Contains("legacy Ollama /v1", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(profile.CompatibilityNotes, note => note.Contains("legacy /v1 compatibility endpoint", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Registry_LeavesOllamaProfilesWithoutPresetAvailable()
+    {
+        LlmClientFactory.ResetDynamicProviders();
+        LlmClientFactory.RegisterProvider("fake-profile-tests", new EvaluationChatClient());
+
+        var config = new GatewayConfig
+        {
+            Llm = new LlmProviderConfig
+            {
+                Provider = "fake-profile-tests",
+                Model = "legacy-model"
+            },
+            Models = new ModelsConfig
+            {
+                Profiles =
+                [
+                    new ModelProfileConfig
+                    {
+                        Id = "local-without-preset",
+                        Provider = "ollama",
+                        Model = "llama3.2",
+                        BaseUrl = "http://127.0.0.1:11434"
+                    }
+                ]
+            }
+        };
+
+        var registry = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var status = Assert.Single(registry.ListStatuses());
+
+        Assert.True(status.IsAvailable);
+        Assert.Empty(status.ValidationIssues);
+        Assert.Contains(status.CompatibilityNotes, note => note.Contains("No local preset is configured", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

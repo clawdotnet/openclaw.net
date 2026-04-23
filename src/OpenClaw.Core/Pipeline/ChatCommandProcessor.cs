@@ -27,6 +27,7 @@ public sealed class ChatCommandProcessor
         "/usage",
         "/think",
         "/compact",
+        "/concise",
         "/verbose",
         "/help"
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -163,8 +164,40 @@ public sealed class ChatCommandProcessor
                 }
                 return (true, "Usage: /verbose on|off");
 
+            case "/concise":
+                if (string.IsNullOrWhiteSpace(args))
+                {
+                    var currentMode = session.ResponseMode switch
+                    {
+                        SessionResponseModes.ConciseOps => "on",
+                        SessionResponseModes.Full => "off",
+                        _ => "auto"
+                    };
+                    return (true, $"Concise mode: {currentMode}\nUsage: /concise on|off|auto");
+                }
+
+                if (args.Equals("on", StringComparison.OrdinalIgnoreCase))
+                {
+                    session.ResponseMode = SessionResponseModes.ConciseOps;
+                    await _sessionManager.PersistAsync(session, ct);
+                    return (true, "Concise operational mode enabled.");
+                }
+                if (args.Equals("off", StringComparison.OrdinalIgnoreCase))
+                {
+                    session.ResponseMode = SessionResponseModes.Full;
+                    await _sessionManager.PersistAsync(session, ct);
+                    return (true, "Concise operational mode disabled for this session.");
+                }
+                if (args.Equals("auto", StringComparison.OrdinalIgnoreCase))
+                {
+                    session.ResponseMode = SessionResponseModes.Default;
+                    await _sessionManager.PersistAsync(session, ct);
+                    return (true, "Concise mode reset to automatic behavior.");
+                }
+                return (true, "Usage: /concise on|off|auto");
+
             case "/help":
-                return (true, "Available commands:\n/status - Show session details\n/new (or /reset) - Clear conversation history\n/model <name> - Override the LLM model for this session\n/model reset - Clear model override\n/usage - Show token counts\n/think <level> - Set reasoning effort (off/low/medium/high)\n/compact - Compact conversation history\n/verbose on|off - Toggle verbose output\n/help - Show this message");
+                return (true, "Available commands:\n/status - Show session details\n/new (or /reset) - Clear conversation history\n/model <name> - Override the LLM model for this session\n/model reset - Clear model override\n/usage - Show token counts\n/think <level> - Set reasoning effort (off/low/medium/high)\n/compact - Compact conversation history\n/concise on|off|auto - Control concise operational responses\n/verbose on|off - Toggle verbose output\n/help - Show this message");
 
             default:
                 if (_dynamicCommands.TryGetValue(command, out var dynamicHandler))

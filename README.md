@@ -67,6 +67,10 @@ openclaw upgrade rollback --config ~/.openclaw/config/openclaw.settings.json --o
 Useful follow-up commands and surfaces:
 
 ```bash
+openclaw models presets
+openclaw models doctor
+openclaw maintenance scan --config ~/.openclaw/config/openclaw.settings.json
+openclaw maintenance fix --config ~/.openclaw/config/openclaw.settings.json --dry-run
 openclaw skills inspect ./skills/my-skill
 openclaw compatibility catalog
 openclaw upgrade check --config ~/.openclaw/config/openclaw.settings.json --offline
@@ -75,9 +79,18 @@ openclaw migrate upstream --source ./upstream-agent --target-config ~/.openclaw/
 ```
 
 - Skill inventory: `/admin/skills`
+- Maintenance report: `/admin/maintenance`
 - Observability summary: `/admin/observability/summary`
 - Audit export: `/admin/audit/export`
 - Compatibility matrix: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)
+
+For local Ollama setups, prefer the native root endpoint and an explicit preset:
+
+```bash
+openclaw setup --non-interactive --profile local --workspace ./workspace --provider ollama --model llama3.2 --model-preset ollama-general
+```
+
+OpenClaw.NET now treats Ollama as a first-class native provider at `http://127.0.0.1:11434`. Older `/v1` endpoints still work for one compatibility cycle, but `openclaw models doctor` will flag them so you can migrate cleanly.
 
 > **Breaking change**: browser admin usage is account/session-first. Use named operator accounts for `/admin`, and use operator account tokens for Companion, CLI, API, and websocket clients.
 

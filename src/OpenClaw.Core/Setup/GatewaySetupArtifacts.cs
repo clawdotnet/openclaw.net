@@ -4,15 +4,15 @@ namespace OpenClaw.Core.Setup;
 
 public static class GatewaySetupArtifacts
 {
-    public static string BuildEnvExample(string apiKeyRef, string authToken, string workspacePath, string baseUrl)
+    public static string BuildEnvExample(string? apiKeyRef, string authToken, string workspacePath, string baseUrl)
     {
-        var lines = new List<string>
-        {
-            $"{ResolveProviderEnvVariable(apiKeyRef)}=replace-me",
-            $"OPENCLAW_AUTH_TOKEN={authToken}",
-            $"OPENCLAW_BASE_URL={baseUrl}",
-            $"OPENCLAW_WORKSPACE={workspacePath}"
-        };
+        var lines = new List<string>();
+        if (!string.IsNullOrWhiteSpace(apiKeyRef))
+            lines.Add($"{ResolveProviderEnvVariable(apiKeyRef)}=replace-me");
+
+        lines.Add($"OPENCLAW_AUTH_TOKEN={authToken}");
+        lines.Add($"OPENCLAW_BASE_URL={baseUrl}");
+        lines.Add($"OPENCLAW_WORKSPACE={workspacePath}");
 
         return string.Join(Environment.NewLine, lines) + Environment.NewLine;
     }

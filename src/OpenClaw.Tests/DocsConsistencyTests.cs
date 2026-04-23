@@ -17,9 +17,12 @@ public sealed class DocsConsistencyTests
         Assert.Contains("openclaw setup launch", readme, StringComparison.Ordinal);
         Assert.Contains("openclaw setup service", readme, StringComparison.Ordinal);
         Assert.Contains("openclaw setup status", readme, StringComparison.Ordinal);
+        Assert.Contains("openclaw models presets", readme, StringComparison.Ordinal);
+        Assert.Contains("openclaw maintenance scan", readme, StringComparison.Ordinal);
         Assert.Contains("docs/COMPATIBILITY.md", readme, StringComparison.Ordinal);
         Assert.Contains("openclaw skills inspect", readme, StringComparison.Ordinal);
         Assert.Contains("/admin/skills", readme, StringComparison.Ordinal);
+        Assert.Contains("/admin/maintenance", readme, StringComparison.Ordinal);
         Assert.Contains("openclaw compatibility catalog", readme, StringComparison.Ordinal);
         Assert.Contains("openclaw upgrade rollback", readme, StringComparison.Ordinal);
         Assert.Contains("openclaw migrate upstream", readme, StringComparison.Ordinal);
@@ -27,11 +30,15 @@ public sealed class DocsConsistencyTests
         Assert.Contains("/admin/audit/export", readme, StringComparison.Ordinal);
         Assert.Contains("Breaking change", readme, StringComparison.Ordinal);
         Assert.Contains("operator account tokens", readme, StringComparison.Ordinal);
+        Assert.Contains("http://127.0.0.1:11434", readme, StringComparison.Ordinal);
 
         Assert.Contains("openclaw setup", quickstart, StringComparison.Ordinal);
         Assert.Contains("openclaw setup launch", quickstart, StringComparison.Ordinal);
         Assert.Contains("openclaw setup service", quickstart, StringComparison.Ordinal);
         Assert.Contains("openclaw setup status", quickstart, StringComparison.Ordinal);
+        Assert.Contains("openclaw models presets", quickstart, StringComparison.Ordinal);
+        Assert.Contains("openclaw maintenance scan", quickstart, StringComparison.Ordinal);
+        Assert.Contains("/concise on|off|auto", quickstart, StringComparison.Ordinal);
         Assert.Contains("openclaw init", quickstart, StringComparison.Ordinal);
         Assert.Contains("--doctor", quickstart, StringComparison.Ordinal);
         Assert.Contains("openclaw admin posture", quickstart, StringComparison.Ordinal);
@@ -45,6 +52,9 @@ public sealed class DocsConsistencyTests
         Assert.Contains("openclaw setup launch", userGuide, StringComparison.Ordinal);
         Assert.Contains("openclaw setup service", userGuide, StringComparison.Ordinal);
         Assert.Contains("openclaw setup status", userGuide, StringComparison.Ordinal);
+        Assert.Contains("openclaw models presets", userGuide, StringComparison.Ordinal);
+        Assert.Contains("openclaw maintenance scan", userGuide, StringComparison.Ordinal);
+        Assert.Contains("/concise on", userGuide, StringComparison.Ordinal);
         Assert.Contains("openclaw init", userGuide, StringComparison.Ordinal);
         Assert.Contains("Compatibility Guide", userGuide, StringComparison.Ordinal);
         Assert.Contains("openclaw skills inspect", userGuide, StringComparison.Ordinal);
@@ -52,11 +62,13 @@ public sealed class DocsConsistencyTests
         Assert.Contains("openclaw compatibility catalog", userGuide, StringComparison.Ordinal);
         Assert.Contains("openclaw upgrade rollback", userGuide, StringComparison.Ordinal);
         Assert.Contains("/admin/compatibility/catalog", userGuide, StringComparison.Ordinal);
+        Assert.Contains("/admin/maintenance", userGuide, StringComparison.Ordinal);
         Assert.Contains("/admin/observability/summary", userGuide, StringComparison.Ordinal);
         Assert.Contains("/admin/audit/export", userGuide, StringComparison.Ordinal);
         Assert.Contains("openclaw migrate upstream", userGuide, StringComparison.Ordinal);
         Assert.Contains("Breaking Changes", userGuide, StringComparison.Ordinal);
         Assert.Contains("operator account tokens", userGuide, StringComparison.Ordinal);
+        Assert.Contains("http://127.0.0.1:11434", userGuide, StringComparison.Ordinal);
 
         Assert.Contains("openclaw setup", dockerhub, StringComparison.Ordinal);
         Assert.Contains("openclaw setup launch", dockerhub, StringComparison.Ordinal);

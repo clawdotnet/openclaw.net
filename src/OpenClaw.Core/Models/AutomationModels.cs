@@ -63,6 +63,7 @@ public sealed class AutomationDefinition
     public string? Timezone { get; init; }
     public string Prompt { get; init; } = "";
     public string? ModelId { get; init; }
+    public string ResponseMode { get; init; } = SessionResponseModes.Default;
     public bool RunOnStartup { get; init; }
     public string? SessionId { get; init; }
     public string DeliveryChannelId { get; init; } = "cron";

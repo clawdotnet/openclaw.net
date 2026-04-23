@@ -17,6 +17,8 @@ public sealed class ModelSelectionRequest
     public required IReadOnlyList<ChatMessage> Messages { get; init; }
     public ChatOptions? Options { get; init; }
     public bool Streaming { get; init; }
+    public long? EstimatedInputTokens { get; init; }
+    public int? ReservedOutputTokens { get; init; }
 }
 
 public sealed class ModelSelectionCandidate

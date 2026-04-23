@@ -1376,6 +1376,8 @@ public sealed class AgentRuntime : IAgentRuntime
             systemPrompt = _systemPrompt;
         }
 
+        systemPrompt = AgentSystemPromptBuilder.ApplyResponseMode(systemPrompt, session.ResponseMode);
+
         if (string.IsNullOrWhiteSpace(session.SystemPromptOverride))
             return systemPrompt;
 

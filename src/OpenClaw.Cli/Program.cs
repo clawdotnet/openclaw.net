@@ -1,5 +1,6 @@
 using System.Globalization;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Setup;
 
 namespace OpenClaw.Cli;
 
@@ -30,6 +31,7 @@ internal static class Program
                 "tui" => await TuiAsync(rest),
                 "setup" => await SetupAsync(rest),
                 "upgrade" => await UpgradeAsync(rest),
+                "maintenance" => await MaintenanceAsync(rest),
                 "init" => InitCommand.Run(rest),
                 "migrate" => await MigrateAsync(rest),
                 "heartbeat" => await HeartbeatAsync(rest),
@@ -90,7 +92,8 @@ internal static class Program
               openclaw migrate [options]
               openclaw migrate <legacy|upstream> [options]
               openclaw heartbeat <wizard|preview|status> [options]
-              openclaw models <list|doctor> [options]
+              openclaw models <list|doctor|presets> [options]
+              openclaw maintenance <scan|fix> [options]
               openclaw eval <run|compare> [options]
               openclaw accounts <list|add|remove|probe> [options]
               openclaw backends <list|probe|run|session send> [options]
@@ -121,6 +124,7 @@ internal static class Program
               openclaw start
               openclaw start --with-companion --open-browser
               openclaw start --non-interactive --profile local --workspace ./workspace --provider openai --model gpt-4o --api-key env:MODEL_PROVIDER_KEY
+              openclaw start --non-interactive --profile local --workspace ./workspace --provider ollama --model llama3.2 --model-preset ollama-general
               openclaw run "summarize this README" --file ./README.md
               OPENCLAW_AUTH_TOKEN=... openclaw run "summarize this README" --file ./README.md
               cat error.log | openclaw run "what went wrong?"
@@ -132,6 +136,7 @@ internal static class Program
               openclaw upgrade check --config ~/.openclaw/config/openclaw.settings.json --offline
               openclaw upgrade rollback --config ~/.openclaw/config/openclaw.settings.json --offline
               openclaw setup --non-interactive --profile local --workspace ./workspace --provider openai --model gpt-4o --api-key env:MODEL_PROVIDER_KEY
+              openclaw setup --non-interactive --profile local --workspace ./workspace --provider ollama --model llama3.2 --model-preset ollama-general
               openclaw setup verify --config ~/.openclaw/config/openclaw.settings.json
               openclaw setup launch --config ~/.openclaw/config/openclaw.settings.json --with-companion --open-browser
               openclaw setup service --config ~/.openclaw/config/openclaw.settings.json --platform all
@@ -141,7 +146,10 @@ internal static class Program
               openclaw migrate upstream --source ./upstream-agent --target-config ~/.openclaw/config/openclaw.settings.json --report ./migration-report.json
               openclaw heartbeat status
               openclaw models list
+              openclaw models presets
               openclaw models doctor
+              openclaw maintenance scan
+              openclaw maintenance fix --dry-run
               openclaw eval run --profile gemma4-prod
               openclaw eval compare --profiles gemma4-prod,frontier-tools
               openclaw accounts list
@@ -225,6 +233,19 @@ internal static class Program
             Usage:
               openclaw models list [--url <url>] [--token <token>]
               openclaw models doctor [--url <url>] [--token <token>]
+              openclaw models presets
+            """);
+    }
+
+    private static void PrintMaintenanceHelp()
+    {
+        Console.WriteLine(
+            """
+            openclaw maintenance
+
+            Usage:
+              openclaw maintenance scan [--config <path>] [--json]
+              openclaw maintenance fix [--config <path>] [--dry-run] [--json] [--apply <all|retention|metadata|artifacts>]
             """);
     }
 
@@ -277,7 +298,7 @@ internal static class Program
 
             Usage:
               openclaw setup [--profile <local|public>] [--non-interactive]
-                              [--config <path>] [--workspace <path>] [--provider <id>] [--model <id>] [--api-key <secret-or-envref>]
+                              [--config <path>] [--workspace <path>] [--provider <id>] [--model <id>] [--model-preset <id>] [--api-key <secret-or-envref>]
                               [--bind <address>] [--port <n>] [--auth-token <token>]
                               [--docker-image <image>] [--opensandbox-endpoint <url>] [--ssh-host <host>] [--ssh-user <user>] [--ssh-key <path>]
               openclaw setup launch [--config <path>] [--with-companion] [--open-browser] [--skip-verify] [--offline] [--require-provider]
@@ -618,6 +639,17 @@ internal static class Program
         return await UpgradeCommands.RunAsync(args, Console.Out, Console.Error, Directory.GetCurrentDirectory());
     }
 
+    private static async Task<int> MaintenanceAsync(string[] args)
+    {
+        if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+        {
+            PrintMaintenanceHelp();
+            return 0;
+        }
+
+        return await MaintenanceCommands.RunAsync(args, Console.Out, Console.Error);
+    }
+
     private static async Task<int> HeartbeatAsync(string[] args)
     {
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
@@ -725,6 +757,14 @@ internal static class Program
 
         var subcommand = args[0].Trim().ToLowerInvariant();
         var parsed = CliArgs.Parse(args.Skip(1).ToArray());
+
+        if (subcommand == "presets")
+        {
+            foreach (var preset in LocalModelPresetCatalog.List())
+                Console.WriteLine($"- {preset.Id} | {preset.Label} | tags={string.Join(",", preset.Tags)} | {preset.Description}");
+            return 0;
+        }
+
         var baseUrl = parsed.GetOption("--url") ?? Environment.GetEnvironmentVariable(EnvBaseUrl) ?? DefaultBaseUrl;
         var token = ResolveAuthToken(parsed, Console.Error);
         using var client = new OpenClawHttpClient(baseUrl, token);
@@ -735,7 +775,9 @@ internal static class Program
             Console.WriteLine($"default_profile={response.DefaultProfileId ?? "none"}");
             foreach (var profile in response.Profiles)
             {
-                Console.WriteLine($"- {profile.Id} | {profile.ProviderId}/{profile.ModelId} | default={profile.IsDefault.ToString().ToLowerInvariant()} | tags={string.Join(",", profile.Tags)}");
+                Console.WriteLine($"- {profile.Id} | {profile.ProviderId}/{profile.ModelId} | default={profile.IsDefault.ToString().ToLowerInvariant()} | preset={profile.PresetId ?? "none"} | tags={string.Join(",", profile.Tags)}");
+                if (profile.CompatibilityNotes.Count > 0)
+                    Console.WriteLine($"  notes: {string.Join("; ", profile.CompatibilityNotes)}");
                 if (profile.ValidationIssues.Length > 0)
                     Console.WriteLine($"  issues: {string.Join("; ", profile.ValidationIssues)}");
             }
@@ -752,7 +794,7 @@ internal static class Program
             foreach (var warning in response.Warnings)
                 Console.WriteLine($"WARN: {warning}");
             foreach (var profile in response.Profiles)
-                Console.WriteLine($"- {profile.Id} | available={profile.IsAvailable.ToString().ToLowerInvariant()} | {profile.ProviderId}/{profile.ModelId}");
+                Console.WriteLine($"- {profile.Id} | available={profile.IsAvailable.ToString().ToLowerInvariant()} | preset={profile.PresetId ?? "none"} | compatibility={profile.UsesCompatibilityTransport.ToString().ToLowerInvariant()} | {profile.ProviderId}/{profile.ModelId}");
             return response.Errors.Count > 0 ? 1 : 0;
         }
 

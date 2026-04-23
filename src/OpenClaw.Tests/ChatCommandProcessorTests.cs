@@ -90,4 +90,47 @@ public sealed class ChatCommandProcessorTests
         Assert.True(handled);
         Assert.Contains("Prompt Cache: 512 read / 0 write", response, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Concise_Command_TogglesSessionResponseMode()
+    {
+        var store = new FileMemoryStore(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "openclaw-command-tests", Guid.NewGuid().ToString("N")), 4);
+        var processor = new ChatCommandProcessor(new SessionManager(store, new GatewayConfig(), NullLogger.Instance));
+        var session = new Session
+        {
+            Id = "sess-concise",
+            ChannelId = "websocket",
+            SenderId = "user1"
+        };
+
+        var (_, onResponse) = await processor.TryProcessCommandAsync(session, "/concise on", CancellationToken.None);
+        Assert.Equal(SessionResponseModes.ConciseOps, session.ResponseMode);
+        Assert.Equal("Concise operational mode enabled.", onResponse);
+
+        var (_, offResponse) = await processor.TryProcessCommandAsync(session, "/concise off", CancellationToken.None);
+        Assert.Equal(SessionResponseModes.Full, session.ResponseMode);
+        Assert.Equal("Concise operational mode disabled for this session.", offResponse);
+
+        var (_, autoResponse) = await processor.TryProcessCommandAsync(session, "/concise auto", CancellationToken.None);
+        Assert.Equal(SessionResponseModes.Default, session.ResponseMode);
+        Assert.Equal("Concise mode reset to automatic behavior.", autoResponse);
+    }
+
+    [Fact]
+    public async Task Help_Command_IncludesConciseMode()
+    {
+        var store = new FileMemoryStore(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "openclaw-command-tests", Guid.NewGuid().ToString("N")), 4);
+        var processor = new ChatCommandProcessor(new SessionManager(store, new GatewayConfig(), NullLogger.Instance));
+        var session = new Session
+        {
+            Id = "sess-help",
+            ChannelId = "websocket",
+            SenderId = "user1"
+        };
+
+        var (handled, response) = await processor.TryProcessCommandAsync(session, "/help", CancellationToken.None);
+
+        Assert.True(handled);
+        Assert.Contains("/concise on|off|auto", response, StringComparison.Ordinal);
+    }
 }
