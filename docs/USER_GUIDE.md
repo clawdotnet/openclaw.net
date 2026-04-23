@@ -18,7 +18,7 @@ From a source checkout, use:
 dotnet run --project src/OpenClaw.Cli -c Release -- start
 ```
 
-Use `--profile public` when you are preparing a reverse-proxy or internet-facing deployment. The start/setup flow writes an external config file, a matching env example, and prints the exact gateway launch, `--doctor`, and `openclaw admin posture` commands for that config.
+Use `--profile public` when you are preparing a reverse-proxy or internet-facing deployment. If `openclaw start` finds an existing config, it reuses it; if it needs to run setup, the flow writes an external config file, a matching env example, and prints the exact gateway launch, `--doctor`, and `openclaw admin posture` commands for that config.
 
 Continue the supported bootstrap flow with:
 

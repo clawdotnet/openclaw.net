@@ -117,7 +117,7 @@ internal static class UpgradeCommands
 
         var summary = $"Setup verification reported {verification.Checks.Count} checks with overall status '{verification.OverallStatus}'.";
         if (offline)
-            summary += " Provider smoke ran in offline mode.";
+            summary += " Provider smoke was skipped because offline mode is enabled.";
 
         return new UpgradeCheckSummary(
             "Config and provider readiness",

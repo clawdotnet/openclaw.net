@@ -26,6 +26,7 @@ public sealed class UpgradeCommandsTests
             Assert.Contains("[pass] Plugin compatibility", text, StringComparison.Ordinal);
             Assert.Contains("[pass] Skill compatibility", text, StringComparison.Ordinal);
             Assert.Contains("[pass] Migration impact", text, StringComparison.Ordinal);
+            Assert.Contains("Provider smoke was skipped because offline mode is enabled.", text, StringComparison.Ordinal);
         });
     }
 
