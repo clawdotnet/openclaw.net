@@ -32,6 +32,7 @@ internal static class CoreServicesExtensions
         // so this is a no-op in production (TryAddSingleton respects existing registrations).
         // Tests that compose services from a bare ServiceCollection rely on this fallback.
         services.TryAddSingleton<IConfiguration>(_ => new ConfigurationBuilder().Build());
+        services.AddSingleton(startup);
         services.AddSingleton(config);
         services.AddSingleton(config.Learning);
         services.AddSingleton(typeof(AllowlistSemantics), AllowlistPolicy.ParseSemantics(config.Channels.AllowlistSemantics));
@@ -123,7 +124,6 @@ internal static class CoreServicesExtensions
         services.AddSingleton<AutomationRunCoordinator>();
         services.AddSingleton<IAutomationRunDispatcher>(sp => sp.GetRequiredService<AutomationRunCoordinator>());
         services.AddSingleton<GatewayAutomationService>();
-        services.AddSingleton<GatewayMaintenanceRuntimeService>();
         services.AddSingleton<LearningService>();
         services.AddSingleton<ICronJobSource, GatewayCronJobSource>();
         services.AddSingleton<ActorRateLimitService>(sp =>
