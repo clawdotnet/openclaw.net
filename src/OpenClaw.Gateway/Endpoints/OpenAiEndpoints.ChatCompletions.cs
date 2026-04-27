@@ -60,7 +60,7 @@ internal static partial class OpenAiEndpoints
 
             var lastUserMsg = req.Messages.FindLast(m =>
                 string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase));
-            var userText = lastUserMsg?.Content ?? req.Messages[^1].Content ?? "";
+            var userText = (lastUserMsg?.Content ?? req.Messages[^1].Content).ToPromptText();
 
             var requesterKey = EndpointHelpers.GetHttpRateLimitKey(ctx, startup.Config);
             if (!TryGetOptionalStableSessionId(ctx, out var stableSessionId, out var stableSessionError))
@@ -158,7 +158,7 @@ internal static partial class OpenAiEndpoints
                             session.History.Add(new ChatTurn
                             {
                                 Role = message.Role.ToLowerInvariant(),
-                                Content = message.Content
+                                Content = message.Content.ToPromptText()
                             });
                         }
                     }

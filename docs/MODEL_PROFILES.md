@@ -38,6 +38,21 @@ The runtime uses those profiles to:
 - fall back to another profile when allowed
 - fail clearly when no profile can safely satisfy the request
 
+## OpenAI-compatible request mapping
+
+When a client calls OpenClaw's OpenAI-compatible HTTP routes, the request `model` field is interpreted as either:
+
+- a model profile id, if it matches a configured OpenClaw profile, or
+- a literal upstream model id override, if it does not.
+
+If the request omits `model`, OpenClaw falls back to the configured default profile or `OpenClaw:Llm:Model`.
+
+This matters for downstream integrations:
+
+- `"default"` is not a built-in sentinel for "use your configured default".
+- `"default"` only works if you defined a profile with id `default`.
+- If you want the gateway default route, omit `model`.
+
 ## Example configuration
 
 ```json

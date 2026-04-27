@@ -83,7 +83,17 @@ public sealed class ToolExecutionRouter
         if (tool is not ISandboxCapableTool sandboxCapableTool)
             return false;
 
-        sandboxMode = ToolSandboxPolicy.ResolveMode(_config, tool.Name, sandboxCapableTool.DefaultSandboxMode);
+        var sandboxResolution = ToolSandboxPolicy.ResolveModeDetailed(_config, tool.Name, sandboxCapableTool.DefaultSandboxMode);
+        sandboxMode = sandboxResolution.EffectiveMode;
+        _logger?.LogInformation(
+            "Sandbox mode resolved for tool {Tool}: provider={Provider} source={Source} default={DefaultMode} configured={ConfiguredMode} effective={EffectiveMode} reason={Reason}",
+            tool.Name,
+            sandboxResolution.Provider,
+            sandboxResolution.ModeSource,
+            sandboxResolution.DefaultMode,
+            sandboxResolution.ConfiguredMode?.ToString() ?? "",
+            sandboxResolution.EffectiveMode,
+            sandboxResolution.Reason);
         if (sandboxMode == ToolSandboxMode.None)
             return false;
 

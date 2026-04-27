@@ -21,6 +21,7 @@ internal static class GatewayBootstrapExtensions
             opts.SerializerOptions.TypeInfoResolverChain.Add(CoreJsonContext.Default));
 
         var config = LoadGatewayConfig(builder.Configuration);
+        var configSources = ConfigurationSourceDiagnosticsBuilder.Build(builder.Configuration, config);
 
         var isNonLoopbackBind = !GatewaySecurity.IsLoopbackBind(config.BindAddress);
         var isDoctorMode = args.Any(a => string.Equals(a, "--doctor", StringComparison.Ordinal));
@@ -39,6 +40,7 @@ internal static class GatewayBootstrapExtensions
         if (isNonLoopbackBind && string.IsNullOrWhiteSpace(config.AuthToken))
         {
             var message = "OPENCLAW_AUTH_TOKEN must be set when binding to a non-loopback address.";
+            WriteConfigSourceDiagnostics(configSources);
             if (isDoctorMode)
             {
                 Console.Error.WriteLine(message);
@@ -57,6 +59,7 @@ internal static class GatewayBootstrapExtensions
             configErrors.Add(featureError);
         if (configErrors.Count > 0)
         {
+            WriteConfigSourceDiagnostics(configSources);
             foreach (var err in configErrors)
                 Console.Error.WriteLine($"Configuration error: {err}");
 
@@ -79,6 +82,7 @@ internal static class GatewayBootstrapExtensions
         }
         catch (Exception ex)
         {
+            WriteConfigSourceDiagnostics(configSources);
             Console.Error.WriteLine($"Configuration error: {ex.Message}");
             if (isDoctorMode)
             {
@@ -94,7 +98,10 @@ internal static class GatewayBootstrapExtensions
 
         if (isDoctorMode)
         {
-            var ok = await DoctorCheck.RunAsync(config, runtimeState);
+            var ok = await DoctorCheck.RunAsync(
+                config,
+                runtimeState,
+                configSources);
             return new BootstrapResult
             {
                 ShouldExit = true,
@@ -113,9 +120,16 @@ internal static class GatewayBootstrapExtensions
                 Config = config,
                 RuntimeState = runtimeState,
                 IsNonLoopbackBind = isNonLoopbackBind,
+                ConfigSources = configSources,
                 WorkspacePath = Environment.GetEnvironmentVariable("OPENCLAW_WORKSPACE")
             }
         };
+    }
+
+    private static void WriteConfigSourceDiagnostics(ConfigSourceDiagnostics diagnostics)
+    {
+        Console.Error.WriteLine("Effective configuration winners:");
+        Console.Error.WriteLine(ConfigurationSourceDiagnosticsBuilder.Render(diagnostics));
     }
 
     internal static GatewayConfig LoadGatewayConfig(IConfiguration configuration)

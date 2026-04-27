@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using OpenClaw.Core.Models;
 
 namespace OpenClaw.Gateway.Bootstrap;
 
@@ -13,6 +14,7 @@ internal sealed class StartupConsoleCoordinator
 
     public void WriteConfigurationSummary(
         ConfigurationManager configuration,
+        GatewayConfig config,
         string environmentName,
         LocalStartupSession? session,
         TextWriter? output = null)
@@ -27,6 +29,10 @@ internal sealed class StartupConsoleCoordinator
         writer.WriteLine(session is null
             ? "- Session-only overrides: none"
             : $"- Session-only overrides: active ({session.Mode})");
+
+        writer.WriteLine("Effective configuration winners:");
+        writer.WriteLine(ConfigurationSourceDiagnosticsBuilder.Render(
+            ConfigurationSourceDiagnosticsBuilder.Build(configuration, config)));
         writer.Flush();
     }
 

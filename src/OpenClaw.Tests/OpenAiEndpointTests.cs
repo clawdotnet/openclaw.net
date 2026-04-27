@@ -64,6 +64,31 @@ public class OpenAiEndpointTests
         Assert.False(req.Stream);
     }
 
+    [Fact]
+    public void ChatCompletionRequest_Deserializes_MultimodalContentPartsAsPromptMarkers()
+    {
+        const string json = """
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            { "type": "text", "text": "What is in this image?" },
+                            { "type": "image_url", "image_url": { "url": "data:image/png;base64,AAAA" } }
+                        ]
+                    }
+                ]
+            }
+            """;
+
+        var req = JsonSerializer.Deserialize(json, CoreJsonContext.Default.OpenAiChatCompletionRequest);
+
+        Assert.NotNull(req);
+        var content = req.Messages[0].Content.ToPromptText();
+        Assert.Contains("What is in this image?", content, StringComparison.Ordinal);
+        Assert.Contains("[IMAGE_URL:data:image/png;base64,AAAA]", content, StringComparison.Ordinal);
+    }
+
     // ── Response Serialization ──────────────────────────────────────────
 
     [Fact]

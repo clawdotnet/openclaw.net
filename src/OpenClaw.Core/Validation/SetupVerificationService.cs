@@ -20,6 +20,7 @@ public sealed class SetupVerificationRequest
     public ModelSelectionDoctorResponse? ModelDoctor { get; init; }
     public IModelProfileRegistry? ModelProfiles { get; init; }
     public ProviderSmokeRegistry? ProviderSmokeRegistry { get; init; }
+    public ConfigSourceDiagnostics? ConfigSources { get; init; }
 }
 
 public sealed class DoctorReportRequest
@@ -35,6 +36,7 @@ public sealed class DoctorReportRequest
     public ModelSelectionDoctorResponse? ModelDoctor { get; init; }
     public IModelProfileRegistry? ModelProfiles { get; init; }
     public ProviderSmokeRegistry? ProviderSmokeRegistry { get; init; }
+    public ConfigSourceDiagnostics? ConfigSources { get; init; }
 }
 
 public static class SetupVerificationService
@@ -64,7 +66,8 @@ public static class SetupVerificationService
             WorkspacePath = request.WorkspacePath,
             ModelDoctor = request.ModelDoctor,
             ModelProfiles = request.ModelProfiles,
-            ProviderSmokeRegistry = request.ProviderSmokeRegistry
+            ProviderSmokeRegistry = request.ProviderSmokeRegistry,
+            ConfigSources = request.ConfigSources
         }, ct);
 
         return BuildSetupVerificationResponse(report);
@@ -82,6 +85,7 @@ public static class SetupVerificationService
         {
             BuildRuntimeCheck(request.RuntimeState),
             BuildConfigCheck(config),
+            BuildConfigSourceDiagnosticsCheck(request.ConfigSources),
             BuildPromptCacheCheck(config),
             BuildModelProfileConsistencyCheck(config),
             BuildWorkspaceCheck(config, workspacePath),
@@ -321,6 +325,32 @@ public static class SetupVerificationService
             Summary = $"Static configuration validation found {errors.Count} issue(s).",
             Detail = string.Join(Environment.NewLine, errors.Take(8).Select(static item => $"- {item}")),
             NextStep = "Fix the configuration validation errors and rerun doctor or setup verify."
+        };
+    }
+
+    private static DoctorCheckItem BuildConfigSourceDiagnosticsCheck(ConfigSourceDiagnostics? diagnostics)
+    {
+        if (diagnostics is null || diagnostics.Items.Count == 0)
+        {
+            return new DoctorCheckItem
+            {
+                Id = "config_sources",
+                Label = "Effective configuration sources",
+                Category = DoctorCheckCategories.Config,
+                Status = SetupCheckStates.Skip,
+                Summary = "Configuration source diagnostics were not supplied."
+            };
+        }
+
+        return new DoctorCheckItem
+        {
+            Id = "config_sources",
+            Label = "Effective configuration sources",
+            Category = DoctorCheckCategories.Config,
+            Status = SetupCheckStates.Pass,
+            Summary = "Effective bind, storage, provider, and secret-source winners are listed.",
+            Detail = string.Join(Environment.NewLine, diagnostics.Items.Select(static item =>
+                $"- {item.Label}: {item.EffectiveValue} (source: {item.Source})"))
         };
     }
 

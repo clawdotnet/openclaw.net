@@ -522,6 +522,29 @@ On non-loopback/public binds, authenticate these surfaces with `Authorization: B
 - Admin session listings and session detail now expose `stableSessionId`, `stableSessionNamespace`, and `stableSessionOwnerKey` so operators can audit the binding.
 - Unsafe stable session ids (path separators, traversal patterns, overlong ids) are rejected at the HTTP edge.
 
+### OpenAI-compatible model resolution
+
+For `POST /v1/chat/completions` and `POST /v1/responses`, the incoming `model` field is resolved in this order:
+
+1. If `model` matches a configured OpenClaw model profile id, OpenClaw selects that profile.
+2. Otherwise, OpenClaw treats `model` as a literal upstream model id override.
+3. If `model` is omitted, OpenClaw falls back to the configured gateway default model profile or `OpenClaw:Llm:Model`.
+
+Important implications:
+
+- The incoming bearer token only authenticates the caller to OpenClaw. It does not tell OpenClaw which provider or model to use.
+- A model profile id is an OpenClaw concept. An upstream model id is a provider concept. They are not interchangeable unless you intentionally name them the same way.
+- `"default"` is not a reserved sentinel on the OpenAI-compatible routes. It only works if you actually defined a model profile with id `default`.
+- If your client wants "whatever OpenClaw is configured to use by default", omit the `model` field instead of sending `"default"`.
+
+Examples:
+
+- Omit `model`: use the gateway default route.
+- `"model": "frontier-tools"`: select the OpenClaw model profile with id `frontier-tools`.
+- `"model": "gpt-4o-mini"`: pass the literal upstream model id `gpt-4o-mini` through the selected provider route.
+
+If you are building a downstream app against OpenClaw's OpenAI-compatible surface, do not assume your own config placeholder values such as `"default"` or `"primary"` have meaning unless you created matching model profiles in OpenClaw.
+
 ## Upstream Migration
 
 Use the upstream migration flow to translate an upstream-style OpenClaw tree into an external OpenClaw.NET config:

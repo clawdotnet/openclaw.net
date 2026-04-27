@@ -445,6 +445,8 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(OpenAiChatCompletionRequest))]
 [JsonSerializable(typeof(OpenAiChatCompletionResponse))]
 [JsonSerializable(typeof(OpenAiMessage))]
+[JsonSerializable(typeof(OpenAiMessageContent))]
+[JsonSerializable(typeof(OpenAiMessageContentPart))]
 [JsonSerializable(typeof(OpenAiChoice))]
 [JsonSerializable(typeof(OpenAiResponseMessage))]
 [JsonSerializable(typeof(OpenAiUsage))]

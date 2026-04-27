@@ -46,6 +46,31 @@ public class AgentRuntimeTests
     }
 
     [Fact]
+    public async Task RunAsync_ImageUrlMarker_ReachesLlmAsUriContent()
+    {
+        IList<ChatMessage>? capturedMessages = null;
+        _chatClient.GetResponseAsync(
+            Arg.Do<IList<ChatMessage>>(messages => capturedMessages = messages),
+            Arg.Any<ChatOptions>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ChatResponse(new[] { new ChatMessage(ChatRole.Assistant, "saw image") })));
+
+        var session = new Session { Id = "sess1", SenderId = "user1", ChannelId = "test-channel" };
+
+        await _agent.RunAsync(
+            session,
+            "What is this?\n[IMAGE_URL:data:image/png;base64,AAAA]",
+            CancellationToken.None);
+
+        Assert.NotNull(capturedMessages);
+        var user = capturedMessages!.Last(message => message.Role == ChatRole.User);
+        Assert.Contains(user.Contents.OfType<TextContent>(), content => content.Text.Contains("What is this?", StringComparison.Ordinal));
+        Assert.Contains(user.Contents.OfType<UriContent>(), content =>
+            content.Uri.ToString() == "data:image/png;base64,AAAA" &&
+            content.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task RunAsync_TrimsHistory()
     {
         var session = new Session { Id = "sess1", SenderId = "user1", ChannelId = "test-channel" };

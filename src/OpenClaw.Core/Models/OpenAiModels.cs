@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace OpenClaw.Core.Models;
@@ -32,7 +33,148 @@ public sealed class OpenAiChatCompletionRequest
 public sealed class OpenAiMessage
 {
     public required string Role { get; set; }
-    public required string Content { get; set; }
+    public required OpenAiMessageContent Content { get; set; }
+}
+
+[JsonConverter(typeof(OpenAiMessageContentJsonConverter))]
+public sealed class OpenAiMessageContent
+{
+    public string? Text { get; init; }
+    public List<OpenAiMessageContentPart> Parts { get; init; } = [];
+
+    public static implicit operator OpenAiMessageContent(string text)
+        => FromText(text);
+
+    public static OpenAiMessageContent FromText(string? text)
+        => new() { Text = text ?? string.Empty };
+
+    public string ToPromptText()
+    {
+        if (Parts.Count == 0)
+            return Text ?? string.Empty;
+
+        var lines = new List<string>();
+        foreach (var part in Parts)
+        {
+            if (part.IsText && !string.IsNullOrWhiteSpace(part.Text))
+            {
+                lines.Add(part.Text!);
+                continue;
+            }
+
+            if (part.IsImage && !string.IsNullOrWhiteSpace(part.ImageUrl))
+                lines.Add($"[IMAGE_URL:{part.ImageUrl}]");
+        }
+
+        return string.Join('\n', lines).Trim();
+    }
+
+    public override string ToString() => ToPromptText();
+
+    public override bool Equals(object? obj)
+        => obj switch
+        {
+            OpenAiMessageContent other => string.Equals(ToPromptText(), other.ToPromptText(), StringComparison.Ordinal),
+            string text => string.Equals(ToPromptText(), text, StringComparison.Ordinal),
+            _ => false
+        };
+
+    public override int GetHashCode()
+        => StringComparer.Ordinal.GetHashCode(ToPromptText());
+}
+
+public sealed class OpenAiMessageContentPart
+{
+    public string Type { get; init; } = "";
+    public string? Text { get; init; }
+    public string? ImageUrl { get; init; }
+
+    public bool IsText => Type is "text" or "input_text";
+    public bool IsImage => Type is "image_url" or "input_image";
+}
+
+public sealed class OpenAiMessageContentJsonConverter : JsonConverter<OpenAiMessageContent>
+{
+    public override OpenAiMessageContent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+            return OpenAiMessageContent.FromText(reader.GetString());
+
+        if (reader.TokenType != JsonTokenType.StartArray)
+            throw new JsonException("OpenAI message content must be a string or an array of content parts.");
+
+        var parts = new List<OpenAiMessageContentPart>();
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndArray)
+                return new OpenAiMessageContent { Parts = parts };
+
+            using var doc = JsonDocument.ParseValue(ref reader);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                continue;
+
+            var type = root.TryGetProperty("type", out var typeProp) ? typeProp.GetString() ?? "" : "";
+            if (type is "text" or "input_text")
+            {
+                var text = root.TryGetProperty("text", out var textProp) ? textProp.GetString() : null;
+                parts.Add(new OpenAiMessageContentPart { Type = type, Text = text });
+                continue;
+            }
+
+            if (type is "image_url" or "input_image")
+            {
+                string? imageUrl = null;
+                if (root.TryGetProperty("image_url", out var imageUrlProp))
+                {
+                    imageUrl = imageUrlProp.ValueKind == JsonValueKind.String
+                        ? imageUrlProp.GetString()
+                        : imageUrlProp.TryGetProperty("url", out var urlProp) ? urlProp.GetString() : null;
+                }
+                else if (root.TryGetProperty("image", out var inputImageProp))
+                {
+                    imageUrl = inputImageProp.GetString();
+                }
+                else if (root.TryGetProperty("url", out var urlProp))
+                {
+                    imageUrl = urlProp.GetString();
+                }
+
+                parts.Add(new OpenAiMessageContentPart { Type = type, ImageUrl = imageUrl });
+            }
+        }
+
+        throw new JsonException("Unexpected end of OpenAI message content array.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, OpenAiMessageContent value, JsonSerializerOptions options)
+    {
+        if (value.Parts.Count == 0)
+        {
+            writer.WriteStringValue(value.Text ?? string.Empty);
+            return;
+        }
+
+        writer.WriteStartArray();
+        foreach (var part in value.Parts)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("type", part.Type);
+            if (part.IsText)
+            {
+                writer.WriteString("text", part.Text ?? string.Empty);
+            }
+            else if (part.IsImage)
+            {
+                writer.WritePropertyName("image_url");
+                writer.WriteStartObject();
+                writer.WriteString("url", part.ImageUrl ?? string.Empty);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
+    }
 }
 
 /// <summary>

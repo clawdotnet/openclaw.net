@@ -8,7 +8,10 @@ namespace OpenClaw.Core.Validation;
 /// </summary>
 public static class DoctorCheck
 {
-    public static async Task<bool> RunAsync(GatewayConfig config, GatewayRuntimeState runtimeState)
+    public static async Task<bool> RunAsync(
+        GatewayConfig config,
+        GatewayRuntimeState runtimeState,
+        ConfigSourceDiagnostics? configSources = null)
     {
         var localState = LocalSetupStateLoader.Load(config.Memory.StoragePath);
         var report = await SetupVerificationService.BuildDoctorReportAsync(new DoctorReportRequest
@@ -21,7 +24,8 @@ public static class DoctorCheck
             RequireProvider = false,
             CheckPortAvailability = true,
             WorkspacePath = config.Tooling.WorkspaceRoot,
-            ModelDoctor = ModelDoctorEvaluator.Build(config)
+            ModelDoctor = ModelDoctorEvaluator.Build(config),
+            ConfigSources = configSources
         }, CancellationToken.None);
 
         Console.WriteLine(SetupVerificationService.RenderDoctorText(report));

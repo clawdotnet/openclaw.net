@@ -63,7 +63,7 @@ while (true)
         startup = bootstrap.Startup
             ?? throw new InvalidOperationException("Bootstrap completed without a startup context.");
 
-        startupConsole.WriteConfigurationSummary(builder.Configuration, environmentName, localSession);
+        startupConsole.WriteConfigurationSummary(builder.Configuration, startup.Config, environmentName, localSession);
         startupConsole.WritePhase("Building services");
         builder.Services.AddOpenApi("openclaw-integration");
         builder.AddOpenClawObservability();
