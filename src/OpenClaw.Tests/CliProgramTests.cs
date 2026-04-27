@@ -69,4 +69,48 @@ public sealed class CliProgramTests
         Assert.Equal("./repo", parsed.GetOption("--workspace"));
         Assert.True(parsed.HasFlag("--no-stream"));
     }
+
+    [Fact]
+    public void CliArgs_Parse_RepeatedImageOptions()
+    {
+        var parsed = CliArgs.Parse(["describe", "--image", "one.png", "--image", "https://example.test/two.png"]);
+
+        Assert.Equal(["one.png", "https://example.test/two.png"], parsed.Images);
+    }
+
+    [Fact]
+    public void BuildUserContent_AddsImageMarkersForImageOptions()
+    {
+        var content = OpenClaw.Cli.Program.BuildUserContent(
+            "Describe these.",
+            files: [],
+            images: ["https://example.test/cat.png"]);
+
+        Assert.Contains("Describe these.", content, StringComparison.Ordinal);
+        Assert.Contains("[IMAGE_URL:https://example.test/cat.png]", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildImageCommandContent_AddsImageMarkerAndDefaultPrompt()
+    {
+        var content = OpenClaw.Cli.Program.BuildImageCommandContent("/image https://example.test/cat.png");
+
+        Assert.NotNull(content);
+        Assert.Contains("Describe this image.", content, StringComparison.Ordinal);
+        Assert.Contains("[IMAGE_URL:https://example.test/cat.png]", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildUserContent_TreatsFileUriImagesAsImagePaths()
+    {
+        var tempImage = Path.Combine(Path.GetTempPath(), $"openclaw-{Guid.NewGuid():N}.png");
+        var fileUri = new Uri(tempImage).AbsoluteUri;
+
+        var content = OpenClaw.Cli.Program.BuildUserContent(
+            "Describe it.",
+            files: [],
+            images: [fileUri]);
+
+        Assert.Contains($"[IMAGE_PATH:{tempImage}]", content, StringComparison.Ordinal);
+    }
 }

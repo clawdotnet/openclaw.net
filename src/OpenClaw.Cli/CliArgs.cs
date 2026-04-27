@@ -7,6 +7,7 @@ internal sealed class CliArgs
 
     public List<string> Positionals { get; } = [];
     public List<string> Files { get; } = [];
+    public List<string> Images { get; } = [];
     public bool ShowHelp { get; private set; }
     public IReadOnlyDictionary<string, List<string>> Options => _options;
 
@@ -56,6 +57,12 @@ internal sealed class CliArgs
             if (a == "--file")
             {
                 parsed.Files.Add(value);
+                continue;
+            }
+
+            if (a == "--image")
+            {
+                parsed.Images.Add(value);
                 continue;
             }
 

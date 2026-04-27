@@ -26,6 +26,14 @@ public sealed class SandboxToolConfig
     public int? TTL { get; set; }
 }
 
+public sealed record ToolSandboxModeResolution(
+    string Provider,
+    string ModeSource,
+    ToolSandboxMode DefaultMode,
+    ToolSandboxMode? ConfiguredMode,
+    ToolSandboxMode EffectiveMode,
+    string Reason);
+
 public static class SandboxProviderNames
 {
     public const string None = "None";
@@ -79,14 +87,38 @@ public static class ToolSandboxPolicy
         GatewayConfig config,
         string toolName,
         ToolSandboxMode defaultMode)
+        => ResolveModeDetailed(config, toolName, defaultMode).EffectiveMode;
+
+    public static ToolSandboxModeResolution ResolveModeDetailed(
+        GatewayConfig config,
+        string toolName,
+        ToolSandboxMode defaultMode)
     {
-        if (config.Sandbox.Tools.TryGetValue(toolName, out var toolConfig) &&
-            TryParseMode(toolConfig.Mode, out var configuredMode))
+        var provider = SandboxProviderNames.Normalize(config.Sandbox.Provider);
+        var configuredMode = ToolSandboxMode.None;
+        var hasConfiguredMode = config.Sandbox.Tools.TryGetValue(toolName, out var toolConfig) &&
+                                TryParseMode(toolConfig.Mode, out configuredMode);
+        var selectedMode = hasConfiguredMode ? configuredMode : defaultMode;
+        var modeSource = hasConfiguredMode ? "tool-config" : "tool-default";
+
+        if (string.Equals(provider, SandboxProviderNames.None, StringComparison.OrdinalIgnoreCase))
         {
-            return configuredMode;
+            return new ToolSandboxModeResolution(
+                provider,
+                modeSource,
+                defaultMode,
+                hasConfiguredMode ? configuredMode : null,
+                ToolSandboxMode.None,
+                "sandbox provider is None, the global sandbox off switch");
         }
 
-        return defaultMode;
+        return new ToolSandboxModeResolution(
+            provider,
+            modeSource,
+            defaultMode,
+            hasConfiguredMode ? configuredMode : null,
+            selectedMode,
+            hasConfiguredMode ? "tool-specific sandbox mode configured" : "using tool default sandbox mode");
     }
 
     public static string? ResolveTemplate(GatewayConfig config, string toolName)

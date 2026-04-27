@@ -583,6 +583,30 @@
             align-items: flex-end;
         }
 
+        #attach-button {
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            border: 1px solid var(--separator);
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            margin-bottom: 6px;
+        }
+
+        #attach-button.has-files {
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+
+        #image-input {
+            display: none;
+        }
+
         #message-input {
             flex-grow: 1;
             background: var(--bg-elevated);
@@ -764,6 +788,8 @@
                 <button id="live-interrupt-button" type="button" title="Interrupt live generation" disabled>Interrupt</button>
             </div>
             <div id="input-container">
+                <button id="attach-button" type="button" title="Attach image" aria-label="Attach image">+</button>
+                <input id="image-input" type="file" accept="image/*" multiple>
                 <textarea id="message-input" rows="1" placeholder="Message OpenClaw.NET..." disabled></textarea>
                 <button id="send-button" disabled title="Send Message">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
@@ -795,6 +821,8 @@
         const chatContainer = document.getElementById('chat-container');
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
+        const attachButton = document.getElementById('attach-button');
+        const imageInput = document.getElementById('image-input');
         const tokenInput = document.getElementById('token-input');
         const rememberToken = document.getElementById('remember-token');
         const doctorButton = document.getElementById('doctor-button');
@@ -1609,16 +1637,50 @@
             };
         }
 
-        function sendMessage() {
+        function readImageAsDataUrl(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(reader.error || new Error('Unable to read image.'));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function clearImageSelection() {
+            imageInput.value = '';
+            attachButton.classList.remove('has-files');
+        }
+
+        async function sendMessage() {
             const text = messageInput.value.trim();
-            if (!text) return;
+            const imageFiles = Array.from(imageInput.files || []);
+            if (!text && imageFiles.length === 0) return;
             if (isLiveMode()) {
                 if (!isLiveConnected()) {
                     appendSystem('Start a live session before sending live messages.', true);
                     return;
                 }
+                if (imageFiles.length > 0) {
+                    appendSystem('Image attachments are available in Chat mode.', true);
+                    clearImageSelection();
+                    return;
+                }
             } else if (!ws || ws.readyState !== WebSocket.OPEN) {
                 return;
+            }
+
+            let outboundText = text;
+            if (!isLiveMode()) {
+                outboundText = text || 'Describe this image.';
+                try {
+                    for (const file of imageFiles) {
+                        outboundText += `\n[IMAGE_URL:${await readImageAsDataUrl(file)}]`;
+                    }
+                } catch (error) {
+                    appendSystem(error.message || 'Unable to read image attachment.', true);
+                    clearImageSelection();
+                    return;
+                }
             }
 
             const row = createRow('user');
@@ -1639,11 +1701,12 @@
             } else {
                 ws.send(JSON.stringify({
                     type: "user_message",
-                    text: text
+                    text: outboundText
                 }));
             }
 
             messageInput.value = '';
+            clearImageSelection();
             messageInput.style.height = 'auto';
             sendButton.style.opacity = '0.7';
             activeResponseDiv = null;
@@ -1671,11 +1734,15 @@
         messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                sendMessage();
+                void sendMessage();
             }
         });
 
-        sendButton.addEventListener('click', sendMessage);
+        sendButton.addEventListener('click', () => void sendMessage());
+        attachButton.addEventListener('click', () => imageInput.click());
+        imageInput.addEventListener('change', () => {
+            attachButton.classList.toggle('has-files', (imageInput.files || []).length > 0);
+        });
         modeSelect.addEventListener('change', updateComposerAvailability);
         liveConnectButton.addEventListener('click', connectLive);
         liveInterruptButton.addEventListener('click', () => {

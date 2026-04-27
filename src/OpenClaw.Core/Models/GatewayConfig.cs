@@ -286,7 +286,7 @@ public sealed class SecurityConfig
 
 public sealed class WebSocketConfig
 {
-    public int MaxMessageBytes { get; set; } = 65_536;
+    public int MaxMessageBytes { get; set; } = 256 * 1024;
     public int MaxConnections { get; set; } = 1_000;
     public int MaxConnectionsPerIp { get; set; } = 50;
     public int MessagesPerMinutePerConnection { get; set; } = 120;

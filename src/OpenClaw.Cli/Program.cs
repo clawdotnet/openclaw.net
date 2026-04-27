@@ -111,6 +111,7 @@ internal static class Program
 
             run options:
               --file <path>      Attach file contents (repeatable)
+              --image <path|url> Attach image input (repeatable)
               --no-stream        Disable SSE streaming
               --temperature <n>  Temperature (optional)
               --max-tokens <n>   Max tokens (optional)
@@ -119,6 +120,7 @@ internal static class Program
               /help, /exit, /reset
               /system <text>
               /model <model>
+              /image <path|url> [prompt]
 
             Examples:
               openclaw start
@@ -424,7 +426,7 @@ internal static class Program
             return 2;
         }
 
-        var userContent = BuildUserContent(prompt, parsed.Files);
+        var userContent = BuildUserContent(prompt, parsed.Files, parsed.Images);
         var messages = BuildMessages(system, userContent, priorConversation: null);
 
         using var client = new OpenClawHttpClient(baseUrl, token);
@@ -488,15 +490,22 @@ internal static class Program
             if (line.Length == 0)
                 continue;
 
-            if (line.StartsWith('/'))
+            var userContent = line.StartsWith("/image ", StringComparison.OrdinalIgnoreCase)
+                ? BuildImageCommandContent(line)
+                : line;
+
+            if (userContent is null)
+                continue;
+
+            if (line.StartsWith('/') && !line.StartsWith("/image ", StringComparison.OrdinalIgnoreCase))
             {
                 if (HandleSlashCommand(line, conversation, ref system, ref model))
                     break;
                 continue;
             }
 
-            conversation.Add(new OpenAiMessage { Role = "user", Content = line });
-            var messages = BuildMessages(system, line, conversation);
+            conversation.Add(new OpenAiMessage { Role = "user", Content = userContent });
+            var messages = BuildMessages(system, userContent, conversation);
 
             var request = new OpenAiChatCompletionRequest
             {
@@ -1612,15 +1621,43 @@ internal static class Program
         return messages;
     }
 
-    private static string BuildUserContent(string prompt, IReadOnlyList<string> files)
+    internal static string? BuildImageCommandContent(string command)
     {
-        if (files.Count == 0)
+        var tail = command["/image ".Length..].Trim();
+        if (tail.Length == 0)
+        {
+            Console.Error.WriteLine("Usage: /image <path|url> [prompt]");
+            return null;
+        }
+
+        var firstSpace = tail.IndexOf(' ');
+        var image = firstSpace < 0 ? tail : tail[..firstSpace].Trim();
+        var prompt = firstSpace < 0 ? "Describe this image." : tail[(firstSpace + 1)..].Trim();
+        if (string.IsNullOrWhiteSpace(prompt))
+            prompt = "Describe this image.";
+
+        return BuildUserContent(prompt, files: [], images: [image]);
+    }
+
+    internal static string BuildUserContent(string prompt, IReadOnlyList<string> files, IReadOnlyList<string>? images = null)
+    {
+        images ??= [];
+        if (files.Count == 0 && images.Count == 0)
             return prompt;
 
         var parts = new List<string> { prompt };
+        foreach (var image in images)
+            parts.Add(BuildImageMarker(image));
+
         foreach (var path in files)
         {
             var fullPath = Path.GetFullPath(path);
+            if (IsImagePath(fullPath))
+            {
+                parts.Add(BuildImageMarker(fullPath));
+                continue;
+            }
+
             var content = File.ReadAllText(fullPath);
             parts.Add(
                 $"""
@@ -1632,6 +1669,30 @@ internal static class Program
                 """);
         }
         return string.Join('\n', parts);
+    }
+
+    private static string BuildImageMarker(string image)
+    {
+        if (Uri.TryCreate(image, UriKind.Absolute, out var uri) &&
+            (uri.Scheme is "http" or "https" or "data"))
+        {
+            return $"[IMAGE_URL:{image}]";
+        }
+
+        if (Uri.TryCreate(image, UriKind.Absolute, out uri) && uri.IsFile)
+            return $"[IMAGE_PATH:{Path.GetFullPath(uri.LocalPath)}]";
+
+        return $"[IMAGE_PATH:{Path.GetFullPath(image)}]";
+    }
+
+    private static bool IsImagePath(string path)
+    {
+        var extension = Path.GetExtension(path);
+        return extension.Equals(".png", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".webp", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".gif", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<string?> ReadAllStdinAsync()
