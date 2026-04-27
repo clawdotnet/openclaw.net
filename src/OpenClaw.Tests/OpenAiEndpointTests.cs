@@ -89,6 +89,17 @@ public class OpenAiEndpointTests
         Assert.Contains("[IMAGE_URL:data:image/png;base64,AAAA]", content, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ChatCompletionRequest_Deserializes_NullContentAsEmptyPromptText()
+    {
+        const string json = """{"messages":[{"role":"assistant","content":null}]}""";
+
+        var req = JsonSerializer.Deserialize(json, CoreJsonContext.Default.OpenAiChatCompletionRequest);
+
+        Assert.NotNull(req);
+        Assert.Equal(string.Empty, req.Messages[0].Content.ToPromptText());
+    }
+
     // ── Response Serialization ──────────────────────────────────────────
 
     [Fact]

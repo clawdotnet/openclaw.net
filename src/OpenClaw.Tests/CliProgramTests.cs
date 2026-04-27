@@ -99,4 +99,18 @@ public sealed class CliProgramTests
         Assert.Contains("Describe this image.", content, StringComparison.Ordinal);
         Assert.Contains("[IMAGE_URL:https://example.test/cat.png]", content, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void BuildUserContent_TreatsFileUriImagesAsImagePaths()
+    {
+        var tempImage = Path.Combine(Path.GetTempPath(), $"openclaw-{Guid.NewGuid():N}.png");
+        var fileUri = new Uri(tempImage).AbsoluteUri;
+
+        var content = OpenClaw.Cli.Program.BuildUserContent(
+            "Describe it.",
+            files: [],
+            images: [fileUri]);
+
+        Assert.Contains($"[IMAGE_PATH:{tempImage}]", content, StringComparison.Ordinal);
+    }
 }

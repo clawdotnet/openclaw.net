@@ -350,9 +350,12 @@ public static class SetupVerificationService
             Status = SetupCheckStates.Pass,
             Summary = "Effective bind, storage, provider, and secret-source winners are listed.",
             Detail = string.Join(Environment.NewLine, diagnostics.Items.Select(static item =>
-                $"- {item.Label}: {item.EffectiveValue} (source: {item.Source})"))
+                $"- {item.Label}: {FormatConfigDiagnosticValue(item)} (source: {item.Source})"))
         };
     }
+
+    private static string FormatConfigDiagnosticValue(ConfigSourceDiagnosticItem item)
+        => item.Redacted ? "configured (redacted)" : item.EffectiveValue;
 
     private static DoctorCheckItem BuildPromptCacheCheck(GatewayConfig config)
         => HasValidPromptCacheConfiguration(config)

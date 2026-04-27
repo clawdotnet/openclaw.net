@@ -788,7 +788,7 @@
                 <button id="live-interrupt-button" type="button" title="Interrupt live generation" disabled>Interrupt</button>
             </div>
             <div id="input-container">
-                <button id="attach-button" type="button" title="Attach image">+</button>
+                <button id="attach-button" type="button" title="Attach image" aria-label="Attach image">+</button>
                 <input id="image-input" type="file" accept="image/*" multiple>
                 <textarea id="message-input" rows="1" placeholder="Message OpenClaw.NET..." disabled></textarea>
                 <button id="send-button" disabled title="Send Message">
@@ -1646,6 +1646,11 @@
             });
         }
 
+        function clearImageSelection() {
+            imageInput.value = '';
+            attachButton.classList.remove('has-files');
+        }
+
         async function sendMessage() {
             const text = messageInput.value.trim();
             const imageFiles = Array.from(imageInput.files || []);
@@ -1655,8 +1660,27 @@
                     appendSystem('Start a live session before sending live messages.', true);
                     return;
                 }
+                if (imageFiles.length > 0) {
+                    appendSystem('Image attachments are available in Chat mode.', true);
+                    clearImageSelection();
+                    return;
+                }
             } else if (!ws || ws.readyState !== WebSocket.OPEN) {
                 return;
+            }
+
+            let outboundText = text;
+            if (!isLiveMode()) {
+                outboundText = text || 'Describe this image.';
+                try {
+                    for (const file of imageFiles) {
+                        outboundText += `\n[IMAGE_URL:${await readImageAsDataUrl(file)}]`;
+                    }
+                } catch (error) {
+                    appendSystem(error.message || 'Unable to read image attachment.', true);
+                    clearImageSelection();
+                    return;
+                }
             }
 
             const row = createRow('user');
@@ -1668,10 +1692,6 @@
             chatContainer.insertBefore(row, typingRow);
 
             if (isLiveMode()) {
-                if (imageFiles.length > 0) {
-                    appendSystem('Image attachments are available in Chat mode.', true);
-                    return;
-                }
                 liveWs.send(JSON.stringify({
                     type: "text",
                     text: text,
@@ -1679,16 +1699,6 @@
                 }));
                 typingRow.style.display = 'flex';
             } else {
-                let outboundText = text || 'Describe this image.';
-                try {
-                    for (const file of imageFiles) {
-                        outboundText += `\n[IMAGE_URL:${await readImageAsDataUrl(file)}]`;
-                    }
-                } catch (error) {
-                    appendSystem(error.message || 'Unable to read image attachment.', true);
-                    return;
-                }
-
                 ws.send(JSON.stringify({
                     type: "user_message",
                     text: outboundText
@@ -1696,8 +1706,7 @@
             }
 
             messageInput.value = '';
-            imageInput.value = '';
-            attachButton.classList.remove('has-files');
+            clearImageSelection();
             messageInput.style.height = 'auto';
             sendButton.style.opacity = '0.7';
             activeResponseDiv = null;

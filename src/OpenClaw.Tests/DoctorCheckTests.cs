@@ -78,7 +78,7 @@ public sealed class DoctorCheckTests
                         {
                             Label = "API key",
                             Key = "OpenClaw:Llm:ApiKey",
-                            EffectiveValue = "configured (redacted)",
+                            EffectiveValue = "sk-test-secret",
                             Source = "environment variable MODEL_PROVIDER_KEY",
                             Redacted = true
                         }

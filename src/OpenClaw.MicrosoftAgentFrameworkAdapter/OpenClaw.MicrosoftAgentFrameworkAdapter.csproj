@@ -22,6 +22,7 @@
     <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A" Version="1.0.0-preview.260330.1" />
     <PackageReference Include="A2A" Version="1.0.0-preview" />
     <PackageReference Include="A2A.AspNetCore" Version="1.0.0-preview" />
+    <PackageReference Include="OpenTelemetry.Api" Version="1.15.3" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.5" />

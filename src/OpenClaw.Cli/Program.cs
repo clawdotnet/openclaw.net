@@ -1679,6 +1679,9 @@ internal static class Program
             return $"[IMAGE_URL:{image}]";
         }
 
+        if (Uri.TryCreate(image, UriKind.Absolute, out uri) && uri.IsFile)
+            return $"[IMAGE_PATH:{Path.GetFullPath(uri.LocalPath)}]";
+
         return $"[IMAGE_PATH:{Path.GetFullPath(image)}]";
     }
 

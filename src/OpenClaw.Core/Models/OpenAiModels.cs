@@ -95,8 +95,13 @@ public sealed class OpenAiMessageContentPart
 
 public sealed class OpenAiMessageContentJsonConverter : JsonConverter<OpenAiMessageContent>
 {
+    public override bool HandleNull => true;
+
     public override OpenAiMessageContent Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
+        if (reader.TokenType == JsonTokenType.Null)
+            return OpenAiMessageContent.FromText(null);
+
         if (reader.TokenType == JsonTokenType.String)
             return OpenAiMessageContent.FromText(reader.GetString());
 
