@@ -22,6 +22,7 @@ public static class TerminalUi
                     .AddChoices(
                     [
                         "Status",
+                        "Insights",
                         "Approvals",
                         "Sessions",
                         "Session Search",
@@ -38,6 +39,9 @@ public static class TerminalUi
             {
                 case "Status":
                     await ShowStatusAsync(client, ct);
+                    break;
+                case "Insights":
+                    await ShowInsightsAsync(client, ct);
                     break;
                 case "Approvals":
                     await ShowApprovalsAsync(client, ct);
@@ -91,6 +95,59 @@ public static class TerminalUi
         table.AddRow("Recent runtime events", dashboard.Events.Items.Count.ToString());
 
         AnsiConsole.Write(table);
+        Pause();
+    }
+
+    private static async Task ShowInsightsAsync(OpenClawHttpClient client, CancellationToken ct)
+    {
+        var insights = await client.GetOperatorInsightsAsync(null, null, ct);
+
+        var summary = new Table().RoundedBorder();
+        summary.AddColumn("Metric");
+        summary.AddColumn("Value");
+        summary.AddRow("Window", $"{insights.StartUtc:yyyy-MM-dd HH:mm} UTC - {insights.EndUtc:yyyy-MM-dd HH:mm} UTC");
+        summary.AddRow("Sessions", $"active {insights.Sessions.Active}, persisted {insights.Sessions.Persisted}, range {insights.Sessions.InRange}");
+        summary.AddRow("Provider requests", insights.Totals.ProviderRequests.ToString());
+        summary.AddRow("Tokens", $"{insights.Totals.TotalTokens} ({insights.Totals.InputTokens} in / {insights.Totals.OutputTokens} out)");
+        summary.AddRow("Estimated spend", $"${insights.Totals.EstimatedCostUsd:0.######}");
+        summary.AddRow("Tool calls", insights.Totals.ToolCalls.ToString());
+        AnsiConsole.Write(summary);
+
+        var providers = new Table().RoundedBorder().Title("Providers");
+        providers.AddColumn("Provider");
+        providers.AddColumn("Requests");
+        providers.AddColumn("Tokens");
+        providers.AddColumn("Cost");
+        providers.AddColumn("Errors");
+        foreach (var item in insights.Providers.Take(8))
+        {
+            providers.AddRow(
+                $"{Markup.Escape(item.ProviderId)}/{Markup.Escape(item.ModelId)}",
+                item.Requests.ToString(),
+                item.TotalTokens.ToString(),
+                $"${item.EstimatedCostUsd:0.######}",
+                item.Errors.ToString());
+        }
+        AnsiConsole.Write(providers);
+
+        var tools = new Table().RoundedBorder().Title("Tools");
+        tools.AddColumn("Tool");
+        tools.AddColumn("Calls");
+        tools.AddColumn("Failures");
+        tools.AddColumn("Avg ms");
+        foreach (var item in insights.Tools.Take(10))
+        {
+            tools.AddRow(
+                Markup.Escape(item.ToolName),
+                item.Calls.ToString(),
+                item.Failures.ToString(),
+                item.AverageDurationMs.ToString("0.0"));
+        }
+        AnsiConsole.Write(tools);
+
+        foreach (var warning in insights.Warnings)
+            AnsiConsole.MarkupLine($"[grey]{Markup.Escape(warning)}[/]");
+
         Pause();
     }
 

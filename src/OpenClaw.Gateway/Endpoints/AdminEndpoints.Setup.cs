@@ -230,6 +230,19 @@ internal static partial class AdminEndpoints
             return Results.Json(summary, CoreJsonContext.Default.ObservabilitySummaryResponse);
         });
 
+        app.MapGet("/admin/insights", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.observability");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var insights = await observability.BuildInsightsAsync(
+                GetQueryDateTimeOffset(ctx.Request, "fromUtc"),
+                GetQueryDateTimeOffset(ctx.Request, "toUtc"),
+                ctx.RequestAborted);
+            return Results.Json(insights, CoreJsonContext.Default.OperatorInsightsResponse);
+        });
+
         app.MapGet("/admin/observability/series", async (HttpContext ctx) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.observability");
@@ -256,6 +269,27 @@ internal static partial class AdminEndpoints
                 ctx.RequestAborted);
             var fileName = $"openclaw-audit-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.zip";
             return Results.File(bytes, "application/zip", fileName);
+        });
+
+        app.MapGet("/admin/trajectory/export", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.trajectory.export");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var sessionId = ctx.Request.Query.TryGetValue("sessionId", out var rawSessionId)
+                ? rawSessionId.ToString()
+                : null;
+            var anonymize = GetQueryBool(ctx.Request, "anonymize") ?? false;
+            var bytes = await observability.ExportTrajectoryJsonlAsync(
+                GetQueryDateTimeOffset(ctx.Request, "fromUtc"),
+                GetQueryDateTimeOffset(ctx.Request, "toUtc"),
+                sessionId,
+                anonymize,
+                ctx.RequestAborted);
+            var scope = string.IsNullOrWhiteSpace(sessionId) ? "range" : "session";
+            var fileName = $"openclaw-trajectory-{scope}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.jsonl";
+            return Results.File(bytes, "application/x-ndjson", fileName);
         });
 
         app.MapGet("/admin/posture", (HttpContext ctx) =>

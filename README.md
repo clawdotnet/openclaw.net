@@ -73,6 +73,8 @@ openclaw maintenance scan --config ~/.openclaw/config/openclaw.settings.json
 openclaw maintenance fix --config ~/.openclaw/config/openclaw.settings.json --dry-run
 openclaw skills inspect ./skills/my-skill
 openclaw compatibility catalog
+openclaw insights
+openclaw admin trajectory export --anonymize --output ./trajectory.jsonl
 openclaw upgrade check --config ~/.openclaw/config/openclaw.settings.json --offline
 openclaw upgrade rollback --config ~/.openclaw/config/openclaw.settings.json --offline
 openclaw migrate upstream --source ./upstream-agent --target-config ~/.openclaw/config/openclaw.settings.json
@@ -81,7 +83,9 @@ openclaw migrate upstream --source ./upstream-agent --target-config ~/.openclaw/
 - Skill inventory: `/admin/skills`
 - Maintenance report: `/admin/maintenance`
 - Observability summary: `/admin/observability/summary`
+- Operator insights: `/admin/insights`
 - Audit export: `/admin/audit/export`
+- Trajectory export: `/admin/trajectory/export`
 - Compatibility matrix: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)
 
 For local Ollama setups, prefer the native root endpoint and an explicit preset:

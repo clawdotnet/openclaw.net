@@ -55,9 +55,11 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _adminOperatorAccountsUri;
     private readonly Uri _adminOrganizationPolicyUri;
     private readonly Uri _adminSetupStatusUri;
+    private readonly Uri _adminInsightsUri;
     private readonly Uri _adminObservabilitySummaryUri;
     private readonly Uri _adminObservabilitySeriesUri;
     private readonly Uri _adminAuditExportUri;
+    private readonly Uri _adminTrajectoryExportUri;
     private readonly Uri _adminWhatsAppSetupUri;
     private readonly Uri _adminWhatsAppRestartUri;
     private long _mcpRequestId;
@@ -116,9 +118,11 @@ public sealed class OpenClawHttpClient : IDisposable
         _adminOperatorAccountsUri = new Uri(baseUri, "/admin/operator-accounts");
         _adminOrganizationPolicyUri = new Uri(baseUri, "/admin/organization-policy");
         _adminSetupStatusUri = new Uri(baseUri, "/admin/setup/status");
+        _adminInsightsUri = new Uri(baseUri, "/admin/insights");
         _adminObservabilitySummaryUri = new Uri(baseUri, "/admin/observability/summary");
         _adminObservabilitySeriesUri = new Uri(baseUri, "/admin/observability/series");
         _adminAuditExportUri = new Uri(baseUri, "/admin/audit/export");
+        _adminTrajectoryExportUri = new Uri(baseUri, "/admin/trajectory/export");
         _adminWhatsAppSetupUri = new Uri(baseUri, "/admin/channels/whatsapp/setup");
         _adminWhatsAppRestartUri = new Uri(baseUri, "/admin/channels/whatsapp/restart");
 
@@ -873,6 +877,12 @@ public sealed class OpenClawHttpClient : IDisposable
     public Task<SetupStatusResponse> GetSetupStatusAsync(CancellationToken cancellationToken)
         => GetAsync(_adminSetupStatusUri, CoreJsonContext.Default.SetupStatusResponse, cancellationToken);
 
+    public Task<OperatorInsightsResponse> GetOperatorInsightsAsync(
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+        => GetAsync(BuildDateRangeUri(_adminInsightsUri, fromUtc, toUtc), CoreJsonContext.Default.OperatorInsightsResponse, cancellationToken);
+
     public Task<ObservabilitySummaryResponse> GetObservabilitySummaryAsync(
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
@@ -897,6 +907,21 @@ public sealed class OpenClawHttpClient : IDisposable
             throw await CreateHttpErrorAsync(resp, cancellationToken);
 
         return await resp.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
+
+    public async Task<string> ExportTrajectoryJsonlAsync(
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        string? sessionId,
+        bool anonymize,
+        CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, BuildTrajectoryExportUri(fromUtc, toUtc, sessionId, anonymize));
+        using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!resp.IsSuccessStatusCode)
+            throw await CreateHttpErrorAsync(resp, cancellationToken);
+
+        return await resp.Content.ReadAsStringAsync(cancellationToken);
     }
 
     public Task<IncidentBundleResponse> ExportIncidentBundleAsync(
@@ -1198,6 +1223,23 @@ public sealed class OpenClawHttpClient : IDisposable
         if (toUtc is { } to)
             pairs.Add($"toUtc={Uri.EscapeDataString(to.ToString("O"))}");
         return new Uri($"{_adminObservabilitySeriesUri}?{string.Join("&", pairs)}", UriKind.RelativeOrAbsolute);
+    }
+
+    private Uri BuildTrajectoryExportUri(DateTimeOffset? fromUtc, DateTimeOffset? toUtc, string? sessionId, bool anonymize)
+    {
+        var pairs = new List<string>();
+        if (fromUtc is { } from)
+            pairs.Add($"fromUtc={Uri.EscapeDataString(from.ToString("O"))}");
+        if (toUtc is { } to)
+            pairs.Add($"toUtc={Uri.EscapeDataString(to.ToString("O"))}");
+        if (!string.IsNullOrWhiteSpace(sessionId))
+            pairs.Add($"sessionId={Uri.EscapeDataString(sessionId)}");
+        if (anonymize)
+            pairs.Add("anonymize=true");
+
+        return pairs.Count == 0
+            ? _adminTrajectoryExportUri
+            : new Uri($"{_adminTrajectoryExportUri}?{string.Join("&", pairs)}", UriKind.RelativeOrAbsolute);
     }
 
     private Uri BuildIntegrationBackendUri(string backendId)

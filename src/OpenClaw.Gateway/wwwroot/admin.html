@@ -565,6 +565,22 @@
                 </div>
                 <pre id="audit-export-output">Ready.</pre>
             </div>
+            <div class="card">
+                <div class="section-title">
+                    <div>
+                        <h2>Trajectory Export</h2>
+                        <div class="muted">Export prompts, responses, tool calls, and tool results as JSONL for review or training pipelines.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="trajectory-export-button">Download JSONL</button>
+                    </div>
+                </div>
+                <div class="filters">
+                    <input id="trajectory-session-input" type="text" placeholder="Session ID (optional)">
+                    <label><input id="trajectory-anonymize-input" type="checkbox"> Anonymize</label>
+                </div>
+                <pre id="trajectory-export-output">Ready.</pre>
+            </div>
         </section>
 
         <section id="migration-section" class="grid">
@@ -1413,6 +1429,9 @@
         const observabilitySummaryOutput = document.getElementById('observability-summary-output');
         const observabilitySeriesOutput = document.getElementById('observability-series-output');
         const auditExportOutput = document.getElementById('audit-export-output');
+        const trajectorySessionInput = document.getElementById('trajectory-session-input');
+        const trajectoryAnonymizeInput = document.getElementById('trajectory-anonymize-input');
+        const trajectoryExportOutput = document.getElementById('trajectory-export-output');
         const migrationReportInput = document.getElementById('migration-report-input');
         const migrationReportOutput = document.getElementById('migration-report-output');
         const integrationDashboardOutput = document.getElementById('integration-dashboard-output');
@@ -2425,6 +2444,32 @@
             URL.revokeObjectURL(href);
             auditExportOutput.textContent = `Downloaded audit bundle (${blob.size} bytes).`;
             showFlash('Audit bundle downloaded.', 'ok');
+        }
+
+        async function exportTrajectoryJsonl() {
+            const params = buildDateRangeQuery();
+            const sessionId = trajectorySessionInput.value.trim();
+            if (sessionId) params.set('sessionId', sessionId);
+            if (trajectoryAnonymizeInput.checked) params.set('anonymize', 'true');
+            const url = `/admin/trajectory/export${params.toString() ? `?${params.toString()}` : ''}`;
+            const resp = await fetch(url, { credentials: 'same-origin' });
+            if (!resp.ok) {
+                trajectoryExportOutput.textContent = `Trajectory export failed (${resp.status})`;
+                showFlash(`Trajectory export failed (${resp.status}).`, 'error');
+                return;
+            }
+
+            const blob = await resp.blob();
+            const href = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = href;
+            link.download = `openclaw-trajectory-${Date.now()}.jsonl`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(href);
+            trajectoryExportOutput.textContent = `Downloaded trajectory JSONL (${blob.size} bytes).`;
+            showFlash('Trajectory JSONL downloaded.', 'ok');
         }
 
         async function loadMigrationReportFromFile(file) {
@@ -4217,6 +4262,7 @@
                 observabilitySummaryOutput.textContent = 'Login required.';
                 observabilitySeriesOutput.textContent = 'Login required.';
                 auditExportOutput.textContent = 'Login required.';
+                trajectoryExportOutput.textContent = 'Login required.';
                 migrationReportOutput.textContent = 'Load a local migration report after login.';
                 if (approvalsPollTimer) {
                     clearInterval(approvalsPollTimer);
@@ -4301,6 +4347,7 @@
         document.getElementById('organization-policy-save-button').addEventListener('click', saveOrganizationPolicy);
         document.getElementById('observability-refresh-button').addEventListener('click', loadObservability);
         document.getElementById('audit-export-button').addEventListener('click', exportAuditBundle);
+        document.getElementById('trajectory-export-button').addEventListener('click', exportTrajectoryJsonl);
         migrationReportInput.addEventListener('change', async event => {
             const file = event.target.files?.[0];
             await loadMigrationReportFromFile(file);

@@ -37,6 +37,9 @@ internal sealed class OpenClawHttpClient : IDisposable
     public Task<SecurityPostureResponse> GetSecurityPostureAsync(CancellationToken cancellationToken)
         => _inner.GetSecurityPostureAsync(cancellationToken);
 
+    public Task<OperatorInsightsResponse> GetOperatorInsightsAsync(DateTimeOffset? fromUtc, DateTimeOffset? toUtc, CancellationToken cancellationToken)
+        => _inner.GetOperatorInsightsAsync(fromUtc, toUtc, cancellationToken);
+
     public Task<ModelProfilesStatusResponse> GetModelProfilesAsync(CancellationToken cancellationToken)
         => _inner.GetModelProfilesAsync(cancellationToken);
 
@@ -90,6 +93,9 @@ internal sealed class OpenClawHttpClient : IDisposable
 
     public Task<IncidentBundleResponse> ExportIncidentBundleAsync(int approvalLimit, int eventLimit, CancellationToken cancellationToken)
         => _inner.ExportIncidentBundleAsync(approvalLimit, eventLimit, cancellationToken);
+
+    public Task<string> ExportTrajectoryJsonlAsync(DateTimeOffset? fromUtc, DateTimeOffset? toUtc, string? sessionId, bool anonymize, CancellationToken cancellationToken)
+        => _inner.ExportTrajectoryJsonlAsync(fromUtc, toUtc, sessionId, anonymize, cancellationToken);
 
     public void Dispose() => _inner.Dispose();
 }

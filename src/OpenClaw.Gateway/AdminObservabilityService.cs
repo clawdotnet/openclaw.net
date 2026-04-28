@@ -1,7 +1,10 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using System.Text.RegularExpressions;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Gateway.Bootstrap;
@@ -11,21 +14,94 @@ namespace OpenClaw.Gateway;
 
 internal sealed class AdminObservabilityService
 {
+    private static readonly Regex EmailRegex = new(@"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex PhoneRegex = new(@"\+?\d[\d\s().-]{7,}\d", RegexOptions.CultureInvariant);
+    private static readonly Regex SecretRegex = new(@"(sk-[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._~+/=-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex JsonSecretRegex = new("""("(?:api[_-]?key|token|password|secret)"\s*:\s*")[^"]+(")""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     private readonly GatewayStartupContext _startup;
     private readonly GatewayAppRuntime _runtime;
     private readonly GatewayAutomationService _automationService;
     private readonly OrganizationPolicyService _organizationPolicy;
+    private readonly ToolUsageTracker _toolUsage;
+    private readonly ISessionAdminStore _sessionAdminStore;
 
     public AdminObservabilityService(
         GatewayStartupContext startup,
         GatewayAppRuntime runtime,
         GatewayAutomationService automationService,
-        OrganizationPolicyService organizationPolicy)
+        OrganizationPolicyService organizationPolicy,
+        ToolUsageTracker toolUsage,
+        ISessionAdminStore sessionAdminStore)
     {
         _startup = startup;
         _runtime = runtime;
         _automationService = automationService;
         _organizationPolicy = organizationPolicy;
+        _toolUsage = toolUsage;
+        _sessionAdminStore = sessionAdminStore;
+    }
+
+    public async Task<OperatorInsightsResponse> BuildInsightsAsync(
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken ct)
+    {
+        var (startUtc, endUtc, warnings) = NormalizeRange(fromUtc, toUtc, defaultWindow: TimeSpan.FromHours(24), applyRetention: false);
+        var providerUsage = _runtime.ProviderUsage.Snapshot()
+            .Select(item => new OperatorInsightsProviderUsage
+            {
+                ProviderId = item.ProviderId,
+                ModelId = item.ModelId,
+                Requests = item.Requests,
+                Retries = item.Retries,
+                Errors = item.Errors,
+                InputTokens = item.InputTokens,
+                OutputTokens = item.OutputTokens,
+                CacheReadTokens = item.CacheReadTokens,
+                CacheWriteTokens = item.CacheWriteTokens,
+                EstimatedCostUsd = EstimateCostUsd(item)
+            })
+            .OrderByDescending(static item => item.EstimatedCostUsd)
+            .ThenByDescending(static item => item.TotalTokens)
+            .ThenBy(static item => item.ProviderId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static item => item.ModelId, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var tools = _toolUsage.Snapshot()
+            .Take(20)
+            .Select(static item => new OperatorInsightsToolFrequency
+            {
+                ToolName = item.ToolName,
+                Calls = item.Calls,
+                Failures = item.Failures,
+                Timeouts = item.Timeouts,
+                AverageDurationMs = item.Calls <= 0 ? 0 : item.TotalDurationMs / item.Calls
+            })
+            .ToArray();
+        var sessions = await BuildSessionCountsAsync(startUtc, endUtc, ct);
+        var scopeWarnings = warnings.ToList();
+        scopeWarnings.Add("Provider and tool usage are live runtime counters; session counts use the selected date range.");
+
+        return new OperatorInsightsResponse
+        {
+            StartUtc = startUtc,
+            EndUtc = endUtc,
+            Totals = new OperatorInsightsTotals
+            {
+                ProviderRequests = providerUsage.Sum(static item => item.Requests),
+                ProviderErrors = providerUsage.Sum(static item => item.Errors),
+                InputTokens = providerUsage.Sum(static item => item.InputTokens),
+                OutputTokens = providerUsage.Sum(static item => item.OutputTokens),
+                CacheReadTokens = providerUsage.Sum(static item => item.CacheReadTokens),
+                CacheWriteTokens = providerUsage.Sum(static item => item.CacheWriteTokens),
+                EstimatedCostUsd = providerUsage.Sum(static item => item.EstimatedCostUsd),
+                ToolCalls = tools.Sum(static item => item.Calls)
+            },
+            Sessions = sessions,
+            Providers = providerUsage,
+            Tools = tools,
+            Warnings = scopeWarnings
+        };
     }
 
     public async Task<ObservabilitySummaryResponse> BuildSummaryAsync(
@@ -210,6 +286,56 @@ internal sealed class AdminObservabilityService
         return ms.ToArray();
     }
 
+    public async Task<byte[]> ExportTrajectoryJsonlAsync(
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        string? sessionId,
+        bool anonymize,
+        CancellationToken ct)
+    {
+        DateTimeOffset startUtc;
+        DateTimeOffset endUtc;
+        if (!string.IsNullOrWhiteSpace(sessionId) && fromUtc is null && toUtc is null)
+        {
+            startUtc = DateTimeOffset.MinValue;
+            endUtc = DateTimeOffset.UtcNow;
+        }
+        else
+        {
+            (startUtc, endUtc, _) = NormalizeRange(fromUtc, toUtc, defaultWindow: TimeSpan.FromHours(24), applyRetention: false);
+        }
+
+        var sessions = await ListTrajectorySessionsAsync(sessionId, ct);
+        await using var ms = new MemoryStream();
+        await using (var writer = new StreamWriter(ms, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), leaveOpen: true))
+        {
+            foreach (var session in sessions.OrderBy(static item => item.CreatedAt).ThenBy(static item => item.Id, StringComparer.Ordinal))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                for (var i = 0; i < session.History.Count; i++)
+                {
+                    var turn = session.History[i];
+                    if (turn.Timestamp < startUtc || turn.Timestamp > endUtc)
+                        continue;
+
+                    await WriteTrajectoryRecordAsync(writer, BuildMessageTrajectoryRecord(session, turn, i, anonymize), ct);
+
+                    if (turn.ToolCalls is null)
+                        continue;
+
+                    foreach (var toolCall in turn.ToolCalls)
+                    {
+                        await WriteTrajectoryRecordAsync(writer, BuildToolCallTrajectoryRecord(session, turn, i, toolCall, anonymize), ct);
+                        await WriteTrajectoryRecordAsync(writer, BuildToolResultTrajectoryRecord(session, turn, i, toolCall, anonymize), ct);
+                    }
+                }
+            }
+        }
+
+        return ms.ToArray();
+    }
+
     private IReadOnlyList<ApprovalHistoryEntry> ReadApprovalHistory(DateTimeOffset startUtc, DateTimeOffset endUtc)
         => ReadJsonlEntries(
             _runtime.ApprovalAuditStore.Path,
@@ -239,6 +365,186 @@ internal sealed class AdminObservabilityService
             .Where(item => item.CreatedAtUtc >= startUtc && item.CreatedAtUtc <= endUtc)
             .OrderBy(static item => item.CreatedAtUtc)
             .ToArray();
+
+    private async Task<IReadOnlyList<Session>> ListTrajectorySessionsAsync(string? sessionId, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(sessionId))
+        {
+            var one = await _runtime.SessionManager.LoadAsync(sessionId.Trim(), ct);
+            return one is null ? [] : [one];
+        }
+
+        var active = await _runtime.SessionManager.ListActiveAsync(ct);
+        var metadataById = _runtime.Operations.SessionMetadata.GetAll();
+        var persisted = await SessionAdminPersistedListing.ListAllMatchingSummariesAsync(
+            _sessionAdminStore,
+            new SessionListQuery(),
+            metadataById,
+            ct);
+
+        var sessions = new Dictionary<string, Session>(StringComparer.Ordinal);
+        foreach (var session in active)
+            sessions[session.Id] = session;
+
+        foreach (var summary in persisted)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (sessions.ContainsKey(summary.Id))
+                continue;
+
+            var session = await _runtime.SessionManager.LoadAsync(summary.Id, ct);
+            if (session is not null)
+                sessions[session.Id] = session;
+        }
+
+        return sessions.Values.ToArray();
+    }
+
+    private static async Task WriteTrajectoryRecordAsync(StreamWriter writer, TrajectoryExportRecord record, CancellationToken ct)
+    {
+        await writer.WriteLineAsync(JsonSerializer.Serialize(record, CoreJsonContext.Default.TrajectoryExportRecord).AsMemory(), ct);
+    }
+
+    private static TrajectoryExportRecord BuildMessageTrajectoryRecord(Session session, ChatTurn turn, int turnIndex, bool anonymize)
+    {
+        var isAssistant = string.Equals(turn.Role, "assistant", StringComparison.OrdinalIgnoreCase);
+        return new TrajectoryExportRecord
+        {
+            Type = isAssistant ? "response" : "prompt",
+            TimestampUtc = turn.Timestamp,
+            SessionId = ExportSessionId(session.Id, anonymize),
+            ChannelId = ExportSessionId(session.ChannelId, anonymize),
+            SenderId = ExportSessionId(session.SenderId, anonymize),
+            TurnIndex = turnIndex,
+            Role = turn.Role,
+            Content = ExportText(turn.Content, anonymize),
+            Anonymized = anonymize
+        };
+    }
+
+    private static TrajectoryExportRecord BuildToolCallTrajectoryRecord(
+        Session session,
+        ChatTurn turn,
+        int turnIndex,
+        ToolInvocation toolCall,
+        bool anonymize)
+        => new()
+        {
+            Type = "tool_call",
+            TimestampUtc = turn.Timestamp,
+            SessionId = ExportSessionId(session.Id, anonymize),
+            ChannelId = ExportSessionId(session.ChannelId, anonymize),
+            SenderId = ExportSessionId(session.SenderId, anonymize),
+            TurnIndex = turnIndex,
+            ToolName = toolCall.ToolName,
+            CallId = ExportOptionalId(toolCall.CallId, anonymize),
+            Arguments = ExportText(toolCall.Arguments, anonymize),
+            Anonymized = anonymize
+        };
+
+    private static TrajectoryExportRecord BuildToolResultTrajectoryRecord(
+        Session session,
+        ChatTurn turn,
+        int turnIndex,
+        ToolInvocation toolCall,
+        bool anonymize)
+        => new()
+        {
+            Type = "tool_result",
+            TimestampUtc = turn.Timestamp,
+            SessionId = ExportSessionId(session.Id, anonymize),
+            ChannelId = ExportSessionId(session.ChannelId, anonymize),
+            SenderId = ExportSessionId(session.SenderId, anonymize),
+            TurnIndex = turnIndex,
+            ToolName = toolCall.ToolName,
+            CallId = ExportOptionalId(toolCall.CallId, anonymize),
+            Result = ExportText(toolCall.Result, anonymize),
+            DurationMs = (long)Math.Max(0, toolCall.Duration.TotalMilliseconds),
+            ResultStatus = toolCall.ResultStatus,
+            FailureCode = toolCall.FailureCode,
+            FailureMessage = ExportText(toolCall.FailureMessage, anonymize),
+            Anonymized = anonymize
+        };
+
+    private static string ExportSessionId(string value, bool anonymize)
+        => anonymize ? $"anon_{HashForExport(value)}" : value;
+
+    private static string? ExportOptionalId(string? value, bool anonymize)
+        => string.IsNullOrWhiteSpace(value) ? value : ExportSessionId(value, anonymize);
+
+    private static string? ExportText(string? value, bool anonymize)
+    {
+        if (!anonymize || string.IsNullOrEmpty(value))
+            return value;
+
+        var text = EmailRegex.Replace(value, "[email]");
+        text = PhoneRegex.Replace(text, "[phone]");
+        text = SecretRegex.Replace(text, "[secret]");
+        text = JsonSecretRegex.Replace(text, "$1[secret]$2");
+        return text;
+    }
+
+    private static string HashForExport(string value)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(bytes, 0, 8).ToLowerInvariant();
+    }
+
+    private async Task<OperatorInsightsSessionCounts> BuildSessionCountsAsync(
+        DateTimeOffset startUtc,
+        DateTimeOffset endUtc,
+        CancellationToken ct)
+    {
+        var activeSessions = await _runtime.SessionManager.ListActiveAsync(ct);
+        var metadataById = _runtime.Operations.SessionMetadata.GetAll();
+        var persisted = await SessionAdminPersistedListing.ListAllMatchingSummariesAsync(
+            _sessionAdminStore,
+            new SessionListQuery(),
+            metadataById,
+            ct);
+        var byId = new Dictionary<string, SessionSummary>(StringComparer.Ordinal);
+
+        foreach (var item in persisted)
+            byId[item.Id] = item;
+
+        foreach (var session in activeSessions)
+        {
+            byId[session.Id] = new SessionSummary
+            {
+                Id = session.Id,
+                ChannelId = session.ChannelId,
+                SenderId = session.SenderId,
+                StableSessionId = session.StableSessionBinding?.ExternalSessionId,
+                StableSessionNamespace = session.StableSessionBinding?.Namespace,
+                StableSessionOwnerKey = session.StableSessionBinding?.OwnerKey,
+                CreatedAt = session.CreatedAt,
+                LastActiveAt = session.LastActiveAt,
+                State = session.State,
+                HistoryTurns = session.History.Count,
+                TotalInputTokens = session.TotalInputTokens,
+                TotalOutputTokens = session.TotalOutputTokens,
+                IsActive = true
+            };
+        }
+
+        var all = byId.Values.ToArray();
+        var now = DateTimeOffset.UtcNow;
+        return new OperatorInsightsSessionCounts
+        {
+            Active = activeSessions.Count,
+            Persisted = persisted.Count,
+            UniqueTotal = all.Length,
+            Last24Hours = all.Count(item => item.LastActiveAt >= now.AddDays(-1)),
+            Last7Days = all.Count(item => item.LastActiveAt >= now.AddDays(-7)),
+            InRange = all.Count(item => item.LastActiveAt >= startUtc && item.LastActiveAt <= endUtc),
+            ByChannel = BuildMetrics(
+                all.GroupBy(static item => item.ChannelId, StringComparer.OrdinalIgnoreCase)
+                    .Select(static group => ($"channel:{group.Key}", group.Key, group.Count()))),
+            ByState = BuildMetrics(
+                all.GroupBy(static item => item.State.ToString(), StringComparer.OrdinalIgnoreCase)
+                    .Select(static group => ($"state:{group.Key}", group.Key, group.Count())))
+        };
+    }
 
     private async Task<(int Total, int Failing, int RanRecently)> BuildAutomationCountsAsync(CancellationToken ct)
     {
@@ -438,6 +744,14 @@ internal sealed class AdminObservabilityService
 
     private static int ToCount(long value)
         => value >= int.MaxValue ? int.MaxValue : (int)Math.Max(0, value);
+
+    private decimal EstimateCostUsd(ProviderUsageSnapshot usage)
+    {
+        var rate = TokenCostRateResolver.Resolve(_startup.Config, usage.ProviderId, usage.ModelId);
+        var inputCost = (decimal)usage.InputTokens / 1000m * rate.InputUsdPer1K;
+        var outputCost = (decimal)usage.OutputTokens / 1000m * rate.OutputUsdPer1K;
+        return Math.Round(inputCost + outputCost, 6, MidpointRounding.AwayFromZero);
+    }
 
     private sealed class ApprovalLifecycle
     {

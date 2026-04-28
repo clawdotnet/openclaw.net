@@ -246,6 +246,19 @@ internal static partial class AdminEndpoints
             : null;
     }
 
+    private static bool? GetQueryBool(HttpRequest request, string key)
+    {
+        if (!request.Query.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        return raw.ToString().Trim().ToLowerInvariant() switch
+        {
+            "1" or "true" or "yes" or "y" => true,
+            "0" or "false" or "no" or "n" => false,
+            _ => null
+        };
+    }
+
     private static async Task<SetupStatusResponse> BuildSetupStatusResponseAsync(
         GatewayStartupContext startup,
         OrganizationPolicyService organizationPolicy,

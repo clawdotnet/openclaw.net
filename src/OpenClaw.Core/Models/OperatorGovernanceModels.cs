@@ -346,6 +346,67 @@ public sealed class ObservabilitySummaryResponse
     public IReadOnlyList<DashboardNamedMetric> ChannelDrift { get; init; } = [];
 }
 
+public sealed class OperatorInsightsResponse
+{
+    public DateTimeOffset GeneratedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset StartUtc { get; init; }
+    public DateTimeOffset EndUtc { get; init; }
+    public required OperatorInsightsTotals Totals { get; init; }
+    public required OperatorInsightsSessionCounts Sessions { get; init; }
+    public IReadOnlyList<OperatorInsightsProviderUsage> Providers { get; init; } = [];
+    public IReadOnlyList<OperatorInsightsToolFrequency> Tools { get; init; } = [];
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+}
+
+public sealed class OperatorInsightsTotals
+{
+    public long ProviderRequests { get; init; }
+    public long ProviderErrors { get; init; }
+    public long InputTokens { get; init; }
+    public long OutputTokens { get; init; }
+    public long CacheReadTokens { get; init; }
+    public long CacheWriteTokens { get; init; }
+    public long TotalTokens => InputTokens + OutputTokens;
+    public decimal EstimatedCostUsd { get; init; }
+    public long ToolCalls { get; init; }
+}
+
+public sealed class OperatorInsightsSessionCounts
+{
+    public int Active { get; init; }
+    public int Persisted { get; init; }
+    public int UniqueTotal { get; init; }
+    public int Last24Hours { get; init; }
+    public int Last7Days { get; init; }
+    public int InRange { get; init; }
+    public IReadOnlyList<DashboardNamedMetric> ByChannel { get; init; } = [];
+    public IReadOnlyList<DashboardNamedMetric> ByState { get; init; } = [];
+}
+
+public sealed class OperatorInsightsProviderUsage
+{
+    public required string ProviderId { get; init; }
+    public required string ModelId { get; init; }
+    public long Requests { get; init; }
+    public long Retries { get; init; }
+    public long Errors { get; init; }
+    public long InputTokens { get; init; }
+    public long OutputTokens { get; init; }
+    public long CacheReadTokens { get; init; }
+    public long CacheWriteTokens { get; init; }
+    public long TotalTokens => InputTokens + OutputTokens;
+    public decimal EstimatedCostUsd { get; init; }
+}
+
+public sealed class OperatorInsightsToolFrequency
+{
+    public required string ToolName { get; init; }
+    public long Calls { get; init; }
+    public long Failures { get; init; }
+    public long Timeouts { get; init; }
+    public double AverageDurationMs { get; init; }
+}
+
 public sealed class ObservabilitySeriesResponse
 {
     public DateTimeOffset GeneratedAtUtc { get; init; } = DateTimeOffset.UtcNow;
@@ -370,6 +431,28 @@ public sealed class AuditExportManifest
     public string? OperatorAuditLastEntryHash { get; init; }
     public IReadOnlyDictionary<string, int>? FileEntryCounts { get; init; }
     public IReadOnlyList<string> Warnings { get; init; } = [];
+}
+
+public sealed class TrajectoryExportRecord
+{
+    public int SchemaVersion { get; init; } = 1;
+    public required string Type { get; init; }
+    public DateTimeOffset TimestampUtc { get; init; }
+    public required string SessionId { get; init; }
+    public required string ChannelId { get; init; }
+    public required string SenderId { get; init; }
+    public int TurnIndex { get; init; }
+    public string? Role { get; init; }
+    public string? Content { get; init; }
+    public string? ToolName { get; init; }
+    public string? CallId { get; init; }
+    public string? Arguments { get; init; }
+    public string? Result { get; init; }
+    public long? DurationMs { get; init; }
+    public string? ResultStatus { get; init; }
+    public string? FailureCode { get; init; }
+    public string? FailureMessage { get; init; }
+    public bool Anonymized { get; init; }
 }
 
 public sealed class UpstreamMigrationCompatibilityItem

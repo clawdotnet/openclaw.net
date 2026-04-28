@@ -50,7 +50,14 @@ internal static partial class AdminEndpoints
         var sessionMetadataStore = app.Services.GetService<SessionMetadataStore>()
             ?? new SessionMetadataStore(startup.Config.Memory.StoragePath, NullLogger<SessionMetadataStore>.Instance);
         var toolPresetResolver = new ToolPresetResolver(startup.Config, sessionMetadataStore);
-        var observability = new AdminObservabilityService(startup, runtime, automationService, organizationPolicy);
+        var sessionAdminStore = app.Services.GetRequiredService<ISessionAdminStore>();
+        var observability = new AdminObservabilityService(
+            startup,
+            runtime,
+            automationService,
+            organizationPolicy,
+            app.Services.GetRequiredService<ToolUsageTracker>(),
+            sessionAdminStore);
         var maintenance = app.Services.GetService<GatewayMaintenanceRuntimeService>()
             ?? new GatewayMaintenanceRuntimeService(startup, runtime, automationService);
         var providerSmokeRegistry = app.Services.GetService<ProviderSmokeRegistry>()
@@ -88,7 +95,7 @@ internal static partial class AdminEndpoints
             ToolPresetResolver = toolPresetResolver,
             Observability = observability,
             Maintenance = maintenance,
-            SessionAdminStore = app.Services.GetRequiredService<ISessionAdminStore>(),
+            SessionAdminStore = sessionAdminStore,
             Operations = runtime.Operations,
             ProviderSmokeRegistry = providerSmokeRegistry,
             SetupVerificationSnapshots = setupVerificationSnapshots,

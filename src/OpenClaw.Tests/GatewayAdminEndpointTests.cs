@@ -682,6 +682,79 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task AdminInsights_SummarizesRuntimeTelemetryAndSessions()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        harness.Runtime.ProviderUsage.RecordRequest("openai", "gpt-4o");
+        harness.Runtime.ProviderUsage.AddTokens("openai", "gpt-4o", inputTokens: 1000, outputTokens: 500);
+        harness.App.Services.GetRequiredService<ToolUsageTracker>()
+            .RecordToolCall("web_fetch", TimeSpan.FromMilliseconds(125), failed: false, timedOut: false);
+
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-insights", "web", "operator", CancellationToken.None);
+        session.History.Add(new ChatTurn { Role = "user", Content = "hello" });
+        await harness.Runtime.SessionManager.PersistAsync(session, CancellationToken.None);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/insights");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        using var payload = await ReadJsonAsync(response);
+        Assert.Equal(1, payload.RootElement.GetProperty("totals").GetProperty("providerRequests").GetInt64());
+        Assert.Equal(1500, payload.RootElement.GetProperty("totals").GetProperty("totalTokens").GetInt64());
+        Assert.True(payload.RootElement.GetProperty("sessions").GetProperty("uniqueTotal").GetInt32() >= 1);
+        Assert.Contains(
+            payload.RootElement.GetProperty("providers").EnumerateArray(),
+            item => item.GetProperty("providerId").GetString() == "openai" &&
+                    item.GetProperty("modelId").GetString() == "gpt-4o");
+        Assert.Contains(
+            payload.RootElement.GetProperty("tools").EnumerateArray(),
+            item => item.GetProperty("toolName").GetString() == "web_fetch" &&
+                    item.GetProperty("calls").GetInt64() == 1);
+    }
+
+    [Fact]
+    public async Task AdminTrajectoryExport_ExportsJsonlAndAnonymizes()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-trajectory", "web", "alice@example.com", CancellationToken.None);
+        session.History.Add(new ChatTurn
+        {
+            Role = "user",
+            Content = "Email alice@example.com using sk-testsecret123",
+            ToolCalls =
+            [
+                new ToolInvocation
+                {
+                    CallId = "call-1",
+                    ToolName = "web_fetch",
+                    Arguments = """{"url":"https://example.com","token":"secret-value"}""",
+                    Result = "Contact alice@example.com",
+                    Duration = TimeSpan.FromMilliseconds(42),
+                    ResultStatus = ToolResultStatuses.Completed
+                }
+            ]
+        });
+        session.History.Add(new ChatTurn { Role = "assistant", Content = "Done for alice@example.com" });
+        await harness.Runtime.SessionManager.PersistAsync(session, CancellationToken.None);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/trajectory/export?sessionId=sess-trajectory&anonymize=true");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var jsonl = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"type\":\"prompt\"", jsonl);
+        Assert.Contains("\"type\":\"response\"", jsonl);
+        Assert.Contains("\"type\":\"tool_call\"", jsonl);
+        Assert.Contains("\"type\":\"tool_result\"", jsonl);
+        Assert.Contains("anon_", jsonl);
+        Assert.DoesNotContain("alice@example.com", jsonl);
+        Assert.DoesNotContain("sk-testsecret123", jsonl);
+        Assert.DoesNotContain("secret-value", jsonl);
+    }
+
+    [Fact]
     public void OperatorAuditStore_AppendUsesHashForHighestExistingSequence()
     {
         var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-audit-store-tests", Guid.NewGuid().ToString("N"));
