@@ -73,16 +73,18 @@ public static class UrlSafetyValidator
         if (string.IsNullOrWhiteSpace(host))
             return UrlSafetyValidationResult.Deny("URL host is empty.");
 
-        foreach (var pattern in BuiltInBlockedHostGlobs)
+        if (policy.BlockPrivateNetworkTargets)
         {
-            if (policy.BlockPrivateNetworkTargets && GlobMatcher.IsMatch(pattern, host, StringComparison.OrdinalIgnoreCase))
-                return UrlSafetyValidationResult.Deny($"host '{host}' is blocked.");
+            foreach (var pattern in BuiltInBlockedHostGlobs)
+            {
+                if (GlobMatcher.IsMatch(pattern, host, StringComparison.OrdinalIgnoreCase))
+                    return UrlSafetyValidationResult.Deny($"host '{host}' is blocked.");
+            }
         }
 
-        foreach (var pattern in policy.BlockedHostGlobs)
+        foreach (var pattern in policy.BlockedHostGlobs.Where(static p => !string.IsNullOrWhiteSpace(p)))
         {
-            if (!string.IsNullOrWhiteSpace(pattern) &&
-                GlobMatcher.IsMatch(pattern.Trim(), host, StringComparison.OrdinalIgnoreCase))
+            if (GlobMatcher.IsMatch(pattern.Trim(), host, StringComparison.OrdinalIgnoreCase))
             {
                 return UrlSafetyValidationResult.Deny($"host '{host}' matches blocklist entry '{pattern}'.");
             }
@@ -121,11 +123,8 @@ public static class UrlSafetyValidator
             if (policy.BlockPrivateNetworkTargets && IsNonPublicAddress(normalized))
                 return UrlSafetyValidationResult.Deny($"host '{host}' resolves to non-public address {normalized}.");
 
-            foreach (var cidr in policy.BlockedCidrs)
+            foreach (var cidr in policy.BlockedCidrs.Where(static c => !string.IsNullOrWhiteSpace(c)))
             {
-                if (string.IsNullOrWhiteSpace(cidr))
-                    continue;
-
                 if (AddressMatchesCidr(normalized, cidr.Trim()))
                     return UrlSafetyValidationResult.Deny($"host '{host}' resolves to {normalized}, which matches blocked CIDR '{cidr}'.");
             }

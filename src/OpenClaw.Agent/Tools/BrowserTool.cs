@@ -447,7 +447,11 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
 
                 await route.ContinueAsync();
             }
-            catch
+            catch (PlaywrightException)
+            {
+                await route.AbortAsync();
+            }
+            catch (OperationCanceledException)
             {
                 await route.AbortAsync();
             }
