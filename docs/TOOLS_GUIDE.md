@@ -86,6 +86,7 @@ Control the current websocket session's Canvas visual workspace.
 - **Scope**: websocket sessions only; commands are routed to the active client sender for the current session.
 - **A2UI**: `a2ui_push` accepts A2UI v0.8 JSONL frames for text, markdown, card, button, input, select, checklist, table, image, progress, and simple chart components.
 - **Navigation**: `canvas_navigate` supports inline local HTML and `about:blank`; remote `http:` / `https:` Canvas navigation is rejected. Use the `browser` tool for remote webpages.
+- **Eval**: `a2ui_eval` is capability-gated. First-party v1 clients do not advertise `a2ui.eval`, so browser-side script execution remains disabled by default.
 - **Snapshots**: `canvas_snapshot` returns lightweight JSON state, not a remote browser screenshot.
 - **Safety**: non-loopback deployments must explicitly opt in with `OpenClaw:Canvas:AllowOnPublicBind=true`.
 

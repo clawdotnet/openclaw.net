@@ -1654,7 +1654,7 @@
             if (!ws || ws.readyState !== WebSocket.OPEN) return;
             ws.send(JSON.stringify({
                 type: 'canvas_ready',
-                capabilities: ['a2ui.v0_8', 'canvas.present', 'canvas.hide', 'canvas.local_html', 'a2ui.eval', 'snapshot.state']
+                capabilities: ['a2ui.v0_8', 'canvas.present', 'canvas.hide', 'canvas.local_html', 'snapshot.state']
             }));
         }
 
@@ -1931,12 +1931,10 @@
         }
 
         function renderA2uiImage(parent, frame) {
-            const img = document.createElement('img');
-            img.src = frame.url || frame.src || '';
-            img.alt = frame.alt || frame.label || '';
-            img.style.maxWidth = '100%';
-            img.style.borderRadius = '8px';
-            parent.appendChild(img);
+            const note = document.createElement('div');
+            note.className = 'a2ui-muted';
+            note.textContent = frame.alt || frame.label || 'Image URL omitted by Canvas security policy.';
+            parent.appendChild(note);
         }
 
         function renderA2uiProgress(parent, frame) {
@@ -2009,27 +2007,14 @@
         }
 
         function handleA2uiEval(env) {
-            try {
-                const fn = new Function('root', 'frames', 'values', String(env.script || ''));
-                const result = fn(a2uiRoot, canvasFrames, canvasValues);
-                ws.send(JSON.stringify({
-                    type: 'canvas_eval_result',
-                    requestId: env.requestId,
-                    sessionId: canvasSessionId,
-                    surfaceId: env.surfaceId || 'main',
-                    success: true,
-                    valueJson: JSON.stringify(result ?? null)
-                }));
-            } catch (error) {
-                ws.send(JSON.stringify({
-                    type: 'canvas_eval_result',
-                    requestId: env.requestId,
-                    sessionId: canvasSessionId,
-                    surfaceId: env.surfaceId || 'main',
-                    success: false,
-                    error: String(error?.message || error)
-                }));
-            }
+            ws.send(JSON.stringify({
+                type: 'canvas_eval_result',
+                requestId: env.requestId,
+                sessionId: canvasSessionId,
+                surfaceId: env.surfaceId || 'main',
+                success: false,
+                error: 'Webchat Canvas does not support a2ui_eval because browser-side script execution is disabled.'
+            }));
         }
 
         function connect() {

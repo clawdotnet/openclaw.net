@@ -8,7 +8,7 @@ Canvas and A2UI are supported as a first-party, session-scoped visual workspace 
 - Typed websocket envelopes for Canvas commands, A2UI pushes, results, and user events.
 - Native agent tools: `canvas_present`, `canvas_hide`, `canvas_navigate`, `canvas_snapshot`, `a2ui_push`, `a2ui_reset`, and `a2ui_eval`.
 - A broker that forwards commands only to the current websocket session, tracks request acknowledgements/results, records runtime events, and times out stalled commands.
-- Webchat Canvas host with a side panel, A2UI renderer, sandboxed local HTML iframe, eval support for local A2UI state, and lightweight snapshots.
+- Webchat Canvas host with a side panel, A2UI renderer, sandboxed local HTML iframe, and lightweight snapshots.
 - Companion Canvas tab with native Avalonia A2UI rendering and event/snapshot feedback.
 
 ## Capability Scope
@@ -45,7 +45,7 @@ Canvas settings live under `OpenClaw:Canvas`:
 | `MaxFramesPerPush` | `100` | Maximum A2UI frames in one push. |
 | `EnableLocalHtml` | `true` | Allows `canvas_navigate` with inline `html`. |
 | `EnableRemoteNavigation` | `false` | Remote webpage Canvas navigation remains unsupported. |
-| `EnableEval` | `true` | Allows `a2ui_eval` against the local A2UI/webchat sandbox. |
+| `EnableEval` | `true` | Allows capability-gated `a2ui_eval` commands when a client advertises `a2ui.eval`. First-party v1 clients do not advertise it. |
 
 When strict public-bind hardening is applied and `AllowOnPublicBind=false`, Canvas is disabled. Without strict mode, public-bind startup refuses unsafe Canvas forwarding unless you explicitly opt in.
 
@@ -121,7 +121,6 @@ Webchat advertises:
 - `canvas.present`
 - `canvas.hide`
 - `canvas.local_html`
-- `a2ui.eval`
 - `snapshot.state`
 
 Companion advertises:
@@ -131,7 +130,7 @@ Companion advertises:
 - `canvas.hide`
 - `snapshot.state`
 
-The gateway uses advertised capabilities before forwarding commands. If a session is not websocket-backed, if the client is disconnected, or if the client lacks a required capability, Canvas tools fail with a normal tool error instead of attempting a best-effort send.
+The gateway uses advertised capabilities before forwarding commands. If a session is not websocket-backed, if the client is disconnected, or if the client lacks a required capability, Canvas tools fail with a normal tool error instead of attempting a best-effort send. No first-party v1 client advertises `a2ui.eval`; the tool remains capability-gated for future local sandboxes.
 
 ## Security Model
 
@@ -141,7 +140,7 @@ Canvas inherits the gateway’s local-first posture:
 - Non-websocket sessions cannot receive Canvas commands.
 - Public-bind deployments must explicitly opt into Canvas forwarding.
 - Remote webpage Canvas navigation is rejected.
-- A2UI eval is local-sandbox only and never targets third-party pages.
+- A2UI eval is capability-gated and never targets third-party pages.
 - Command and result sizes are bounded.
 - Canvas command lifecycle events are written to the runtime event log.
 

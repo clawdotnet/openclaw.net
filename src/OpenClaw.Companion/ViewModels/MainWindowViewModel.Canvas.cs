@@ -10,6 +10,10 @@ namespace OpenClaw.Companion.ViewModels;
 
 public sealed partial class MainWindowViewModel
 {
+    private const int MaxSnapshotJsonChars = 128 * 1024;
+    private const int MaxSnapshotFrames = 100;
+    private const int MaxSnapshotTextChars = 1_024;
+
     private string? _canvasSessionId;
     private long _canvasEventSequence;
 
@@ -25,6 +29,10 @@ public sealed partial class MainWindowViewModel
     public ObservableCollection<A2UiFrameItem> CanvasFrames { get; } = new();
 
     public bool HasCanvasFrames => CanvasFrames.Count > 0;
+    public bool HasCanvasHtmlStatus => !string.IsNullOrWhiteSpace(CanvasHtmlStatus);
+
+    partial void OnCanvasHtmlStatusChanged(string value)
+        => OnPropertyChanged(nameof(HasCanvasHtmlStatus));
 
     private async Task SendCanvasReadyAsync()
     {
@@ -208,28 +216,51 @@ public sealed partial class MainWindowViewModel
 
     private string BuildCanvasSnapshotJson(string? surfaceId)
     {
-        var frames = CanvasFrames.Select(frame => new
+        var totalFrames = CanvasFrames.Count;
+        var frames = CanvasFrames.Take(MaxSnapshotFrames).Select(frame => new
         {
             frame.SurfaceId,
             frame.Id,
             frame.Type,
-            frame.Title,
-            frame.Text,
-            frame.Label,
-            frame.ValueText,
-            frame.SelectedValue
+            Title = TruncateSnapshotText(frame.Title),
+            Text = TruncateSnapshotText(frame.Text),
+            Label = TruncateSnapshotText(frame.Label),
+            ValueText = TruncateSnapshotText(frame.ValueText),
+            SelectedValue = TruncateSnapshotText(frame.SelectedValue)
         }).ToArray();
+
+        var snapshot = JsonSerializer.Serialize(new
+        {
+            type = "canvas_snapshot",
+            surfaceId = string.IsNullOrWhiteSpace(surfaceId) ? "main" : surfaceId,
+            visible = IsCanvasVisible,
+            frameCount = totalFrames,
+            returnedFrameCount = frames.Length,
+            truncated = totalFrames > frames.Length,
+            frames,
+            diagnostics = string.IsNullOrWhiteSpace(CanvasHtmlStatus) ? Array.Empty<string>() : new[] { CanvasHtmlStatus }
+        });
+
+        if (snapshot.Length <= MaxSnapshotJsonChars)
+            return snapshot;
 
         return JsonSerializer.Serialize(new
         {
             type = "canvas_snapshot",
             surfaceId = string.IsNullOrWhiteSpace(surfaceId) ? "main" : surfaceId,
             visible = IsCanvasVisible,
-            frameCount = frames.Length,
-            frames,
-            diagnostics = string.IsNullOrWhiteSpace(CanvasHtmlStatus) ? Array.Empty<string>() : new[] { CanvasHtmlStatus }
+            frameCount = totalFrames,
+            returnedFrameCount = 0,
+            truncated = true,
+            frames = Array.Empty<object>(),
+            diagnostics = new[] { $"Snapshot exceeded {MaxSnapshotJsonChars} characters and was truncated." }
         });
     }
+
+    private static string? TruncateSnapshotText(string? value)
+        => string.IsNullOrEmpty(value) || value.Length <= MaxSnapshotTextChars
+            ? value
+            : string.Concat(value.AsSpan(0, MaxSnapshotTextChars), "...");
 
     [RelayCommand]
     private void ClearCanvas()

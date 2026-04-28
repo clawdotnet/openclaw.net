@@ -104,6 +104,47 @@ public sealed class CompanionCanvasTests : IDisposable
         Assert.True(doc.RootElement.GetProperty("visible").GetBoolean());
     }
 
+    [Fact]
+    public void A2UiFrameItem_ClampsNegativeProgressToZero()
+    {
+        using var doc = JsonDocument.Parse("""{"type":"progress","id":"p","value":-0.25}""");
+
+        var item = A2UiFrameItem.FromJson("main", doc.RootElement, (_, _, _) => Task.CompletedTask);
+
+        Assert.Equal(0, item.ProgressValue);
+    }
+
+    [Fact]
+    public async Task ApplyCanvasEnvelope_SnapshotBoundsReturnedFrames()
+    {
+        var (viewModel, ws) = CreateViewModel();
+        var frames = string.Join('\n', Enumerable.Range(0, 105)
+            .Select(i => $$"""{"type":"text","id":"f{{i}}","text":"{{new string('x', 2000)}}"}"""));
+        await ApplyCanvasEnvelopeAsync(viewModel, new WsServerEnvelope
+        {
+            Type = "a2ui_push",
+            RequestId = "req1",
+            SessionId = "sess",
+            SurfaceId = "main",
+            Frames = frames
+        });
+
+        await ApplyCanvasEnvelopeAsync(viewModel, new WsServerEnvelope
+        {
+            Type = "canvas_snapshot",
+            RequestId = "snap1",
+            SessionId = "sess",
+            SurfaceId = "main"
+        });
+
+        var snapshot = LastSentEnvelope(ws);
+        using var doc = JsonDocument.Parse(snapshot.SnapshotJson!);
+
+        Assert.Equal(105, doc.RootElement.GetProperty("frameCount").GetInt32());
+        Assert.True(doc.RootElement.GetProperty("truncated").GetBoolean());
+        Assert.True(snapshot.SnapshotJson!.Length <= 128 * 1024);
+    }
+
     private (MainWindowViewModel ViewModel, TestWebSocket Socket) CreateViewModel()
     {
         var dir = Path.Combine(Path.GetTempPath(), "openclaw-companion-canvas-tests", Guid.NewGuid().ToString("N"));

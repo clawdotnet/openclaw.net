@@ -67,7 +67,7 @@ OpenClaw.NET ships a v1 Canvas/A2UI workspace for websocket clients. The support
 | Remote webpage Canvas navigation/eval | Not supported | `http:` and `https:` URLs are rejected; use the browser tool for remote pages. |
 | A2UI v0.8 JSONL rendering | Supported | Webchat and Companion render text, markdown, card, button, input, select, checklist, table, image, progress, and simple chart frames. |
 | A2UI interaction event feedback | Supported | Client events return as structured `a2ui_event` session turns. |
-| A2UI eval | Supported with caveats | Webchat supports local A2UI sandbox eval; Companion returns an unsupported diagnostic. |
+| A2UI eval | Supported with caveats | The gateway tool is capability-gated, but no first-party v1 client advertises `a2ui.eval`; webchat and Companion return unsupported diagnostics. |
 | A2UI v0.9 `createSurface` | Not supported | Validation rejects it with an explicit diagnostic. |
 
 ## Channel Compatibility

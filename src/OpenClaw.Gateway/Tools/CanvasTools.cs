@@ -76,6 +76,9 @@ internal abstract class CanvasToolBase : IToolWithContext
         error = $"Error: '{propertyName}' is required.";
         return false;
     }
+
+    protected int MaxPayloadBytesWithEnvelopeReserve()
+        => Math.Max(1, Config.Canvas.MaxCommandBytes - 4096);
 }
 
 internal sealed class CanvasPresentTool : CanvasToolBase
@@ -185,7 +188,7 @@ internal sealed class A2UiPushTool : CanvasToolBase
         if (!TryGetRequiredString(args.RootElement, "frames", out var frames, out var error))
             return error;
 
-        var validation = A2UiFrameValidator.ValidateJsonl(frames, Config.Canvas.MaxFramesPerPush, Config.Canvas.MaxCommandBytes);
+        var validation = A2UiFrameValidator.ValidateJsonl(frames, Config.Canvas.MaxFramesPerPush, MaxPayloadBytesWithEnvelopeReserve());
         if (!validation.IsValid)
             return $"Error: {validation.Error}";
 

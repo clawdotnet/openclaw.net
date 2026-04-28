@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Channels;
 using OpenClaw.Core.Abstractions;
@@ -54,6 +55,24 @@ public sealed class CanvasToolTests
         var result = await tool.ExecuteAsync("{}", Context(), CancellationToken.None);
 
         Assert.Contains("'frames' is required", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A2UiPush_UsesEnvelopeReserveForPayloadLimit()
+    {
+        var config = new GatewayConfig
+        {
+            Canvas = new CanvasConfig
+            {
+                MaxCommandBytes = 4_200
+            }
+        };
+        var tool = new A2UiPushTool(CreateBroker(config: config), config);
+        var frames = $$"""{"type":"text","id":"large","text":"{{new string('x', 200)}}"}""";
+
+        var result = await tool.ExecuteAsync(JsonSerializer.Serialize(new { frames }), Context(), CancellationToken.None);
+
+        Assert.Contains("exceeds 104 bytes", result, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -123,7 +123,8 @@ public sealed partial class A2UiFrameItem : ObservableObject
         if (!root.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Number)
             return 0;
         var number = value.GetDouble();
-        return number <= 1 ? number * 100 : Math.Clamp(number, 0, 100);
+        var percent = number <= 1 ? number * 100 : number;
+        return Math.Clamp(percent, 0, 100);
     }
 
     private static string BuildDisplayText(string type, JsonElement root)
