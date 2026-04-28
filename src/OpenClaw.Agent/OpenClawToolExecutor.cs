@@ -133,6 +133,7 @@ public sealed class OpenClawToolExecutor
                 toolName,
                 argsJson,
                 "Error: Unknown tool",
+                callId: callId,
                 resultStatus: ToolResultStatuses.Failed,
                 failureCode: ToolFailureCodes.ToolFailed,
                 failureMessage: "Unknown tool.",
@@ -150,6 +151,7 @@ public sealed class OpenClawToolExecutor
                 toolName,
                 argsJson,
                 deniedByPreset,
+                callId: callId,
                 resultStatus: ToolResultStatuses.Blocked,
                 failureCode: ToolFailureCodes.PresetBlocked,
                 failureMessage: deniedByPreset,
@@ -182,6 +184,7 @@ public sealed class OpenClawToolExecutor
                         toolName,
                         argsJson,
                         deniedByHook,
+                        callId: callId,
                         resultStatus: ToolResultStatuses.Blocked,
                         failureCode: ToolFailureCodes.ToolFailed,
                         failureMessage: deniedByHook);
@@ -216,6 +219,7 @@ public sealed class OpenClawToolExecutor
                         toolName,
                         argsJson,
                         "Tool execution denied by user.",
+                        callId: callId,
                         resultStatus: ToolResultStatuses.Blocked,
                         failureCode: ToolFailureCodes.ApprovalRequired,
                         failureMessage: "Tool execution was denied by the reviewer.",
@@ -236,6 +240,7 @@ public sealed class OpenClawToolExecutor
                     toolName,
                     argsJson,
                     approvalMessage,
+                    callId: callId,
                     resultStatus: ToolResultStatuses.Blocked,
                     failureCode: ToolFailureCodes.ApprovalRequired,
                     failureMessage: approvalMessage,
@@ -352,6 +357,7 @@ public sealed class OpenClawToolExecutor
 
         var invocation = new ToolInvocation
         {
+            CallId = callId,
             ToolName = toolName,
             Arguments = argsJson,
             Result = result,
@@ -377,6 +383,7 @@ public sealed class OpenClawToolExecutor
         string toolName,
         string argsJson,
         string result,
+        string? callId = null,
         string resultStatus = ToolResultStatuses.Completed,
         string? failureCode = null,
         string? failureMessage = null,
@@ -384,6 +391,7 @@ public sealed class OpenClawToolExecutor
     {
         var invocation = new ToolInvocation
         {
+            CallId = callId,
             ToolName = toolName,
             Arguments = argsJson,
             Result = result,

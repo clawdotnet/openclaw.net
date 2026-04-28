@@ -47,15 +47,17 @@ The manager's public surface that matters for the lifecycle:
 
 3. **Persistence.** `PersistAsync` writes the session through `IMemoryStore.SaveSessionAsync` under the per-session lock, with up to 3 attempts and exponential backoff on transient failures ([lines 144-165](../src/OpenClaw.Core/Sessions/SessionManager.cs#L144-L165)). Writes happen after turn completion and opportunistically in the background — there is no "commit the session" call from tools.
 
-4. **Inter-session routing.** Nothing about a session is tied to a single thread or request. All session traffic flows through `MessagePipeline.InboundWriter` keyed by `SessionId`. That means every tool that wants to "talk to another session" is really just queuing an `InboundMessage` with the target session's ID — the runtime picks it up and runs that session's turn the same way a human message would.
+4. **Checkpointing during long turns.** During multi-step agent execution, the native runtime writes `Session.ExecutionCheckpoint` immediately after each completed tool batch. The checkpoint records the kind (`tool_batch`), resume state, sequence, iteration, history count, correlation id, timestamps, and per-tool metadata. The corresponding tool arguments/results remain in the persisted `History` tool-use turn, so a restarted runtime can rebuild the last completed batch without calling those tools again. When a later message arrives for a session whose latest checkpoint is `ready_to_resume` and whose history still ends at that checkpoint, the runtime resumes from that checkpoint instead of appending a new user turn. A bare `resume`, `continue`, `/resume`, or `/continue` message is treated as the resume trigger; any other text is passed as a resume note.
 
-5. **Expiry and eviction.** Two forces remove sessions from the active cache:
+5. **Inter-session routing.** Nothing about a session is tied to a single thread or request. All session traffic flows through `MessagePipeline.InboundWriter` keyed by `SessionId`. That means every tool that wants to "talk to another session" is really just queuing an `InboundMessage` with the target session's ID — the runtime picks it up and runs that session's turn the same way a human message would.
+
+6. **Expiry and eviction.** Two forces remove sessions from the active cache:
    - **Time.** `SweepExpiredActiveSessions` marks anything idle past `_timeout` as `Expired`, removes it from `_active`, and decrements `_activeCount`. Sweeping is triggered both on a background cadence and inside `EnsureCapacityForAdmission` before any forced eviction.
    - **Capacity.** If admission would push `_activeCount` over `_maxSessions` after sweeping, the session with the oldest `LastActiveAt` is evicted (`RemoveActive`).
 
    Eviction is **not deletion** — the session remains in the store. The next message for that ID simply takes the rehydrate path in step 1.
 
-6. **Disposal.** On shutdown, the manager awaits any in-flight background persistence tasks and disposes per-session semaphores.
+7. **Disposal.** On shutdown, the manager awaits any in-flight background persistence tasks and disposes per-session semaphores.
 
 ## The tools
 
@@ -96,6 +98,7 @@ All three are grouped under the `group:sessions` tool preset in [src/OpenClaw.Ga
 ## Mental model
 
 - **Sessions are state, not threads.** They are just rows keyed by ID with a conversation list and some overrides. Nothing in `SessionManager` owns an execution context.
+- **Checkpoints are save points, not full runtime snapshots.** They are written after completed tool batches, which is the first durable point where OpenClaw can resume without duplicating already-run tools. They intentionally do not snapshot every internal token, stream, or provider transition.
 - **The pipeline is the only way in.** `sessions_spawn`, `sessions_yield`, `sessions send` all produce the same `InboundMessage` shape that a user's channel message produces. Sub-agent sessions are not a separate runtime path.
 - **Eviction is a cache decision.** Hitting the active cap or going idle past the timeout removes a session from memory, not from durable storage. The next message rehydrates it.
 - **Spawn vs yield** is the async/sync axis: spawn returns immediately; yield polls for a reply with a bounded timeout.

@@ -232,20 +232,42 @@ public sealed class AgentRuntime : IAgentRuntime
             return contractBudgetMessage;
         }
 
-        // Record user turn
-        session.History.Add(new ChatTurn { Role = "user", Content = userMessage });
+        var resumeCheckpoint = TryGetResumableCheckpoint(session);
+        if (resumeCheckpoint is null)
+        {
+            // Record user turn
+            session.History.Add(new ChatTurn { Role = "user", Content = userMessage });
 
-        // Compaction or simple trim
-        if (_enableCompaction)
-            await CompactHistoryAsync(session, ct);
+            // Compaction or simple trim
+            if (_enableCompaction)
+                await CompactHistoryAsync(session, ct);
+            else
+                TrimHistory(session);
+        }
         else
-            TrimHistory(session);
+        {
+            resumeCheckpoint.LastResumeAttemptAtUtc = DateTimeOffset.UtcNow;
+            _logger?.LogInformation(
+                "[{CorrelationId}] Resuming session={SessionId} from checkpoint {CheckpointId}",
+                turnCtx.CorrelationId,
+                session.Id,
+                resumeCheckpoint.CheckpointId);
+        }
 
         // Build conversation for LLM
-        var messages = BuildMessages(session);
-        // Order matters: memory recall first, then profile recall (inserted near conversation start).
-        await TryInjectRecallAsync(messages, userMessage, ct);
-        await TryInjectProfileRecallAsync(messages, session, ct);
+        var messages = BuildMessages(session, exactLatestToolBatch: resumeCheckpoint is not null);
+        if (resumeCheckpoint is not null)
+        {
+            messages.Insert(1, new ChatMessage(ChatRole.System, BuildCheckpointResumeInstruction(resumeCheckpoint)));
+            if (!IsBareResumeRequest(userMessage))
+                messages.Add(new ChatMessage(ChatRole.User, BuildCheckpointResumeUserNote(userMessage)));
+        }
+        else
+        {
+            // Order matters: memory recall first, then profile recall (inserted near conversation start).
+            await TryInjectRecallAsync(messages, userMessage, ct);
+            await TryInjectProfileRecallAsync(messages, session, ct);
+        }
 
         // Build tool definitions for the LLM (use pre-cached declarations)
         var chatOptions = new ChatOptions
@@ -374,6 +396,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 // Final text response
                 var text = response.Text ?? "";
                 session.History.Add(new ChatTurn { Role = "assistant", Content = text });
+                MarkCheckpointCompleted(session, SessionCheckpointStates.Completed, "final_response");
                 AppendContractSnapshot(session, "active");
                 LogTurnComplete(turnCtx);
                 return text;
@@ -397,8 +420,10 @@ public sealed class AgentRuntime : IAgentRuntime
             // Compaction is NOT run inside the iteration loop to avoid cascading LLM calls.
             // It runs once at the start of the turn (before the loop).
             TrimHistory(session);
+            await PersistToolBatchCheckpointAsync(session, turnCtx, i, invocations, ct);
         }
 
+        MarkCheckpointCompleted(session, SessionCheckpointStates.Failed, "max_iterations");
         AppendContractSnapshot(session, "active");
         LogTurnComplete(turnCtx);
         return "I've reached the maximum number of tool iterations. Please try a simpler request.";
@@ -444,17 +469,39 @@ public sealed class AgentRuntime : IAgentRuntime
                 turnCtx.CorrelationId);
         }
 
-        session.History.Add(new ChatTurn { Role = "user", Content = userMessage });
+        var resumeCheckpoint = TryGetResumableCheckpoint(session);
+        if (resumeCheckpoint is null)
+        {
+            session.History.Add(new ChatTurn { Role = "user", Content = userMessage });
 
-        if (_enableCompaction)
-            await CompactHistoryAsync(session, ct);
+            if (_enableCompaction)
+                await CompactHistoryAsync(session, ct);
+            else
+                TrimHistory(session);
+        }
         else
-            TrimHistory(session);
+        {
+            resumeCheckpoint.LastResumeAttemptAtUtc = DateTimeOffset.UtcNow;
+            _logger?.LogInformation(
+                "[{CorrelationId}] Resuming streaming session={SessionId} from checkpoint {CheckpointId}",
+                turnCtx.CorrelationId,
+                session.Id,
+                resumeCheckpoint.CheckpointId);
+        }
 
-        var messages = BuildMessages(session);
-        // Order matters: memory recall first, then profile recall (inserted near conversation start).
-        await TryInjectRecallAsync(messages, userMessage, ct);
-        await TryInjectProfileRecallAsync(messages, session, ct);
+        var messages = BuildMessages(session, exactLatestToolBatch: resumeCheckpoint is not null);
+        if (resumeCheckpoint is not null)
+        {
+            messages.Insert(1, new ChatMessage(ChatRole.System, BuildCheckpointResumeInstruction(resumeCheckpoint)));
+            if (!IsBareResumeRequest(userMessage))
+                messages.Add(new ChatMessage(ChatRole.User, BuildCheckpointResumeUserNote(userMessage)));
+        }
+        else
+        {
+            // Order matters: memory recall first, then profile recall (inserted near conversation start).
+            await TryInjectRecallAsync(messages, userMessage, ct);
+            await TryInjectProfileRecallAsync(messages, session, ct);
+        }
         var chatOptions = new ChatOptions
         {
             ModelId = session.ModelOverride ?? _config.Model,
@@ -543,6 +590,7 @@ public sealed class AgentRuntime : IAgentRuntime
             {
                 // Final text response
                 session.History.Add(new ChatTurn { Role = "assistant", Content = streamResult.FullText });
+                MarkCheckpointCompleted(session, SessionCheckpointStates.Completed, "final_response");
                 yield return AgentStreamEvent.Complete();
                 AppendContractSnapshot(session, "active");
                 LogTurnComplete(turnCtx);
@@ -638,12 +686,14 @@ public sealed class AgentRuntime : IAgentRuntime
 
             // Compaction is NOT run inside the iteration loop to avoid cascading LLM calls.
             TrimHistory(session);
+            await PersistToolBatchCheckpointAsync(session, turnCtx, i, invocations, ct);
         }
 
         yield return AgentStreamEvent.ErrorOccurred(
             "I've reached the maximum number of tool iterations. Please try a simpler request.",
             "max_iterations");
         yield return AgentStreamEvent.Complete();
+        MarkCheckpointCompleted(session, SessionCheckpointStates.Failed, "max_iterations");
         AppendContractSnapshot(session, "active");
         LogTurnComplete(turnCtx);
     }
@@ -1332,7 +1382,7 @@ public sealed class AgentRuntime : IAgentRuntime
         }
     }
 
-    private List<ChatMessage> BuildMessages(Session session)
+    private List<ChatMessage> BuildMessages(Session session, bool exactLatestToolBatch = false)
     {
         var messages = new List<ChatMessage>
         {
@@ -1357,15 +1407,238 @@ public sealed class AgentRuntime : IAgentRuntime
             }
             else if (turn.Content == "[tool_use]" && turn.ToolCalls is { Count: > 0 })
             {
-                // Include a summary of tool calls so the LLM retains context of previous actions
-                var toolSummary = string.Join("\n", turn.ToolCalls.Select(tc =>
-                    $"- Called {tc.ToolName}: {Truncate(tc.Result ?? "(no result)", 200)}"));
-                messages.Add(new ChatMessage(ChatRole.Assistant,
-                    $"[Previous tool calls:\n{toolSummary}]"));
+                if (exactLatestToolBatch && i == session.History.Count - 1)
+                {
+                    var callContents = new List<AIContent>(turn.ToolCalls.Count);
+                    var resultContents = new List<AIContent>(turn.ToolCalls.Count);
+                    for (var toolIndex = 0; toolIndex < turn.ToolCalls.Count; toolIndex++)
+                    {
+                        var invocation = turn.ToolCalls[toolIndex];
+                        var callId = ResolveCheckpointCallId(invocation, toolIndex);
+                        callContents.Add(new FunctionCallContent(
+                            callId,
+                            invocation.ToolName,
+                            DeserializeToolArguments(invocation.Arguments)));
+                        resultContents.Add(new FunctionResultContent(callId, invocation.Result ?? ""));
+                    }
+
+                    messages.Add(new ChatMessage(ChatRole.Assistant, callContents));
+                    messages.Add(new ChatMessage(ChatRole.Tool, resultContents));
+                }
+                else
+                {
+                    // Include a summary of tool calls so the LLM retains context of previous actions.
+                    var toolSummary = string.Join("\n", turn.ToolCalls.Select(tc =>
+                        $"- Called {tc.ToolName}: {Truncate(tc.Result ?? "(no result)", 200)}"));
+                    messages.Add(new ChatMessage(ChatRole.Assistant,
+                        $"[Previous tool calls:\n{toolSummary}]"));
+                }
             }
         }
 
         return messages;
+    }
+
+    private async ValueTask PersistToolBatchCheckpointAsync(
+        Session session,
+        TurnContext turnCtx,
+        int iteration,
+        IReadOnlyList<ToolInvocation> invocations,
+        CancellationToken ct)
+    {
+        if (invocations.Count == 0)
+            return;
+
+        var sequence = (session.ExecutionCheckpoint?.Sequence ?? 0) + 1;
+        var checkpoint = new SessionExecutionCheckpoint
+        {
+            CheckpointId = $"chk_{Guid.NewGuid():N}"[..20],
+            Kind = SessionCheckpointKinds.ToolBatch,
+            State = SessionCheckpointStates.ReadyToResume,
+            Sequence = sequence,
+            Iteration = iteration,
+            HistoryCount = session.History.Count,
+            CorrelationId = turnCtx.CorrelationId,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            ToolCalls = invocations.Select(static invocation => new SessionCheckpointToolCall
+            {
+                CallId = invocation.CallId,
+                ToolName = invocation.ToolName,
+                ResultStatus = string.IsNullOrWhiteSpace(invocation.ResultStatus)
+                    ? ToolResultStatuses.Completed
+                    : invocation.ResultStatus!,
+                FailureCode = invocation.FailureCode,
+                DurationMs = (long)invocation.Duration.TotalMilliseconds,
+                ArgumentsBytes = Encoding.UTF8.GetByteCount(invocation.Arguments ?? ""),
+                ResultBytes = Encoding.UTF8.GetByteCount(invocation.Result ?? "")
+            }).ToList()
+        };
+
+        session.ExecutionCheckpoint = checkpoint;
+
+        const int MaxRetries = 3;
+        var delay = TimeSpan.FromMilliseconds(100);
+
+        async ValueTask RecordRetryAsync(Exception ex, int attempt)
+        {
+            checkpoint.PersistedAtUtc = null;
+            _logger?.LogWarning(
+                ex,
+                "[{CorrelationId}] Checkpoint persistence failed (attempt {Attempt}/{MaxRetries}) for session={SessionId}",
+                turnCtx.CorrelationId,
+                attempt,
+                MaxRetries,
+                session.Id);
+            await Task.Delay(delay, ct);
+            delay *= 2;
+        }
+
+        void RecordFinalFailure(Exception ex)
+        {
+            checkpoint.PersistedAtUtc = null;
+            _logger?.LogWarning(
+                ex,
+                "[{CorrelationId}] Failed to persist checkpoint after {MaxRetries} attempts for session={SessionId}",
+                turnCtx.CorrelationId,
+                MaxRetries,
+                session.Id);
+        }
+
+        for (var attempt = 1; attempt <= MaxRetries; attempt++)
+        {
+            try
+            {
+                checkpoint.PersistedAtUtc = DateTimeOffset.UtcNow;
+                await _memory.SaveSessionAsync(session, ct);
+                _logger?.LogInformation(
+                    "[{CorrelationId}] Persisted checkpoint {CheckpointId} for session={SessionId} toolCalls={ToolCallCount}",
+                    turnCtx.CorrelationId,
+                    checkpoint.CheckpointId,
+                    session.Id,
+                    invocations.Count);
+                return;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                checkpoint.PersistedAtUtc = null;
+                throw;
+            }
+            catch (System.IO.IOException ex) when (attempt < MaxRetries)
+            {
+                await RecordRetryAsync(ex, attempt);
+            }
+            catch (TimeoutException ex) when (attempt < MaxRetries)
+            {
+                await RecordRetryAsync(ex, attempt);
+            }
+            catch (InvalidOperationException ex) when (attempt < MaxRetries)
+            {
+                await RecordRetryAsync(ex, attempt);
+            }
+            catch (UnauthorizedAccessException ex) when (attempt < MaxRetries)
+            {
+                await RecordRetryAsync(ex, attempt);
+            }
+            catch (System.IO.IOException ex)
+            {
+                RecordFinalFailure(ex);
+            }
+            catch (TimeoutException ex)
+            {
+                RecordFinalFailure(ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                RecordFinalFailure(ex);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                RecordFinalFailure(ex);
+            }
+        }
+    }
+
+    private static SessionExecutionCheckpoint? TryGetResumableCheckpoint(Session session)
+    {
+        var checkpoint = session.ExecutionCheckpoint;
+        if (checkpoint is null ||
+            !string.Equals(checkpoint.Kind, SessionCheckpointKinds.ToolBatch, StringComparison.Ordinal) ||
+            !string.Equals(checkpoint.State, SessionCheckpointStates.ReadyToResume, StringComparison.Ordinal) ||
+            checkpoint.PersistedAtUtc is null)
+        {
+            return null;
+        }
+
+        if (session.History.Count != checkpoint.HistoryCount)
+            return null;
+
+        var lastTurn = session.History.Count == 0 ? null : session.History[^1];
+        if (lastTurn?.Content != "[tool_use]" || lastTurn.ToolCalls is not { Count: > 0 })
+            return null;
+
+        return checkpoint;
+    }
+
+    private static void MarkCheckpointCompleted(Session session, string state, string reason)
+    {
+        var checkpoint = session.ExecutionCheckpoint;
+        if (checkpoint is null ||
+            !string.Equals(checkpoint.State, SessionCheckpointStates.ReadyToResume, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        checkpoint.State = state;
+        checkpoint.CompletedAtUtc = DateTimeOffset.UtcNow;
+        checkpoint.CompletionReason = reason;
+    }
+
+    private static string BuildCheckpointResumeInstruction(SessionExecutionCheckpoint checkpoint)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("[Checkpoint resume]");
+        sb.AppendLine($"Resume from checkpoint {checkpoint.CheckpointId}.");
+        sb.AppendLine("The previous assistant tool batch and tool results have already completed and are present in this conversation context.");
+        sb.AppendLine("Continue the interrupted task from those results. Do not repeat completed tool calls unless the results show that retrying is necessary.");
+        sb.AppendLine("[/Checkpoint resume]");
+        return sb.ToString();
+    }
+
+    private static string BuildCheckpointResumeUserNote(string userMessage)
+        => "[Checkpoint resume user note]\n" + userMessage.Trim() + "\n[/Checkpoint resume user note]";
+
+    private static bool IsBareResumeRequest(string userMessage)
+    {
+        var trimmed = userMessage.Trim();
+        return trimmed.Length == 0 ||
+            trimmed.Equals("resume", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("continue", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("/resume", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("/continue", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveCheckpointCallId(ToolInvocation invocation, int index)
+        => string.IsNullOrWhiteSpace(invocation.CallId)
+            ? $"checkpoint_call_{index + 1}"
+            : invocation.CallId!;
+
+    private static IDictionary<string, object?> DeserializeToolArguments(string arguments)
+    {
+        if (string.IsNullOrWhiteSpace(arguments))
+            return new Dictionary<string, object?>(StringComparer.Ordinal);
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize(arguments, CoreJsonContext.Default.DictionaryStringObject);
+            return parsed ?? new Dictionary<string, object?>(StringComparer.Ordinal);
+        }
+        catch (JsonException)
+        {
+            return new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["_raw"] = arguments
+            };
+        }
     }
 
     private string GetSystemPrompt(Session session)
