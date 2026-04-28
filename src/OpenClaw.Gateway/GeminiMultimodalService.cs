@@ -44,6 +44,7 @@ internal sealed class GeminiMultimodalService
             mimeType,
             defaultMimeType: "image/png",
             maxBytes: null,
+            allowedLocalFileRoots: null,
             ct);
         var requestBody = BuildVisionRequest(prompt, bytes, resolvedMimeType);
         using var response = await _httpClient.PostAsync(
@@ -63,6 +64,7 @@ internal sealed class GeminiMultimodalService
         string? mimeType,
         string? model,
         int maxAudioBytes,
+        IReadOnlyList<string>? allowedLocalFileRoots,
         CancellationToken ct)
     {
         var (bytes, resolvedMimeType) = await LoadBinaryAsync(
@@ -71,10 +73,11 @@ internal sealed class GeminiMultimodalService
             mimeType,
             defaultMimeType: "audio/ogg",
             maxBytes: maxAudioBytes,
+            allowedLocalFileRoots,
             ct);
         var requestBody = BuildTranscriptionRequest(bytes, resolvedMimeType);
         using var response = await _httpClient.PostAsync(
-            BuildGenerateContentUri(model ?? _config.Multimodal.Transcription.Model),
+            BuildGenerateContentUri(ResolveModel(model, _config.Multimodal.Transcription.Model, "gemini-2.5-flash")),
             new StringContent(requestBody, Encoding.UTF8, "application/json"),
             ct);
 
@@ -128,6 +131,9 @@ internal sealed class GeminiMultimodalService
 
     private Uri BuildGenerateContentUri(string model)
     {
+        if (string.IsNullOrWhiteSpace(model))
+            throw new InvalidOperationException("A Gemini model is required for multimodal features.");
+
         var apiKey = SecretResolver.Resolve(_config.Llm.ApiKey)
             ?? Environment.GetEnvironmentVariable("GOOGLE_API_KEY")
             ?? _config.Llm.ApiKey;
@@ -240,6 +246,7 @@ internal sealed class GeminiMultimodalService
         string? mimeType,
         string? defaultMimeType,
         int? maxBytes,
+        IReadOnlyList<string>? allowedLocalFileRoots,
         CancellationToken ct)
     {
         if (!string.IsNullOrWhiteSpace(path))
@@ -251,53 +258,105 @@ internal sealed class GeminiMultimodalService
         }
 
         if (string.IsNullOrWhiteSpace(url))
-            throw new InvalidOperationException("image_url or image_path is required.");
+            throw new InvalidOperationException("url or path is required.");
 
         if (url.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
-            var (dataBytes, dataMimeType) = ParseDataUrl(url);
+            var (dataBytes, dataMimeType) = ParseDataUrl(url, maxBytes);
             EnforceMaxBytes(dataBytes.Length, maxBytes);
             return (dataBytes, mimeType ?? dataMimeType ?? defaultMimeType ?? "application/octet-stream");
         }
 
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsFile)
         {
-            var fullPath = Path.GetFullPath(uri.LocalPath);
-            EnforceMaxBytes(new FileInfo(fullPath).Length, maxBytes);
-            var bytes = await File.ReadAllBytesAsync(fullPath, ct);
-            return (bytes, mimeType ?? GuessMimeType(fullPath));
+            return await ReadAllowedLocalFileAsync(uri.LocalPath, allowedLocalFileRoots, mimeType, maxBytes, ct);
         }
 
         if (!Uri.TryCreate(url, UriKind.Absolute, out var remoteUri) ||
             (remoteUri.Scheme != Uri.UriSchemeHttp && remoteUri.Scheme != Uri.UriSchemeHttps))
         {
-            var fullPath = Path.GetFullPath(url);
-            EnforceMaxBytes(new FileInfo(fullPath).Length, maxBytes);
-            var bytes = await File.ReadAllBytesAsync(fullPath, ct);
-            return (bytes, mimeType ?? GuessMimeType(fullPath));
+            return await ReadAllowedLocalFileAsync(url, allowedLocalFileRoots, mimeType, maxBytes, ct);
         }
 
-        using var response = await _httpClient.GetAsync(url, ct);
+        using var response = await _httpClient.GetAsync(remoteUri, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
         if (response.Content.Headers.ContentLength is { } length)
             EnforceMaxBytes(length, maxBytes);
-        var bytesFromUrl = await response.Content.ReadAsByteArrayAsync(ct);
+        var bytesFromUrl = await ReadContentWithLimitAsync(response.Content, maxBytes, ct);
         EnforceMaxBytes(bytesFromUrl.Length, maxBytes);
         var responseMimeType = response.Content.Headers.ContentType?.MediaType;
         return (bytesFromUrl, mimeType ?? responseMimeType ?? defaultMimeType ?? "image/png");
     }
 
-    private static (byte[] Data, string? MimeType) ParseDataUrl(string url)
+    private static async Task<(ReadOnlyMemory<byte> Data, string MimeType)> ReadAllowedLocalFileAsync(
+        string localPath,
+        IReadOnlyList<string>? allowedLocalFileRoots,
+        string? mimeType,
+        int? maxBytes,
+        CancellationToken ct)
+    {
+        var fullPath = Path.GetFullPath(localPath);
+        if (allowedLocalFileRoots is not { Count: > 0 } ||
+            !allowedLocalFileRoots.Any(root => IsPathUnderRoot(fullPath, root)))
+        {
+            throw new InvalidOperationException("Local media files are not allowed unless they are under a configured media cache root.");
+        }
+
+        EnforceMaxBytes(new FileInfo(fullPath).Length, maxBytes);
+        var bytes = await File.ReadAllBytesAsync(fullPath, ct);
+        return (bytes, mimeType ?? GuessMimeType(fullPath));
+    }
+
+    private static bool IsPathUnderRoot(string path, string root)
+    {
+        var normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var normalizedPath = Path.GetFullPath(path);
+        return normalizedPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task<byte[]> ReadContentWithLimitAsync(HttpContent content, int? maxBytes, CancellationToken ct)
+    {
+        await using var stream = await content.ReadAsStreamAsync(ct);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        while (true)
+        {
+            var read = await stream.ReadAsync(chunk, ct);
+            if (read == 0)
+                break;
+
+            if (maxBytes is > 0 && buffer.Length + read > maxBytes.Value)
+                throw new InvalidOperationException($"Media is too large to process ({buffer.Length + read} bytes > {maxBytes.Value} bytes).");
+
+            buffer.Write(chunk, 0, read);
+        }
+
+        return buffer.ToArray();
+    }
+
+    private static (byte[] Data, string? MimeType) ParseDataUrl(string url, int? maxBytes)
     {
         var commaIndex = url.IndexOf(',', StringComparison.Ordinal);
         if (commaIndex < 0)
-            throw new InvalidOperationException("Unsupported audio data URL.");
+            throw new InvalidOperationException("Unsupported data URL.");
 
         var metadata = url[5..commaIndex];
         var payload = url[(commaIndex + 1)..];
         var metadataParts = metadata.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var mimeType = metadataParts.FirstOrDefault(static part => part.Contains('/', StringComparison.Ordinal));
         var isBase64 = metadataParts.Any(static part => part.Equals("base64", StringComparison.OrdinalIgnoreCase));
+        if (maxBytes is > 0)
+        {
+            if (!isBase64 && payload.Length > maxBytes.Value * 3L)
+                EnforceMaxBytes(payload.Length, maxBytes);
+
+            var estimatedBytes = isBase64
+                ? (long)Math.Ceiling(payload.Length / 4d) * 3
+                : Encoding.UTF8.GetByteCount(Uri.UnescapeDataString(payload));
+            EnforceMaxBytes(estimatedBytes, maxBytes);
+        }
+
         return isBase64
             ? (Convert.FromBase64String(payload), mimeType)
             : (Encoding.UTF8.GetBytes(Uri.UnescapeDataString(payload)), mimeType);
@@ -306,7 +365,16 @@ internal sealed class GeminiMultimodalService
     private static void EnforceMaxBytes(long sizeBytes, int? maxBytes)
     {
         if (maxBytes is > 0 && sizeBytes > maxBytes.Value)
-            throw new InvalidOperationException($"Audio is too large to transcribe ({sizeBytes} bytes > {maxBytes.Value} bytes).");
+            throw new InvalidOperationException($"Media is too large to process ({sizeBytes} bytes > {maxBytes.Value} bytes).");
+    }
+
+    private static string ResolveModel(string? requestedModel, string? configuredModel, string fallbackModel)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedModel))
+            return requestedModel.Trim();
+        if (!string.IsNullOrWhiteSpace(configuredModel))
+            return configuredModel.Trim();
+        return fallbackModel;
     }
 
     private static string? ExtractText(string payload)

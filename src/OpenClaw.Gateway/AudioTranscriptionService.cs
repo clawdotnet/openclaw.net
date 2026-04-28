@@ -11,6 +11,7 @@ internal sealed class AudioTranscriptionRequest
     public string? Provider { get; init; }
     public string? Model { get; init; }
     public int MaxAudioBytes { get; init; }
+    public IReadOnlyList<string> AllowedLocalFileRoots { get; init; } = [];
 }
 
 internal sealed class AudioTranscriptionResult
@@ -51,9 +52,7 @@ internal sealed class AudioTranscriptionService
         if (!IsAudioMessage(message))
             throw new InvalidOperationException("Only inbound audio messages can be transcribed.");
 
-        var providerName = string.IsNullOrWhiteSpace(_config.Multimodal.Transcription.Provider)
-            ? "gemini"
-            : _config.Multimodal.Transcription.Provider.Trim();
+        var providerName = ResolveProviderName(_config.Multimodal.Transcription.Provider);
 
         if (!_providers.TryGetValue(providerName, out var provider))
             throw new InvalidOperationException($"Unknown audio transcription provider '{providerName}'.");
@@ -70,8 +69,9 @@ internal sealed class AudioTranscriptionService
                 MimeType = message.MediaMimeType,
                 FileName = message.MediaFileName,
                 Provider = providerName,
-                Model = _config.Multimodal.Transcription.Model,
-                MaxAudioBytes = Math.Max(1, _config.Multimodal.Transcription.MaxAudioBytes)
+                Model = NormalizeOptional(_config.Multimodal.Transcription.Model),
+                MaxAudioBytes = Math.Max(1, _config.Multimodal.Transcription.MaxAudioBytes),
+                AllowedLocalFileRoots = BuildAllowedLocalFileRoots(_config)
             }, timeoutCts.Token);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
@@ -87,6 +87,45 @@ internal sealed class AudioTranscriptionService
     public static bool IsAudioMessage(InboundMessage message)
         => string.Equals(message.MediaType, "audio", StringComparison.OrdinalIgnoreCase)
            && !string.IsNullOrWhiteSpace(message.MediaUrl);
+
+    public static string ResolveProviderName(string? provider)
+        => string.IsNullOrWhiteSpace(provider) ? "gemini" : provider.Trim();
+
+    public static bool ShouldDegrade(string? failureMode)
+    {
+        var normalized = failureMode?.Trim();
+        return !string.Equals(normalized, "strict", StringComparison.OrdinalIgnoreCase)
+               && !string.Equals(normalized, "fail", StringComparison.OrdinalIgnoreCase)
+               && !string.Equals(normalized, "throw", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? NormalizeOptional(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static IReadOnlyList<string> BuildAllowedLocalFileRoots(GatewayConfig config)
+    {
+        var roots = new List<string>();
+        AddRoot(roots, config.Multimodal.MediaCachePath);
+
+        var worker = config.Channels.WhatsApp.FirstPartyWorker;
+        AddRoot(roots, worker.MediaCachePath);
+        if (!string.IsNullOrWhiteSpace(worker.StoragePath))
+            AddRoot(roots, Path.Combine(worker.StoragePath, "media-cache"));
+
+        foreach (var account in worker.Accounts)
+            AddRoot(roots, account.MediaCachePath);
+
+        return roots
+            .Select(static root => Path.GetFullPath(root))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static void AddRoot(List<string> roots, string? root)
+    {
+        if (!string.IsNullOrWhiteSpace(root))
+            roots.Add(root);
+    }
 }
 
 internal sealed class GeminiAudioTranscriptionProvider : IAudioTranscriptionProvider
@@ -106,6 +145,7 @@ internal sealed class GeminiAudioTranscriptionProvider : IAudioTranscriptionProv
             request.MimeType,
             request.Model,
             request.MaxAudioBytes,
+            request.AllowedLocalFileRoots,
             ct);
 }
 

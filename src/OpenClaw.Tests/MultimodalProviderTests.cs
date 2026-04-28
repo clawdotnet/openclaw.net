@@ -133,6 +133,115 @@ public sealed class MultimodalProviderTests
     }
 
     [Fact]
+    public async Task GeminiAudioTranscriptionProvider_BlankModelFallsBackToDefault()
+    {
+        var config = new GatewayConfig();
+        config.Llm.ApiKey = "raw:test-key";
+        config.Multimodal.Transcription.Model = "   ";
+        HttpRequestMessage? captured = null;
+        var handler = new CallbackHttpMessageHandler(request =>
+        {
+            captured = request;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"candidates":[{"content":{"parts":[{"text":"fallback model"}]}}]}""",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+        var gemini = new GeminiMultimodalService(
+            config,
+            new MediaCacheStore(Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"))),
+            NullLogger<GeminiMultimodalService>.Instance,
+            new HttpClient(handler));
+        var provider = new GeminiAudioTranscriptionProvider(gemini);
+
+        await provider.TranscribeAsync(new AudioTranscriptionRequest
+        {
+            AudioUrl = "data:audio/ogg;base64,AQID",
+            MimeType = "audio/ogg",
+            Model = "  ",
+            MaxAudioBytes = 1024
+        }, CancellationToken.None);
+
+        Assert.NotNull(captured);
+        Assert.Equal(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=test-key",
+            captured!.RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task GeminiAudioTranscriptionProvider_RejectsLocalFileOutsideAllowedRoots()
+    {
+        var config = new GatewayConfig();
+        config.Llm.ApiKey = "raw:test-key";
+        var audioPath = Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"), "memo.ogg");
+        Directory.CreateDirectory(Path.GetDirectoryName(audioPath)!);
+        await File.WriteAllBytesAsync(audioPath, [1, 2, 3]);
+        var gemini = new GeminiMultimodalService(
+            config,
+            new MediaCacheStore(Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"))),
+            NullLogger<GeminiMultimodalService>.Instance,
+            new HttpClient(new CallbackHttpMessageHandler(_ => throw new InvalidOperationException("HTTP should not be called."))));
+        var provider = new GeminiAudioTranscriptionProvider(gemini);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            provider.TranscribeAsync(new AudioTranscriptionRequest
+            {
+                AudioUrl = new Uri(audioPath).AbsoluteUri,
+                MimeType = "audio/ogg",
+                Model = "gemini-test",
+                MaxAudioBytes = 1024
+            }, CancellationToken.None));
+
+        Assert.Contains("configured media cache root", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GeminiAudioTranscriptionProvider_AllowsLocalFileUnderConfiguredRoot()
+    {
+        var config = new GatewayConfig();
+        config.Llm.ApiKey = "raw:test-key";
+        var root = Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"));
+        var audioPath = Path.Combine(root, "memo.ogg");
+        Directory.CreateDirectory(root);
+        await File.WriteAllBytesAsync(audioPath, [1, 2, 3]);
+        string? capturedBody = null;
+        var handler = new CallbackHttpMessageHandler(request =>
+        {
+            capturedBody = request.Content is null
+                ? null
+                : request.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"candidates":[{"content":{"parts":[{"text":"local file transcript"}]}}]}""",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+        var gemini = new GeminiMultimodalService(
+            config,
+            new MediaCacheStore(Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"))),
+            NullLogger<GeminiMultimodalService>.Instance,
+            new HttpClient(handler));
+        var provider = new GeminiAudioTranscriptionProvider(gemini);
+
+        var result = await provider.TranscribeAsync(new AudioTranscriptionRequest
+        {
+            AudioUrl = new Uri(audioPath).AbsoluteUri,
+            MimeType = "audio/ogg",
+            Model = "gemini-test",
+            MaxAudioBytes = 1024,
+            AllowedLocalFileRoots = [root]
+        }, CancellationToken.None);
+
+        Assert.Contains("\"data\":\"AQID\"", capturedBody, StringComparison.Ordinal);
+        Assert.Equal("local file transcript", result.Text);
+    }
+
+    [Fact]
     public void VoiceMemoTranscriptionText_PrependsTranscriptAndUnavailableMarker()
     {
         var transcribed = VoiceMemoTranscriptionText.PrependTranscript(
@@ -152,6 +261,8 @@ public sealed class MultimodalProviderTests
         Assert.Equal(
             "original text\n[VOICE_TRANSCRIPTION_UNAVAILABLE: timeout]",
             VoiceMemoTranscriptionText.AppendUnavailable("original text", "timeout"));
+        Assert.True(AudioTranscriptionService.ShouldDegrade("degrade"));
+        Assert.False(AudioTranscriptionService.ShouldDegrade("strict"));
     }
 
     [Fact]

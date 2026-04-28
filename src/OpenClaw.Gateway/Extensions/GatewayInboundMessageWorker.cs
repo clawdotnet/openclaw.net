@@ -433,6 +433,9 @@ internal sealed class GatewayInboundMessageWorker
                             }
 
                             var messageText = mwContext.Text;
+                            var mediaMarker = BuildMediaMarker(msg);
+                            var hasCurrentMediaMarker = ContainsExactMediaMarker(messageText, mediaMarker);
+                            var transcriptionProviderName = AudioTranscriptionService.ResolveProviderName(config.Multimodal.Transcription.Provider);
                             var audioTranscriptionSucceeded = false;
                             if (AudioTranscriptionService.IsAudioMessage(msg))
                             {
@@ -446,7 +449,7 @@ internal sealed class GatewayInboundMessageWorker
                                     transcriptionStopwatch.Stop();
                                     audioTranscriptionSucceeded = true;
                                     if (!config.Multimodal.Transcription.InjectAudioMarker)
-                                        messageText = RemoveAudioMarkers(messageText);
+                                        messageText = RemoveExactMediaMarker(messageText, mediaMarker);
                                     messageText = VoiceMemoTranscriptionText.PrependTranscript(messageText, transcription);
                                     AppendVoiceTranscriptionEvent(
                                         operations,
@@ -466,7 +469,6 @@ internal sealed class GatewayInboundMessageWorker
                                     transcriptionStopwatch.Stop();
                                     var reason = VoiceMemoTranscriptionText.FailureReason(ex);
                                     logger.LogWarning(ex, "Voice memo transcription failed for {ChannelId}:{SenderId}: {Reason}", msg.ChannelId, msg.SenderId, reason);
-                                    messageText = VoiceMemoTranscriptionText.AppendUnavailable(messageText, reason);
                                     AppendVoiceTranscriptionEvent(
                                         operations,
                                         session,
@@ -474,11 +476,15 @@ internal sealed class GatewayInboundMessageWorker
                                         action: "transcription_failed",
                                         severity: "warning",
                                         summary: $"Voice memo transcription unavailable: {reason}.",
-                                        provider: config.Multimodal.Transcription.Provider,
+                                        provider: transcriptionProviderName,
                                         reason: reason,
                                         elapsed: transcriptionStopwatch.Elapsed,
                                         sizeBytes: null,
                                         mimeType: msg.MediaMimeType);
+                                    if (!AudioTranscriptionService.ShouldDegrade(config.Multimodal.Transcription.FailureMode))
+                                        throw;
+
+                                    messageText = VoiceMemoTranscriptionText.AppendUnavailable(messageText, reason);
                                 }
                             }
 
@@ -486,12 +492,10 @@ internal sealed class GatewayInboundMessageWorker
                                 || !audioTranscriptionSucceeded
                                 || config.Multimodal.Transcription.InjectAudioMarker;
                             if (shouldInjectMediaMarker &&
-                                !string.IsNullOrWhiteSpace(msg.MediaUrl) &&
-                                !ContainsMediaMarker(messageText))
+                                !string.IsNullOrWhiteSpace(mediaMarker) &&
+                                !hasCurrentMediaMarker)
                             {
-                                var marker = BuildMediaMarker(msg);
-                                if (!string.IsNullOrWhiteSpace(marker))
-                                    messageText = string.IsNullOrWhiteSpace(messageText) ? marker : $"{marker}\n{messageText}";
+                                messageText = string.IsNullOrWhiteSpace(messageText) ? mediaMarker : $"{mediaMarker}\n{messageText}";
                             }
                             var useStreaming = msg.ChannelId == "websocket" && wsChannel.IsClientUsingEnvelopes(msg.SenderId);
 
@@ -959,17 +963,23 @@ internal sealed class GatewayInboundMessageWorker
             _ => null
         };
 
-    private static bool ContainsMediaMarker(string text)
-        => text.Contains("[IMAGE_URL:", StringComparison.Ordinal)
-           || text.Contains("[AUDIO_URL:", StringComparison.Ordinal)
-           || text.Contains("[VIDEO_URL:", StringComparison.Ordinal)
-           || text.Contains("[FILE_URL:", StringComparison.Ordinal)
-           || text.Contains("[DOCUMENT_URL:", StringComparison.Ordinal)
-           || text.Contains("[STICKER_URL:", StringComparison.Ordinal);
-
-    private static string RemoveAudioMarkers(string text)
+    private static bool ContainsExactMediaMarker(string text, string? marker)
     {
-        if (string.IsNullOrEmpty(text))
+        if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(marker))
+            return false;
+
+        foreach (var line in text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+        {
+            if (string.Equals(line.Trim(), marker, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static string RemoveExactMediaMarker(string text, string? marker)
+    {
+        if (string.IsNullOrEmpty(text) || string.IsNullOrWhiteSpace(marker))
             return text;
 
         var changed = false;
@@ -977,7 +987,7 @@ internal sealed class GatewayInboundMessageWorker
         var kept = new List<string>();
         foreach (var line in lines)
         {
-            if (MediaMarkerProtocol.TryParseMarker(line.Trim(), out var marker) && marker.Kind == MediaMarkerKind.AudioUrl)
+            if (string.Equals(line.Trim(), marker, StringComparison.Ordinal))
             {
                 changed = true;
                 continue;
