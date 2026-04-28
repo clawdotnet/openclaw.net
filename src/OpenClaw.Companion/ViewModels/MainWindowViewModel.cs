@@ -99,6 +99,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _adminClientFactory = adminClientFactory ?? ((baseUrl, authToken) => new OpenClawHttpClient(baseUrl, authToken));
 
         _client.OnTextMessage += HandleInboundText;
+        _client.OnEnvelopeReceived += HandleCanvasEnvelope;
         _client.OnError += err => AddSystemMessage($"Error: {err}");
 
         LoadSettings();
@@ -155,6 +156,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         if (TryParseEnvelope(payload, out var envelope))
         {
+            if (IsCanvasServerEnvelope(envelope.Type))
+                return;
+
             Dispatcher.UIThread.Post(() => ApplyEnvelope(envelope));
             return;
         }
@@ -450,6 +454,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             await _client.ConnectAsync(uri, string.IsNullOrWhiteSpace(AuthToken) ? null : AuthToken, CancellationToken.None);
             IsConnected = true;
             Status = "Connected";
+            await SendCanvasReadyAsync();
             await LoadAdminStatusAsyncInternal();
             await LoadWhatsAppSetupAsync();
         }

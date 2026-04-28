@@ -18,6 +18,7 @@
 - Optional estimated token admission control.
 - Startup/runtime composition split into explicit service, channel, plugin, and runtime assembly stages.
 - Optional native Notion scratchpad integration with scoped read/write tools (`notion`, `notion_write`), allowlists, and write approvals by default.
+- Canvas and A2UI v1 visual workspace with session-scoped websocket command broker, webchat Canvas host, Companion native Canvas tab, A2UI v0.8 JSONL renderer, event feedback, snapshots, and public-bind hardening.
 
 ## Runtime and Platform Expansion
 

@@ -69,6 +69,7 @@ public sealed class WebSocketChannel : IChannelAdapter
     public string ChannelId => "websocket";
 
     public event Func<InboundMessage, CancellationToken, ValueTask>? OnMessageReceived;
+    public event Func<string, WsClientEnvelope, CancellationToken, ValueTask>? OnCanvasClientEnvelopeReceived;
 
     public Task StartAsync(CancellationToken ct) => Task.CompletedTask; // Kestrel manages the listener
 
@@ -110,6 +111,13 @@ public sealed class WebSocketChannel : IChannelAdapter
                     break;
                 }
 
+                if (parsed.CanvasEnvelope is not null)
+                {
+                    await HandleCanvasClientEnvelopeAsync(clientId, parsed.CanvasEnvelope, ct);
+                    if (!string.Equals(parsed.CanvasEnvelope.Type, "a2ui_event", StringComparison.Ordinal))
+                        continue;
+                }
+
                 var msg = new InboundMessage
                 {
                     ChannelId = ChannelId,
@@ -119,6 +127,12 @@ public sealed class WebSocketChannel : IChannelAdapter
                     Text = parsed.Text ?? "",
                     MessageId = parsed.MessageId,
                     ReplyToMessageId = parsed.ReplyToMessageId,
+                    RequestId = parsed.CanvasEnvelope?.RequestId,
+                    SurfaceId = parsed.CanvasEnvelope?.SurfaceId,
+                    ComponentId = parsed.CanvasEnvelope?.ComponentId,
+                    Event = parsed.CanvasEnvelope?.Event,
+                    ValueJson = parsed.CanvasEnvelope?.ValueJson,
+                    Sequence = parsed.CanvasEnvelope?.Sequence,
                     ApprovalId = parsed.ApprovalId,
                     Approved = parsed.Approved,
                     RequestCancellation = ct
@@ -220,6 +234,9 @@ public sealed class WebSocketChannel : IChannelAdapter
     /// </summary>
     public bool IsClientUsingEnvelopes(string clientId) =>
         _connections.TryGetValue(clientId, out var state) && state.UseJsonEnvelope;
+
+    public bool IsClientConnected(string clientId) =>
+        _connections.TryGetValue(clientId, out var state) && state.Socket.State == WebSocketState.Open;
 
     /// <summary>
     /// Sends a streaming event to a connected client. Only works for envelope-mode clients.
@@ -498,7 +515,8 @@ public sealed class WebSocketChannel : IChannelAdapter
         string? MessageId,
         string? ReplyToMessageId,
         string? ApprovalId,
-        bool? Approved);
+        bool? Approved,
+        WsClientEnvelope? CanvasEnvelope = null);
 
     private static ParsedWsInbound TryParseClientEnvelope(string payload)
     {
@@ -510,7 +528,7 @@ public sealed class WebSocketChannel : IChannelAdapter
             i++;
 
         if (i >= span.Length || span[i] != '{')
-            return new ParsedWsInbound(false, null, payload, null, null, null, null, null);
+            return new ParsedWsInbound(false, null, payload, null, null, null, null, null, null);
 
         try
         {
@@ -531,14 +549,72 @@ public sealed class WebSocketChannel : IChannelAdapter
             {
                 return new ParsedWsInbound(true, env.Type, "", env.SessionId, env.MessageId, env.ReplyToMessageId, env.ApprovalId, env.Approved);
             }
+
+            if (env is not null && IsCanvasClientEnvelope(env.Type))
+            {
+                var text = string.Equals(env.Type, "a2ui_event", StringComparison.Ordinal)
+                    ? BuildA2UiEventText(env)
+                    : "";
+                return new ParsedWsInbound(
+                    true,
+                    env.Type,
+                    text,
+                    env.SessionId,
+                    env.MessageId ?? env.RequestId,
+                    env.ReplyToMessageId,
+                    null,
+                    null,
+                    env);
+            }
         }
         catch
         {
             // fall through to raw
         }
 
-        return new ParsedWsInbound(false, null, payload, null, null, null, null, null);
+        return new ParsedWsInbound(false, null, payload, null, null, null, null, null, null);
     }
+
+    private async ValueTask HandleCanvasClientEnvelopeAsync(string clientId, WsClientEnvelope envelope, CancellationToken ct)
+    {
+        if (OnCanvasClientEnvelopeReceived is not null)
+            await OnCanvasClientEnvelopeReceived(clientId, envelope, ct);
+    }
+
+    private static bool IsCanvasClientEnvelope(string? type)
+        => type is "canvas_ready" or "canvas_ack" or "canvas_snapshot_result" or "canvas_eval_result" or "a2ui_event";
+
+    private static string BuildA2UiEventText(WsClientEnvelope env)
+    {
+        var value = NormalizeJsonValue(env.ValueJson);
+        return "{\n" +
+               "  \"type\": \"a2ui_event\",\n" +
+               $"  \"surfaceId\": {JsonStringLiteral(env.SurfaceId ?? "main")},\n" +
+               $"  \"componentId\": {JsonStringLiteral(env.ComponentId ?? "")},\n" +
+               $"  \"event\": {JsonStringLiteral(env.Event ?? "")},\n" +
+               $"  \"value\": {value},\n" +
+               $"  \"sequence\": {(env.Sequence ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}\n" +
+               "}";
+    }
+
+    private static string NormalizeJsonValue(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return "null";
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.GetRawText();
+        }
+        catch (JsonException)
+        {
+            return JsonStringLiteral(json);
+        }
+    }
+
+    private static string JsonStringLiteral(string value)
+        => $"\"{JsonEncodedText.Encode(value)}\"";
 
     private static ValueTask CloseIfOpenAsync(WebSocket ws, WebSocketCloseStatus status, string description, CancellationToken ct)
     {

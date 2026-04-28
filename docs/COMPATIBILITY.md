@@ -56,6 +56,20 @@ These APIs are not bridged. If a plugin uses them, initialization fails fast wit
 | `api.registerGatewayMethod()` | Not supported | `unsupported_gateway_method` |
 | `api.registerCli()` | Not supported | `unsupported_cli_registration` |
 
+## Canvas and A2UI Compatibility
+
+OpenClaw.NET ships a v1 Canvas/A2UI workspace for websocket clients. The supported target is local Canvas content plus A2UI v0.8 JSONL; remote webpage Canvas control and A2UI v0.9 surfaces remain intentionally unsupported. See [CANVAS_A2UI.md](CANVAS_A2UI.md).
+
+| Surface | Status | Notes |
+| --- | --- | --- |
+| Canvas present/hide/snapshot commands | Supported | Typed websocket envelopes routed through the session-scoped broker. |
+| Local Canvas navigation | Supported with caveats | `about:blank` is supported. Inline local HTML is supported in webchat via sandboxed `srcdoc`; Companion reports an unsupported diagnostic without a native WebView. |
+| Remote webpage Canvas navigation/eval | Not supported | `http:` and `https:` URLs are rejected; use the browser tool for remote pages. |
+| A2UI v0.8 JSONL rendering | Supported | Webchat and Companion render text, markdown, card, button, input, select, checklist, table, image, progress, and simple chart frames. |
+| A2UI interaction event feedback | Supported | Client events return as structured `a2ui_event` session turns. |
+| A2UI eval | Supported with caveats | Webchat supports local A2UI sandbox eval; Companion returns an unsupported diagnostic. |
+| A2UI v0.9 `createSurface` | Not supported | Validation rejects it with an explicit diagnostic. |
+
 ## Channel Compatibility
 
 The messaging channels below now share the same operator model for DM policy, recent senders, diagnostics, and dynamic allowlist administration.

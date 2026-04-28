@@ -60,6 +60,29 @@ public sealed class GatewaySecurityHardeningTests
     }
 
     [Fact]
+    public void EnforcePublicBindHardening_CanvasEnabledOnPublicBind_Throws()
+    {
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Canvas.Enabled = true;
+        config.Canvas.AllowOnPublicBind = false;
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true));
+
+        Assert.Contains("Canvas command forwarding", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EnforcePublicBindHardening_CanvasPublicBindOptIn_IsAllowed()
+    {
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Canvas.Enabled = true;
+        config.Canvas.AllowOnPublicBind = true;
+
+        GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true);
+    }
+
+    [Fact]
     public void EnforcePublicBindHardening_Loopback_DoesNotApplyPublicChecks()
     {
         var config = new GatewayConfig();
@@ -228,6 +251,7 @@ public sealed class GatewaySecurityHardeningTests
 
         Assert.True(config.Security.RequireRequesterMatchForHttpToolApproval);
         Assert.True(config.Tooling.RequireToolApproval);
+        Assert.False(config.Canvas.Enabled);
         Assert.Contains("process", config.Tooling.ApprovalRequiredTools, StringComparer.OrdinalIgnoreCase);
         Assert.Contains("shell", config.Tooling.ApprovalRequiredTools, StringComparer.OrdinalIgnoreCase);
     }
@@ -241,6 +265,10 @@ public sealed class GatewaySecurityHardeningTests
                 AllowShell = false,
                 AllowedReadRoots = ["/tmp/openclaw-read"],
                 AllowedWriteRoots = ["/tmp/openclaw-write"]
+            },
+            Canvas = new CanvasConfig
+            {
+                Enabled = false
             },
             Channels = new ChannelsConfig
             {

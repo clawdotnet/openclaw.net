@@ -125,6 +125,13 @@ internal static partial class RuntimeInitializationExtensions
             new AutomationTool(services.AutomationService, services.Pipeline),
             new VisionAnalyzeTool(services.GeminiMultimodalService),
             new TextToSpeechTool(services.TextToSpeechService),
+            new CanvasPresentTool(services.CanvasBroker, config),
+            new CanvasHideTool(services.CanvasBroker, config),
+            new CanvasNavigateTool(services.CanvasBroker, config),
+            new CanvasSnapshotTool(services.CanvasBroker, config),
+            new A2UiPushTool(services.CanvasBroker, config),
+            new A2UiResetTool(services.CanvasBroker, config),
+            new A2UiEvalTool(services.CanvasBroker, config),
 
             new EditFileTool(config.Tooling),
             new ApplyPatchTool(config.Tooling),

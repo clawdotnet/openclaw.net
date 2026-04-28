@@ -156,6 +156,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton<CronSchedulerStartupService>();
         services.AddHostedService(sp => sp.GetRequiredService<CronSchedulerStartupService>());
         services.AddSingleton(new WebSocketChannel(config.WebSocket));
+        services.AddSingleton<CanvasCommandBroker>();
         services.AddSingleton<GatewayRuntimeShutdownCoordinator>();
         services.AddHostedService(sp => sp.GetRequiredService<GatewayRuntimeShutdownCoordinator>());
         services.AddSingleton<ChatCommandProcessor>();

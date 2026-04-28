@@ -17,6 +17,7 @@ public sealed class GatewayConfig
     public MemoryConfig Memory { get; set; } = new();
     public SecurityConfig Security { get; set; } = new();
     public WebSocketConfig WebSocket { get; set; } = new();
+    public CanvasConfig Canvas { get; set; } = new();
     public ToolingConfig Tooling { get; set; } = new();
     public SandboxConfig Sandbox { get; set; } = new();
     public ExecutionConfig Execution { get; set; } = new();
@@ -291,6 +292,23 @@ public sealed class WebSocketConfig
     public int MaxConnectionsPerIp { get; set; } = 50;
     public int MessagesPerMinutePerConnection { get; set; } = 120;
     public int ReceiveTimeoutSeconds { get; set; } = 120;
+}
+
+public sealed class CanvasConfig
+{
+    /// <summary>Enables first-party Canvas/A2UI command forwarding on websocket clients.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Canvas is disabled on non-loopback binds unless this is explicitly enabled.</summary>
+    public bool AllowOnPublicBind { get; set; } = false;
+
+    public int MaxCommandBytes { get; set; } = 256 * 1024;
+    public int MaxSnapshotBytes { get; set; } = 256 * 1024;
+    public int CommandTimeoutSeconds { get; set; } = 10;
+    public int MaxFramesPerPush { get; set; } = 100;
+    public bool EnableLocalHtml { get; set; } = true;
+    public bool EnableRemoteNavigation { get; set; } = false;
+    public bool EnableEval { get; set; } = true;
 }
 
 public sealed class ToolingConfig

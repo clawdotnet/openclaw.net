@@ -17,6 +17,8 @@ public static class GatewaySecurityExtensions
         config.Security.AllowUnsafeToolingOnPublicBind = false;
         config.Security.AllowPluginBridgeOnPublicBind = false;
         config.Security.AllowRawSecretRefsOnPublicBind = false;
+        if (!config.Canvas.AllowOnPublicBind)
+            config.Canvas.Enabled = false;
         config.Tooling.RequireToolApproval = true;
         config.Tooling.ApprovalRequiredTools = config.Tooling.ApprovalRequiredTools
             .Concat(["shell", "process", "write_file", "code_exec", "git"])
@@ -28,6 +30,13 @@ public static class GatewaySecurityExtensions
     {
         if (!isNonLoopbackBind)
             return;
+
+        if (config.Canvas.Enabled && !config.Canvas.AllowOnPublicBind)
+        {
+            throw new InvalidOperationException(
+                "Refusing to start with Canvas command forwarding enabled on a non-loopback bind. " +
+                "Disable OpenClaw:Canvas:Enabled or explicitly opt in via OpenClaw:Canvas:AllowOnPublicBind=true.");
+        }
 
         var localShellEnabled = IsUnsafeLocalToolExecutionExposed(config, "shell");
         var localProcessEnabled = IsUnsafeLocalToolExecutionExposed(config, "process");

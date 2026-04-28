@@ -17,6 +17,12 @@ public sealed record InboundMessage
     public string? SenderName { get; init; }
     public string? MessageId { get; init; }
     public string? ReplyToMessageId { get; init; }
+    public string? RequestId { get; init; }
+    public string? SurfaceId { get; init; }
+    public string? ComponentId { get; init; }
+    public string? Event { get; init; }
+    public string? ValueJson { get; init; }
+    public long? Sequence { get; init; }
     public bool IsSystem { get; init; }
     public string? Subject { get; init; }
     public string? ApprovalId { get; init; }

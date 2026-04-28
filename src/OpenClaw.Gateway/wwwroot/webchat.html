@@ -257,6 +257,13 @@
 
         /* ============================== Chat Stream ============================== */
 
+        #workspace {
+            flex-grow: 1;
+            min-height: 0;
+            display: flex;
+            background: var(--bg);
+        }
+
         #chat-wrapper {
             flex-grow: 1;
             overflow-y: auto;
@@ -264,6 +271,124 @@
             justify-content: center;
             scroll-behavior: smooth;
             background: var(--bg);
+        }
+
+        #canvas-panel {
+            width: min(44vw, 560px);
+            min-width: 360px;
+            border-right: 1px solid var(--separator);
+            background: #101012;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        #canvas-panel[hidden] {
+            display: none;
+        }
+
+        #canvas-header {
+            height: 42px;
+            padding: 0 1rem;
+            border-bottom: 1px solid var(--separator);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            color: var(--text-secondary);
+            font-size: 0.8125rem;
+        }
+
+        #canvas-header strong {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        #canvas-surface {
+            min-height: 0;
+            flex: 1;
+            overflow: auto;
+            padding: 1rem;
+        }
+
+        #canvas-html-frame {
+            width: 100%;
+            min-height: 420px;
+            border: 1px solid var(--separator);
+            border-radius: 8px;
+            background: white;
+        }
+
+        #a2ui-root {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .a2ui-card,
+        .a2ui-frame {
+            border: 1px solid var(--separator-strong);
+            background: rgba(255, 255, 255, 0.045);
+            border-radius: 8px;
+            padding: 0.875rem;
+        }
+
+        .a2ui-title {
+            font-weight: 650;
+            margin-bottom: 0.35rem;
+        }
+
+        .a2ui-muted {
+            color: var(--text-secondary);
+            font-size: 0.8125rem;
+        }
+
+        .a2ui-control {
+            width: 100%;
+            min-height: 34px;
+            border-radius: 8px;
+            border: 1px solid var(--separator-strong);
+            background: var(--bg-field);
+            color: var(--text);
+            padding: 0.45rem 0.6rem;
+            font: inherit;
+        }
+
+        .a2ui-button {
+            min-height: 34px;
+            border: 0;
+            border-radius: 8px;
+            background: var(--accent);
+            color: white;
+            padding: 0.45rem 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .a2ui-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+
+        .a2ui-table th,
+        .a2ui-table td {
+            border-bottom: 1px solid var(--separator);
+            padding: 0.45rem;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .a2ui-progress {
+            width: 100%;
+            accent-color: var(--accent);
+        }
+
+        .a2ui-chart-bar {
+            height: 22px;
+            min-width: 2px;
+            border-radius: 5px;
+            background: var(--accent);
         }
 
         #chat-state-bar {
@@ -715,6 +840,18 @@
                 max-width: 82%;
             }
 
+            #workspace {
+                flex-direction: column;
+            }
+
+            #canvas-panel {
+                width: 100%;
+                min-width: 0;
+                max-height: 45vh;
+                border-right: 0;
+                border-bottom: 1px solid var(--separator);
+            }
+
             #token-input,
             #voice-id-input {
                 width: 160px;
@@ -755,16 +892,29 @@
         </div>
     </div>
 
-    <div id="chat-wrapper">
-        <div id="chat-container">
-            <div id="chat-state-bar"></div>
-            <!-- Messages will render here -->
-            <div class="message-row typing-row" id="typing-row">
-                <div class="agent-avatar"><img src="image.png" alt="Agent" /></div>
-                <div class="typing-indicator">
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                    <div class="dot"></div>
+    <div id="workspace">
+        <section id="canvas-panel" aria-label="Canvas" hidden>
+            <div id="canvas-header">
+                <strong>Canvas</strong>
+                <span id="canvas-status">Ready</span>
+            </div>
+            <div id="canvas-surface">
+                <iframe id="canvas-html-frame" title="Canvas HTML" sandbox="allow-scripts" hidden></iframe>
+                <div id="a2ui-root"></div>
+            </div>
+        </section>
+
+        <div id="chat-wrapper">
+            <div id="chat-container">
+                <div id="chat-state-bar"></div>
+                <!-- Messages will render here -->
+                <div class="message-row typing-row" id="typing-row">
+                    <div class="agent-avatar"><img src="image.png" alt="Agent" /></div>
+                    <div class="typing-indicator">
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -836,6 +986,10 @@
         const liveStatusBadge = document.getElementById('live-status-badge');
         const chatStateBar = document.getElementById('chat-state-bar');
         const typingRow = document.getElementById('typing-row');
+        const canvasPanel = document.getElementById('canvas-panel');
+        const canvasStatus = document.getElementById('canvas-status');
+        const canvasHtmlFrame = document.getElementById('canvas-html-frame');
+        const a2uiRoot = document.getElementById('a2ui-root');
         const TOKEN_KEY_PERSIST = 'openclaw_token';
         const TOKEN_KEY_SESSION = 'openclaw_token_session';
 
@@ -853,6 +1007,11 @@
         let liveAudioContext = null;
         let liveAudioSource = null;
         let liveAudioProcessor = null;
+        let canvasSessionId = null;
+        let canvasEventSequence = 0;
+        let canvasFrames = [];
+        let canvasValues = {};
+        let canvasDiagnostics = [];
 
         const WEBCHAT_CONFIG = {
             streamRenderDebounceMs: Math.max(20, Number(window.OPENCLAW_WEBCHAT_CONFIG?.streamRenderDebounceMs ?? 120)),
@@ -1491,6 +1650,388 @@
             liveMicButton.textContent = 'Mic';
         }
 
+        function sendCanvasReady() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({
+                type: 'canvas_ready',
+                capabilities: ['a2ui.v0_8', 'canvas.present', 'canvas.hide', 'canvas.local_html', 'a2ui.eval', 'snapshot.state']
+            }));
+        }
+
+        function isCanvasEnvelopeType(type) {
+            return ['canvas_present', 'canvas_hide', 'canvas_navigate', 'canvas_snapshot', 'a2ui_push', 'a2ui_reset', 'a2ui_eval'].includes(type);
+        }
+
+        function sendCanvasAck(env, success = true, error = null) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({
+                type: 'canvas_ack',
+                requestId: env.requestId,
+                sessionId: canvasSessionId,
+                surfaceId: env.surfaceId || 'main',
+                success,
+                error
+            }));
+        }
+
+        function showCanvas() {
+            canvasPanel.hidden = false;
+            canvasStatus.textContent = 'Visible';
+        }
+
+        function hideCanvas() {
+            canvasPanel.hidden = true;
+            canvasStatus.textContent = 'Hidden';
+        }
+
+        function resetA2ui() {
+            canvasFrames = [];
+            canvasValues = {};
+            canvasDiagnostics = [];
+            a2uiRoot.innerHTML = '';
+            a2uiRoot.hidden = false;
+            canvasHtmlFrame.hidden = true;
+            canvasHtmlFrame.removeAttribute('srcdoc');
+            canvasStatus.textContent = 'Reset';
+        }
+
+        function handleCanvasEnvelope(env) {
+            canvasSessionId = env.sessionId || canvasSessionId;
+            try {
+                switch (env.type) {
+                    case 'canvas_present':
+                        showCanvas();
+                        sendCanvasAck(env);
+                        break;
+                    case 'canvas_hide':
+                        hideCanvas();
+                        sendCanvasAck(env);
+                        break;
+                    case 'canvas_navigate':
+                        handleCanvasNavigate(env);
+                        break;
+                    case 'a2ui_reset':
+                        resetA2ui();
+                        sendCanvasAck(env);
+                        break;
+                    case 'a2ui_push':
+                        handleA2uiPush(env);
+                        break;
+                    case 'canvas_snapshot':
+                        sendCanvasSnapshot(env);
+                        break;
+                    case 'a2ui_eval':
+                        handleA2uiEval(env);
+                        break;
+                }
+            } catch (error) {
+                const message = String(error?.message || error);
+                canvasDiagnostics.push(message);
+                sendCanvasAck(env, false, message);
+            }
+        }
+
+        function handleCanvasNavigate(env) {
+            showCanvas();
+            if (env.html) {
+                canvasHtmlFrame.hidden = false;
+                a2uiRoot.hidden = true;
+                canvasHtmlFrame.srcdoc = env.html;
+                canvasStatus.textContent = 'Local HTML';
+                sendCanvasAck(env);
+                return;
+            }
+            if (!env.url || env.url === 'about:blank') {
+                resetA2ui();
+                showCanvas();
+                sendCanvasAck(env);
+                return;
+            }
+            if (String(env.url).startsWith('openclaw-canvas://')) {
+                sendCanvasAck(env, false, 'openclaw-canvas:// artifact loading is not implemented in webchat v1.');
+                return;
+            }
+            sendCanvasAck(env, false, 'Canvas v1 rejects remote webpage navigation; use the browser tool.');
+        }
+
+        function handleA2uiPush(env) {
+            showCanvas();
+            canvasHtmlFrame.hidden = true;
+            a2uiRoot.hidden = false;
+            const lines = String(env.frames || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+            for (const line of lines) {
+                const frame = JSON.parse(line);
+                canvasFrames.push(frame);
+                renderA2uiFrame(frame, env.surfaceId || 'main');
+            }
+            canvasStatus.textContent = `${lines.length} frame${lines.length === 1 ? '' : 's'}`;
+            sendCanvasAck(env);
+        }
+
+        function renderA2uiFrame(frame, surfaceId) {
+            const wrap = document.createElement('div');
+            wrap.className = frame.type === 'card' ? 'a2ui-card' : 'a2ui-frame';
+            wrap.dataset.frameId = frame.id || '';
+            wrap.dataset.type = frame.type || '';
+            const title = frame.title || frame.label;
+            if (title && frame.type !== 'button') {
+                const titleEl = document.createElement('div');
+                titleEl.className = 'a2ui-title';
+                titleEl.textContent = title;
+                wrap.appendChild(titleEl);
+            }
+            switch (frame.type) {
+                case 'text':
+                case 'markdown':
+                    appendMarkdownOrText(wrap, frame.text || '', frame.type === 'markdown');
+                    break;
+                case 'card':
+                    appendMarkdownOrText(wrap, frame.body || frame.text || '', true);
+                    break;
+                case 'button':
+                    renderA2uiButton(wrap, frame, surfaceId);
+                    break;
+                case 'input':
+                    renderA2uiInput(wrap, frame, surfaceId);
+                    break;
+                case 'select':
+                    renderA2uiSelect(wrap, frame, surfaceId);
+                    break;
+                case 'checklist':
+                    renderA2uiChecklist(wrap, frame, surfaceId);
+                    break;
+                case 'table':
+                    renderA2uiTable(wrap, frame);
+                    break;
+                case 'image':
+                    renderA2uiImage(wrap, frame);
+                    break;
+                case 'progress':
+                    renderA2uiProgress(wrap, frame);
+                    break;
+                case 'chart':
+                    renderA2uiChart(wrap, frame);
+                    break;
+                default:
+                    wrap.textContent = `Unsupported A2UI frame: ${frame.type}`;
+                    canvasDiagnostics.push(`Unsupported A2UI frame: ${frame.type}`);
+                    break;
+            }
+            a2uiRoot.appendChild(wrap);
+        }
+
+        function appendMarkdownOrText(parent, value, markdown) {
+            const div = document.createElement('div');
+            if (markdown) {
+                div.innerHTML = sanitizeRenderedHtml(marked.parse(String(value || '')));
+            } else {
+                div.textContent = String(value || '');
+            }
+            parent.appendChild(div);
+        }
+
+        function renderA2uiButton(parent, frame, surfaceId) {
+            const button = document.createElement('button');
+            button.className = 'a2ui-button';
+            button.type = 'button';
+            button.textContent = frame.label || frame.text || 'Button';
+            button.addEventListener('click', () => sendA2uiEvent(surfaceId, frame.id, 'click', true));
+            parent.appendChild(button);
+        }
+
+        function renderA2uiInput(parent, frame, surfaceId) {
+            const input = document.createElement('input');
+            input.className = 'a2ui-control';
+            input.placeholder = frame.placeholder || frame.label || '';
+            input.value = frame.value || '';
+            canvasValues[frame.id] = input.value;
+            input.addEventListener('change', () => {
+                canvasValues[frame.id] = input.value;
+                sendA2uiEvent(surfaceId, frame.id, 'change', input.value);
+            });
+            parent.appendChild(input);
+        }
+
+        function normalizeOptions(frame) {
+            return Array.isArray(frame.options) ? frame.options.map(option => {
+                if (typeof option === 'string') return { label: option, value: option };
+                return {
+                    label: option.label ?? option.text ?? option.value ?? 'option',
+                    value: option.value ?? option.label ?? option.text ?? 'option',
+                    selected: Boolean(option.selected)
+                };
+            }) : [];
+        }
+
+        function renderA2uiSelect(parent, frame, surfaceId) {
+            const select = document.createElement('select');
+            select.className = 'a2ui-control';
+            for (const option of normalizeOptions(frame)) {
+                const el = document.createElement('option');
+                el.value = option.value;
+                el.textContent = option.label;
+                el.selected = option.selected;
+                select.appendChild(el);
+            }
+            canvasValues[frame.id] = select.value;
+            select.addEventListener('change', () => {
+                canvasValues[frame.id] = select.value;
+                sendA2uiEvent(surfaceId, frame.id, 'change', select.value);
+            });
+            parent.appendChild(select);
+        }
+
+        function renderA2uiChecklist(parent, frame, surfaceId) {
+            const group = document.createElement('div');
+            for (const option of normalizeOptions(frame)) {
+                const label = document.createElement('label');
+                label.className = 'a2ui-muted';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = Boolean(option.selected);
+                checkbox.addEventListener('change', () => {
+                    canvasValues[`${frame.id}:${option.value}`] = checkbox.checked;
+                    sendA2uiEvent(surfaceId, frame.id, 'change', { value: option.value, selected: checkbox.checked });
+                });
+                label.appendChild(checkbox);
+                label.append(` ${option.label}`);
+                group.appendChild(label);
+                group.appendChild(document.createElement('br'));
+            }
+            parent.appendChild(group);
+        }
+
+        function renderA2uiTable(parent, frame) {
+            const table = document.createElement('table');
+            table.className = 'a2ui-table';
+            if (Array.isArray(frame.columns)) {
+                const thead = document.createElement('thead');
+                const tr = document.createElement('tr');
+                for (const column of frame.columns) {
+                    const th = document.createElement('th');
+                    th.textContent = String(column);
+                    tr.appendChild(th);
+                }
+                thead.appendChild(tr);
+                table.appendChild(thead);
+            }
+            const tbody = document.createElement('tbody');
+            for (const row of Array.isArray(frame.rows) ? frame.rows : []) {
+                const tr = document.createElement('tr');
+                const cells = Array.isArray(row) ? row : Object.values(row || {});
+                for (const cell of cells) {
+                    const td = document.createElement('td');
+                    td.textContent = String(cell ?? '');
+                    tr.appendChild(td);
+                }
+                tbody.appendChild(tr);
+            }
+            table.appendChild(tbody);
+            parent.appendChild(table);
+        }
+
+        function renderA2uiImage(parent, frame) {
+            const img = document.createElement('img');
+            img.src = frame.url || frame.src || '';
+            img.alt = frame.alt || frame.label || '';
+            img.style.maxWidth = '100%';
+            img.style.borderRadius = '8px';
+            parent.appendChild(img);
+        }
+
+        function renderA2uiProgress(parent, frame) {
+            const progress = document.createElement('progress');
+            progress.className = 'a2ui-progress';
+            progress.max = Number(frame.max ?? 100);
+            const raw = Number(frame.value ?? 0);
+            progress.value = raw <= 1 && progress.max === 100 ? raw * 100 : raw;
+            parent.appendChild(progress);
+        }
+
+        function renderA2uiChart(parent, frame) {
+            const data = Array.isArray(frame.data) ? frame.data : [];
+            if (!data.length) {
+                appendMarkdownOrText(parent, JSON.stringify(frame.data ?? {}, null, 2), false);
+                return;
+            }
+            const max = Math.max(...data.map(item => Number(item.value ?? item.y ?? 0)), 1);
+            for (const item of data) {
+                const label = document.createElement('div');
+                label.className = 'a2ui-muted';
+                label.textContent = String(item.label ?? item.x ?? '');
+                const bar = document.createElement('div');
+                bar.className = 'a2ui-chart-bar';
+                bar.style.width = `${Math.max(2, (Number(item.value ?? item.y ?? 0) / max) * 100)}%`;
+                parent.appendChild(label);
+                parent.appendChild(bar);
+            }
+        }
+
+        function sendA2uiEvent(surfaceId, componentId, eventName, value) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({
+                type: 'a2ui_event',
+                sessionId: canvasSessionId,
+                surfaceId: surfaceId || 'main',
+                componentId,
+                event: eventName,
+                valueJson: JSON.stringify(value ?? null),
+                sequence: ++canvasEventSequence
+            }));
+        }
+
+        function sendCanvasSnapshot(env) {
+            const snapshot = {
+                type: 'canvas_snapshot',
+                surfaceId: env.surfaceId || 'main',
+                visible: !canvasPanel.hidden,
+                frameCount: canvasFrames.length,
+                frames: canvasFrames.map(frame => ({
+                    id: frame.id,
+                    type: frame.type,
+                    title: frame.title,
+                    label: frame.label,
+                    text: frame.text
+                })),
+                values: canvasValues,
+                diagnostics: canvasDiagnostics,
+                localHtmlText: canvasHtmlFrame.hidden ? null : canvasHtmlFrame.srcdoc
+            };
+            ws.send(JSON.stringify({
+                type: 'canvas_snapshot_result',
+                requestId: env.requestId,
+                sessionId: canvasSessionId,
+                surfaceId: env.surfaceId || 'main',
+                snapshotMode: env.snapshotMode || 'state',
+                success: true,
+                snapshotJson: JSON.stringify(snapshot)
+            }));
+        }
+
+        function handleA2uiEval(env) {
+            try {
+                const fn = new Function('root', 'frames', 'values', String(env.script || ''));
+                const result = fn(a2uiRoot, canvasFrames, canvasValues);
+                ws.send(JSON.stringify({
+                    type: 'canvas_eval_result',
+                    requestId: env.requestId,
+                    sessionId: canvasSessionId,
+                    surfaceId: env.surfaceId || 'main',
+                    success: true,
+                    valueJson: JSON.stringify(result ?? null)
+                }));
+            } catch (error) {
+                ws.send(JSON.stringify({
+                    type: 'canvas_eval_result',
+                    requestId: env.requestId,
+                    sessionId: canvasSessionId,
+                    surfaceId: env.surfaceId || 'main',
+                    success: false,
+                    error: String(error?.message || error)
+                }));
+            }
+        }
+
         function connect() {
             appendSystem('Connecting to OpenClaw.NET Gateway...');
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1512,6 +2053,7 @@
                 }
                 refreshChatState();
                 appendSystem('Connected successfully.');
+                sendCanvasReady();
                 updateComposerAvailability();
                 messageInput.focus();
             };
@@ -1519,6 +2061,11 @@
             ws.onmessage = (event) => {
                 try {
                     const env = JSON.parse(event.data);
+
+                    if (isCanvasEnvelopeType(env.type)) {
+                        handleCanvasEnvelope(env);
+                        return;
+                    }
 
                     switch (env.type) {
                         case 'typing_start':

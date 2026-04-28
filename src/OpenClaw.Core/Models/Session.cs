@@ -233,6 +233,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(WsServerEnvelope))]
 [JsonSerializable(typeof(GatewayConfig))]
 [JsonSerializable(typeof(RuntimeConfig))]
+[JsonSerializable(typeof(CanvasConfig))]
 [JsonSerializable(typeof(GatewayRuntimeState))]
 [JsonSerializable(typeof(LlmProviderConfig))]
 [JsonSerializable(typeof(PromptCachingConfig))]

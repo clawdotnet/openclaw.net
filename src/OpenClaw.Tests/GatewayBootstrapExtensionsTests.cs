@@ -17,7 +17,8 @@ public sealed class GatewayBootstrapExtensionsTests
                 ["OpenClaw:Tooling:AllowShell"] = "false",
                 ["OpenClaw:Tooling:AllowedReadRoots:0"] = "/app/workspace",
                 ["OpenClaw:Tooling:AllowedWriteRoots:0"] = "/app/workspace",
-                ["OpenClaw:Plugins:Enabled"] = "false"
+                ["OpenClaw:Plugins:Enabled"] = "false",
+                ["OpenClaw:Canvas:Enabled"] = "false"
             })
             .Build();
 

@@ -76,6 +76,91 @@
                 </Grid>
             </TabItem>
 
+            <TabItem Header="Canvas">
+                <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                    <Border Grid.Row="0" Padding="10" CornerRadius="8" BorderThickness="1"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                            <StackPanel Grid.Column="0" Spacing="2">
+                                <TextBlock Text="{Binding CanvasStatus}" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding CanvasHtmlStatus}" FontSize="11" Opacity="0.65"
+                                           TextWrapping="Wrap"
+                                           IsVisible="{Binding CanvasHtmlStatus, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="Clear"
+                                    Command="{Binding ClearCanvasCommand}" />
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="1" Padding="10" CornerRadius="8" BorderThickness="1"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                        <Grid>
+                            <TextBlock Text="Canvas is empty."
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Opacity="0.55" TextWrapping="Wrap" TextAlignment="Center"
+                                       IsVisible="{Binding !HasCanvasFrames}" />
+                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                                          IsVisible="{Binding HasCanvasFrames}">
+                                <ItemsControl ItemsSource="{Binding CanvasFrames}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="vm:A2UiFrameItem">
+                                            <Border Margin="0,0,0,8" Padding="10" CornerRadius="6" BorderThickness="1"
+                                                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                                                <StackPanel Spacing="8">
+                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                                                               IsVisible="{Binding HasTitle}" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                                                               IsVisible="{Binding HasText}" />
+                                                    <TextBlock Text="{Binding Body}" TextWrapping="Wrap"
+                                                               IsVisible="{Binding HasBody}" />
+                                                    <Button Content="{Binding Label}" Command="{Binding ActivateCommand}"
+                                                            IsVisible="{Binding IsButton}" HorizontalAlignment="Left" />
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8"
+                                                          IsVisible="{Binding IsInput}">
+                                                        <TextBox Text="{Binding ValueText}" Watermark="{Binding Label}" />
+                                                        <Button Grid.Column="1" Content="Send" Command="{Binding CommitValueCommand}" />
+                                                    </Grid>
+                                                    <ItemsControl ItemsSource="{Binding Options}"
+                                                                  IsVisible="{Binding HasOptions}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate DataType="vm:A2UiOptionItem">
+                                                                <CheckBox Content="{Binding Label}"
+                                                                          IsChecked="{Binding IsSelected}" />
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                    <StackPanel Spacing="5" IsVisible="{Binding HasTable}">
+                                                        <TextBlock Text="{Binding Columns, StringFormat='Columns: {0}'}"
+                                                                   FontSize="11" Opacity="0.65" />
+                                                        <ItemsControl ItemsSource="{Binding Rows}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate DataType="vm:A2UiTableRowItem">
+                                                                    <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
+                                                                               FontFamily="Consolas, Menlo, monospace"
+                                                                               FontSize="12" />
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressValue}"
+                                                                 IsVisible="{Binding IsProgress}" />
+                                                    <TextBlock Text="{Binding Url, StringFormat='Image: {0}'}"
+                                                               TextWrapping="Wrap" IsVisible="{Binding IsImage}" />
+                                                    <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
+                                                               FontFamily="Consolas, Menlo, monospace"
+                                                               FontSize="12"
+                                                               IsVisible="{Binding HasDisplayText}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
             <TabItem x:Name="ApprovalsTab">
                 <TabItem.Header>
                     <StackPanel Orientation="Horizontal" Spacing="6">

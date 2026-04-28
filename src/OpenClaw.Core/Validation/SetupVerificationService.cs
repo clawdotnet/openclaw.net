@@ -468,6 +468,8 @@ public static class SetupVerificationService
             issues.Add("Public bind is enabled without an auth token.");
         if (publicBind && !config.Security.RequireRequesterMatchForHttpToolApproval)
             warnings.Add("Requester-matched HTTP tool approvals are disabled.");
+        if (publicBind && config.Canvas.Enabled && !config.Canvas.AllowOnPublicBind)
+            issues.Add("Canvas command forwarding is enabled on a public bind without Canvas.AllowOnPublicBind.");
         if (publicBind && !config.Security.TrustForwardedHeaders)
             warnings.Add("Forwarded headers are not trusted, so browser session cookies may not be marked secure behind TLS termination.");
         if (publicBind &&

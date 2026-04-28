@@ -80,6 +80,15 @@ Admin/ops tool to list active sessions, inspect recent history, or send a cross-
 ### 7. Delegate Agent Tool (`delegate_agent`)
 Spawns a “sub-agent” for multi-agent delegation (only present when `OpenClaw:Delegation:Enabled=true`).
 
+### 7b. Canvas and A2UI Tools (`canvas_present`, `canvas_hide`, `canvas_navigate`, `canvas_snapshot`, `a2ui_push`, `a2ui_reset`, `a2ui_eval`)
+Control the current websocket session's Canvas visual workspace.
+- **Config**: `OpenClaw:Canvas:*`
+- **Scope**: websocket sessions only; commands are routed to the active client sender for the current session.
+- **A2UI**: `a2ui_push` accepts A2UI v0.8 JSONL frames for text, markdown, card, button, input, select, checklist, table, image, progress, and simple chart components.
+- **Navigation**: `canvas_navigate` supports inline local HTML and `about:blank`; remote `http:` / `https:` Canvas navigation is rejected. Use the `browser` tool for remote webpages.
+- **Snapshots**: `canvas_snapshot` returns lightweight JSON state, not a remote browser screenshot.
+- **Safety**: non-loopback deployments must explicitly opt in with `OpenClaw:Canvas:AllowOnPublicBind=true`.
+
 ---
 
 ## 🔌 Native Plugin Tools

@@ -117,8 +117,7 @@ public sealed class OpenClawWebSocketClient : IAsyncDisposable
     }
 
     public async Task SendUserMessageAsync(string text, string? messageId, string? replyToMessageId, CancellationToken ct)
-    {
-        var payload = JsonSerializer.Serialize(
+        => await SendEnvelopeAsync(
             new WsClientEnvelope
             {
                 Type = "user_message",
@@ -126,7 +125,11 @@ public sealed class OpenClawWebSocketClient : IAsyncDisposable
                 MessageId = messageId,
                 ReplyToMessageId = replyToMessageId
             },
-            CoreJsonContext.Default.WsClientEnvelope);
+            ct);
+
+    public async Task SendEnvelopeAsync(WsClientEnvelope envelope, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Serialize(envelope, CoreJsonContext.Default.WsClientEnvelope);
 
         var bytes = Encoding.UTF8.GetBytes(payload);
         if (bytes.Length > _maxMessageBytes)

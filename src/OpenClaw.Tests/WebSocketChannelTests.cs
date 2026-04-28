@@ -102,6 +102,101 @@ public sealed class WebSocketChannelTests
     }
 
     [Fact]
+    public async Task HandleConnectionAsync_RoutesCanvasReadyWithoutUserMessage()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });
+        var ws = new TestWebSocket();
+
+        ws.QueueReceiveText("""{"type":"canvas_ready","capabilities":["a2ui.v0_8","snapshot.state"]}""");
+        ws.QueueClose();
+
+        WsClientEnvelope? canvasEnvelope = null;
+        var messageObserved = false;
+        channel.OnCanvasClientEnvelopeReceived += (_, envelope, _) =>
+        {
+            canvasEnvelope = envelope;
+            return ValueTask.CompletedTask;
+        };
+        channel.OnMessageReceived += (_, _) =>
+        {
+            messageObserved = true;
+            return ValueTask.CompletedTask;
+        };
+
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+
+        Assert.NotNull(canvasEnvelope);
+        Assert.Equal("canvas_ready", canvasEnvelope!.Type);
+        Assert.Contains("a2ui.v0_8", canvasEnvelope.Capabilities ?? [], StringComparer.Ordinal);
+        Assert.False(messageObserved);
+    }
+
+    [Fact]
+    public async Task HandleConnectionAsync_RoutesCanvasAckAndResultsWithoutUserMessage()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 2048 });
+        var ws = new TestWebSocket();
+
+        ws.QueueReceiveText("""{"type":"canvas_ack","requestId":"req1","success":true}""");
+        ws.QueueReceiveText("""{"type":"canvas_snapshot_result","requestId":"req2","snapshotJson":"{}","success":true}""");
+        ws.QueueReceiveText("""{"type":"canvas_eval_result","requestId":"req3","valueJson":"1","success":true}""");
+        ws.QueueClose();
+
+        var canvasTypes = new List<string>();
+        var messageObserved = false;
+        channel.OnCanvasClientEnvelopeReceived += (_, envelope, _) =>
+        {
+            canvasTypes.Add(envelope.Type);
+            return ValueTask.CompletedTask;
+        };
+        channel.OnMessageReceived += (_, _) =>
+        {
+            messageObserved = true;
+            return ValueTask.CompletedTask;
+        };
+
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+
+        Assert.Equal(["canvas_ack", "canvas_snapshot_result", "canvas_eval_result"], canvasTypes);
+        Assert.False(messageObserved);
+    }
+
+    [Fact]
+    public async Task HandleConnectionAsync_ConvertsA2UiEventToSessionMessage()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });
+        var ws = new TestWebSocket();
+
+        ws.QueueReceiveText("""{"type":"a2ui_event","sessionId":"sess","surfaceId":"main","componentId":"btn","event":"click","valueJson":"true","sequence":7}""");
+        ws.QueueClose();
+
+        WsClientEnvelope? canvasEnvelope = null;
+        InboundMessage? received = null;
+        channel.OnCanvasClientEnvelopeReceived += (_, envelope, _) =>
+        {
+            canvasEnvelope = envelope;
+            return ValueTask.CompletedTask;
+        };
+        channel.OnMessageReceived += (msg, _) =>
+        {
+            received = msg;
+            return ValueTask.CompletedTask;
+        };
+
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+
+        Assert.NotNull(canvasEnvelope);
+        Assert.NotNull(received);
+        Assert.Equal("a2ui_event", received!.Type);
+        Assert.Equal("sess", received.SessionId);
+        Assert.Equal("btn", received.ComponentId);
+        Assert.Equal("click", received.Event);
+        Assert.Equal("true", received.ValueJson);
+        Assert.Equal(7, received.Sequence);
+        Assert.Contains("\"componentId\": \"btn\"", received.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task HandleConnectionAsync_IgnoresPrematureRemoteCloseDuringReceive()
     {
         var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });

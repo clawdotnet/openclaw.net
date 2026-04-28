@@ -108,6 +108,7 @@ The full documentation map lives at **[docs/README.md](docs/README.md)**. Starti
 | [docs/QUICKSTART.md](docs/QUICKSTART.md) | Shortest supported path to a running local instance |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Providers, tools, skills, memory, channels, and day-to-day operation |
 | [docs/TOOLS_GUIDE.md](docs/TOOLS_GUIDE.md) | Native tool catalog and configuration |
+| [docs/CANVAS_A2UI.md](docs/CANVAS_A2UI.md) | Supported Canvas and A2UI visual workspace behavior |
 | [docs/MODEL_PROFILES.md](docs/MODEL_PROFILES.md) | Provider-agnostic named model profiles (including Gemma) |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Supported upstream skill, plugin, and channel surface |
 | [SECURITY.md](SECURITY.md) | Hardening guidance for public deployments |
