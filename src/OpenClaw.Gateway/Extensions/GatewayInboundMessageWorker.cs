@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Agent;
@@ -40,7 +41,8 @@ internal sealed class GatewayInboundMessageWorker
         RuntimeMetrics? runtimeMetrics,
         LearningService? learningService,
         GatewayAutomationService? automationService,
-        ContractGovernanceService? contractGovernance)
+        ContractGovernanceService? contractGovernance,
+        AudioTranscriptionService? audioTranscriptionService = null)
     {
         _ = isNonLoopbackBind;
         _ = sessionLocks;
@@ -431,7 +433,61 @@ internal sealed class GatewayInboundMessageWorker
                             }
 
                             var messageText = mwContext.Text;
-                            if (!string.IsNullOrWhiteSpace(msg.MediaUrl) && !messageText.Contains("[IMAGE_URL:", StringComparison.Ordinal))
+                            var audioTranscriptionSucceeded = false;
+                            if (AudioTranscriptionService.IsAudioMessage(msg))
+                            {
+                                var transcriptionStopwatch = Stopwatch.StartNew();
+                                try
+                                {
+                                    if (audioTranscriptionService is null)
+                                        throw new InvalidOperationException("Voice transcription is unavailable in this runtime.");
+
+                                    var transcription = await audioTranscriptionService.TranscribeAsync(msg, processingCt);
+                                    transcriptionStopwatch.Stop();
+                                    audioTranscriptionSucceeded = true;
+                                    if (!config.Multimodal.Transcription.InjectAudioMarker)
+                                        messageText = RemoveAudioMarkers(messageText);
+                                    messageText = VoiceMemoTranscriptionText.PrependTranscript(messageText, transcription);
+                                    AppendVoiceTranscriptionEvent(
+                                        operations,
+                                        session,
+                                        msg,
+                                        action: "transcription_succeeded",
+                                        severity: "info",
+                                        summary: "Voice memo transcribed.",
+                                        provider: transcription.Provider,
+                                        reason: null,
+                                        elapsed: transcriptionStopwatch.Elapsed,
+                                        sizeBytes: transcription.SizeBytes,
+                                        mimeType: transcription.MimeType ?? msg.MediaMimeType);
+                                }
+                                catch (Exception ex) when (!processingCt.IsCancellationRequested)
+                                {
+                                    transcriptionStopwatch.Stop();
+                                    var reason = VoiceMemoTranscriptionText.FailureReason(ex);
+                                    logger.LogWarning(ex, "Voice memo transcription failed for {ChannelId}:{SenderId}: {Reason}", msg.ChannelId, msg.SenderId, reason);
+                                    messageText = VoiceMemoTranscriptionText.AppendUnavailable(messageText, reason);
+                                    AppendVoiceTranscriptionEvent(
+                                        operations,
+                                        session,
+                                        msg,
+                                        action: "transcription_failed",
+                                        severity: "warning",
+                                        summary: $"Voice memo transcription unavailable: {reason}.",
+                                        provider: config.Multimodal.Transcription.Provider,
+                                        reason: reason,
+                                        elapsed: transcriptionStopwatch.Elapsed,
+                                        sizeBytes: null,
+                                        mimeType: msg.MediaMimeType);
+                                }
+                            }
+
+                            var shouldInjectMediaMarker = !AudioTranscriptionService.IsAudioMessage(msg)
+                                || !audioTranscriptionSucceeded
+                                || config.Multimodal.Transcription.InjectAudioMarker;
+                            if (shouldInjectMediaMarker &&
+                                !string.IsNullOrWhiteSpace(msg.MediaUrl) &&
+                                !ContainsMediaMarker(messageText))
                             {
                                 var marker = BuildMediaMarker(msg);
                                 if (!string.IsNullOrWhiteSpace(marker))
@@ -902,4 +958,73 @@ internal sealed class GatewayInboundMessageWorker
             "document" or "file" => $"[FILE_URL:{message.MediaUrl}]",
             _ => null
         };
+
+    private static bool ContainsMediaMarker(string text)
+        => text.Contains("[IMAGE_URL:", StringComparison.Ordinal)
+           || text.Contains("[AUDIO_URL:", StringComparison.Ordinal)
+           || text.Contains("[VIDEO_URL:", StringComparison.Ordinal)
+           || text.Contains("[FILE_URL:", StringComparison.Ordinal)
+           || text.Contains("[DOCUMENT_URL:", StringComparison.Ordinal)
+           || text.Contains("[STICKER_URL:", StringComparison.Ordinal);
+
+    private static string RemoveAudioMarkers(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+
+        var changed = false;
+        var lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var kept = new List<string>();
+        foreach (var line in lines)
+        {
+            if (MediaMarkerProtocol.TryParseMarker(line.Trim(), out var marker) && marker.Kind == MediaMarkerKind.AudioUrl)
+            {
+                changed = true;
+                continue;
+            }
+
+            kept.Add(line);
+        }
+
+        return changed ? string.Join("\n", kept).Trim() : text;
+    }
+
+    private static void AppendVoiceTranscriptionEvent(
+        RuntimeOperationsState operations,
+        Session session,
+        InboundMessage message,
+        string action,
+        string severity,
+        string summary,
+        string? provider,
+        string? reason,
+        TimeSpan elapsed,
+        long? sizeBytes,
+        string? mimeType)
+    {
+        var metadata = new Dictionary<string, string>
+        {
+            ["provider"] = string.IsNullOrWhiteSpace(provider) ? "unknown" : provider,
+            ["elapsedMs"] = ((long)elapsed.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+        if (!string.IsNullOrWhiteSpace(reason))
+            metadata["reason"] = reason;
+        if (!string.IsNullOrWhiteSpace(mimeType))
+            metadata["mimeType"] = mimeType;
+        if (sizeBytes.HasValue)
+            metadata["sizeBytes"] = sizeBytes.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        operations.RuntimeEvents.Append(new RuntimeEventEntry
+        {
+            Id = $"evt_{Guid.NewGuid():N}"[..20],
+            SessionId = session.Id,
+            ChannelId = message.ChannelId,
+            SenderId = message.SenderId,
+            Component = "voice_transcription",
+            Action = action,
+            Severity = severity,
+            Summary = summary,
+            Metadata = metadata
+        });
+    }
 }

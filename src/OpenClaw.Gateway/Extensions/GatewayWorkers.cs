@@ -39,7 +39,8 @@ internal static class GatewayWorkers
         RuntimeMetrics? runtimeMetrics = null,
         LearningService? learningService = null,
         GatewayAutomationService? automationService = null,
-        ContractGovernanceService? contractGovernance = null)
+        ContractGovernanceService? contractGovernance = null,
+        AudioTranscriptionService? audioTranscriptionService = null)
     {
         new GatewaySessionCleanupWorker().Start(lifetime, logger, sessionManager);
 
@@ -67,7 +68,8 @@ internal static class GatewayWorkers
             runtimeMetrics,
             learningService,
             automationService,
-            contractGovernance);
+            contractGovernance,
+            audioTranscriptionService);
 
         new GatewayOutboundDeliveryWorker().Start(
             lifetime,

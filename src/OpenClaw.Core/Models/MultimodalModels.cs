@@ -7,9 +7,21 @@ public sealed class MultimodalConfig
     public string LiveProvider { get; set; } = "gemini";
     public string VisionProvider { get; set; } = "gemini";
     public string VisionModel { get; set; } = "gemini-2.5-flash";
+    public AudioTranscriptionConfig Transcription { get; set; } = new();
     public TextToSpeechConfig TextToSpeech { get; set; } = new();
     public GeminiLiveConfig GeminiLive { get; set; } = new();
     public ElevenLabsConfig ElevenLabs { get; set; } = new();
+}
+
+public sealed class AudioTranscriptionConfig
+{
+    public bool Enabled { get; set; } = true;
+    public string Provider { get; set; } = "gemini";
+    public string Model { get; set; } = "gemini-2.5-flash";
+    public int MaxAudioBytes { get; set; } = 25 * 1024 * 1024;
+    public int TimeoutSeconds { get; set; } = 30;
+    public bool InjectAudioMarker { get; set; } = true;
+    public string FailureMode { get; set; } = "degrade";
 }
 
 public sealed class TextToSpeechConfig

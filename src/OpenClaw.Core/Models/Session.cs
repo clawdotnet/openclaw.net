@@ -330,6 +330,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(BackendFileWriteEvent))]
 [JsonSerializable(typeof(BackendErrorEvent))]
 [JsonSerializable(typeof(BackendSessionCompletedEvent))]
+[JsonSerializable(typeof(AudioTranscriptionConfig))]
 [JsonSerializable(typeof(TextToSpeechConfig))]
 [JsonSerializable(typeof(GeminiLiveConfig))]
 [JsonSerializable(typeof(ElevenLabsConfig))]
