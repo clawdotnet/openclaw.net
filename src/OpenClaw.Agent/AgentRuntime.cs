@@ -1478,6 +1478,32 @@ public sealed class AgentRuntime : IAgentRuntime
 
         const int MaxRetries = 3;
         var delay = TimeSpan.FromMilliseconds(100);
+
+        async ValueTask RecordRetryAsync(Exception ex, int attempt)
+        {
+            checkpoint.PersistedAtUtc = null;
+            _logger?.LogWarning(
+                ex,
+                "[{CorrelationId}] Checkpoint persistence failed (attempt {Attempt}/{MaxRetries}) for session={SessionId}",
+                turnCtx.CorrelationId,
+                attempt,
+                MaxRetries,
+                session.Id);
+            await Task.Delay(delay, ct);
+            delay *= 2;
+        }
+
+        void RecordFinalFailure(Exception ex)
+        {
+            checkpoint.PersistedAtUtc = null;
+            _logger?.LogWarning(
+                ex,
+                "[{CorrelationId}] Failed to persist checkpoint after {MaxRetries} attempts for session={SessionId}",
+                turnCtx.CorrelationId,
+                MaxRetries,
+                session.Id);
+        }
+
         for (var attempt = 1; attempt <= MaxRetries; attempt++)
         {
             try
@@ -1497,28 +1523,37 @@ public sealed class AgentRuntime : IAgentRuntime
                 checkpoint.PersistedAtUtc = null;
                 throw;
             }
-            catch (Exception ex) when (attempt < MaxRetries)
+            catch (System.IO.IOException ex) when (attempt < MaxRetries)
             {
-                checkpoint.PersistedAtUtc = null;
-                _logger?.LogWarning(
-                    ex,
-                    "[{CorrelationId}] Checkpoint persistence failed (attempt {Attempt}/{MaxRetries}) for session={SessionId}",
-                    turnCtx.CorrelationId,
-                    attempt,
-                    MaxRetries,
-                    session.Id);
-                await Task.Delay(delay, ct);
-                delay *= 2;
+                await RecordRetryAsync(ex, attempt);
             }
-            catch (Exception ex)
+            catch (TimeoutException ex) when (attempt < MaxRetries)
             {
-                checkpoint.PersistedAtUtc = null;
-                _logger?.LogWarning(
-                    ex,
-                    "[{CorrelationId}] Failed to persist checkpoint after {MaxRetries} attempts for session={SessionId}",
-                    turnCtx.CorrelationId,
-                    MaxRetries,
-                    session.Id);
+                await RecordRetryAsync(ex, attempt);
+            }
+            catch (InvalidOperationException ex) when (attempt < MaxRetries)
+            {
+                await RecordRetryAsync(ex, attempt);
+            }
+            catch (UnauthorizedAccessException ex) when (attempt < MaxRetries)
+            {
+                await RecordRetryAsync(ex, attempt);
+            }
+            catch (System.IO.IOException ex)
+            {
+                RecordFinalFailure(ex);
+            }
+            catch (TimeoutException ex)
+            {
+                RecordFinalFailure(ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                RecordFinalFailure(ex);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                RecordFinalFailure(ex);
             }
         }
     }
