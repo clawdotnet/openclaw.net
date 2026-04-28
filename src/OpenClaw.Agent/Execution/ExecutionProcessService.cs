@@ -123,7 +123,7 @@ internal sealed class ManagedExecutionProcess : IAsyncDisposable
 
     public ExecutionProcessStatus GetStatus()
     {
-        var state = !_process.HasExited
+        var state = !HasExited()
             ? ExecutionProcessState.Running
             : _timedOut
                 ? ExecutionProcessState.TimedOut
@@ -172,21 +172,27 @@ internal sealed class ManagedExecutionProcess : IAsyncDisposable
             Stderr = stderr,
             NextStdoutOffset = nextStdout,
             NextStderrOffset = nextStderr,
-            Completed = _process.HasExited
+            Completed = HasExited()
         };
     }
 
     public async Task WaitAsync(CancellationToken ct)
     {
-        if (_process.HasExited)
+        if (HasExited())
             return;
 
-        await _process.WaitForExitAsync(ct);
+        try
+        {
+            await _process.WaitForExitAsync(ct);
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     public async Task WriteAsync(string data, CancellationToken ct)
     {
-        if (_process.HasExited)
+        if (HasExited())
             throw new InvalidOperationException("The process has already exited.");
 
         await _process.StandardInput.WriteAsync(data.AsMemory(), ct);
@@ -195,7 +201,7 @@ internal sealed class ManagedExecutionProcess : IAsyncDisposable
 
     public async Task KillAsync(CancellationToken ct)
     {
-        if (_process.HasExited)
+        if (HasExited())
             return;
 
         _killed = true;
@@ -235,6 +241,18 @@ internal sealed class ManagedExecutionProcess : IAsyncDisposable
                     ? "completed"
                     : "failed";
         OnExited?.Invoke(ProcessId, outcome);
+    }
+
+    private bool HasExited()
+    {
+        try
+        {
+            return _process.HasExited;
+        }
+        catch (InvalidOperationException)
+        {
+            return true;
+        }
     }
 
     private static string BuildCommandPreview(string command, IReadOnlyList<string> arguments)
