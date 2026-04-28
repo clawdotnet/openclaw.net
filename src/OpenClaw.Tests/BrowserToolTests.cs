@@ -8,6 +8,7 @@ using OpenClaw.Core.Models;
 
 namespace OpenClaw.Tests;
 
+[Collection(EnvironmentVariableCollection.Name)]
 public class BrowserToolTests
 {
     [Fact]

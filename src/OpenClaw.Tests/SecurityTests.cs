@@ -3,6 +3,7 @@ using Xunit;
 
 namespace OpenClaw.Tests;
 
+[Collection(EnvironmentVariableCollection.Name)]
 public class SecurityTests
 {
     // ── SecretResolver ─────────────────────────────────────────────

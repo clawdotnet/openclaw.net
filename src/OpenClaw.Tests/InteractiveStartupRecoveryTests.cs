@@ -4,6 +4,7 @@ using Xunit;
 
 namespace OpenClaw.Tests;
 
+[Collection(EnvironmentVariableCollection.Name)]
 public sealed class InteractiveStartupRecoveryTests
 {
     [Fact]

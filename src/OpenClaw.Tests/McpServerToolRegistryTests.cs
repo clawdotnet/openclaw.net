@@ -17,6 +17,7 @@ using Xunit;
 
 namespace OpenClaw.Tests;
 
+[Collection(EnvironmentVariableCollection.Name)]
 public sealed class McpServerToolRegistryTests : IAsyncDisposable
 {
     private readonly List<WebApplication> _apps = [];
