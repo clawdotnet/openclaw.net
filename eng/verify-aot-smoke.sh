@@ -27,9 +27,20 @@ GATEWAY_CONFIG="$WORK_DIR/gateway.smoke.json"
 cat > "$GATEWAY_CONFIG" <<JSON
 {
   "OpenClaw": {
+    "BindAddress": "127.0.0.1",
     "Port": 19899,
+    "Runtime": {
+      "Mode": "aot"
+    },
+    "Llm": {
+      "Provider": "ollama",
+      "Model": "llama3.2"
+    },
     "Memory": {
       "StoragePath": "$WORK_DIR/memory"
+    },
+    "Tooling": {
+      "EnableBrowserTool": false
     }
   }
 }
@@ -66,7 +77,10 @@ GATEWAY_BIN="$(resolve_binary "$ARTIFACTS_DIR/gateway" "OpenClaw.Gateway")"
 CLI_BIN="$(resolve_binary "$ARTIFACTS_DIR/cli" "openclaw")"
 
 echo "Running published gateway --doctor..."
-MODEL_PROVIDER_KEY="smoke-test-key" "$GATEWAY_BIN" --config "$GATEWAY_CONFIG" --doctor >/tmp/openclaw-aot-doctor.log 2>&1
+if ! MODEL_PROVIDER_KEY="smoke-test-key" "$GATEWAY_BIN" --config "$GATEWAY_CONFIG" --doctor >/tmp/openclaw-aot-doctor.log 2>&1; then
+  cat /tmp/openclaw-aot-doctor.log >&2
+  exit 1
+fi
 
 echo "Starting published gateway..."
 MODEL_PROVIDER_KEY="smoke-test-key" "$GATEWAY_BIN" --config "$GATEWAY_CONFIG" >/tmp/openclaw-aot-gateway.log 2>&1 &

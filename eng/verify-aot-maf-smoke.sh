@@ -27,13 +27,21 @@ GATEWAY_CONFIG="$WORK_DIR/gateway.maf.aot.smoke.json"
 cat > "$GATEWAY_CONFIG" <<JSON
 {
   "OpenClaw": {
+    "BindAddress": "127.0.0.1",
     "Port": 19929,
     "Runtime": {
       "Mode": "aot",
       "Orchestrator": "maf"
     },
+    "Llm": {
+      "Provider": "ollama",
+      "Model": "llama3.2"
+    },
     "Memory": {
       "StoragePath": "$WORK_DIR/memory"
+    },
+    "Tooling": {
+      "EnableBrowserTool": false
     }
   }
 }
@@ -64,7 +72,10 @@ resolve_binary() {
 GATEWAY_BIN="$(resolve_binary "$ARTIFACTS_DIR/gateway" "OpenClaw.Gateway")"
 
 echo "Running NativeAOT gateway --doctor..."
-MODEL_PROVIDER_KEY="smoke-test-key" "$GATEWAY_BIN" --config "$GATEWAY_CONFIG" --doctor >/tmp/openclaw-aot-maf-doctor.log 2>&1
+if ! MODEL_PROVIDER_KEY="smoke-test-key" "$GATEWAY_BIN" --config "$GATEWAY_CONFIG" --doctor >/tmp/openclaw-aot-maf-doctor.log 2>&1; then
+  cat /tmp/openclaw-aot-maf-doctor.log >&2
+  exit 1
+fi
 
 echo "Starting NativeAOT gateway..."
 MODEL_PROVIDER_KEY="smoke-test-key" "$GATEWAY_BIN" --config "$GATEWAY_CONFIG" >/tmp/openclaw-aot-maf-gateway.log 2>&1 &
