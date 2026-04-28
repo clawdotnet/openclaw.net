@@ -19,6 +19,8 @@
 - Startup/runtime composition split into explicit service, channel, plugin, and runtime assembly stages.
 - Optional native Notion scratchpad integration with scoped read/write tools (`notion`, `notion_write`), allowlists, and write approvals by default.
 - Canvas and A2UI v1 visual workspace with session-scoped websocket command broker, webchat Canvas host, Companion native Canvas tab, A2UI v0.8 JSONL renderer, event feedback, snapshots, and public-bind hardening.
+- Voice memo transcription for inbound audio media with Gemini provider support, degraded fallback behavior, and audio-marker preservation.
+- Checkpoint and resume for long-running native runtime turns, with durable save points after completed tool batches and resume from the latest completed batch after interruption.
 
 ## Runtime and Platform Expansion
 
@@ -26,17 +28,7 @@ These are strong candidates for the next roadmap phases because they extend the 
 
 ### Multimodal and Input Expansion
 
-4. **Voice memo transcription**
-   - Detect inbound audio across supported channels and route it through a transcription provider.
-   - Inject transcript text into the runtime before the normal agent turn starts.
-   - Provide clear degraded behavior when transcription is disabled or unavailable.
-
-5. **Checkpoint and resume for long-running tasks**
-   - Persist structured save points during multi-step execution.
-   - Allow interrupted or restarted sessions to resume from the last completed checkpoint.
-   - Start with checkpointing after successful tool batches instead of trying to snapshot every internal runtime state transition.
-
-6. **Mixture-of-agents execution**
+4. **Mixture-of-agents execution**
    - Fan out a prompt to multiple providers and synthesize a final answer from their outputs.
    - Expose this as an optional high-cost/high-confidence runtime mode or explicit tool.
    - Keep it profile-driven so it can be limited to selected models and use cases.
