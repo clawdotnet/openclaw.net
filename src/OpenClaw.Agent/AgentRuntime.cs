@@ -258,7 +258,9 @@ public sealed class AgentRuntime : IAgentRuntime
         var messages = BuildMessages(session, exactLatestToolBatch: resumeCheckpoint is not null);
         if (resumeCheckpoint is not null)
         {
-            messages.Insert(1, new ChatMessage(ChatRole.System, BuildCheckpointResumeInstruction(resumeCheckpoint, userMessage)));
+            messages.Insert(1, new ChatMessage(ChatRole.System, BuildCheckpointResumeInstruction(resumeCheckpoint)));
+            if (!IsBareResumeRequest(userMessage))
+                messages.Add(new ChatMessage(ChatRole.User, BuildCheckpointResumeUserNote(userMessage)));
         }
         else
         {
@@ -490,7 +492,9 @@ public sealed class AgentRuntime : IAgentRuntime
         var messages = BuildMessages(session, exactLatestToolBatch: resumeCheckpoint is not null);
         if (resumeCheckpoint is not null)
         {
-            messages.Insert(1, new ChatMessage(ChatRole.System, BuildCheckpointResumeInstruction(resumeCheckpoint, userMessage)));
+            messages.Insert(1, new ChatMessage(ChatRole.System, BuildCheckpointResumeInstruction(resumeCheckpoint)));
+            if (!IsBareResumeRequest(userMessage))
+                messages.Add(new ChatMessage(ChatRole.User, BuildCheckpointResumeUserNote(userMessage)));
         }
         else
         {
@@ -1445,7 +1449,6 @@ public sealed class AgentRuntime : IAgentRuntime
         if (invocations.Count == 0)
             return;
 
-        var now = DateTimeOffset.UtcNow;
         var sequence = (session.ExecutionCheckpoint?.Sequence ?? 0) + 1;
         var checkpoint = new SessionExecutionCheckpoint
         {
@@ -1456,8 +1459,7 @@ public sealed class AgentRuntime : IAgentRuntime
             Iteration = iteration,
             HistoryCount = session.History.Count,
             CorrelationId = turnCtx.CorrelationId,
-            CreatedAtUtc = now,
-            PersistedAtUtc = now,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
             ToolCalls = invocations.Select(static invocation => new SessionCheckpointToolCall
             {
                 CallId = invocation.CallId,
@@ -1474,27 +1476,50 @@ public sealed class AgentRuntime : IAgentRuntime
 
         session.ExecutionCheckpoint = checkpoint;
 
-        try
+        const int MaxRetries = 3;
+        var delay = TimeSpan.FromMilliseconds(100);
+        for (var attempt = 1; attempt <= MaxRetries; attempt++)
         {
-            await _memory.SaveSessionAsync(session, ct);
-            _logger?.LogInformation(
-                "[{CorrelationId}] Persisted checkpoint {CheckpointId} for session={SessionId} toolCalls={ToolCallCount}",
-                turnCtx.CorrelationId,
-                checkpoint.CheckpointId,
-                session.Id,
-                invocations.Count);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(
-                ex,
-                "[{CorrelationId}] Failed to persist checkpoint for session={SessionId}",
-                turnCtx.CorrelationId,
-                session.Id);
+            try
+            {
+                checkpoint.PersistedAtUtc = DateTimeOffset.UtcNow;
+                await _memory.SaveSessionAsync(session, ct);
+                _logger?.LogInformation(
+                    "[{CorrelationId}] Persisted checkpoint {CheckpointId} for session={SessionId} toolCalls={ToolCallCount}",
+                    turnCtx.CorrelationId,
+                    checkpoint.CheckpointId,
+                    session.Id,
+                    invocations.Count);
+                return;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                checkpoint.PersistedAtUtc = null;
+                throw;
+            }
+            catch (Exception ex) when (attempt < MaxRetries)
+            {
+                checkpoint.PersistedAtUtc = null;
+                _logger?.LogWarning(
+                    ex,
+                    "[{CorrelationId}] Checkpoint persistence failed (attempt {Attempt}/{MaxRetries}) for session={SessionId}",
+                    turnCtx.CorrelationId,
+                    attempt,
+                    MaxRetries,
+                    session.Id);
+                await Task.Delay(delay, ct);
+                delay *= 2;
+            }
+            catch (Exception ex)
+            {
+                checkpoint.PersistedAtUtc = null;
+                _logger?.LogWarning(
+                    ex,
+                    "[{CorrelationId}] Failed to persist checkpoint after {MaxRetries} attempts for session={SessionId}",
+                    turnCtx.CorrelationId,
+                    MaxRetries,
+                    session.Id);
+            }
         }
     }
 
@@ -1503,7 +1528,8 @@ public sealed class AgentRuntime : IAgentRuntime
         var checkpoint = session.ExecutionCheckpoint;
         if (checkpoint is null ||
             !string.Equals(checkpoint.Kind, SessionCheckpointKinds.ToolBatch, StringComparison.Ordinal) ||
-            !string.Equals(checkpoint.State, SessionCheckpointStates.ReadyToResume, StringComparison.Ordinal))
+            !string.Equals(checkpoint.State, SessionCheckpointStates.ReadyToResume, StringComparison.Ordinal) ||
+            checkpoint.PersistedAtUtc is null)
         {
             return null;
         }
@@ -1532,24 +1558,19 @@ public sealed class AgentRuntime : IAgentRuntime
         checkpoint.CompletionReason = reason;
     }
 
-    private static string BuildCheckpointResumeInstruction(SessionExecutionCheckpoint checkpoint, string userMessage)
+    private static string BuildCheckpointResumeInstruction(SessionExecutionCheckpoint checkpoint)
     {
         var sb = new StringBuilder();
         sb.AppendLine("[Checkpoint resume]");
         sb.AppendLine($"Resume from checkpoint {checkpoint.CheckpointId}.");
         sb.AppendLine("The previous assistant tool batch and tool results have already completed and are present in this conversation context.");
         sb.AppendLine("Continue the interrupted task from those results. Do not repeat completed tool calls unless the results show that retrying is necessary.");
-
-        if (!string.IsNullOrWhiteSpace(userMessage) && !IsBareResumeRequest(userMessage))
-        {
-            sb.AppendLine();
-            sb.AppendLine("Latest user note while resuming:");
-            sb.AppendLine(userMessage.Trim());
-        }
-
         sb.AppendLine("[/Checkpoint resume]");
         return sb.ToString();
     }
+
+    private static string BuildCheckpointResumeUserNote(string userMessage)
+        => "[Checkpoint resume user note]\n" + userMessage.Trim() + "\n[/Checkpoint resume user note]";
 
     private static bool IsBareResumeRequest(string userMessage)
     {

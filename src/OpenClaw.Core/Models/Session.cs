@@ -192,7 +192,7 @@ public sealed class SessionExecutionCheckpoint
     public int HistoryCount { get; init; }
     public string? CorrelationId { get; init; }
     public DateTimeOffset CreatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
-    public DateTimeOffset PersistedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? PersistedAtUtc { get; set; }
     public DateTimeOffset? LastResumeAttemptAtUtc { get; set; }
     public DateTimeOffset? CompletedAtUtc { get; set; }
     public string? CompletionReason { get; set; }
