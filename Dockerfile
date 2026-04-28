@@ -17,12 +17,14 @@ COPY src/OpenClaw.Core/OpenClaw.Core.csproj        src/OpenClaw.Core/
 COPY src/OpenClaw.Agent/OpenClaw.Agent.csproj       src/OpenClaw.Agent/
 COPY src/OpenClaw.Channels/OpenClaw.Channels.csproj src/OpenClaw.Channels/
 COPY src/OpenClaw.Gateway/OpenClaw.Gateway.csproj   src/OpenClaw.Gateway/
+COPY src/OpenClaw.PluginKit/OpenClaw.PluginKit.csproj src/OpenClaw.PluginKit/
 
 # Restore (cached unless csproj files change)
 RUN dotnet restore src/OpenClaw.Gateway/OpenClaw.Gateway.csproj
 
 # Copy all source
 COPY src/ src/
+COPY compat/ compat/
 
 # Publish Gateway as NativeAOT single-file binary
 RUN dotnet publish src/OpenClaw.Gateway/OpenClaw.Gateway.csproj \
