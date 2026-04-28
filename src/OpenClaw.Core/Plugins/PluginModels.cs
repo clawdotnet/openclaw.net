@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenClaw.Core.Models;
 
 namespace OpenClaw.Core.Plugins;
 
@@ -358,6 +359,9 @@ public sealed class WebFetchConfig
 
     /// <summary>User-Agent header for outbound requests.</summary>
     public string UserAgent { get; set; } = "OpenClaw/1.0";
+
+    /// <summary>Optional tool-specific URL safety override. Falls back to Tooling.UrlSafety when unset.</summary>
+    public UrlSafetyConfig? UrlSafety { get; set; }
 }
 
 public sealed class GitToolsConfig

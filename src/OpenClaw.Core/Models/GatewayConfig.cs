@@ -285,6 +285,21 @@ public sealed class SecurityConfig
     public int BrowserRememberDays { get; set; } = 30;
 }
 
+public sealed class UrlSafetyConfig
+{
+    /// <summary>Enable URL validation for tools that initiate outbound navigation or fetches.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Block loopback, private, link-local, metadata, and other non-public address ranges.</summary>
+    public bool BlockPrivateNetworkTargets { get; set; } = true;
+
+    /// <summary>Additional host globs to block. Examples: ["*.internal", "metadata.google.internal"].</summary>
+    public string[] BlockedHostGlobs { get; set; } = [];
+
+    /// <summary>Additional CIDR ranges to block. Examples: ["203.0.113.0/24", "2001:db8::/32"].</summary>
+    public string[] BlockedCidrs { get; set; } = [];
+}
+
 public sealed class WebSocketConfig
 {
     public int MaxMessageBytes { get; set; } = 256 * 1024;
@@ -352,6 +367,7 @@ public sealed class ToolingConfig
     public bool AllowBrowserEvaluate { get; set; } = true;
     public bool BrowserHeadless { get; set; } = true;
     public int BrowserTimeoutSeconds { get; set; } = 30;
+    public UrlSafetyConfig UrlSafety { get; set; } = new();
     public Dictionary<string, ToolsetConfig> Toolsets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ToolPresetConfig> Presets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> SurfaceBindings { get; set; } = new(StringComparer.OrdinalIgnoreCase);

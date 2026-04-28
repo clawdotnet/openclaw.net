@@ -5,7 +5,9 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Http;
+using OpenClaw.Core.Models;
 using OpenClaw.Core.Plugins;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Agent.Tools;
 
@@ -16,12 +18,14 @@ namespace OpenClaw.Agent.Tools;
 public sealed partial class WebFetchTool : ITool, IDisposable
 {
     private readonly WebFetchConfig _config;
+    private readonly UrlSafetyConfig _urlSafety;
     private readonly HttpClient _http;
     private const int MaxRedirects = 5;
 
-    public WebFetchTool(WebFetchConfig config, HttpClient? httpClient = null)
+    public WebFetchTool(WebFetchConfig config, HttpClient? httpClient = null, UrlSafetyConfig? urlSafety = null)
     {
         _config = config;
+        _urlSafety = config.UrlSafety ?? urlSafety ?? new UrlSafetyConfig();
         _http = httpClient ?? HttpClientFactory.Create(allowAutoRedirect: false);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd(config.UserAgent);
     }
@@ -61,10 +65,9 @@ public sealed partial class WebFetchTool : ITool, IDisposable
         var redirects = 0;
         while (true)
         {
-            // SSRF protection: block internal/metadata IPs (re-check on each hop)
-            var ssrfError = await CheckSsrfAsync(current);
-            if (ssrfError is not null)
-                return ssrfError;
+            var safety = await UrlSafetyValidator.ValidateHttpUrlAsync(current, _urlSafety, ct);
+            if (!safety.Allowed)
+                return safety.ToToolError();
 
             try
             {
@@ -183,61 +186,6 @@ public sealed partial class WebFetchTool : ITool, IDisposable
         cleaned = MultiNewlineRegex().Replace(cleaned, "\n\n");
 
         return cleaned;
-    }
-
-    /// <summary>
-    /// SSRF protection: resolve the hostname and block internal/metadata IPs.
-    /// </summary>
-    private static async Task<string?> CheckSsrfAsync(Uri uri)
-    {
-        try
-        {
-            var addresses = await Dns.GetHostAddressesAsync(uri.Host);
-            foreach (var ip in addresses)
-            {
-                if (IsBlockedIp(ip))
-                    return $"Error: Access denied — the resolved address ({ip}) is blocked for security reasons.";
-            }
-            return null;
-        }
-        catch (Exception ex)
-        {
-            return $"Error: DNS resolution failed for {uri.Host} — {ex.Message}";
-        }
-    }
-
-    /// <summary>
-    /// Returns true if the IP is loopback, link-local, private (RFC 1918), or a cloud metadata address.
-    /// </summary>
-    private static bool IsBlockedIp(IPAddress ip)
-    {
-        if (ip.IsIPv4MappedToIPv6)
-            return IsBlockedIp(ip.MapToIPv4());
-
-        if (IPAddress.IsLoopback(ip)) return true;
-        if (ip.IsIPv6LinkLocal) return true;
-        if (ip.IsIPv6SiteLocal) return true;
-
-        var bytes = ip.GetAddressBytes();
-        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && bytes.Length == 4)
-        {
-            return
-                bytes[0] == 10 || // 10.0.0.0/8
-                (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) || // 172.16.0.0/12
-                (bytes[0] == 192 && bytes[1] == 168) || // 192.168.0.0/16
-                (bytes[0] == 169 && bytes[1] == 254) || // 169.254.0.0/16 (link-local + cloud metadata)
-                bytes[0] == 127 || // 127.0.0.0/8
-                bytes[0] == 0; // 0.0.0.0/8
-        }
-
-        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 && bytes.Length == 16)
-        {
-            // Unique local addresses fc00::/7
-            if ((bytes[0] & 0xFE) == 0xFC)
-                return true;
-        }
-
-        return false;
     }
 
     private static bool IsRedirectStatus(HttpStatusCode statusCode) =>

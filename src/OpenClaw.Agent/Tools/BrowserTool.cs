@@ -6,6 +6,7 @@ using Microsoft.Playwright;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Agent.Tools;
 
@@ -20,9 +21,104 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
         "Error: Browser tool requires a configured execution backend or sandbox in this runtime. Local Playwright execution is unavailable.";
     private const string SandboxRunnerScript = """
         const { chromium } = require('playwright');
+        const dns = require('dns').promises;
+        const net = require('net');
+
+        function globMatches(pattern, value) {
+          if (!pattern) return false;
+          if (pattern === '*') return true;
+          const escaped = String(pattern).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+          return new RegExp(`^${escaped}$`, 'i').test(String(value));
+        }
+
+        function isBlockedIpv4(address) {
+          const parts = address.split('.').map((part) => Number(part));
+          if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
+          return parts[0] === 0 ||
+            parts[0] === 10 ||
+            parts[0] === 127 ||
+            (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) ||
+            (parts[0] === 169 && parts[1] === 254) ||
+            (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+            (parts[0] === 192 && parts[1] === 168) ||
+            (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19)) ||
+            parts[0] >= 224;
+        }
+
+        function ipv4ToInt(address) {
+          const parts = address.split('.').map((part) => Number(part));
+          if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
+          return (((parts[0] << 24) >>> 0) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+        }
+
+        function cidrMatches(address, cidr) {
+          if (net.isIP(address) !== 4) return false;
+          const parts = String(cidr || '').split('/');
+          if (parts.length !== 2 || net.isIP(parts[0]) !== 4) return false;
+          const prefix = Number(parts[1]);
+          if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) return false;
+          const value = ipv4ToInt(address);
+          const network = ipv4ToInt(parts[0]);
+          if (value == null || network == null) return false;
+          const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+          return (value & mask) === (network & mask);
+        }
+
+        function isBlockedIp(address) {
+          const version = net.isIP(address);
+          if (version === 4) return isBlockedIpv4(address);
+          if (version === 6) {
+            const value = address.toLowerCase();
+            return value === '::' ||
+              value === '::1' ||
+              value.startsWith('fe80:') ||
+              value.startsWith('fc') ||
+              value.startsWith('fd') ||
+              value.startsWith('ff');
+          }
+          return true;
+        }
+
+        async function validateUrlSafety(rawUrl, policy) {
+          if (!policy || policy.enabled === false) return;
+          const parsed = new URL(rawUrl);
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            throw new Error('URL safety blocked non-http(s) navigation.');
+          }
+
+          const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
+          const builtInBlocked = ['localhost', '*.localhost', 'metadata', 'metadata.google.internal'];
+          if (policy.blockPrivateNetworkTargets !== false && builtInBlocked.some((pattern) => globMatches(pattern, host))) {
+            throw new Error(`URL safety blocked host '${host}'.`);
+          }
+
+          for (const pattern of policy.blockedHostGlobs || []) {
+            if (globMatches(pattern, host)) throw new Error(`URL safety blocked host '${host}'.`);
+          }
+
+          let addresses;
+          if (net.isIP(host)) {
+            addresses = [host];
+          } else if (policy.blockPrivateNetworkTargets !== false || (policy.blockedCidrs || []).length > 0) {
+            addresses = (await dns.lookup(host, { all: true })).map((item) => item.address);
+          } else {
+            addresses = [];
+          }
+
+          if (policy.blockPrivateNetworkTargets !== false && addresses.some(isBlockedIp)) {
+            throw new Error(`URL safety blocked private or loopback target for '${host}'.`);
+          }
+
+          for (const cidr of policy.blockedCidrs || []) {
+            if (addresses.some((address) => cidrMatches(address, cidr))) {
+              throw new Error(`URL safety blocked CIDR target for '${host}'.`);
+            }
+          }
+        }
 
         (async () => {
           const payload = JSON.parse(process.argv[1] || '{}');
+          payload.urlSafety = JSON.parse(payload.urlSafetyJson || '{}');
           let context;
 
           try {
@@ -30,12 +126,21 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
               headless: payload.headless !== false,
               timeout: payload.timeoutMs || 30000
             });
+            await context.route('**/*', async (route) => {
+              try {
+                await validateUrlSafety(route.request().url(), payload.urlSafety);
+                await route.continue();
+              } catch {
+                await route.abort();
+              }
+            });
 
             const page = context.pages()[0] || await context.newPage();
             let output = '';
 
             switch (payload.action) {
               case 'goto': {
+                await validateUrlSafety(payload.url, payload.urlSafety);
                 await page.goto(payload.url, { waitUntil: 'load' });
                 const title = await page.title();
                 output = `Navigated to ${payload.url}. Title: '${title}'`;
@@ -159,6 +264,7 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
                 Timeout = _config.BrowserTimeoutSeconds * 1000
             });
             _page = await _browser.NewPageAsync();
+            await ConfigureUrlSafetyAsync(_page);
             
             _initialized = true;
         }
@@ -205,6 +311,10 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
                 case "goto":
                 {
                     var url = args.RootElement.GetProperty("url").GetString()!;
+                    var safety = await ValidateBrowserUrlAsync(url, ct);
+                    if (!safety.Allowed)
+                        return safety.ToToolError();
+
                     await WithCancellationAsync(
                         page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.Load }), ct);
                     var title = await WithCancellationAsync(page.TitleAsync(), ct);
@@ -311,7 +421,48 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
 
         ct.ThrowIfCancellationRequested();
         _page = await _browser.NewPageAsync();
+        await ConfigureUrlSafetyAsync(_page);
         return _page;
+    }
+
+    private async Task ConfigureUrlSafetyAsync(IPage page)
+    {
+        if (!_config.UrlSafety.Enabled)
+            return;
+
+        await page.RouteAsync("**/*", async route =>
+        {
+            try
+            {
+                if (Uri.TryCreate(route.Request.Url, UriKind.Absolute, out var uri) &&
+                    (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+                {
+                    var safety = await UrlSafetyValidator.ValidateHttpUrlAsync(uri, _config.UrlSafety, CancellationToken.None);
+                    if (!safety.Allowed)
+                    {
+                        await route.AbortAsync();
+                        return;
+                    }
+                }
+
+                await route.ContinueAsync();
+            }
+            catch
+            {
+                await route.AbortAsync();
+            }
+        });
+    }
+
+    private async ValueTask<UrlSafetyValidationResult> ValidateBrowserUrlAsync(string url, CancellationToken ct)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return UrlSafetyValidationResult.Deny("only absolute http(s) URLs are allowed.");
+        }
+
+        return await UrlSafetyValidator.ValidateHttpUrlAsync(uri, _config.UrlSafety, ct);
     }
 
     private static async Task ClosePageBestEffortAsync(IPage page)
@@ -390,13 +541,14 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
             ["action"] = action,
             ["headless"] = _config.BrowserHeadless,
             ["timeoutMs"] = _config.BrowserTimeoutSeconds * 1000,
-            ["userDataDir"] = SandboxProfileDir
+            ["userDataDir"] = SandboxProfileDir,
+            ["urlSafetyJson"] = JsonSerializer.Serialize(_config.UrlSafety, CoreJsonContext.Default.UrlSafetyConfig)
         };
 
         switch (action)
         {
             case "goto":
-                payload["url"] = ReadRequiredString(args.RootElement, "url");
+                payload["url"] = ReadValidatedHttpUrl(args.RootElement, "url");
                 break;
 
             case "click":
@@ -442,4 +594,20 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
         => element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
             ? property.GetString()
             : null;
+
+    private string ReadValidatedHttpUrl(JsonElement element, string propertyName)
+    {
+        var value = ReadRequiredString(element, propertyName);
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new ToolSandboxException("Error: only absolute http(s) URLs are allowed.");
+        }
+
+        var safety = UrlSafetyValidator.ValidateHttpUrl(uri, _config.UrlSafety);
+        if (!safety.Allowed)
+            throw new ToolSandboxException(safety.ToToolError());
+
+        return value;
+    }
 }

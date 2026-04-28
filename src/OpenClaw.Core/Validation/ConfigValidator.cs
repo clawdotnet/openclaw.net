@@ -109,6 +109,10 @@ public static class ConfigValidator
         if (config.Tooling.ToolTimeoutSeconds < 0)
             errors.Add($"Tooling.ToolTimeoutSeconds must be >= 0 (got {config.Tooling.ToolTimeoutSeconds}).");
 
+        ValidateUrlSafety("Tooling.UrlSafety", config.Tooling.UrlSafety, errors);
+        if (config.Plugins.Native.WebFetch.UrlSafety is not null)
+            ValidateUrlSafety("Plugins.Native.WebFetch.UrlSafety", config.Plugins.Native.WebFetch.UrlSafety, errors);
+
         if (config.Tooling.WorkspaceOnly)
         {
             var resolvedWorkspaceRoot = ResolveConfiguredPath(config.Tooling.WorkspaceRoot);
@@ -414,6 +418,28 @@ public static class ConfigValidator
 
             if (credentialSourceCount > 1)
                 errors.Add($"CodingBackends.{backend.BackendId}.Credentials must specify at most one of SecretRef, TokenFilePath, or ConnectedAccountId.");
+        }
+    }
+
+    private static void ValidateUrlSafety(string path, UrlSafetyConfig config, List<string> errors)
+    {
+        foreach (var cidr in config.BlockedCidrs)
+        {
+            if (string.IsNullOrWhiteSpace(cidr))
+                continue;
+
+            var parts = cidr.Split('/', 2, StringSplitOptions.TrimEntries);
+            if (parts.Length != 2 ||
+                !System.Net.IPAddress.TryParse(parts[0], out var address) ||
+                !int.TryParse(parts[1], out var prefixLength))
+            {
+                errors.Add($"{path}.BlockedCidrs entry '{cidr}' must be a valid CIDR block.");
+                continue;
+            }
+
+            var maxPrefix = address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128;
+            if (prefixLength < 0 || prefixLength > maxPrefix)
+                errors.Add($"{path}.BlockedCidrs entry '{cidr}' has an invalid prefix length.");
         }
     }
 

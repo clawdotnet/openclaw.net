@@ -314,6 +314,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(MemoryRecallConfig))]
 [JsonSerializable(typeof(MemoryRetentionConfig))]
 [JsonSerializable(typeof(SecurityConfig))]
+[JsonSerializable(typeof(UrlSafetyConfig))]
 [JsonSerializable(typeof(WebSocketConfig))]
 [JsonSerializable(typeof(ToolingConfig))]
 [JsonSerializable(typeof(ToolsetConfig))]

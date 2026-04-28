@@ -25,7 +25,7 @@ public sealed class NativePluginRegistry : IDisposable
             RegisterTool(new WebSearchTool(config.WebSearch), "web-search", config.WebSearch.Provider);
 
         if (config.WebFetch.Enabled)
-            RegisterTool(new WebFetchTool(config.WebFetch), "web-fetch");
+            RegisterTool(new WebFetchTool(config.WebFetch, urlSafety: toolingConfig?.UrlSafety), "web-fetch");
 
         if (config.GitTools.Enabled)
             RegisterTool(new GitTool(config.GitTools), "git-tools");
