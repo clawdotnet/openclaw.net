@@ -44,12 +44,6 @@ internal sealed class CliArgs
 
             if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal))
             {
-                if (IsFlagOption(a))
-                {
-                    parsed._flags.Add(a);
-                    continue;
-                }
-
                 throw new ArgumentException($"Missing value for {a}");
             }
 

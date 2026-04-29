@@ -84,6 +84,13 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
           return value;
         }
 
+        function mappedIpv6ToIpv4(address) {
+          const value = ipv6ToBigInt(address);
+          if (value == null || (value >> 32n) !== 0xffffn) return null;
+          const tail = Number(value & 0xffffffffn);
+          return `${(tail >>> 24) & 0xff}.${(tail >>> 16) & 0xff}.${(tail >>> 8) & 0xff}.${tail & 0xff}`;
+        }
+
         function ipToBigInt(address) {
           const version = net.isIP(address);
           if (version === 4) {
@@ -91,6 +98,9 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
             return value == null ? null : { value: BigInt(value), bits: 32 };
           }
           if (version === 6) {
+            const mapped = mappedIpv6ToIpv4(address);
+            if (mapped) return ipToBigInt(mapped);
+
             const value = ipv6ToBigInt(address);
             return value == null ? null : { value, bits: 128 };
           }
@@ -117,12 +127,8 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
           if (version === 4) return isBlockedIpv4(address);
           if (version === 6) {
             const value = address.toLowerCase();
-            const mapped = ipv6ToBigInt(value);
-            if (mapped != null && (mapped >> 32n) === 0xffffn) {
-              const tail = Number(mapped & 0xffffffffn);
-              const dotted = `${(tail >>> 24) & 0xff}.${(tail >>> 16) & 0xff}.${(tail >>> 8) & 0xff}.${tail & 0xff}`;
-              return isBlockedIpv4(dotted);
-            }
+            const mapped = mappedIpv6ToIpv4(value);
+            if (mapped) return isBlockedIpv4(mapped);
 
             const firstGroup = parseInt(value.split(':', 1)[0] || '0', 16);
             return value === '::' ||
@@ -504,11 +510,30 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
 
                 await route.ContinueAsync();
             }
-            catch
+            catch (PlaywrightException)
             {
-                await route.AbortAsync();
+                await AbortRouteBestEffortAsync(route);
+            }
+            catch (System.Net.Http.HttpRequestException)
+            {
+                await AbortRouteBestEffortAsync(route);
+            }
+            catch (TimeoutException)
+            {
+                await AbortRouteBestEffortAsync(route);
             }
         });
+    }
+
+    private static async Task AbortRouteBestEffortAsync(IRoute route)
+    {
+        try
+        {
+            await route.AbortAsync();
+        }
+        catch (PlaywrightException)
+        {
+        }
     }
 
     private async ValueTask<UrlSafetyValidationResult> ValidateBrowserUrlAsync(string url, CancellationToken ct)

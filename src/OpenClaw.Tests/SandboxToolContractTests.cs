@@ -81,6 +81,8 @@ public sealed class SandboxToolContractTests
         Assert.Equal("node", request.Command);
         Assert.Equal("-e", request.Arguments[0]);
         Assert.Contains("playwright", request.Arguments[1], StringComparison.Ordinal);
+        Assert.Contains("mappedIpv6ToIpv4", request.Arguments[1], StringComparison.Ordinal);
+        Assert.Contains("if (mapped) return ipToBigInt(mapped);", request.Arguments[1], StringComparison.Ordinal);
         Assert.Contains("\"action\":\"goto\"", request.Arguments[2], StringComparison.Ordinal);
         Assert.Contains("\"url\":\"https://example.com\"", request.Arguments[2], StringComparison.Ordinal);
     }
