@@ -80,6 +80,20 @@ public sealed class CliProgramTests
     }
 
     [Fact]
+    public void CliArgs_Parse_TrajectoryExportAnonymizeFlag()
+    {
+        var parsed = CliArgs.Parse([
+            "--session", "sess-1",
+            "--anonymize",
+            "--output", "trajectory.jsonl"
+        ]);
+
+        Assert.Equal("sess-1", parsed.GetOption("--session"));
+        Assert.Equal("trajectory.jsonl", parsed.GetOption("--output"));
+        Assert.True(parsed.HasFlag("--anonymize"));
+    }
+
+    [Fact]
     public void BuildUserContent_AddsImageMarkersForImageOptions()
     {
         var content = OpenClaw.Cli.Program.BuildUserContent(

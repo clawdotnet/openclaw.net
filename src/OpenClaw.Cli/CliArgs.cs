@@ -36,7 +36,7 @@ internal sealed class CliArgs
                 continue;
             }
 
-            if (a is "--no-stream" or "--apply" or "--non-interactive" or "--offline" or "--require-provider" or "--with-companion" or "--open-browser" or "--skip-verify" or "--json")
+            if (IsFlagOption(a))
             {
                 parsed._flags.Add(a);
                 continue;
@@ -44,7 +44,7 @@ internal sealed class CliArgs
 
             if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal))
             {
-                if (a is "--no-stream" or "--apply" or "--non-interactive" or "--offline" or "--require-provider" or "--with-companion" or "--open-browser" or "--skip-verify" or "--json")
+                if (IsFlagOption(a))
                 {
                     parsed._flags.Add(a);
                     continue;
@@ -82,4 +82,16 @@ internal sealed class CliArgs
 
     public string? GetOption(string name)
         => _options.TryGetValue(name, out var values) && values.Count > 0 ? values[^1] : null;
+
+    private static bool IsFlagOption(string value)
+        => value is "--no-stream"
+            or "--apply"
+            or "--non-interactive"
+            or "--offline"
+            or "--require-provider"
+            or "--with-companion"
+            or "--open-browser"
+            or "--skip-verify"
+            or "--json"
+            or "--anonymize";
 }

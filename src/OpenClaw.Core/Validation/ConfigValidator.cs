@@ -423,8 +423,11 @@ public static class ConfigValidator
 
     private static void ValidateUrlSafety(string path, UrlSafetyConfig config, List<string> errors)
     {
-        foreach (var cidr in config.BlockedCidrs.Where(static c => !string.IsNullOrWhiteSpace(c)))
+        foreach (var cidr in config.BlockedCidrs)
         {
+            if (string.IsNullOrWhiteSpace(cidr))
+                continue;
+
             var parts = cidr.Split('/', 2, StringSplitOptions.TrimEntries);
             if (parts.Length != 2 ||
                 !System.Net.IPAddress.TryParse(parts[0], out var address) ||

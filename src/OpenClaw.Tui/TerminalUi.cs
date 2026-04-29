@@ -119,14 +119,21 @@ public static class TerminalUi
         providers.AddColumn("Tokens");
         providers.AddColumn("Cost");
         providers.AddColumn("Errors");
-        foreach (var item in insights.Providers.Take(8))
+        if (insights.Providers.Count == 0)
         {
-            providers.AddRow(
-                $"{Markup.Escape(item.ProviderId)}/{Markup.Escape(item.ModelId)}",
-                item.Requests.ToString(),
-                item.TotalTokens.ToString(),
-                $"${item.EstimatedCostUsd:0.######}",
-                item.Errors.ToString());
+            providers.AddRow("none", "-", "-", "-", "-");
+        }
+        else
+        {
+            foreach (var item in insights.Providers.Take(8))
+            {
+                providers.AddRow(
+                    $"{Markup.Escape(item.ProviderId)}/{Markup.Escape(item.ModelId)}",
+                    item.Requests.ToString(),
+                    item.TotalTokens.ToString(),
+                    $"${item.EstimatedCostUsd:0.######}",
+                    item.Errors.ToString());
+            }
         }
         AnsiConsole.Write(providers);
 
@@ -135,13 +142,20 @@ public static class TerminalUi
         tools.AddColumn("Calls");
         tools.AddColumn("Failures");
         tools.AddColumn("Avg ms");
-        foreach (var item in insights.Tools.Take(10))
+        if (insights.Tools.Count == 0)
         {
-            tools.AddRow(
-                Markup.Escape(item.ToolName),
-                item.Calls.ToString(),
-                item.Failures.ToString(),
-                item.AverageDurationMs.ToString("0.0"));
+            tools.AddRow("none", "-", "-", "-");
+        }
+        else
+        {
+            foreach (var item in insights.Tools.Take(10))
+            {
+                tools.AddRow(
+                    Markup.Escape(item.ToolName),
+                    item.Calls.ToString(),
+                    item.Failures.ToString(),
+                    item.AverageDurationMs.ToString("0.0"));
+            }
         }
         AnsiConsole.Write(tools);
 

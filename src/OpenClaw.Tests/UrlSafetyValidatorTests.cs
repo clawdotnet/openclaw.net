@@ -39,6 +39,22 @@ public sealed class UrlSafetyValidatorTests
     }
 
     [Fact]
+    public void ValidateHttpUrl_HonorsConfiguredIpv6CidrBlocklist()
+    {
+        var result = UrlSafetyValidator.ValidateHttpUrl(
+            new Uri("https://[2001:db8::42]/"),
+            new UrlSafetyConfig
+            {
+                BlockPrivateNetworkTargets = false,
+                BlockedCidrs = ["2001:db8::/32"]
+            },
+            resolveDns: false);
+
+        Assert.False(result.Allowed);
+        Assert.Contains("CIDR", result.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task WebFetchTool_BlocksLoopbackBeforeHttpRequest()
     {
         using var tool = new WebFetchTool(new WebFetchConfig { Enabled = true });

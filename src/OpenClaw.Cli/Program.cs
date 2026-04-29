@@ -99,7 +99,7 @@ internal static class Program
               openclaw eval <run|compare> [options]
               openclaw accounts <list|add|remove|probe> [options]
               openclaw backends <list|probe|run|session send> [options]
-              openclaw admin <posture|incident export|approvals simulate> [options]
+              openclaw admin <posture|incident export|trajectory export|approvals simulate> [options]
               openclaw compatibility <catalog> [options]
               openclaw skills <inspect|install|list> [options]
               openclaw clawhub [wrapper options] [--] <clawhub args...>

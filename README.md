@@ -102,6 +102,8 @@ OpenClaw.NET now treats Ollama as a first-class native provider at `http://127.0
 
 When binding to a non-loopback address, the gateway **refuses to start** unless dangerous settings are explicitly hardened (auth token required, tooling roots restricted, signature validation enforced, `raw:` secret refs rejected). See [SECURITY.md](SECURITY.md) before exposing the gateway publicly.
 
+Outbound web fetches and browser navigations run through `OpenClaw:Tooling:UrlSafety` by default. The safe default blocks loopback, private/link-local, multicast, and metadata hosts; operators can disable the policy intentionally or add `BlockedHostGlobs` and `BlockedCidrs` for environment-specific deny lists.
+
 ## Docs
 
 The full documentation map lives at **[docs/README.md](docs/README.md)**. Starting points:

@@ -51,17 +51,65 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
           return (((parts[0] << 24) >>> 0) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
         }
 
+        function ipv6ToBigInt(address) {
+          const zoneIndex = address.indexOf('%');
+          let text = (zoneIndex >= 0 ? address.slice(0, zoneIndex) : address).toLowerCase();
+          const lastColon = text.lastIndexOf(':');
+          const tail = lastColon >= 0 ? text.slice(lastColon + 1) : text;
+          if (tail.includes('.')) {
+            const ipv4 = ipv4ToInt(tail);
+            if (ipv4 == null) return null;
+            const high = ((ipv4 >>> 16) & 0xffff).toString(16);
+            const low = (ipv4 & 0xffff).toString(16);
+            text = `${text.slice(0, lastColon)}:${high}:${low}`;
+          }
+
+          const halves = text.split('::');
+          if (halves.length > 2) return null;
+
+          const left = halves[0] ? halves[0].split(':') : [];
+          const right = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+          if (left.concat(right).some((part) => !/^[0-9a-f]{1,4}$/.test(part))) return null;
+
+          const missing = 8 - left.length - right.length;
+          if ((halves.length === 1 && missing !== 0) || (halves.length === 2 && missing < 1)) return null;
+
+          const groups = left.concat(Array(Math.max(0, missing)).fill('0'), right);
+          if (groups.length !== 8) return null;
+
+          let value = 0n;
+          for (const group of groups) {
+            value = (value << 16n) + BigInt(parseInt(group, 16));
+          }
+          return value;
+        }
+
+        function ipToBigInt(address) {
+          const version = net.isIP(address);
+          if (version === 4) {
+            const value = ipv4ToInt(address);
+            return value == null ? null : { value: BigInt(value), bits: 32 };
+          }
+          if (version === 6) {
+            const value = ipv6ToBigInt(address);
+            return value == null ? null : { value, bits: 128 };
+          }
+          return null;
+        }
+
         function cidrMatches(address, cidr) {
-          if (net.isIP(address) !== 4) return false;
           const parts = String(cidr || '').split('/');
-          if (parts.length !== 2 || net.isIP(parts[0]) !== 4) return false;
+          if (parts.length !== 2) return false;
+          const addressValue = ipToBigInt(address);
+          const networkValue = ipToBigInt(parts[0]);
+          if (!addressValue || !networkValue || addressValue.bits !== networkValue.bits) return false;
+
           const prefix = Number(parts[1]);
-          if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) return false;
-          const value = ipv4ToInt(address);
-          const network = ipv4ToInt(parts[0]);
-          if (value == null || network == null) return false;
-          const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
-          return (value & mask) === (network & mask);
+          if (!Number.isInteger(prefix) || prefix < 0 || prefix > addressValue.bits) return false;
+          if (prefix === 0) return true;
+
+          const shift = BigInt(addressValue.bits - prefix);
+          return (addressValue.value >> shift) === (networkValue.value >> shift);
         }
 
         function isBlockedIp(address) {
@@ -69,12 +117,20 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
           if (version === 4) return isBlockedIpv4(address);
           if (version === 6) {
             const value = address.toLowerCase();
+            const mapped = ipv6ToBigInt(value);
+            if (mapped != null && (mapped >> 32n) === 0xffffn) {
+              const tail = Number(mapped & 0xffffffffn);
+              const dotted = `${(tail >>> 24) & 0xff}.${(tail >>> 16) & 0xff}.${(tail >>> 8) & 0xff}.${tail & 0xff}`;
+              return isBlockedIpv4(dotted);
+            }
+
+            const firstGroup = parseInt(value.split(':', 1)[0] || '0', 16);
             return value === '::' ||
               value === '::1' ||
-              value.startsWith('fe80:') ||
-              value.startsWith('fc') ||
-              value.startsWith('fd') ||
-              value.startsWith('ff');
+              (Number.isInteger(firstGroup) && (firstGroup & 0xffc0) === 0xfe80) ||
+              (Number.isInteger(firstGroup) && (firstGroup & 0xffc0) === 0xfec0) ||
+              (Number.isInteger(firstGroup) && (firstGroup & 0xfe00) === 0xfc00) ||
+              (Number.isInteger(firstGroup) && (firstGroup & 0xff00) === 0xff00);
           }
           return true;
         }
@@ -86,7 +142,8 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
             throw new Error('URL safety blocked non-http(s) navigation.');
           }
 
-          const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
+          let host = parsed.hostname.toLowerCase().replace(/\.$/, '');
+          if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
           const builtInBlocked = ['localhost', '*.localhost', 'metadata', 'metadata.google.internal'];
           if (policy.blockPrivateNetworkTargets !== false && builtInBlocked.some((pattern) => globMatches(pattern, host))) {
             throw new Error(`URL safety blocked host '${host}'.`);
@@ -447,11 +504,7 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
 
                 await route.ContinueAsync();
             }
-            catch (PlaywrightException)
-            {
-                await route.AbortAsync();
-            }
-            catch (OperationCanceledException)
+            catch
             {
                 await route.AbortAsync();
             }
