@@ -118,7 +118,15 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
         {
             _gatewayProcess.Start();
         }
-        catch (Exception ex)
+        catch (ObjectDisposedException ex)
+        {
+            return ManagedGatewayStartResult.Fail($"Gateway launch failed: {ex.Message}");
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            return ManagedGatewayStartResult.Fail($"Gateway launch failed: {ex.Message}");
+        }
+        catch (InvalidOperationException ex)
         {
             return ManagedGatewayStartResult.Fail($"Gateway launch failed: {ex.Message}");
         }
