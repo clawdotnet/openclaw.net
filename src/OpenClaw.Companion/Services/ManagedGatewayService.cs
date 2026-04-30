@@ -166,14 +166,17 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
                 await process.WaitForExitAsync(ct);
             }
         }
-        catch (ObjectDisposedException)
+        catch (ObjectDisposedException ex)
         {
+            TraceIgnoredProcessException("stop", ex);
         }
-        catch (System.ComponentModel.Win32Exception)
+        catch (System.ComponentModel.Win32Exception ex)
         {
+            TraceIgnoredProcessException("stop", ex);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
+            TraceIgnoredProcessException("stop", ex);
         }
         finally
         {
@@ -197,11 +200,7 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
         {
             return false;
         }
-        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
-        {
-            return false;
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             return false;
         }
@@ -306,10 +305,15 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
             await process.WaitForExitAsync(timeoutCts.Token);
             return new ProcessRunResult(process.ExitCode, await stdout, await stderr);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             TryKill(process);
             return new ProcessRunResult(124, "", "Command timed out.");
+        }
+        catch (OperationCanceledException)
+        {
+            TryKill(process);
+            throw;
         }
         catch (ObjectDisposedException ex)
         {
@@ -373,20 +377,24 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
                 string.IsNullOrWhiteSpace(bind) ? "127.0.0.1" : bind,
                 port);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            Trace.TraceWarning("Managed gateway config read ignored JSON error for '{0}': {1}", ConfigPath, ex.Message);
             return null;
         }
-        catch (IOException)
+        catch (IOException ex)
         {
+            Trace.TraceWarning("Managed gateway config read ignored IO error for '{0}': {1}", ConfigPath, ex.Message);
             return null;
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
+            Trace.TraceWarning("Managed gateway config read ignored access error for '{0}': {1}", ConfigPath, ex.Message);
             return null;
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
+            Trace.TraceWarning("Managed gateway config read ignored invalid state for '{0}': {1}", ConfigPath, ex.Message);
             return null;
         }
     }
@@ -405,14 +413,19 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
             _ => "ws"
         };
 
-        var path = uri.AbsolutePath;
-        if (string.IsNullOrWhiteSpace(path) || path == "/")
+        var normalizedPath = uri.AbsolutePath.TrimEnd('/');
+        string path;
+        if (string.IsNullOrWhiteSpace(normalizedPath))
         {
             path = "/ws";
         }
-        else if (!path.EndsWith("/ws", StringComparison.OrdinalIgnoreCase))
+        else if (normalizedPath.EndsWith("/ws", StringComparison.OrdinalIgnoreCase))
         {
-            path = path.TrimEnd('/') + "/ws";
+            path = normalizedPath;
+        }
+        else
+        {
+            path = normalizedPath + "/ws";
         }
 
         var builder = new UriBuilder(uri)
@@ -482,14 +495,17 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
             if (!process.HasExited)
                 process.Kill(entireProcessTree: true);
         }
-        catch (ObjectDisposedException)
+        catch (ObjectDisposedException ex)
         {
+            TraceIgnoredProcessException("kill", ex);
         }
-        catch (System.ComponentModel.Win32Exception)
+        catch (System.ComponentModel.Win32Exception ex)
         {
+            TraceIgnoredProcessException("kill", ex);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
+            TraceIgnoredProcessException("kill", ex);
         }
     }
 
@@ -504,11 +520,13 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
             if (!process.HasExited)
                 return;
         }
-        catch (ObjectDisposedException)
+        catch (ObjectDisposedException ex)
         {
+            TraceIgnoredProcessException("dispose exited process state check", ex);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
+            TraceIgnoredProcessException("dispose exited process state check", ex);
         }
 
         if (ReferenceEquals(_gatewayProcess, process))
@@ -530,27 +548,38 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
         if (process is null)
             return;
 
-        try
+        using (process)
         {
-            if (!process.HasExited)
+            try
             {
-                process.Kill(entireProcessTree: true);
-                process.WaitForExit(5000);
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit(5000);
+                }
+            }
+            catch (ObjectDisposedException ex)
+            {
+                TraceIgnoredProcessException("dispose stop", ex);
+            }
+            catch (System.ComponentModel.Win32Exception ex)
+            {
+                TraceIgnoredProcessException("dispose stop", ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                TraceIgnoredProcessException("dispose stop", ex);
             }
         }
-        catch (ObjectDisposedException)
-        {
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-        }
-        catch (InvalidOperationException)
-        {
-        }
-        finally
-        {
-            process.Dispose();
-        }
+    }
+
+    private static void TraceIgnoredProcessException(string operation, Exception ex)
+    {
+        Trace.TraceWarning(
+            "Managed gateway process cleanup ignored {0} during {1}: {2}",
+            ex.GetType().Name,
+            operation,
+            ex.Message);
     }
 
     private sealed record ProcessRunResult(int ExitCode, string Output, string Error);

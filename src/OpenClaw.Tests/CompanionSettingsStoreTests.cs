@@ -98,10 +98,11 @@ public sealed class CompanionSettingsStoreTests
         var baseDir = CreateTempDir();
         try
         {
+            var providerStoreDir = Path.Combine(baseDir, "provider-secret-store");
             var store = new SettingsStore(
                 baseDir,
                 new ProtectedTokenStore(baseDir, new InMemorySecretStore()),
-                new ProtectedTokenStore(Path.Combine(baseDir, "provider-secret-store"), new InMemorySecretStore()));
+                new ProtectedTokenStore(providerStoreDir, new InMemorySecretStore()));
             store.Save(new CompanionSettings
             {
                 ServerUrl = "ws://127.0.0.1:18789/ws"
@@ -113,10 +114,61 @@ public sealed class CompanionSettingsStoreTests
             Assert.True(saved);
             Assert.DoesNotContain("provider-secret", json, StringComparison.Ordinal);
             Assert.Equal("provider-secret", store.LoadProviderApiKey(allowPlaintextFallback: false));
+            Assert.True(File.Exists(Path.Combine(providerStoreDir, "stored.marker")));
+            Assert.False(File.Exists(Path.Combine(baseDir, "provider-key", "stored.marker")));
 
             store.ClearProviderApiKey();
 
             Assert.Null(store.LoadProviderApiKey(allowPlaintextFallback: false));
+        }
+        finally
+        {
+            Directory.Delete(baseDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ProviderApiKey_DoesNotLeaveMarkerWhenSecretCannotBeStored()
+    {
+        var baseDir = CreateTempDir();
+        try
+        {
+            var providerStoreDir = Path.Combine(baseDir, "provider-secret-store");
+            var store = new SettingsStore(
+                baseDir,
+                new ProtectedTokenStore(baseDir, new InMemorySecretStore()),
+                new ProtectedTokenStore(providerStoreDir, new UnavailableTestSecretStore()));
+
+            var saved = store.SaveProviderApiKey("provider-secret", allowPlaintextFallback: false);
+
+            Assert.False(saved);
+            Assert.False(File.Exists(Path.Combine(providerStoreDir, "stored.marker")));
+            Assert.Null(store.LoadProviderApiKey(allowPlaintextFallback: false));
+        }
+        finally
+        {
+            Directory.Delete(baseDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ProviderApiKey_TreatsPlaintextFallbackAsStoredWhenExplicitlyAllowed()
+    {
+        var baseDir = CreateTempDir();
+        try
+        {
+            var providerStoreDir = Path.Combine(baseDir, "provider-secret-store");
+            var store = new SettingsStore(
+                baseDir,
+                new ProtectedTokenStore(baseDir, new InMemorySecretStore()),
+                new ProtectedTokenStore(providerStoreDir, new UnavailableTestSecretStore()));
+
+            var saved = store.SaveProviderApiKey("provider-secret", allowPlaintextFallback: true);
+
+            Assert.True(saved);
+            Assert.True(File.Exists(Path.Combine(providerStoreDir, "stored.marker")));
+            Assert.Equal("provider-secret", store.LoadProviderApiKey(allowPlaintextFallback: true));
+            Assert.Equal("provider-secret", File.ReadAllText(Path.Combine(providerStoreDir, "token.txt")));
         }
         finally
         {

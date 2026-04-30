@@ -77,10 +77,23 @@ public sealed class ManagedGatewayServiceTests : IDisposable
     [InlineData("https://example.test", "wss://example.test/ws")]
     [InlineData("http://example.test/root", "ws://example.test/root/ws")]
     [InlineData("wss://example.test/ws", "wss://example.test/ws")]
+    [InlineData("wss://example.test/ws/", "wss://example.test/ws")]
     [InlineData("ws://example.test/root/ws", "ws://example.test/root/ws")]
+    [InlineData("ws://example.test/root/ws/", "ws://example.test/root/ws")]
     public void BuildWebSocketUrl_PreservesWsSchemeAndAvoidsDuplicatePath(string baseUrl, string expected)
     {
         Assert.Equal(expected, ManagedGatewayService.BuildWebSocketUrl(baseUrl).TrimEnd('/'));
+    }
+
+    [Fact]
+    public async Task IsHealthyAsync_PropagatesCallerCancellation()
+    {
+        using var httpClient = new HttpClient(new CancellationHttpMessageHandler());
+        using var service = new ManagedGatewayService(_tempDir, httpClient);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.IsHealthyAsync(null, cts.Token));
     }
 
     [Fact]
@@ -175,6 +188,38 @@ public sealed class ManagedGatewayServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RunSetupAsync_PropagatesCallerCancellation()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var cliDir = Path.Combine(_tempDir, "cli");
+        Directory.CreateDirectory(cliDir);
+        var cliPath = Path.Combine(cliDir, BinaryName("openclaw"));
+        File.WriteAllText(cliPath, """
+        #!/usr/bin/env sh
+        sleep 5
+        exit 0
+        """);
+        File.SetUnixFileMode(
+            cliPath,
+            UnixFileMode.UserRead |
+            UnixFileMode.UserWrite |
+            UnixFileMode.UserExecute);
+
+        using var service = new ManagedGatewayService(_tempDir);
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(20));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.RunSetupAsync(new ManagedGatewaySetupRequest(
+            "openai",
+            "gpt-4o",
+            ApiKey: "super-secret",
+            ModelPresetId: null,
+            WorkspacePath: Path.Combine(_tempDir, "workspace"),
+            ConfigPath: Path.Combine(_tempDir, "config.json")), cts.Token));
+    }
+
+    [Fact]
     public async Task StartAsync_InjectsStoredProviderApiKeyIntoGatewayProcess()
     {
         if (OperatingSystem.IsWindows())
@@ -236,6 +281,15 @@ public sealed class ManagedGatewayServiceTests : IDisposable
     private sealed class StaticHttpMessageHandler(HttpStatusCode statusCode) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            => Task.FromResult(new HttpResponseMessage(statusCode));
+        {
+            var response = new HttpResponseMessage(statusCode);
+            return Task.FromResult(response);
+        }
+    }
+
+    private sealed class CancellationHttpMessageHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromCanceled<HttpResponseMessage>(cancellationToken);
     }
 }
