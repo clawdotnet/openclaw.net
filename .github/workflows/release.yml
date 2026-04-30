@@ -1,0 +1,249 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create or update, for example v0.1.0"
+        required: false
+        type: string
+      create_release:
+        description: "Create or update a GitHub Release"
+        required: true
+        default: true
+        type: boolean
+      draft:
+        description: "Create the release as a draft"
+        required: true
+        default: true
+        type: boolean
+      prerelease:
+        description: "Mark the release as a prerelease"
+        required: true
+        default: false
+        type: boolean
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-release-assets:
+    name: Build ${{ matrix.asset }} assets
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset: linux-x64
+            os: ubuntu-latest
+            rid: linux-x64
+          - asset: windows-x64
+            os: windows-latest
+            rid: win-x64
+          - asset: macos-arm64
+            os: macos-latest
+            rid: osx-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install Linux NativeAOT prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish, smoke-test, and package assets
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+          WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+          APPLE_DEVELOPER_ID_CERT_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERT_BASE64 }}
+          APPLE_DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASSWORD }}
+          APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $rid = "${{ matrix.rid }}"
+          $root = (Get-Location).Path
+          $staging = Join-Path $root "artifacts/release/$rid"
+          $archives = Join-Path $root "artifacts/release-archives"
+          $exe = if ($IsWindows) { ".exe" } else { "" }
+
+          New-Item -ItemType Directory -Force -Path $staging, $archives | Out-Null
+
+          $gatewayStandard = Join-Path $staging "gateway-standard"
+          $gatewayMaf = Join-Path $staging "gateway-maf"
+          $cli = Join-Path $staging "cli"
+          $companion = Join-Path $staging "desktop/companion"
+          $desktopGateway = Join-Path $staging "desktop/gateway"
+          $desktopCli = Join-Path $staging "desktop/cli"
+
+          dotnet publish "$root/src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" -c Release -r $rid -p:PublishAot=true -p:OpenClawEnableMafExperiment=false -o $gatewayStandard
+          dotnet publish "$root/src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" -c Release -r $rid -p:PublishAot=true -p:OpenClawEnableMafExperiment=true -o $gatewayMaf
+          dotnet publish "$root/src/OpenClaw.Cli/OpenClaw.Cli.csproj" -c Release -r $rid -p:PublishAot=true -o $cli
+          dotnet publish "$root/src/OpenClaw.Companion/OpenClaw.Companion.csproj" -c Release -r $rid --self-contained true -p:PublishAot=false -p:PublishSingleFile=false -o $companion
+
+          Copy-Item -Path $gatewayStandard -Destination $desktopGateway -Recurse -Force
+          Copy-Item -Path $cli -Destination $desktopCli -Recurse -Force
+
+          if ($IsWindows -and $env:WINDOWS_SIGNING_CERT_BASE64 -and $env:WINDOWS_SIGNING_CERT_PASSWORD) {
+            $certPath = Join-Path $env:RUNNER_TEMP "openclaw-signing.pfx"
+            [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
+            $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+            if (-not $signtool) {
+              throw "signtool.exe was not found on the Windows runner."
+            }
+            Get-ChildItem $staging -Recurse -File | Where-Object { $_.Extension -in ".exe", ".dll" } | ForEach-Object {
+              & $signtool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $certPath /p $env:WINDOWS_SIGNING_CERT_PASSWORD $_.FullName
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+          } elseif ($IsWindows) {
+            Write-Host "Windows signing secrets are not configured; producing unsigned archives."
+          }
+
+          if ($IsMacOS -and $env:APPLE_DEVELOPER_ID_CERT_BASE64 -and $env:APPLE_DEVELOPER_ID_CERT_PASSWORD -and $env:APPLE_CODESIGN_IDENTITY) {
+            $certPath = Join-Path $env:RUNNER_TEMP "openclaw-developer-id.p12"
+            $keychainPath = Join-Path $env:RUNNER_TEMP "openclaw-signing.keychain-db"
+            $keychainPassword = [Guid]::NewGuid().ToString("N")
+            [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:APPLE_DEVELOPER_ID_CERT_BASE64))
+            security create-keychain -p $keychainPassword $keychainPath
+            security set-keychain-settings -lut 21600 $keychainPath
+            security unlock-keychain -p $keychainPassword $keychainPath
+            security import $certPath -k $keychainPath -P $env:APPLE_DEVELOPER_ID_CERT_PASSWORD -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k $keychainPassword $keychainPath
+            security list-keychains -d user -s $keychainPath
+
+            Get-ChildItem $staging -Recurse -File | ForEach-Object {
+              $kind = (& file -b $_.FullName) -join " "
+              if ($kind -match "Mach-O") {
+                codesign --force --timestamp --options runtime --sign $env:APPLE_CODESIGN_IDENTITY $_.FullName
+                if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              }
+            }
+          } elseif ($IsMacOS) {
+            Write-Host "Apple signing secrets are not configured; producing unsigned archives."
+          }
+
+          $work = Join-Path ([System.IO.Path]::GetTempPath()) ("openclaw-release-smoke-" + [System.Guid]::NewGuid().ToString("N"))
+          $memory = Join-Path $work "memory"
+          New-Item -ItemType Directory -Force -Path $memory | Out-Null
+          $configPath = Join-Path $work "gateway.smoke.json"
+          @{
+            OpenClaw = @{
+              BindAddress = "127.0.0.1"
+              Port = 19899
+              Runtime = @{ Mode = "aot" }
+              Llm = @{
+                Provider = "ollama"
+                Model = "llama3.2"
+              }
+              Memory = @{ StoragePath = $memory }
+              Tooling = @{ EnableBrowserTool = $false }
+            }
+          } | ConvertTo-Json -Depth 10 | Set-Content -Path $configPath -Encoding UTF8
+
+          $gatewayBin = Join-Path $gatewayStandard ("OpenClaw.Gateway" + $exe)
+          $cliBin = Join-Path $cli ("openclaw" + $exe)
+          & $gatewayBin --config $configPath --doctor
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $cliBin version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $desktopArchive = Join-Path $archives "openclaw-desktop-$rid.zip"
+          $gatewayStandardArchive = Join-Path $archives "openclaw-gateway-standard-aot-$rid.zip"
+          $gatewayMafArchive = Join-Path $archives "openclaw-gateway-maf-enabled-aot-$rid.zip"
+          $cliArchive = Join-Path $archives "openclaw-cli-aot-$rid.zip"
+          Compress-Archive -Path (Join-Path $staging "desktop/*") -DestinationPath $desktopArchive -Force
+          Compress-Archive -Path (Join-Path $gatewayStandard "*") -DestinationPath $gatewayStandardArchive -Force
+          Compress-Archive -Path (Join-Path $gatewayMaf "*") -DestinationPath $gatewayMafArchive -Force
+          Compress-Archive -Path (Join-Path $cli "*") -DestinationPath $cliArchive -Force
+
+          if ($IsMacOS -and $env:APPLE_ID -and $env:APPLE_TEAM_ID -and $env:APPLE_APP_SPECIFIC_PASSWORD -and $env:APPLE_CODESIGN_IDENTITY) {
+            xcrun notarytool submit $desktopArchive --apple-id $env:APPLE_ID --team-id $env:APPLE_TEAM_ID --password $env:APPLE_APP_SPECIFIC_PASSWORD --wait
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } elseif ($IsMacOS) {
+            Write-Host "Apple notarization secrets are not configured; skipping notarization."
+          }
+
+          Get-ChildItem $archives -Filter *.zip | ForEach-Object {
+            $hash = Get-FileHash -Algorithm SHA256 -Path $_.FullName
+            "$($hash.Hash.ToLowerInvariant())  $($_.Name)" | Set-Content -Path ($_.FullName + ".sha256") -Encoding ascii
+          }
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.rid }}
+          path: artifacts/release-archives/*
+
+  publish-github-release:
+    name: Publish GitHub Release
+    needs: build-release-assets
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.create_release)
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.tag }}"
+            if [[ -z "$TAG" ]]; then
+              echo "workflow_dispatch releases require the tag input." >&2
+              exit 2
+            fi
+            DRAFT="${{ inputs.draft }}"
+            PRERELEASE="${{ inputs.prerelease }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+            DRAFT="false"
+            PRERELEASE="false"
+          fi
+
+          NOTES_FILE="$(mktemp)"
+          cat > "$NOTES_FILE" <<EOF
+          OpenClaw.NET desktop and runtime downloads.
+
+          Start with the desktop bundle for your platform:
+          - openclaw-desktop-win-x64.zip
+          - openclaw-desktop-osx-arm64.zip
+          - openclaw-desktop-linux-x64.zip
+
+          These archives bundle Companion, the standard NativeAOT gateway, and the NativeAOT CLI. Standalone gateway and CLI archives are also attached for operators.
+
+          Windows and macOS assets are currently unsigned unless this workflow is extended with signing secrets. See docs/RELEASES.md for the expected first-run warnings and the signing path.
+          EOF
+
+          args=(release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes-file "$NOTES_FILE")
+          if [[ "$DRAFT" == "true" ]]; then args+=(--draft); fi
+          if [[ "$PRERELEASE" == "true" ]]; then args+=(--prerelease); fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            gh "${args[@]}" release-assets/*
+          fi

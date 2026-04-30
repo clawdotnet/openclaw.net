@@ -57,7 +57,14 @@ public sealed class SettingsStore
             OperatorTokenLabel = settings.OperatorTokenLabel,
             RememberToken = settings.RememberToken,
             AllowPlaintextTokenFallback = settings.AllowPlaintextTokenFallback,
-            DebugMode = settings.DebugMode
+            DebugMode = settings.DebugMode,
+            ApprovalDesktopNotificationsEnabled = settings.ApprovalDesktopNotificationsEnabled,
+            ApprovalDesktopNotificationsOnlyWhenUnfocused = settings.ApprovalDesktopNotificationsOnlyWhenUnfocused,
+            AutoStartLocalGateway = settings.AutoStartLocalGateway,
+            SetupProvider = settings.SetupProvider,
+            SetupModel = settings.SetupModel,
+            SetupModelPreset = settings.SetupModelPreset,
+            SetupWorkspacePath = settings.SetupWorkspacePath
         };
 
         var json = JsonSerializer.Serialize(toSave, JsonOptions);

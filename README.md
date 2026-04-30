@@ -44,6 +44,8 @@ When the gateway finishes startup it now prints explicit phase markers, a final 
 
 The root URL redirects to `/chat`. For the full first-run walkthrough (including the "First 10 Minutes" runbook and debugging flow), see [docs/QUICKSTART.md](docs/QUICKSTART.md). For the project shape and repository map before changing code, see [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 
+For the lowest-friction desktop start, download the platform desktop bundle from GitHub Releases instead of cloning the repo. The desktop bundle includes Companion, the standard NativeAOT gateway, and the NativeAOT CLI; Companion's **Setup** tab can write the local config, start the bundled gateway, and connect to it. See [docs/RELEASES.md](docs/RELEASES.md).
+
 If you want a direct gateway fallback instead of the full CLI onboarding flow, run:
 
 ```bash
@@ -113,6 +115,7 @@ The full documentation map lives at **[docs/README.md](docs/README.md)**. Starti
 | [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | Project shape, repository map, and first-run debugging flow |
 | [docs/QUICKSTART.md](docs/QUICKSTART.md) | Shortest supported path to a running local instance |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Providers, tools, skills, memory, channels, and day-to-day operation |
+| [docs/RELEASES.md](docs/RELEASES.md) | Desktop downloads, release assets, and signing status |
 | [docs/TOOLS_GUIDE.md](docs/TOOLS_GUIDE.md) | Native tool catalog and configuration |
 | [docs/CANVAS_A2UI.md](docs/CANVAS_A2UI.md) | Supported Canvas and A2UI visual workspace behavior |
 | [docs/MODEL_PROFILES.md](docs/MODEL_PROFILES.md) | Provider-agnostic named model profiles (including Gemma) |

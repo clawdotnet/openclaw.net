@@ -41,6 +41,57 @@ dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart
 
 `--quickstart` is the direct terminal fallback. It keeps the gateway on `127.0.0.1`, prompts for missing provider values, retries in-process on the common local startup failures, and after a successful start can save the resulting config to the standard `~/.openclaw/config/openclaw.settings.json`.
 
+## Prebuilt GitHub Release Downloads
+
+For non-technical desktop users, start from a GitHub Release desktop bundle instead of a source checkout or Actions artifact.
+
+Download the matching asset:
+
+- `openclaw-desktop-win-x64.zip`
+- `openclaw-desktop-osx-arm64.zip`
+- `openclaw-desktop-linux-x64.zip`
+
+Extract the archive and launch Companion from the `companion` folder. Open the **Setup** tab, enter the provider/model/key or choose Ollama, then click **Set Up and Start**. Companion writes the local config, starts the bundled gateway on `127.0.0.1`, and connects to it.
+
+Current Windows and macOS archives are unsigned until signing/notarization secrets are configured in the release workflow. Windows users may see SmartScreen warnings; macOS users may need to right-click Open or remove quarantine for local testing. See [RELEASES.md](RELEASES.md) for the signing path.
+
+Operators can still download standalone AOT archives from the same release:
+
+```bash
+gh release download <tag> \
+  --repo clawdotnet/openclaw.net \
+  --pattern 'openclaw-gateway-standard-aot-linux-x64.zip' \
+  --dir ./openclaw-gateway-aot
+
+gh release download <tag> \
+  --repo clawdotnet/openclaw.net \
+  --pattern 'openclaw-cli-aot-linux-x64.zip' \
+  --dir ./openclaw-cli-aot
+```
+
+After extracting those standalone archives:
+
+```bash
+chmod +x ./openclaw-gateway-aot/OpenClaw.Gateway
+chmod +x ./openclaw-cli-aot/openclaw
+```
+
+For the fastest interactive local run:
+
+```bash
+export MODEL_PROVIDER_KEY="sk-..."
+./openclaw-gateway-aot/OpenClaw.Gateway --quickstart
+```
+
+For a reusable config:
+
+```bash
+./openclaw-cli-aot/openclaw setup
+./openclaw-gateway-aot/OpenClaw.Gateway --config ~/.openclaw/config/openclaw.settings.json
+```
+
+GitHub Actions artifacts remain available for commit validation, but they are not the supported user download surface because they can expire and may require GitHub access.
+
 You explicitly do **not** need any of these to get started:
 
 - Docker
