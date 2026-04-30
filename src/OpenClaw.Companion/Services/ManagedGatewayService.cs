@@ -148,7 +148,13 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
                 await process.WaitForExitAsync(ct);
             }
         }
-        catch
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+        }
+        catch (InvalidOperationException)
         {
         }
         finally
