@@ -49,7 +49,7 @@ jobs:
             os: windows-latest
             rid: win-x64
           - asset: macos-arm64
-            os: macos-latest
+            os: macos-14
             rid: osx-arm64
 
     steps:

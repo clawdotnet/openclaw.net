@@ -40,7 +40,12 @@ public partial class App : Application
             };
 
             viewModel.StartApprovalsPolling();
-            _ = viewModel.InitializeLocalGatewayAsync();
+            var initializeLocalGatewayTask = viewModel.InitializeLocalGatewayAsync();
+            _ = initializeLocalGatewayTask.ContinueWith(
+                task => viewModel.ReportLocalGatewayInitializationFailure(task.Exception),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
 
             desktop.Exit += async (_, _) =>
             {

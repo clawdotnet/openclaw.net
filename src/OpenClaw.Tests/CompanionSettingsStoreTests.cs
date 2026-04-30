@@ -92,6 +92,38 @@ public sealed class CompanionSettingsStoreTests
         }
     }
 
+    [Fact]
+    public void ProviderApiKey_UsesProtectedStoreAndDoesNotPersistInSettingsJson()
+    {
+        var baseDir = CreateTempDir();
+        try
+        {
+            var store = new SettingsStore(
+                baseDir,
+                new ProtectedTokenStore(baseDir, new InMemorySecretStore()),
+                new ProtectedTokenStore(Path.Combine(baseDir, "provider-secret-store"), new InMemorySecretStore()));
+            store.Save(new CompanionSettings
+            {
+                ServerUrl = "ws://127.0.0.1:18789/ws"
+            });
+
+            var saved = store.SaveProviderApiKey("provider-secret", allowPlaintextFallback: false);
+            var json = File.ReadAllText(store.SettingsPath);
+
+            Assert.True(saved);
+            Assert.DoesNotContain("provider-secret", json, StringComparison.Ordinal);
+            Assert.Equal("provider-secret", store.LoadProviderApiKey(allowPlaintextFallback: false));
+
+            store.ClearProviderApiKey();
+
+            Assert.Null(store.LoadProviderApiKey(allowPlaintextFallback: false));
+        }
+        finally
+        {
+            Directory.Delete(baseDir, recursive: true);
+        }
+    }
+
     private static string CreateTempDir()
     {
         var path = Path.Combine(Path.GetTempPath(), "openclaw-companion-tests", Guid.NewGuid().ToString("N"));

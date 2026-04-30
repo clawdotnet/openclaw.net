@@ -22,12 +22,14 @@ public sealed partial class MainWindowViewModel
     private bool _localGatewayCanStart;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRunLocalGatewaySetup))]
     private bool _localGatewayCanRunSetup;
 
     [ObservableProperty]
     private bool _localGatewayIsHealthy;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRunLocalGatewaySetup))]
     private bool _isManagedGatewayBusy;
 
     [ObservableProperty]
@@ -47,6 +49,8 @@ public sealed partial class MainWindowViewModel
 
     [ObservableProperty]
     private string _setupApiKey = "";
+
+    public bool CanRunLocalGatewaySetup => LocalGatewayCanRunSetup && !IsManagedGatewayBusy;
 
     public async Task InitializeLocalGatewayAsync()
     {
@@ -77,11 +81,12 @@ public sealed partial class MainWindowViewModel
         try
         {
             SaveSettings();
+            var setupApiKey = string.IsNullOrWhiteSpace(SetupApiKey) ? null : SetupApiKey;
             LocalGatewayStatus = "Writing local setup...";
             var result = await _managedGateway.RunSetupAsync(new ManagedGatewaySetupRequest(
                 SetupProvider,
                 SetupModel,
-                string.IsNullOrWhiteSpace(SetupApiKey) ? null : SetupApiKey,
+                setupApiKey,
                 string.IsNullOrWhiteSpace(SetupModelPreset) ? null : SetupModelPreset,
                 string.IsNullOrWhiteSpace(SetupWorkspacePath) ? _managedGateway.WorkspacePath : SetupWorkspacePath,
                 _managedGateway.ConfigPath), CancellationToken.None);
@@ -94,7 +99,12 @@ public sealed partial class MainWindowViewModel
             }
 
             SetupApiKey = "";
+            if (setupApiKey is null)
+                _settingsStore.ClearProviderApiKey();
+            else
+                _settingsStore.SaveProviderApiKey(setupApiKey, AllowPlaintextTokenFallback);
             RefreshManagedGatewayStateCore();
+            ShowSettingsWarningIfNeeded();
             AddSystemMessageCore("Local setup completed.");
             await StartLocalGatewayCoreAsync(connectAfterStart: true);
         }

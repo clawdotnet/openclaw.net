@@ -10,11 +10,16 @@ public sealed class SettingsStore
         WriteIndented = true
     };
     private readonly ProtectedTokenStore _tokenStore;
+    private readonly ProtectedTokenStore _providerKeyStore;
+    private readonly string _providerKeyMarkerPath;
 
     public string SettingsPath { get; }
     public string? LastWarning { get; private set; }
 
-    public SettingsStore(string? baseDir = null, ProtectedTokenStore? tokenStore = null)
+    public SettingsStore(
+        string? baseDir = null,
+        ProtectedTokenStore? tokenStore = null,
+        ProtectedTokenStore? providerKeyStore = null)
     {
         var dir = baseDir ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -22,6 +27,9 @@ public sealed class SettingsStore
             "Companion");
         SettingsPath = Path.Combine(dir, "settings.json");
         _tokenStore = tokenStore ?? new ProtectedTokenStore(dir);
+        var providerKeyDir = Path.Combine(dir, "provider-key");
+        _providerKeyStore = providerKeyStore ?? new ProtectedTokenStore(providerKeyDir);
+        _providerKeyMarkerPath = Path.Combine(providerKeyDir, "stored.marker");
     }
 
     public CompanionSettings Load()
@@ -85,6 +93,31 @@ public sealed class SettingsStore
         LastWarning = warning;
     }
 
+    public string? LoadProviderApiKey(bool allowPlaintextFallback)
+    {
+        if (!File.Exists(_providerKeyMarkerPath))
+            return null;
+
+        var providerApiKey = _providerKeyStore.LoadToken(allowPlaintextFallback);
+        LastWarning = _providerKeyStore.LastWarning;
+        return providerApiKey;
+    }
+
+    public bool SaveProviderApiKey(string providerApiKey, bool allowPlaintextFallback)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(_providerKeyMarkerPath)!);
+        File.WriteAllText(_providerKeyMarkerPath, "stored");
+        var saved = _providerKeyStore.SaveToken(providerApiKey, allowPlaintextFallback, out var warning);
+        LastWarning = warning;
+        return saved;
+    }
+
+    public void ClearProviderApiKey()
+    {
+        _providerKeyStore.ClearToken();
+        TryDelete(_providerKeyMarkerPath);
+    }
+
     private static string? TryReadLegacyAuthToken(string json, bool rememberToken)
     {
         if (!rememberToken)
@@ -104,5 +137,19 @@ public sealed class SettingsStore
         }
 
         return null;
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 }

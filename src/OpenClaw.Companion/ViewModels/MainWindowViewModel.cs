@@ -131,6 +131,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             SetupWorkspacePath = string.IsNullOrWhiteSpace(settings.SetupWorkspacePath)
                 ? _managedGateway.WorkspacePath
                 : settings.SetupWorkspacePath;
+            _managedGateway.SetProviderApiKey(_settingsStore.LoadProviderApiKey(settings.AllowPlaintextTokenFallback));
             ApplyEnvironmentSettings();
         }
         finally
@@ -175,15 +176,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     private static string ConvertBaseUrlToWebSocketUrl(string baseUrl)
-    {
-        if (!Uri.TryCreate(baseUrl.TrimEnd('/') + "/ws", UriKind.Absolute, out var uri))
-            return baseUrl;
+        => ManagedGatewayService.BuildWebSocketUrl(baseUrl);
 
-        var builder = new UriBuilder(uri)
+    public void ReportLocalGatewayInitializationFailure(Exception? exception)
+    {
+        var detail = exception?.GetBaseException().Message ?? "Unknown error.";
+        Dispatcher.UIThread.Post(() =>
         {
-            Scheme = uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ? "wss" : "ws"
-        };
-        return builder.Uri.ToString();
+            LocalGatewayStatus = $"Local gateway initialization failed: {detail}";
+            AddSystemMessageCore($"Local gateway initialization failed: {detail}");
+        });
     }
 
     private void HandleInboundText(string payload)
