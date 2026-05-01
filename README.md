@@ -44,7 +44,7 @@ When the gateway finishes startup it now prints explicit phase markers, a final 
 
 The root URL redirects to `/chat`. For the full first-run walkthrough (including the "First 10 Minutes" runbook and debugging flow), see [docs/QUICKSTART.md](docs/QUICKSTART.md). For the project shape and repository map before changing code, see [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 
-For the lowest-friction desktop start, download the platform desktop bundle from GitHub Releases instead of cloning the repo. The desktop bundle includes Companion, the standard NativeAOT gateway, and the NativeAOT CLI; Companion's **Setup** tab can write the local config, start the bundled gateway, and connect to it. See [docs/RELEASES.md](docs/RELEASES.md).
+For the lowest-friction desktop start, download the platform desktop bundle from [GitHub Releases](https://github.com/clawdotnet/openclaw.net/releases/latest) instead of cloning the repo. The desktop bundle includes Companion, the standard NativeAOT gateway, and the NativeAOT CLI; Companion's **Setup** tab can write the local config, start the bundled gateway, and connect to it. See [docs/RELEASES.md](docs/RELEASES.md).
 
 If you want a direct gateway fallback instead of the full CLI onboarding flow, run:
 

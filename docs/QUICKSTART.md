@@ -43,13 +43,13 @@ dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart
 
 ## Prebuilt GitHub Release Downloads
 
-For non-technical desktop users, start from a GitHub Release desktop bundle instead of a source checkout or Actions artifact.
+For non-technical desktop users, start from the [latest GitHub Release](https://github.com/clawdotnet/openclaw.net/releases/latest) desktop bundle instead of a source checkout or Actions artifact.
 
 Download the matching asset:
 
-- `openclaw-desktop-win-x64.zip`
-- `openclaw-desktop-osx-arm64.zip`
-- `openclaw-desktop-linux-x64.zip`
+- Windows: [`openclaw-desktop-win-x64.zip`](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-win-x64.zip)
+- Apple Silicon macOS: [`openclaw-desktop-osx-arm64.zip`](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-osx-arm64.zip)
+- Linux: [`openclaw-desktop-linux-x64.zip`](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-linux-x64.zip)
 
 Extract the archive and launch Companion from the `companion` folder. Open the **Setup** tab, enter the provider/model/key or choose Ollama, then click **Set Up and Start**. Companion writes the local config, starts the bundled gateway on `127.0.0.1`, and connects to it.
 
@@ -58,12 +58,12 @@ Current Windows and macOS archives are unsigned until signing/notarization secre
 Operators can still download standalone AOT archives from the same release:
 
 ```bash
-gh release download <tag> \
+gh release download \
   --repo clawdotnet/openclaw.net \
   --pattern 'openclaw-gateway-standard-aot-linux-x64.zip' \
   --dir ./openclaw-gateway-aot
 
-gh release download <tag> \
+gh release download \
   --repo clawdotnet/openclaw.net \
   --pattern 'openclaw-cli-aot-linux-x64.zip' \
   --dir ./openclaw-cli-aot
