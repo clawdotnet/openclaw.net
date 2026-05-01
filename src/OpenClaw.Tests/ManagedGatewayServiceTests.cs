@@ -1,4 +1,3 @@
-using System.Net;
 using OpenClaw.Companion.Services;
 using Xunit;
 
@@ -10,21 +9,21 @@ public sealed class ManagedGatewayServiceTests : IDisposable
 
     public ManagedGatewayServiceTests()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), "openclaw-managed-gateway-tests", Guid.NewGuid().ToString("N"));
+        _tempDir = Path.Join(Path.GetTempPath(), "openclaw-managed-gateway-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempDir);
     }
 
     [Fact]
     public void ResolveExecutables_FindsReleaseSiblingLayout()
     {
-        var companionDir = Path.Combine(_tempDir, "companion");
-        var gatewayDir = Path.Combine(_tempDir, "gateway");
-        var cliDir = Path.Combine(_tempDir, "cli");
+        var companionDir = Path.Join(_tempDir, "companion");
+        var gatewayDir = Path.Join(_tempDir, "gateway");
+        var cliDir = Path.Join(_tempDir, "cli");
         Directory.CreateDirectory(companionDir);
         Directory.CreateDirectory(gatewayDir);
         Directory.CreateDirectory(cliDir);
-        File.WriteAllText(Path.Combine(gatewayDir, BinaryName("OpenClaw.Gateway")), "");
-        File.WriteAllText(Path.Combine(cliDir, BinaryName("openclaw")), "");
+        File.WriteAllText(Path.Join(gatewayDir, BinaryName("OpenClaw.Gateway")), "");
+        File.WriteAllText(Path.Join(cliDir, BinaryName("openclaw")), "");
 
         var gateway = ManagedGatewayService.ResolveGatewayExecutable(companionDir);
         var cli = ManagedGatewayService.ResolveCliExecutable(companionDir);
@@ -38,7 +37,7 @@ public sealed class ManagedGatewayServiceTests : IDisposable
     [Fact]
     public void WebSocketUrl_UsesConfiguredPort()
     {
-        var configPath = Path.Combine(_tempDir, "openclaw.settings.json");
+        var configPath = Path.Join(_tempDir, "openclaw.settings.json");
         File.WriteAllText(configPath, """
         {
           "OpenClaw": {
@@ -57,7 +56,7 @@ public sealed class ManagedGatewayServiceTests : IDisposable
     [Fact]
     public void WebSocketUrl_BracketsIpv6BindAddress()
     {
-        var configPath = Path.Combine(_tempDir, "openclaw.settings.json");
+        var configPath = Path.Join(_tempDir, "openclaw.settings.json");
         File.WriteAllText(configPath, """
         {
           "OpenClaw": {
@@ -97,24 +96,22 @@ public sealed class ManagedGatewayServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Dispose_DoesNotDisposeInjectedHttpClient()
+    public void Dispose_DoesNotDisposeInjectedHttpClient()
     {
-        using var httpClient = new HttpClient(new StaticHttpMessageHandler(HttpStatusCode.OK));
+        using var httpClient = new TrackingHttpClient();
         using (new ManagedGatewayService(_tempDir, httpClient))
         {
         }
 
-        using var response = await httpClient.GetAsync("http://example.test/health");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(httpClient.WasDisposed);
     }
 
     [Fact]
     public async Task RunSetupAsync_RequiresApiKeyForRemoteProviders()
     {
-        var cliDir = Path.Combine(_tempDir, "cli");
+        var cliDir = Path.Join(_tempDir, "cli");
         Directory.CreateDirectory(cliDir);
-        File.WriteAllText(Path.Combine(cliDir, BinaryName("openclaw")), "");
+        File.WriteAllText(Path.Join(cliDir, BinaryName("openclaw")), "");
         using var service = new ManagedGatewayService(_tempDir);
 
         var result = await service.RunSetupAsync(new ManagedGatewaySetupRequest(
@@ -122,8 +119,8 @@ public sealed class ManagedGatewayServiceTests : IDisposable
             "gpt-4o",
             ApiKey: null,
             ModelPresetId: null,
-            WorkspacePath: Path.Combine(_tempDir, "workspace"),
-            ConfigPath: Path.Combine(_tempDir, "config.json")), CancellationToken.None);
+            WorkspacePath: Path.Join(_tempDir, "workspace"),
+            ConfigPath: Path.Join(_tempDir, "config.json")), CancellationToken.None);
 
         Assert.False(result.IsSuccess);
         Assert.Contains("API key", result.Message, StringComparison.OrdinalIgnoreCase);
@@ -135,9 +132,9 @@ public sealed class ManagedGatewayServiceTests : IDisposable
         if (OperatingSystem.IsWindows())
             return;
 
-        var cliDir = Path.Combine(_tempDir, "cli");
+        var cliDir = Path.Join(_tempDir, "cli");
         Directory.CreateDirectory(cliDir);
-        var cliPath = Path.Combine(cliDir, BinaryName("openclaw"));
+        var cliPath = Path.Join(cliDir, BinaryName("openclaw"));
         File.WriteAllText(cliPath, """
         #!/usr/bin/env sh
         printf '%s\n' "$@" > "$OPENCLAW_ARG_CAPTURE_PATH"
@@ -150,8 +147,8 @@ public sealed class ManagedGatewayServiceTests : IDisposable
             UnixFileMode.UserWrite |
             UnixFileMode.UserExecute);
 
-        var argCapturePath = Path.Combine(_tempDir, "args.txt");
-        var envCapturePath = Path.Combine(_tempDir, "env.txt");
+        var argCapturePath = Path.Join(_tempDir, "args.txt");
+        var envCapturePath = Path.Join(_tempDir, "env.txt");
         var previousProviderKey = Environment.GetEnvironmentVariable("OPENCLAW_MODEL_PROVIDER_KEY");
         var previousArgCapturePath = Environment.GetEnvironmentVariable("OPENCLAW_ARG_CAPTURE_PATH");
         var previousEnvCapturePath = Environment.GetEnvironmentVariable("OPENCLAW_ENV_CAPTURE_PATH");
@@ -167,8 +164,8 @@ public sealed class ManagedGatewayServiceTests : IDisposable
                 "gpt-4o",
                 ApiKey: "super-secret",
                 ModelPresetId: null,
-                WorkspacePath: Path.Combine(_tempDir, "workspace"),
-                ConfigPath: Path.Combine(_tempDir, "config.json")), CancellationToken.None);
+                WorkspacePath: Path.Join(_tempDir, "workspace"),
+                ConfigPath: Path.Join(_tempDir, "config.json")), CancellationToken.None);
 
             var args = File.ReadAllText(argCapturePath);
             var childProviderKey = File.ReadAllText(envCapturePath);
@@ -193,9 +190,9 @@ public sealed class ManagedGatewayServiceTests : IDisposable
         if (OperatingSystem.IsWindows())
             return;
 
-        var cliDir = Path.Combine(_tempDir, "cli");
+        var cliDir = Path.Join(_tempDir, "cli");
         Directory.CreateDirectory(cliDir);
-        var cliPath = Path.Combine(cliDir, BinaryName("openclaw"));
+        var cliPath = Path.Join(cliDir, BinaryName("openclaw"));
         File.WriteAllText(cliPath, """
         #!/usr/bin/env sh
         sleep 5
@@ -215,8 +212,8 @@ public sealed class ManagedGatewayServiceTests : IDisposable
             "gpt-4o",
             ApiKey: "super-secret",
             ModelPresetId: null,
-            WorkspacePath: Path.Combine(_tempDir, "workspace"),
-            ConfigPath: Path.Combine(_tempDir, "config.json")), cts.Token));
+            WorkspacePath: Path.Join(_tempDir, "workspace"),
+            ConfigPath: Path.Join(_tempDir, "config.json")), cts.Token));
     }
 
     [Fact]
@@ -225,9 +222,9 @@ public sealed class ManagedGatewayServiceTests : IDisposable
         if (OperatingSystem.IsWindows())
             return;
 
-        var gatewayDir = Path.Combine(_tempDir, "gateway");
+        var gatewayDir = Path.Join(_tempDir, "gateway");
         Directory.CreateDirectory(gatewayDir);
-        var gatewayPath = Path.Combine(gatewayDir, BinaryName("OpenClaw.Gateway"));
+        var gatewayPath = Path.Join(gatewayDir, BinaryName("OpenClaw.Gateway"));
         File.WriteAllText(gatewayPath, """
         #!/usr/bin/env sh
         printf '%s' "$OPENCLAW_MODEL_PROVIDER_KEY" > "$OPENCLAW_GATEWAY_ENV_CAPTURE_PATH"
@@ -239,7 +236,7 @@ public sealed class ManagedGatewayServiceTests : IDisposable
             UnixFileMode.UserWrite |
             UnixFileMode.UserExecute);
 
-        var configPath = Path.Combine(_tempDir, "openclaw.settings.json");
+        var configPath = Path.Join(_tempDir, "openclaw.settings.json");
         File.WriteAllText(configPath, """
         {
           "OpenClaw": {
@@ -249,12 +246,12 @@ public sealed class ManagedGatewayServiceTests : IDisposable
         }
         """);
 
-        var envCapturePath = Path.Combine(_tempDir, "gateway-env.txt");
+        var envCapturePath = Path.Join(_tempDir, "gateway-env.txt");
         var previousEnvCapturePath = Environment.GetEnvironmentVariable("OPENCLAW_GATEWAY_ENV_CAPTURE_PATH");
         Environment.SetEnvironmentVariable("OPENCLAW_GATEWAY_ENV_CAPTURE_PATH", envCapturePath);
         try
         {
-            using var httpClient = new HttpClient(new StaticHttpMessageHandler(HttpStatusCode.ServiceUnavailable));
+            using var httpClient = new HttpClient(new FailingHttpMessageHandler());
             using var service = new ManagedGatewayService(_tempDir, httpClient, configPath: configPath);
             service.SetProviderApiKey("super-secret");
 
@@ -278,12 +275,14 @@ public sealed class ManagedGatewayServiceTests : IDisposable
     private static string BinaryName(string name)
         => OperatingSystem.IsWindows() ? name + ".exe" : name;
 
-    private sealed class StaticHttpMessageHandler(HttpStatusCode statusCode) : HttpMessageHandler
+    private sealed class TrackingHttpClient : HttpClient
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        public bool WasDisposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
         {
-            var response = new HttpResponseMessage(statusCode);
-            return Task.FromResult(response);
+            WasDisposed = true;
+            base.Dispose(disposing);
         }
     }
 
@@ -291,5 +290,11 @@ public sealed class ManagedGatewayServiceTests : IDisposable
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromCanceled<HttpResponseMessage>(cancellationToken);
+    }
+
+    private sealed class FailingHttpMessageHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromException<HttpResponseMessage>(new HttpRequestException("unhealthy"));
     }
 }

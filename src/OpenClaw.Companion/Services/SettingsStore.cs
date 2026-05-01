@@ -22,16 +22,16 @@ public sealed class SettingsStore
         ProtectedTokenStore? tokenStore = null,
         ProtectedTokenStore? providerKeyStore = null)
     {
-        var dir = baseDir ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "OpenClaw",
+        var defaultDir = Path.Join(
+            Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OpenClaw"),
             "Companion");
-        SettingsPath = Path.Combine(dir, "settings.json");
+        var dir = baseDir ?? defaultDir;
+        SettingsPath = Path.Join(dir, "settings.json");
         _tokenStore = tokenStore ?? new ProtectedTokenStore(dir);
-        var providerKeyDir = Path.Combine(dir, "provider-key");
+        var providerKeyDir = Path.Join(dir, "provider-key");
         _providerKeyStore = providerKeyStore ?? new ProtectedTokenStore(providerKeyDir);
         var providerKeyMarkerDirectory = Path.GetDirectoryName(_providerKeyStore.FallbackPath) ?? providerKeyDir;
-        _providerKeyMarkerPath = Path.Combine(providerKeyMarkerDirectory, "stored.marker");
+        _providerKeyMarkerPath = Path.Join(providerKeyMarkerDirectory, "stored.marker");
     }
 
     public CompanionSettings Load()

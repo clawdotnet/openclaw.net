@@ -200,7 +200,11 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
         {
             return false;
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
         {
             return false;
         }
