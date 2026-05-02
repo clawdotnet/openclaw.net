@@ -236,11 +236,13 @@ You can lock down the agent via the `Tooling` config block:
       "AllowedWriteRoots": ["/Users/telli/safe-dir"],
       "RequireToolApproval": true,
       "ApprovalRequiredTools": ["shell", "write_file"],
-      "EnableBrowserTool": true
+      "EnableBrowserTool": false
     }
   }
 }
 ```
+
+Setup-generated local profiles keep the browser tool disabled unless you explicitly configure a non-local execution backend or sandbox. Turn `EnableBrowserTool` on only after that backend is available.
 
 If you expose OpenClaw to the internet (a non-loopback bind address like `0.0.0.0`), the Gateway will **refuse to start** unless you explicitly harden these settings or opt-out of the safety checks.
 

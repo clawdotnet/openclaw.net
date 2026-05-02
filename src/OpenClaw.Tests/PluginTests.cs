@@ -225,6 +225,67 @@ public class PluginDiscoveryTests : IDisposable
         Assert.Contains(report.Diagnostics, diagnostic => diagnostic.Code == "entry_outside_root");
     }
 
+    [Fact]
+    public void DiscoverWithDiagnostics_ManifestEntrySymlinkOutsideRoot_IsRejected()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var pluginDir = Path.Combine(_tempDir, "symlink-plugin");
+        var outsideDir = Path.Combine(_tempDir, "outside");
+        Directory.CreateDirectory(pluginDir);
+        Directory.CreateDirectory(outsideDir);
+        File.WriteAllText(Path.Combine(pluginDir, "openclaw.plugin.json"), """{"id":"symlink-plugin"}""");
+        File.WriteAllText(Path.Combine(outsideDir, "index.js"), "export default function() {}");
+        File.CreateSymbolicLink(Path.Combine(pluginDir, "index.js"), Path.Combine(outsideDir, "index.js"));
+
+        var config = new PluginsConfig
+        {
+            Load = new PluginLoadConfig { Paths = [pluginDir] }
+        };
+
+        var result = PluginDiscovery.DiscoverWithDiagnostics(config);
+
+        Assert.Empty(result.Plugins);
+        var report = Assert.Single(result.Reports);
+        Assert.Contains(report.Diagnostics, diagnostic => diagnostic.Code == "entry_outside_root");
+    }
+
+    [Fact]
+    public void DiscoverWithDiagnostics_PackageEntryUnderSymlinkedParentOutsideRoot_IsRejected()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var pluginDir = Path.Combine(_tempDir, "packed-symlink-plugin");
+        var outsideDir = Path.Combine(_tempDir, "outside-pack");
+        Directory.CreateDirectory(pluginDir);
+        Directory.CreateDirectory(outsideDir);
+        File.WriteAllText(Path.Combine(outsideDir, "entry.js"), "export default function() {}");
+        Directory.CreateSymbolicLink(Path.Combine(pluginDir, "linked"), outsideDir);
+        File.WriteAllText(
+            Path.Combine(pluginDir, "package.json"),
+            """
+            {
+              "name": "packed-symlink-plugin",
+              "openclaw": {
+                "extensions": ["linked/entry.js"]
+              }
+            }
+            """);
+
+        var config = new PluginsConfig
+        {
+            Load = new PluginLoadConfig { Paths = [pluginDir] }
+        };
+
+        var result = PluginDiscovery.DiscoverWithDiagnostics(config);
+
+        Assert.Empty(result.Plugins);
+        var report = Assert.Single(result.Reports);
+        Assert.Contains(report.Diagnostics, diagnostic => diagnostic.Code == "entry_outside_root");
+    }
+
     private static DiscoveredPlugin MakePlugin(string id, string? kind = null)
         => new()
         {

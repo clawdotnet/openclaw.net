@@ -75,6 +75,7 @@ public sealed class ManagedGatewayServiceTests : IDisposable
     [Theory]
     [InlineData("https://example.test", "wss://example.test/ws")]
     [InlineData("http://example.test/root", "ws://example.test/root/ws")]
+    [InlineData("https://example.test/root?token=abc#frag", "wss://example.test/root/ws")]
     [InlineData("wss://example.test/ws", "wss://example.test/ws")]
     [InlineData("wss://example.test/ws/", "wss://example.test/ws")]
     [InlineData("ws://example.test/root/ws", "ws://example.test/root/ws")]

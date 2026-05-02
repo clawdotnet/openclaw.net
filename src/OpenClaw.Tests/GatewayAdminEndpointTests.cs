@@ -39,6 +39,7 @@ using OpenClaw.Gateway.Composition;
 using OpenClaw.Gateway.Endpoints;
 using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Mcp;
+using OpenClaw.Gateway.Models;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -1824,6 +1825,68 @@ public sealed class GatewayAdminEndpointTests
 
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
         Assert.Equal("Request too large.", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task ChatCompletions_DefaultProfileWithoutTools_RunsPromptOnlyWhenNoPresetRequested()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, ConfigureNoToolDefaultProfile);
+        Session? capturedSession = null;
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns(callInfo =>
+            {
+                capturedSession = callInfo.Arg<Session>();
+                return Task.FromResult("plain chat ok");
+            });
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        {
+            Content = JsonContent("""{"messages":[{"role":"user","content":"hello"}]}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(capturedSession);
+        Assert.Single(capturedSession!.RouteAllowedTools);
+        Assert.Contains("no_implicit_tools", capturedSession.RouteAllowedTools[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ChatCompletions_DefaultProfileWithoutTools_KeepsPresetRequestsExplicit()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, ConfigureNoToolDefaultProfile);
+        Session? capturedSession = null;
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns(callInfo =>
+            {
+                capturedSession = callInfo.Arg<Session>();
+                return Task.FromResult("preset chat ok");
+            });
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        {
+            Content = JsonContent("""{"messages":[{"role":"user","content":"use the configured preset"}]}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        request.Headers.Add("X-OpenClaw-Preset", "web");
+
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(capturedSession);
+        Assert.Empty(capturedSession!.RouteAllowedTools);
     }
 
     [Fact]
@@ -4601,6 +4664,29 @@ public sealed class GatewayAdminEndpointTests
     private static StringContent JsonContent(string json)
         => new(json, Encoding.UTF8, "application/json");
 
+    private static void ConfigureNoToolDefaultProfile(GatewayConfig config)
+    {
+        config.Models.DefaultProfile = "ollama-general";
+        config.Models.Profiles =
+        [
+            new ModelProfileConfig
+            {
+                Id = "ollama-general",
+                Provider = "ollama",
+                Model = "llama3.2",
+                BaseUrl = "http://127.0.0.1:11434",
+                Capabilities = new ModelCapabilities
+                {
+                    SupportsTools = false,
+                    SupportsStreaming = true,
+                    SupportsSystemMessages = true,
+                    MaxContextTokens = 131_072,
+                    MaxOutputTokens = 4_096
+                }
+            }
+        ];
+    }
+
     private static async Task<HttpResponseMessage> PostWebhookAsync(HttpClient client, string name, string body, string secret)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/webhooks/{name}")
@@ -5018,6 +5104,9 @@ public sealed class GatewayAdminEndpointTests
             PluginReports = Array.Empty<PluginLoadReport>(),
             Operations = new RuntimeOperationsState
             {
+                ModelProfiles = new ConfiguredModelProfileRegistry(
+                    config,
+                    NullLogger<ConfiguredModelProfileRegistry>.Instance),
                 ProviderPolicies = providerPolicies,
                 ProviderRegistry = providerRegistry,
                 LlmExecution = llmExecution,

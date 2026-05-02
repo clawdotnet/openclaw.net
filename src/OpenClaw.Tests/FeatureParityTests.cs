@@ -128,6 +128,75 @@ public class FeatureParityTests
     }
 
     [Fact]
+    public async Task RunStreamingAsync_NonStreamingTool_YieldsToolStartedBeforeToolCompletes()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        var memory = Substitute.For<IMemoryStore>();
+
+        var toolCallUpdates = new[]
+        {
+            new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent>
+            {
+                new FunctionCallContent("call1", "slow_tool", new Dictionary<string, object?> { ["id"] = "1" })
+            })
+        };
+        var finalUpdates = new[]
+        {
+            new ChatResponseUpdate(ChatRole.Assistant, "done")
+        };
+
+        var streamCallCount = 0;
+        chatClient.GetStreamingResponseAsync(
+            Arg.Any<IList<ChatMessage>>(),
+            Arg.Any<ChatOptions>(),
+            Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                var call = Interlocked.Increment(ref streamCallCount);
+                return (call == 1 ? toolCallUpdates : finalUpdates).ToAsyncEnumerable();
+            });
+
+        var executeCalled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseTool = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var slowTool = Substitute.For<ITool>();
+        slowTool.Name.Returns("slow_tool");
+        slowTool.Description.Returns("A slow tool");
+        slowTool.ParameterSchema.Returns("""{"type":"object","properties":{"id":{"type":"string"}}}""");
+        slowTool.ExecuteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<string>(CompleteToolAfterReleaseAsync(executeCalled, releaseTool.Task)));
+
+        var agent = new AgentRuntime(chatClient, [slowTool], memory, DefaultConfig,
+            maxHistoryTurns: 10,
+            parallelToolExecution: false);
+        var session = CreateSession();
+
+        await using var enumerator = agent.RunStreamingAsync(session, "Run a slow tool", CancellationToken.None)
+            .GetAsyncEnumerator();
+
+        var firstMove = enumerator.MoveNextAsync().AsTask();
+        var completed = await Task.WhenAny(firstMove, Task.Delay(TimeSpan.FromSeconds(2)));
+
+        Assert.Same(firstMove, completed);
+        Assert.True(await firstMove);
+        Assert.Equal(AgentStreamEventType.ToolStart, enumerator.Current.Type);
+        Assert.Equal("slow_tool", enumerator.Current.ToolName);
+        Assert.False(executeCalled.Task.IsCompleted);
+
+        releaseTool.SetResult(true);
+
+        var remaining = new List<AgentStreamEvent>();
+        while (await enumerator.MoveNextAsync())
+            remaining.Add(enumerator.Current);
+
+        Assert.True(await executeCalled.Task);
+        Assert.Contains(remaining, evt =>
+            evt.Type == AgentStreamEventType.ToolResult
+            && evt.ToolName == "slow_tool"
+            && evt.Content == "tool result");
+        Assert.Contains(remaining, evt => evt.Type == AgentStreamEventType.Done);
+    }
+
+    [Fact]
     public async Task RunAsync_EstimatedTokenAdmissionControl_RejectsBeforeCallingLlm()
     {
         var chatClient = Substitute.For<IChatClient>();
@@ -970,6 +1039,13 @@ public class FeatureParityTests
 #pragma warning disable CS0162 // Unreachable code detected
         yield break;
 #pragma warning restore CS0162
+    }
+
+    private static async Task<string> CompleteToolAfterReleaseAsync(TaskCompletionSource<bool> executeCalled, Task releaseTool)
+    {
+        executeCalled.SetResult(true);
+        await releaseTool;
+        return "tool result";
     }
 }
 

@@ -254,11 +254,32 @@ public static class PluginDiscovery
             return;
         }
 
+        if (!TryResolveContainedPath(pluginRoot, Path.GetRelativePath(pluginRoot, entryPath), out var containedEntryPath))
+        {
+            result.Reports.Add(new PluginLoadReport
+            {
+                PluginId = manifest.Id,
+                SourcePath = Path.GetFullPath(pluginRoot),
+                EntryPath = Path.GetFullPath(entryPath),
+                Loaded = false,
+                Diagnostics =
+                [
+                    new PluginCompatibilityDiagnostic
+                    {
+                        Code = "entry_outside_root",
+                        Message = $"Plugin entry file for '{manifest.Id}' resolves outside the plugin root.",
+                        Path = Path.GetFullPath(entryPath)
+                    }
+                ]
+            });
+            return;
+        }
+
         result.Plugins.Add(new DiscoveredPlugin
         {
             Manifest = manifest,
             RootPath = Path.GetFullPath(pluginRoot),
-            EntryPath = Path.GetFullPath(entryPath)
+            EntryPath = containedEntryPath
         });
     }
 
@@ -497,30 +518,61 @@ public static class PluginDiscovery
     }
 
     /// <summary>
-    /// Resolves the real filesystem path, following symlinks.
-    /// Falls back to the normalized path when the target does not exist.
+    /// Resolves the real filesystem path, following symlinked ancestors and final targets.
+    /// Falls back to the normalized segment path when a segment does not exist.
     /// </summary>
     private static string ResolveRealPath(string path)
     {
+        var full = Path.GetFullPath(path);
+        var root = Path.GetPathRoot(full);
+        if (string.IsNullOrEmpty(root))
+            return full;
+
+        var current = root;
+        var remaining = full[root.Length..];
+        var segments = remaining.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var segment in segments)
+        {
+            current = Path.Combine(current, segment);
+            var resolved = TryResolveLinkTarget(current);
+            if (resolved is not null)
+                current = ResolveRealPath(resolved);
+        }
+
+        return Path.GetFullPath(current);
+    }
+
+    private static string? TryResolveLinkTarget(string path)
+    {
         try
         {
-            if (File.Exists(path))
-            {
-                var resolved = File.ResolveLinkTarget(path, returnFinalTarget: true);
-                return resolved?.FullName ?? path;
-            }
-
-            if (Directory.Exists(path))
-            {
-                var resolved = Directory.ResolveLinkTarget(path, returnFinalTarget: true);
-                return resolved?.FullName ?? path;
-            }
+            var target = File.ResolveLinkTarget(path, returnFinalTarget: true);
+            if (target is not null)
+                return target.FullName;
         }
-        catch
+        catch (IOException)
         {
-            // Symlink resolution failed — fall through to the unresolved path.
+        }
+        catch (UnauthorizedAccessException)
+        {
         }
 
-        return path;
+        try
+        {
+            var target = Directory.ResolveLinkTarget(path, returnFinalTarget: true);
+            if (target is not null)
+                return target.FullName;
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+
+        return null;
     }
 }

@@ -107,6 +107,8 @@ You explicitly do **not** need any of these to get started:
 - .NET 10 SDK
 - Optional: Node.js 20+ if you want upstream-style TS/JS plugin support
 
+The first full `dotnet test` run may download Playwright browser assets for browser-tool coverage. The test suite uses Playwright's normal browser cache after that first install; set `OPENCLAW_TEST_ISOLATE_PLAYWRIGHT_BROWSERS=true` only when you intentionally want an isolated test browser install.
+
 Examples below use `openclaw ...`. From a source checkout, replace that with `dotnet run --project src/OpenClaw.Cli -c Release -- ...`.
 
 For a first run from source, prefer the generated external config from `openclaw setup`. Do not start by relying on the checked-in `src/OpenClaw.Gateway/appsettings.json` unless you intentionally want to debug raw repo defaults.
@@ -182,7 +184,7 @@ openclaw models presets
 openclaw models doctor
 ```
 
-The doctor now warns when an Ollama profile still points at `/v1` or when a local agentic profile is missing a deterministic fallback.
+Plain `openclaw run "hello"` requests work as prompt-only chat with non-tool Ollama profiles when no explicit tool preset is requested. Tool-heavy routes and explicit presets still need a tool-capable model profile or configured fallback. The doctor now warns when an Ollama profile still points at `/v1` or when a local agentic profile is missing a deterministic fallback.
 
 After the first successful run, use the maintenance surface to keep the install healthy without touching user-authored prompt files:
 

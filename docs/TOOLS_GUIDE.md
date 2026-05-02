@@ -56,6 +56,7 @@ Allows basic file operations.
 Allows the agent to navigate and interact with websites using Playwright.
 - **Config**: `OpenClaw:Tooling:EnableBrowserTool` (bool)
 - **Options**: `BrowserHeadless` (default: true), `BrowserTimeoutSeconds` (default: 30).
+- **Runtime note**: source/setup-generated local profiles disable this tool by default because the NativeAOT-friendly gateway does not run local Playwright execution unless dynamic code or a configured non-local execution backend is available. Enable it only after configuring an execution backend or sandbox for browser automation.
 
 ### 4. Memory Note Tool (`memory`)
 Stores and retrieves lightweight notes in the configured memory store.

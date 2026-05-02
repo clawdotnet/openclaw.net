@@ -33,46 +33,32 @@ internal static class ToolPathPolicy
     }
 
     /// <summary>
-    /// Resolves the real filesystem path, following symlinks.
-    /// For paths that don't exist yet (e.g. write targets), resolves the deepest
-    /// existing ancestor and appends the remaining segments.
+    /// Resolves the real filesystem path, following symlinked ancestors and final targets.
+    /// For paths that do not exist yet, existing ancestors are still resolved and the
+    /// remaining segments are appended.
     /// </summary>
     internal static string ResolveRealPath(string path)
     {
         var full = Path.GetFullPath(path);
-
-        // Try resolving as a symlink first, without checking existence.
-        // This eliminates the TOCTOU window between File.Exists and ResolveLinkTarget.
-        var resolved = TryResolveLinkTarget(full);
-        if (resolved is not null)
-            return resolved;
-
-        // Not a symlink — if the path exists as-is, return it directly
-        if (File.Exists(full) || Directory.Exists(full))
+        var root = Path.GetPathRoot(full);
+        if (string.IsNullOrEmpty(root))
             return full;
 
-        // Path doesn't exist yet — resolve the deepest existing ancestor
-        // and append the remaining tail. This prevents writing through a
-        // symlinked parent directory.
-        var dir = Path.GetDirectoryName(full);
-        var tail = Path.GetFileName(full);
+        var current = root;
+        var remaining = full[root.Length..];
+        var segments = remaining.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries);
 
-        while (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+        foreach (var segment in segments)
         {
-            tail = Path.Combine(Path.GetFileName(dir), tail);
-            dir = Path.GetDirectoryName(dir);
+            current = Path.Combine(current, segment);
+            var resolved = TryResolveLinkTarget(current);
+            if (resolved is not null)
+                current = ResolveRealPath(resolved);
         }
 
-        if (!string.IsNullOrEmpty(dir))
-        {
-            if (IsPathRoot(dir))
-                return Path.Combine(dir, tail);
-
-            var realDir = TryResolveLinkTarget(dir) ?? dir;
-            return Path.Combine(realDir, tail);
-        }
-
-        return full;
+        return Path.GetFullPath(current);
     }
 
     /// <summary>
@@ -98,22 +84,6 @@ internal static class ToolPathPolicy
         catch (UnauthorizedAccessException) { }
 
         return null;
-    }
-
-    private static bool IsPathRoot(string path)
-    {
-        var root = Path.GetPathRoot(path);
-        if (string.IsNullOrEmpty(root))
-            return false;
-
-        var comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-
-        return string.Equals(
-            Path.TrimEndingDirectorySeparator(path),
-            Path.TrimEndingDirectorySeparator(root),
-            comparison);
     }
 
     private static bool IsUnderRoot(string fullPath, string fullRoot)

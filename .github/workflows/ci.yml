@@ -30,43 +30,29 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Restore standard targets
-        run: |
-          dotnet restore src/OpenClaw.Gateway && dotnet restore src/OpenClaw.Tests
-          dotnet restore src/OpenClaw.SemanticKernelAdapter
-          dotnet restore samples/OpenClaw.SemanticKernelInteropHost
+      - name: Restore solution
+        run: dotnet restore OpenClaw.Net.slnx
 
-      - name: Build standard targets
-        run: |
-          dotnet build --no-restore -c Release src/OpenClaw.Gateway && dotnet build --no-restore -c Release src/OpenClaw.Tests
-          dotnet build --no-restore -c Release src/OpenClaw.SemanticKernelAdapter
-          dotnet build --no-restore -c Release samples/OpenClaw.SemanticKernelInteropHost
+      - name: Build solution
+        run: dotnet build OpenClaw.Net.slnx --no-restore -c Release
 
       - name: Test standard targets
         run: dotnet test --no-build -c Release --verbosity normal --logger "trx;LogFileName=results.trx" src/OpenClaw.Tests
 
-      - name: Restore sandbox-enabled targets
-        run: |
-          dotnet restore src/OpenClaw.Gateway -p:OpenClawEnableOpenSandbox=true
-          dotnet restore src/OpenClaw.Tests -p:OpenClawEnableOpenSandbox=true
+      - name: Restore sandbox-enabled solution
+        run: dotnet restore OpenClaw.Net.slnx -p:OpenClawEnableOpenSandbox=true
 
-      - name: Build sandbox-enabled targets
-        run: |
-          dotnet build --no-restore -c Release -p:OpenClawEnableOpenSandbox=true src/OpenClaw.Gateway
-          dotnet build --no-restore -c Release -p:OpenClawEnableOpenSandbox=true src/OpenClaw.Tests
+      - name: Build sandbox-enabled solution
+        run: dotnet build OpenClaw.Net.slnx --no-restore -c Release -p:OpenClawEnableOpenSandbox=true
 
       - name: Test sandbox-enabled targets
         run: dotnet test --no-build -c Release -p:OpenClawEnableOpenSandbox=true --verbosity normal --logger "trx;LogFileName=results-sandbox.trx" src/OpenClaw.Tests
 
-      - name: Restore MAF-enabled targets
-        run: |
-          dotnet restore src/OpenClaw.Gateway -p:OpenClawEnableMafExperiment=true
-          dotnet restore src/OpenClaw.Tests -p:OpenClawEnableMafExperiment=true
+      - name: Restore MAF-enabled solution
+        run: dotnet restore OpenClaw.Net.slnx -p:OpenClawEnableMafExperiment=true
 
-      - name: Build MAF-enabled targets
-        run: |
-          dotnet build --no-restore -c Release -p:OpenClawEnableMafExperiment=true src/OpenClaw.Gateway
-          dotnet build --no-restore -c Release -p:OpenClawEnableMafExperiment=true src/OpenClaw.Tests
+      - name: Build MAF-enabled solution
+        run: dotnet build OpenClaw.Net.slnx --no-restore -c Release -p:OpenClawEnableMafExperiment=true
 
       - name: Test MAF-enabled targets
         run: dotnet test --no-build -c Release -p:OpenClawEnableMafExperiment=true --verbosity normal --logger "trx;LogFileName=results-maf.trx" src/OpenClaw.Tests
@@ -81,7 +67,7 @@ jobs:
   publish-aot:
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v4
 
@@ -93,30 +79,104 @@ jobs:
       - name: Install AOT prerequisites
         run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
 
-      - name: Publish and smoke-test NativeAOT binaries
+      - name: Publish and smoke-test standard NativeAOT binaries
         run: |
           chmod +x ./eng/verify-aot-smoke.sh
-          chmod +x ./eng/verify-aot-maf-smoke.sh
           ./eng/verify-aot-smoke.sh
+
+      - name: Publish and smoke-test MAF NativeAOT gateway
+        if: github.event_name != 'pull_request'
+        run: |
+          chmod +x ./eng/verify-aot-maf-smoke.sh
           ./eng/verify-aot-maf-smoke.sh
 
       - name: Upload standard gateway artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: gateway-standard-aot-linux-x64
           path: ./artifacts/aot/gateway/
 
       - name: Upload MAF-enabled gateway artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: gateway-maf-enabled-aot-linux-x64
           path: ./artifacts/aot-maf/gateway/
 
       - name: Upload CLI artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: openclaw-cli-aot-linux-x64
           path: ./artifacts/aot/cli/
+
+  macos-gateway-linker-probe:
+    needs: build-and-test
+    runs-on: macos-15
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Configure macOS Swift library path
+        shell: bash
+        run: |
+          set -euo pipefail
+          developer_dir="$(xcode-select -p)"
+          sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
+          library_paths=()
+          for candidate in \
+            "/usr/lib/swift" \
+            "$developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx" \
+            "$sdk_path/usr/lib/swift"; do
+            if [[ -d "$candidate" ]]; then
+              library_paths+=("$candidate")
+            fi
+          done
+          if [[ -n "${LIBRARY_PATH:-}" ]]; then
+            library_paths+=("$LIBRARY_PATH")
+          fi
+          joined="$(IFS=:; echo "${library_paths[*]}")"
+          echo "LIBRARY_PATH=$joined" >> "$GITHUB_ENV"
+          echo "Using macOS Swift library paths: $joined"
+
+      - name: Probe gateway NativeAOT without classic linker
+        id: probe
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/linker-probe
+          dotnet publish src/OpenClaw.Gateway/OpenClaw.Gateway.csproj \
+            -c Release \
+            -r osx-arm64 \
+            --self-contained true \
+            -p:PublishAot=true \
+            -p:OpenClawUseClassicMacLd=false \
+            -o artifacts/linker-probe/gateway \
+            2>&1 | tee artifacts/linker-probe/publish.log
+
+      - name: Report linker probe outcome
+        shell: bash
+        run: |
+          if [[ "${{ steps.probe.outcome }}" == "success" ]]; then
+            echo "::notice title=Gateway linked without classic linker::Remove the gateway OpenClawUseClassicMacLd default after validating release smoke coverage."
+          else
+            echo "::warning title=Gateway still needs classic linker::The no-classic-linker probe failed on macos-15; keep the scoped gateway fallback."
+          fi
+
+      - name: Upload linker probe log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-gateway-linker-probe
+          path: artifacts/linker-probe/
 
   publish-jit:
     needs: build-and-test

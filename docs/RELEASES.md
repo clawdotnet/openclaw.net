@@ -70,6 +70,22 @@ The workflow currently builds:
 
 The macOS runner label is intentionally ARM-native for the `osx-arm64` artifact. Add an Intel macOS row only if you want to support older Intel Macs and have a runner that can NativeAOT publish that RID reliably.
 
+### Companion Release Smoke
+
+Before publishing a public desktop release, run this manual smoke on at least one desktop bundle:
+
+1. Extract the desktop archive into a clean directory.
+2. Launch Companion from the `companion` folder.
+3. Use **Setup** with a temporary workspace and either a local Ollama model or a throwaway provider key.
+4. Confirm Companion writes config, starts the bundled gateway on `127.0.0.1`, and shows a connected state.
+5. Stop the managed gateway, start it again, and confirm Companion reconnects.
+6. Delete or corrupt the temporary config and confirm setup surfaces a clear recoverable error.
+7. Close Companion and confirm the managed gateway process exits.
+
+### macOS NativeAOT Linker Note
+
+The gateway project currently opts into Apple's classic linker for `osx-arm64` NativeAOT publishes because the new macOS arm64 linker can fail with an `ld::Fixup` assertion on the gateway binary. This may print a `-ld_classic is deprecated` warning during gateway publish. The CLI does not use this fallback by default. Scheduled/manual CI probes the gateway with `-p:OpenClawUseClassicMacLd=false`; remove the gateway opt-in when the Apple/.NET toolchain links the gateway reliably without it.
+
 ## CI Artifacts vs Releases
 
 Actions artifacts are useful for validating a commit, but they are not a user-friendly distribution channel. They can expire, may require GitHub access, and are harder for users to find. GitHub Releases are the supported download surface for normal users.

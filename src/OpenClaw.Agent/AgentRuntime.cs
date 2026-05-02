@@ -664,13 +664,41 @@ public sealed class AgentRuntime : IAgentRuntime
             }
             else
             {
-                (invocations, toolResults) = await ExecuteToolCallsAsync(
-                    toolCalls, session, turnCtx, isStreaming: true, approvalCallback, ct);
-
-                foreach (var inv in invocations)
+                if (_parallelToolExecution && toolCalls.Count > 1)
                 {
-                    yield return AgentStreamEvent.ToolStarted(inv.ToolName, inv.Arguments);
-                    yield return AgentStreamEvent.ToolCompleted(inv.ToolName, inv.Result ?? "");
+                    foreach (var call in toolCalls)
+                    {
+                        var argsJson = call.Arguments is not null
+                            ? JsonSerializer.Serialize(call.Arguments, CoreJsonContext.Default.IDictionaryStringObject)
+                            : "{}";
+                        yield return AgentStreamEvent.ToolStarted(call.Name, argsJson);
+                    }
+
+                    (invocations, toolResults) = await ExecuteToolCallsAsync(
+                        toolCalls, session, turnCtx, isStreaming: true, approvalCallback, ct);
+
+                    foreach (var inv in invocations)
+                        yield return CreateToolCompletedEvent(inv);
+                }
+                else
+                {
+                    invocations = new List<ToolInvocation>(toolCalls.Count);
+                    toolResults = new List<FunctionResultContent>(toolCalls.Count);
+
+                    foreach (var call in toolCalls)
+                    {
+                        var argsJson = call.Arguments is not null
+                            ? JsonSerializer.Serialize(call.Arguments, CoreJsonContext.Default.IDictionaryStringObject)
+                            : "{}";
+                        yield return AgentStreamEvent.ToolStarted(call.Name, argsJson);
+
+                        var (invocation, result) = await ExecuteSingleToolCallAsync(
+                            call, session, turnCtx, isStreaming: true, approvalCallback, ct, onDelta: null);
+                        invocations.Add(invocation);
+                        toolResults.Add(result);
+
+                        yield return CreateToolCompletedEvent(invocation);
+                    }
                 }
             }
 
@@ -697,6 +725,17 @@ public sealed class AgentRuntime : IAgentRuntime
         AppendContractSnapshot(session, "active");
         LogTurnComplete(turnCtx);
     }
+
+    private static AgentStreamEvent CreateToolCompletedEvent(ToolInvocation invocation) =>
+        AgentStreamEvent.ToolCompleted(
+            invocation.ToolName,
+            invocation.Result ?? "",
+            resultStatus: string.IsNullOrWhiteSpace(invocation.ResultStatus)
+                ? ToolResultStatuses.Completed
+                : invocation.ResultStatus!,
+            failureCode: invocation.FailureCode,
+            failureMessage: invocation.FailureMessage,
+            nextStep: invocation.NextStep);
 
     private async ValueTask TryInjectRecallAsync(List<ChatMessage> messages, string userMessage, CancellationToken ct)
     {
