@@ -1,13 +1,10 @@
-name: NuGet
+name: NuGet Packages
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       version:
-        description: "Package version to publish (for example 0.1.0)"
+        description: "Package version to pack (for example 0.1.0)"
         required: true
         type: string
 
@@ -17,7 +14,7 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  publish:
+  pack:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,10 +49,3 @@ jobs:
         with:
           name: nuget-packages-${{ env.PACKAGE_VERSION }}
           path: ./artifacts/nuget
-
-      - name: Publish to NuGet.org
-        run: |
-          dotnet nuget push "./artifacts/nuget/*.nupkg" \
-            --api-key "${{ secrets.NUGET_API_KEY }}" \
-            --source https://api.nuget.org/v3/index.json \
-            --skip-duplicate

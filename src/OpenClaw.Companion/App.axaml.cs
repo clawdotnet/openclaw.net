@@ -13,6 +13,7 @@ namespace OpenClaw.Companion;
 public partial class App : Application
 {
     private GatewayWebSocketClient? _client;
+    private ManagedGatewayService? _managedGateway;
 
     public override void Initialize()
     {
@@ -28,8 +29,9 @@ public partial class App : Application
             DisableAvaloniaDataAnnotationValidation();
 
             _client = new GatewayWebSocketClient();
+            _managedGateway = new ManagedGatewayService();
             var settings = new SettingsStore();
-            var viewModel = new MainWindowViewModel(settings, _client);
+            var viewModel = new MainWindowViewModel(settings, _client, managedGateway: _managedGateway);
             viewModel.AttachDesktopNotifier(new DesktopNotifier());
 
             desktop.MainWindow = new MainWindow
@@ -38,12 +40,20 @@ public partial class App : Application
             };
 
             viewModel.StartApprovalsPolling();
+            var initializeLocalGatewayTask = viewModel.InitializeLocalGatewayAsync();
+            _ = initializeLocalGatewayTask.ContinueWith(
+                task => viewModel.ReportLocalGatewayInitializationFailure(task.Exception),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
 
             desktop.Exit += async (_, _) =>
             {
                 viewModel.StopApprovalsPolling();
                 if (_client is not null)
                     await _client.DisposeAsync();
+                if (_managedGateway is not null)
+                    await _managedGateway.DisposeAsync();
             };
         }
 

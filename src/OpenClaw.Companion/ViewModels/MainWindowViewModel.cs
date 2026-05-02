@@ -14,6 +14,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 {
     private readonly SettingsStore _settingsStore;
     private readonly GatewayWebSocketClient _client;
+    private readonly ManagedGatewayService _managedGateway;
     private bool _isLoadingSettings;
     private int? _activeAssistantMessageIndex;
     private string? _activeAssistantReplyToMessageId;
@@ -85,17 +86,19 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public ObservableCollection<ChatMessage> Messages { get; } = new();
 
     public MainWindowViewModel()
-        : this(new SettingsStore(), new GatewayWebSocketClient(), null)
+        : this(new SettingsStore(), new GatewayWebSocketClient(), null, null)
     {
     }
 
     public MainWindowViewModel(
         SettingsStore settingsStore,
         GatewayWebSocketClient client,
-        Func<string, string?, OpenClawHttpClient>? adminClientFactory = null)
+        Func<string, string?, OpenClawHttpClient>? adminClientFactory = null,
+        ManagedGatewayService? managedGateway = null)
     {
         _settingsStore = settingsStore;
         _client = client;
+        _managedGateway = managedGateway ?? new ManagedGatewayService();
         _adminClientFactory = adminClientFactory ?? ((baseUrl, authToken) => new OpenClawHttpClient(baseUrl, authToken));
 
         _client.OnTextMessage += HandleInboundText;
@@ -103,6 +106,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _client.OnError += err => AddSystemMessage($"Error: {err}");
 
         LoadSettings();
+        RefreshManagedGatewayStateCore();
     }
 
     private void LoadSettings()
@@ -120,6 +124,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             DebugMode = settings.DebugMode;
             ApprovalDesktopNotificationsEnabled = settings.ApprovalDesktopNotificationsEnabled;
             ApprovalDesktopNotificationsOnlyWhenUnfocused = settings.ApprovalDesktopNotificationsOnlyWhenUnfocused;
+            AutoStartLocalGateway = settings.AutoStartLocalGateway;
+            SetupProvider = string.IsNullOrWhiteSpace(settings.SetupProvider) ? "openai" : settings.SetupProvider;
+            SetupModel = string.IsNullOrWhiteSpace(settings.SetupModel) ? "gpt-4o" : settings.SetupModel;
+            SetupModelPreset = settings.SetupModelPreset ?? "";
+            SetupWorkspacePath = string.IsNullOrWhiteSpace(settings.SetupWorkspacePath)
+                ? _managedGateway.WorkspacePath
+                : settings.SetupWorkspacePath;
+            _managedGateway.SetProviderApiKey(_settingsStore.LoadProviderApiKey(settings.AllowPlaintextTokenFallback));
+            ApplyEnvironmentSettings();
         }
         finally
         {
@@ -141,9 +154,38 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             DebugMode = DebugMode,
             ApprovalDesktopNotificationsEnabled = ApprovalDesktopNotificationsEnabled,
             ApprovalDesktopNotificationsOnlyWhenUnfocused = ApprovalDesktopNotificationsOnlyWhenUnfocused,
+            AutoStartLocalGateway = AutoStartLocalGateway,
+            SetupProvider = SetupProvider,
+            SetupModel = SetupModel,
+            SetupModelPreset = SetupModelPreset,
+            SetupWorkspacePath = SetupWorkspacePath,
             AuthToken = string.IsNullOrWhiteSpace(AuthToken) ? null : AuthToken
         });
         ShowSettingsWarningIfNeeded();
+    }
+
+    private void ApplyEnvironmentSettings()
+    {
+        var baseUrl = Environment.GetEnvironmentVariable("OPENCLAW_BASE_URL");
+        if (!string.IsNullOrWhiteSpace(baseUrl))
+            ServerUrl = ConvertBaseUrlToWebSocketUrl(baseUrl);
+
+        var authToken = Environment.GetEnvironmentVariable("OPENCLAW_AUTH_TOKEN");
+        if (!string.IsNullOrWhiteSpace(authToken))
+            AuthToken = authToken;
+    }
+
+    private static string ConvertBaseUrlToWebSocketUrl(string baseUrl)
+        => ManagedGatewayService.BuildWebSocketUrl(baseUrl);
+
+    public void ReportLocalGatewayInitializationFailure(Exception? exception)
+    {
+        var detail = exception?.GetBaseException().Message ?? "Unknown error.";
+        Dispatcher.UIThread.Post(() =>
+        {
+            LocalGatewayStatus = $"Local gateway initialization failed: {detail}";
+            AddSystemMessageCore($"Local gateway initialization failed: {detail}");
+        });
     }
 
     private void HandleInboundText(string payload)

@@ -23,6 +23,26 @@ Self-hosted **AI agent runtime and gateway for .NET** with 48 native tools, 9 ch
 - **Practical reuse** of existing OpenClaw TS/JS plugins and `SKILL.md` packages
 - **Review-first self-evolving** workflows — the runtime proposes profile updates, automation drafts, and skill drafts from observed sessions; operators approve or reject
 
+## Download And Run
+
+For the lowest-friction desktop start, download the latest desktop bundle for your platform:
+
+| Platform | Download |
+|----------|----------|
+| Windows x64 | [openclaw-desktop-win-x64.zip](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-win-x64.zip) |
+| Apple Silicon macOS | [openclaw-desktop-osx-arm64.zip](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-osx-arm64.zip) |
+| Linux x64 | [openclaw-desktop-linux-x64.zip](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-linux-x64.zip) |
+
+Each desktop bundle includes Companion, the standard NativeAOT gateway, and the NativeAOT CLI.
+
+1. Extract the archive.
+2. Launch Companion from the `companion` folder.
+3. Open the **Setup** tab.
+4. Choose a provider/model and enter the provider key, or choose Ollama for a local model.
+5. Click **Set Up and Start**.
+
+Companion writes a local config, starts the bundled gateway on `127.0.0.1`, and connects to it. Windows and macOS archives are currently unsigned so first-run OS warnings are expected. See [docs/RELEASES.md](docs/RELEASES.md) for checksums, standalone CLI/gateway archives, signing status, and maintainer release flow.
+
 ## Quickstart
 
 ```bash
@@ -113,6 +133,7 @@ The full documentation map lives at **[docs/README.md](docs/README.md)**. Starti
 | [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | Project shape, repository map, and first-run debugging flow |
 | [docs/QUICKSTART.md](docs/QUICKSTART.md) | Shortest supported path to a running local instance |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Providers, tools, skills, memory, channels, and day-to-day operation |
+| [docs/RELEASES.md](docs/RELEASES.md) | Desktop downloads, release assets, and signing status |
 | [docs/TOOLS_GUIDE.md](docs/TOOLS_GUIDE.md) | Native tool catalog and configuration |
 | [docs/CANVAS_A2UI.md](docs/CANVAS_A2UI.md) | Supported Canvas and A2UI visual workspace behavior |
 | [docs/MODEL_PROFILES.md](docs/MODEL_PROFILES.md) | Provider-agnostic named model profiles (including Gemma) |
