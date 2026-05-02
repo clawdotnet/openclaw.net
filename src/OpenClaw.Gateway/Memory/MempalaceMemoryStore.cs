@@ -56,9 +56,9 @@ internal sealed class MempalaceMemoryStore :
         _backend = new SqliteBackend(basePath);
         _embedder = new HashingMempalaceEmbedder(
             Math.Max(MinEmbeddingDimensions, mempalace.EmbeddingDimensions),
-            string.IsNullOrWhiteSpace(mempalace.EmbedderIdentity)
+            string.IsNullOrWhiteSpace(mempalace.EmbedderIdentifier)
                 ? "openclaw:mempalace:hash-v1"
-                : mempalace.EmbedderIdentity.Trim());
+                : mempalace.EmbedderIdentifier.Trim());
 
         _sessionStore = new SqliteMemoryStore(
             ResolvePath(mempalace.SessionDbPath, config.Memory.StoragePath),

@@ -186,7 +186,7 @@ public sealed class MemoryMempalaceConfig
     public string? Namespace { get; set; }
     public string CollectionName { get; set; } = "memories";
     public int EmbeddingDimensions { get; set; } = 384;
-    public string EmbedderIdentity { get; set; } = "openclaw:mempalace:hash-v1";
+    public string EmbedderIdentifier { get; set; } = "openclaw:mempalace:hash-v1";
     public string DefaultWing { get; set; } = "openclaw";
     public string DefaultRoom { get; set; } = "notes";
     public string SessionDbPath { get; set; } = "./memory/mempalace/openclaw-sessions.db";

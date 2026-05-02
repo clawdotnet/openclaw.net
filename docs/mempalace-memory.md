@@ -52,4 +52,6 @@ Entities use MemPalace's `type:id` format, for example `agent:openclaw` or `memo
 
 ## AOT and dependency implications
 
-The integration is optional and only loaded when `OpenClaw:Memory:Provider` is `mempalace`. It adds `MemPalace.Core`, `MemPalace.Backends.Sqlite`, and `MemPalace.KnowledgeGraph` to the Gateway project. The adapter uses a deterministic local hashing embedder, so enabling it does not add cloud calls or API-key requirements. Treat the MemPalace provider as the standard gateway lane until NativeAOT publish validation is run for the exact deployment profile.
+The integration is optional and only loaded when `OpenClaw:Memory:Provider` is `mempalace`. It adds `MemPalace.Core`, `MemPalace.Backends.Sqlite`, and `MemPalace.KnowledgeGraph` to the Gateway project.
+
+The adapter uses a deterministic local hashing embedder, so enabling it does not add cloud calls or API-key requirements. Treat the MemPalace provider as the standard gateway lane until NativeAOT publish validation is run for the exact deployment profile.

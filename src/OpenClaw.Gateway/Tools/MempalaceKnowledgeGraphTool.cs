@@ -50,9 +50,11 @@ internal sealed class MempalaceKnowledgeGraphTool : ITool
 
     private async ValueTask<string> AddAsync(JsonElement root, CancellationToken ct)
     {
-        var subject = ReadEntity(root, "subject");
+        if (!TryReadEntity(root, "subject", required: true, out var subject, out var entityError))
+            return entityError;
         var predicate = ReadString(root, "predicate");
-        var obj = ReadEntity(root, "object");
+        if (!TryReadEntity(root, "object", required: true, out var obj, out entityError))
+            return entityError;
         if (subject is null || obj is null || string.IsNullOrWhiteSpace(predicate))
             return "Error: add requires subject, predicate, and object.";
 
@@ -71,10 +73,15 @@ internal sealed class MempalaceKnowledgeGraphTool : ITool
 
     private async ValueTask<string> QueryAsync(JsonElement root, CancellationToken ct)
     {
+        if (!TryReadEntity(root, "subject", required: false, out var subject, out var entityError))
+            return entityError;
+        if (!TryReadEntity(root, "object", required: false, out var obj, out entityError))
+            return entityError;
+
         var pattern = new TriplePattern(
-            ReadEntity(root, "subject"),
+            subject,
             ReadString(root, "predicate"),
-            ReadEntity(root, "object"));
+            obj);
         var at = ReadDate(root, "at");
         var results = await _knowledgeGraph.QueryAsync(pattern, at, ct);
         if (results.Count == 0)
@@ -101,7 +108,8 @@ internal sealed class MempalaceKnowledgeGraphTool : ITool
 
     private async ValueTask<string> TimelineAsync(JsonElement root, CancellationToken ct)
     {
-        var entity = ReadEntity(root, "entity");
+        if (!TryReadEntity(root, "entity", required: true, out var entity, out var entityError))
+            return entityError;
         if (entity is null)
             return "Error: timeline requires entity.";
 
@@ -130,19 +138,36 @@ internal sealed class MempalaceKnowledgeGraphTool : ITool
         return sb.ToString().TrimEnd();
     }
 
-    private static EntityRef? ReadEntity(JsonElement root, string propertyName)
+    private static bool TryReadEntity(
+        JsonElement root,
+        string propertyName,
+        bool required,
+        out EntityRef? entity,
+        out string error)
     {
+        entity = null;
+        error = string.Empty;
         var value = ReadString(root, propertyName);
         if (string.IsNullOrWhiteSpace(value))
-            return null;
+        {
+            if (required)
+            {
+                error = $"Error: {propertyName} is required and must use type:id format.";
+                return false;
+            }
+
+            return true;
+        }
 
         try
         {
-            return EntityRef.Parse(value);
+            entity = EntityRef.Parse(value);
+            return true;
         }
-        catch
+        catch (Exception ex)
         {
-            return null;
+            error = $"Error: {propertyName} must use type:id format. {ex.Message}";
+            return false;
         }
     }
 
