@@ -231,8 +231,8 @@ public class PluginDiscoveryTests : IDisposable
         if (OperatingSystem.IsWindows())
             return;
 
-        var pluginDir = Path.Combine(_tempDir, "symlink-plugin");
-        var outsideDir = Path.Combine(_tempDir, "outside");
+        var pluginDir = Path.GetFullPath("symlink-plugin", _tempDir);
+        var outsideDir = Path.GetFullPath("outside", _tempDir);
         Directory.CreateDirectory(pluginDir);
         Directory.CreateDirectory(outsideDir);
         File.WriteAllText(Path.Combine(pluginDir, "openclaw.plugin.json"), """{"id":"symlink-plugin"}""");
@@ -249,6 +249,28 @@ public class PluginDiscoveryTests : IDisposable
         Assert.Empty(result.Plugins);
         var report = Assert.Single(result.Reports);
         Assert.Contains(report.Diagnostics, diagnostic => diagnostic.Code == "entry_outside_root");
+    }
+
+    [Fact]
+    public void DiscoverWithDiagnostics_ManifestEntryCyclicSymlink_DoesNotRecurseIndefinitely()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var pluginDir = Path.GetFullPath("cyclic-symlink-plugin", _tempDir);
+        Directory.CreateDirectory(pluginDir);
+        File.WriteAllText(Path.Combine(pluginDir, "openclaw.plugin.json"), """{"id":"cyclic-symlink-plugin"}""");
+        var loop = Path.Combine(pluginDir, "index.js");
+        File.CreateSymbolicLink(loop, loop);
+
+        var config = new PluginsConfig
+        {
+            Load = new PluginLoadConfig { Paths = [pluginDir] }
+        };
+
+        var result = PluginDiscovery.DiscoverWithDiagnostics(config);
+
+        Assert.Empty(result.Plugins);
     }
 
     [Fact]

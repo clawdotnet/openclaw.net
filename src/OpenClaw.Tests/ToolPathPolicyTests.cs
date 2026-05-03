@@ -160,6 +160,21 @@ public sealed class ToolPathPolicyTests
         Assert.EndsWith("does-not-exist.txt", resolved, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ResolveRealPath_CyclicSymlink_DoesNotRecurseIndefinitely()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var root = CreateTempDir();
+        var loop = Path.Combine(root, "loop");
+        File.CreateSymbolicLink(loop, loop);
+
+        var resolved = ToolPathPolicy.ResolveRealPath(loop);
+
+        Assert.False(string.IsNullOrWhiteSpace(resolved));
+    }
+
     private static string CreateTempDir()
     {
         var path = Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("n"));

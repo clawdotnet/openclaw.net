@@ -4,6 +4,8 @@ namespace OpenClaw.Agent.Tools;
 
 internal static class ToolPathPolicy
 {
+    private const int MaxSymlinkResolutionDepth = 64;
+
     public static bool IsReadAllowed(ToolingConfig config, string path) =>
         IsPathAllowed(config.AllowedReadRoots, path);
 
@@ -38,8 +40,14 @@ internal static class ToolPathPolicy
     /// remaining segments are appended.
     /// </summary>
     internal static string ResolveRealPath(string path)
+        => ResolveRealPath(path, new HashSet<string>(GetPathComparer()), depth: 0);
+
+    private static string ResolveRealPath(string path, HashSet<string> visited, int depth)
     {
         var full = Path.GetFullPath(path);
+        if (depth >= MaxSymlinkResolutionDepth || !visited.Add(full))
+            return full;
+
         var root = Path.GetPathRoot(full);
         if (string.IsNullOrEmpty(root))
             return full;
@@ -52,10 +60,13 @@ internal static class ToolPathPolicy
 
         foreach (var segment in segments)
         {
-            current = Path.Combine(current, segment);
+            if (Path.IsPathRooted(segment))
+                return Path.GetFullPath(current);
+
+            current = Path.Join(current, segment);
             var resolved = TryResolveLinkTarget(current);
             if (resolved is not null)
-                current = ResolveRealPath(resolved);
+                current = ResolveRealPath(resolved, visited, depth + 1);
         }
 
         return Path.GetFullPath(current);
@@ -72,19 +83,36 @@ internal static class ToolPathPolicy
             var target = File.ResolveLinkTarget(path, returnFinalTarget: true);
             if (target is not null) return target.FullName;
         }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        catch (IOException)
+        {
+            // Expected when probing inaccessible or broken filesystem entries.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Expected when probing roots the current process cannot inspect.
+        }
 
         try
         {
             var target = Directory.ResolveLinkTarget(path, returnFinalTarget: true);
             if (target is not null) return target.FullName;
         }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        catch (IOException)
+        {
+            // Expected when probing inaccessible or broken filesystem entries.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Expected when probing roots the current process cannot inspect.
+        }
 
         return null;
     }
+
+    private static StringComparer GetPathComparer()
+        => OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
 
     private static bool IsUnderRoot(string fullPath, string fullRoot)
     {

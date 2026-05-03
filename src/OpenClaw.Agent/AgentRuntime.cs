@@ -612,9 +612,7 @@ public sealed class AgentRuntime : IAgentRuntime
 
                 foreach (var call in toolCalls)
                 {
-                    var argsJson = call.Arguments is not null
-                        ? JsonSerializer.Serialize(call.Arguments, CoreJsonContext.Default.IDictionaryStringObject)
-                        : "{}";
+                    var argsJson = SerializeToolArgumentsForEvent(call.Arguments);
                     yield return AgentStreamEvent.ToolStarted(call.Name, argsJson);
 
                     var channel = Channel.CreateBounded<string>(new BoundedChannelOptions(256)
@@ -668,9 +666,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 {
                     foreach (var call in toolCalls)
                     {
-                        var argsJson = call.Arguments is not null
-                            ? JsonSerializer.Serialize(call.Arguments, CoreJsonContext.Default.IDictionaryStringObject)
-                            : "{}";
+                        var argsJson = SerializeToolArgumentsForEvent(call.Arguments);
                         yield return AgentStreamEvent.ToolStarted(call.Name, argsJson);
                     }
 
@@ -687,9 +683,7 @@ public sealed class AgentRuntime : IAgentRuntime
 
                     foreach (var call in toolCalls)
                     {
-                        var argsJson = call.Arguments is not null
-                            ? JsonSerializer.Serialize(call.Arguments, CoreJsonContext.Default.IDictionaryStringObject)
-                            : "{}";
+                        var argsJson = SerializeToolArgumentsForEvent(call.Arguments);
                         yield return AgentStreamEvent.ToolStarted(call.Name, argsJson);
 
                         var (invocation, result) = await ExecuteSingleToolCallAsync(
@@ -1677,6 +1671,21 @@ public sealed class AgentRuntime : IAgentRuntime
             {
                 ["_raw"] = arguments
             };
+        }
+    }
+
+    private static string SerializeToolArgumentsForEvent(IDictionary<string, object?>? arguments)
+    {
+        if (arguments is null || arguments.Count == 0)
+            return "{}";
+
+        try
+        {
+            return JsonSerializer.Serialize(arguments, CoreJsonContext.Default.IDictionaryStringObject);
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
+        {
+            return "{}";
         }
     }
 

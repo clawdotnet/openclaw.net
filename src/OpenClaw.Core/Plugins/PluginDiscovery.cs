@@ -10,6 +10,8 @@ namespace OpenClaw.Core.Plugins;
 /// </summary>
 public static class PluginDiscovery
 {
+    private const int MaxSymlinkResolutionDepth = 64;
+
     private const string ManifestFileName = "openclaw.plugin.json";
     private const string PackageJsonFileName = "package.json";
 
@@ -500,7 +502,20 @@ public static class PluginDiscovery
 
     public static bool TryResolveContainedPath(string rootPath, string relativePath, out string resolvedPath)
     {
-        resolvedPath = Path.GetFullPath(Path.Combine(rootPath, relativePath));
+        if (Path.IsPathRooted(relativePath))
+        {
+            resolvedPath = string.Empty;
+            return false;
+        }
+
+        var candidatePath = Path.GetFullPath(Path.Join(rootPath, relativePath));
+        if (IsUnresolvedLink(candidatePath))
+        {
+            resolvedPath = string.Empty;
+            return false;
+        }
+
+        resolvedPath = candidatePath;
         var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath));
 
         // Resolve symlinks for both paths to prevent symlink-based escape from the root.
@@ -522,8 +537,14 @@ public static class PluginDiscovery
     /// Falls back to the normalized segment path when a segment does not exist.
     /// </summary>
     private static string ResolveRealPath(string path)
+        => ResolveRealPath(path, new HashSet<string>(GetPathComparer()), depth: 0);
+
+    private static string ResolveRealPath(string path, HashSet<string> visited, int depth)
     {
         var full = Path.GetFullPath(path);
+        if (depth >= MaxSymlinkResolutionDepth || !visited.Add(full))
+            return full;
+
         var root = Path.GetPathRoot(full);
         if (string.IsNullOrEmpty(root))
             return full;
@@ -536,10 +557,13 @@ public static class PluginDiscovery
 
         foreach (var segment in segments)
         {
-            current = Path.Combine(current, segment);
+            if (Path.IsPathRooted(segment))
+                return Path.GetFullPath(current);
+
+            current = Path.Join(current, segment);
             var resolved = TryResolveLinkTarget(current);
             if (resolved is not null)
-                current = ResolveRealPath(resolved);
+                current = ResolveRealPath(resolved, visited, depth + 1);
         }
 
         return Path.GetFullPath(current);
@@ -555,9 +579,11 @@ public static class PluginDiscovery
         }
         catch (IOException)
         {
+            // Expected when discovery probes inaccessible or broken filesystem entries.
         }
         catch (UnauthorizedAccessException)
         {
+            // Expected when discovery probes roots the current process cannot inspect.
         }
 
         try
@@ -568,11 +594,38 @@ public static class PluginDiscovery
         }
         catch (IOException)
         {
+            // Expected when discovery probes inaccessible or broken filesystem entries.
         }
         catch (UnauthorizedAccessException)
         {
+            // Expected when discovery probes roots the current process cannot inspect.
         }
 
         return null;
     }
+
+    private static bool IsUnresolvedLink(string path)
+    {
+        try
+        {
+            FileSystemInfo info = File.Exists(path)
+                ? new FileInfo(path)
+                : new DirectoryInfo(path);
+
+            return !string.IsNullOrEmpty(info.LinkTarget) && TryResolveLinkTarget(path) is null;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static StringComparer GetPathComparer()
+        => OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
 }

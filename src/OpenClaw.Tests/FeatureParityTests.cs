@@ -197,6 +197,40 @@ public class FeatureParityTests
     }
 
     [Fact]
+    public async Task RunStreamingAsync_ToolStartIgnoresUnserializableArguments()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        var memory = Substitute.For<IMemoryStore>();
+        var cyclicArguments = new Dictionary<string, object?>(StringComparer.Ordinal);
+        cyclicArguments["self"] = cyclicArguments;
+
+        var toolCallUpdates = new[]
+        {
+            new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent>
+            {
+                new FunctionCallContent("call1", "cyclic_tool", cyclicArguments)
+            })
+        };
+
+        chatClient.GetStreamingResponseAsync(
+            Arg.Any<IList<ChatMessage>>(),
+            Arg.Any<ChatOptions>(),
+            Arg.Any<CancellationToken>())
+            .Returns(toolCallUpdates.ToAsyncEnumerable());
+
+        var agent = new AgentRuntime(chatClient, [], memory, DefaultConfig, maxHistoryTurns: 10);
+        var session = CreateSession();
+
+        await using var enumerator = agent.RunStreamingAsync(session, "Run tool", CancellationToken.None)
+            .GetAsyncEnumerator();
+
+        Assert.True(await enumerator.MoveNextAsync());
+        Assert.Equal(AgentStreamEventType.ToolStart, enumerator.Current.Type);
+        Assert.Equal("cyclic_tool", enumerator.Current.ToolName);
+        Assert.Equal("{}", enumerator.Current.ToolArguments);
+    }
+
+    [Fact]
     public async Task RunAsync_EstimatedTokenAdmissionControl_RejectsBeforeCallingLlm()
     {
         var chatClient = Substitute.For<IChatClient>();

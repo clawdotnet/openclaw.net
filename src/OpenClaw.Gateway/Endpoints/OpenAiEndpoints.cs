@@ -23,7 +23,7 @@ internal static partial class OpenAiEndpoints
     {
         ClearImplicitToolSuppression(session);
 
-        if (!string.IsNullOrWhiteSpace(presetId))
+        if (HasExplicitPreset(session, runtime, presetId))
             return;
 
         if (!TryResolveSelectedProfile(session, runtime, out var profile) ||
@@ -57,6 +57,12 @@ internal static partial class OpenAiEndpoints
             return true;
         }
 
+        if (!string.IsNullOrWhiteSpace(session.ModelOverride))
+        {
+            profile = null!;
+            return false;
+        }
+
         var defaultProfileId = runtime.Operations.ModelProfiles.DefaultProfileId;
         if (!string.IsNullOrWhiteSpace(defaultProfileId) &&
             runtime.Operations.ModelProfiles.TryGet(defaultProfileId, out var defaultProfile) &&
@@ -68,5 +74,14 @@ internal static partial class OpenAiEndpoints
 
         profile = null!;
         return false;
+    }
+
+    private static bool HasExplicitPreset(Session session, GatewayAppRuntime runtime, string? presetId)
+    {
+        if (!string.IsNullOrWhiteSpace(presetId) || !string.IsNullOrWhiteSpace(session.RoutePresetId))
+            return true;
+
+        var metadata = runtime.Operations.SessionMetadata.Get(session.Id);
+        return !string.IsNullOrWhiteSpace(metadata.ActivePresetId);
     }
 }

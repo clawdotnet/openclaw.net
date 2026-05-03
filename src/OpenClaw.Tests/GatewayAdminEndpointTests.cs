@@ -1890,6 +1890,84 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task ChatCompletions_DefaultProfileWithoutTools_DoesNotSuppressToolsForLiteralModelOverride()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, ConfigureNoToolDefaultProfile);
+        Session? capturedSession = null;
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns(callInfo =>
+            {
+                capturedSession = callInfo.Arg<Session>();
+                return Task.FromResult("override chat ok");
+            });
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        {
+            Content = JsonContent("""{"model":"llama3.2:latest","messages":[{"role":"user","content":"hello"}]}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(capturedSession);
+        Assert.Equal("llama3.2:latest", capturedSession!.ModelOverride);
+        Assert.Empty(capturedSession.RouteAllowedTools);
+    }
+
+    [Fact]
+    public async Task ChatCompletions_DefaultProfileWithoutTools_KeepsPersistedPresetRequestsExplicit()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, ConfigureNoToolDefaultProfile);
+        var capturedSessions = new List<Session>();
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns(callInfo =>
+            {
+                capturedSessions.Add(callInfo.Arg<Session>());
+                return Task.FromResult("stable preset chat ok");
+            });
+
+        const string stableSessionId = "stable-preset-session";
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        {
+            Content = JsonContent("""{"messages":[{"role":"user","content":"set preset"}]}""")
+        };
+        firstRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        firstRequest.Headers.Add("X-OpenClaw-Session-Id", stableSessionId);
+        firstRequest.Headers.Add("X-OpenClaw-Preset", "web");
+
+        using var firstResponse = await harness.Client.SendAsync(firstRequest);
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+
+        using var secondRequest = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        {
+            Content = JsonContent("""{"messages":[{"role":"user","content":"follow up"}]}""")
+        };
+        secondRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        secondRequest.Headers.Add("X-OpenClaw-Session-Id", stableSessionId);
+
+        using var secondResponse = await harness.Client.SendAsync(secondRequest);
+
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        Assert.Equal(2, capturedSessions.Count);
+        Assert.Empty(capturedSessions[1].RouteAllowedTools);
+
+        var activeSession = await FindStableSessionAsync(harness, stableSessionId);
+        Assert.NotNull(activeSession);
+        Assert.True(harness.Runtime.SessionManager.RemoveActive(activeSession!.Id));
+    }
+
+    [Fact]
     public async Task ChatCompletions_StableSession_DoesNotDuplicatePersistedHistory()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);

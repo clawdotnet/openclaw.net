@@ -34,7 +34,7 @@ public class BrowserToolTests
             StringComparison.OrdinalIgnoreCase);
         if (isolateBrowserInstall)
         {
-            var browsersPath = Path.Combine(Path.GetTempPath(), "openclaw-playwright-tests", "browsers");
+            var browsersPath = Path.Join(Path.GetTempPath(), "openclaw-playwright-tests", "browsers");
             Directory.CreateDirectory(browsersPath);
             Environment.SetEnvironmentVariable("PLAYWRIGHT_BROWSERS_PATH", browsersPath);
         }
@@ -96,6 +96,7 @@ public class BrowserToolTests
             }
             catch (OperationCanceledException)
             {
+                // Cancellation is expected when the local fixture server is stopped during disposal.
             }
 
             _cts.Dispose();
