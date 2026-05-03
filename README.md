@@ -9,6 +9,7 @@
 ![Plugin compatibility](https://img.shields.io/badge/plugin%20compatibility-evolving-green)
 ![Tools](https://img.shields.io/badge/native%20tools-48-green)
 ![Channels](https://img.shields.io/badge/channels-9-green)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/clawdotnet/openclaw.net)
 
 > **Disclaimer**: This project is not affiliated with, endorsed by, or associated with [OpenClaw](https://github.com/openclaw/openclaw). It is an independent .NET implementation inspired by their work.
 
@@ -41,7 +42,7 @@ Each desktop bundle includes Companion, the standard NativeAOT gateway, and the 
 4. Choose a provider/model and enter the provider key, or choose Ollama for a local model.
 5. Click **Set Up and Start**.
 
-Companion writes a local config, starts the bundled gateway on `127.0.0.1`, and connects to it. See [docs/RELEASES.md](docs/RELEASES.md) for checksums, standalone CLI/gateway archives, signing status, and maintainer release flow.
+Companion writes a local config, starts the bundled gateway on `127.0.0.1`, and connects to it. The current Windows and macOS release archives are unsigned, so first-run OS warnings are expected. See [docs/RELEASES.md](docs/RELEASES.md) for checksums, standalone CLI/gateway archives, signing status, and maintainer release flow.
 
 ## Quickstart
 
