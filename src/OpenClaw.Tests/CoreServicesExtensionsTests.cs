@@ -294,6 +294,82 @@ public sealed class CoreServicesExtensionsTests
         }
     }
 
+    [Fact]
+    public void AddOpenClawCoreServices_MempalaceMemoryProvider_DisposesDynamicHostWhenNoProviderMatches()
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), "openclaw-core-services-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempPath);
+        try
+        {
+            var startPath = Path.Combine(tempPath, "plugin.start");
+            var stopPath = Path.Combine(tempPath, "plugin.stop");
+            var pluginId = "native-dynamic-memory-mismatch";
+            var pluginDir = CreateNativePlugin(
+                tempPath,
+                pluginId,
+                typeof(ToolAndCommandPlugin).Assembly.Location,
+                typeof(ToolAndCommandPlugin).FullName!,
+                ["memory", "services"]);
+
+            var config = new GatewayConfig
+            {
+                Memory = new MemoryConfig
+                {
+                    Provider = "mempalace",
+                    StoragePath = tempPath
+                },
+                Plugins = new PluginsConfig
+                {
+                    DynamicNative = new NativeDynamicPluginsConfig
+                    {
+                        Enabled = true,
+                        Load = new PluginLoadConfig { Paths = [pluginDir] },
+                        Entries = new Dictionary<string, PluginEntryConfig>(StringComparer.Ordinal)
+                        {
+                            [pluginId] = new()
+                            {
+                                Config = JsonSerializer.SerializeToElement(new
+                                {
+                                    memoryProviderId = "other-memory",
+                                    startPath,
+                                    stopPath
+                                })
+                            }
+                        }
+                    }
+                }
+            };
+            var startup = new GatewayStartupContext
+            {
+                Config = config,
+                RuntimeState = new GatewayRuntimeState
+                {
+                    RequestedMode = "jit",
+                    EffectiveMode = GatewayRuntimeMode.Jit,
+                    DynamicCodeSupported = true
+                },
+                IsNonLoopbackBind = false
+            };
+
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddOptions();
+            services.AddOpenClawCoreServices(startup);
+
+            using var provider = services.BuildServiceProvider();
+
+            var ex = Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<IMemoryStore>());
+            Assert.Contains("no dynamic native memory provider registered", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True(File.Exists(startPath));
+            Assert.True(File.Exists(stopPath));
+            Assert.Null(startup.NativeDynamicPluginHost);
+        }
+        finally
+        {
+            DeleteDirectoryIfPresent(tempPath);
+        }
+    }
+
     private static void DeleteDirectoryIfPresent(string path)
     {
         try

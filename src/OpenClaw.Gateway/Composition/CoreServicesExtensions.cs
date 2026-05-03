@@ -266,27 +266,49 @@ internal static class CoreServicesExtensions
         }
 
         var host = new NativeDynamicPluginHost(config.Plugins.DynamicNative, startup.RuntimeState, logger, blockedPluginIds);
-        var providers = host.LoadMemoryProvidersAsync(startup.WorkspacePath, startupCancellationToken)
-            .GetAwaiter()
-            .GetResult();
-        startup.NativeDynamicPluginHost = host;
-        var provider = providers.FirstOrDefault(item => string.Equals(item.ProviderId, config.Memory.Provider, StringComparison.OrdinalIgnoreCase));
-        if (provider.Factory is null)
+        try
         {
-            throw new InvalidOperationException(
-                "Memory.Provider 'mempalace' was requested, but no dynamic native memory provider registered 'mempalace'. " +
-                "Load the OpenClaw.Plugins.Mempalace native plugin via OpenClaw:Plugins:DynamicNative:Load:Paths.");
-        }
+            var providers = host.LoadMemoryProvidersAsync(startup.WorkspacePath, startupCancellationToken)
+                .GetAwaiter()
+                .GetResult();
+            var provider = providers.FirstOrDefault(item => string.Equals(item.ProviderId, config.Memory.Provider, StringComparison.OrdinalIgnoreCase));
+            if (provider.Factory is null)
+            {
+                throw new InvalidOperationException(
+                    "Memory.Provider 'mempalace' was requested, but no dynamic native memory provider registered 'mempalace'. " +
+                    "Load the OpenClaw.Plugins.Mempalace native plugin via OpenClaw:Plugins:DynamicNative:Load:Paths.");
+            }
 
-        return provider.Factory(new NativeDynamicMemoryProviderContext
+            var memoryStore = provider.Factory(new NativeDynamicMemoryProviderContext
+            {
+                PluginId = provider.PluginId,
+                ProviderId = provider.ProviderId,
+                Config = provider.Config,
+                GatewayConfig = config,
+                Metrics = metrics,
+                Logger = logger
+            });
+
+            startup.NativeDynamicPluginHost = host;
+            return memoryStore;
+        }
+        catch
         {
-            PluginId = provider.PluginId,
-            ProviderId = provider.ProviderId,
-            Config = provider.Config,
-            GatewayConfig = config,
-            Metrics = metrics,
-            Logger = logger
-        });
+            DisposeNativeDynamicPluginHostOnStartupFailure(host, logger);
+            throw;
+        }
+    }
+
+    private static void DisposeNativeDynamicPluginHostOnStartupFailure(NativeDynamicPluginHost host, ILogger logger)
+    {
+        try
+        {
+            host.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to dispose dynamic native plugin host after memory provider startup failure");
+        }
     }
 
     private static CancellationToken ResolveStartupCancellationToken(IServiceProvider services)
