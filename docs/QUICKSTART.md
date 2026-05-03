@@ -2,7 +2,31 @@
 
 This guide gets OpenClaw.NET to a first working agent with the supported setup path.
 
-If you want the broader overview first, start with [GETTING_STARTED.md](GETTING_STARTED.md). That guide explains what each project is, how the runtime layers fit together, and which parts most contributors actually need.
+If you want the broader evaluator overview first, start with [START_HERE.md](START_HERE.md). If you want the repository map and contributor-oriented project shape, read [GETTING_STARTED.md](GETTING_STARTED.md).
+
+## Clone-To-Success Smoke
+
+Run this before configuring providers. It proves the runtime loop and tool invocation path without external services:
+
+```bash
+git clone https://github.com/clawdotnet/openclaw.net
+cd openclaw.net
+
+dotnet restore OpenClaw.Net.slnx
+dotnet build OpenClaw.Net.slnx --configuration Release --no-restore
+dotnet run --project samples/OpenClaw.HelloAgent -c Release --no-build
+```
+
+Expected output:
+
+```text
+OpenClaw.HelloAgent
+User: hello
+Agent: hello from OpenClaw.NET
+Tool: echo(hello): ok
+```
+
+After that succeeds, continue with the local gateway flow below.
 
 ## First 10 Minutes
 
@@ -53,7 +77,7 @@ Download the matching asset:
 
 Extract the archive and launch Companion from the `companion` folder. Open the **Setup** tab, enter the provider/model/key or choose Ollama, then click **Set Up and Start**. Companion writes the local config, starts the bundled gateway on `127.0.0.1`, and connects to it.
 
-Current Windows and macOS archives are unsigned until signing/notarization secrets are configured in the release workflow. Windows users may see SmartScreen warnings; macOS users may need to right-click Open or remove quarantine for local testing. See [RELEASES.md](RELEASES.md) for the signing path.
+Current Windows and macOS archives are unsigned. Windows users may see SmartScreen warnings; macOS users may need to right-click Open or remove quarantine for local testing. See [RELEASES.md](RELEASES.md) for checksums and release assets.
 
 Operators can still download standalone AOT archives from the same release:
 

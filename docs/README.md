@@ -6,6 +6,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 
 | Doc | When to read |
 | --- | --- |
+| [START_HERE.md](START_HERE.md) | You are evaluating the repo and want the shortest orientation: what works, what is experimental, how to prove the runtime, and where the compatibility boundaries are. |
 | [GETTING_STARTED.md](GETTING_STARTED.md) | You cloned the repo and want the project shape, repository map, and first-run debugging flow before running commands. |
 | [QUICKSTART.md](QUICKSTART.md) | You want the shortest supported path to a running local instance. |
 | [GLOSSARY.md](GLOSSARY.md) | A term in another doc is unfamiliar — *gateway*, *runtime*, *skill*, *plugin*, *profile*, *posture*, `aot` / `jit` / `auto`, etc. |

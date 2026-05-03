@@ -13,18 +13,46 @@
 
 > **Disclaimer**: This project is not affiliated with, endorsed by, or associated with [OpenClaw](https://github.com/openclaw/openclaw). It is an independent .NET implementation inspired by their work.
 
-Self-hosted **AI agent runtime and gateway for .NET** with 48 native tools, 9 channel adapters, multi-agent routing, review-first self-evolving features, built-in OpenAI/Claude/Gemini provider support, NativeAOT support, and practical OpenClaw ecosystem compatibility.
+OpenClaw.NET is a NativeAOT-friendly AI agent runtime and gateway for .NET with practical OpenClaw ecosystem compatibility.
 
-## Highlights
+It is for .NET developers and operators who want a local or self-hosted agent gateway with explicit diagnostics, first-party .NET tools, OpenAI-compatible HTTP surfaces, and a path from source checkout to NativeAOT release artifacts.
+
+## What Works Now
 
 - **NativeAOT-friendly** runtime and gateway for .NET agent workloads
+- **Agent runtime** with tool execution, streaming, cancellation, retry, memory, and session support
+- **Gateway** with chat UI, admin UI, OpenAI-compatible endpoints, MCP, websocket, health, and diagnostics
+- **CLI and Companion** setup flows for source checkouts and desktop bundles
 - **48 native tools** covering file ops, sessions, memory, web, messaging, home automation, databases, email, and more
 - **9 channel adapters** (Telegram, SMS, WhatsApp, Teams, Slack, Discord, Signal, email, webhooks) with DM policy, allowlists, and signature validation
 - **Native LLM providers** for OpenAI, Claude, Gemini, Azure OpenAI, Ollama, and OpenAI-compatible endpoints
 - **Practical reuse** of existing OpenClaw TS/JS plugins and `SKILL.md` packages
-- **Review-first self-evolving** workflows — the runtime proposes profile updates, automation drafts, and skill drafts from observed sessions; operators approve or reject
 
-## Download And Run
+Start with [docs/START_HERE.md](docs/START_HERE.md) for the evaluator overview, [docs/QUICKSTART.md](docs/QUICKSTART.md) for the supported local setup path, or [docs/RELEASES.md](docs/RELEASES.md) for desktop downloads.
+
+## Fastest Source Proof
+
+This deterministic sample proves the runtime loop and tool path without provider keys, Ollama, Docker, or a browser:
+
+```bash
+git clone https://github.com/clawdotnet/openclaw.net
+cd openclaw.net
+
+dotnet restore OpenClaw.Net.slnx
+dotnet build OpenClaw.Net.slnx --configuration Release --no-restore
+dotnet run --project samples/OpenClaw.HelloAgent -c Release --no-build
+```
+
+Expected output:
+
+```text
+OpenClaw.HelloAgent
+User: hello
+Agent: hello from OpenClaw.NET
+Tool: echo(hello): ok
+```
+
+## Download And Run Desktop
 
 For the lowest-friction desktop start, download the latest desktop bundle for your platform:
 
@@ -46,10 +74,9 @@ Companion writes a local config, starts the bundled gateway on `127.0.0.1`, and 
 
 ## Quickstart
 
-```bash
-git clone https://github.com/clawdotnet/openclaw.net
-cd openclaw.net
+For a real local gateway from source:
 
+```bash
 export MODEL_PROVIDER_KEY="sk-..."
 dotnet run --project src/OpenClaw.Cli -c Release -- start
 ```

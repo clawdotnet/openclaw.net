@@ -5,6 +5,7 @@
     <Platform Name="x86" />
   </Configurations>
   <Folder Name="/samples/">
+    <Project Path="samples/OpenClaw.HelloAgent/OpenClaw.HelloAgent.csproj" />
     <Project Path="samples/OpenClaw.SemanticKernelInteropHost/OpenClaw.SemanticKernelInteropHost.csproj" />
   </Folder>
   <Folder Name="/src/">
