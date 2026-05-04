@@ -1,5 +1,6 @@
 #if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using A2A;
+using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting.A2A;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenClaw.Gateway.Mcp;
@@ -16,6 +17,9 @@ internal static class A2AServiceExtensions
         services.AddSingleton<IOpenClawA2AExecutionBridge, OpenClawA2AExecutionBridge>();
         services.AddSingleton<OpenClawA2AAgentHandler>();
         services.AddSingleton<OpenClawAgentCardFactory>();
+        services.AddKeyedSingleton<AIAgent>(
+            OpenClawA2ANames.AgentName,
+            (_, _) => new OpenClawA2ARegistrationAgent());
         services.AddKeyedSingleton<IAgentHandler>(
             OpenClawA2ANames.AgentName,
             (sp, _) => sp.GetRequiredService<OpenClawA2AAgentHandler>());

@@ -64,7 +64,7 @@ public sealed class A2AIntegrationTests
     }
 
     [Fact]
-    public void AddOpenClawA2AServices_Registers_A2A_Server()
+    public async Task AddOpenClawA2AServices_Registers_A2A_Server()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -72,7 +72,7 @@ public sealed class A2AIntegrationTests
         services.AddOpenClawA2AServices();
         services.AddSingleton<IOpenClawA2AExecutionBridge>(new FakeExecutionBridge());
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
 
         Assert.NotNull(provider.GetService<OpenClawA2AAgentHandler>());
         Assert.NotNull(provider.GetService<OpenClawAgentCardFactory>());
