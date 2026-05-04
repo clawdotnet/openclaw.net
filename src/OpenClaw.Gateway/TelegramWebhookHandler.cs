@@ -116,10 +116,13 @@ internal sealed class TelegramWebhookHandler
 
     private static bool TryGetMessage(JsonElement root, out JsonElement message)
     {
-        foreach (var propertyName in new[] { "message", "channel_post", "edited_message", "edited_channel_post" })
+        var propertyName = new[] { "message", "channel_post", "edited_message", "edited_channel_post" }
+            .Where(name => root.TryGetProperty(name, out _))
+            .FirstOrDefault();
+
+        if (propertyName is not null && root.TryGetProperty(propertyName, out message))
         {
-            if (root.TryGetProperty(propertyName, out message))
-                return true;
+            return true;
         }
 
         message = default;
@@ -147,12 +150,10 @@ internal sealed class TelegramWebhookHandler
     {
         if (message.TryGetProperty("photo", out var photoNode) && photoNode.ValueKind == JsonValueKind.Array)
         {
-            string? fileId = null;
-            foreach (var photo in photoNode.EnumerateArray())
-            {
-                if (photo.TryGetProperty("file_id", out var idNode))
-                    fileId = idNode.GetString();
-            }
+            var fileId = photoNode.EnumerateArray()
+                .Where(static photo => photo.TryGetProperty("file_id", out _))
+                .Select(static photo => photo.GetProperty("file_id").GetString())
+                .LastOrDefault(static id => !string.IsNullOrWhiteSpace(id));
 
             return string.IsNullOrWhiteSpace(fileId) ? null : $"[IMAGE:telegram:file_id={fileId}]";
         }

@@ -242,12 +242,10 @@ internal sealed class WhatsAppWebhookHandler
         var lines = new List<string>();
         if (payload.Attachments is { Length: > 0 })
         {
-            foreach (var attachment in payload.Attachments)
-            {
-                var marker = BuildMediaMarker(attachment.Type, attachment.Url);
-                if (!string.IsNullOrWhiteSpace(marker))
-                    lines.Add(marker);
-            }
+            lines.AddRange(payload.Attachments
+                .Select(static attachment => BuildMediaMarker(attachment.Type, attachment.Url))
+                .Where(static marker => !string.IsNullOrWhiteSpace(marker))
+                .Select(static marker => marker!));
         }
         else
         {
