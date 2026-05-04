@@ -40,7 +40,6 @@ internal sealed class OpenClawA2ARegistrationAgent : AIAgent
         AgentRunOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        await Task.CompletedTask;
         yield break;
     }
 }
