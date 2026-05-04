@@ -56,8 +56,23 @@ public sealed class OpenClawA2AAgent : AIAgent
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var session = serializedState.Deserialize<OpenClawA2AAgentSession>(jsonSerializerOptions)
-            ?? OpenClawA2AAgentSession.CreateNew();
+        OpenClawA2AAgentSession? session;
+        try
+        {
+            session = serializedState.Deserialize<OpenClawA2AAgentSession>(jsonSerializerOptions);
+        }
+        catch (JsonException)
+        {
+            session = null;
+        }
+
+        if (session is null
+            || string.IsNullOrWhiteSpace(session.SessionId)
+            || string.IsNullOrWhiteSpace(session.SenderId))
+        {
+            session = OpenClawA2AAgentSession.CreateNew();
+        }
+
         return ValueTask.FromResult<AgentSession>(session);
     }
 
@@ -80,7 +95,14 @@ public sealed class OpenClawA2AAgent : AIAgent
         AgentRunOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var openClawSession = session as OpenClawA2AAgentSession ?? OpenClawA2AAgentSession.CreateNew();
+        var validSession = session as OpenClawA2AAgentSession;
+        if (validSession is null
+            || string.IsNullOrWhiteSpace(validSession.SessionId)
+            || string.IsNullOrWhiteSpace(validSession.SenderId))
+        {
+            validSession = OpenClawA2AAgentSession.CreateNew();
+        }
+
         var messageList = messages.ToList();
         var userText = ExtractUserText(messageList);
         var messageId = ExtractMessageId(messageList);
@@ -93,9 +115,9 @@ public sealed class OpenClawA2AAgent : AIAgent
             await _bridge.ExecuteStreamingAsync(
                 new OpenClawA2AExecutionRequest
                 {
-                    SessionId = openClawSession.SessionId,
+                    SessionId = validSession.SessionId,
                     ChannelId = "a2a",
-                    SenderId = openClawSession.SenderId,
+                    SenderId = validSession.SenderId,
                     UserText = userText,
                     MessageId = messageId
                 },
@@ -121,13 +143,13 @@ public sealed class OpenClawA2AAgent : AIAgent
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "A2A execution failed for session {SessionId}", openClawSession.SessionId);
+            _logger.LogError(ex, "A2A execution failed for session {SessionId}", validSession.SessionId);
             pendingUpdates.Add(CreateUpdate("A2A request failed.", responseId, messageId));
         }
 
         if (!string.IsNullOrWhiteSpace(errorMessage))
         {
-            _logger.LogWarning("A2A execution failed for session {SessionId}: {Message}", openClawSession.SessionId, errorMessage);
+            _logger.LogWarning("A2A execution failed for session {SessionId}: {Message}", validSession.SessionId, errorMessage);
             pendingUpdates.Add(CreateUpdate(errorMessage, responseId, messageId));
         }
 
@@ -146,14 +168,16 @@ public sealed class OpenClawA2AAgent : AIAgent
             MessageId = messageId
         };
 
-    private static string ExtractUserText(IEnumerable<ChatMessage> messages)
+    private static string ExtractUserText(IReadOnlyList<ChatMessage> messages)
     {
-        var text = string.Concat(messages.Select(static message => message.Text));
+        var text = messages.LastOrDefault(static message => message.Role == ChatRole.User)?.Text;
         return string.IsNullOrWhiteSpace(text) ? string.Empty : text;
     }
 
-    private static string? ExtractMessageId(IEnumerable<ChatMessage> messages)
-        => messages.LastOrDefault(static message => !string.IsNullOrWhiteSpace(message.MessageId))?.MessageId;
+    private static string? ExtractMessageId(IReadOnlyList<ChatMessage> messages)
+        => messages.LastOrDefault(static message =>
+            message.Role == ChatRole.User
+            && !string.IsNullOrWhiteSpace(message.MessageId))?.MessageId;
 
     private sealed class OpenClawA2AAgentSession : AgentSession
     {

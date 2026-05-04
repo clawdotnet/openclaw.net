@@ -1,7 +1,9 @@
 #if OPENCLAW_ENABLE_MAF_EXPERIMENT
+using System.Text.Json;
 using A2A;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -63,6 +65,60 @@ public sealed class A2AIntegrationTests
 
         var fallbackUpdate = Assert.Single(updates);
         Assert.Equal("[openclaw] Request completed.", fallbackUpdate.Text);
+    }
+
+    [Fact]
+    public async Task A2AAgent_RunStreamingAsync_Uses_Latest_User_Message_Only()
+    {
+        var bridge = new CapturingExecutionBridge();
+        var agent = new OpenClawA2AAgent(
+            Options.Create(CreateOptions()),
+            bridge,
+            NullLogger<OpenClawA2AAgent>.Instance);
+        var messages = new[]
+        {
+            new ChatMessage(ChatRole.System, "system instructions"),
+            new ChatMessage(ChatRole.User, "first user") { MessageId = "user-1" },
+            new ChatMessage(ChatRole.Assistant, "assistant history") { MessageId = "assistant-1" },
+            new ChatMessage(ChatRole.User, "latest user") { MessageId = "user-2" }
+        };
+
+        await foreach (var _ in agent.RunStreamingAsync(messages))
+        {
+        }
+
+        Assert.NotNull(bridge.Request);
+        Assert.Equal("latest user", bridge.Request!.UserText);
+        Assert.Equal("user-2", bridge.Request.MessageId);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"SessionId\":\"\",\"SenderId\":\"sender\"}")]
+    [InlineData("{\"SessionId\":\"session\",\"SenderId\":\" \"}")]
+    public async Task A2AAgent_DeserializeSessionAsync_Falls_Back_When_Stored_Ids_Are_Invalid(string json)
+    {
+        var agent = new OpenClawA2AAgent(
+            Options.Create(CreateOptions()),
+            new FakeExecutionBridge(),
+            NullLogger<OpenClawA2AAgent>.Instance);
+        using var document = JsonDocument.Parse(json);
+
+        var session = await agent.DeserializeSessionAsync(
+            document.RootElement,
+            jsonSerializerOptions: null,
+            CancellationToken.None);
+        var serialized = await agent.SerializeSessionAsync(
+            session,
+            jsonSerializerOptions: null,
+            CancellationToken.None);
+
+        Assert.True(serialized.TryGetProperty("SessionId", out var sessionId));
+        Assert.True(serialized.TryGetProperty("SenderId", out var senderId));
+        var sessionIdText = sessionId.GetString();
+        var senderIdText = senderId.GetString();
+        Assert.False(string.IsNullOrWhiteSpace(sessionIdText));
+        Assert.Equal(sessionIdText, senderIdText);
     }
 
     [Fact]
@@ -310,6 +366,21 @@ public sealed class A2AIntegrationTests
             Func<AgentStreamEvent, CancellationToken, ValueTask> onEvent,
             CancellationToken cancellationToken)
         {
+            await onEvent(AgentStreamEvent.Complete(), cancellationToken);
+        }
+    }
+
+    private sealed class CapturingExecutionBridge : IOpenClawA2AExecutionBridge
+    {
+        public OpenClawA2AExecutionRequest? Request { get; private set; }
+
+        public async Task ExecuteStreamingAsync(
+            OpenClawA2AExecutionRequest request,
+            Func<AgentStreamEvent, CancellationToken, ValueTask> onEvent,
+            CancellationToken cancellationToken)
+        {
+            Request = request;
+            await onEvent(AgentStreamEvent.TextDelta($"bridge:{request.UserText}"), cancellationToken);
             await onEvent(AgentStreamEvent.Complete(), cancellationToken);
         }
     }
