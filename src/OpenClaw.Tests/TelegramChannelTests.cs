@@ -210,7 +210,7 @@ public sealed class TelegramChannelTests
     [Fact]
     public async Task TelegramWebhookHandler_ChannelPost_EnqueuesChatMessage()
     {
-        var root = Path.Combine(Path.Combine(Path.GetTempPath(), "openclaw-tests"), Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
@@ -264,7 +264,7 @@ public sealed class TelegramChannelTests
     [Fact]
     public async Task TelegramWebhookHandler_InvalidJson_ReturnsBadRequest()
     {
-        var root = Path.Combine(Path.Combine(Path.GetTempPath(), "openclaw-tests"), Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {

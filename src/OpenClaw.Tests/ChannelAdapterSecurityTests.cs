@@ -386,7 +386,7 @@ public sealed class ChannelAdapterSecurityTests
     [Fact]
     public async Task WhatsAppWebhookHandler_BridgeWebhookMapsMediaAndGroupMetadata()
     {
-        var root = Path.Combine(Path.Combine(Path.GetTempPath(), "openclaw-tests"), Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
@@ -468,7 +468,7 @@ public sealed class ChannelAdapterSecurityTests
     [Fact]
     public async Task WhatsAppWebhookHandler_BridgeAttachmentDerivesPrimaryMediaMetadata()
     {
-        var root = Path.Combine(Path.Combine(Path.GetTempPath(), "openclaw-tests"), Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
