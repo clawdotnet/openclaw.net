@@ -23,6 +23,12 @@
   <ItemGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">
     <ProjectReference Include="..\OpenClaw.MicrosoftAgentFrameworkAdapter\OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
   </ItemGroup>
+  <ItemGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0" />
+    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A" Version="1.0.0-preview.260330.1" />
+    <PackageReference Include="A2A" Version="1.0.0-preview" />
+    <PackageReference Include="A2A.AspNetCore" Version="1.0.0-preview" />
+  </ItemGroup>
   <ItemGroup Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">
     <ProjectReference Include="..\OpenClawNet.Sandbox.OpenSandbox\OpenClawNet.Sandbox.OpenSandbox.csproj" />
   </ItemGroup>

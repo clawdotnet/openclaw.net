@@ -304,6 +304,7 @@ internal static class SetupCommand
                 if (!Uri.TryCreate(answers.OpenSandboxEndpoint, UriKind.Absolute, out _))
                     throw new ArgumentException($"Invalid OpenSandbox endpoint: {answers.OpenSandboxEndpoint}");
 
+                config.Tooling.EnableBrowserTool = true;
                 config.Sandbox.Provider = SandboxProviderNames.OpenSandbox;
                 config.Sandbox.Endpoint = answers.OpenSandboxEndpoint;
                 config.Execution.Profiles["opensandbox"] = new ExecutionBackendProfileConfig

@@ -45,6 +45,7 @@ public static class GatewaySetupProfileFactory
                 WorkspaceRoot = workspacePath,
                 WorkspaceOnly = true,
                 AllowShell = normalizedProfile == "local",
+                EnableBrowserTool = false,
                 AllowedReadRoots = [workspacePath],
                 AllowedWriteRoots = [workspacePath],
                 RequireToolApproval = normalizedProfile == "public"

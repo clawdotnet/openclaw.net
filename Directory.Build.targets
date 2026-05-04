@@ -1,5 +1,5 @@
 <Project>
-  <ItemGroup Condition="'$(PublishAot)' == 'true' and '$(RuntimeIdentifier)' == 'osx-arm64'">
+  <ItemGroup Condition="'$(PublishAot)' == 'true' and '$(RuntimeIdentifier)' == 'osx-arm64' and '$(OpenClawUseClassicMacLd)' == 'true'">
     <LinkerArg Include="-ld_classic" />
   </ItemGroup>
 </Project>

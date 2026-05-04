@@ -101,6 +101,7 @@ internal static class Program
               openclaw backends <list|probe|run|session send> [options]
               openclaw admin <posture|incident export|trajectory export|approvals simulate> [options]
               openclaw compatibility <catalog> [options]
+              openclaw plugins <install|remove|list|search> [options]
               openclaw skills <inspect|install|list> [options]
               openclaw clawhub [wrapper options] [--] <clawhub args...>
 

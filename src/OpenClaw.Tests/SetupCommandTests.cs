@@ -60,6 +60,7 @@ public sealed class SetupCommandTests
             var tooling = openClaw.GetProperty("tooling");
             Assert.True(tooling.GetProperty("workspaceOnly").GetBoolean());
             Assert.True(tooling.GetProperty("allowShell").GetBoolean());
+            Assert.False(tooling.GetProperty("enableBrowserTool").GetBoolean());
             Assert.Equal(workspace, tooling.GetProperty("workspaceRoot").GetString());
             Assert.Equal(workspace, tooling.GetProperty("allowedReadRoots")[0].GetString());
             Assert.Equal(workspace, tooling.GetProperty("allowedWriteRoots")[0].GetString());
@@ -119,6 +120,7 @@ public sealed class SetupCommandTests
 
             var tooling = openClaw.GetProperty("tooling");
             Assert.False(tooling.GetProperty("allowShell").GetBoolean());
+            Assert.False(tooling.GetProperty("enableBrowserTool").GetBoolean());
             Assert.True(tooling.GetProperty("requireToolApproval").GetBoolean());
 
             var security = openClaw.GetProperty("security");

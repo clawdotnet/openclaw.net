@@ -435,7 +435,9 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
         var builder = new UriBuilder(uri)
         {
             Scheme = scheme,
-            Path = path
+            Path = path,
+            Query = string.Empty,
+            Fragment = string.Empty
         };
         return builder.Uri.ToString();
     }

@@ -121,6 +121,7 @@ internal static partial class OpenAiEndpoints
                         ActivePresetId = responsesPresetHeader.Trim()
                     });
                 }
+                ApplyImplicitToolPolicy(session, runtime, responsesPresetHeader);
                 approvalCallback = ToolApprovalCallbackFactory.Create(
                     startup.Config,
                     runtime,

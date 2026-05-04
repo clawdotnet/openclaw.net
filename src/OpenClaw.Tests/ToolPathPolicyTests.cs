@@ -56,6 +56,29 @@ public sealed class ToolPathPolicyTests
     }
 
     [Fact]
+    public void IsReadAllowed_DeniesExistingFileUnderSymlinkedParentDirectory()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var root = CreateTempDir();
+        var outsideDir = CreateTempDir();
+        var secretFile = Path.Combine(outsideDir, "secret.txt");
+        File.WriteAllText(secretFile, "sensitive");
+
+        var symlinkDir = Path.Combine(root, "escape_dir");
+        Directory.CreateSymbolicLink(symlinkDir, outsideDir);
+        var targetPath = Path.Combine(symlinkDir, "secret.txt");
+
+        var config = new ToolingConfig
+        {
+            AllowedReadRoots = [root]
+        };
+
+        Assert.False(ToolPathPolicy.IsReadAllowed(config, targetPath));
+    }
+
+    [Fact]
     public void IsWriteAllowed_DeniesSymlinkedParentDirectory()
     {
         if (OperatingSystem.IsWindows())
@@ -118,7 +141,7 @@ public sealed class ToolPathPolicyTests
         var resolved = ToolPathPolicy.ResolveRealPath(Path.Combine(symlinkDir, "nonexistent.txt"));
 
         // The resolved path should point under the outside directory, not under root
-        Assert.StartsWith(outsideDir, resolved, StringComparison.Ordinal);
+        Assert.StartsWith(ToolPathPolicy.ResolveRealPath(outsideDir), resolved, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -133,8 +156,23 @@ public sealed class ToolPathPolicyTests
         var resolved = ToolPathPolicy.ResolveRealPath(nonExistentFile);
 
         // Should resolve under the real root directory with the correct filename
-        Assert.StartsWith(root, resolved, StringComparison.Ordinal);
+        Assert.StartsWith(ToolPathPolicy.ResolveRealPath(root), resolved, StringComparison.Ordinal);
         Assert.EndsWith("does-not-exist.txt", resolved, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolveRealPath_CyclicSymlink_DoesNotRecurseIndefinitely()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var root = CreateTempDir();
+        var loop = Path.Combine(root, "loop");
+        File.CreateSymbolicLink(loop, loop);
+
+        var resolved = ToolPathPolicy.ResolveRealPath(loop);
+
+        Assert.False(string.IsNullOrWhiteSpace(resolved));
     }
 
     private static string CreateTempDir()

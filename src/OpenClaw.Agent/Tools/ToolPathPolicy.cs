@@ -4,6 +4,8 @@ namespace OpenClaw.Agent.Tools;
 
 internal static class ToolPathPolicy
 {
+    private const int MaxSymlinkResolutionDepth = 64;
+
     public static bool IsReadAllowed(ToolingConfig config, string path) =>
         IsPathAllowed(config.AllowedReadRoots, path);
 
@@ -33,46 +35,41 @@ internal static class ToolPathPolicy
     }
 
     /// <summary>
-    /// Resolves the real filesystem path, following symlinks.
-    /// For paths that don't exist yet (e.g. write targets), resolves the deepest
-    /// existing ancestor and appends the remaining segments.
+    /// Resolves the real filesystem path, following symlinked ancestors and final targets.
+    /// For paths that do not exist yet, existing ancestors are still resolved and the
+    /// remaining segments are appended.
     /// </summary>
     internal static string ResolveRealPath(string path)
+        => ResolveRealPath(path, new HashSet<string>(GetPathComparer()), depth: 0);
+
+    private static string ResolveRealPath(string path, HashSet<string> visited, int depth)
     {
         var full = Path.GetFullPath(path);
-
-        // Try resolving as a symlink first, without checking existence.
-        // This eliminates the TOCTOU window between File.Exists and ResolveLinkTarget.
-        var resolved = TryResolveLinkTarget(full);
-        if (resolved is not null)
-            return resolved;
-
-        // Not a symlink — if the path exists as-is, return it directly
-        if (File.Exists(full) || Directory.Exists(full))
+        if (depth >= MaxSymlinkResolutionDepth || !visited.Add(full))
             return full;
 
-        // Path doesn't exist yet — resolve the deepest existing ancestor
-        // and append the remaining tail. This prevents writing through a
-        // symlinked parent directory.
-        var dir = Path.GetDirectoryName(full);
-        var tail = Path.GetFileName(full);
+        var root = Path.GetPathRoot(full);
+        if (string.IsNullOrEmpty(root))
+            return full;
 
-        while (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+        var current = root;
+        var remaining = full[root.Length..];
+        var segments = remaining.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var segment in segments)
         {
-            tail = Path.Combine(Path.GetFileName(dir), tail);
-            dir = Path.GetDirectoryName(dir);
+            if (Path.IsPathRooted(segment))
+                return Path.GetFullPath(current);
+
+            current = Path.Join(current, segment);
+            var resolved = TryResolveLinkTarget(current);
+            if (resolved is not null)
+                current = ResolveRealPath(resolved, visited, depth + 1);
         }
 
-        if (!string.IsNullOrEmpty(dir))
-        {
-            if (IsPathRoot(dir))
-                return Path.Combine(dir, tail);
-
-            var realDir = TryResolveLinkTarget(dir) ?? dir;
-            return Path.Combine(realDir, tail);
-        }
-
-        return full;
+        return Path.GetFullPath(current);
     }
 
     /// <summary>
@@ -86,35 +83,36 @@ internal static class ToolPathPolicy
             var target = File.ResolveLinkTarget(path, returnFinalTarget: true);
             if (target is not null) return target.FullName;
         }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        catch (IOException)
+        {
+            // Expected when probing inaccessible or broken filesystem entries.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Expected when probing roots the current process cannot inspect.
+        }
 
         try
         {
             var target = Directory.ResolveLinkTarget(path, returnFinalTarget: true);
             if (target is not null) return target.FullName;
         }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        catch (IOException)
+        {
+            // Expected when probing inaccessible or broken filesystem entries.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Expected when probing roots the current process cannot inspect.
+        }
 
         return null;
     }
 
-    private static bool IsPathRoot(string path)
-    {
-        var root = Path.GetPathRoot(path);
-        if (string.IsNullOrEmpty(root))
-            return false;
-
-        var comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-
-        return string.Equals(
-            Path.TrimEndingDirectorySeparator(path),
-            Path.TrimEndingDirectorySeparator(root),
-            comparison);
-    }
+    private static StringComparer GetPathComparer()
+        => OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
 
     private static bool IsUnderRoot(string fullPath, string fullRoot)
     {

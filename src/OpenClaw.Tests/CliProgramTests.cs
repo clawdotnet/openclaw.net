@@ -8,6 +8,26 @@ namespace OpenClaw.Tests;
 public sealed class CliProgramTests
 {
     [Fact]
+    public async Task Main_Help_ListsPluginsCommand()
+    {
+        var previousOut = Console.Out;
+        using var output = new StringWriter();
+        try
+        {
+            Console.SetOut(output);
+
+            var exitCode = await OpenClaw.Cli.Program.Main(["--help"]);
+
+            Assert.Equal(0, exitCode);
+            Assert.Contains("openclaw plugins <install|remove|list|search> [options]", output.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Console.SetOut(previousOut);
+        }
+    }
+
+    [Fact]
     public void ResolveAuthToken_CliToken_WarnsAndTakesPrecedence()
     {
         var previous = Environment.GetEnvironmentVariable("OPENCLAW_AUTH_TOKEN");
