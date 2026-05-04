@@ -1302,6 +1302,18 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
         Assert.Equal("image", attachment.GetProperty("type").GetString());
         Assert.Equal("https://cdn.example/image.png", attachment.GetProperty("url").GetString());
 
+        File.Delete(sendPath);
+        await adapter.SendAsync(new OutboundMessage
+        {
+            ChannelId = "whatsapp",
+            RecipientId = "group-1@wa",
+            Text = "[DOCUMENT:telegram:file_id=doc123]\nkeep marker as text"
+        }, CancellationToken.None);
+
+        sendPayload = JsonDocument.Parse(await WaitForFileTextAsync(sendPath, TimeSpan.FromSeconds(5))).RootElement;
+        Assert.Equal("[DOCUMENT:telegram:file_id=doc123]\nkeep marker as text", sendPayload.GetProperty("text").GetString());
+        Assert.Equal(JsonValueKind.Null, sendPayload.GetProperty("attachments").ValueKind);
+
         var typingPayload = JsonDocument.Parse(await WaitForFileTextAsync(typingPath, TimeSpan.FromSeconds(5))).RootElement;
         Assert.Equal("acc-1", typingPayload.GetProperty("accountId").GetString());
         Assert.Equal("group-1@wa", typingPayload.GetProperty("recipientId").GetString());

@@ -177,6 +177,37 @@ public sealed class TelegramChannelTests
     }
 
     [Fact]
+    public async Task SendAsync_BareUsername_DoesNotCallTelegramApi()
+    {
+        var called = false;
+        using var http = new HttpClient(new CallbackHandler(_ =>
+        {
+            called = true;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }));
+
+        await using var channel = new TelegramChannel(
+            new TelegramChannelConfig
+            {
+                Enabled = true,
+                BotTokenRef = "raw:test-token"
+            },
+            NullLogger<TelegramChannel>.Instance,
+            http);
+
+        await channel.SendAsync(
+            new OutboundMessage
+            {
+                ChannelId = "telegram",
+                RecipientId = "openclaw_updates",
+                Text = "hello"
+            },
+            CancellationToken.None);
+
+        Assert.False(called);
+    }
+
+    [Fact]
     public async Task TelegramWebhookHandler_ChannelPost_EnqueuesChatMessage()
     {
         var root = Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"));

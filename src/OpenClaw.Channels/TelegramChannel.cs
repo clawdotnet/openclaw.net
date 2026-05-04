@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Http;
@@ -242,10 +243,22 @@ public sealed class TelegramMediaPayload
 [JsonConverter(typeof(TelegramChatIdJsonConverter))]
 public readonly record struct TelegramChatId(string Value)
 {
+    private static readonly Regex PublicUsernamePattern = new(
+        "^@[A-Za-z][A-Za-z0-9_]{4,31}$",
+        RegexOptions.CultureInvariant,
+        TimeSpan.FromMilliseconds(100));
+
     public static bool TryCreate(string? value, out TelegramChatId chatId)
     {
         value = value?.Trim();
         if (string.IsNullOrWhiteSpace(value))
+        {
+            chatId = default;
+            return false;
+        }
+
+        if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _) &&
+            !PublicUsernamePattern.IsMatch(value))
         {
             chatId = default;
             return false;

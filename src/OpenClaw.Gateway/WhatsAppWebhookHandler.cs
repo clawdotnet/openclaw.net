@@ -206,6 +206,7 @@ internal sealed class WhatsAppWebhookHandler
                 text = text[.._config.MaxInboundChars];
             }
 
+            var primaryMedia = ResolvePrimaryBridgeMedia(payload);
             var msg = new InboundMessage
             {
                 ChannelId = "whatsapp",
@@ -220,10 +221,10 @@ internal sealed class WhatsAppWebhookHandler
                 GroupId = payload.GroupId,
                 GroupName = payload.GroupName,
                 MentionedIds = payload.MentionedIds,
-                MediaType = payload.MediaType,
-                MediaUrl = payload.MediaUrl,
-                MediaMimeType = payload.MediaMimeType,
-                MediaFileName = payload.MediaFileName
+                MediaType = primaryMedia.Type,
+                MediaUrl = primaryMedia.Url,
+                MediaMimeType = primaryMedia.MimeType,
+                MediaFileName = primaryMedia.FileName
             };
 
             await enqueue(msg, ct);
@@ -271,12 +272,33 @@ internal sealed class WhatsAppWebhookHandler
             "image" => $"[IMAGE_URL:{mediaUrl}]",
             "video" => $"[VIDEO_URL:{mediaUrl}]",
             "audio" => $"[AUDIO_URL:{mediaUrl}]",
-            "document" => $"[DOCUMENT_URL:{mediaUrl}]",
+            "document" => $"[FILE_URL:{mediaUrl}]",
             "file" => $"[FILE_URL:{mediaUrl}]",
             "sticker" => $"[STICKER_URL:{mediaUrl}]",
             _ => $"[FILE_URL:{mediaUrl}]"
         };
     }
+
+    private static BridgeMediaInfo ResolvePrimaryBridgeMedia(WhatsAppBridgeInboundPayload payload)
+    {
+        if (!string.IsNullOrWhiteSpace(payload.MediaType) || !string.IsNullOrWhiteSpace(payload.MediaUrl))
+        {
+            return new BridgeMediaInfo(
+                payload.MediaType,
+                payload.MediaUrl,
+                payload.MediaMimeType,
+                payload.MediaFileName);
+        }
+
+        var attachment = payload.Attachments?.FirstOrDefault(static item =>
+            !string.IsNullOrWhiteSpace(item.Type) || !string.IsNullOrWhiteSpace(item.Url));
+
+        return attachment is null
+            ? default
+            : new BridgeMediaInfo(attachment.Type, attachment.Url, attachment.MimeType, attachment.FileName);
+    }
+
+    private readonly record struct BridgeMediaInfo(string? Type, string? Url, string? MimeType, string? FileName);
 
     private static async Task<byte[]?> ReadBodyWithLimitAsync(HttpContext context, int maxBytes, CancellationToken ct)
     {

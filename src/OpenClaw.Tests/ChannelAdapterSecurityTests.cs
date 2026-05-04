@@ -465,6 +465,66 @@ public sealed class ChannelAdapterSecurityTests
         }
     }
 
+    [Fact]
+    public async Task WhatsAppWebhookHandler_BridgeAttachmentDerivesPrimaryMediaMetadata()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var handler = new WhatsAppWebhookHandler(
+                new WhatsAppChannelConfig
+                {
+                    Enabled = true,
+                    Type = "bridge"
+                },
+                new AllowlistManager(root, NullLogger<AllowlistManager>.Instance),
+                new RecentSendersStore(root, NullLogger<RecentSendersStore>.Instance),
+                AllowlistSemantics.Legacy,
+                NullLogger<WhatsAppWebhookHandler>.Instance);
+
+            var context = new DefaultHttpContext();
+            context.Request.Method = HttpMethods.Post;
+            context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(
+                """
+                {
+                  "from": "15551234567@s.whatsapp.net",
+                  "text": "document caption",
+                  "attachments": [
+                    {
+                      "type": "document",
+                      "url": "https://cdn.example.test/report.pdf",
+                      "mimeType": "application/pdf",
+                      "fileName": "report.pdf"
+                    }
+                  ]
+                }
+                """));
+
+            InboundMessage? captured = null;
+            var result = await handler.HandleAsync(
+                context,
+                (message, _) =>
+                {
+                    captured = message;
+                    return ValueTask.CompletedTask;
+                },
+                CancellationToken.None);
+
+            Assert.Equal(200, result.StatusCode);
+            Assert.NotNull(captured);
+            Assert.Equal("[FILE_URL:https://cdn.example.test/report.pdf]\ndocument caption", captured!.Text);
+            Assert.Equal("document", captured.MediaType);
+            Assert.Equal("https://cdn.example.test/report.pdf", captured.MediaUrl);
+            Assert.Equal("application/pdf", captured.MediaMimeType);
+            Assert.Equal("report.pdf", captured.MediaFileName);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private sealed class CallbackHandler(Func<HttpRequestMessage, HttpResponseMessage> callback) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
