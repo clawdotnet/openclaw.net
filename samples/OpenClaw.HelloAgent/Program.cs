@@ -6,7 +6,7 @@ using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
 
-var memoryPath = Path.Combine(Path.GetTempPath(), "openclaw-hello-agent", Guid.NewGuid().ToString("N"));
+var memoryPath = Path.Join(Path.GetTempPath(), "openclaw-hello-agent", Guid.NewGuid().ToString("N"));
 await using var memoryStore = new FileMemoryStore(memoryPath);
 
 var agent = new AgentRuntime(
