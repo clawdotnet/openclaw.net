@@ -15,6 +15,10 @@
     <ProjectReference Include="..\OpenClaw.Cli\OpenClaw.Cli.csproj" />
     <ProjectReference Include="..\OpenClaw.Companion\OpenClaw.Companion.csproj" />
     <ProjectReference Include="..\OpenClaw.Gateway\OpenClaw.Gateway.csproj" />
+    <ProjectReference Include="..\OpenClaw.Payments.Abstractions\OpenClaw.Payments.Abstractions.csproj" />
+    <ProjectReference Include="..\OpenClaw.Payments.Core\OpenClaw.Payments.Core.csproj" />
+    <ProjectReference Include="..\OpenClaw.Payments.StripeLink\OpenClaw.Payments.StripeLink.csproj" />
+    <ProjectReference Include="..\OpenClaw.Plugins.Payment\OpenClaw.Plugins.Payment.csproj" />
     <ProjectReference Include="..\OpenClaw.SemanticKernelAdapter\OpenClaw.SemanticKernelAdapter.csproj" />
     <ProjectReference Include="..\OpenClaw.PluginKit\OpenClaw.PluginKit.csproj" />
     <ProjectReference Include="..\OpenClaw.TestPluginFixtures\OpenClaw.TestPluginFixtures.csproj" />

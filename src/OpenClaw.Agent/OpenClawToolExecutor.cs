@@ -9,6 +9,7 @@ using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Agent;
 
@@ -41,6 +42,8 @@ public sealed class OpenClawToolExecutor
     private readonly ToolExecutionRouter _executionRouter;
     private readonly IToolPresetResolver? _toolPresetResolver;
     private readonly ToolAuditLog? _auditLog;
+    private readonly IRedactionPipeline _redaction;
+    private readonly ISentinelSubstitutionService _sentinelSubstitution;
 
     public OpenClawToolExecutor(
         IReadOnlyList<ITool> tools,
@@ -55,7 +58,9 @@ public sealed class OpenClawToolExecutor
         ToolUsageTracker? toolUsageTracker = null,
         ToolExecutionRouter? executionRouter = null,
         IToolPresetResolver? toolPresetResolver = null,
-        ToolAuditLog? auditLog = null)
+        ToolAuditLog? auditLog = null,
+        IRedactionPipeline? redaction = null,
+        ISentinelSubstitutionService? sentinelSubstitution = null)
     {
         _toolsByName = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         _toolDeclarations = tools.Select(CreateDeclaration).Cast<AITool>().ToArray();
@@ -82,6 +87,8 @@ public sealed class OpenClawToolExecutor
         _executionRouter = executionRouter ?? new ToolExecutionRouter(_config, _toolSandbox, logger);
         _toolPresetResolver = toolPresetResolver;
         _auditLog = auditLog;
+        _redaction = redaction ?? new NoopRedactionPipeline();
+        _sentinelSubstitution = sentinelSubstitution ?? new NoopSentinelSubstitutionService();
     }
 
     public IList<AITool> ToolDeclarations => _toolDeclarations;
@@ -126,12 +133,14 @@ public sealed class OpenClawToolExecutor
     {
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.ExecuteTool");
         activity?.SetTag("tool.name", toolName);
+        var persistedArgsJson = _redaction.Redact(argsJson);
+        var executionArgsJson = argsJson;
 
         if (!_toolsByName.TryGetValue(toolName, out var tool))
         {
             return CreateImmediateResult(
                 toolName,
-                argsJson,
+                persistedArgsJson,
                 "Error: Unknown tool",
                 callId: callId,
                 resultStatus: ToolResultStatuses.Failed,
@@ -149,7 +158,7 @@ public sealed class OpenClawToolExecutor
             _logger?.LogInformation("[{CorrelationId}] {Message}", turnCtx.CorrelationId, deniedByPreset);
             return CreateImmediateResult(
                 toolName,
-                argsJson,
+                persistedArgsJson,
                 deniedByPreset,
                 callId: callId,
                 resultStatus: ToolResultStatuses.Blocked,
@@ -165,7 +174,7 @@ public sealed class OpenClawToolExecutor
             SenderId = session.SenderId,
             CorrelationId = turnCtx.CorrelationId,
             ToolName = tool.Name,
-            ArgumentsJson = argsJson,
+            ArgumentsJson = persistedArgsJson,
             IsStreaming = isStreaming
         };
 
@@ -175,14 +184,14 @@ public sealed class OpenClawToolExecutor
             {
                 var allowed = hook is IToolHookWithContext ctxHook
                     ? await ctxHook.BeforeExecuteAsync(hookCtx, ct)
-                    : await hook.BeforeExecuteAsync(tool.Name, argsJson, ct);
+                    : await hook.BeforeExecuteAsync(tool.Name, persistedArgsJson, ct);
                 if (!allowed)
                 {
                     var deniedByHook = $"Tool execution denied by hook: {hook.Name}";
                     _logger?.LogInformation("[{CorrelationId}] {Message}", turnCtx.CorrelationId, deniedByHook);
                     return CreateImmediateResult(
                         toolName,
-                        argsJson,
+                        persistedArgsJson,
                         deniedByHook,
                         callId: callId,
                         resultStatus: ToolResultStatuses.Blocked,
@@ -196,7 +205,7 @@ public sealed class OpenClawToolExecutor
             }
         }
 
-        var approvalDescriptor = ToolActionPolicyResolver.Resolve(tool.Name, argsJson);
+        var approvalDescriptor = ToolActionPolicyResolver.Resolve(tool.Name, persistedArgsJson);
         var normalizedToolName = NormalizeApprovalToolName(tool.Name);
         var explicitlyConfiguredApproval = _config.Tooling.ApprovalRequiredTools
             .Any(item => string.Equals(NormalizeApprovalToolName(item), normalizedToolName, StringComparison.Ordinal));
@@ -211,13 +220,13 @@ public sealed class OpenClawToolExecutor
         {
             if (approvalCallback is not null)
             {
-                var approved = await approvalCallback(tool.Name, argsJson, ct);
+                var approved = await approvalCallback(tool.Name, persistedArgsJson, ct);
                 if (!approved)
                 {
                     _logger?.LogInformation("[{CorrelationId}] Tool {Tool} denied by user", turnCtx.CorrelationId, tool.Name);
                     return CreateImmediateResult(
                         toolName,
-                        argsJson,
+                        persistedArgsJson,
                         "Tool execution denied by user.",
                         callId: callId,
                         resultStatus: ToolResultStatuses.Blocked,
@@ -238,8 +247,8 @@ public sealed class OpenClawToolExecutor
                     "or set OpenClaw:Tooling:RequireToolApproval=false for trusted local sessions.";
                 return CreateImmediateResult(
                     toolName,
-                    argsJson,
-                    approvalMessage,
+                    persistedArgsJson,
+                    _redaction.Redact(approvalMessage),
                     callId: callId,
                     resultStatus: ToolResultStatuses.Blocked,
                     failureCode: ToolFailureCodes.ApprovalRequired,
@@ -256,12 +265,26 @@ public sealed class OpenClawToolExecutor
         string? nextStep = null;
         var toolFailed = false;
         var toolTimedOut = false;
+        var afterHookCtx = hookCtx;
         try
         {
+            var substitution = await _sentinelSubstitution.SubstituteAsync(new SentinelSubstitutionContext
+            {
+                ToolName = tool.Name,
+                ArgumentsJson = argsJson,
+                SessionId = session.Id,
+                ChannelId = session.ChannelId,
+                SenderId = session.SenderId,
+                CorrelationId = turnCtx.CorrelationId
+            }, ct);
+            executionArgsJson = substitution.ExecutionArgumentsJson;
+            persistedArgsJson = _redaction.Redact(substitution.PersistedArgumentsJson);
+            afterHookCtx = hookCtx with { ArgumentsJson = persistedArgsJson };
+
             if (onDelta is not null && tool is IStreamingTool streamingTool)
-                result = await ExecuteStreamingToolCollectAsync(streamingTool, argsJson, onDelta, ct);
+                result = await ExecuteStreamingToolCollectAsync(streamingTool, executionArgsJson, onDelta, ct);
             else
-                result = await ExecuteToolWithRoutingAsync(tool, argsJson, session, turnCtx, ct);
+                result = await ExecuteToolWithRoutingAsync(tool, executionArgsJson, session, turnCtx, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -312,6 +335,9 @@ public sealed class OpenClawToolExecutor
             _logger?.LogWarning(ex, "[{CorrelationId}] Tool {Tool} failed", turnCtx.CorrelationId, tool.Name);
         }
         sw.Stop();
+        result = _redaction.Redact(result);
+        failureMessage = failureMessage is null ? null : _redaction.Redact(failureMessage);
+        nextStep = nextStep is null ? null : _redaction.Redact(nextStep);
 
         _metrics?.IncrementToolCalls();
         Telemetry.ToolExecutionDuration.Record(
@@ -331,7 +357,7 @@ public sealed class OpenClawToolExecutor
             DurationMs = sw.Elapsed.TotalMilliseconds,
             Failed = toolFailed,
             TimedOut = toolTimedOut,
-            ArgumentsBytes = Encoding.UTF8.GetByteCount(argsJson),
+            ArgumentsBytes = Encoding.UTF8.GetByteCount(persistedArgsJson),
             ResultBytes = Encoding.UTF8.GetByteCount(result)
         });
         _logger?.LogDebug("[{CorrelationId}] Tool {Tool} completed in {Duration}ms ok={Ok}",
@@ -345,9 +371,9 @@ public sealed class OpenClawToolExecutor
             try
             {
                 if (hook is IToolHookWithContext ctxHook)
-                    await ctxHook.AfterExecuteAsync(hookCtx, result, sw.Elapsed, toolFailed, ct);
+                    await ctxHook.AfterExecuteAsync(afterHookCtx, result, sw.Elapsed, toolFailed, ct);
                 else
-                    await hook.AfterExecuteAsync(tool.Name, argsJson, result, sw.Elapsed, toolFailed, ct);
+                    await hook.AfterExecuteAsync(tool.Name, persistedArgsJson, result, sw.Elapsed, toolFailed, ct);
             }
             catch (Exception ex)
             {
@@ -359,7 +385,7 @@ public sealed class OpenClawToolExecutor
         {
             CallId = callId,
             ToolName = toolName,
-            Arguments = argsJson,
+            Arguments = persistedArgsJson,
             Result = result,
             Duration = sw.Elapsed,
             ResultStatus = resultStatus,

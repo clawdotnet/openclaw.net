@@ -57,6 +57,7 @@ Allows the agent to navigate and interact with websites using Playwright.
 - **Config**: `OpenClaw:Tooling:EnableBrowserTool` (bool)
 - **Options**: `BrowserHeadless` (default: true), `BrowserTimeoutSeconds` (default: 30).
 - **Runtime note**: source/setup-generated local profiles disable this tool by default because the NativeAOT-friendly gateway does not run local Playwright execution unless dynamic code or a configured non-local execution backend is available. Enable it only after configuring an execution backend or sandbox for browser automation.
+- **Payment sentinels**: when native payments are enabled, browser `fill` can resolve approved payment sentinels inside the execution boundary. Persisted tool arguments keep the sentinel text, not raw card values.
 
 ### 4. Memory Note Tool (`memory`)
 Stores and retrieves lightweight notes in the configured memory store.
@@ -80,6 +81,12 @@ Admin/ops tool to list active sessions, inspect recent history, or send a cross-
 
 ### 7. Delegate Agent Tool (`delegate_agent`)
 Spawns a “sub-agent” for multi-agent delegation (only present when `OpenClaw:Delegation:Enabled=true`).
+
+### 7a. Payment Tool (`payment`)
+Gateway-registered first-party payment tool over the native payment runtime. Disabled by default via `OpenClaw:Payments:Enabled=false`.
+- Actions: `setup_status`, `list_funding_sources`, `issue_virtual_card`, `execute_machine_payment`, `get_payment_status`.
+- Safety: money-moving actions are approval-gated by policy; tool results include safe metadata only.
+- Docs: [plugins/payment.md](plugins/payment.md) and [security/payments.md](security/payments.md).
 
 ### 7b. Canvas and A2UI Tools (`canvas_present`, `canvas_hide`, `canvas_navigate`, `canvas_snapshot`, `a2ui_push`, `a2ui_reset`, `a2ui_eval`)
 Control the current websocket session's Canvas visual workspace.

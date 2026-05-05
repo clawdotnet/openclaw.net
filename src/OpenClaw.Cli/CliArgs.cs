@@ -87,5 +87,7 @@ internal sealed class CliArgs
             or "--open-browser"
             or "--skip-verify"
             or "--json"
-            or "--anonymize";
+            or "--anonymize"
+            or "--test"
+            or "--yes";
 }

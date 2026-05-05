@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>OpenClaw.Payments.Abstractions</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsPackable>true</IsPackable>
+    <PackageId>OpenClaw.Payments.Abstractions</PackageId>
+    <Description>Native payment abstractions and safe DTOs for OpenClaw.NET.</Description>
+    <PackageTags>openclaw;payments;agents;dotnet</PackageTags>
+  </PropertyGroup>
+</Project>

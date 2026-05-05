@@ -16,6 +16,7 @@ using OpenClaw.Core.Validation;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Models;
+using OpenClaw.Payments.Core;
 
 namespace OpenClaw.Gateway.Composition;
 
@@ -35,6 +36,7 @@ internal static partial class RuntimeInitializationExtensions
             ApprovalAuditStore = app.Services.GetRequiredService<ApprovalAuditStore>(),
             RuntimeMetrics = app.Services.GetRequiredService<RuntimeMetrics>(),
             ProviderUsage = app.Services.GetRequiredService<ProviderUsageTracker>(),
+            PaymentRuntime = app.Services.GetRequiredService<PaymentRuntimeService>(),
             ModelProfiles = app.Services.GetRequiredService<ConfiguredModelProfileRegistry>(),
             ProviderRegistry = app.Services.GetRequiredService<LlmProviderRegistry>(),
             ProviderPolicies = app.Services.GetRequiredService<ProviderPolicyService>(),
@@ -546,6 +548,7 @@ internal static partial class RuntimeInitializationExtensions
         public required ApprovalAuditStore ApprovalAuditStore { get; init; }
         public required RuntimeMetrics RuntimeMetrics { get; init; }
         public required ProviderUsageTracker ProviderUsage { get; init; }
+        public required PaymentRuntimeService PaymentRuntime { get; init; }
         public required ConfiguredModelProfileRegistry ModelProfiles { get; init; }
         public required LlmProviderRegistry ProviderRegistry { get; init; }
         public required ProviderPolicyService ProviderPolicies { get; init; }

@@ -1,4 +1,5 @@
 using OpenClaw.Core.Models;
+using OpenClaw.Payments.Abstractions;
 
 namespace OpenClaw.Cli;
 
@@ -96,6 +97,21 @@ internal sealed class OpenClawHttpClient : IDisposable
 
     public Task<string> ExportTrajectoryJsonlAsync(DateTimeOffset? fromUtc, DateTimeOffset? toUtc, string? sessionId, bool anonymize, CancellationToken cancellationToken)
         => _inner.ExportTrajectoryJsonlAsync(fromUtc, toUtc, sessionId, anonymize, cancellationToken);
+
+    public Task<PaymentSetupStatus> GetPaymentSetupStatusAsync(string? provider, CancellationToken cancellationToken)
+        => _inner.GetPaymentSetupStatusAsync(provider, cancellationToken);
+
+    public Task<List<FundingSource>> ListPaymentFundingSourcesAsync(string? provider, string? environment, CancellationToken cancellationToken)
+        => _inner.ListPaymentFundingSourcesAsync(provider, environment, cancellationToken);
+
+    public Task<VirtualCardHandle> IssueVirtualCardAsync(VirtualCardRequest request, bool yes, CancellationToken cancellationToken)
+        => _inner.IssueVirtualCardAsync(request, yes, cancellationToken);
+
+    public Task<MachinePaymentResult> ExecuteMachinePaymentAsync(MachinePaymentRequest request, bool yes, CancellationToken cancellationToken)
+        => _inner.ExecuteMachinePaymentAsync(request, yes, cancellationToken);
+
+    public Task<PaymentStatus> GetPaymentStatusAsync(string id, string? provider, string? environment, CancellationToken cancellationToken)
+        => _inner.GetPaymentStatusAsync(id, provider, environment, cancellationToken);
 
     public void Dispose() => _inner.Dispose();
 }

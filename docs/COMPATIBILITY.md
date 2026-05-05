@@ -46,6 +46,7 @@ OpenClaw.NET keeps plugin compatibility explicit by runtime mode. The goal is to
 | `Plugins:Transport:Mode=socket` | Supported | Local IPC with authenticated handshake and private runtime socket directories. |
 | `Plugins:Transport:Mode=hybrid` | Supported | `init` over stdio, then runtime RPC/notifications over the local IPC socket transport. |
 | Native dynamic .NET plugins | Supported with caveats | `jit` only through `OpenClaw:Plugins:DynamicNative`. AOT fails fast before load. |
+| Upstream/TypeScript `payment` plugin live execution | Not supported | Native OpenClaw.NET payment runtime owns live payment secrets. Bridge plugins named/providing `payment` are diagnostic/test-only unless explicitly sandboxed; live execution routes through the native `payment` tool. |
 
 ## Unsupported Today
 

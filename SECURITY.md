@@ -36,6 +36,14 @@ Use the approval simulator to inspect effective behavior without mutating live q
 - `POST /admin/approvals/simulate`
 - `openclaw admin approvals simulate`
 
+## Payments
+
+Native payments are disabled by default. When enabled, payment actions are fail-closed: live virtual cards, machine payments, and browser payment-sentinel fills require critical approval unless policy explicitly allows deterministic test mode.
+
+Payment secrets are stored behind opaque handles. Raw PAN, CVV, authorization headers, shared payment tokens, and provider secret JSON must not appear in tool results, audit records, traces, memory, or persisted session messages. The payment redaction pipeline runs before persistence/export paths, and `PaymentSecret` cannot be JSON-serialized.
+
+See [docs/security/payments.md](docs/security/payments.md), [docs/plugins/payment.md](docs/plugins/payment.md), and [docs/cli/payment.md](docs/cli/payment.md).
+
 ## Browser Sessions And Proxies
 
 Browser-session admin auth is only safe when the gateway can determine that the effective request scheme is HTTPS.

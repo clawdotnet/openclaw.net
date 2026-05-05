@@ -5,6 +5,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Core.Memory;
 
@@ -16,6 +17,7 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
     private readonly IEmbeddingGenerator<string, Embedding<float>>? _embeddingGenerator;
     private readonly bool _enableVectors;
     private readonly ILogger? _logger;
+    private readonly IRedactionPipeline? _redaction;
 
     public SqliteMemoryStore(string dbPath, bool enableFts)
         : this(dbPath, enableFts, embeddingGenerator: null, enableVectors: false, logger: null)
@@ -25,13 +27,15 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
     public SqliteMemoryStore(string dbPath, bool enableFts,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
         bool enableVectors = false,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IRedactionPipeline? redaction = null)
     {
         _dbPath = dbPath ?? throw new ArgumentNullException(nameof(dbPath));
         _enableFtsRequested = enableFts;
         _embeddingGenerator = embeddingGenerator;
         _enableVectors = enableVectors && embeddingGenerator is not null;
         _logger = logger;
+        _redaction = redaction;
 
         var dir = Path.GetDirectoryName(Path.GetFullPath(_dbPath));
         if (!string.IsNullOrWhiteSpace(dir))
@@ -179,6 +183,7 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         if (session is null)
             throw new ArgumentNullException(nameof(session));
 
+        _redaction?.RedactSessionInPlace(session);
         var json = JsonSerializer.Serialize(session, CoreJsonContext.Default.Session);
         var updatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
@@ -221,7 +226,7 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         if (string.IsNullOrWhiteSpace(key))
             throw new ArgumentException("key must be set.", nameof(key));
 
-        content ??= "";
+        content = _redaction?.Redact(content) ?? content ?? "";
         var updatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
         await using var conn = new SqliteConnection(ConnectionString);
@@ -541,6 +546,7 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         if (branch is null)
             throw new ArgumentNullException(nameof(branch));
 
+        RedactBranchInPlace(branch);
         var json = JsonSerializer.Serialize(branch, CoreJsonContext.Default.SessionBranch);
         var updatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
@@ -564,6 +570,21 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         cmd.Parameters.AddWithValue("$updated_at", updatedAt);
 
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private void RedactBranchInPlace(SessionBranch branch)
+    {
+        if (_redaction is null)
+            return;
+
+        var session = new Session
+        {
+            Id = branch.SessionId,
+            ChannelId = "",
+            SenderId = "",
+            History = branch.History
+        };
+        _redaction.RedactSessionInPlace(session);
     }
 
     public async ValueTask<SessionBranch?> LoadBranchAsync(string branchId, CancellationToken ct)

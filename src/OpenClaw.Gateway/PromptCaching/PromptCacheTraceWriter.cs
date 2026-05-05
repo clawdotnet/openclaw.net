@@ -2,17 +2,20 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Gateway.PromptCaching;
 
 internal sealed class PromptCacheTraceWriter
 {
     private readonly GatewayConfig _config;
+    private readonly IRedactionPipeline _redaction;
     private readonly Lock _gate = new();
 
-    public PromptCacheTraceWriter(GatewayConfig config)
+    public PromptCacheTraceWriter(GatewayConfig config, IRedactionPipeline? redaction = null)
     {
         _config = config;
+        _redaction = redaction ?? new NoopRedactionPipeline();
     }
 
     public void WriteRequest(PromptCacheDescriptor descriptor, IReadOnlyList<ChatMessage> messages, ChatOptions options)
@@ -31,10 +34,10 @@ internal sealed class PromptCacheTraceWriter
             Dialect = descriptor.Dialect,
             Retention = descriptor.Retention,
             Fingerprint = descriptor.StableFingerprint,
-            StableSystemPrompt = ShouldIncludeSystem() ? descriptor.StableSystemPrompt : null,
-            PromptText = ShouldIncludePrompt() ? descriptor.VolatileSuffix : null,
+            StableSystemPrompt = ShouldIncludeSystem() ? _redaction.Redact(descriptor.StableSystemPrompt) : null,
+            PromptText = ShouldIncludePrompt() ? _redaction.Redact(descriptor.VolatileSuffix) : null,
             MessageCount = messages.Count,
-            AdditionalProperties = options.AdditionalProperties?.ToDictionary(static kvp => kvp.Key, static kvp => RenderPropertyValue(kvp.Value))
+            AdditionalProperties = options.AdditionalProperties?.ToDictionary(kvp => kvp.Key, kvp => (string?)_redaction.Redact(RenderPropertyValue(kvp.Value)))
         });
     }
 

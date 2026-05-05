@@ -12,6 +12,10 @@
     <Project Path="src/OpenClaw.Client/OpenClaw.Client.csproj" />
     <Project Path="src/OpenClaw.Cli/OpenClaw.Cli.csproj" />
     <Project Path="src/OpenClaw.Companion/OpenClaw.Companion.csproj" />
+    <Project Path="src/OpenClaw.Payments.Abstractions/OpenClaw.Payments.Abstractions.csproj" />
+    <Project Path="src/OpenClaw.Payments.Core/OpenClaw.Payments.Core.csproj" />
+    <Project Path="src/OpenClaw.Payments.StripeLink/OpenClaw.Payments.StripeLink.csproj" />
+    <Project Path="src/OpenClaw.Plugins.Payment/OpenClaw.Plugins.Payment.csproj" />
     <Project Path="src/OpenClaw.Plugins.Mempalace/OpenClaw.Plugins.Mempalace.csproj" />
     <Project Path="src/OpenClaw.MicrosoftAgentFrameworkAdapter/OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
     <Project Path="src/OpenClawNet.Sandbox.OpenSandbox/OpenClawNet.Sandbox.OpenSandbox.csproj" />

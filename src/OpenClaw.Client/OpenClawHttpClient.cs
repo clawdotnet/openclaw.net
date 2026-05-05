@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using OpenClaw.Core.Models;
+using OpenClaw.Payments.Abstractions;
 
 namespace OpenClaw.Client;
 
@@ -31,6 +32,11 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _integrationAutomationsUri;
     private readonly Uri _integrationRuntimeEventsUri;
     private readonly Uri _integrationMessagesUri;
+    private readonly Uri _integrationPaymentSetupUri;
+    private readonly Uri _integrationPaymentFundingUri;
+    private readonly Uri _integrationPaymentVirtualCardUri;
+    private readonly Uri _integrationPaymentExecuteUri;
+    private readonly Uri _integrationPaymentStatusUri;
     private readonly Uri _adminAutomationsUri;
     private readonly Uri _adminLearningProposalsUri;
     private readonly Uri _adminMemoryNotesUri;
@@ -94,6 +100,11 @@ public sealed class OpenClawHttpClient : IDisposable
         _integrationAutomationsUri = new Uri(baseUri, "/api/integration/automations");
         _integrationRuntimeEventsUri = new Uri(baseUri, "/api/integration/runtime-events");
         _integrationMessagesUri = new Uri(baseUri, "/api/integration/messages");
+        _integrationPaymentSetupUri = new Uri(baseUri, "/api/integration/payment/setup");
+        _integrationPaymentFundingUri = new Uri(baseUri, "/api/integration/payment/funding");
+        _integrationPaymentVirtualCardUri = new Uri(baseUri, "/api/integration/payment/virtual-card");
+        _integrationPaymentExecuteUri = new Uri(baseUri, "/api/integration/payment/execute");
+        _integrationPaymentStatusUri = new Uri(baseUri, "/api/integration/payment/status/");
         _adminAutomationsUri = new Uri(baseUri, "/admin/automations");
         _adminLearningProposalsUri = new Uri(baseUri, "/admin/learning/proposals");
         _adminMemoryNotesUri = new Uri(baseUri, "/admin/memory/notes");
@@ -277,6 +288,39 @@ public sealed class OpenClawHttpClient : IDisposable
 
     public Task<IntegrationStatusResponse> GetIntegrationStatusAsync(CancellationToken cancellationToken)
         => GetAsync(_integrationStatusUri, CoreJsonContext.Default.IntegrationStatusResponse, cancellationToken);
+
+    public Task<PaymentSetupStatus> GetPaymentSetupStatusAsync(string? provider, CancellationToken cancellationToken)
+        => GetAsync(BuildPaymentUri(_integrationPaymentSetupUri, provider, environment: null, yes: false), PaymentJsonContext.Default.PaymentSetupStatus, cancellationToken);
+
+    public Task<List<FundingSource>> ListPaymentFundingSourcesAsync(string? provider, string? environment, CancellationToken cancellationToken)
+        => GetAsync(BuildPaymentUri(_integrationPaymentFundingUri, provider, environment, yes: false), PaymentJsonContext.Default.ListFundingSource, cancellationToken);
+
+    public async Task<VirtualCardHandle> IssueVirtualCardAsync(VirtualCardRequest request, bool yes, CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, BuildPaymentUri(_integrationPaymentVirtualCardUri, request.ProviderId, request.Environment, yes))
+        {
+            Content = BuildJsonContent(request, PaymentJsonContext.Default.VirtualCardRequest)
+        };
+        return await SendAsync(httpRequest, PaymentJsonContext.Default.VirtualCardHandle, cancellationToken);
+    }
+
+    public async Task<MachinePaymentResult> ExecuteMachinePaymentAsync(MachinePaymentRequest request, bool yes, CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, BuildPaymentUri(_integrationPaymentExecuteUri, request.ProviderId, request.Environment, yes))
+        {
+            Content = BuildJsonContent(request, PaymentJsonContext.Default.MachinePaymentRequest)
+        };
+        return await SendAsync(httpRequest, PaymentJsonContext.Default.MachinePaymentResult, cancellationToken);
+    }
+
+    public Task<PaymentStatus> GetPaymentStatusAsync(string id, string? provider, string? environment, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            throw new ArgumentException("Payment id is required.", nameof(id));
+
+        var uri = new Uri(_integrationPaymentStatusUri, Uri.EscapeDataString(id));
+        return GetAsync(BuildPaymentUri(uri, provider, environment, yes: false), PaymentJsonContext.Default.PaymentStatus, cancellationToken);
+    }
 
     public Task<IntegrationApprovalsResponse> GetIntegrationApprovalsAsync(
         string? channelId,
@@ -1516,6 +1560,22 @@ public sealed class OpenClawHttpClient : IDisposable
     {
         var json = JsonSerializer.Serialize(request, jsonTypeInfo);
         return new StringContent(json, Encoding.UTF8, "application/json");
+    }
+
+    private static Uri BuildPaymentUri(Uri baseUri, string? provider, string? environment, bool yes)
+    {
+        var pairs = new List<string>();
+        if (!string.IsNullOrWhiteSpace(provider))
+            pairs.Add($"provider={Uri.EscapeDataString(provider)}");
+        if (!string.IsNullOrWhiteSpace(environment))
+            pairs.Add($"environment={Uri.EscapeDataString(environment)}");
+        if (yes)
+            pairs.Add("yes=true");
+        if (pairs.Count == 0)
+            return baseUri;
+
+        var separator = string.IsNullOrEmpty(baseUri.Query) ? "?" : "&";
+        return new Uri(baseUri.AbsoluteUri + separator + string.Join("&", pairs), UriKind.Absolute);
     }
 
     private static void ApplyPresetHeader(HttpRequestMessage request, string? presetId)

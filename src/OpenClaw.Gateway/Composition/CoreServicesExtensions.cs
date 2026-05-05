@@ -22,6 +22,9 @@ using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.PromptCaching;
 using OpenClaw.Core.Validation;
 using OpenClaw.PluginKit;
+using OpenClaw.Payments.Abstractions;
+using OpenClaw.Payments.Core;
+using OpenClaw.Payments.StripeLink;
 using TickerQ.DependencyInjection;
 
 namespace OpenClaw.Gateway.Composition;
@@ -39,6 +42,35 @@ internal static class CoreServicesExtensions
         services.AddSingleton(startup);
         services.AddSingleton(config);
         services.AddSingleton(config.Learning);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISensitiveDataRedactor, BaselineSecretRedactor>());
+        services.AddOpenClawPaymentCore(
+            defaultProviderId: config.Payments.Provider,
+            environment: config.Payments.Environment,
+            secretTtl: TimeSpan.FromMinutes(Math.Max(1, config.Payments.SecretTtlMinutes)),
+            allowTestModeWithoutApproval: config.Payments.Policy.AllowTestModeWithoutApproval,
+            denyLiveWithoutApprovalService: config.Payments.Policy.DenyLiveWithoutApprovalService,
+            maxLiveAmountMinor: config.Payments.Policy.MaxLiveAmountMinor,
+            mockProviderId: config.Payments.Mock.ProviderId,
+            mockFundingDisplay: config.Payments.Mock.FundingSourceDisplayName);
+        if (string.Equals(config.Payments.Provider, "stripe-link", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton<ILinkCliCommandRunner, LinkCliProcessRunner>();
+            services.AddSingleton<IPaymentProvider>(sp => new StripeLinkPaymentProvider(new StripeLinkOptions
+            {
+                ProviderId = config.Payments.StripeLink.ProviderId,
+                CliPath = config.Payments.StripeLink.CliPath,
+                Mode = config.Payments.Environment,
+                Timeout = TimeSpan.FromSeconds(Math.Max(1, config.Payments.StripeLink.TimeoutSeconds)),
+                WorkingDirectory = config.Payments.StripeLink.WorkingDirectory,
+                EnvironmentVariables = config.Payments.StripeLink.EnvironmentVariables
+            }, sp.GetRequiredService<ILinkCliCommandRunner>()));
+        }
+        services.AddSingleton<IPaymentApprovalService, GatewayPaymentApprovalService>();
+        services.AddSingleton<IRedactionPipeline>(sp => new RedactionPipeline(sp.GetServices<ISensitiveDataRedactor>()));
+        services.AddSingleton<ISentinelSubstitutionService>(sp =>
+            config.Payments.Enabled
+                ? sp.GetRequiredService<PaymentSentinelSubstitutionService>()
+                : new NoopSentinelSubstitutionService());
         services.AddSingleton(typeof(AllowlistSemantics), AllowlistPolicy.ParseSemantics(config.Channels.AllowlistSemantics));
         services.AddSingleton(sp =>
             new RecentSendersStore(config.Memory.StoragePath, sp.GetRequiredService<ILogger<RecentSendersStore>>()));
@@ -51,6 +83,7 @@ internal static class CoreServicesExtensions
             config,
             sp.GetRequiredService<RuntimeMetrics>(),
             sp.GetRequiredService<ILoggerFactory>().CreateLogger("MemoryStore"),
+            sp.GetRequiredService<IRedactionPipeline>(),
             ResolveStartupCancellationToken(sp),
             ResolveBlockedPluginIds(sp)));
         services.AddSingleton<ISessionAdminStore>(sp =>
@@ -220,6 +253,7 @@ internal static class CoreServicesExtensions
         GatewayConfig config,
         RuntimeMetrics metrics,
         ILogger logger,
+        IRedactionPipeline redaction,
         CancellationToken startupCancellationToken,
         IReadOnlyCollection<string> blockedPluginIds)
     {
@@ -239,7 +273,8 @@ internal static class CoreServicesExtensions
                 ResolveSqliteDbPath(config),
                 sqliteConfig.EnableFts,
                 embeddingGenerator: embeddingGen,
-                enableVectors: sqliteConfig.EnableVectors);
+                enableVectors: sqliteConfig.EnableVectors,
+                redaction: redaction);
 
             return store;
         }
@@ -247,7 +282,8 @@ internal static class CoreServicesExtensions
         return new FileMemoryStore(
             config.Memory.StoragePath,
             config.Memory.MaxCachedSessions ?? config.MaxConcurrentSessions,
-            metrics: metrics);
+            metrics: metrics,
+            redaction: redaction);
     }
 
     private static IMemoryStore CreateDynamicNativeMemoryStore(

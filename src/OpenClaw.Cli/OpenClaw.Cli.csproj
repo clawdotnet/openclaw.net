@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.Client\OpenClaw.Client.csproj" />
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
+    <ProjectReference Include="..\OpenClaw.Payments.Abstractions\OpenClaw.Payments.Abstractions.csproj" />
     <ProjectReference Include="..\OpenClaw.Tui\OpenClaw.Tui.csproj" />
   </ItemGroup>
 

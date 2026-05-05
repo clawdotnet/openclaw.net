@@ -16,6 +16,7 @@ using OpenClaw.Core.Skills;
 using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Tools;
+using OpenClaw.Plugins.Payment;
 
 namespace OpenClaw.Gateway.Composition;
 
@@ -70,6 +71,7 @@ internal static partial class RuntimeInitializationExtensions
             ApprovalAuditStore = services.ApprovalAuditStore,
             RuntimeMetrics = services.RuntimeMetrics,
             ProviderUsage = services.ProviderUsage,
+            PaymentRuntime = services.PaymentRuntime,
             Heartbeat = services.HeartbeatService,
             LoadedSkills = skills,
             SkillWatcher = skillWatcher,
@@ -154,6 +156,9 @@ internal static partial class RuntimeInitializationExtensions
 
         if (browserAvailability.Registered)
             tools.Add(new BrowserTool(config.Tooling, services.RuntimeMetrics, browserAvailability.LocalExecutionSupported));
+
+        if (config.Payments.Enabled && config.Payments.ToolEnabled)
+            tools.Add(PaymentPluginRegistration.CreateTool(services.PaymentRuntime, config.Payments.Provider, config.Payments.Environment));
 
         if (string.Equals(Environment.GetEnvironmentVariable("OPENCLAW_ENABLE_STREAMING_SMOKE_TOOL"), "1", StringComparison.Ordinal))
             tools.Add(new StreamingSmokeEchoTool());

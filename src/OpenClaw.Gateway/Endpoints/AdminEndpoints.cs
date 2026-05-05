@@ -57,7 +57,8 @@ internal static partial class AdminEndpoints
             automationService,
             organizationPolicy,
             app.Services.GetRequiredService<ToolUsageTracker>(),
-            sessionAdminStore);
+            sessionAdminStore,
+            app.Services.GetService<IRedactionPipeline>());
         var maintenance = app.Services.GetService<GatewayMaintenanceRuntimeService>()
             ?? new GatewayMaintenanceRuntimeService(startup, runtime, automationService);
         var providerSmokeRegistry = app.Services.GetService<ProviderSmokeRegistry>()

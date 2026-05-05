@@ -19,6 +19,8 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [USER_GUIDE.md](USER_GUIDE.md) | Providers, tools, skills, channels, and the day-to-day operator surface. |
 | [RELEASES.md](RELEASES.md) | Desktop download bundles, release assets, and signing/notarization status. |
 | [TOOLS_GUIDE.md](TOOLS_GUIDE.md) | Native tool catalog, behavior, and configuration. |
+| [plugins/payment.md](plugins/payment.md) | Native payment tool, virtual cards, machine payments, providers, and safe agent-facing actions. |
+| [cli/payment.md](cli/payment.md) | `openclaw payment ...` gateway-backed CLI commands and safe output contract. |
 | [mempalace-memory.md](mempalace-memory.md) | Optional ElBruno.MempalaceNet memory provider and temporal KG tool. |
 | [SESSIONS.md](SESSIONS.md) | Session lifecycle, the `SessionManager`, and the `sessions_spawn` / `sessions_yield` / `sessions` tools. |
 | [CANVAS_A2UI.md](CANVAS_A2UI.md) | Supported Canvas and A2UI behavior for agent-rendered visual workspaces. |
@@ -41,6 +43,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | Doc | What it covers |
 | --- | --- |
 | [../SECURITY.md](../SECURITY.md) | Security posture, required settings before a public deployment, and breaking-change credential rules. |
+| [security/payments.md](security/payments.md) | Payment approvals, vaulting, redaction, sentinel substitution, and provider security invariants. |
 | [COMPATIBILITY.md](COMPATIBILITY.md) | Supported upstream skill, plugin, and channel surface. |
 | [sandboxing.md](sandboxing.md) | Optional sandbox execution backends. |
 | [DOCKERHUB.md](DOCKERHUB.md) | Official container image reference. |

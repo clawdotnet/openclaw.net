@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
+using OpenClaw.Core.Security;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
 
@@ -25,6 +26,7 @@ internal sealed class AdminObservabilityService
     private readonly OrganizationPolicyService _organizationPolicy;
     private readonly ToolUsageTracker _toolUsage;
     private readonly ISessionAdminStore _sessionAdminStore;
+    private readonly IRedactionPipeline _redaction;
 
     public AdminObservabilityService(
         GatewayStartupContext startup,
@@ -32,7 +34,8 @@ internal sealed class AdminObservabilityService
         GatewayAutomationService automationService,
         OrganizationPolicyService organizationPolicy,
         ToolUsageTracker toolUsage,
-        ISessionAdminStore sessionAdminStore)
+        ISessionAdminStore sessionAdminStore,
+        IRedactionPipeline? redaction = null)
     {
         _startup = startup;
         _runtime = runtime;
@@ -40,6 +43,7 @@ internal sealed class AdminObservabilityService
         _organizationPolicy = organizationPolicy;
         _toolUsage = toolUsage;
         _sessionAdminStore = sessionAdminStore;
+        _redaction = redaction ?? new NoopRedactionPipeline();
     }
 
     public async Task<OperatorInsightsResponse> BuildInsightsAsync(
@@ -405,7 +409,7 @@ internal sealed class AdminObservabilityService
         await writer.WriteLineAsync(JsonSerializer.Serialize(record, CoreJsonContext.Default.TrajectoryExportRecord).AsMemory(), ct);
     }
 
-    private static TrajectoryExportRecord BuildMessageTrajectoryRecord(Session session, ChatTurn turn, int turnIndex, bool anonymize)
+    private TrajectoryExportRecord BuildMessageTrajectoryRecord(Session session, ChatTurn turn, int turnIndex, bool anonymize)
     {
         var isAssistant = string.Equals(turn.Role, "assistant", StringComparison.OrdinalIgnoreCase);
         return new TrajectoryExportRecord
@@ -417,12 +421,12 @@ internal sealed class AdminObservabilityService
             SenderId = ExportSessionId(session.SenderId, anonymize),
             TurnIndex = turnIndex,
             Role = turn.Role,
-            Content = ExportText(turn.Content, anonymize),
+            Content = ExportText(turn.Content, anonymize, _redaction),
             Anonymized = anonymize
         };
     }
 
-    private static TrajectoryExportRecord BuildToolCallTrajectoryRecord(
+    private TrajectoryExportRecord BuildToolCallTrajectoryRecord(
         Session session,
         ChatTurn turn,
         int turnIndex,
@@ -438,11 +442,11 @@ internal sealed class AdminObservabilityService
             TurnIndex = turnIndex,
             ToolName = toolCall.ToolName,
             CallId = ExportOptionalId(toolCall.CallId, anonymize),
-            Arguments = ExportText(toolCall.Arguments, anonymize),
+            Arguments = ExportText(toolCall.Arguments, anonymize, _redaction),
             Anonymized = anonymize
         };
 
-    private static TrajectoryExportRecord BuildToolResultTrajectoryRecord(
+    private TrajectoryExportRecord BuildToolResultTrajectoryRecord(
         Session session,
         ChatTurn turn,
         int turnIndex,
@@ -458,11 +462,11 @@ internal sealed class AdminObservabilityService
             TurnIndex = turnIndex,
             ToolName = toolCall.ToolName,
             CallId = ExportOptionalId(toolCall.CallId, anonymize),
-            Result = ExportText(toolCall.Result, anonymize),
+            Result = ExportText(toolCall.Result, anonymize, _redaction),
             DurationMs = (long)Math.Max(0, toolCall.Duration.TotalMilliseconds),
             ResultStatus = toolCall.ResultStatus,
             FailureCode = toolCall.FailureCode,
-            FailureMessage = ExportText(toolCall.FailureMessage, anonymize),
+            FailureMessage = ExportText(toolCall.FailureMessage, anonymize, _redaction),
             Anonymized = anonymize
         };
 
@@ -472,12 +476,16 @@ internal sealed class AdminObservabilityService
     private static string? ExportOptionalId(string? value, bool anonymize)
         => string.IsNullOrWhiteSpace(value) ? value : ExportSessionId(value, anonymize);
 
-    private static string? ExportText(string? value, bool anonymize)
+    private static string? ExportText(string? value, bool anonymize, IRedactionPipeline redaction)
     {
-        if (!anonymize || string.IsNullOrEmpty(value))
+        if (string.IsNullOrEmpty(value))
             return value;
 
-        var text = EmailRegex.Replace(value, "[email]");
+        var text = redaction.Redact(value);
+        if (!anonymize)
+            return text;
+
+        text = EmailRegex.Replace(text, "[email]");
         text = PhoneRegex.Replace(text, "[phone]");
         text = SecretRegex.Replace(text, "[secret]");
         text = JsonSecretRegex.Replace(text, "$1[secret]$2");
