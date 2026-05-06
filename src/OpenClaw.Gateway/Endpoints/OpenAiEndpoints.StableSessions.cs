@@ -22,6 +22,33 @@ internal static partial class OpenAiEndpoints
         }
     }
 
+    private static async Task FinalizeOpenAiSessionAsync(
+        SessionManager sessionManager,
+        Session session,
+        bool isStableSession,
+        bool persistStableSession,
+        IAsyncDisposable? stableSessionLock)
+    {
+        try
+        {
+            if (!isStableSession)
+            {
+                sessionManager.RemoveActive(session.Id);
+                return;
+            }
+
+            if (persistStableSession)
+                await PersistStableSessionAsync(sessionManager, session, sessionLockHeld: stableSessionLock is not null);
+            else if (stableSessionLock is null && session.StableSessionBinding is null && session.History.Count == 0)
+                sessionManager.RemoveActive(session.Id);
+        }
+        finally
+        {
+            if (stableSessionLock is not null)
+                await stableSessionLock.DisposeAsync();
+        }
+    }
+
     private static bool TryGetOptionalStableSessionId(HttpContext ctx, out string? stableSessionId, out string? error)
     {
         stableSessionId = null;

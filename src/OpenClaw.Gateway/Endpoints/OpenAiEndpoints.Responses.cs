@@ -66,7 +66,7 @@ internal static partial class OpenAiEndpoints
                 ? await runtime.SessionManager.GetOrCreateByIdAsync(BuildScopedStableSessionId(stableBinding), "openai-responses", requesterKey, ctx.RequestAborted)
                 : await runtime.SessionManager.GetOrCreateAsync("openai-responses", requestId, ctx.RequestAborted);
             IAsyncDisposable? stableSessionLock = null;
-            var discardStableSessionOnExit = false;
+            var persistStableSessionOnExit = false;
             ToolApprovalCallback? approvalCallback = null;
 
             try
@@ -80,6 +80,8 @@ internal static partial class OpenAiEndpoints
                         await ctx.Response.WriteAsync(bindingError ?? "Stable session binding is inconsistent with the current requester scope.", ctx.RequestAborted);
                         return;
                     }
+
+                    persistStableSessionOnExit = true;
                 }
 
                 var httpMwCtx = new MessageContext
@@ -557,7 +559,6 @@ internal static partial class OpenAiEndpoints
                     }
                     catch (OperationCanceledException) when (ctx.RequestAborted.IsCancellationRequested)
                     {
-                        discardStableSessionOnExit = !string.IsNullOrWhiteSpace(stableSessionId);
                         throw;
                     }
                     catch (Exception)
@@ -597,31 +598,14 @@ internal static partial class OpenAiEndpoints
                         ctx.RequestAborted);
                 }
             }
-            catch (OperationCanceledException) when (ctx.RequestAborted.IsCancellationRequested)
-            {
-                discardStableSessionOnExit = !string.IsNullOrWhiteSpace(stableSessionId);
-                throw;
-            }
             finally
             {
-                if (!string.IsNullOrWhiteSpace(stableSessionId))
-                {
-                    if (discardStableSessionOnExit)
-                    {
-                        runtime.SessionManager.RemoveActive(session.Id);
-                    }
-                    else
-                    {
-                        await PersistStableSessionAsync(runtime.SessionManager, session, sessionLockHeld: stableSessionLock is not null);
-                    }
-
-                    if (stableSessionLock is not null)
-                        await stableSessionLock.DisposeAsync();
-                }
-                else
-                {
-                    runtime.SessionManager.RemoveActive(session.Id);
-                }
+                await FinalizeOpenAiSessionAsync(
+                    runtime.SessionManager,
+                    session,
+                    isStableSession: stableBinding is not null,
+                    persistStableSession: persistStableSessionOnExit,
+                    stableSessionLock);
             }
         });
     }

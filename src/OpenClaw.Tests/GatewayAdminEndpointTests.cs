@@ -2118,6 +2118,56 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task ChatCompletions_StableSession_PersistsHistoryWhenRequestAborts()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var agentEntered = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns(async callInfo =>
+            {
+                var session = callInfo.Arg<Session>();
+                var userMessage = callInfo.ArgAt<string>(1);
+                var ct = callInfo.ArgAt<CancellationToken>(2);
+                session.History.Add(new ChatTurn { Role = "user", Content = userMessage });
+                session.History.Add(new ChatTurn { Role = "assistant", Content = "partial before abort" });
+                agentEntered.TrySetResult(session.Id);
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return "unreachable";
+            });
+
+        using var request = CreateStableChatCompletionRequest("stable-chat-abort", "hello", harness.AuthToken);
+        using var abortCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var responseTask = harness.Client.SendAsync(request, abortCts.Token);
+
+        var sessionId = await agentEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        abortCts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => responseTask.WaitAsync(TimeSpan.FromSeconds(2)));
+
+        var persisted = await WaitForPersistedSessionAsync(harness.MemoryStore, sessionId, TimeSpan.FromSeconds(2));
+        Assert.Equal("stable-chat-abort", persisted.StableSessionBinding?.ExternalSessionId);
+        Assert.Collection(
+            persisted.History,
+            turn =>
+            {
+                Assert.Equal("user", turn.Role);
+                Assert.Equal("hello", turn.Content);
+            },
+            turn =>
+            {
+                Assert.Equal("assistant", turn.Role);
+                Assert.Equal("partial before abort", turn.Content);
+            });
+
+        Assert.True(harness.Runtime.SessionManager.RemoveActive(sessionId));
+    }
+
+    [Fact]
     public async Task ChatCompletions_StableSession_RejectsUnsafeStableSessionId()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: false);
@@ -2471,6 +2521,61 @@ public sealed class GatewayAdminEndpointTests
         var activeSession = await FindStableSessionAsync(harness, "stable-responses-save-failure");
         Assert.NotNull(activeSession);
         Assert.True(harness.Runtime.SessionManager.RemoveActive(activeSession!.Id));
+    }
+
+    [Fact]
+    public async Task Responses_StableSession_PersistsHistoryWhenRequestAborts()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var agentEntered = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns(async callInfo =>
+            {
+                var session = callInfo.Arg<Session>();
+                var userMessage = callInfo.ArgAt<string>(1);
+                var ct = callInfo.ArgAt<CancellationToken>(2);
+                session.History.Add(new ChatTurn { Role = "user", Content = userMessage });
+                session.History.Add(new ChatTurn { Role = "assistant", Content = "partial response before abort" });
+                agentEntered.TrySetResult(session.Id);
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return "unreachable";
+            });
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/responses")
+        {
+            Content = JsonContent("""{"input":"hello"}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        request.Headers.Add("X-OpenClaw-Session-Id", "stable-responses-abort");
+        using var abortCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var responseTask = harness.Client.SendAsync(request, abortCts.Token);
+
+        var sessionId = await agentEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        abortCts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => responseTask.WaitAsync(TimeSpan.FromSeconds(2)));
+
+        var persisted = await WaitForPersistedSessionAsync(harness.MemoryStore, sessionId, TimeSpan.FromSeconds(2));
+        Assert.Equal("stable-responses-abort", persisted.StableSessionBinding?.ExternalSessionId);
+        Assert.Collection(
+            persisted.History,
+            turn =>
+            {
+                Assert.Equal("user", turn.Role);
+                Assert.Equal("hello", turn.Content);
+            },
+            turn =>
+            {
+                Assert.Equal("assistant", turn.Role);
+                Assert.Equal("partial response before abort", turn.Content);
+            });
+
+        Assert.True(harness.Runtime.SessionManager.RemoveActive(sessionId));
     }
 
     [Fact]
@@ -4918,6 +5023,21 @@ public sealed class GatewayAdminEndpointTests
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         await using var sessionLock = await harness.Runtime.SessionManager.AcquireSessionLockAsync(sessionId, cts.Token);
+    }
+
+    private static async Task<Session> WaitForPersistedSessionAsync(IMemoryStore store, string sessionId, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var session = await store.GetSessionAsync(sessionId, CancellationToken.None);
+            if (session is not null)
+                return session;
+
+            await Task.Delay(10);
+        }
+
+        throw new TimeoutException($"Session '{sessionId}' was not persisted in time.");
     }
 
     private static void UpdateMax(ref int target, int value)

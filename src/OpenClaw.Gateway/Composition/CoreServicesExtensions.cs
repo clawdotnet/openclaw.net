@@ -92,7 +92,11 @@ internal static class CoreServicesExtensions
             return memory as ISessionAdminStore
                 ?? throw new InvalidOperationException($"{memory.GetType().Name} must implement ISessionAdminStore.");
         });
-        services.AddSingleton<ISessionSearchStore>(sp => (ISessionSearchStore)sp.GetRequiredService<IMemoryStore>());
+        services.AddSingleton<ISessionSearchStore>(sp =>
+        {
+            var memory = sp.GetRequiredService<IMemoryStore>();
+            return memory as ISessionSearchStore ?? EmptySessionSearchStore.Instance;
+        });
         AddFeatureStores(services, config);
         services.AddSingleton<ProviderUsageTracker>();
         services.AddSingleton<ToolUsageTracker>();
