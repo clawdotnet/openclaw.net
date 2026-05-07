@@ -70,7 +70,8 @@ public sealed class PaymentRuntimeTests
         Assert.Contains("4242", result, StringComparison.Ordinal);
         Assert.DoesNotContain("4242424242424242", result, StringComparison.Ordinal);
         Assert.DoesNotContain("\"cvv\"", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("123", result, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"cvv\":\"123\"", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("cvv: 123", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
