@@ -5,10 +5,12 @@ using Microsoft.Extensions.Options;
 using OpenClaw.Core.Models;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace OpenClaw.MicrosoftAgentFrameworkAdapter.A2A;
 
-public sealed class OpenClawA2AAgent : AIAgent
+public sealed partial class OpenClawA2AAgent : AIAgent
 {
     // Must match the gateway's keyed A2A service registration; the Agent Card display name is configurable separately.
     public const string HostedAgentName = "openclaw";
@@ -50,7 +52,9 @@ public sealed class OpenClawA2AAgent : AIAgent
         if (session is not OpenClawA2AAgentSession openClawSession)
             throw new InvalidOperationException($"Unsupported session type '{session.GetType().FullName}'.");
 
-        return ValueTask.FromResult(JsonSerializer.SerializeToElement(openClawSession, jsonSerializerOptions));
+        return ValueTask.FromResult(JsonSerializer.SerializeToElement(
+            openClawSession,
+            GetSessionTypeInfo(jsonSerializerOptions)));
     }
 
     protected override ValueTask<AgentSession> DeserializeSessionCoreAsync(
@@ -63,7 +67,7 @@ public sealed class OpenClawA2AAgent : AIAgent
         OpenClawA2AAgentSession? session;
         try
         {
-            session = serializedState.Deserialize<OpenClawA2AAgentSession>(jsonSerializerOptions);
+            session = serializedState.Deserialize(GetSessionTypeInfo(jsonSerializerOptions));
         }
         catch (JsonException)
         {
@@ -182,6 +186,14 @@ public sealed class OpenClawA2AAgent : AIAgent
         => messages.LastOrDefault(static message =>
             message.Role == ChatRole.User
             && !string.IsNullOrWhiteSpace(message.MessageId))?.MessageId;
+
+    private static JsonTypeInfo<OpenClawA2AAgentSession> GetSessionTypeInfo(JsonSerializerOptions? options)
+        => options is null
+            ? OpenClawA2AAgentJsonContext.Default.OpenClawA2AAgentSession
+            : new OpenClawA2AAgentJsonContext(options).OpenClawA2AAgentSession;
+
+    [JsonSerializable(typeof(OpenClawA2AAgentSession))]
+    private sealed partial class OpenClawA2AAgentJsonContext : JsonSerializerContext;
 
     private sealed class OpenClawA2AAgentSession : AgentSession
     {
