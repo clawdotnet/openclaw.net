@@ -601,14 +601,19 @@ Use it when repeated requests resemble the sessions that produced this draft.
             var metadata = System.Text.Json.JsonSerializer.Deserialize(
                 await File.ReadAllTextAsync(metadataPath, ct),
                 CoreJsonContext.Default.ManagedLearningSkillMetadata);
-            if (metadata?.ManagedByLearning == true &&
+            if (metadata?.ManagedByLearning is true &&
                 string.Equals(metadata.CreatedByProposalId, proposalId, StringComparison.Ordinal))
             {
                 return null;
             }
         }
-        catch
+        catch (OperationCanceledException)
         {
+            throw;
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is System.Text.Json.JsonException)
+        {
+            return "Managed skill target metadata could not be read; refusing to overwrite it.";
         }
 
         return "Managed skill target already exists for a different learning proposal; refusing to overwrite it.";
