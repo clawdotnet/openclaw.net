@@ -3543,14 +3543,26 @@
             learningListOutput.innerHTML = items.map(item => `
                 <div class="card" style="margin-bottom:0.75rem;">
                     <strong>${escapeHtml(item.title || item.id)}</strong>
-                    <div class="muted">${escapeHtml(item.kind)} · ${escapeHtml(item.status)} · confidence ${escapeHtml(item.confidence ?? 0)}</div>
+                    <div class="muted">${escapeHtml(item.kind)} · ${escapeHtml(item.status)} · risk ${escapeHtml(item.riskLevel || 'medium')} · confidence ${escapeHtml(item.confidence ?? 0)}</div>
                     <div class="muted">${escapeHtml(item.summary || '')}</div>
-                    <div class="muted">${escapeHtml(formatDateTime(item.updatedAtUtc || item.createdAtUtc))}</div>
+                    <div class="muted">Sources: ${escapeHtml((item.sourceSessionIds || []).slice(0, 3).join(', ') || 'none')} · Updated: ${escapeHtml(formatDateTime(item.updatedAtUtc || item.createdAtUtc))}</div>
+                    ${renderLearningWarnings(item.validationWarnings)}
                     <div class="actions" style="margin-top:0.75rem;">
                         <button data-learning-inspect="${encodeURIComponent(item.id)}">Inspect</button>
                     </div>
                 </div>
             `).join('');
+        }
+
+        function renderLearningWarnings(warnings) {
+            if (!warnings || !warnings.length) return '';
+            return `<ul>${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join('')}</ul>`;
+        }
+
+        function renderLearningList(label, values) {
+            const items = values || [];
+            if (!items.length) return '';
+            return `<div class="muted"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(items.join(', '))}</div>`;
         }
 
         function renderLearningDetail(detail) {
@@ -3570,14 +3582,45 @@
             const profile = detail.currentProfile
                 ? `<h3>Current Profile</h3><pre>${escapeHtml(JSON.stringify(detail.currentProfile, null, 2))}</pre>`
                 : '';
+            const provenance = detail.provenance
+                ? `<h3>Provenance</h3>
+                   <div class="muted">Reason: ${escapeHtml(detail.provenance.createdReason || proposal.createdReason || 'not recorded')}</div>
+                   <div class="muted">Repeated count: ${escapeHtml(detail.provenance.repeatedCount || proposal.repeatedCount || 0)}</div>
+                   ${renderLearningList('Source sessions', detail.provenance.sourceSessionIds)}
+                   ${renderLearningList('Source turns', detail.provenance.sourceTurnIds)}
+                   ${renderLearningList('Tool sequence', detail.provenance.toolSequence)}
+                   <pre>${escapeHtml(JSON.stringify(detail.provenance.toolObservations || [], null, 2))}</pre>`
+                : '';
+            const skillDraft = proposal.kind === 'skill_draft'
+                ? `<h3>Skill Draft</h3>
+                   <div class="muted">Skill: ${escapeHtml(proposal.skillName || 'unknown')}</div>
+                   <div class="muted">Draft hash: ${escapeHtml(proposal.draftContentHash || 'not recorded')}</div>
+                   <div class="muted">Managed path: ${escapeHtml(proposal.managedSkillPath || 'not approved yet')}</div>
+                   <pre>${escapeHtml(proposal.draftContent || proposal.draftPreview || '')}</pre>`
+                : '';
+            const automationSummary = proposal.kind === 'automation_suggestion' && proposal.automationDraft
+                ? `<h3>Automation Review</h3>
+                   <div class="muted">Schedule: ${escapeHtml(proposal.automationDraft.schedule || 'not set')}</div>
+                   <div class="muted">Delivery: ${escapeHtml(proposal.automationDraft.deliveryChannelId || 'none')} ${escapeHtml(proposal.automationDraft.deliveryRecipientId || '')}</div>
+                   <div class="muted">Enabled: ${escapeHtml(String(proposal.automationDraft.enabled))} · Draft: ${escapeHtml(String(proposal.automationDraft.isDraft))}</div>
+                   <div class="muted">Tags: ${escapeHtml((proposal.automationDraft.tags || []).join(', ') || 'none')}</div>`
+                : '';
 
             learningDetailOutput.innerHTML = `
                 <div class="stack">
                     <div>
                         <strong>${escapeHtml(proposal.title || proposal.id)}</strong>
-                        <div class="muted">${escapeHtml(proposal.kind)} · ${escapeHtml(proposal.status)} · confidence ${escapeHtml(proposal.confidence ?? 0)}</div>
-                        <div class="muted">Actor: ${escapeHtml(proposal.actorId || 'unknown')} · Updated: ${escapeHtml(formatDateTime(proposal.updatedAtUtc || proposal.createdAtUtc))}</div>
+                        <div class="muted">${escapeHtml(proposal.kind)} · ${escapeHtml(proposal.status)} · risk ${escapeHtml(proposal.riskLevel || 'medium')} · confidence ${escapeHtml(proposal.confidence ?? 0)}</div>
+                        <div class="muted">Validation: ${escapeHtml(proposal.validationStatus || 'not_run')} · Rollback: ${escapeHtml(detail.canRollback ? 'available' : 'not available')}</div>
+                        <div class="muted">Actor: ${escapeHtml(proposal.actorId || 'unknown')} · Created: ${escapeHtml(formatDateTime(proposal.createdAtUtc))} · Updated: ${escapeHtml(formatDateTime(proposal.updatedAtUtc || proposal.createdAtUtc))} · Reviewed: ${escapeHtml(formatDateTime(proposal.reviewedAtUtc))}</div>
+                        <div class="muted">Review notes: ${escapeHtml(proposal.reviewNotes || 'none')}</div>
+                        <div class="muted">Rollback reason: ${escapeHtml(proposal.rollbackReason || 'none')}</div>
                     </div>
+                    ${renderLearningWarnings(proposal.validationWarnings)}
+                    ${proposal.validationErrors?.length ? `<h3>Validation Errors</h3>${renderLearningWarnings(proposal.validationErrors)}` : ''}
+                    ${provenance}
+                    ${skillDraft}
+                    ${automationSummary}
                     <pre>${escapeHtml(JSON.stringify(proposal, null, 2))}</pre>
                     ${diff}
                     ${automationDraft}

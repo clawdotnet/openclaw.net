@@ -36,6 +36,12 @@ Use the approval simulator to inspect effective behavior without mutating live q
 - `POST /admin/approvals/simulate`
 - `openclaw admin approvals simulate`
 
+## Review-First Learning
+
+Learning proposals are governed changes, not silent self-modification. Profile updates, automation suggestions, and skill drafts remain pending until an operator reviews provenance, risk, confidence, validation status, warnings, and the proposed change.
+
+Approved learning changes are audited. Automation suggestions are created as disabled drafts, and skill drafts are saved as managed skills with proposal metadata. Rollback only affects artifacts created by the learning proposal system; user-authored skills and unrelated automations are not removed by learning rollback.
+
 ## Payments
 
 Native payments are disabled by default. When enabled, payment actions are fail-closed: live virtual cards, machine payments, and browser payment-sentinel fills require critical approval unless policy explicitly allows deterministic test mode.

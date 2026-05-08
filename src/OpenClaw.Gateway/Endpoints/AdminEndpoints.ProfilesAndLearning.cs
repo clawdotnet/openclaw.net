@@ -214,6 +214,8 @@ internal static partial class AdminEndpoints
             if (approved is null)
                 return Results.NotFound(new MutationResponse { Success = false, Error = "Proposal not found." });
 
+            var approvalSucceeded = string.Equals(approved.Status, LearningProposalStatus.Approved, StringComparison.OrdinalIgnoreCase);
+            var action = approvalSucceeded ? "approved" : "rejected";
             operations.RuntimeEvents.Append(new RuntimeEventEntry
             {
                 Id = $"evt_{Guid.NewGuid():N}"[..20],
@@ -221,11 +223,24 @@ internal static partial class AdminEndpoints
                 ChannelId = approved.ProfileUpdate?.ChannelId ?? approved.AutomationDraft?.DeliveryChannelId,
                 SenderId = approved.ProfileUpdate?.SenderId ?? approved.AutomationDraft?.DeliveryRecipientId,
                 Component = "learning",
-                Action = "approved",
-                Severity = "info",
-                Summary = $"Learning proposal '{approved.Id}' approved."
+                Action = action,
+                Severity = approvalSucceeded ? "info" : "warning",
+                Summary = approvalSucceeded
+                    ? $"Learning proposal '{approved.Id}' approved."
+                    : $"Learning proposal '{approved.Id}' rejected during approval validation."
             });
-            RecordOperatorAudit(ctx, operations, auth, "learning_approve", approved.Id, $"Approved learning proposal '{approved.Id}'.", success: true, before, after: approved);
+            RecordOperatorAudit(
+                ctx,
+                operations,
+                auth,
+                approvalSucceeded ? "learning_approve" : "learning_reject",
+                approved.Id,
+                approvalSucceeded
+                    ? $"Approved learning proposal '{approved.Id}'."
+                    : $"Rejected learning proposal '{approved.Id}' during approval validation.",
+                success: true,
+                before,
+                after: approved);
 
             return Results.Json(approved, CoreJsonContext.Default.LearningProposal);
         });
@@ -277,15 +292,6 @@ internal static partial class AdminEndpoints
             if (before?.Proposal is null)
                 return Results.NotFound(new MutationResponse { Success = false, Error = "Proposal not found." });
 
-            if (!string.Equals(before.Proposal.Kind, LearningProposalKind.ProfileUpdate, StringComparison.OrdinalIgnoreCase))
-            {
-                return Results.BadRequest(new MutationResponse
-                {
-                    Success = false,
-                    Error = "Only profile update proposals support rollback."
-                });
-            }
-
             if (!before.CanRollback)
             {
                 return Results.BadRequest(new MutationResponse
@@ -295,16 +301,25 @@ internal static partial class AdminEndpoints
                 });
             }
 
-            var rolledBack = await learningService.RollbackAsync(id, requestPayload.Value?.Reason, ctx.RequestAborted);
+            var rolledBack = await learningService.RollbackAsync(id, requestPayload.Value?.Reason, runtime.AgentRuntime, ctx.RequestAborted);
             if (rolledBack is null)
                 return Results.NotFound(new MutationResponse { Success = false, Error = "Proposal not found." });
+            if (!string.Equals(rolledBack.Status, LearningProposalStatus.RolledBack, StringComparison.OrdinalIgnoreCase) ||
+                !rolledBack.RolledBack)
+            {
+                return Results.BadRequest(new MutationResponse
+                {
+                    Success = false,
+                    Error = "Rollback could not be completed. Managed learning metadata was missing, did not match this proposal, or the target artifact no longer exists."
+                });
+            }
 
             operations.RuntimeEvents.Append(new RuntimeEventEntry
             {
                 Id = $"evt_{Guid.NewGuid():N}"[..20],
                 TimestampUtc = DateTimeOffset.UtcNow,
-                ChannelId = rolledBack.ProfileUpdate?.ChannelId,
-                SenderId = rolledBack.ProfileUpdate?.SenderId,
+                ChannelId = rolledBack.ProfileUpdate?.ChannelId ?? rolledBack.AutomationDraft?.DeliveryChannelId,
+                SenderId = rolledBack.ProfileUpdate?.SenderId ?? rolledBack.AutomationDraft?.DeliveryRecipientId,
                 Component = "learning",
                 Action = "rolled_back",
                 Severity = "warning",

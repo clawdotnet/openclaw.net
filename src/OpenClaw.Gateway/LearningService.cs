@@ -6,6 +6,7 @@ using Microsoft.Extensions.AI;
 using OpenClaw.Agent;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Pipeline;
 
 namespace OpenClaw.Gateway;
 
@@ -63,10 +64,13 @@ internal sealed class LearningService
                 ? currentProfile
                 : proposal.AppliedProfileBefore;
             profileDiff = BuildProfileDiff(baselineProfile, proposal.ProfileUpdate);
-            canRollback = string.Equals(proposal.Kind, LearningProposalKind.ProfileUpdate, StringComparison.OrdinalIgnoreCase) &&
-                          string.Equals(proposal.Status, LearningProposalStatus.Approved, StringComparison.OrdinalIgnoreCase) &&
-                          !proposal.RolledBack;
         }
+
+        canRollback = string.Equals(proposal.Status, LearningProposalStatus.Approved, StringComparison.OrdinalIgnoreCase) &&
+                      !proposal.RolledBack &&
+                      (string.Equals(proposal.Kind, LearningProposalKind.ProfileUpdate, StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(proposal.Kind, LearningProposalKind.SkillDraft, StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(proposal.Kind, LearningProposalKind.AutomationSuggestion, StringComparison.OrdinalIgnoreCase));
 
         return new LearningProposalDetailResponse
         {
@@ -78,6 +82,13 @@ internal sealed class LearningService
             {
                 ActorId = proposal.ActorId,
                 SourceSessionIds = proposal.SourceSessionIds,
+                SourceTurnIds = proposal.SourceTurnIds,
+                ToolNames = proposal.ToolNames,
+                ToolSequence = proposal.ToolSequence,
+                ToolObservations = proposal.ToolObservations,
+                RepeatedCount = proposal.RepeatedCount,
+                ProposalFingerprint = proposal.ProposalFingerprint,
+                CreatedReason = proposal.CreatedReason,
                 Confidence = proposal.Confidence,
                 CreatedAtUtc = proposal.CreatedAtUtc,
                 UpdatedAtUtc = proposal.UpdatedAtUtc,
@@ -124,43 +135,46 @@ internal sealed class LearningService
                 await _profileStore.SaveProfileAsync(proposal.ProfileUpdate, ct);
                 break;
             case LearningProposalKind.AutomationSuggestion when proposal.AutomationDraft is not null:
-                await _automationStore.SaveAutomationAsync(proposal.AutomationDraft, ct);
+                await _automationStore.SaveAutomationAsync(BuildManagedAutomationDraft(proposal.AutomationDraft, proposal.Id), ct);
                 break;
             case LearningProposalKind.SkillDraft when !string.IsNullOrWhiteSpace(proposal.DraftContent):
-                if (!ValidateSkillDraft(proposal.SkillName ?? proposal.Title, proposal.DraftContent, proposal.DraftContentHash, out var validationError))
+                var validation = ValidateSkillDraft(proposal.SkillName ?? proposal.Title, proposal.DraftContent, proposal.DraftContentHash, proposal);
+                if (validation.Errors.Count > 0)
                 {
-                    return await RejectAsync(proposal.Id, validationError, ct);
+                    return await RejectAsync(proposal.Id, string.Join(" ", validation.Errors), ct);
                 }
 
-                await SaveManagedSkillAsync(proposal.SkillName ?? proposal.Title, proposal.DraftContent, ct);
+                await SaveManagedSkillAsync(proposal.SkillName ?? proposal.Title, proposal.DraftContent, proposal.Id, proposal.DraftContentHash, ct);
                 await runtime.ReloadSkillsAsync(ct);
                 break;
         }
 
-        var approved = new LearningProposal
-        {
-            Id = proposal.Id,
-            Kind = proposal.Kind,
-            Status = LearningProposalStatus.Approved,
-            ActorId = proposal.ActorId,
-            Title = proposal.Title,
-            Summary = proposal.Summary,
-            SkillName = proposal.SkillName,
-            DraftContent = proposal.DraftContent,
-            DraftContentHash = proposal.DraftContentHash,
-            ProfileUpdate = proposal.ProfileUpdate,
-            AppliedProfileBefore = appliedProfileBefore,
-            AutomationDraft = proposal.AutomationDraft,
-            SourceSessionIds = proposal.SourceSessionIds,
-            Confidence = proposal.Confidence,
-            CreatedAtUtc = proposal.CreatedAtUtc,
-            UpdatedAtUtc = DateTimeOffset.UtcNow,
-            ReviewedAtUtc = DateTimeOffset.UtcNow,
-            ReviewNotes = "approved",
-            RolledBack = false,
-            RolledBackAtUtc = null,
-            RollbackReason = null
-        };
+        var managedSkillPath = string.Equals(proposal.Kind, LearningProposalKind.SkillDraft, StringComparison.OrdinalIgnoreCase)
+            ? GetManagedSkillPath(proposal.SkillName ?? proposal.Title)
+            : proposal.ManagedSkillPath;
+        var approvedAtUtc = DateTimeOffset.UtcNow;
+        var approved = CopyProposal(
+            proposal,
+            status: LearningProposalStatus.Approved,
+            appliedProfileBefore: appliedProfileBefore,
+            automationDraft: proposal.AutomationDraft is null ? null : BuildManagedAutomationDraft(proposal.AutomationDraft, proposal.Id),
+            appliedAutomationId: proposal.AutomationDraft?.Id ?? proposal.AppliedAutomationId,
+            managedSkillPath: managedSkillPath,
+            managedSkillMetadata: string.Equals(proposal.Kind, LearningProposalKind.SkillDraft, StringComparison.OrdinalIgnoreCase)
+                ? new ManagedLearningSkillMetadata
+                {
+                    CreatedByProposalId = proposal.Id,
+                    OriginalDraftHash = proposal.DraftContentHash,
+                    ApprovedAtUtc = approvedAtUtc,
+                    SkillName = proposal.SkillName ?? proposal.Title
+                }
+                : proposal.ManagedSkillMetadata,
+            statusUpdatedAtUtc: approvedAtUtc,
+            reviewedAtUtc: approvedAtUtc,
+            reviewNotes: "approved",
+            rolledBack: false,
+            rolledBackAtUtc: null,
+            rollbackReason: null);
         await _proposalStore.SaveProposalAsync(approved, ct);
         return approved;
     }
@@ -174,77 +188,57 @@ internal sealed class LearningService
         if (!string.Equals(proposal.Status, LearningProposalStatus.Pending, StringComparison.OrdinalIgnoreCase))
             return proposal;
 
-        var rejected = new LearningProposal
-        {
-            Id = proposal.Id,
-            Kind = proposal.Kind,
-            Status = LearningProposalStatus.Rejected,
-            ActorId = proposal.ActorId,
-            Title = proposal.Title,
-            Summary = proposal.Summary,
-            SkillName = proposal.SkillName,
-            DraftContent = proposal.DraftContent,
-            DraftContentHash = proposal.DraftContentHash,
-            ProfileUpdate = proposal.ProfileUpdate,
-            AppliedProfileBefore = proposal.AppliedProfileBefore,
-            AutomationDraft = proposal.AutomationDraft,
-            SourceSessionIds = proposal.SourceSessionIds,
-            Confidence = proposal.Confidence,
-            CreatedAtUtc = proposal.CreatedAtUtc,
-            UpdatedAtUtc = DateTimeOffset.UtcNow,
-            ReviewedAtUtc = DateTimeOffset.UtcNow,
-            ReviewNotes = string.IsNullOrWhiteSpace(reason) ? "rejected" : reason.Trim(),
-            RolledBack = proposal.RolledBack,
-            RolledBackAtUtc = proposal.RolledBackAtUtc,
-            RollbackReason = proposal.RollbackReason
-        };
+        var rejected = CopyProposal(
+            proposal,
+            status: LearningProposalStatus.Rejected,
+            statusUpdatedAtUtc: DateTimeOffset.UtcNow,
+            reviewedAtUtc: DateTimeOffset.UtcNow,
+            reviewNotes: string.IsNullOrWhiteSpace(reason) ? "rejected" : reason.Trim());
         await _proposalStore.SaveProposalAsync(rejected, ct);
         return rejected;
     }
 
-    public async ValueTask<LearningProposal?> RollbackAsync(string proposalId, string? reason, CancellationToken ct)
+    public async ValueTask<LearningProposal?> RollbackAsync(string proposalId, string? reason, IAgentRuntime? runtime, CancellationToken ct)
     {
         var proposal = await _proposalStore.GetProposalAsync(proposalId, ct);
         if (proposal is null)
             return null;
 
-        if (!string.Equals(proposal.Kind, LearningProposalKind.ProfileUpdate, StringComparison.OrdinalIgnoreCase) ||
-            proposal.ProfileUpdate is null ||
-            !string.Equals(proposal.Status, LearningProposalStatus.Approved, StringComparison.OrdinalIgnoreCase) ||
+        if (!string.Equals(proposal.Status, LearningProposalStatus.Approved, StringComparison.OrdinalIgnoreCase) ||
             proposal.RolledBack)
         {
             return proposal;
         }
 
-        if (proposal.AppliedProfileBefore is null)
-            await _profileStore.DeleteProfileAsync(proposal.ProfileUpdate.ActorId, ct);
-        else
-            await _profileStore.SaveProfileAsync(proposal.AppliedProfileBefore, ct);
-
-        var rolledBack = new LearningProposal
+        switch (proposal.Kind)
         {
-            Id = proposal.Id,
-            Kind = proposal.Kind,
-            Status = LearningProposalStatus.RolledBack,
-            ActorId = proposal.ActorId,
-            Title = proposal.Title,
-            Summary = proposal.Summary,
-            SkillName = proposal.SkillName,
-            DraftContent = proposal.DraftContent,
-            DraftContentHash = proposal.DraftContentHash,
-            ProfileUpdate = proposal.ProfileUpdate,
-            AppliedProfileBefore = proposal.AppliedProfileBefore,
-            AutomationDraft = proposal.AutomationDraft,
-            SourceSessionIds = proposal.SourceSessionIds,
-            Confidence = proposal.Confidence,
-            CreatedAtUtc = proposal.CreatedAtUtc,
-            UpdatedAtUtc = DateTimeOffset.UtcNow,
-            ReviewedAtUtc = proposal.ReviewedAtUtc,
-            ReviewNotes = proposal.ReviewNotes,
-            RolledBack = true,
-            RolledBackAtUtc = DateTimeOffset.UtcNow,
-            RollbackReason = string.IsNullOrWhiteSpace(reason) ? "rollback requested" : reason.Trim()
-        };
+            case LearningProposalKind.ProfileUpdate when proposal.ProfileUpdate is not null:
+                if (proposal.AppliedProfileBefore is null)
+                    await _profileStore.DeleteProfileAsync(proposal.ProfileUpdate.ActorId, ct);
+                else
+                    await _profileStore.SaveProfileAsync(proposal.AppliedProfileBefore, ct);
+                break;
+            case LearningProposalKind.SkillDraft:
+                if (!await RollbackManagedSkillAsync(proposal, ct))
+                    return proposal;
+                if (runtime is not null)
+                    await runtime.ReloadSkillsAsync(ct);
+                break;
+            case LearningProposalKind.AutomationSuggestion:
+                if (!await RollbackManagedAutomationAsync(proposal, ct))
+                    return proposal;
+                break;
+            default:
+                return proposal;
+        }
+
+        var rolledBack = CopyProposal(
+            proposal,
+            status: LearningProposalStatus.RolledBack,
+            statusUpdatedAtUtc: DateTimeOffset.UtcNow,
+            rolledBack: true,
+            rolledBackAtUtc: DateTimeOffset.UtcNow,
+            rollbackReason: string.IsNullOrWhiteSpace(reason) ? "rollback requested" : reason.Trim());
 
         await _proposalStore.SaveProposalAsync(rolledBack, ct);
         return rolledBack;
@@ -256,9 +250,14 @@ internal sealed class LearningService
         if (existingProfile is not null && existingProfile.Summary.Contains(lastUser.Content, StringComparison.OrdinalIgnoreCase))
             return;
 
+        var fingerprint = BuildProposalFingerprint(LearningProposalKind.ProfileUpdate, actorId, "preference", lastUser.Content);
         var pending = await _proposalStore.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.ProfileUpdate, ct);
-        if (pending.Any(item => string.Equals(item.ActorId, actorId, StringComparison.OrdinalIgnoreCase)))
+        var duplicate = pending.FirstOrDefault(item => IsDuplicateProposal(item, fingerprint, actorId, title: null, skillName: null));
+        if (duplicate is not null)
+        {
+            await _proposalStore.SaveProposalAsync(MergeDuplicateProposal(duplicate, [session.Id], [BuildTurnId(session, lastUser)], 0.55f), ct);
             return;
+        }
 
         var profile = new UserProfile
         {
@@ -294,7 +293,13 @@ internal sealed class LearningService
                 ProfileUpdate = profile,
                 AppliedProfileBefore = existingProfile,
                 SourceSessionIds = [session.Id],
-                Confidence = 0.55f
+                SourceTurnIds = [BuildTurnId(session, lastUser)],
+                RepeatedCount = 1,
+                ProposalFingerprint = fingerprint,
+                RiskLevel = LearningProposalRiskLevels.Low,
+                Confidence = 0.55f,
+                CreatedReason = "Detected a possible stable user preference or identity hint.",
+                ValidationStatus = LearningProposalValidationStatuses.Valid
             }, ct);
             return;
         }
@@ -311,7 +316,13 @@ internal sealed class LearningService
             ProfileUpdate = profile,
             AppliedProfileBefore = existingProfile,
             SourceSessionIds = [session.Id],
+            SourceTurnIds = [BuildTurnId(session, lastUser)],
+            RepeatedCount = 1,
+            ProposalFingerprint = fingerprint,
+            RiskLevel = LearningProposalRiskLevels.Low,
             Confidence = 0.55f,
+            CreatedReason = "Detected a possible stable user preference or identity hint.",
+            ValidationStatus = LearningProposalValidationStatuses.Valid,
             ReviewedAtUtc = DateTimeOffset.UtcNow,
             ReviewNotes = "auto-applied because Learning.ReviewRequired=false"
         }, ct);
@@ -330,9 +341,22 @@ internal sealed class LearningService
         if (search.Items.Count < _config.AutomationProposalThreshold)
             return;
 
-        var pending = await _proposalStore.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.AutomationSuggestion, ct);
-        if (pending.Any(item => string.Equals(item.ActorId, actorId, StringComparison.OrdinalIgnoreCase) &&
-                                string.Equals(item.Title, lastUser.Content, StringComparison.OrdinalIgnoreCase)))
+        var fingerprint = BuildProposalFingerprint(LearningProposalKind.AutomationSuggestion, actorId, NormalizeForFingerprint(lastUser.Content));
+        var allAutomationProposals = await _proposalStore.ListProposalsAsync(null, LearningProposalKind.AutomationSuggestion, ct);
+        var pendingDuplicate = allAutomationProposals.FirstOrDefault(item =>
+            string.Equals(item.Status, LearningProposalStatus.Pending, StringComparison.OrdinalIgnoreCase) &&
+            IsDuplicateProposal(item, fingerprint, actorId, lastUser.Content, skillName: null));
+        if (pendingDuplicate is not null)
+        {
+            await _proposalStore.SaveProposalAsync(MergeDuplicateProposal(
+                pendingDuplicate,
+                search.Items.Select(static item => item.SessionId).Append(session.Id),
+                [BuildTurnId(session, lastUser)],
+                Math.Min(0.9f, 0.3f + (search.Items.Count * 0.1f))), ct);
+            return;
+        }
+
+        if (HasRecentlyApprovedDuplicate(allAutomationProposals, fingerprint, actorId, lastUser.Content, skillName: null))
             return;
 
         var automation = new AutomationDefinition
@@ -346,6 +370,7 @@ internal sealed class LearningService
             Tags = ["suggested", "learning"],
             IsDraft = true,
             Source = "learning",
+            CreatedByLearningProposalId = null,
             TemplateKey = "custom"
         };
 
@@ -358,8 +383,15 @@ internal sealed class LearningService
             Title = lastUser.Content,
             Summary = "Repeated prompt detected; suggested as a disabled automation draft.",
             AutomationDraft = automation,
-            SourceSessionIds = [session.Id],
-            Confidence = Math.Min(0.9f, 0.3f + (search.Items.Count * 0.1f))
+            SourceSessionIds = search.Items.Select(static item => item.SessionId).Append(session.Id).Distinct(StringComparer.Ordinal).ToArray(),
+            SourceTurnIds = [BuildTurnId(session, lastUser)],
+            RepeatedCount = search.Items.Count,
+            ProposalFingerprint = fingerprint,
+            RiskLevel = LearningProposalRiskLevels.Medium,
+            Confidence = Math.Min(0.9f, 0.3f + (search.Items.Count * 0.1f)),
+            CreatedReason = $"Observed {search.Items.Count} similar requests from the same actor.",
+            ValidationStatus = LearningProposalValidationStatuses.Warning,
+            ValidationWarnings = ["Automation suggestions are created as disabled drafts and require operator review before use."]
         };
 
         await _proposalStore.SaveProposalAsync(automationProposal, ct);
@@ -367,24 +399,44 @@ internal sealed class LearningService
 
     private async Task EnsureSkillProposalAsync(Session session, string actorId, ChatTurn assistantTurn, CancellationToken ct)
     {
-        var toolSequence = string.Join(" -> ", assistantTurn.ToolCalls!.Select(static item => item.ToolName));
+        var toolSequenceItems = assistantTurn.ToolCalls!.Select(static item => item.ToolName).ToArray();
+        var normalizedToolSequence = NormalizeToolSequence(toolSequenceItems);
+        var toolSequence = string.Join(" -> ", toolSequenceItems);
         var repeatedCount = session.History
             .Where(static turn => string.Equals(turn.Role, "assistant", StringComparison.OrdinalIgnoreCase) && turn.ToolCalls is { Count: > 1 })
             .Count(turn => string.Equals(
-                string.Join(" -> ", turn.ToolCalls!.Select(static item => item.ToolName)),
-                toolSequence,
-                StringComparison.Ordinal));
+                NormalizeToolSequence(turn.ToolCalls!.Select(static item => item.ToolName)),
+                normalizedToolSequence,
+                StringComparison.OrdinalIgnoreCase));
 
         if (repeatedCount < _config.SkillProposalThreshold)
             return;
 
-        var pending = await _proposalStore.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.SkillDraft, ct);
-        if (pending.Any(item => string.Equals(item.ActorId, actorId, StringComparison.OrdinalIgnoreCase) &&
-                                string.Equals(item.SkillName, Slugify(toolSequence), StringComparison.OrdinalIgnoreCase)))
+        var skillName = Slugify(toolSequence);
+        var fingerprint = BuildProposalFingerprint(LearningProposalKind.SkillDraft, actorId, skillName, normalizedToolSequence);
+        var allSkillProposals = await _proposalStore.ListProposalsAsync(null, LearningProposalKind.SkillDraft, ct);
+        var pendingDuplicate = allSkillProposals.FirstOrDefault(item =>
+            string.Equals(item.Status, LearningProposalStatus.Pending, StringComparison.OrdinalIgnoreCase) &&
+            IsDuplicateProposal(item, fingerprint, actorId, title: null, skillName));
+        if (pendingDuplicate is not null)
+        {
+            await _proposalStore.SaveProposalAsync(MergeDuplicateProposal(
+                pendingDuplicate,
+                [session.Id],
+                [BuildTurnId(session, assistantTurn)],
+                Math.Min(0.95f, 0.4f + (repeatedCount * 0.1f)),
+                repeatedCount), ct);
+            return;
+        }
+
+        if (HasRecentlyApprovedDuplicate(allSkillProposals, fingerprint, actorId, title: null, skillName))
             return;
 
-        var skillName = Slugify(toolSequence);
         var draftContent = await SummarizeSkillDraftAsync(skillName, toolSequence, repeatedCount, ct);
+        var finalDraftContent = draftContent.Length > _config.MaxDraftChars ? draftContent[.._config.MaxDraftChars] : draftContent;
+        var toolObservations = BuildToolObservations(assistantTurn.ToolCalls!);
+        var validation = ValidateSkillDraft(skillName, finalDraftContent, ComputeDraftHash(finalDraftContent), toolObservations, repeatedCount, usedFallbackTemplate: IsFallbackSkillDraft(finalDraftContent));
+        var riskLevel = DetermineSkillRisk(toolObservations);
 
         await _proposalStore.SaveProposalAsync(new LearningProposal
         {
@@ -395,10 +447,24 @@ internal sealed class LearningService
             Title = $"Skill draft for {toolSequence}",
             Summary = "Repeated multi-tool workflow detected.",
             SkillName = skillName,
-            DraftContent = draftContent.Length > _config.MaxDraftChars ? draftContent[.._config.MaxDraftChars] : draftContent,
-            DraftContentHash = ComputeDraftHash(draftContent.Length > _config.MaxDraftChars ? draftContent[.._config.MaxDraftChars] : draftContent),
+            DraftContent = finalDraftContent,
+            DraftContentHash = ComputeDraftHash(finalDraftContent),
+            DraftPreview = Preview(finalDraftContent),
             SourceSessionIds = [session.Id],
-            Confidence = Math.Min(0.95f, 0.4f + (repeatedCount * 0.1f))
+            SourceTurnIds = [BuildTurnId(session, assistantTurn)],
+            ToolNames = toolSequenceItems.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            ToolSequence = toolSequenceItems,
+            ToolObservations = toolObservations,
+            RepeatedCount = repeatedCount,
+            ProposalFingerprint = fingerprint,
+            RiskLevel = riskLevel,
+            Confidence = Math.Min(0.95f, 0.4f + (repeatedCount * 0.1f)),
+            CreatedReason = $"Observed the same multi-tool sequence {repeatedCount} times in this session.",
+            ValidationStatus = validation.Errors.Count > 0
+                ? LearningProposalValidationStatuses.Error
+                : validation.Warnings.Count > 0 ? LearningProposalValidationStatuses.Warning : LearningProposalValidationStatuses.Valid,
+            ValidationWarnings = validation.Warnings,
+            ValidationErrors = validation.Errors
         }, ct);
     }
 
@@ -451,54 +517,85 @@ Use it when repeated requests resemble the sessions that produced this draft.
         return templateFallback;
     }
 
-    private static async Task SaveManagedSkillAsync(string skillName, string content, CancellationToken ct)
+    private static async Task SaveManagedSkillAsync(string skillName, string content, string proposalId, string? originalDraftHash, CancellationToken ct)
     {
-        var slug = Slugify(skillName);
-        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills", slug);
+        var root = GetManagedSkillPath(skillName);
         Directory.CreateDirectory(root);
         await File.WriteAllTextAsync(Path.Combine(root, "SKILL.md"), content, ct);
+        await File.WriteAllTextAsync(
+            Path.Combine(root, ".openclaw-learning.json"),
+            System.Text.Json.JsonSerializer.Serialize(new ManagedLearningSkillMetadata
+            {
+                CreatedByProposalId = proposalId,
+                OriginalDraftHash = originalDraftHash,
+                SkillName = skillName
+            }, CoreJsonContext.Default.ManagedLearningSkillMetadata),
+            ct);
     }
 
-    private static bool ValidateSkillDraft(string skillName, string content, string? expectedHash, out string error)
+    private static string GetManagedSkillPath(string skillName)
     {
-        error = string.Empty;
+        var slug = Slugify(skillName);
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills", slug);
+    }
+
+    private SkillDraftValidationResult ValidateSkillDraft(string skillName, string content, string? expectedHash, LearningProposal proposal)
+        => ValidateSkillDraft(
+            skillName,
+            content,
+            expectedHash,
+            proposal.ToolObservations,
+            proposal.RepeatedCount == 0 ? _config.SkillProposalThreshold : proposal.RepeatedCount,
+            proposal.ValidationWarnings.Any(static warning => warning.Contains("fallback template", StringComparison.OrdinalIgnoreCase)));
+
+    private SkillDraftValidationResult ValidateSkillDraft(
+        string skillName,
+        string content,
+        string? expectedHash,
+        IReadOnlyList<LearningToolObservation> toolObservations,
+        int repeatedCount,
+        bool usedFallbackTemplate)
+    {
+        var errors = new List<string>();
+        var warnings = new List<string>();
         if (string.IsNullOrWhiteSpace(content))
         {
-            error = "Skill draft content is empty.";
-            return false;
+            errors.Add("Skill draft content is empty.");
+            return new SkillDraftValidationResult(errors, warnings);
         }
 
         if (!string.IsNullOrWhiteSpace(expectedHash) &&
             !string.Equals(expectedHash, ComputeDraftHash(content), StringComparison.Ordinal))
         {
-            error = "Skill draft content no longer matches the reviewed proposal.";
-            return false;
+            errors.Add("Skill draft content no longer matches the reviewed proposal.");
         }
 
-        if (content.Length > 4_000)
+        if (content.Length > _config.MaxDraftChars)
         {
-            error = "Skill draft content exceeds the maximum allowed length.";
-            return false;
+            errors.Add("Skill draft content exceeds the maximum allowed length.");
+        }
+        else if (content.Length >= Math.Max(1, (int)(_config.MaxDraftChars * 0.9)))
+        {
+            warnings.Add("Skill draft content is near the configured maximum draft length.");
         }
 
         if (content.Contains("..", StringComparison.Ordinal) || content.Contains('\0'))
         {
-            error = "Skill draft contains invalid path-like content.";
-            return false;
+            errors.Add("Skill draft contains invalid path-like content.");
         }
 
         var lines = content.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         if (lines.Length < 5 || lines[0] != "---")
         {
-            error = "Skill draft must begin with YAML frontmatter.";
-            return false;
+            errors.Add("Skill draft must begin with YAML frontmatter.");
+            return new SkillDraftValidationResult(errors, warnings);
         }
 
         var endIndex = Array.IndexOf(lines, "---", 1);
         if (endIndex < 2)
         {
-            error = "Skill draft frontmatter is incomplete.";
-            return false;
+            errors.Add("Skill draft frontmatter is incomplete.");
+            return new SkillDraftValidationResult(errors, warnings);
         }
 
         var frontmatter = lines[1..endIndex];
@@ -506,20 +603,285 @@ Use it when repeated requests resemble the sessions that produced this draft.
         var descriptionLine = frontmatter.FirstOrDefault(static line => line.StartsWith("description:", StringComparison.OrdinalIgnoreCase));
         if (string.IsNullOrWhiteSpace(nameLine) || string.IsNullOrWhiteSpace(descriptionLine))
         {
-            error = "Skill draft frontmatter must include name and description.";
-            return false;
+            errors.Add("Skill draft frontmatter must include name and description.");
         }
 
-        var declaredName = nameLine["name:".Length..].Trim();
-        if (!string.Equals(Slugify(declaredName), Slugify(skillName), StringComparison.Ordinal))
+        if (!string.IsNullOrWhiteSpace(descriptionLine) && descriptionLine["description:".Length..].Trim().Length < 16)
+            warnings.Add("Skill draft description is short; review whether it clearly explains when to use the skill.");
+
+        if (!string.IsNullOrWhiteSpace(nameLine))
         {
-            error = "Skill draft name does not match the target skill slug.";
+            var declaredName = nameLine["name:".Length..].Trim();
+            if (!string.Equals(Slugify(declaredName), Slugify(skillName), StringComparison.Ordinal))
+                errors.Add("Skill draft name does not match the target skill slug.");
+        }
+
+        if (toolObservations.Any(static tool => tool.IsMutating == true))
+            warnings.Add("Observed tool sequence includes mutating tools.");
+        if (toolObservations.Any(static tool => tool.IsInteractive == true))
+            warnings.Add("Observed tool sequence includes interactive, messaging, browser, shell, or external side-effect tools.");
+        if (toolObservations.Any(static tool => tool.IsApprovalGated == true))
+            warnings.Add("Observed tool sequence includes tools that may require approval.");
+        if (toolObservations.Any(static tool => tool.IsReadOnly is null || tool.IsMutating is null))
+            warnings.Add("Some observed tools have unknown metadata; review risk manually.");
+        if (repeatedCount < _config.SkillProposalThreshold)
+            warnings.Add("Skill draft was generated from a low repeated count.");
+        if (usedFallbackTemplate)
+            warnings.Add("Skill draft used the fallback template because LLM summarization was unavailable or failed.");
+
+        return new SkillDraftValidationResult(errors, warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+    }
+
+    private async Task<bool> RollbackManagedSkillAsync(LearningProposal proposal, CancellationToken ct)
+    {
+        var skillPath = string.IsNullOrWhiteSpace(proposal.ManagedSkillPath)
+            ? GetManagedSkillPath(proposal.SkillName ?? proposal.Title)
+            : proposal.ManagedSkillPath;
+        var skillFile = Path.Combine(skillPath, "SKILL.md");
+        var metadataFile = Path.Combine(skillPath, ".openclaw-learning.json");
+
+        if (!File.Exists(skillFile) || !File.Exists(metadataFile))
+            return false;
+
+        ManagedLearningSkillMetadata? metadata;
+        try
+        {
+            metadata = System.Text.Json.JsonSerializer.Deserialize(
+                await File.ReadAllTextAsync(metadataFile, ct),
+                CoreJsonContext.Default.ManagedLearningSkillMetadata);
+        }
+        catch
+        {
             return false;
         }
 
-        error = string.Empty;
+        if (metadata?.ManagedByLearning != true ||
+            !string.Equals(metadata.CreatedByProposalId, proposal.Id, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var currentContent = await File.ReadAllTextAsync(skillFile, ct);
+        var currentHash = ComputeDraftHash(currentContent);
+        var archiveRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".openclaw",
+            "rollback-archive",
+            "skills",
+            $"{Slugify(proposal.SkillName ?? proposal.Title)}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}");
+
+        if (!string.Equals(currentHash, metadata.OriginalDraftHash ?? proposal.DraftContentHash, StringComparison.Ordinal))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(archiveRoot)!);
+            Directory.Move(skillPath, archiveRoot);
+            _logger.LogWarning("Archived modified managed learning skill for proposal {ProposalId} at {ArchivePath}", proposal.Id, archiveRoot);
+            return true;
+        }
+
+        Directory.Delete(skillPath, recursive: true);
         return true;
     }
+
+    private async Task<bool> RollbackManagedAutomationAsync(LearningProposal proposal, CancellationToken ct)
+    {
+        var automationId = proposal.AppliedAutomationId ?? proposal.AutomationDraft?.Id;
+        if (string.IsNullOrWhiteSpace(automationId))
+            return false;
+
+        var automation = await _automationStore.GetAutomationAsync(automationId, ct);
+        if (automation is null)
+            return false;
+
+        var createdByThisProposal = string.Equals(automation.CreatedByLearningProposalId, proposal.Id, StringComparison.Ordinal) ||
+                                    (string.Equals(automation.Source, "learning", StringComparison.OrdinalIgnoreCase) &&
+                                     string.Equals(automation.Id, proposal.AutomationDraft?.Id, StringComparison.Ordinal));
+        if (!createdByThisProposal)
+            return false;
+
+        await _automationStore.SaveAutomationAsync(CloneAutomation(
+            automation,
+            enabled: false,
+            isDraft: true,
+            source: "learning",
+            updatedAtUtc: DateTimeOffset.UtcNow), ct);
+        return true;
+    }
+
+    private static AutomationDefinition BuildManagedAutomationDraft(AutomationDefinition source, string proposalId)
+        => CloneAutomation(
+            source,
+            enabled: false,
+            isDraft: true,
+            source: "learning",
+            createdByLearningProposalId: proposalId,
+            updatedAtUtc: DateTimeOffset.UtcNow);
+
+    private static AutomationDefinition CloneAutomation(
+        AutomationDefinition automation,
+        bool? enabled = null,
+        bool? isDraft = null,
+        string? source = null,
+        string? createdByLearningProposalId = null,
+        DateTimeOffset? updatedAtUtc = null)
+        => new()
+        {
+            Id = automation.Id,
+            Name = automation.Name,
+            Enabled = enabled ?? automation.Enabled,
+            Schedule = automation.Schedule,
+            Timezone = automation.Timezone,
+            Prompt = automation.Prompt,
+            ModelId = automation.ModelId,
+            ResponseMode = automation.ResponseMode,
+            RunOnStartup = automation.RunOnStartup,
+            SessionId = automation.SessionId,
+            DeliveryChannelId = automation.DeliveryChannelId,
+            DeliveryRecipientId = automation.DeliveryRecipientId,
+            DeliverySubject = automation.DeliverySubject,
+            Tags = automation.Tags,
+            IsDraft = isDraft ?? automation.IsDraft,
+            Source = source ?? automation.Source,
+            TemplateKey = automation.TemplateKey,
+            CreatedByLearningProposalId = createdByLearningProposalId ?? automation.CreatedByLearningProposalId,
+            Verification = automation.Verification,
+            RetryPolicy = automation.RetryPolicy,
+            CreatedAtUtc = automation.CreatedAtUtc,
+            UpdatedAtUtc = updatedAtUtc ?? automation.UpdatedAtUtc
+        };
+
+    private static IReadOnlyList<LearningToolObservation> BuildToolObservations(IReadOnlyList<ToolInvocation> toolCalls)
+        => toolCalls.Select((toolCall, index) =>
+        {
+            var toolName = toolCall.ToolName;
+            var mutating = ToolActionPolicyResolver.IsMutationCapable(toolName, toolCall.Arguments);
+            var known = IsKnownToolCategory(toolName);
+            var interactive = IsInteractiveOrExternalTool(toolName);
+            var approvalGated = IsLikelyApprovalGatedTool(toolName);
+            return new LearningToolObservation
+            {
+                ToolName = toolName,
+                SequenceIndex = index,
+                IsReadOnly = known ? !mutating && !interactive : null,
+                IsMutating = known ? mutating : null,
+                IsInteractive = interactive,
+                IsApprovalGated = approvalGated,
+                IsSandboxCapable = IsLikelySandboxCapableTool(toolName),
+                ClassificationReason = known
+                    ? mutating ? "Tool name or arguments indicate mutation." : "Tool appears read-oriented from known policy metadata."
+                    : "Tool metadata is unknown; review conservatively."
+            };
+        }).ToArray();
+
+    private static string DetermineSkillRisk(IReadOnlyList<LearningToolObservation> observations)
+    {
+        if (observations.Count == 0 ||
+            observations.Any(static item => item.IsMutating != false || item.IsInteractive == true || item.IsApprovalGated == true || item.IsReadOnly is null))
+        {
+            return LearningProposalRiskLevels.High;
+        }
+
+        return observations.Count <= 2 ? LearningProposalRiskLevels.Low : LearningProposalRiskLevels.Medium;
+    }
+
+    private static bool IsKnownToolCategory(string toolName)
+        => ContainsAny(
+               toolName,
+               "read",
+               "list",
+               "get",
+               "search",
+               "find",
+               "open",
+               "view",
+               "fetch",
+               "inspect",
+               "query",
+               "status",
+               "log",
+               "poll",
+               "tool",
+               "process",
+               "automation",
+               "todo",
+               "file",
+               "shell",
+               "code_exec",
+               "git",
+               "browser",
+               "web",
+               "http",
+               "email",
+               "calendar",
+               "slack",
+               "teams",
+               "github",
+               "notion",
+               "database",
+               "home_assistant",
+               "mqtt",
+               "payment",
+               "delegate");
+
+    private static bool IsInteractiveOrExternalTool(string toolName)
+        => ContainsAny(toolName, "browser", "web", "http", "email", "calendar", "slack", "teams", "discord", "telegram", "whatsapp", "sms", "signal", "notion", "github", "shell", "process", "code_exec", "database", "home_assistant", "mqtt", "payment");
+
+    private static bool IsLikelyApprovalGatedTool(string toolName)
+        => ContainsAny(toolName, "shell", "write", "edit", "apply_patch", "payment", "email", "calendar", "browser", "home_assistant", "mqtt", "database") ||
+           ToolActionPolicyResolver.SupportsActionAwareApproval(toolName);
+
+    private static bool IsLikelySandboxCapableTool(string toolName)
+        => ContainsAny(toolName, "shell", "code_exec", "process", "browser");
+
+    private static bool ContainsAny(string value, params string[] needles)
+        => needles.Any(needle => value.Contains(needle, StringComparison.OrdinalIgnoreCase));
+
+    private static string NormalizeToolSequence(IEnumerable<string> toolNames)
+        => string.Join(">", toolNames.Select(static item => Slugify(item)).Where(static item => !string.IsNullOrWhiteSpace(item)));
+
+    private static string BuildProposalFingerprint(string kind, string actorId, params string?[] parts)
+        => ComputeDraftHash(string.Join("\n", new[] { kind, actorId }.Concat(parts.Select(static part => NormalizeForFingerprint(part ?? string.Empty)))));
+
+    private static string NormalizeForFingerprint(string value)
+        => Regex.Replace(value.Trim().ToLowerInvariant(), @"\s+", " ");
+
+    private static bool IsDuplicateProposal(LearningProposal proposal, string fingerprint, string actorId, string? title, string? skillName)
+        => string.Equals(proposal.ActorId, actorId, StringComparison.OrdinalIgnoreCase) &&
+           (string.Equals(proposal.ProposalFingerprint, fingerprint, StringComparison.Ordinal) ||
+            (!string.IsNullOrWhiteSpace(skillName) && string.Equals(proposal.SkillName, skillName, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(title) && string.Equals(NormalizeForFingerprint(proposal.Title), NormalizeForFingerprint(title), StringComparison.Ordinal)));
+
+    private static bool HasRecentlyApprovedDuplicate(IReadOnlyList<LearningProposal> proposals, string fingerprint, string actorId, string? title, string? skillName)
+        => proposals.Any(item =>
+            string.Equals(item.Status, LearningProposalStatus.Approved, StringComparison.OrdinalIgnoreCase) &&
+            item.UpdatedAtUtc >= DateTimeOffset.UtcNow.AddDays(-30) &&
+            IsDuplicateProposal(item, fingerprint, actorId, title, skillName));
+
+    private static LearningProposal MergeDuplicateProposal(
+        LearningProposal proposal,
+        IEnumerable<string> sourceSessionIds,
+        IEnumerable<string> sourceTurnIds,
+        float confidence,
+        int? repeatedCount = null)
+        => CopyProposal(
+            proposal,
+            sourceSessionIds: proposal.SourceSessionIds.Concat(sourceSessionIds).Where(static item => !string.IsNullOrWhiteSpace(item)).Distinct(StringComparer.Ordinal).ToArray(),
+            sourceTurnIds: proposal.SourceTurnIds.Concat(sourceTurnIds).Where(static item => !string.IsNullOrWhiteSpace(item)).Distinct(StringComparer.Ordinal).ToArray(),
+            confidence: Math.Max(proposal.Confidence, confidence),
+            repeatedCount: Math.Max(proposal.RepeatedCount, repeatedCount ?? proposal.RepeatedCount),
+            statusUpdatedAtUtc: DateTimeOffset.UtcNow);
+
+    private static string BuildTurnId(Session session, ChatTurn turn)
+    {
+        var index = session.History.IndexOf(turn);
+        return index < 0 ? $"{session.Id}:{turn.Timestamp:O}" : $"{session.Id}:turn:{index}";
+    }
+
+    private static string Preview(string content)
+        => content.Length <= 600 ? content : content[..600];
+
+    private static bool IsFallbackSkillDraft(string content)
+        => content.Contains("When the task matches this workflow", StringComparison.OrdinalIgnoreCase) &&
+           content.Contains("prefer the following tool chain", StringComparison.OrdinalIgnoreCase);
 
     private static string ComputeDraftHash(string content)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
@@ -642,6 +1004,64 @@ Use it when repeated requests resemble the sessions that produced this draft.
             .Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace("\"", "\\\"", StringComparison.Ordinal);
 
+    private static LearningProposal CopyProposal(
+        LearningProposal proposal,
+        string? status = null,
+        UserProfile? appliedProfileBefore = null,
+        AutomationDefinition? automationDraft = null,
+        string? appliedAutomationId = null,
+        string? managedSkillPath = null,
+        ManagedLearningSkillMetadata? managedSkillMetadata = null,
+        IReadOnlyList<string>? sourceSessionIds = null,
+        IReadOnlyList<string>? sourceTurnIds = null,
+        float? confidence = null,
+        int? repeatedCount = null,
+        DateTimeOffset? statusUpdatedAtUtc = null,
+        DateTimeOffset? reviewedAtUtc = null,
+        string? reviewNotes = null,
+        bool? rolledBack = null,
+        DateTimeOffset? rolledBackAtUtc = null,
+        string? rollbackReason = null)
+        => new()
+        {
+            Id = proposal.Id,
+            Kind = proposal.Kind,
+            Status = status ?? proposal.Status,
+            ActorId = proposal.ActorId,
+            Title = proposal.Title,
+            Summary = proposal.Summary,
+            SkillName = proposal.SkillName,
+            DraftContent = proposal.DraftContent,
+            DraftContentHash = proposal.DraftContentHash,
+            DraftPreview = proposal.DraftPreview,
+            ProfileUpdate = proposal.ProfileUpdate,
+            AppliedProfileBefore = appliedProfileBefore ?? proposal.AppliedProfileBefore,
+            AutomationDraft = automationDraft ?? proposal.AutomationDraft,
+            AppliedAutomationId = appliedAutomationId ?? proposal.AppliedAutomationId,
+            ManagedSkillPath = managedSkillPath ?? proposal.ManagedSkillPath,
+            ManagedSkillMetadata = managedSkillMetadata ?? proposal.ManagedSkillMetadata,
+            SourceSessionIds = sourceSessionIds ?? proposal.SourceSessionIds,
+            SourceTurnIds = sourceTurnIds ?? proposal.SourceTurnIds,
+            ToolNames = proposal.ToolNames,
+            ToolSequence = proposal.ToolSequence,
+            ToolObservations = proposal.ToolObservations,
+            RepeatedCount = repeatedCount ?? proposal.RepeatedCount,
+            ProposalFingerprint = proposal.ProposalFingerprint,
+            RiskLevel = proposal.RiskLevel,
+            Confidence = confidence ?? proposal.Confidence,
+            CreatedReason = proposal.CreatedReason,
+            ValidationStatus = proposal.ValidationStatus,
+            ValidationWarnings = proposal.ValidationWarnings,
+            ValidationErrors = proposal.ValidationErrors,
+            CreatedAtUtc = proposal.CreatedAtUtc,
+            UpdatedAtUtc = statusUpdatedAtUtc ?? proposal.UpdatedAtUtc,
+            ReviewedAtUtc = reviewedAtUtc ?? proposal.ReviewedAtUtc,
+            ReviewNotes = reviewNotes ?? proposal.ReviewNotes,
+            RolledBack = rolledBack ?? proposal.RolledBack,
+            RolledBackAtUtc = rolledBackAtUtc ?? proposal.RolledBackAtUtc,
+            RollbackReason = rollbackReason ?? proposal.RollbackReason
+        };
+
     private static string Slugify(string value)
     {
         var chars = value
@@ -658,5 +1078,17 @@ Use it when repeated requests resemble the sessions that produced this draft.
         public required float Confidence { get; init; }
         public required int ConfidenceBits { get; init; }
         public required IReadOnlyList<string> SourceSessionIds { get; init; }
+    }
+
+    private sealed class SkillDraftValidationResult
+    {
+        public SkillDraftValidationResult(IReadOnlyList<string> errors, IReadOnlyList<string> warnings)
+        {
+            Errors = errors;
+            Warnings = warnings;
+        }
+
+        public IReadOnlyList<string> Errors { get; }
+        public IReadOnlyList<string> Warnings { get; }
     }
 }

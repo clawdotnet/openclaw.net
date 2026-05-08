@@ -1,3 +1,4 @@
+using System.Text;
 using OpenClaw.Client;
 using OpenClaw.Core.Models;
 using Spectre.Console;
@@ -343,11 +344,12 @@ public static class TerminalUi
         var table = new Table().RoundedBorder();
         table.AddColumn("ID");
         table.AddColumn("Kind");
+        table.AddColumn("Risk");
         table.AddColumn("Title");
         table.AddColumn("Confidence");
 
         foreach (var item in proposals.Items)
-            table.AddRow(item.Id, item.Kind, item.Title, item.Confidence.ToString("0.00"));
+            table.AddRow(item.Id, item.Kind, item.RiskLevel, item.Title, item.Confidence.ToString("0.00"));
 
         if (proposals.Items.Count == 0)
         {
@@ -369,11 +371,23 @@ public static class TerminalUi
             return;
         }
 
-        AnsiConsole.Write(new Panel(proposal.DraftContent ?? proposal.Summary).Header(proposal.Title));
+        var detail = await client.GetLearningProposalDetailAsync(proposalId, ct);
+        var current = detail?.Proposal ?? proposal;
+        var reviewText = new StringBuilder()
+            .AppendLine(current.Summary)
+            .AppendLine($"Risk: {current.RiskLevel}")
+            .AppendLine($"Validation: {current.ValidationStatus}")
+            .AppendLine($"Repeated count: {current.RepeatedCount}")
+            .AppendLine($"Sources: {string.Join(", ", current.SourceSessionIds)}")
+            .AppendLine($"Warnings: {(current.ValidationWarnings.Count == 0 ? "none" : string.Join("; ", current.ValidationWarnings))}")
+            .AppendLine()
+            .AppendLine(current.DraftContent ?? current.DraftPreview ?? current.AutomationDraft?.Prompt ?? current.ProfileUpdate?.Summary ?? string.Empty)
+            .ToString();
+        AnsiConsole.Write(new Panel(reviewText).Header(current.Title));
         var action = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
                 .Title("Review action")
-                .AddChoices(["Approve", "Reject", "Return"]));
+                .AddChoices(detail?.CanRollback == true ? ["Approve", "Reject", "Rollback", "Return"] : ["Approve", "Reject", "Return"]));
 
         switch (action)
         {
@@ -385,6 +399,11 @@ public static class TerminalUi
                 var reason = AnsiConsole.Ask<string>("Reason ([grey]optional[/])");
                 await client.RejectLearningProposalAsync(proposalId, string.IsNullOrWhiteSpace(reason) ? null : reason, ct);
                 AnsiConsole.MarkupLine("[yellow]Proposal rejected.[/]");
+                break;
+            case "Rollback":
+                var rollbackReason = AnsiConsole.Ask<string>("Rollback reason ([grey]optional[/])");
+                await client.RollbackLearningProposalAsync(proposalId, string.IsNullOrWhiteSpace(rollbackReason) ? null : rollbackReason, ct);
+                AnsiConsole.MarkupLine("[yellow]Proposal rolled back.[/]");
                 break;
         }
 

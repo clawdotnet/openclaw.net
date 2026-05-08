@@ -21,6 +21,7 @@
 - Canvas and A2UI v1 visual workspace with session-scoped websocket command broker, webchat Canvas host, Companion native Canvas tab, A2UI v0.8 JSONL renderer, event feedback, snapshots, and public-bind hardening.
 - Voice memo transcription for inbound audio media with Gemini provider support, degraded fallback behavior, and audio-marker preservation.
 - Checkpoint and resume for long-running native runtime turns, with durable save points after completed tool batches and resume from the latest completed batch after interruption.
+- Review-first learning hardening: richer learning proposal provenance, duplicate suppression, risk levels, validation warnings, and rollback for managed skill drafts and learning-created automation drafts.
 
 ## Runtime and Platform Expansion
 

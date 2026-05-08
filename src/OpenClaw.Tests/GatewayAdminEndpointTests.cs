@@ -1207,6 +1207,260 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task LearningService_SkillDraftProposal_IncludesRiskWarningsAndSuppressesDuplicates()
+    {
+        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        var store = new FileFeatureStore(storagePath);
+        var service = new LearningService(
+            new LearningConfig { SkillProposalThreshold = 2, AutomationProposalThreshold = 99 },
+            store,
+            store,
+            store,
+            new StaticSessionSearchStore([]),
+            NullLogger<LearningService>.Instance);
+        var session = new Session
+        {
+            Id = "sess-skill-risk",
+            ChannelId = "web",
+            SenderId = "operator",
+            History =
+            [
+                new ChatTurn { Role = "user", Content = "Patch the file and run the check." },
+                BuildAssistantToolTurn("shell", "apply_patch"),
+                BuildAssistantToolTurn("shell", "apply_patch")
+            ]
+        };
+
+        await service.ObserveSessionAsync(session, CancellationToken.None);
+        await service.ObserveSessionAsync(session, CancellationToken.None);
+
+        var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.SkillDraft, CancellationToken.None);
+        var proposal = Assert.Single(proposals);
+        Assert.Equal("high", proposal.RiskLevel);
+        Assert.Equal("warning", proposal.ValidationStatus);
+        Assert.Equal(2, proposal.RepeatedCount);
+        Assert.Equal(["shell", "apply_patch"], proposal.ToolSequence);
+        Assert.Contains("shell", proposal.ToolNames, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("apply_patch", proposal.ToolNames, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(["sess-skill-risk"], proposal.SourceSessionIds);
+        Assert.True(proposal.SourceTurnIds.Count >= 1);
+        Assert.False(string.IsNullOrWhiteSpace(proposal.ProposalFingerprint));
+        Assert.False(string.IsNullOrWhiteSpace(proposal.DraftPreview));
+        Assert.Contains(proposal.ToolObservations, static item => item.IsMutating == true);
+        Assert.Contains(proposal.ValidationWarnings, static warning => warning.Contains("mutating tools", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(proposal.ValidationWarnings, static warning => warning.Contains("fallback template", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task LearningService_AutomationSuggestion_DuplicateUpdatesPendingProposal()
+    {
+        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        var store = new FileFeatureStore(storagePath);
+        var searchStore = new StaticSessionSearchStore(
+        [
+            new SessionSearchHit { SessionId = "sess-search-1", ChannelId = "web", SenderId = "operator", Role = "user", Snippet = "Send the daily review", Score = 0.9f },
+            new SessionSearchHit { SessionId = "sess-search-2", ChannelId = "web", SenderId = "operator", Role = "user", Snippet = "Send the daily review", Score = 0.8f }
+        ]);
+        var service = new LearningService(
+            new LearningConfig { SkillProposalThreshold = 99, AutomationProposalThreshold = 2 },
+            store,
+            store,
+            store,
+            searchStore,
+            NullLogger<LearningService>.Instance);
+
+        await service.ObserveSessionAsync(BuildUserSession("sess-auto-1", "Send the daily review"), CancellationToken.None);
+        await service.ObserveSessionAsync(BuildUserSession("sess-auto-2", "Send the daily review"), CancellationToken.None);
+
+        var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.AutomationSuggestion, CancellationToken.None);
+        var proposal = Assert.Single(proposals);
+        Assert.Equal("medium", proposal.RiskLevel);
+        Assert.Equal("warning", proposal.ValidationStatus);
+        Assert.True(proposal.Confidence >= 0.5f);
+        Assert.Equal(2, proposal.RepeatedCount);
+        Assert.False(proposal.AutomationDraft!.Enabled);
+        Assert.True(proposal.AutomationDraft.IsDraft);
+        Assert.Equal("learning", proposal.AutomationDraft.Source);
+        Assert.Contains("sess-search-1", proposal.SourceSessionIds);
+        Assert.Contains("sess-search-2", proposal.SourceSessionIds);
+        Assert.Contains("sess-auto-1", proposal.SourceSessionIds);
+        Assert.Contains("sess-auto-2", proposal.SourceSessionIds);
+    }
+
+    [Fact]
+    public async Task LearningProposalApproveRollback_SkillDraft_ManagesOnlyLearningSkill()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var store = new FileFeatureStore(harness.StoragePath);
+        var skillName = $"rollback-skill-{Guid.NewGuid():N}";
+        var skillPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills", skillName);
+        if (Directory.Exists(skillPath))
+            Directory.Delete(skillPath, recursive: true);
+
+        var draft = $"""
+            ---
+            name: {skillName}
+            description: Validate managed learning skill rollback
+            ---
+
+            Use when testing approved learning skill rollback.
+            """;
+
+        try
+        {
+            await store.SaveProposalAsync(new LearningProposal
+            {
+                Id = "lp_rollback_skill",
+                Kind = LearningProposalKind.SkillDraft,
+                Status = LearningProposalStatus.Pending,
+                ActorId = "web:operator",
+                Title = "Managed skill draft",
+                Summary = "Skill rollback test.",
+                SkillName = skillName,
+                DraftContent = draft,
+                DraftContentHash = ComputeTestHash(draft),
+                RiskLevel = LearningProposalRiskLevels.High,
+                ValidationStatus = LearningProposalValidationStatuses.Warning,
+                ValidationWarnings = ["Observed tool sequence includes mutating tools."]
+            }, CancellationToken.None);
+
+            using var approveRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_rollback_skill/approve");
+            approveRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+            using var approveResponse = await harness.Client.SendAsync(approveRequest);
+            Assert.Equal(HttpStatusCode.OK, approveResponse.StatusCode);
+            using var approvePayload = await ReadJsonAsync(approveResponse);
+            Assert.Equal("approved", approvePayload.RootElement.GetProperty("status").GetString());
+            Assert.Equal(skillPath, approvePayload.RootElement.GetProperty("managedSkillPath").GetString());
+            Assert.True(File.Exists(Path.Combine(skillPath, "SKILL.md")));
+            Assert.True(File.Exists(Path.Combine(skillPath, ".openclaw-learning.json")));
+
+            using var rollbackRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_rollback_skill/rollback")
+            {
+                Content = JsonContent("""{"reason":"remove test skill"}""")
+            };
+            rollbackRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+            using var rollbackResponse = await harness.Client.SendAsync(rollbackRequest);
+            Assert.Equal(HttpStatusCode.OK, rollbackResponse.StatusCode);
+            using var rollbackPayload = await ReadJsonAsync(rollbackResponse);
+            Assert.Equal("rolled_back", rollbackPayload.RootElement.GetProperty("status").GetString());
+            Assert.False(Directory.Exists(skillPath));
+            await harness.Runtime.AgentRuntime.Received(2).ReloadSkillsAsync(Arg.Any<CancellationToken>());
+
+            var events = harness.Runtime.Operations.RuntimeEvents.Query(new RuntimeEventQuery { Component = "learning", Limit = 10 });
+            Assert.Contains(events, static item => item.Action == "approved" && item.Summary.Contains("lp_rollback_skill", StringComparison.Ordinal));
+            Assert.Contains(events, static item => item.Action == "rolled_back" && item.Summary.Contains("lp_rollback_skill", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(skillPath))
+                Directory.Delete(skillPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LearningProposalApproveRollback_AutomationSuggestion_DisablesManagedDraft()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var store = new FileFeatureStore(harness.StoragePath);
+        await store.SaveProposalAsync(new LearningProposal
+        {
+            Id = "lp_rollback_automation",
+            Kind = LearningProposalKind.AutomationSuggestion,
+            Status = LearningProposalStatus.Pending,
+            ActorId = "web:operator",
+            Title = "Daily review automation",
+            Summary = "Automation rollback test.",
+            AutomationDraft = new AutomationDefinition
+            {
+                Id = "auto_learning_rollback",
+                Name = "Daily review automation",
+                Enabled = true,
+                Schedule = "@daily",
+                Prompt = "Send the daily review.",
+                DeliveryChannelId = "cron",
+                IsDraft = false,
+                Source = "learning",
+                TemplateKey = "custom"
+            },
+            RiskLevel = LearningProposalRiskLevels.Medium,
+            ValidationStatus = LearningProposalValidationStatuses.Warning
+        }, CancellationToken.None);
+
+        using var approveRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_rollback_automation/approve");
+        approveRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        using var approveResponse = await harness.Client.SendAsync(approveRequest);
+        Assert.Equal(HttpStatusCode.OK, approveResponse.StatusCode);
+
+        var approvedAutomation = await store.GetAutomationAsync("auto_learning_rollback", CancellationToken.None);
+        Assert.NotNull(approvedAutomation);
+        Assert.False(approvedAutomation.Enabled);
+        Assert.True(approvedAutomation.IsDraft);
+        Assert.Equal("lp_rollback_automation", approvedAutomation.CreatedByLearningProposalId);
+
+        await store.SaveAutomationAsync(new AutomationDefinition
+        {
+            Id = "auto_learning_rollback",
+            Name = "Daily review automation",
+            Enabled = true,
+            Schedule = "@daily",
+            Prompt = "Send the daily review.",
+            DeliveryChannelId = "cron",
+            IsDraft = false,
+            Source = "learning",
+            CreatedByLearningProposalId = "lp_rollback_automation",
+            TemplateKey = "custom"
+        }, CancellationToken.None);
+
+        using var rollbackRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_rollback_automation/rollback")
+        {
+            Content = JsonContent("""{"reason":"operator cancelled automation"}""")
+        };
+        rollbackRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        using var rollbackResponse = await harness.Client.SendAsync(rollbackRequest);
+        Assert.Equal(HttpStatusCode.OK, rollbackResponse.StatusCode);
+        using var rollbackPayload = await ReadJsonAsync(rollbackResponse);
+        Assert.Equal("rolled_back", rollbackPayload.RootElement.GetProperty("status").GetString());
+
+        var rolledBackAutomation = await store.GetAutomationAsync("auto_learning_rollback", CancellationToken.None);
+        Assert.NotNull(rolledBackAutomation);
+        Assert.False(rolledBackAutomation.Enabled);
+        Assert.True(rolledBackAutomation.IsDraft);
+        Assert.Equal("lp_rollback_automation", rolledBackAutomation.CreatedByLearningProposalId);
+    }
+
+    [Fact]
+    public async Task LearningProposalApprove_InvalidSkillDraft_RejectsWithValidationError()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var store = new FileFeatureStore(harness.StoragePath);
+        await store.SaveProposalAsync(new LearningProposal
+        {
+            Id = "lp_invalid_skill",
+            Kind = LearningProposalKind.SkillDraft,
+            Status = LearningProposalStatus.Pending,
+            ActorId = "web:operator",
+            Title = "Invalid skill draft",
+            Summary = "Invalid draft test.",
+            SkillName = "invalid-skill",
+            DraftContent = "---\nname: invalid-skill\ndescription: Invalid hash test skill\n---\nUse for validation tests.",
+            DraftContentHash = "not-the-reviewed-hash"
+        }, CancellationToken.None);
+
+        using var approveRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_invalid_skill/approve");
+        approveRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        using var approveResponse = await harness.Client.SendAsync(approveRequest);
+        Assert.Equal(HttpStatusCode.OK, approveResponse.StatusCode);
+        using var approvePayload = await ReadJsonAsync(approveResponse);
+        Assert.Equal("rejected", approvePayload.RootElement.GetProperty("status").GetString());
+        Assert.Contains("no longer matches", approvePayload.RootElement.GetProperty("reviewNotes").GetString(), StringComparison.OrdinalIgnoreCase);
+
+        var events = harness.Runtime.Operations.RuntimeEvents.Query(new RuntimeEventQuery { Component = "learning", Limit = 10 });
+        Assert.Contains(events, static item => item.Action == "rejected" && item.Summary.Contains("validation", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task AdminProfiles_ExportAndImport_RoundTripsProfilesAndProposals()
     {
         const string actorId = "discord:portable-user";
@@ -4845,6 +5099,35 @@ public sealed class GatewayAdminEndpointTests
 
     private const string ShellApprovalArgumentsJson = """{"command":"pwd"}""";
 
+    private static ChatTurn BuildAssistantToolTurn(params string[] toolNames)
+        => new()
+        {
+            Role = "assistant",
+            Content = "Used tools.",
+            ToolCalls = toolNames.Select(static toolName => new ToolInvocation
+            {
+                ToolName = toolName,
+                Arguments = "{}",
+                Result = "{}"
+            }).ToList()
+        };
+
+    private static Session BuildUserSession(string sessionId, string content)
+        => new()
+        {
+            Id = sessionId,
+            ChannelId = "web",
+            SenderId = "operator",
+            History =
+            [
+                new ChatTurn { Role = "user", Content = content },
+                new ChatTurn { Role = "assistant", Content = "Acknowledged." }
+            ]
+        };
+
+    private static string ComputeTestHash(string content)
+        => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(content)));
+
     private static StringContent JsonContent(string json)
         => new(json, Encoding.UTF8, "application/json");
 
@@ -5353,6 +5636,16 @@ public sealed class GatewayAdminEndpointTests
             Client.Dispose();
             await App.DisposeAsync();
         }
+    }
+
+    private sealed class StaticSessionSearchStore(IReadOnlyList<SessionSearchHit> items) : ISessionSearchStore
+    {
+        public ValueTask<SessionSearchResult> SearchSessionsAsync(SessionSearchQuery query, CancellationToken ct)
+            => ValueTask.FromResult(new SessionSearchResult
+            {
+                Query = query,
+                Items = items
+            });
     }
 
     private sealed class RestartableTestChannelAdapter(string channelId) : IChannelAdapter, IRestartableChannelAdapter

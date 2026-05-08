@@ -73,6 +73,7 @@ public sealed class AutomationDefinition
     public bool IsDraft { get; init; }
     public string Source { get; init; } = "managed";
     public string? TemplateKey { get; init; }
+    public string? CreatedByLearningProposalId { get; init; }
     public VerificationPolicy? Verification { get; init; }
     public AutomationRetryPolicy RetryPolicy { get; init; } = new();
     public DateTimeOffset CreatedAtUtc { get; init; } = DateTimeOffset.UtcNow;

@@ -445,6 +445,13 @@ public sealed class LearningProposalProvenance
 {
     public string? ActorId { get; init; }
     public IReadOnlyList<string> SourceSessionIds { get; init; } = [];
+    public IReadOnlyList<string> SourceTurnIds { get; init; } = [];
+    public IReadOnlyList<string> ToolNames { get; init; } = [];
+    public IReadOnlyList<string> ToolSequence { get; init; } = [];
+    public IReadOnlyList<LearningToolObservation> ToolObservations { get; init; } = [];
+    public int RepeatedCount { get; init; }
+    public string? ProposalFingerprint { get; init; }
+    public string? CreatedReason { get; init; }
     public float Confidence { get; init; }
     public DateTimeOffset CreatedAtUtc { get; init; }
     public DateTimeOffset UpdatedAtUtc { get; init; }

@@ -405,7 +405,10 @@ For operator workflows outside the chat UI, the gateway also exposes:
 - `POST /admin/plugins/{id}/unreview`
 - `GET /admin/skills`
 - `GET /admin/compatibility/catalog`
+- `GET /admin/learning/proposals`
 - `GET /admin/learning/proposals/{id}`
+- `POST /admin/learning/proposals/{id}/approve`
+- `POST /admin/learning/proposals/{id}/reject`
 - `POST /admin/learning/proposals/{id}/rollback`
 
 CLI mirrors:
@@ -436,7 +439,29 @@ For memory and learning operations, the admin API now also supports:
 - inspecting a session's delegated child agents, delegated tool usage, and proposed changes directly from the session detail pane
 - promoting a successful session into a disabled automation draft, a scoped provider policy, or a pending skill draft proposal without leaving the admin UI
 - using the built-in automation center to apply reusable templates such as inbox triage, daily summary, incident follow-up, channel moderation, and repo hygiene
-- reviewing learning proposals directly in the admin UI, including profile diffs, provenance, rollback, and one-click loading of automation drafts into the automation editor
+- reviewing learning proposals directly in the admin UI, including profile diffs, provenance, risk, validation warnings, rollback, and one-click loading of automation drafts into the automation editor
+
+### Review-first learning
+
+OpenClaw.NET can observe repeated patterns and propose durable improvements, including `profile_update`, `automation_suggestion`, and `skill_draft` proposals. By default, this is review-first: observing a pattern creates a proposal, not a silent runtime mutation.
+
+Operators can inspect each proposal before approval:
+
+- provenance: source session ids, source turn ids when available, repeated count, tool sequence, and tool observations
+- safety context: risk level, confidence, validation status, validation warnings, and hard validation errors
+- proposed change preview: profile before/after diff, disabled automation draft details, or generated `SKILL.md` content
+
+View proposals from the admin UI Learning Queue, the TUI Learning Proposals panel, or the admin API:
+
+- `GET /admin/learning/proposals`
+- `GET /admin/learning/proposals/{id}`
+- `POST /admin/learning/proposals/{id}/approve`
+- `POST /admin/learning/proposals/{id}/reject`
+- `POST /admin/learning/proposals/{id}/rollback`
+
+Approval applies the durable change and records runtime/operator audit evidence. Automation suggestions are approved as disabled drafts. Skill drafts are approved as managed skills with learning metadata. Rollback is supported for profile updates, managed learning skills, and learning-created automations. Skill rollback only touches managed skills created by the proposal system; modified managed skills are archived instead of silently deleted.
+
+What is not automatic: OpenClaw.NET does not auto-approve proposals by default, does not silently change durable runtime behavior, and does not treat high-risk proposals as safe just because a pattern repeated. High-risk proposals remain reviewable and require explicit approval.
 
 Plugin trust levels shown in the admin UI and CLI are:
 
