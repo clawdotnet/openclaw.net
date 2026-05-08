@@ -281,6 +281,8 @@ internal static class EndpointHelpers
             scope.StartsWith("admin.automations.migrate", StringComparison.Ordinal) ||
             scope.StartsWith("admin.pulse.mutate", StringComparison.Ordinal) ||
             scope.StartsWith("admin.pulse.run", StringComparison.Ordinal) ||
+            scope.StartsWith("admin.pulse.status", StringComparison.Ordinal) ||
+            scope.StartsWith("admin.pulse.events", StringComparison.Ordinal) ||
             scope.StartsWith("admin.session.promote", StringComparison.Ordinal) ||
             scope.StartsWith("admin.branch.restore", StringComparison.Ordinal) ||
             scope.StartsWith("admin.session.metadata", StringComparison.Ordinal) ||

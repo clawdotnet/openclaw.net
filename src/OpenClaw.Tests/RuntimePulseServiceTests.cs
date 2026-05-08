@@ -17,12 +17,20 @@ public sealed class RuntimePulseServiceTests
     }
 
     [Fact]
+    public void TryParseEvery_RejectsUnknownSuffix()
+    {
+        Assert.False(RuntimePulseService.TryParseEvery("30x", out _));
+    }
+
+    [Fact]
     public void IsAck_SuppressesOnlyBoundedEdgeAck()
     {
         Assert.True(RuntimePulseService.IsAck("HEARTBEAT_OK", "HEARTBEAT_OK", 300));
         Assert.True(RuntimePulseService.IsAck("HEARTBEAT_OK\nNo changes.", "HEARTBEAT_OK", 300));
         Assert.True(RuntimePulseService.IsAck("No changes.\nHEARTBEAT_OK", "HEARTBEAT_OK", 300));
         Assert.False(RuntimePulseService.IsAck("No HEARTBEAT_OK changes in the middle.", "HEARTBEAT_OK", 300));
+        Assert.False(RuntimePulseService.IsAck("HEARTBEAT_OKAY", "HEARTBEAT_OK", 300));
+        Assert.False(RuntimePulseService.IsAck("ALERT_HEARTBEAT_OK", "HEARTBEAT_OK", 300));
     }
 
     [Fact]
@@ -65,6 +73,38 @@ public sealed class RuntimePulseServiceTests
                 Assert.Equal("2h", second.Interval);
                 Assert.Equal("Check recent runtime warnings.", second.Prompt);
             });
+    }
+
+    [Fact]
+    public void TasksBlock_EndsAtFreeformContentWithoutHeading()
+    {
+        var markdown =
+            """
+            # Heartbeat
+
+            tasks:
+            - name: proposal-review
+              interval: 2h
+              prompt: "Check pending proposals."
+            - Keep alerts short.
+            If nothing needs attention, reply HEARTBEAT_OK.
+            """;
+
+        var tasks = RuntimePulseService.ParseTasks(markdown);
+        var freeform = RuntimePulseService.RemoveTasksBlock(markdown);
+
+        Assert.Collection(
+            tasks,
+            task =>
+            {
+                Assert.Equal("proposal-review", task.Name);
+                Assert.Equal("2h", task.Interval);
+                Assert.Equal("Check pending proposals.", task.Prompt);
+            });
+        Assert.Contains("- Keep alerts short.", freeform, StringComparison.Ordinal);
+        Assert.Contains("If nothing needs attention", freeform, StringComparison.Ordinal);
+        Assert.DoesNotContain("tasks:", freeform, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Check pending proposals.", freeform, StringComparison.Ordinal);
     }
 
     [Fact]

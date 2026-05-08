@@ -259,15 +259,9 @@ internal static partial class AdminEndpoints
                 return payload.Failure;
 
             var request = payload.Value ?? new PulseRunRequest();
-            PulseRunResponse result;
-            if (string.Equals(request.Mode, "next-heartbeat", StringComparison.OrdinalIgnoreCase))
-            {
-                result = pulse.EnqueueForNextPulse(request.Text ?? "");
-            }
-            else
-            {
-                result = await pulse.RunNowAsync(request.Text, ctx.RequestAborted);
-            }
+            var result = string.Equals(request.Mode, "next-heartbeat", StringComparison.OrdinalIgnoreCase)
+                ? pulse.EnqueueForNextPulse(request.Text ?? "")
+                : await pulse.RunNowAsync(request.Text, ctx.RequestAborted);
 
             RecordOperatorAudit(ctx, operations, auth, "pulse_manual_wake", "runtime-pulse", $"Runtime Pulse manual wake outcome={result.Outcome}.", result.Success, before: null, after: request);
             return Results.Json(result, CoreJsonContext.Default.PulseRunResponse);

@@ -123,6 +123,7 @@ public static class PulseSkipReasons
     public const string EmptyHeartbeatFile = "empty-heartbeat-file";
     public const string VisibilityDisabled = "visibility-disabled";
     public const string NoSession = "no-session";
+    public const string EmptyManualWake = "empty-manual-wake";
     public const string DeliveryBlocked = "delivery-blocked";
     public const string DmBlocked = "dm-blocked";
     public const string ModelUnavailable = "model-unavailable";

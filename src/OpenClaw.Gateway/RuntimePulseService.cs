@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
@@ -45,12 +46,12 @@ internal sealed class RuntimePulseService : BackgroundService
         var workspace = string.IsNullOrWhiteSpace(startup.WorkspacePath)
             ? Directory.GetCurrentDirectory()
             : startup.WorkspacePath!;
-        _heartbeatPath = Path.Combine(Path.GetFullPath(workspace), "HEARTBEAT.md");
+        _heartbeatPath = Path.Join(Path.GetFullPath(workspace), "HEARTBEAT.md");
 
         var storagePath = Path.IsPathRooted(config.Memory.StoragePath)
             ? config.Memory.StoragePath
             : Path.GetFullPath(config.Memory.StoragePath);
-        _statePath = Path.Combine(storagePath, "admin", "pulse-state.json");
+        _statePath = Path.Join(storagePath, "admin", "pulse-state.json");
     }
 
     public string HeartbeatPath => _heartbeatPath;
@@ -89,9 +90,14 @@ internal sealed class RuntimePulseService : BackgroundService
 
     public PulseRunResponse EnqueueForNextPulse(string text)
     {
-        var state = LoadState();
-        state.PendingManualText = string.IsNullOrWhiteSpace(text) ? null : text.Trim();
-        SaveState(state);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            const string message = "Manual next-heartbeat text is required.";
+            AppendEvent(PulseEventActions.ManualWake, $"Manual Runtime Pulse queue request ignored because no text was provided. reason={PulseSkipReasons.EmptyManualWake}", severity: "warning");
+            return new PulseRunResponse { Success = false, Outcome = "not-queued", SkipReason = PulseSkipReasons.EmptyManualWake, MessagePreview = message };
+        }
+
+        var state = UpdateState(state => state.PendingManualText = text.Trim());
         AppendEvent(PulseEventActions.ManualWake, "Manual Runtime Pulse text queued for next scheduled pulse.", severity: "info");
         return new PulseRunResponse { Success = true, Outcome = "queued", MessagePreview = state.PendingManualText };
     }
@@ -108,12 +114,10 @@ internal sealed class RuntimePulseService : BackgroundService
                 continue;
             }
 
-            var state = LoadState();
             var now = DateTimeOffset.UtcNow;
-            state.NextRunAtUtc ??= now.Add(interval);
-            SaveState(state);
+            var nextRunAt = UpdateState(state => state.NextRunAtUtc ??= now.Add(interval)).NextRunAtUtc ?? now.Add(interval);
 
-            var delay = state.NextRunAtUtc.Value - now;
+            var delay = nextRunAt - now;
             if (delay > TimeSpan.Zero)
                 await DelayQuietly(delay, stoppingToken);
             if (stoppingToken.IsCancellationRequested)
@@ -121,16 +125,14 @@ internal sealed class RuntimePulseService : BackgroundService
 
             await RunPulseAsync(manualText: null, scheduled: true, stoppingToken);
 
-            state = LoadState();
-            state.NextRunAtUtc = DateTimeOffset.UtcNow.Add(interval);
-            SaveState(state);
+            UpdateState(state => state.NextRunAtUtc = DateTimeOffset.UtcNow.Add(interval));
         }
     }
 
     private async Task<PulseRunResponse> RunPulseAsync(string? manualText, bool scheduled, CancellationToken ct)
     {
         var config = Normalize(_config.Pulse);
-        if (!config.Enabled || !TryParseEvery(config.Every, out var interval) || interval <= TimeSpan.Zero)
+        if (!config.Enabled || !TryParseEvery(config.Every, out var interval) || (scheduled && interval <= TimeSpan.Zero))
             return RecordSkip(PulseSkipReasons.Disabled, "Runtime Pulse disabled by configuration.");
 
         if (config.Visibility is { ShowOk: false, ShowAlerts: false, UseIndicator: false })
@@ -160,6 +162,7 @@ internal sealed class RuntimePulseService : BackgroundService
                 return RecordSkip(PulseSkipReasons.EmptyHeartbeatFile, "Runtime Pulse skipped because HEARTBEAT.md only contains non-due tasks.");
 
             var pendingText = string.IsNullOrWhiteSpace(manualText) ? state.PendingManualText : manualText;
+            var consumedPendingText = string.IsNullOrWhiteSpace(manualText) ? state.PendingManualText : null;
             var prompt = BuildPrompt(config, heartbeat.Content, dueTasks, pendingText);
             if (prompt.Length > MaxHeartbeatChars + config.Prompt.Length + 2_000)
                 prompt = prompt[..(MaxHeartbeatChars + config.Prompt.Length + 2_000)];
@@ -209,19 +212,21 @@ internal sealed class RuntimePulseService : BackgroundService
             sw.Stop();
             _metrics.SetPulseLastRunDuration(sw.ElapsedMilliseconds);
 
-            state.LastRunAtUtc = DateTimeOffset.UtcNow;
-            state.LastCompletedAtUtc = DateTimeOffset.UtcNow;
-            state.PendingManualText = null;
-            foreach (var task in dueTasks)
-                state.TaskLastRunUtc[task.Name] = DateTimeOffset.UtcNow;
-
             var ack = IsAck(output, config.AckToken, config.AckMaxChars);
             if (ack)
             {
-                state.LastResult = "ok";
-                state.LastSkipReason = null;
-                state.RecentOkCount++;
-                SaveState(state);
+                var completedAt = DateTimeOffset.UtcNow;
+                UpdateState(current =>
+                {
+                    current.LastRunAtUtc = completedAt;
+                    current.LastCompletedAtUtc = completedAt;
+                    ClearConsumedPendingText(current, consumedPendingText);
+                    foreach (var task in dueTasks)
+                        current.TaskLastRunUtc[task.Name] = completedAt;
+                    current.LastResult = "ok";
+                    current.LastSkipReason = null;
+                    current.RecentOkCount++;
+                });
                 _metrics.IncrementPulseOkSuppressed();
                 AppendEvent(PulseEventActions.OkSuppressed, "Runtime Pulse returned HEARTBEAT_OK and visible delivery was suppressed.", sessionId: session.Id, severity: "info");
                 AppendEvent(PulseEventActions.RunCompleted, "Runtime Pulse run completed with no alert.", sessionId: session.Id, severity: "info");
@@ -229,12 +234,20 @@ internal sealed class RuntimePulseService : BackgroundService
             }
 
             var preview = Truncate((output ?? "").Trim(), 500);
-            state.LastResult = "alert";
-            state.LastSkipReason = null;
-            state.RecentAlerts.Insert(0, new PulseAlertDto { TimestampUtc = DateTimeOffset.UtcNow, Text = preview, Severity = "warning" });
-            if (state.RecentAlerts.Count > MaxAlertCount)
-                state.RecentAlerts.RemoveRange(MaxAlertCount, state.RecentAlerts.Count - MaxAlertCount);
-            SaveState(state);
+            var alertAt = DateTimeOffset.UtcNow;
+            UpdateState(current =>
+            {
+                current.LastRunAtUtc = alertAt;
+                current.LastCompletedAtUtc = alertAt;
+                ClearConsumedPendingText(current, consumedPendingText);
+                foreach (var task in dueTasks)
+                    current.TaskLastRunUtc[task.Name] = alertAt;
+                current.LastResult = "alert";
+                current.LastSkipReason = null;
+                current.RecentAlerts.Insert(0, new PulseAlertDto { TimestampUtc = alertAt, Text = preview, Severity = "warning" });
+                if (current.RecentAlerts.Count > MaxAlertCount)
+                    current.RecentAlerts.RemoveRange(MaxAlertCount, current.RecentAlerts.Count - MaxAlertCount);
+            });
             _metrics.IncrementPulseAlerts();
             AppendEvent(PulseEventActions.Alert, preview, sessionId: session.Id, severity: "warning");
             if (string.Equals(config.Target, "none", StringComparison.OrdinalIgnoreCase) || !config.Visibility.ShowAlerts)
@@ -308,6 +321,15 @@ internal sealed class RuntimePulseService : BackgroundService
         return sb.ToString();
     }
 
+    private static void ClearConsumedPendingText(PulseState state, string? consumedPendingText)
+    {
+        if (consumedPendingText is not null &&
+            string.Equals(state.PendingManualText, consumedPendingText, StringComparison.Ordinal))
+        {
+            state.PendingManualText = null;
+        }
+    }
+
     internal static PulseConfig Normalize(PulseConfig? config)
         => new()
         {
@@ -349,45 +371,56 @@ internal sealed class RuntimePulseService : BackgroundService
         if (!double.TryParse(numberText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number))
             return false;
 
-        interval = suffix switch
+        TimeSpan? parsed = suffix switch
         {
             's' or 'S' => TimeSpan.FromSeconds(number),
             'm' or 'M' => TimeSpan.FromMinutes(number),
             'h' or 'H' => TimeSpan.FromHours(number),
             'd' or 'D' => TimeSpan.FromDays(number),
-            _ => TimeSpan.Zero
+            _ => (TimeSpan?)null
         };
+        if (parsed is null)
+            return false;
+
+        interval = parsed.Value;
         return interval >= TimeSpan.Zero;
     }
 
     internal static bool IsAck(string? output, string ackToken, int maxChars)
     {
         var text = (output ?? "").Trim();
-        if (text.Length == 0)
+        if (text.Length == 0 || string.IsNullOrEmpty(ackToken))
             return false;
         if (string.Equals(text, ackToken, StringComparison.Ordinal))
             return true;
         if (text.Length > maxChars)
             return false;
-        if (text.StartsWith(ackToken, StringComparison.Ordinal))
+        if (text.StartsWith(ackToken, StringComparison.Ordinal) && HasAckBoundaryAfter(text, ackToken.Length))
             return true;
-        if (text.EndsWith(ackToken, StringComparison.Ordinal))
+        if (text.EndsWith(ackToken, StringComparison.Ordinal) && HasAckBoundaryBefore(text, text.Length - ackToken.Length))
             return true;
         return false;
     }
+
+    private static bool HasAckBoundaryAfter(string text, int tokenEnd)
+        => tokenEnd >= text.Length || char.IsWhiteSpace(text[tokenEnd]);
+
+    private static bool HasAckBoundaryBefore(string text, int tokenStart)
+        => tokenStart <= 0 || char.IsWhiteSpace(text[tokenStart - 1]);
 
     internal static bool IsEffectivelyEmpty(string? markdown)
     {
         if (string.IsNullOrWhiteSpace(markdown))
             return true;
 
-        foreach (var raw in markdown.Split('\n'))
+        foreach (var line in markdown.Split('\n')
+            .Select(static raw => raw.Trim())
+            .Where(static line =>
+                line.Length > 0 &&
+                !line.StartsWith("<!--", StringComparison.Ordinal) &&
+                !line.StartsWith('#') &&
+                !string.Equals(line, "tasks:", StringComparison.OrdinalIgnoreCase)))
         {
-            var line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith("<!--", StringComparison.Ordinal) || line.StartsWith('#'))
-                continue;
-            if (string.Equals(line, "tasks:", StringComparison.OrdinalIgnoreCase))
-                continue;
             if (line.StartsWith("- name:", StringComparison.OrdinalIgnoreCase) ||
                 line.StartsWith("interval:", StringComparison.OrdinalIgnoreCase) ||
                 line.StartsWith("prompt:", StringComparison.OrdinalIgnoreCase))
@@ -428,14 +461,16 @@ internal sealed class RuntimePulseService : BackgroundService
             prompt = null;
         }
 
-        foreach (var raw in markdown.Split('\n'))
+        foreach (var line in markdown.Split('\n').Select(static raw => raw.Trim()))
         {
-            var line = raw.Trim();
             if (!inTasks)
             {
                 inTasks = string.Equals(line, "tasks:", StringComparison.OrdinalIgnoreCase);
                 continue;
             }
+
+            if (line.Length == 0)
+                continue;
 
             if (line.StartsWith('#'))
             {
@@ -449,16 +484,19 @@ internal sealed class RuntimePulseService : BackgroundService
                 name = ExtractValue(line["- name:".Length..]);
                 continue;
             }
-            if (line.StartsWith("interval:", StringComparison.OrdinalIgnoreCase))
+            if (name is not null && line.StartsWith("interval:", StringComparison.OrdinalIgnoreCase))
             {
                 interval = ExtractValue(line["interval:".Length..]);
                 continue;
             }
-            if (line.StartsWith("prompt:", StringComparison.OrdinalIgnoreCase))
+            if (name is not null && line.StartsWith("prompt:", StringComparison.OrdinalIgnoreCase))
             {
                 prompt = ExtractValue(line["prompt:".Length..]);
                 continue;
             }
+
+            Flush();
+            break;
         }
 
         Flush();
@@ -469,21 +507,42 @@ internal sealed class RuntimePulseService : BackgroundService
     {
         var sb = new StringBuilder();
         var inTasks = false;
+        var inTaskItem = false;
         foreach (var raw in markdown.Split('\n'))
         {
             var line = raw.Trim();
             if (!inTasks && string.Equals(line, "tasks:", StringComparison.OrdinalIgnoreCase))
             {
                 inTasks = true;
+                inTaskItem = false;
                 continue;
             }
             if (inTasks)
             {
+                if (line.Length == 0)
+                    continue;
                 if (line.StartsWith('#'))
                 {
                     inTasks = false;
+                    inTaskItem = false;
                     sb.AppendLine(raw);
+                    continue;
                 }
+                if (line.StartsWith("- name:", StringComparison.OrdinalIgnoreCase))
+                {
+                    inTaskItem = true;
+                    continue;
+                }
+                if (inTaskItem &&
+                    (line.StartsWith("interval:", StringComparison.OrdinalIgnoreCase) ||
+                     line.StartsWith("prompt:", StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                inTasks = false;
+                inTaskItem = false;
+                sb.AppendLine(raw);
                 continue;
             }
             sb.AppendLine(raw);
@@ -492,17 +551,12 @@ internal sealed class RuntimePulseService : BackgroundService
     }
 
     internal static IReadOnlyList<PulseTaskDefinition> SelectDueTasks(IReadOnlyList<PulseTaskDefinition> tasks, PulseState state, DateTimeOffset nowUtc)
-    {
-        var due = new List<PulseTaskDefinition>();
-        foreach (var task in tasks)
+        => tasks.Where(task =>
         {
             if (!TryParseEvery(task.Interval, out var interval) || interval <= TimeSpan.Zero)
-                continue;
-            if (!state.TaskLastRunUtc.TryGetValue(task.Name, out var lastRun) || nowUtc - lastRun >= interval)
-                due.Add(task);
-        }
-        return due;
-    }
+                return false;
+            return !state.TaskLastRunUtc.TryGetValue(task.Name, out var lastRun) || nowUtc - lastRun >= interval;
+        }).ToList();
 
     private static string ExtractValue(string value)
     {
@@ -555,7 +609,11 @@ internal sealed class RuntimePulseService : BackgroundService
         {
             return TimeZoneInfo.FindSystemTimeZoneById(timezone);
         }
-        catch
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.Local;
+        }
+        catch (InvalidTimeZoneException)
         {
             return TimeZoneInfo.Local;
         }
@@ -579,20 +637,27 @@ internal sealed class RuntimePulseService : BackgroundService
             var text = File.ReadAllText(_heartbeatPath);
             return (true, text.Length <= MaxHeartbeatChars ? text : text[..MaxHeartbeatChars]);
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to read HEARTBEAT.md from {Path}", _heartbeatPath);
-            return (false, "");
-        }
+        catch (IOException ex) { return LogHeartbeatReadFailure(ex); }
+        catch (UnauthorizedAccessException ex) { return LogHeartbeatReadFailure(ex); }
+        catch (System.Security.SecurityException ex) { return LogHeartbeatReadFailure(ex); }
+        catch (NotSupportedException ex) { return LogHeartbeatReadFailure(ex); }
+    }
+
+    private (bool Exists, string Content) LogHeartbeatReadFailure(Exception ex)
+    {
+        _logger.LogWarning(ex, "Failed to read HEARTBEAT.md from {Path}", _heartbeatPath);
+        return (false, "");
     }
 
     private PulseRunResponse RecordSkip(string reason, string summary)
     {
-        var state = LoadState();
-        var shouldEmit = !string.Equals(state.LastSkipReason, reason, StringComparison.Ordinal);
-        state.LastSkipReason = reason;
-        state.LastResult = "skipped";
-        SaveState(state);
+        var shouldEmit = false;
+        UpdateState(state =>
+        {
+            shouldEmit = !string.Equals(state.LastSkipReason, reason, StringComparison.Ordinal);
+            state.LastSkipReason = reason;
+            state.LastResult = "skipped";
+        });
         _metrics.IncrementPulseSkips();
         if (shouldEmit)
             AppendEvent(PulseEventActions.Skipped, $"{summary} reason={reason}", severity: "info");
@@ -603,33 +668,52 @@ internal sealed class RuntimePulseService : BackgroundService
     {
         lock (_stateGate)
         {
-            try
-            {
-                if (!File.Exists(_statePath))
-                    return new PulseState();
-                var json = File.ReadAllText(_statePath);
-                return JsonSerializer.Deserialize(json, CoreJsonContext.Default.PulseState) ?? new PulseState();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to load Runtime Pulse state from {Path}", _statePath);
-                return new PulseState();
-            }
+            return LoadStateUnsafe();
         }
     }
 
-    private void SaveState(PulseState state)
+    private PulseState UpdateState(Action<PulseState> update)
     {
         lock (_stateGate)
         {
-            var directory = Path.GetDirectoryName(_statePath);
-            if (!string.IsNullOrWhiteSpace(directory))
-                Directory.CreateDirectory(directory);
-            var json = JsonSerializer.Serialize(state, CoreJsonContext.Default.PulseState);
-            var temp = $"{_statePath}.{Guid.NewGuid():N}.tmp";
-            File.WriteAllText(temp, json);
-            File.Move(temp, _statePath, overwrite: true);
+            var state = LoadStateUnsafe();
+            update(state);
+            SaveStateUnsafe(state);
+            return state;
         }
+    }
+
+    private PulseState LoadStateUnsafe()
+    {
+        try
+        {
+            if (!File.Exists(_statePath))
+                return new PulseState();
+            var json = File.ReadAllText(_statePath);
+            return JsonSerializer.Deserialize(json, CoreJsonContext.Default.PulseState) ?? new PulseState();
+        }
+        catch (IOException ex) { return LogStateLoadFailure(ex); }
+        catch (UnauthorizedAccessException ex) { return LogStateLoadFailure(ex); }
+        catch (System.Security.SecurityException ex) { return LogStateLoadFailure(ex); }
+        catch (JsonException ex) { return LogStateLoadFailure(ex); }
+        catch (NotSupportedException ex) { return LogStateLoadFailure(ex); }
+    }
+
+    private PulseState LogStateLoadFailure(Exception ex)
+    {
+        _logger.LogWarning(ex, "Failed to load Runtime Pulse state from {Path}", _statePath);
+        return new PulseState();
+    }
+
+    private void SaveStateUnsafe(PulseState state)
+    {
+        var directory = Path.GetDirectoryName(_statePath);
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
+        var json = JsonSerializer.Serialize(state, CoreJsonContext.Default.PulseState);
+        var temp = $"{_statePath}.{Guid.NewGuid():N}.tmp";
+        File.WriteAllText(temp, json);
+        File.Move(temp, _statePath, overwrite: true);
     }
 
     private void AppendEvent(string action, string summary, string? sessionId = null, string severity = "info")
@@ -655,6 +739,7 @@ internal sealed class RuntimePulseService : BackgroundService
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            return;
         }
     }
 

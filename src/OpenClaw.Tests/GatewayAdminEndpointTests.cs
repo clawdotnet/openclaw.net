@@ -1998,6 +1998,42 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task ViewerRole_CannotReadPulseStatusOrEvents()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var viewerToken = CreateOperatorToken(harness, OperatorRoleNames.Viewer, "viewer-pulse");
+
+        using var statusRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/pulse/status");
+        statusRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken);
+        var statusResponse = await harness.Client.SendAsync(statusRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, statusResponse.StatusCode);
+
+        using var eventsRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/pulse/events");
+        eventsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken);
+        var eventsResponse = await harness.Client.SendAsync(eventsRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, eventsResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task PulseRunNextHeartbeat_RejectsEmptyText()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/admin/pulse/run")
+        {
+            Content = JsonContent("""{"mode":"next-heartbeat"}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+
+        var response = await harness.Client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        using var payload = await ReadJsonAsync(response);
+        Assert.False(payload.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal("not-queued", payload.RootElement.GetProperty("outcome").GetString());
+        Assert.Equal(PulseSkipReasons.EmptyManualWake, payload.RootElement.GetProperty("skipReason").GetString());
+    }
+
+    [Fact]
     public async Task HeartbeatPreview_UsesSuggestionsAndCostEstimateVariesBySchedule()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
