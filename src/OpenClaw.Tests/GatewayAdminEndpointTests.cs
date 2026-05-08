@@ -1209,84 +1209,100 @@ public sealed class GatewayAdminEndpointTests
     [Fact]
     public async Task LearningService_SkillDraftProposal_IncludesRiskWarningsAndSuppressesDuplicates()
     {
-        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(storagePath);
-        var store = new FileFeatureStore(storagePath);
-        var service = new LearningService(
-            new LearningConfig { SkillProposalThreshold = 2, AutomationProposalThreshold = 99 },
-            store,
-            store,
-            store,
-            new StaticSessionSearchStore([]),
-            NullLogger<LearningService>.Instance);
-        var session = new Session
+        try
         {
-            Id = "sess-skill-risk",
-            ChannelId = "web",
-            SenderId = "operator",
-            History =
-            [
-                new ChatTurn { Role = "user", Content = "Patch the file and run the check." },
-                BuildAssistantToolTurn("shell", "apply_patch"),
-                BuildAssistantToolTurn("shell", "apply_patch")
-            ]
-        };
+            var store = new FileFeatureStore(storagePath);
+            var service = new LearningService(
+                new LearningConfig { SkillProposalThreshold = 2, AutomationProposalThreshold = 99 },
+                store,
+                store,
+                store,
+                new StaticSessionSearchStore([]),
+                NullLogger<LearningService>.Instance);
+            var session = new Session
+            {
+                Id = "sess-skill-risk",
+                ChannelId = "web",
+                SenderId = "operator",
+                History =
+                [
+                    new ChatTurn { Role = "user", Content = "Patch the file and run the check." },
+                    BuildAssistantToolTurn("shell", "apply_patch"),
+                    BuildAssistantToolTurn("shell", "apply_patch")
+                ]
+            };
 
-        await service.ObserveSessionAsync(session, CancellationToken.None);
-        await service.ObserveSessionAsync(session, CancellationToken.None);
+            await service.ObserveSessionAsync(session, CancellationToken.None);
+            await service.ObserveSessionAsync(session, CancellationToken.None);
 
-        var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.SkillDraft, CancellationToken.None);
-        var proposal = Assert.Single(proposals);
-        Assert.Equal("high", proposal.RiskLevel);
-        Assert.Equal("warning", proposal.ValidationStatus);
-        Assert.Equal(2, proposal.RepeatedCount);
-        Assert.Equal(["shell", "apply_patch"], proposal.ToolSequence);
-        Assert.Contains("shell", proposal.ToolNames, StringComparer.OrdinalIgnoreCase);
-        Assert.Contains("apply_patch", proposal.ToolNames, StringComparer.OrdinalIgnoreCase);
-        Assert.Equal(["sess-skill-risk"], proposal.SourceSessionIds);
-        Assert.True(proposal.SourceTurnIds.Count >= 1);
-        Assert.False(string.IsNullOrWhiteSpace(proposal.ProposalFingerprint));
-        Assert.False(string.IsNullOrWhiteSpace(proposal.DraftPreview));
-        Assert.Contains(proposal.ToolObservations, static item => item.IsMutating == true);
-        Assert.Contains(proposal.ValidationWarnings, static warning => warning.Contains("mutating tools", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(proposal.ValidationWarnings, static warning => warning.Contains("fallback template", StringComparison.OrdinalIgnoreCase));
+            var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.SkillDraft, CancellationToken.None);
+            var proposal = Assert.Single(proposals);
+            Assert.Equal("high", proposal.RiskLevel);
+            Assert.Equal("warning", proposal.ValidationStatus);
+            Assert.Equal(2, proposal.RepeatedCount);
+            Assert.Equal(["shell", "apply_patch"], proposal.ToolSequence);
+            Assert.Contains("shell", proposal.ToolNames, StringComparer.OrdinalIgnoreCase);
+            Assert.Contains("apply_patch", proposal.ToolNames, StringComparer.OrdinalIgnoreCase);
+            Assert.Equal(["sess-skill-risk"], proposal.SourceSessionIds);
+            Assert.True(proposal.SourceTurnIds.Count >= 1);
+            Assert.False(string.IsNullOrWhiteSpace(proposal.ProposalFingerprint));
+            Assert.False(string.IsNullOrWhiteSpace(proposal.DraftPreview));
+            Assert.Contains(proposal.ToolObservations, static item => item.IsMutating == true);
+            Assert.Contains(proposal.ValidationWarnings, static warning => warning.Contains("mutating tools", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(proposal.ValidationWarnings, static warning => warning.Contains("fallback template", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            if (Directory.Exists(storagePath))
+                Directory.Delete(storagePath, recursive: true);
+        }
     }
 
     [Fact]
     public async Task LearningService_AutomationSuggestion_DuplicateUpdatesPendingProposal()
     {
-        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(storagePath);
-        var store = new FileFeatureStore(storagePath);
-        var searchStore = new StaticSessionSearchStore(
-        [
-            new SessionSearchHit { SessionId = "sess-search-1", ChannelId = "web", SenderId = "operator", Role = "user", Snippet = "Send the daily review", Score = 0.9f },
-            new SessionSearchHit { SessionId = "sess-search-2", ChannelId = "web", SenderId = "operator", Role = "user", Snippet = "Send the daily review", Score = 0.8f }
-        ]);
-        var service = new LearningService(
-            new LearningConfig { SkillProposalThreshold = 99, AutomationProposalThreshold = 2 },
-            store,
-            store,
-            store,
-            searchStore,
-            NullLogger<LearningService>.Instance);
+        try
+        {
+            var store = new FileFeatureStore(storagePath);
+            var searchStore = new StaticSessionSearchStore(
+            [
+                new SessionSearchHit { SessionId = "sess-search-1", ChannelId = "web", SenderId = "operator", Role = "user", Snippet = "Send the daily review", Score = 0.9f },
+                new SessionSearchHit { SessionId = "sess-search-2", ChannelId = "web", SenderId = "operator", Role = "user", Snippet = "Send the daily review", Score = 0.8f }
+            ]);
+            var service = new LearningService(
+                new LearningConfig { SkillProposalThreshold = 99, AutomationProposalThreshold = 2 },
+                store,
+                store,
+                store,
+                searchStore,
+                NullLogger<LearningService>.Instance);
 
-        await service.ObserveSessionAsync(BuildUserSession("sess-auto-1", "Send the daily review"), CancellationToken.None);
-        await service.ObserveSessionAsync(BuildUserSession("sess-auto-2", "Send the daily review"), CancellationToken.None);
+            await service.ObserveSessionAsync(BuildUserSession("sess-auto-1", "Send the daily review"), CancellationToken.None);
+            await service.ObserveSessionAsync(BuildUserSession("sess-auto-2", "Send the daily review"), CancellationToken.None);
 
-        var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.AutomationSuggestion, CancellationToken.None);
-        var proposal = Assert.Single(proposals);
-        Assert.Equal("medium", proposal.RiskLevel);
-        Assert.Equal("warning", proposal.ValidationStatus);
-        Assert.True(proposal.Confidence >= 0.5f);
-        Assert.Equal(2, proposal.RepeatedCount);
-        Assert.False(proposal.AutomationDraft!.Enabled);
-        Assert.True(proposal.AutomationDraft.IsDraft);
-        Assert.Equal("learning", proposal.AutomationDraft.Source);
-        Assert.Contains("sess-search-1", proposal.SourceSessionIds);
-        Assert.Contains("sess-search-2", proposal.SourceSessionIds);
-        Assert.Contains("sess-auto-1", proposal.SourceSessionIds);
-        Assert.Contains("sess-auto-2", proposal.SourceSessionIds);
+            var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.AutomationSuggestion, CancellationToken.None);
+            var proposal = Assert.Single(proposals);
+            Assert.Equal("medium", proposal.RiskLevel);
+            Assert.Equal("warning", proposal.ValidationStatus);
+            Assert.True(proposal.Confidence >= 0.5f);
+            Assert.Equal(3, proposal.RepeatedCount);
+            Assert.False(proposal.AutomationDraft!.Enabled);
+            Assert.True(proposal.AutomationDraft.IsDraft);
+            Assert.Equal("learning", proposal.AutomationDraft.Source);
+            Assert.Contains("sess-search-1", proposal.SourceSessionIds);
+            Assert.Contains("sess-search-2", proposal.SourceSessionIds);
+            Assert.Contains("sess-auto-1", proposal.SourceSessionIds);
+            Assert.Contains("sess-auto-2", proposal.SourceSessionIds);
+        }
+        finally
+        {
+            if (Directory.Exists(storagePath))
+                Directory.Delete(storagePath, recursive: true);
+        }
     }
 
     [Fact]
@@ -1295,7 +1311,8 @@ public sealed class GatewayAdminEndpointTests
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
         var store = new FileFeatureStore(harness.StoragePath);
         var skillName = $"rollback-skill-{Guid.NewGuid():N}";
-        var skillPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills", skillName);
+        var skillsRoot = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills");
+        var skillPath = Path.Join(skillsRoot, Path.GetFileName(skillName));
         if (Directory.Exists(skillPath))
             Directory.Delete(skillPath, recursive: true);
 
@@ -1333,8 +1350,8 @@ public sealed class GatewayAdminEndpointTests
             using var approvePayload = await ReadJsonAsync(approveResponse);
             Assert.Equal("approved", approvePayload.RootElement.GetProperty("status").GetString());
             Assert.Equal(skillPath, approvePayload.RootElement.GetProperty("managedSkillPath").GetString());
-            Assert.True(File.Exists(Path.Combine(skillPath, "SKILL.md")));
-            Assert.True(File.Exists(Path.Combine(skillPath, ".openclaw-learning.json")));
+            Assert.True(File.Exists(Path.Join(skillPath, "SKILL.md")));
+            Assert.True(File.Exists(Path.Join(skillPath, ".openclaw-learning.json")));
 
             using var rollbackRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_rollback_skill/rollback")
             {
@@ -1454,7 +1471,11 @@ public sealed class GatewayAdminEndpointTests
         Assert.Equal(HttpStatusCode.OK, approveResponse.StatusCode);
         using var approvePayload = await ReadJsonAsync(approveResponse);
         Assert.Equal("rejected", approvePayload.RootElement.GetProperty("status").GetString());
+        Assert.Equal("error", approvePayload.RootElement.GetProperty("validationStatus").GetString());
         Assert.Contains("no longer matches", approvePayload.RootElement.GetProperty("reviewNotes").GetString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            approvePayload.RootElement.GetProperty("validationErrors").EnumerateArray().Select(static item => item.GetString()),
+            static error => error is not null && error.Contains("no longer matches", StringComparison.OrdinalIgnoreCase));
 
         var events = harness.Runtime.Operations.RuntimeEvents.Query(new RuntimeEventQuery { Component = "learning", Limit = 10 });
         Assert.Contains(events, static item => item.Action == "rejected" && item.Summary.Contains("validation", StringComparison.OrdinalIgnoreCase));

@@ -238,7 +238,7 @@ internal static partial class AdminEndpoints
                 approvalSucceeded
                     ? $"Approved learning proposal '{approved.Id}'."
                     : $"Rejected learning proposal '{approved.Id}' during approval validation.",
-                success: true,
+                success: approvalSucceeded,
                 before,
                 after: approved);
 

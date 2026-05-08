@@ -13,6 +13,8 @@ namespace OpenClaw.Gateway;
 internal sealed class LearningService
 {
     private static readonly Regex PreferenceRegex = new(@"\b(i prefer|call me|my name is|i like)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private const string ManagedSkillFileName = "SKILL.md";
+    private const string ManagedSkillMetadataFileName = ".openclaw-learning.json";
     private readonly LearningConfig _config;
     private readonly ILearningProposalStore _proposalStore;
     private readonly IUserProfileStore _profileStore;
@@ -141,7 +143,33 @@ internal sealed class LearningService
                 var validation = ValidateSkillDraft(proposal.SkillName ?? proposal.Title, proposal.DraftContent, proposal.DraftContentHash, proposal);
                 if (validation.Errors.Count > 0)
                 {
-                    return await RejectAsync(proposal.Id, string.Join(" ", validation.Errors), ct);
+                    var rejected = CopyProposal(
+                        proposal,
+                        status: LearningProposalStatus.Rejected,
+                        statusUpdatedAtUtc: DateTimeOffset.UtcNow,
+                        reviewedAtUtc: DateTimeOffset.UtcNow,
+                        reviewNotes: string.Join(" ", validation.Errors),
+                        validationStatus: LearningProposalValidationStatuses.Error,
+                        validationWarnings: validation.Warnings,
+                        validationErrors: validation.Errors);
+                    await _proposalStore.SaveProposalAsync(rejected, ct);
+                    return rejected;
+                }
+
+                var conflictError = await GetManagedSkillTargetErrorAsync(proposal.SkillName ?? proposal.Title, proposal.Id, ct);
+                if (conflictError is not null)
+                {
+                    var rejected = CopyProposal(
+                        proposal,
+                        status: LearningProposalStatus.Rejected,
+                        statusUpdatedAtUtc: DateTimeOffset.UtcNow,
+                        reviewedAtUtc: DateTimeOffset.UtcNow,
+                        reviewNotes: conflictError,
+                        validationStatus: LearningProposalValidationStatuses.Error,
+                        validationWarnings: validation.Warnings,
+                        validationErrors: validation.Errors.Append(conflictError).ToArray());
+                    await _proposalStore.SaveProposalAsync(rejected, ct);
+                    return rejected;
                 }
 
                 await SaveManagedSkillAsync(proposal.SkillName ?? proposal.Title, proposal.DraftContent, proposal.Id, proposal.DraftContentHash, ct);
@@ -255,7 +283,12 @@ internal sealed class LearningService
         var duplicate = pending.FirstOrDefault(item => IsDuplicateProposal(item, fingerprint, actorId, title: null, skillName: null));
         if (duplicate is not null)
         {
-            await _proposalStore.SaveProposalAsync(MergeDuplicateProposal(duplicate, [session.Id], [BuildTurnId(session, lastUser)], 0.55f), ct);
+            await _proposalStore.SaveProposalAsync(MergeDuplicateProposal(
+                duplicate,
+                [session.Id],
+                [BuildTurnId(session, lastUser)],
+                0.55f,
+                duplicate.RepeatedCount + 1), ct);
             return;
         }
 
@@ -352,7 +385,8 @@ internal sealed class LearningService
                 pendingDuplicate,
                 search.Items.Select(static item => item.SessionId).Append(session.Id),
                 [BuildTurnId(session, lastUser)],
-                Math.Min(0.9f, 0.3f + (search.Items.Count * 0.1f))), ct);
+                Math.Min(0.9f, 0.3f + (search.Items.Count * 0.1f)),
+                Math.Max(pendingDuplicate.RepeatedCount + 1, search.Items.Count)), ct);
             return;
         }
 
@@ -520,10 +554,12 @@ Use it when repeated requests resemble the sessions that produced this draft.
     private static async Task SaveManagedSkillAsync(string skillName, string content, string proposalId, string? originalDraftHash, CancellationToken ct)
     {
         var root = GetManagedSkillPath(skillName);
+        var skillPath = Path.Join(root, SafePathLeaf(ManagedSkillFileName, ManagedSkillFileName));
+        var metadataPath = Path.Join(root, SafePathLeaf(ManagedSkillMetadataFileName, ManagedSkillMetadataFileName));
         Directory.CreateDirectory(root);
-        await File.WriteAllTextAsync(Path.Combine(root, "SKILL.md"), content, ct);
+        await File.WriteAllTextAsync(skillPath, content, ct);
         await File.WriteAllTextAsync(
-            Path.Combine(root, ".openclaw-learning.json"),
+            metadataPath,
             System.Text.Json.JsonSerializer.Serialize(new ManagedLearningSkillMetadata
             {
                 CreatedByProposalId = proposalId,
@@ -536,7 +572,46 @@ Use it when repeated requests resemble the sessions that produced this draft.
     private static string GetManagedSkillPath(string skillName)
     {
         var slug = Slugify(skillName);
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills", slug);
+        var safeSlug = SafePathLeaf(slug, "learned-skill");
+        var skillsRoot = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills");
+        return Path.Join(skillsRoot, safeSlug);
+    }
+
+    private static string SafePathLeaf(string value, string fallback)
+    {
+        var leaf = Path.GetFileName(value);
+        if (string.IsNullOrWhiteSpace(leaf) || Path.IsPathRooted(leaf))
+            return fallback;
+
+        return leaf;
+    }
+
+    private static async Task<string?> GetManagedSkillTargetErrorAsync(string skillName, string proposalId, CancellationToken ct)
+    {
+        var skillPath = GetManagedSkillPath(skillName);
+        if (!Directory.Exists(skillPath))
+            return null;
+
+        var metadataPath = Path.Join(skillPath, SafePathLeaf(ManagedSkillMetadataFileName, ManagedSkillMetadataFileName));
+        if (!File.Exists(metadataPath))
+            return "Managed skill target already exists without learning metadata; refusing to overwrite user-authored skill content.";
+
+        try
+        {
+            var metadata = System.Text.Json.JsonSerializer.Deserialize(
+                await File.ReadAllTextAsync(metadataPath, ct),
+                CoreJsonContext.Default.ManagedLearningSkillMetadata);
+            if (metadata?.ManagedByLearning == true &&
+                string.Equals(metadata.CreatedByProposalId, proposalId, StringComparison.Ordinal))
+            {
+                return null;
+            }
+        }
+        catch
+        {
+        }
+
+        return "Managed skill target already exists for a different learning proposal; refusing to overwrite it.";
     }
 
     private SkillDraftValidationResult ValidateSkillDraft(string skillName, string content, string? expectedHash, LearningProposal proposal)
@@ -637,8 +712,9 @@ Use it when repeated requests resemble the sessions that produced this draft.
         var skillPath = string.IsNullOrWhiteSpace(proposal.ManagedSkillPath)
             ? GetManagedSkillPath(proposal.SkillName ?? proposal.Title)
             : proposal.ManagedSkillPath;
-        var skillFile = Path.Combine(skillPath, "SKILL.md");
-        var metadataFile = Path.Combine(skillPath, ".openclaw-learning.json");
+        skillPath = Path.GetFullPath(skillPath);
+        var skillFile = Path.Join(skillPath, SafePathLeaf(ManagedSkillFileName, ManagedSkillFileName));
+        var metadataFile = Path.Join(skillPath, SafePathLeaf(ManagedSkillMetadataFileName, ManagedSkillMetadataFileName));
 
         if (!File.Exists(skillFile) || !File.Exists(metadataFile))
             return false;
@@ -663,23 +739,53 @@ Use it when repeated requests resemble the sessions that produced this draft.
 
         var currentContent = await File.ReadAllTextAsync(skillFile, ct);
         var currentHash = ComputeDraftHash(currentContent);
-        var archiveRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".openclaw",
-            "rollback-archive",
-            "skills",
-            $"{Slugify(proposal.SkillName ?? proposal.Title)}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}");
+        var archiveRoot = GetManagedSkillArchivePath(proposal.SkillName ?? proposal.Title);
 
         if (!string.Equals(currentHash, metadata.OriginalDraftHash ?? proposal.DraftContentHash, StringComparison.Ordinal))
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(archiveRoot)!);
-            Directory.Move(skillPath, archiveRoot);
+            ArchiveManagedSkill(skillPath, archiveRoot);
             _logger.LogWarning("Archived modified managed learning skill for proposal {ProposalId} at {ArchivePath}", proposal.Id, archiveRoot);
+            return true;
+        }
+
+        if (ManagedSkillDirectoryHasUnexpectedEntries(skillPath))
+        {
+            ArchiveManagedSkill(skillPath, archiveRoot);
+            _logger.LogWarning("Archived managed learning skill with extra files for proposal {ProposalId} at {ArchivePath}", proposal.Id, archiveRoot);
             return true;
         }
 
         Directory.Delete(skillPath, recursive: true);
         return true;
+    }
+
+    private static string GetManagedSkillArchivePath(string skillName)
+    {
+        var archiveLeaf = SafePathLeaf($"{Slugify(skillName)}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}", $"learned-skill-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}");
+        var archiveRoot = Path.Join(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".openclaw",
+            "rollback-archive",
+            "skills");
+        return Path.Join(archiveRoot, archiveLeaf);
+    }
+
+    private static void ArchiveManagedSkill(string skillPath, string archiveRoot)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(archiveRoot)!);
+        Directory.Move(skillPath, archiveRoot);
+    }
+
+    private static bool ManagedSkillDirectoryHasUnexpectedEntries(string skillPath)
+    {
+        var expected = new HashSet<string>(StringComparer.Ordinal)
+        {
+            ManagedSkillFileName,
+            ManagedSkillMetadataFileName
+        };
+        return Directory.EnumerateFileSystemEntries(skillPath)
+            .Select(Path.GetFileName)
+            .Any(name => string.IsNullOrWhiteSpace(name) || !expected.Contains(name));
     }
 
     private async Task<bool> RollbackManagedAutomationAsync(LearningProposal proposal, CancellationToken ct)
@@ -799,7 +905,6 @@ Use it when repeated requests resemble the sessions that produced this draft.
                "status",
                "log",
                "poll",
-               "tool",
                "process",
                "automation",
                "todo",
@@ -1019,6 +1124,9 @@ Use it when repeated requests resemble the sessions that produced this draft.
         DateTimeOffset? statusUpdatedAtUtc = null,
         DateTimeOffset? reviewedAtUtc = null,
         string? reviewNotes = null,
+        string? validationStatus = null,
+        IReadOnlyList<string>? validationWarnings = null,
+        IReadOnlyList<string>? validationErrors = null,
         bool? rolledBack = null,
         DateTimeOffset? rolledBackAtUtc = null,
         string? rollbackReason = null)
@@ -1050,9 +1158,9 @@ Use it when repeated requests resemble the sessions that produced this draft.
             RiskLevel = proposal.RiskLevel,
             Confidence = confidence ?? proposal.Confidence,
             CreatedReason = proposal.CreatedReason,
-            ValidationStatus = proposal.ValidationStatus,
-            ValidationWarnings = proposal.ValidationWarnings,
-            ValidationErrors = proposal.ValidationErrors,
+            ValidationStatus = validationStatus ?? proposal.ValidationStatus,
+            ValidationWarnings = validationWarnings ?? proposal.ValidationWarnings,
+            ValidationErrors = validationErrors ?? proposal.ValidationErrors,
             CreatedAtUtc = proposal.CreatedAtUtc,
             UpdatedAtUtc = statusUpdatedAtUtc ?? proposal.UpdatedAtUtc,
             ReviewedAtUtc = reviewedAtUtc ?? proposal.ReviewedAtUtc,
