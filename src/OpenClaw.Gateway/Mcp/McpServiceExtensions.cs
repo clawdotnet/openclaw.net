@@ -1,5 +1,6 @@
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
@@ -20,7 +21,7 @@ internal static class McpServiceExtensions
         this IServiceCollection services,
         GatewayStartupContext startup)
     {
-        services.AddSingleton<GatewayRuntimeHolder>();
+        services.TryAddSingleton<GatewayRuntimeHolder>();
 
         services.AddSingleton<IntegrationApiFacade>(sp =>
         {

@@ -54,6 +54,11 @@ public sealed class RuntimeMetrics
     private long _promptCacheWarmRuns;
     private long _promptCacheWarmSkips;
     private long _promptCacheWarmFailures;
+    private long _pulseRuns;
+    private long _pulseSkips;
+    private long _pulseAlerts;
+    private long _pulseOkSuppressed;
+    private long _pulseErrors;
 
     // ── Gauges ────────────────────────────────────────────────────────────
     private int _activeSessions;
@@ -62,6 +67,7 @@ public sealed class RuntimeMetrics
     private long _retentionLastRunAtUnixSeconds;
     private long _retentionLastRunDurationMs;
     private int _retentionLastRunSucceeded;
+    private long _pulseLastRunDurationMs;
 
     public long TotalRequests => Interlocked.Read(ref _totalRequests);
     public long TotalLlmCalls => Interlocked.Read(ref _totalLlmCalls);
@@ -107,12 +113,18 @@ public sealed class RuntimeMetrics
     public long PromptCacheWarmRuns => Interlocked.Read(ref _promptCacheWarmRuns);
     public long PromptCacheWarmSkips => Interlocked.Read(ref _promptCacheWarmSkips);
     public long PromptCacheWarmFailures => Interlocked.Read(ref _promptCacheWarmFailures);
+    public long PulseRuns => Interlocked.Read(ref _pulseRuns);
+    public long PulseSkips => Interlocked.Read(ref _pulseSkips);
+    public long PulseAlerts => Interlocked.Read(ref _pulseAlerts);
+    public long PulseOkSuppressed => Interlocked.Read(ref _pulseOkSuppressed);
+    public long PulseErrors => Interlocked.Read(ref _pulseErrors);
     public int ActiveSessions => Volatile.Read(ref _activeSessions);
     public int CircuitBreakerState => Volatile.Read(ref _circuitBreakerState);
     public int RetainedProcesses => Volatile.Read(ref _retainedProcesses);
     public long RetentionLastRunAtUnixSeconds => Interlocked.Read(ref _retentionLastRunAtUnixSeconds);
     public long RetentionLastRunDurationMs => Interlocked.Read(ref _retentionLastRunDurationMs);
     public int RetentionLastRunSucceeded => Volatile.Read(ref _retentionLastRunSucceeded);
+    public long PulseLastRunDurationMs => Interlocked.Read(ref _pulseLastRunDurationMs);
 
     public void IncrementRequests() => Interlocked.Increment(ref _totalRequests);
     public void IncrementLlmCalls() => Interlocked.Increment(ref _totalLlmCalls);
@@ -158,6 +170,12 @@ public sealed class RuntimeMetrics
     public void IncrementPromptCacheWarmRuns() => Interlocked.Increment(ref _promptCacheWarmRuns);
     public void IncrementPromptCacheWarmSkips() => Interlocked.Increment(ref _promptCacheWarmSkips);
     public void IncrementPromptCacheWarmFailures() => Interlocked.Increment(ref _promptCacheWarmFailures);
+    public void IncrementPulseRuns() => Interlocked.Increment(ref _pulseRuns);
+    public void IncrementPulseSkips() => Interlocked.Increment(ref _pulseSkips);
+    public void IncrementPulseAlerts() => Interlocked.Increment(ref _pulseAlerts);
+    public void IncrementPulseOkSuppressed() => Interlocked.Increment(ref _pulseOkSuppressed);
+    public void IncrementPulseErrors() => Interlocked.Increment(ref _pulseErrors);
+    public void SetPulseLastRunDuration(long durationMs) => Interlocked.Exchange(ref _pulseLastRunDurationMs, Math.Max(0, durationMs));
     public void SetActiveSessions(int count) => Volatile.Write(ref _activeSessions, count);
     public void SetCircuitBreakerState(int state) => Volatile.Write(ref _circuitBreakerState, state);
     public void SetRetainedProcesses(int count) => Volatile.Write(ref _retainedProcesses, count);
@@ -217,9 +235,15 @@ public sealed class RuntimeMetrics
         PromptCacheWarmRuns = PromptCacheWarmRuns,
         PromptCacheWarmSkips = PromptCacheWarmSkips,
         PromptCacheWarmFailures = PromptCacheWarmFailures,
+        PulseRuns = PulseRuns,
+        PulseSkips = PulseSkips,
+        PulseAlerts = PulseAlerts,
+        PulseOkSuppressed = PulseOkSuppressed,
+        PulseErrors = PulseErrors,
         RetentionLastRunAtUnixSeconds = RetentionLastRunAtUnixSeconds,
         RetentionLastRunDurationMs = RetentionLastRunDurationMs,
         RetentionLastRunSucceeded = RetentionLastRunSucceeded,
+        PulseLastRunDurationMs = PulseLastRunDurationMs,
         ActiveSessions = ActiveSessions,
         CircuitBreakerState = CircuitBreakerState,
         RetainedProcesses = RetainedProcesses
@@ -272,9 +296,15 @@ public struct MetricsSnapshot
     public long PromptCacheWarmRuns { get; set; }
     public long PromptCacheWarmSkips { get; set; }
     public long PromptCacheWarmFailures { get; set; }
+    public long PulseRuns { get; set; }
+    public long PulseSkips { get; set; }
+    public long PulseAlerts { get; set; }
+    public long PulseOkSuppressed { get; set; }
+    public long PulseErrors { get; set; }
     public long RetentionLastRunAtUnixSeconds { get; set; }
     public long RetentionLastRunDurationMs { get; set; }
     public int RetentionLastRunSucceeded { get; set; }
+    public long PulseLastRunDurationMs { get; set; }
     public int ActiveSessions { get; set; }
     public int CircuitBreakerState { get; set; }
     public int RetainedProcesses { get; set; }

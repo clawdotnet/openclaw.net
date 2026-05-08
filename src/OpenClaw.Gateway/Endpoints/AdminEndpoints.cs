@@ -38,6 +38,7 @@ internal static partial class AdminEndpoints
         var adminSettings = app.Services.GetRequiredService<AdminSettingsService>();
         var pluginAdminSettings = app.Services.GetRequiredService<PluginAdminSettingsService>();
         var heartbeat = app.Services.GetRequiredService<HeartbeatService>();
+        var pulse = app.Services.GetRequiredService<RuntimePulseService>();
         var memoryStore = app.Services.GetRequiredService<IMemoryStore>();
         var memorySearch = memoryStore as IMemoryNoteSearch;
         var memoryCatalog = memoryStore as IMemoryNoteCatalog;
@@ -85,6 +86,7 @@ internal static partial class AdminEndpoints
             AdminSettings = adminSettings,
             PluginAdminSettings = pluginAdminSettings,
             Heartbeat = heartbeat,
+            Pulse = pulse,
             MemoryStore = memoryStore,
             MemorySearch = memorySearch,
             MemoryCatalog = memoryCatalog,

@@ -629,6 +629,30 @@
             <div class="card">
                 <div class="section-title">
                     <div>
+                        <h2>Runtime Pulse</h2>
+                        <div class="muted">Scheduled heartbeat turns for surfacing what needs attention without creating background task records.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="pulse-run-button" class="secondary">Run now</button>
+                        <button id="pulse-events-button" class="secondary">View Events</button>
+                        <button id="pulse-reload-button" class="secondary">Reload</button>
+                    </div>
+                </div>
+                <div class="settings-grid">
+                    <div class="field">
+                        <label for="pulse-manual-input">Manual wake text</label>
+                        <input id="pulse-manual-input" type="text" placeholder="Check for urgent follow-ups">
+                    </div>
+                    <div class="field">
+                        <label>Warnings</label>
+                        <div class="muted">Frequent intervals increase token cost. target=last may send messages externally. includeReasoning can expose more detail. Do not put secrets in HEARTBEAT.md.</div>
+                    </div>
+                </div>
+                <pre id="pulse-status-output">Loading…</pre>
+            </div>
+            <div class="card">
+                <div class="section-title">
+                    <div>
                         <h2>Heartbeat Wizard</h2>
                         <div class="muted">Managed heartbeat config backed by the gateway and rendered to HEARTBEAT.md.</div>
                     </div>
@@ -1478,6 +1502,8 @@
         const heartbeatTasks = document.getElementById('heartbeat-tasks');
         const heartbeatStatusOutput = document.getElementById('heartbeat-status-output');
         const heartbeatPreviewOutput = document.getElementById('heartbeat-preview-output');
+        const pulseManualInput = document.getElementById('pulse-manual-input');
+        const pulseStatusOutput = document.getElementById('pulse-status-output');
         const automationTemplatesOutput = document.getElementById('automation-templates-output');
         const automationListOutput = document.getElementById('automation-list-output');
         const automationPreviewOutput = document.getElementById('automation-preview-output');
@@ -2983,6 +3009,57 @@
             applyHeartbeatPreview(previewResult.data, statusResult.resp.ok ? statusResult.data : null);
         }
 
+        async function loadPulse() {
+            const { resp, data } = await api('/admin/pulse/status');
+            if (!resp.ok) {
+                pulseStatusOutput.textContent = `Runtime Pulse request failed (${resp.status})`;
+                return;
+            }
+
+            const alerts = (data.recentAlerts || []).slice(0, 5)
+                .map(item => `- ${item.timestampUtc} [${item.severity}] ${item.text}`)
+                .join('\n') || '- none';
+            pulseStatusOutput.textContent = [
+                `enabled: ${data.enabled}`,
+                `interval: ${data.interval}`,
+                `heartbeat_path: ${data.heartbeatPath}`,
+                `heartbeat_exists: ${data.heartbeatExists}`,
+                `heartbeat_empty: ${data.heartbeatEmpty}`,
+                `last_result: ${data.lastResult}`,
+                `last_skip_reason: ${data.lastSkipReason || '(none)'}`,
+                `last_run: ${data.lastRunAtUtc || 'never'}`,
+                `next_run: ${data.nextRunAtUtc || '(not scheduled)'}`,
+                `target: ${data.config?.target || 'none'}`,
+                `active_hours: ${data.config?.activeHours ? `${data.config.activeHours.start}-${data.config.activeHours.end}` : '(none)'}`,
+                `light_context: ${Boolean(data.config?.lightContext)}`,
+                `isolated_session: ${Boolean(data.config?.isolatedSession)}`,
+                `recent_ok_count: ${data.recentOkCount}`,
+                '',
+                'recent_alerts:',
+                alerts
+            ].join('\n');
+        }
+
+        async function runPulseNow() {
+            if (!requireRole('operator', 'Running Runtime Pulse')) return;
+            const { resp, data } = await mutate('/admin/pulse/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: pulseManualInput.value.trim() || null, mode: 'now' })
+            });
+            if (!resp.ok) {
+                showFlash(data?.error || `Runtime Pulse run failed (${resp.status}).`, 'error');
+                return;
+            }
+            showFlash(`Runtime Pulse ${data.outcome}.`, data.success ? 'ok' : 'warn');
+            await loadPulse();
+        }
+
+        async function loadPulseEvents() {
+            const { resp, data } = await api('/admin/pulse/events?limit=40');
+            renderJson(eventsOutput, resp.ok ? data : `Runtime Pulse events failed (${resp.status})`);
+        }
+
         async function previewHeartbeat() {
             const payload = collectHeartbeatForm();
             const { resp, data } = await mutate('/admin/heartbeat/preview', {
@@ -4275,6 +4352,7 @@
                 heartbeatTemplates.textContent = 'Login required.';
                 heartbeatSuggestions.textContent = 'Login required.';
                 heartbeatTasks.innerHTML = '';
+                pulseStatusOutput.textContent = 'Login required.';
                 settingsStatus.textContent = 'Login required.';
                 settingsPersistence.textContent = '';
                 settingsRestartFields.innerHTML = '<li>Login required.</li>';
@@ -4333,6 +4411,7 @@
                 loadDeadLetter(),
                 loadRateLimits(),
                 loadSessions(),
+                loadPulse(),
                 loadHeartbeat(),
                 loadAutomationTemplates(),
                 loadAutomations(),
@@ -4657,6 +4736,12 @@
             await loadHeartbeat();
             showFlash('Heartbeat reloaded from the server.', 'ok');
         });
+        document.getElementById('pulse-reload-button').addEventListener('click', async () => {
+            await loadPulse();
+            showFlash('Runtime Pulse reloaded from the server.', 'ok');
+        });
+        document.getElementById('pulse-run-button').addEventListener('click', runPulseNow);
+        document.getElementById('pulse-events-button').addEventListener('click', loadPulseEvents);
 
         document.getElementById('heartbeat-preview-button').addEventListener('click', previewHeartbeat);
         document.getElementById('heartbeat-save-button').addEventListener('click', saveHeartbeat);

@@ -39,6 +39,7 @@ internal static partial class AdminEndpoints
         public AdminSettingsService AdminSettings { get; init; } = null!;
         public PluginAdminSettingsService PluginAdminSettings { get; init; } = null!;
         public HeartbeatService Heartbeat { get; init; } = null!;
+        public RuntimePulseService Pulse { get; init; } = null!;
         public IMemoryStore MemoryStore { get; init; } = null!;
         public IMemoryNoteSearch? MemorySearch { get; init; }
         public IMemoryNoteCatalog? MemoryCatalog { get; init; }

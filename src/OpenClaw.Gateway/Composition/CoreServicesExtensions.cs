@@ -17,6 +17,7 @@ using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
+using OpenClaw.Gateway.Mcp;
 using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.PromptCaching;
@@ -166,6 +167,9 @@ internal static class CoreServicesExtensions
             return svc;
         });
         services.AddSingleton<HeartbeatService>();
+        services.TryAddSingleton<GatewayRuntimeHolder>();
+        services.AddSingleton<RuntimePulseService>();
+        services.AddHostedService(sp => sp.GetRequiredService<RuntimePulseService>());
         services.AddTickerQ();
         services.AddSingleton<CronSchedulerTickerFunction>();
         services.AddSingleton<AutomationRunCoordinator>();

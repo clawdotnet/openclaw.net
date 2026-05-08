@@ -28,6 +28,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [a2a.md](a2a.md) | Experimental A2A v1 discovery, endpoint, authentication, and deployment contract. |
 | [MODEL_PROFILES.md](MODEL_PROFILES.md) | Provider-agnostic named model profiles, including Gemma-family setups. |
 | [PROMPT_CACHING.md](PROMPT_CACHING.md) | Provider-aware prompt caching hints, dialects, diagnostics. |
+| [PULSE.md](PULSE.md) | Runtime Pulse scheduled heartbeat turns, `HEARTBEAT.md`, alert suppression, and operator controls. |
 
 ## Channels and Integrations
 

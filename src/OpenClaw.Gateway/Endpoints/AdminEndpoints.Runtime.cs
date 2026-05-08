@@ -34,6 +34,7 @@ internal static partial class AdminEndpoints
         var browserSessions = services.BrowserSessions;
         var modelEvaluationRunner = services.ModelEvaluationRunner;
         var operations = services.Operations;
+        var pulse = services.Pulse;
 
         app.MapGet("/tools/approvals", (HttpContext ctx, string? channelId, string? senderId) =>
         {
@@ -221,6 +222,81 @@ internal static partial class AdminEndpoints
             });
 
             return Results.Json(new RuntimeEventListResponse { Items = items }, CoreJsonContext.Default.RuntimeEventListResponse);
+        });
+
+        app.MapGet("/admin/pulse/status", (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.pulse.status");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            return Results.Json(pulse.GetStatus(), CoreJsonContext.Default.PulseStatusResponse);
+        });
+
+        app.MapGet("/admin/pulse/events", (HttpContext ctx, int limit = 100) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.pulse.events");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var items = operations.RuntimeEvents.Query(new RuntimeEventQuery
+            {
+                Limit = limit,
+                Component = "runtime_pulse"
+            });
+            return Results.Json(new RuntimeEventListResponse { Items = items }, CoreJsonContext.Default.RuntimeEventListResponse);
+        });
+
+        app.MapPost("/admin/pulse/run", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.pulse.run");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var payload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.PulseRunRequest);
+            if (payload.Failure is not null)
+                return payload.Failure;
+
+            var request = payload.Value ?? new PulseRunRequest();
+            PulseRunResponse result;
+            if (string.Equals(request.Mode, "next-heartbeat", StringComparison.OrdinalIgnoreCase))
+            {
+                result = pulse.EnqueueForNextPulse(request.Text ?? "");
+            }
+            else
+            {
+                result = await pulse.RunNowAsync(request.Text, ctx.RequestAborted);
+            }
+
+            RecordOperatorAudit(ctx, operations, auth, "pulse_manual_wake", "runtime-pulse", $"Runtime Pulse manual wake outcome={result.Outcome}.", result.Success, before: null, after: request);
+            return Results.Json(result, CoreJsonContext.Default.PulseRunResponse);
+        });
+
+        app.MapPost("/admin/pulse/enable", (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.pulse.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var before = startup.Config.Pulse.Enabled;
+            startup.Config.Pulse.Enabled = true;
+            RecordOperatorAudit(ctx, operations, auth, "pulse_enable", "runtime-pulse", "Enabled Runtime Pulse for the current gateway process.", success: true, before, after: startup.Config.Pulse.Enabled);
+            return Results.Json(pulse.GetStatus(), CoreJsonContext.Default.PulseStatusResponse);
+        });
+
+        app.MapPost("/admin/pulse/disable", (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.pulse.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var before = startup.Config.Pulse.Enabled;
+            startup.Config.Pulse.Enabled = false;
+            RecordOperatorAudit(ctx, operations, auth, "pulse_disable", "runtime-pulse", "Disabled Runtime Pulse for the current gateway process.", success: true, before, after: startup.Config.Pulse.Enabled);
+            return Results.Json(pulse.GetStatus(), CoreJsonContext.Default.PulseStatusResponse);
         });
 
         app.MapGet("/tools/approval-policies", (HttpContext ctx) =>

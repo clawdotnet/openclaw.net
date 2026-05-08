@@ -36,6 +36,7 @@ internal static class Program
                 "payment" => await PaymentCommands.RunAsync(rest),
                 "init" => InitCommand.Run(rest),
                 "migrate" => await MigrateAsync(rest),
+                "pulse" => await PulseAsync(rest),
                 "heartbeat" => await HeartbeatAsync(rest),
                 "models" => await ModelsAsync(rest),
                 "eval" => await EvalAsync(rest),
@@ -94,7 +95,8 @@ internal static class Program
               openclaw init [options]
               openclaw migrate [options]
               openclaw migrate <legacy|upstream> [options]
-              openclaw heartbeat <wizard|preview|status> [options]
+              openclaw pulse <status|run|enable|disable|events|doctor> [options]
+              openclaw heartbeat <wizard|preview|status|run> [options]
               openclaw models <list|doctor|presets> [options]
               openclaw maintenance <scan|fix> [options]
               openclaw payment <setup|funding list|virtual-card issue|execute|status> [options]
@@ -153,6 +155,8 @@ internal static class Program
               openclaw migrate --apply
               openclaw migrate upstream --source ./upstream-agent --target-config ~/.openclaw/config/openclaw.settings.json --report ./migration-report.json
               openclaw heartbeat status
+              openclaw pulse status
+              openclaw pulse run --text "Check for urgent follow-ups"
               openclaw models list
               openclaw models presets
               openclaw models doctor
@@ -212,10 +216,32 @@ internal static class Program
               openclaw heartbeat status [--url <url>] [--token <token>]
               openclaw heartbeat preview [--url <url>] [--token <token>]
               openclaw heartbeat wizard [--url <url>] [--token <token>]
+              openclaw heartbeat run --text <text> [--mode now|next-heartbeat] [--url <url>] [--token <token>]
 
             Notes:
-              - The heartbeat commands talk to the gateway admin API.
+              - Wizard/preview/status manage the legacy cron-backed heartbeat wizard.
+              - Run is an alias for Runtime Pulse manual wake.
               - Prefer OPENCLAW_BASE_URL / OPENCLAW_AUTH_TOKEN over command-line tokens.
+            """);
+    }
+
+    private static void PrintPulseHelp()
+    {
+        Console.WriteLine(
+            """
+            openclaw pulse
+
+            Usage:
+              openclaw pulse status [--url <url>] [--token <token>]
+              openclaw pulse run [--text <text>] [--mode now|next-heartbeat] [--url <url>] [--token <token>]
+              openclaw pulse enable [--url <url>] [--token <token>]
+              openclaw pulse disable [--url <url>] [--token <token>]
+              openclaw pulse events [--limit <n>] [--url <url>] [--token <token>]
+              openclaw pulse doctor [--url <url>] [--token <token>]
+
+            Notes:
+              - Runtime Pulse is a scheduled heartbeat turn, not cron automation.
+              - OK replies are suppressed by default; alerts remain operator-visible.
             """);
     }
 
@@ -732,7 +758,40 @@ internal static class Program
             "status" => await HeartbeatStatusAsync(client),
             "preview" => await HeartbeatPreviewAsync(client),
             "wizard" => await HeartbeatWizardAsync(client),
+            "run" => await PulseRunAsync(client, parsed),
             _ => throw new ArgumentException($"Unknown heartbeat command: {subcommand}")
+        };
+    }
+
+    private static async Task<int> PulseAsync(string[] args)
+    {
+        if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+        {
+            PrintPulseHelp();
+            return 0;
+        }
+
+        var subcommand = args[0].Trim().ToLowerInvariant();
+        var parsed = CliArgs.Parse(args.Skip(1).ToArray());
+        if (parsed.ShowHelp)
+        {
+            PrintPulseHelp();
+            return 0;
+        }
+
+        var baseUrl = parsed.GetOption("--url") ?? Environment.GetEnvironmentVariable(EnvBaseUrl) ?? DefaultBaseUrl;
+        var token = ResolveAuthToken(parsed, Console.Error);
+
+        using var client = new OpenClawHttpClient(baseUrl, token);
+        return subcommand switch
+        {
+            "status" => await PulseStatusAsync(client),
+            "run" => await PulseRunAsync(client, parsed),
+            "enable" => await PulseEnableAsync(client),
+            "disable" => await PulseDisableAsync(client),
+            "events" => await PulseEventsAsync(client, parsed),
+            "doctor" => await PulseDoctorAsync(client),
+            _ => throw new ArgumentException($"Unknown pulse command: {subcommand}")
         };
     }
 
@@ -1190,6 +1249,72 @@ internal static class Program
         return 0;
     }
 
+    private static async Task<int> PulseStatusAsync(OpenClawHttpClient client)
+    {
+        var status = await client.GetPulseStatusAsync(CancellationToken.None);
+        WritePulseStatus(status);
+        return 0;
+    }
+
+    private static async Task<int> PulseRunAsync(OpenClawHttpClient client, CliArgs parsed)
+    {
+        var result = await client.RunPulseAsync(new PulseRunRequest
+        {
+            Text = parsed.GetOption("--text"),
+            Mode = parsed.GetOption("--mode") ?? "now"
+        }, CancellationToken.None);
+        Console.WriteLine($"outcome: {result.Outcome}");
+        if (!string.IsNullOrWhiteSpace(result.SkipReason))
+            Console.WriteLine($"skip_reason: {result.SkipReason}");
+        if (!string.IsNullOrWhiteSpace(result.SessionId))
+            Console.WriteLine($"session: {result.SessionId}");
+        if (!string.IsNullOrWhiteSpace(result.MessagePreview))
+            Console.WriteLine(result.MessagePreview);
+        return result.Success ? 0 : 1;
+    }
+
+    private static async Task<int> PulseEnableAsync(OpenClawHttpClient client)
+    {
+        var status = await client.EnablePulseAsync(CancellationToken.None);
+        WritePulseStatus(status);
+        return 0;
+    }
+
+    private static async Task<int> PulseDisableAsync(OpenClawHttpClient client)
+    {
+        var status = await client.DisablePulseAsync(CancellationToken.None);
+        WritePulseStatus(status);
+        return 0;
+    }
+
+    private static async Task<int> PulseEventsAsync(OpenClawHttpClient client, CliArgs parsed)
+    {
+        var limit = int.TryParse(parsed.GetOption("--limit"), out var parsedLimit) ? parsedLimit : 50;
+        var events = await client.GetPulseEventsAsync(limit, CancellationToken.None);
+        foreach (var item in events.Items)
+            Console.WriteLine($"{item.TimestampUtc:O} {item.Severity} {item.Action} {item.Summary}");
+        return 0;
+    }
+
+    private static async Task<int> PulseDoctorAsync(OpenClawHttpClient client)
+    {
+        var status = await client.GetPulseStatusAsync(CancellationToken.None);
+        WritePulseStatus(status);
+        Console.WriteLine();
+        Console.WriteLine("doctor:");
+        if (!status.Enabled)
+            Console.WriteLine("- pulse is disabled or has a zero interval");
+        if (status.Config.Visibility is { ShowOk: false, ShowAlerts: false, UseIndicator: false })
+            Console.WriteLine("- all visibility controls are disabled; scheduled pulse calls are skipped");
+        if (status.HeartbeatExists && status.HeartbeatEmpty)
+            Console.WriteLine("- HEARTBEAT.md exists but has no actionable content");
+        if (string.Equals(status.Config.Target, "last", StringComparison.OrdinalIgnoreCase))
+            Console.WriteLine("- target=last may send alerts externally");
+        if (status.Config.IncludeReasoning)
+            Console.WriteLine("- includeReasoning may expose more detail in human-facing channels");
+        return 0;
+    }
+
     private static async Task<int> PollBackendSessionAsync(
         OpenClawHttpClient client,
         string backendId,
@@ -1621,6 +1746,31 @@ internal static class Program
             foreach (var issue in status.Issues)
                 Console.WriteLine($"- {issue.Severity}: {issue.Message}");
             }
+    }
+
+    private static void WritePulseStatus(PulseStatusResponse status)
+    {
+        Console.WriteLine("Runtime Pulse");
+        Console.WriteLine($"Enabled: {status.Enabled}");
+        Console.WriteLine($"Interval: {status.Interval}");
+        Console.WriteLine($"HEARTBEAT path: {status.HeartbeatPath}");
+        Console.WriteLine($"HEARTBEAT exists: {status.HeartbeatExists}");
+        Console.WriteLine($"HEARTBEAT empty: {status.HeartbeatEmpty}");
+        Console.WriteLine($"Last result: {status.LastResult}");
+        if (!string.IsNullOrWhiteSpace(status.LastSkipReason))
+            Console.WriteLine($"Last skip reason: {status.LastSkipReason}");
+        if (status.LastRunAtUtc is not null)
+            Console.WriteLine($"Last run: {status.LastRunAtUtc:O}");
+        if (status.NextRunAtUtc is not null)
+            Console.WriteLine($"Next run: {status.NextRunAtUtc:O}");
+        Console.WriteLine($"Target: {status.Config.Target}");
+        Console.WriteLine($"Session: {status.Config.Session}");
+        Console.WriteLine($"Light context: {status.Config.LightContext}");
+        Console.WriteLine($"Isolated session: {status.Config.IsolatedSession}");
+        Console.WriteLine($"Recent OKs: {status.RecentOkCount}");
+        Console.WriteLine($"Recent alerts: {status.RecentAlertCount}");
+        foreach (var alert in status.RecentAlerts.Take(5))
+            Console.WriteLine($"- {alert.TimestampUtc:O} [{alert.Severity}] {alert.Text}");
     }
 
     private static void WriteInsights(OperatorInsightsResponse insights)

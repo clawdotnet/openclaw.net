@@ -1967,6 +1967,37 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task PulseEndpoints_StatusEnableDisable_Work()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+        {
+            config.Pulse.Enabled = false;
+        });
+
+        using var statusRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/pulse/status");
+        statusRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var statusResponse = await harness.Client.SendAsync(statusRequest);
+        statusResponse.EnsureSuccessStatusCode();
+        using var statusPayload = await ReadJsonAsync(statusResponse);
+        Assert.False(statusPayload.RootElement.GetProperty("enabled").GetBoolean());
+        Assert.Equal("30m", statusPayload.RootElement.GetProperty("interval").GetString());
+
+        using var enableRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/pulse/enable");
+        enableRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var enableResponse = await harness.Client.SendAsync(enableRequest);
+        enableResponse.EnsureSuccessStatusCode();
+        using var enablePayload = await ReadJsonAsync(enableResponse);
+        Assert.True(enablePayload.RootElement.GetProperty("enabled").GetBoolean());
+
+        using var disableRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/pulse/disable");
+        disableRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var disableResponse = await harness.Client.SendAsync(disableRequest);
+        disableResponse.EnsureSuccessStatusCode();
+        using var disablePayload = await ReadJsonAsync(disableResponse);
+        Assert.False(disablePayload.RootElement.GetProperty("enabled").GetBoolean());
+    }
+
+    [Fact]
     public async Task HeartbeatPreview_UsesSuggestionsAndCostEstimateVariesBySchedule()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -5470,6 +5501,8 @@ public sealed class GatewayAdminEndpointTests
         builder.Services.AddSingleton<IBackendSessionStore>(_ => featureStore);
         builder.Services.AddSingleton(sessionManager);
         builder.Services.AddSingleton(heartbeatService);
+        builder.Services.AddSingleton(startup);
+        builder.Services.AddSingleton(new RuntimeMetrics());
         builder.Services.AddSingleton(new BrowserSessionAuthService(config));
         builder.Services.AddSingleton(new OperatorAccountService(
             storagePath,
@@ -5497,6 +5530,7 @@ public sealed class GatewayAdminEndpointTests
         builder.Services.AddSingleton(new ProviderUsageTracker());
         builder.Services.AddSingleton(new ToolUsageTracker());
         builder.Services.AddSingleton(new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance));
+        builder.Services.AddSingleton<RuntimePulseService>();
         builder.Services.AddSingleton(new ContractStore(storagePath, NullLogger<ContractStore>.Instance));
         builder.Services.AddSingleton(sp =>
         {

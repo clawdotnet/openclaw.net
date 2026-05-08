@@ -48,6 +48,11 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _adminHeartbeatUri;
     private readonly Uri _adminHeartbeatPreviewUri;
     private readonly Uri _adminHeartbeatStatusUri;
+    private readonly Uri _adminPulseStatusUri;
+    private readonly Uri _adminPulseRunUri;
+    private readonly Uri _adminPulseEventsUri;
+    private readonly Uri _adminPulseEnableUri;
+    private readonly Uri _adminPulseDisableUri;
     private readonly Uri _adminPostureUri;
     private readonly Uri _adminModelsUri;
     private readonly Uri _adminModelsDoctorUri;
@@ -116,6 +121,11 @@ public sealed class OpenClawHttpClient : IDisposable
         _adminHeartbeatUri = new Uri(baseUri, "/admin/heartbeat");
         _adminHeartbeatPreviewUri = new Uri(baseUri, "/admin/heartbeat/preview");
         _adminHeartbeatStatusUri = new Uri(baseUri, "/admin/heartbeat/status");
+        _adminPulseStatusUri = new Uri(baseUri, "/admin/pulse/status");
+        _adminPulseRunUri = new Uri(baseUri, "/admin/pulse/run");
+        _adminPulseEventsUri = new Uri(baseUri, "/admin/pulse/events");
+        _adminPulseEnableUri = new Uri(baseUri, "/admin/pulse/enable");
+        _adminPulseDisableUri = new Uri(baseUri, "/admin/pulse/disable");
         _adminPostureUri = new Uri(baseUri, "/admin/posture");
         _adminModelsUri = new Uri(baseUri, "/admin/models");
         _adminModelsDoctorUri = new Uri(baseUri, "/admin/models/doctor");
@@ -800,6 +810,34 @@ public sealed class OpenClawHttpClient : IDisposable
 
     public Task<HeartbeatStatusResponse> GetHeartbeatStatusAsync(CancellationToken cancellationToken)
         => GetAsync(_adminHeartbeatStatusUri, CoreJsonContext.Default.HeartbeatStatusResponse, cancellationToken);
+
+    public Task<PulseStatusResponse> GetPulseStatusAsync(CancellationToken cancellationToken)
+        => GetAsync(_adminPulseStatusUri, CoreJsonContext.Default.PulseStatusResponse, cancellationToken);
+
+    public async Task<PulseRunResponse> RunPulseAsync(PulseRunRequest request, CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, _adminPulseRunUri)
+        {
+            Content = BuildJsonContent(request, CoreJsonContext.Default.PulseRunRequest)
+        };
+
+        return await SendAsync(req, CoreJsonContext.Default.PulseRunResponse, cancellationToken);
+    }
+
+    public Task<RuntimeEventListResponse> GetPulseEventsAsync(int limit, CancellationToken cancellationToken)
+        => GetAsync(new Uri($"{_adminPulseEventsUri.AbsoluteUri}?limit={Math.Clamp(limit, 1, 500)}", UriKind.Absolute), CoreJsonContext.Default.RuntimeEventListResponse, cancellationToken);
+
+    public async Task<PulseStatusResponse> EnablePulseAsync(CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, _adminPulseEnableUri);
+        return await SendAsync(req, CoreJsonContext.Default.PulseStatusResponse, cancellationToken);
+    }
+
+    public async Task<PulseStatusResponse> DisablePulseAsync(CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, _adminPulseDisableUri);
+        return await SendAsync(req, CoreJsonContext.Default.PulseStatusResponse, cancellationToken);
+    }
 
     public Task<SecurityPostureResponse> GetSecurityPostureAsync(CancellationToken cancellationToken)
         => GetAsync(_adminPostureUri, CoreJsonContext.Default.SecurityPostureResponse, cancellationToken);

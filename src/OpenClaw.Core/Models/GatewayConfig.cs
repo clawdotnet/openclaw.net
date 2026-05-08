@@ -28,6 +28,7 @@ public sealed class GatewayConfig
     public PluginsConfig Plugins { get; set; } = new();
     public SkillsConfig Skills { get; set; } = new();
     public DelegationConfig Delegation { get; set; } = new();
+    public PulseConfig Pulse { get; set; } = new();
     public CronConfig Cron { get; set; } = new();
     public AutomationsConfig Automations { get; set; } = new();
     public ProfilesConfig Profiles { get; set; } = new();

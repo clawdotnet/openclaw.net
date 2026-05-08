@@ -35,6 +35,21 @@ internal sealed class OpenClawHttpClient : IDisposable
     public Task<HeartbeatStatusResponse> GetHeartbeatStatusAsync(CancellationToken cancellationToken)
         => _inner.GetHeartbeatStatusAsync(cancellationToken);
 
+    public Task<PulseStatusResponse> GetPulseStatusAsync(CancellationToken cancellationToken)
+        => _inner.GetPulseStatusAsync(cancellationToken);
+
+    public Task<PulseRunResponse> RunPulseAsync(PulseRunRequest request, CancellationToken cancellationToken)
+        => _inner.RunPulseAsync(request, cancellationToken);
+
+    public Task<RuntimeEventListResponse> GetPulseEventsAsync(int limit, CancellationToken cancellationToken)
+        => _inner.GetPulseEventsAsync(limit, cancellationToken);
+
+    public Task<PulseStatusResponse> EnablePulseAsync(CancellationToken cancellationToken)
+        => _inner.EnablePulseAsync(cancellationToken);
+
+    public Task<PulseStatusResponse> DisablePulseAsync(CancellationToken cancellationToken)
+        => _inner.DisablePulseAsync(cancellationToken);
+
     public Task<SecurityPostureResponse> GetSecurityPostureAsync(CancellationToken cancellationToken)
         => _inner.GetSecurityPostureAsync(cancellationToken);
 
