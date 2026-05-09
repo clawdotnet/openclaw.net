@@ -57,6 +57,9 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _adminModelsUri;
     private readonly Uri _adminModelsDoctorUri;
     private readonly Uri _adminModelEvaluationsUri;
+    private readonly Uri _adminExternalCliConnectorsUri;
+    private readonly Uri _adminExternalCliPreviewUri;
+    private readonly Uri _adminExternalCliExecuteUri;
     private readonly Uri _adminApprovalSimulationUri;
     private readonly Uri _toolsApproveUri;
     private readonly Uri _adminAccountResolutionUri;
@@ -130,6 +133,9 @@ public sealed class OpenClawHttpClient : IDisposable
         _adminModelsUri = new Uri(baseUri, "/admin/models");
         _adminModelsDoctorUri = new Uri(baseUri, "/admin/models/doctor");
         _adminModelEvaluationsUri = new Uri(baseUri, "/admin/models/evaluations");
+        _adminExternalCliConnectorsUri = new Uri(baseUri, "/admin/external-cli/connectors");
+        _adminExternalCliPreviewUri = new Uri(baseUri, "/admin/external-cli/preview");
+        _adminExternalCliExecuteUri = new Uri(baseUri, "/admin/external-cli/execute");
         _adminApprovalSimulationUri = new Uri(baseUri, "/admin/approvals/simulate");
         _toolsApproveUri = new Uri(baseUri, "/tools/approve");
         _adminAccountResolutionUri = new Uri(baseUri, "/admin/accounts/test-resolution");
@@ -858,6 +864,35 @@ public sealed class OpenClawHttpClient : IDisposable
         return await SendAsync(httpRequest, CoreJsonContext.Default.ModelEvaluationReport, cancellationToken);
     }
 
+    public Task<ExternalCliConnectorListResponse> ListExternalCliConnectorsAsync(CancellationToken cancellationToken)
+        => GetAsync(_adminExternalCliConnectorsUri, CoreJsonContext.Default.ExternalCliConnectorListResponse, cancellationToken);
+
+    public Task<ExternalCliConnectorStatus> GetExternalCliConnectorStatusAsync(string connector, CancellationToken cancellationToken)
+        => GetAsync(BuildExternalCliConnectorUri(connector), CoreJsonContext.Default.ExternalCliConnectorStatus, cancellationToken);
+
+    public Task<ExternalCliCommandListResponse> ListExternalCliCommandsAsync(string connector, CancellationToken cancellationToken)
+        => GetAsync(BuildExternalCliConnectorCommandsUri(connector), CoreJsonContext.Default.ExternalCliCommandListResponse, cancellationToken);
+
+    public async Task<ExternalCliPreviewResponse> PreviewExternalCliAsync(ExternalCliPreviewRequest request, CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _adminExternalCliPreviewUri)
+        {
+            Content = BuildJsonContent(request, CoreJsonContext.Default.ExternalCliPreviewRequest)
+        };
+
+        return await SendAsync(httpRequest, CoreJsonContext.Default.ExternalCliPreviewResponse, cancellationToken);
+    }
+
+    public async Task<ExternalCliExecutionResult> ExecuteExternalCliAsync(ExternalCliExecuteRequest request, CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _adminExternalCliExecuteUri)
+        {
+            Content = BuildJsonContent(request, CoreJsonContext.Default.ExternalCliExecuteRequest)
+        };
+
+        return await SendAsync(httpRequest, CoreJsonContext.Default.ExternalCliExecutionResult, cancellationToken);
+    }
+
     public async Task<ApprovalSimulationResponse> SimulateApprovalAsync(
         ApprovalSimulationRequest request,
         CancellationToken cancellationToken)
@@ -1571,6 +1606,22 @@ public sealed class OpenClawHttpClient : IDisposable
             pairs.Add($"toUtc={Uri.EscapeDataString(toUtc.ToString("O"))}");
 
         return new Uri($"{_integrationRuntimeEventsUri}?{string.Join("&", pairs)}", UriKind.RelativeOrAbsolute);
+    }
+
+    private Uri BuildExternalCliConnectorUri(string connector)
+    {
+        if (string.IsNullOrWhiteSpace(connector))
+            throw new ArgumentException("Connector is required.", nameof(connector));
+
+        return new Uri(_adminExternalCliConnectorsUri, $"/admin/external-cli/connectors/{Uri.EscapeDataString(connector)}");
+    }
+
+    private Uri BuildExternalCliConnectorCommandsUri(string connector)
+    {
+        if (string.IsNullOrWhiteSpace(connector))
+            throw new ArgumentException("Connector is required.", nameof(connector));
+
+        return new Uri(_adminExternalCliConnectorsUri, $"/admin/external-cli/connectors/{Uri.EscapeDataString(connector)}/commands");
     }
 
     private Uri BuildChannelAuthUri(string channelId, string? accountId)

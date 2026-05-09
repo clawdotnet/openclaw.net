@@ -10,6 +10,7 @@ using OpenClaw.Agent.Execution;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Channels;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
@@ -57,6 +58,10 @@ internal static partial class AdminEndpoints
         public SetupVerificationSnapshotStore SetupVerificationSnapshots { get; init; } = null!;
         public IModelProfileRegistry ModelProfiles { get; init; } = null!;
         public ModelEvaluationRunner ModelEvaluationRunner { get; init; } = null!;
+        public IExternalCliConnectorRegistry ExternalCliRegistry { get; init; } = null!;
+        public IExternalCliRunner ExternalCliRunner { get; init; } = null!;
+        public IExternalCliAuditSink ExternalCliAudit { get; init; } = null!;
+        public IExternalCliEventSink ExternalCliEvents { get; init; } = null!;
     }
 
     private static async Task<JsonBodyReadResult<T>> ReadJsonBodyAsync<T>(HttpContext ctx, JsonTypeInfo<T> typeInfo)

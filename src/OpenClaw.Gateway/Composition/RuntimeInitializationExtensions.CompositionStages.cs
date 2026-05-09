@@ -5,6 +5,7 @@ using OpenClaw.Agent.Plugins;
 using OpenClaw.Channels;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Contacts;
+using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
@@ -64,7 +65,11 @@ internal static partial class RuntimeInitializationExtensions
             WebSocketChannel = app.Services.GetRequiredService<WebSocketChannel>(),
             CanvasBroker = app.Services.GetRequiredService<CanvasCommandBroker>(),
             NativeRegistry = app.Services.GetRequiredService<NativePluginRegistry>(),
-            McpRegistry = app.Services.GetRequiredService<McpServerToolRegistry>()
+            McpRegistry = app.Services.GetRequiredService<McpServerToolRegistry>(),
+            ExternalCliRegistry = app.Services.GetRequiredService<IExternalCliConnectorRegistry>(),
+            ExternalCliRunner = app.Services.GetRequiredService<IExternalCliRunner>(),
+            ExternalCliAudit = app.Services.GetRequiredService<IExternalCliAuditSink>(),
+            ExternalCliEvents = app.Services.GetRequiredService<IExternalCliEventSink>()
         };
 
     private static async Task<ChannelComposition> BuildChannelCompositionAsync(
@@ -577,6 +582,10 @@ internal static partial class RuntimeInitializationExtensions
         public required CanvasCommandBroker CanvasBroker { get; init; }
         public required NativePluginRegistry NativeRegistry { get; init; }
         public required McpServerToolRegistry McpRegistry { get; init; }
+        public required IExternalCliConnectorRegistry ExternalCliRegistry { get; init; }
+        public required IExternalCliRunner ExternalCliRunner { get; init; }
+        public required IExternalCliAuditSink ExternalCliAudit { get; init; }
+        public required IExternalCliEventSink ExternalCliEvents { get; init; }
     }
 
     private sealed class ChannelComposition

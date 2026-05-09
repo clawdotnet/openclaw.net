@@ -36,5 +36,9 @@ public sealed class ToolActionDescriptor
 {
     public string Action { get; init; } = "";
     public bool IsMutation { get; init; }
+    public bool RequiresApproval { get; init; }
     public string Summary { get; init; } = "";
+    public string? ApprovalFingerprint { get; init; }
+    public string? RiskLevel { get; init; }
+    public bool? ReadOnly { get; init; }
 }

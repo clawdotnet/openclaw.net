@@ -10,6 +10,7 @@ using OpenClaw.Agent.Execution;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Channels;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
@@ -75,6 +76,15 @@ internal static partial class AdminEndpoints
                     ?? new ConfiguredModelProfileRegistry(startup.Config, NullLogger<ConfiguredModelProfileRegistry>.Instance),
                 startup.Config,
                 NullLogger<ModelEvaluationRunner>.Instance);
+        var redaction = app.Services.GetService<IRedactionPipeline>();
+        var externalCliRegistry = app.Services.GetService<IExternalCliConnectorRegistry>()
+            ?? new ExternalCliConnectorRegistry(startup.Config, redaction);
+        var externalCliRunner = app.Services.GetService<IExternalCliRunner>()
+            ?? new ExternalCliRunner(redaction);
+        var externalCliAudit = app.Services.GetService<IExternalCliAuditSink>()
+            ?? new NoopExternalCliAuditSink();
+        var externalCliEvents = app.Services.GetService<IExternalCliEventSink>()
+            ?? new NoopExternalCliEventSink();
 
         var services = new AdminEndpointServices
         {
@@ -103,7 +113,11 @@ internal static partial class AdminEndpoints
             ProviderSmokeRegistry = providerSmokeRegistry,
             SetupVerificationSnapshots = setupVerificationSnapshots,
             ModelProfiles = modelProfiles,
-            ModelEvaluationRunner = modelEvaluationRunner
+            ModelEvaluationRunner = modelEvaluationRunner,
+            ExternalCliRegistry = externalCliRegistry,
+            ExternalCliRunner = externalCliRunner,
+            ExternalCliAudit = externalCliAudit,
+            ExternalCliEvents = externalCliEvents
         };
 
         MapAuthEndpoints(app, services);
@@ -113,6 +127,7 @@ internal static partial class AdminEndpoints
         MapMemoryEndpoints(app, services);
         MapProfilesAndLearningEndpoints(app, services);
         MapRuntimeEndpoints(app, services);
+        MapExternalCliEndpoints(app, services);
         MapPluginAndChannelEndpoints(app, services);
     }
 }

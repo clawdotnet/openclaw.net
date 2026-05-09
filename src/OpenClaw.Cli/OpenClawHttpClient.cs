@@ -65,6 +65,21 @@ internal sealed class OpenClawHttpClient : IDisposable
     public Task<ModelEvaluationReport> RunModelEvaluationAsync(ModelEvaluationRequest request, CancellationToken cancellationToken)
         => _inner.RunModelEvaluationAsync(request, cancellationToken);
 
+    public Task<ExternalCliConnectorListResponse> ListExternalCliConnectorsAsync(CancellationToken cancellationToken)
+        => _inner.ListExternalCliConnectorsAsync(cancellationToken);
+
+    public Task<ExternalCliConnectorStatus> GetExternalCliConnectorStatusAsync(string connector, CancellationToken cancellationToken)
+        => _inner.GetExternalCliConnectorStatusAsync(connector, cancellationToken);
+
+    public Task<ExternalCliCommandListResponse> ListExternalCliCommandsAsync(string connector, CancellationToken cancellationToken)
+        => _inner.ListExternalCliCommandsAsync(connector, cancellationToken);
+
+    public Task<ExternalCliPreviewResponse> PreviewExternalCliAsync(ExternalCliPreviewRequest request, CancellationToken cancellationToken)
+        => _inner.PreviewExternalCliAsync(request, cancellationToken);
+
+    public Task<ExternalCliExecutionResult> ExecuteExternalCliAsync(ExternalCliExecuteRequest request, CancellationToken cancellationToken)
+        => _inner.ExecuteExternalCliAsync(request, cancellationToken);
+
     public Task<IntegrationAccountsResponse> GetIntegrationAccountsAsync(CancellationToken cancellationToken)
         => _inner.GetIntegrationAccountsAsync(cancellationToken);
 

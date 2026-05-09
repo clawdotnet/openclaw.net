@@ -157,6 +157,13 @@ internal static partial class RuntimeInitializationExtensions
         if (browserAvailability.Registered)
             tools.Add(new BrowserTool(config.Tooling, services.RuntimeMetrics, browserAvailability.LocalExecutionSupported));
 
+        if (config.ExternalCli.Enabled)
+            tools.Add(new ExternalCliTool(
+                services.ExternalCliRegistry,
+                services.ExternalCliRunner,
+                services.ExternalCliAudit,
+                services.ExternalCliEvents));
+
         if (config.Payments.Enabled && config.Payments.ToolEnabled)
             tools.Add(PaymentPluginRegistration.CreateTool(services.PaymentRuntime, config.Payments.Provider, config.Payments.Environment));
 
