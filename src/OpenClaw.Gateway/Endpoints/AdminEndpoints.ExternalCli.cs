@@ -52,6 +52,10 @@ internal static partial class AdminEndpoints
             {
                 return Results.BadRequest(new OperationStatusResponse { Success = false, Error = ex.Message });
             }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new OperationStatusResponse { Success = false, Error = ex.Message });
+            }
         });
 
         app.MapGet("/admin/external-cli/connectors/{connector}/commands", (HttpContext ctx, string connector) =>
@@ -65,6 +69,10 @@ internal static partial class AdminEndpoints
                 return Results.Json(registry.ListCommands(connector), CoreJsonContext.Default.ExternalCliCommandListResponse);
             }
             catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new OperationStatusResponse { Success = false, Error = ex.Message });
+            }
+            catch (ArgumentException ex)
             {
                 return Results.BadRequest(new OperationStatusResponse { Success = false, Error = ex.Message });
             }
@@ -109,6 +117,16 @@ internal static partial class AdminEndpoints
                 }, CoreJsonContext.Default.ExternalCliPreviewResponse);
             }
             catch (InvalidOperationException ex)
+            {
+                events.Record(new ExternalCliRuntimeEvent
+                {
+                    Action = "command_blocked_by_policy",
+                    Severity = "warning",
+                    Summary = ex.Message
+                });
+                return Results.BadRequest(new OperationStatusResponse { Success = false, Error = ex.Message });
+            }
+            catch (ArgumentException ex)
             {
                 events.Record(new ExternalCliRuntimeEvent
                 {
@@ -177,6 +195,16 @@ internal static partial class AdminEndpoints
                 return Results.Json(result, CoreJsonContext.Default.ExternalCliExecutionResult);
             }
             catch (InvalidOperationException ex)
+            {
+                events.Record(new ExternalCliRuntimeEvent
+                {
+                    Action = "command_blocked_by_policy",
+                    Severity = "warning",
+                    Summary = ex.Message
+                });
+                return Results.BadRequest(new OperationStatusResponse { Success = false, Error = ex.Message });
+            }
+            catch (ArgumentException ex)
             {
                 events.Record(new ExternalCliRuntimeEvent
                 {

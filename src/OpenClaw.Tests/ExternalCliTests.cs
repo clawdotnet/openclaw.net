@@ -6,6 +6,7 @@ using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Security;
+using OpenClaw.Core.Validation;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -155,6 +156,90 @@ public sealed class ExternalCliTests
         Assert.True(readOnly.ReadOnly);
         Assert.True(high.RequiresApproval);
         Assert.Equal(ExternalCliRiskLevel.High, high.RiskLevel);
+    }
+
+    [Fact]
+    public void ExternalCliTool_DryRunPreview_UsesCommandApprovalPolicy()
+    {
+        var config = CreateConfig(enabled: true);
+        config.ExternalCli.Connectors["test"].Commands["high_dry_run"] = new ExternalCliCommandOptions
+        {
+            ArgsTemplate = ["run", "{{value}}"],
+            DryRunArgsTemplate = ["dry-run", "{{value}}"],
+            SupportsDryRun = true,
+            ReadOnly = true,
+            RiskLevel = ExternalCliRiskLevel.High
+        };
+        var registry = new ExternalCliConnectorRegistry(config);
+        var tool = new ExternalCliTool(registry, new ExternalCliRunner());
+
+        var descriptor = tool.ResolveActionDescriptor("""{"action":"preview","connector":"test","command":"high_dry_run","execute_dry_run":true,"parameters":{"value":"hello"}}""");
+
+        Assert.Equal("preview", descriptor.Action);
+        Assert.True(descriptor.RequiresApproval);
+        Assert.Equal(ExternalCliRiskLevel.High, descriptor.RiskLevel);
+        Assert.False(string.IsNullOrWhiteSpace(descriptor.ApprovalFingerprint));
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_DisabledConfig_DoesNotExecuteStatusCommand()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var marker = Path.Combine(Path.GetTempPath(), "openclaw-external-cli-tests", Guid.NewGuid().ToString("N"), "status-ran");
+        Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
+        var script = CreateUnixScript($"touch '{marker}'");
+        var config = CreateConfig(enabled: false, executable: script);
+        config.ExternalCli.Connectors["test"].StatusCommand = new ExternalCliStatusCommandOptions
+        {
+            Args = ["status"]
+        };
+        var registry = new ExternalCliConnectorRegistry(config);
+
+        var status = await registry.GetStatusAsync("test", CancellationToken.None);
+
+        Assert.False(status.Authenticated.HasValue);
+        Assert.Contains(status.Warnings, warning => warning.Contains("disabled", StringComparison.OrdinalIgnoreCase));
+        Assert.False(File.Exists(marker));
+    }
+
+    [Fact]
+    public void BuildPreview_ResolvesExecutableFromConfiguredPathForFingerprint()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var script = CreateUnixScript("printf ok");
+        var binDir = Path.GetDirectoryName(script)!;
+        var executableName = Path.GetFileName(script);
+        var config = CreateConfig(enabled: true, executable: executableName);
+        config.ExternalCli.Connectors["test"].Environment["PATH"] = binDir;
+        var registry = new ExternalCliConnectorRegistry(config);
+
+        var prepared = registry.BuildPreview(new ExternalCliPreviewRequest
+        {
+            Connector = "test",
+            Command = "echo",
+            Parameters = Params(("value", "hello"))
+        }, dryRun: false);
+
+        Assert.Equal(script, prepared.Executable);
+        Assert.Equal(script, prepared.Preview.Executable);
+        Assert.StartsWith(script, prepared.Preview.RedactedCommandLine, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConfigValidator_RejectsInvalidExternalCliRegexes()
+    {
+        var config = CreateConfig(enabled: true);
+        config.ExternalCli.Connectors["test"].RedactionRules = ["["];
+        config.ExternalCli.Connectors["test"].Commands["echo"].Parameters["value"].Pattern = "[";
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("ExternalCli.Connectors.test.RedactionRules", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("ExternalCli.Connectors.test.Commands.echo.Parameters.value.Pattern", StringComparison.Ordinal));
     }
 
     [Fact]

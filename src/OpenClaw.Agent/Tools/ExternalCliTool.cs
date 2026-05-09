@@ -82,7 +82,12 @@ public sealed class ExternalCliTool : IToolWithContext, IToolActionDescriptorPro
                 _ => "Error: Unknown action. Valid actions are list_connectors, connector_status, list_commands, command_schema, preview, and execute."
             };
         }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        catch (InvalidOperationException ex)
+        {
+            RecordEvent(context, "blocked_by_policy", "warning", ex.Message, request);
+            return $"Error: {ex.Message}";
+        }
+        catch (ArgumentException ex)
         {
             RecordEvent(context, "blocked_by_policy", "warning", ex.Message, request);
             return $"Error: {ex.Message}";
@@ -96,7 +101,8 @@ public sealed class ExternalCliTool : IToolWithContext, IToolActionDescriptorPro
             var request = JsonSerializer.Deserialize(
                 string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson,
                 CoreJsonContext.Default.ExternalCliToolRequest) ?? new ExternalCliToolRequest();
-            if (!string.Equals(request.Action, "execute", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(request.Action, "execute", StringComparison.OrdinalIgnoreCase) &&
+                !(string.Equals(request.Action, "preview", StringComparison.OrdinalIgnoreCase) && request.ExecuteDryRun))
             {
                 return new ToolActionDescriptor
                 {
@@ -107,7 +113,8 @@ public sealed class ExternalCliTool : IToolWithContext, IToolActionDescriptorPro
                 };
             }
 
-            var prepared = _registry.BuildPreview(ToPreviewRequest(request), dryRun: false);
+            var dryRun = string.Equals(request.Action, "preview", StringComparison.OrdinalIgnoreCase) && request.ExecuteDryRun;
+            var prepared = _registry.BuildPreview(ToPreviewRequest(request), dryRun);
             return new ToolActionDescriptor
             {
                 Action = request.Action,
@@ -119,7 +126,7 @@ public sealed class ExternalCliTool : IToolWithContext, IToolActionDescriptorPro
                 ReadOnly = prepared.Preview.ReadOnly
             };
         }
-        catch
+        catch (JsonException)
         {
             return ToolActionPolicyResolver.Resolve(Name, argumentsJson);
         }

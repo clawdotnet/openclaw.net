@@ -239,7 +239,7 @@ internal static class ExternalCliCommands
               openclaw external status <connector> [--json]
               openclaw external commands <connector> [--json]
               openclaw external preview <connector> <command> [--param key=value]... [--dry-run] [--json]
-              openclaw external execute <connector> <command> [--param key=value]... [--yes] [--json]
+              openclaw external execute <connector> <command> [--param key=value]... [--yes] [--reason text] [--json]
 
             Notes:
               - Commands talk to the gateway admin API.

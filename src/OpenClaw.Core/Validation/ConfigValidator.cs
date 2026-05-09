@@ -2,6 +2,7 @@ using OpenClaw.Core.Security;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Setup;
 using OpenClaw.Core.Plugins;
+using System.Text.RegularExpressions;
 
 namespace OpenClaw.Core.Validation;
 
@@ -686,6 +687,7 @@ public static class ConfigValidator
             var defaultFormat = ExternalCliOutputFormat.Normalize(connector.DefaultOutputFormat);
             if (!string.Equals(defaultFormat, connector.DefaultOutputFormat, StringComparison.OrdinalIgnoreCase))
                 errors.Add($"ExternalCli.Connectors.{connectorName}.DefaultOutputFormat must be one of: json, ndjson, csv, text, table.");
+            ValidateRegexList($"ExternalCli.Connectors.{connectorName}.RedactionRules", connector.RedactionRules, errors);
 
             foreach (var (commandName, command) in connector.Commands)
             {
@@ -708,7 +710,35 @@ public static class ConfigValidator
                     if (!string.Equals(format, command.StructuredOutput, StringComparison.OrdinalIgnoreCase))
                         errors.Add($"ExternalCli.Connectors.{connectorName}.Commands.{commandName}.StructuredOutput must be one of: json, ndjson, csv, text, table.");
                 }
+
+                ValidateRegexList($"ExternalCli.Connectors.{connectorName}.Commands.{commandName}.RedactionRules", command.RedactionRules, errors);
+                foreach (var (parameterName, parameter) in command.Parameters)
+                {
+                    if (!string.IsNullOrWhiteSpace(parameter.Pattern))
+                        ValidateRegexPattern($"ExternalCli.Connectors.{connectorName}.Commands.{commandName}.Parameters.{parameterName}.Pattern", parameter.Pattern, errors);
+                }
             }
+        }
+    }
+
+    private static void ValidateRegexList(string path, IReadOnlyList<string> patterns, List<string> errors)
+    {
+        for (var i = 0; i < patterns.Count; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(patterns[i]))
+                ValidateRegexPattern($"{path}[{i}]", patterns[i], errors);
+        }
+    }
+
+    private static void ValidateRegexPattern(string path, string pattern, List<string> errors)
+    {
+        try
+        {
+            _ = new Regex(pattern, RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(250));
+        }
+        catch (ArgumentException ex)
+        {
+            errors.Add($"{path} is not a valid regex: {ex.Message}");
         }
     }
 

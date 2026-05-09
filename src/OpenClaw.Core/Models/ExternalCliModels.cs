@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OpenClaw.Core.Models;
 
@@ -105,6 +106,7 @@ public sealed class ExternalCliPreviewRequest
     public string? Connector { get; init; }
     public string? Command { get; init; }
     public Dictionary<string, JsonElement> Parameters { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    [JsonPropertyName("execute_dry_run")]
     public bool ExecuteDryRun { get; init; }
 }
 
@@ -113,7 +115,9 @@ public sealed class ExternalCliExecuteRequest
     public string? Connector { get; init; }
     public string? Command { get; init; }
     public Dictionary<string, JsonElement> Parameters { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    [JsonPropertyName("approved_fingerprint")]
     public string? ApprovedFingerprint { get; init; }
+    [JsonPropertyName("approval_reason")]
     public string? ApprovalReason { get; init; }
 }
 
@@ -123,8 +127,11 @@ public sealed class ExternalCliToolRequest
     public string? Connector { get; init; }
     public string? Command { get; init; }
     public Dictionary<string, JsonElement> Parameters { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    [JsonPropertyName("execute_dry_run")]
     public bool ExecuteDryRun { get; init; }
+    [JsonPropertyName("approved_fingerprint")]
     public string? ApprovedFingerprint { get; init; }
+    [JsonPropertyName("approval_reason")]
     public string? ApprovalReason { get; init; }
 }
 

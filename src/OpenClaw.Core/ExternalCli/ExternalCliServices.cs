@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
@@ -167,11 +168,12 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
         var environment = new Dictionary<string, string>(connector.Environment, StringComparer.Ordinal);
         foreach (var (key, value) in command.Environment)
             environment[key] = value;
+        var resolvedExecutable = ResolveExecutable(connector.Executable, environment) ?? connector.Executable;
 
         var fingerprint = ComputeFingerprint(
             connectorName,
             commandName,
-            connector.Executable,
+            resolvedExecutable,
             args,
             workingDirectory,
             timeout,
@@ -184,10 +186,10 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
         {
             Connector = connectorName,
             Command = commandName,
-            Executable = connector.Executable,
+            Executable = resolvedExecutable,
             Arguments = args,
             RedactedArguments = redactedArgs,
-            RedactedCommandLine = BuildCommandLine(connector.Executable, redactedArgs),
+            RedactedCommandLine = BuildCommandLine(resolvedExecutable, redactedArgs),
             RiskLevel = ExternalCliRiskLevel.Normalize(command.RiskLevel),
             ReadOnly = command.ReadOnly,
             RequiresApproval = requiresApproval,
@@ -200,7 +202,7 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
             TimeoutSeconds = timeout,
             Fingerprint = fingerprint,
             ParametersHash = parametersHash,
-            Warnings = BuildPreviewWarnings(connector.Executable)
+            Warnings = BuildPreviewWarnings(connector.Executable, environment)
         };
 
         return new ExternalCliPreparedCommand
@@ -209,7 +211,7 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
             CommandName = commandName,
             Connector = connector,
             Command = command,
-            Executable = connector.Executable,
+            Executable = resolvedExecutable,
             Arguments = args,
             RedactedArguments = redactedArgs,
             WorkingDirectory = workingDirectory,
@@ -225,24 +227,29 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
     {
         var (name, connector) = GetConnector(connectorName);
         var warnings = new List<string>();
-        var resolvedExecutable = ResolveExecutable(connector.Executable);
+        var resolvedExecutable = ResolveExecutable(connector.Executable, connector.Environment);
         if (string.IsNullOrWhiteSpace(resolvedExecutable))
             warnings.Add($"Executable '{connector.Executable}' was not found on PATH.");
 
         string? version = null;
-        if (resolvedExecutable is not null && connector.VersionCommand is { Args.Length: > 0 } versionCommand)
-            version = await RunStatusCommandAsync(resolvedExecutable, versionCommand, connector, ct);
+        if (!_options.Enabled)
+            warnings.Add("External CLI connectors are disabled.");
+        if (!connector.Enabled)
+            warnings.Add($"External CLI connector '{name}' is disabled.");
+
+        var executableForStatus = _options.Enabled && connector.Enabled ? resolvedExecutable : null;
+        if (executableForStatus is not null && connector.VersionCommand is { Args.Length: > 0 } versionCommand)
+            version = await RunStatusCommandAsync(executableForStatus, versionCommand, connector, ct);
 
         string authStatus = "unknown";
         bool? authenticated = null;
-        if (resolvedExecutable is not null && connector.StatusCommand is { Args.Length: > 0 } statusCommand)
+        if (executableForStatus is not null && connector.StatusCommand is { Args.Length: > 0 } statusCommand)
         {
-            var statusOutput = await RunStatusCommandAsync(resolvedExecutable, statusCommand, connector, ct, captureExitCode: true) ?? "";
+            var statusOutput = await RunStatusCommandAsync(executableForStatus, statusCommand, connector, ct, captureExitCode: true) ?? "";
             if (statusOutput.StartsWith("exit=0\n", StringComparison.Ordinal))
             {
                 authenticated = true;
                 authStatus = "authenticated";
-                statusOutput = statusOutput["exit=0\n".Length..];
             }
             else if (statusOutput.StartsWith("exit=", StringComparison.Ordinal))
             {
@@ -411,6 +418,8 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
             }
             catch (ArgumentException)
             {
+                // Invalid config is reported by startup validation; keep redaction best-effort.
+                continue;
             }
         }
 
@@ -436,7 +445,7 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
         return fullPath;
     }
 
-    public static string? ResolveExecutable(string executable)
+    public static string? ResolveExecutable(string executable, IReadOnlyDictionary<string, string>? environment = null)
     {
         if (string.IsNullOrWhiteSpace(executable))
             return null;
@@ -444,7 +453,9 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
         if (Path.IsPathFullyQualified(executable))
             return File.Exists(executable) ? executable : null;
 
-        var path = Environment.GetEnvironmentVariable("PATH");
+        var path = environment is not null && environment.TryGetValue("PATH", out var configuredPath)
+            ? configuredPath
+            : Environment.GetEnvironmentVariable("PATH");
         if (string.IsNullOrWhiteSpace(path))
             return null;
 
@@ -511,15 +522,18 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            try { process.Kill(entireProcessTree: true); } catch { }
+            try { process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { /* Best-effort cleanup; process may already have exited. */ }
+            catch (NotSupportedException) { /* Best-effort cleanup; process-tree kill may be unsupported. */ }
+            catch (Win32Exception) { /* Best-effort cleanup; OS process state may already be gone. */ }
             return captureExitCode ? "exit=-1\ntimeout" : "timeout";
         }
     }
 
-    private static IReadOnlyList<string> BuildPreviewWarnings(string executable)
+    private static IReadOnlyList<string> BuildPreviewWarnings(string executable, IReadOnlyDictionary<string, string>? environment)
     {
         var warnings = new List<string>();
-        if (ResolveExecutable(executable) is null)
+        if (ResolveExecutable(executable, environment) is null)
             warnings.Add($"Executable '{executable}' was not found on PATH.");
         return warnings;
     }
@@ -588,7 +602,7 @@ public sealed class ExternalCliRunner : IExternalCliRunner
 
     public async Task<ExternalCliExecutionResult> ExecuteAsync(ExternalCliPreparedCommand command, CancellationToken ct)
     {
-        var executable = ExternalCliConnectorRegistry.ResolveExecutable(command.Executable) ?? command.Executable;
+        var executable = command.Executable;
         var startedAt = DateTimeOffset.UtcNow;
         var sw = Stopwatch.StartNew();
         var psi = new ProcessStartInfo
@@ -611,7 +625,21 @@ public sealed class ExternalCliRunner : IExternalCliRunner
         {
             process.Start();
         }
-        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (InvalidOperationException ex)
+        {
+            sw.Stop();
+            return new ExternalCliExecutionResult
+            {
+                Preview = command.Preview,
+                Success = false,
+                ExitCode = -1,
+                StartedAtUtc = startedAt,
+                CompletedAtUtc = DateTimeOffset.UtcNow,
+                DurationMs = sw.Elapsed.TotalMilliseconds,
+                ErrorMessage = _redaction.Redact(ex.Message)
+            };
+        }
+        catch (Win32Exception ex)
         {
             sw.Stop();
             return new ExternalCliExecutionResult
@@ -639,8 +667,14 @@ public sealed class ExternalCliRunner : IExternalCliRunner
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             timedOut = true;
-            try { process.Kill(entireProcessTree: true); } catch { }
-            try { await process.WaitForExitAsync(CancellationToken.None); } catch { }
+            try { process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { /* Best-effort cleanup; process may already have exited. */ }
+            catch (NotSupportedException) { /* Best-effort cleanup; process-tree kill may be unsupported. */ }
+            catch (Win32Exception) { /* Best-effort cleanup; OS process state may already be gone. */ }
+            try { await process.WaitForExitAsync(CancellationToken.None); }
+            catch (InvalidOperationException) { /* Best-effort cleanup; process may already have detached. */ }
+            catch (OperationCanceledException) { /* Defensive; cleanup wait is non-critical after timeout. */ }
+            catch (Win32Exception) { /* Best-effort cleanup; OS process state may already be gone. */ }
         }
 
         var stdout = await stdoutTask;
@@ -689,6 +723,8 @@ public sealed class ExternalCliRunner : IExternalCliRunner
             }
             catch (ArgumentException)
             {
+                // Invalid config is reported by startup validation; keep redaction best-effort.
+                continue;
             }
         }
 
@@ -735,7 +771,15 @@ public sealed class ExternalCliRunner : IExternalCliRunner
         {
             return process.ExitCode;
         }
-        catch
+        catch (InvalidOperationException)
+        {
+            return -1;
+        }
+        catch (NotSupportedException)
+        {
+            return -1;
+        }
+        catch (Win32Exception)
         {
             return -1;
         }

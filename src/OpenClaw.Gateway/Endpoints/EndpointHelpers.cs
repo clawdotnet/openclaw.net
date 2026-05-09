@@ -293,7 +293,7 @@ internal static class EndpointHelpers
             scope.StartsWith("admin.channels.auth.mutate", StringComparison.Ordinal) ||
             scope.StartsWith("admin.channels.auth.restart", StringComparison.Ordinal) ||
             scope.StartsWith("admin.models.evaluate", StringComparison.Ordinal) ||
-            scope.StartsWith("admin.external-cli.execute", StringComparison.Ordinal) ||
+            scope.StartsWith("admin.external-cli", StringComparison.Ordinal) ||
             scope.StartsWith("contract.mutate", StringComparison.Ordinal) ||
             scope.StartsWith("integration.mutate", StringComparison.Ordinal))
         {
