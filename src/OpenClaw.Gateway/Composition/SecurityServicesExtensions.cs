@@ -1,3 +1,4 @@
+using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Security;
 using OpenClaw.Gateway;
@@ -42,6 +43,13 @@ internal static class SecurityServicesExtensions
                 startup.Config.Memory.StoragePath,
                 sp.GetRequiredService<ILogger<RuntimeEventStore>>(),
                 sp.GetRequiredService<OpenClaw.Core.Observability.RuntimeMetrics>()));
+        services.AddSingleton(sp =>
+            new ExternalCliAuditStore(
+                startup.Config.Memory.StoragePath,
+                sp.GetRequiredService<ILogger<ExternalCliAuditStore>>()));
+        services.AddSingleton<IExternalCliAuditSink>(sp => sp.GetRequiredService<ExternalCliAuditStore>());
+        services.AddSingleton<IExternalCliEventSink>(sp =>
+            new ExternalCliRuntimeEventSink(sp.GetRequiredService<RuntimeEventStore>()));
         services.AddSingleton(sp =>
             new OperatorAuditStore(
                 startup.Config.Memory.StoragePath,

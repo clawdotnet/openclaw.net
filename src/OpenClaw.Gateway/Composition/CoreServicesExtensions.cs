@@ -7,6 +7,7 @@ using OpenClaw.Agent;
 using OpenClaw.Agent.Execution;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Features;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
@@ -68,6 +69,8 @@ internal static class CoreServicesExtensions
         }
         services.AddSingleton<IPaymentApprovalService, GatewayPaymentApprovalService>();
         services.AddSingleton<IRedactionPipeline>(sp => new RedactionPipeline(sp.GetServices<ISensitiveDataRedactor>()));
+        services.AddSingleton<IExternalCliConnectorRegistry, ExternalCliConnectorRegistry>();
+        services.AddSingleton<IExternalCliRunner, ExternalCliRunner>();
         services.AddSingleton<ISentinelSubstitutionService>(sp =>
             config.Payments.Enabled
                 ? sp.GetRequiredService<PaymentSentinelSubstitutionService>()

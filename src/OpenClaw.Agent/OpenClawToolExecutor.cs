@@ -204,16 +204,18 @@ public sealed class OpenClawToolExecutor
             }
         }
 
-        var approvalDescriptor = ToolActionPolicyResolver.Resolve(tool.Name, persistedArgsJson);
+        var approvalDescriptor = ResolveToolActionDescriptor(tool, persistedArgsJson);
         var normalizedToolName = NormalizeApprovalToolName(tool.Name);
         var explicitlyConfiguredApproval = _config.Tooling.ApprovalRequiredTools
             .Any(item => string.Equals(NormalizeApprovalToolName(item), normalizedToolName, StringComparison.Ordinal));
         var presetRequiresApproval = preset?.ApprovalRequiredTools.Contains(tool.Name) == true;
-        var defaultActionAwareApproval = ToolActionPolicyResolver.SupportsActionAwareApproval(tool.Name) && approvalDescriptor.IsMutation;
+        var defaultActionAwareApproval = ToolActionPolicyResolver.SupportsActionAwareApproval(tool.Name)
+            && (approvalDescriptor.IsMutation || approvalDescriptor.RequiresApproval);
         var listedApproval = _requireToolApproval && (_approvalRequiredTools.Contains(normalizedToolName) || presetRequiresApproval);
-        var requiresApproval = ToolActionPolicyResolver.SupportsActionAwareApproval(tool.Name) && !explicitlyConfiguredApproval && !presetRequiresApproval
+        var requiresApproval = approvalDescriptor.RequiresApproval ||
+            (ToolActionPolicyResolver.SupportsActionAwareApproval(tool.Name) && !explicitlyConfiguredApproval && !presetRequiresApproval
             ? defaultActionAwareApproval
-            : listedApproval || defaultActionAwareApproval;
+            : listedApproval || defaultActionAwareApproval);
 
         if (requiresApproval)
         {
@@ -253,6 +255,24 @@ public sealed class OpenClawToolExecutor
                     failureCode: ToolFailureCodes.ApprovalRequired,
                     failureMessage: approvalMessage,
                     nextStep: "Use an approval-capable surface such as /chat, or disable approval requirements for trusted local sessions.");
+            }
+        }
+
+        if (requiresApproval && !string.IsNullOrWhiteSpace(approvalDescriptor.ApprovalFingerprint))
+        {
+            var currentDescriptor = ResolveToolActionDescriptor(tool, persistedArgsJson);
+            if (!string.Equals(currentDescriptor.ApprovalFingerprint, approvalDescriptor.ApprovalFingerprint, StringComparison.Ordinal))
+            {
+                var message = $"Tool '{tool.Name}' changed after approval was requested; execution blocked.";
+                return CreateImmediateResult(
+                    toolName,
+                    persistedArgsJson,
+                    message,
+                    callId: callId,
+                    resultStatus: ToolResultStatuses.Blocked,
+                    failureCode: ToolFailureCodes.ApprovalRequired,
+                    failureMessage: message,
+                    nextStep: "Preview the command again and request approval for the updated fingerprint.");
             }
         }
 
@@ -448,6 +468,11 @@ public sealed class OpenClawToolExecutor
 
         return true;
     }
+
+    private static ToolActionDescriptor ResolveToolActionDescriptor(ITool tool, string argsJson)
+        => tool is IToolActionDescriptorProvider descriptorProvider
+            ? descriptorProvider.ResolveActionDescriptor(argsJson)
+            : ToolActionPolicyResolver.Resolve(tool.Name, argsJson);
 
     private async Task<string> ExecuteStreamingToolCollectAsync(
         IStreamingTool tool,

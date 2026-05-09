@@ -20,6 +20,7 @@ public sealed class GatewayConfig
     public CanvasConfig Canvas { get; set; } = new();
     public ToolingConfig Tooling { get; set; } = new();
     public PaymentConfig Payments { get; set; } = new();
+    public ExternalCliOptions ExternalCli { get; set; } = new();
     public SandboxConfig Sandbox { get; set; } = new();
     public ExecutionConfig Execution { get; set; } = new();
     public CodingBackendsConfig CodingBackends { get; set; } = new();

@@ -89,5 +89,6 @@ internal sealed class CliArgs
             or "--json"
             or "--anonymize"
             or "--test"
+            or "--dry-run"
             or "--yes";
 }

@@ -109,6 +109,7 @@ public static class ConfigValidator
         // Tooling
         if (config.Tooling.ToolTimeoutSeconds < 0)
             errors.Add($"Tooling.ToolTimeoutSeconds must be >= 0 (got {config.Tooling.ToolTimeoutSeconds}).");
+        ValidateExternalCli(config.ExternalCli, errors);
 
         ValidateUrlSafety("Tooling.UrlSafety", config.Tooling.UrlSafety, errors);
         if (config.Plugins.Native.WebFetch.UrlSafety is not null)
@@ -663,6 +664,53 @@ public static class ConfigValidator
 
     private static string ResolveConfiguredPath(string? path)
         => ConfigPathResolver.Resolve(path);
+
+    private static void ValidateExternalCli(ExternalCliOptions config, List<string> errors)
+    {
+        if (config.DefaultTimeoutSeconds < 1)
+            errors.Add($"ExternalCli.DefaultTimeoutSeconds must be >= 1 (got {config.DefaultTimeoutSeconds}).");
+        if (config.MaxStdoutBytes < 1)
+            errors.Add($"ExternalCli.MaxStdoutBytes must be >= 1 (got {config.MaxStdoutBytes}).");
+        if (config.MaxStderrBytes < 1)
+            errors.Add($"ExternalCli.MaxStderrBytes must be >= 1 (got {config.MaxStderrBytes}).");
+        if (config.AllowFreeformCommands)
+            errors.Add("ExternalCli.AllowFreeformCommands is not supported by this native connector; use named allowlisted commands.");
+
+        foreach (var (connectorName, connector) in config.Connectors)
+        {
+            if (string.IsNullOrWhiteSpace(connectorName))
+                errors.Add("ExternalCli.Connectors contains an empty connector name.");
+            if (connector.Enabled && string.IsNullOrWhiteSpace(connector.Executable))
+                errors.Add($"ExternalCli.Connectors.{connectorName}.Executable must be set when connector is enabled.");
+
+            var defaultFormat = ExternalCliOutputFormat.Normalize(connector.DefaultOutputFormat);
+            if (!string.Equals(defaultFormat, connector.DefaultOutputFormat, StringComparison.OrdinalIgnoreCase))
+                errors.Add($"ExternalCli.Connectors.{connectorName}.DefaultOutputFormat must be one of: json, ndjson, csv, text, table.");
+
+            foreach (var (commandName, command) in connector.Commands)
+            {
+                if (string.IsNullOrWhiteSpace(commandName))
+                    errors.Add($"ExternalCli.Connectors.{connectorName}.Commands contains an empty command name.");
+                if (command.ArgsTemplate.Length == 0)
+                    errors.Add($"ExternalCli.Connectors.{connectorName}.Commands.{commandName}.ArgsTemplate must contain at least one argument.");
+                if (command.SupportsDryRun && command.DryRunArgsTemplate.Length == 0)
+                    errors.Add($"ExternalCli.Connectors.{connectorName}.Commands.{commandName}.DryRunArgsTemplate must be set when SupportsDryRun=true.");
+                if (command.TimeoutSeconds is <= 0)
+                    errors.Add($"ExternalCli.Connectors.{connectorName}.Commands.{commandName}.TimeoutSeconds must be >= 1 when set.");
+
+                var risk = ExternalCliRiskLevel.Normalize(command.RiskLevel);
+                if (!string.Equals(risk, command.RiskLevel, StringComparison.OrdinalIgnoreCase))
+                    errors.Add($"ExternalCli.Connectors.{connectorName}.Commands.{commandName}.RiskLevel must be low, medium, or high.");
+
+                if (!string.IsNullOrWhiteSpace(command.StructuredOutput))
+                {
+                    var format = ExternalCliOutputFormat.Normalize(command.StructuredOutput);
+                    if (!string.Equals(format, command.StructuredOutput, StringComparison.OrdinalIgnoreCase))
+                        errors.Add($"ExternalCli.Connectors.{connectorName}.Commands.{commandName}.StructuredOutput must be one of: json, ndjson, csv, text, table.");
+                }
+            }
+        }
+    }
 
     private static void ValidatePromptCaching(
         string prefix,

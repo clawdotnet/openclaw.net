@@ -78,6 +78,31 @@ public static class ToolActionPolicyResolver
                 };
             }
 
+            if (toolName.Equals("external_cli", StringComparison.OrdinalIgnoreCase))
+            {
+                var action = GetString(root, "action") ?? "list_connectors";
+                var connector = GetString(root, "connector");
+                var command = GetString(root, "command");
+                var target = string.IsNullOrWhiteSpace(connector) || string.IsNullOrWhiteSpace(command)
+                    ? "an external CLI command"
+                    : $"{connector}/{command}";
+                return new ToolActionDescriptor
+                {
+                    Action = action,
+                    IsMutation = action is "execute",
+                    RequiresApproval = action is "execute",
+                    Summary = action switch
+                    {
+                        "execute" => $"Execute {target}.",
+                        "preview" => $"Preview {target}.",
+                        "connector_status" => string.IsNullOrWhiteSpace(connector) ? "Check external CLI connector status." : $"Check external CLI connector '{connector}'.",
+                        "list_commands" => string.IsNullOrWhiteSpace(connector) ? "List external CLI commands." : $"List commands for external CLI connector '{connector}'.",
+                        "command_schema" => $"Inspect schema for {target}.",
+                        _ => "List external CLI connectors."
+                    }
+                };
+            }
+
             if (toolName.Equals("todo", StringComparison.OrdinalIgnoreCase))
             {
                 var action = GetString(root, "action") ?? "list";
@@ -109,7 +134,8 @@ public static class ToolActionPolicyResolver
 
     public static bool SupportsActionAwareApproval(string toolName)
         => toolName.Equals("process", StringComparison.OrdinalIgnoreCase)
-           || toolName.Equals("automation", StringComparison.OrdinalIgnoreCase);
+           || toolName.Equals("automation", StringComparison.OrdinalIgnoreCase)
+           || toolName.Equals("external_cli", StringComparison.OrdinalIgnoreCase);
 
     public static bool IsMutationCapable(string toolName, string argumentsJson)
     {
