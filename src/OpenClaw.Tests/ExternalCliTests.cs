@@ -240,7 +240,7 @@ public sealed class ExternalCliTests
         if (OperatingSystem.IsWindows())
             return;
 
-        var marker = Path.Combine(Path.GetTempPath(), "openclaw-external-cli-tests", Guid.NewGuid().ToString("N"), "status-ran");
+        var marker = Path.Join(Path.GetTempPath(), "openclaw-external-cli-tests", Guid.NewGuid().ToString("N"), "status-ran");
         Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
         var script = CreateUnixScript($"touch '{marker}'");
         var config = CreateConfig(enabled: false, executable: script);
@@ -397,9 +397,9 @@ public sealed class ExternalCliTests
 
     private static string CreateUnixScript(string body)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "openclaw-external-cli-tests", Guid.NewGuid().ToString("N"));
+        var dir = Path.Join(Path.GetTempPath(), "openclaw-external-cli-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, "cli.sh");
+        var path = Path.Join(dir, "cli.sh");
         File.WriteAllText(path, "#!/usr/bin/env sh\n" + body + "\n");
 #pragma warning disable CA1416
         File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserExecute | UnixFileMode.UserWrite);

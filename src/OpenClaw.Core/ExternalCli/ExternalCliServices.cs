@@ -471,7 +471,7 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
         if (expanded.StartsWith("~/", StringComparison.Ordinal) || string.Equals(expanded, "~", StringComparison.Ordinal))
         {
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            expanded = expanded.Length == 1 ? home : Path.Combine(home, expanded[2..]);
+            expanded = expanded.Length == 1 ? home : Path.Join(home, expanded[2..]);
         }
 
         var fullPath = Path.GetFullPath(expanded);
@@ -508,7 +508,7 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
         {
             foreach (var candidate in candidates)
             {
-                var fullPath = Path.Combine(dir, candidate);
+                var fullPath = Path.Join(dir, candidate);
                 if (File.Exists(fullPath))
                     return fullPath;
             }

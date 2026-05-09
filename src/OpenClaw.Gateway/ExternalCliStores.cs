@@ -18,7 +18,7 @@ internal sealed class ExternalCliAuditStore : IExternalCliAuditSink
         var rootedStoragePath = System.IO.Path.IsPathRooted(storagePath)
             ? storagePath
             : System.IO.Path.GetFullPath(storagePath);
-        _path = System.IO.Path.Combine(rootedStoragePath, DirectoryName, FileName);
+        _path = System.IO.Path.Join(rootedStoragePath, DirectoryName, FileName);
         _logger = logger;
     }
 
