@@ -320,13 +320,13 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
 
         foreach (var required in placeholderNames)
         {
-            if (!parameters.ContainsKey(required))
+            if (!TryGetParameter(parameters, required, out _))
                 throw new InvalidOperationException($"External CLI parameter '{required}' is required.");
         }
 
         foreach (var (name, schema) in command.Parameters)
         {
-            if (schema.Required && !parameters.ContainsKey(name))
+            if (schema.Required && !TryGetParameter(parameters, name, out _))
                 throw new InvalidOperationException($"External CLI parameter '{name}' is required.");
         }
 
@@ -341,7 +341,7 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
 
         foreach (var (key, value) in parameters)
         {
-            if (command.Parameters.TryGetValue(key, out var schema))
+            if (TryGetParameterSchema(command.Parameters, key, out var schema))
                 ValidateParameterValue(key, ToParameterString(key, value), schema);
             else
                 _ = ToParameterString(key, value);
@@ -371,11 +371,47 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
             .Select(arg => PlaceholderRegex.Replace(arg, match =>
             {
                 var name = match.Groups["name"].Value;
-                return parameters.TryGetValue(name, out var value)
+                return TryGetParameter(parameters, name, out var value)
                     ? ToParameterString(name, value)
                     : throw new InvalidOperationException($"External CLI parameter '{name}' is required.");
             }))
             .ToArray();
+
+    private static bool TryGetParameter(IReadOnlyDictionary<string, JsonElement> parameters, string name, out JsonElement value)
+    {
+        if (parameters.TryGetValue(name, out value))
+            return true;
+
+        foreach (var (key, candidate) in parameters)
+        {
+            if (string.Equals(key, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = candidate;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static bool TryGetParameterSchema(IReadOnlyDictionary<string, ExternalCliParameterOptions> parameters, string name, out ExternalCliParameterOptions schema)
+    {
+        if (parameters.TryGetValue(name, out schema!))
+            return true;
+
+        foreach (var (key, candidate) in parameters)
+        {
+            if (string.Equals(key, name, StringComparison.OrdinalIgnoreCase))
+            {
+                schema = candidate;
+                return true;
+            }
+        }
+
+        schema = null!;
+        return false;
+    }
 
     private static IReadOnlyList<string> FindPlaceholders(IReadOnlyList<string> template)
         => template

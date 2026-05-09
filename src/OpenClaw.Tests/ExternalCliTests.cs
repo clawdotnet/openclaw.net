@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Tools;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
@@ -81,6 +82,22 @@ public sealed class ExternalCliTests
     }
 
     [Fact]
+    public void BuildPreview_MatchesParametersCaseInsensitively()
+    {
+        var config = CreateConfig(enabled: true);
+        var registry = new ExternalCliConnectorRegistry(config);
+
+        var prepared = registry.BuildPreview(new ExternalCliPreviewRequest
+        {
+            Connector = "test",
+            Command = "echo",
+            Parameters = Params(("VALUE", "hello"))
+        }, dryRun: false);
+
+        Assert.Equal(["hello"], prepared.Arguments);
+    }
+
+    [Fact]
     public async Task Runner_ParsesJsonOutput()
     {
         if (OperatingSystem.IsWindows())
@@ -134,6 +151,42 @@ public sealed class ExternalCliTests
         Assert.True(result.Success);
         Assert.True(result.StdoutTruncated);
         Assert.Equal("abcd", result.Stdout);
+    }
+
+    [Fact]
+    public async Task ExternalCliTool_AuditUsesPreviewFingerprint_WhenRequestHasNoFingerprint()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var script = CreateUnixScript("printf '%s' \"$1\"");
+        var config = CreateConfig(enabled: true, executable: script);
+        var registry = new ExternalCliConnectorRegistry(config);
+        var audit = new CapturingExternalCliAuditSink();
+        var tool = new ExternalCliTool(registry, new ExternalCliRunner(), audit);
+        var session = new Session
+        {
+            Id = "sess_external_cli_audit",
+            ChannelId = "websocket",
+            SenderId = "user1"
+        };
+        var context = new ToolExecutionContext
+        {
+            Session = session,
+            TurnContext = new TurnContext
+            {
+                SessionId = session.Id,
+                ChannelId = session.ChannelId
+            }
+        };
+
+        _ = await tool.ExecuteAsync(
+            """{"action":"execute","connector":"test","command":"echo","parameters":{"value":"hello"}}""",
+            context,
+            CancellationToken.None);
+
+        Assert.NotNull(audit.Entry);
+        Assert.False(string.IsNullOrWhiteSpace(audit.Entry.ApprovalFingerprint));
     }
 
     [Fact]
@@ -352,5 +405,13 @@ public sealed class ExternalCliTests
         File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserExecute | UnixFileMode.UserWrite);
 #pragma warning restore CA1416
         return path;
+    }
+
+    private sealed class CapturingExternalCliAuditSink : IExternalCliAuditSink
+    {
+        public ExternalCliAuditEntry? Entry { get; private set; }
+
+        public void Record(ExternalCliAuditEntry entry)
+            => Entry = entry;
     }
 }

@@ -182,7 +182,7 @@ public sealed class ExternalCliTool : IToolWithContext, IToolActionDescriptorPro
             ArgsHash = ExternalCliConnectorRegistry.ComputeArgsHash(result.Preview.Arguments.ToArray()),
             RedactedArgsPreview = result.Preview.RedactedCommandLine,
             ParametersHash = result.Preview.ParametersHash,
-            ApprovalFingerprint = request.ApprovedFingerprint,
+            ApprovalFingerprint = request.ApprovedFingerprint ?? result.Preview.Fingerprint,
             ExitCode = result.ExitCode,
             DurationMs = result.DurationMs,
             TimedOut = result.TimedOut,

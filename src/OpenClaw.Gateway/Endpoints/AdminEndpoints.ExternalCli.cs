@@ -238,7 +238,7 @@ internal static partial class AdminEndpoints
             ArgsHash = ExternalCliConnectorRegistry.ComputeArgsHash(result.Preview.Arguments.ToArray()),
             RedactedArgsPreview = result.Preview.RedactedCommandLine,
             ParametersHash = result.Preview.ParametersHash,
-            ApprovalFingerprint = approvalFingerprint,
+            ApprovalFingerprint = approvalFingerprint ?? result.Preview.Fingerprint,
             ExitCode = result.ExitCode,
             DurationMs = result.DurationMs,
             TimedOut = result.TimedOut,
