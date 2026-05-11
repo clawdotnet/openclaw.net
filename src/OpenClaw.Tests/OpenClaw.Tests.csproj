@@ -21,6 +21,7 @@
     <ProjectReference Include="..\OpenClaw.Plugins.Payment\OpenClaw.Plugins.Payment.csproj" />
     <ProjectReference Include="..\OpenClaw.SemanticKernelAdapter\OpenClaw.SemanticKernelAdapter.csproj" />
     <ProjectReference Include="..\OpenClaw.PluginKit\OpenClaw.PluginKit.csproj" />
+    <ProjectReference Include="..\OpenClaw.Testing\OpenClaw.Testing.csproj" />
     <ProjectReference Include="..\OpenClaw.TestPluginFixtures\OpenClaw.TestPluginFixtures.csproj" />
     <ProjectReference Include="..\OpenClaw.WhatsApp.BaileysWorker\OpenClaw.WhatsApp.BaileysWorker.csproj" />
   </ItemGroup>

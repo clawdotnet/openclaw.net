@@ -15,6 +15,8 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Guides | External CLI Connectors | [EXTERNAL_CLI_CONNECTORS.md](EXTERNAL_CLI_CONNECTORS.md) |
 | Guides | Model Profiles | [MODEL_PROFILES.md](MODEL_PROFILES.md) |
 | Guides | Prompt Caching | [PROMPT_CACHING.md](PROMPT_CACHING.md) |
+| Guides | Agent Testing Harness | [testing/agent-testing-harness.md](testing/agent-testing-harness.md) |
+| Guides | AI-Assisted Testing Playbook | [testing/ai-assisted-testing-playbook.md](testing/ai-assisted-testing-playbook.md) |
 | Reference | Compatibility | [COMPATIBILITY.md](COMPATIBILITY.md) |
 | Reference | Sessions | [SESSIONS.md](SESSIONS.md) |
 | Reference | Canvas and A2UI | [CANVAS_A2UI.md](CANVAS_A2UI.md) |
@@ -56,6 +58,8 @@ Guides
   External CLI Connectors
   Model Profiles
   Prompt Caching
+  Agent Testing Harness
+  AI-Assisted Testing Playbook
 
 Reference
   Compatibility
