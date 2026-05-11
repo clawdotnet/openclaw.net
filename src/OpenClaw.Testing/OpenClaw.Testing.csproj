@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>OpenClaw.Testing</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsPackable>true</IsPackable>
+    <PackageId>OpenClaw.Testing</PackageId>
+    <Description>Scenario-based testing harness primitives for OpenClaw.NET agent traces and oracles.</Description>
+    <PackageTags>openclaw;ai;agent;testing;dotnet</PackageTags>
+  </PropertyGroup>
+</Project>

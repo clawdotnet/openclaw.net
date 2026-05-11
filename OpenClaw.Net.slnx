@@ -22,6 +22,7 @@
     <Project Path="src/OpenClaw.PluginKit/OpenClaw.PluginKit.csproj" />
     <Project Path="src/OpenClaw.SemanticKernelAdapter/OpenClaw.SemanticKernelAdapter.csproj" />
     <Project Path="src/OpenClaw.Tui/OpenClaw.Tui.csproj" />
+    <Project Path="src/OpenClaw.Testing/OpenClaw.Testing.csproj" />
     <Project Path="src/OpenClaw.TestPluginFixtures/OpenClaw.TestPluginFixtures.csproj" />
     <Project Path="src/OpenClaw.WhatsApp.BaileysWorker/OpenClaw.WhatsApp.BaileysWorker.csproj" />
   </Folder>

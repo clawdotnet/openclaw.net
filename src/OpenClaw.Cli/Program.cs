@@ -35,6 +35,7 @@ internal static class Program
                 "maintenance" => await MaintenanceAsync(rest),
                 "payment" => await PaymentCommands.RunAsync(rest),
                 "external" => await ExternalCliCommands.RunAsync(rest),
+                "test" => await TestingCommands.RunAsync(rest),
                 "init" => InitCommand.Run(rest),
                 "migrate" => await MigrateAsync(rest),
                 "pulse" => await PulseAsync(rest),
@@ -102,6 +103,7 @@ internal static class Program
               openclaw maintenance <scan|fix> [options]
               openclaw payment <setup|funding list|virtual-card issue|execute|status> [options]
               openclaw external <list|status|commands|preview|execute> [options]
+              openclaw test <init|run|report|gates> [options]
               openclaw eval <run|compare> [options]
               openclaw accounts <list|add|remove|probe> [options]
               openclaw backends <list|probe|run|session send> [options]
@@ -160,6 +162,8 @@ internal static class Program
               openclaw pulse status
               openclaw pulse run --text "Check for urgent follow-ups"
               openclaw external list
+              openclaw test run
+              openclaw test gates
               openclaw models list
               openclaw models presets
               openclaw models doctor

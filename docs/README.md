@@ -31,6 +31,14 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [PROMPT_CACHING.md](PROMPT_CACHING.md) | Provider-aware prompt caching hints, dialects, diagnostics. |
 | [PULSE.md](PULSE.md) | Runtime Pulse scheduled heartbeat turns, `HEARTBEAT.md`, alert suppression, and operator controls. |
 
+## Testing and Evaluation
+
+| Doc | What it covers |
+| --- | --- |
+| [testing/agent-testing-harness.md](testing/agent-testing-harness.md) | Scenario-based agent tests, trace artifacts, explicit oracles, CLI usage, xUnit usage, and future runtime/gateway adapter seams. |
+| [testing/ai-assisted-testing-playbook.md](testing/ai-assisted-testing-playbook.md) | Disciplined AI-assisted testing workflow: scenario matrices, oracle requirements, boundary cases, human review, and trace-to-regression loops. |
+| [MODEL_PROFILES.md#evaluation-harness](MODEL_PROFILES.md#evaluation-harness) | Existing gateway-backed model/profile evaluation surface exposed by `openclaw eval`. |
+
 ## Channels and Integrations
 
 | Doc | What it covers |
