@@ -175,6 +175,7 @@ public sealed record ToolInvocation
     public string? GovernanceRuleId { get; init; }
     public double? GovernanceTrustScore { get; init; }
     public double? GovernanceEvaluationMs { get; init; }
+    public bool? GovernanceUnavailable { get; init; }
 }
 
 public static class SessionCheckpointKinds

@@ -385,6 +385,9 @@ internal static class CoreServicesExtensions
         if (!Uri.TryCreate(config.SidecarBaseUrl, UriKind.Absolute, out var baseUri))
             throw new InvalidOperationException("OpenClaw:Governance:SidecarBaseUrl must be an absolute URL when governance is enabled.");
 
+        if (baseUri.Scheme is not "http" and not "https")
+            throw new InvalidOperationException("OpenClaw:Governance:SidecarBaseUrl must use http or https when governance is enabled.");
+
         var httpClient = OpenClaw.Core.Http.HttpClientFactory.Create(allowAutoRedirect: false);
         httpClient.BaseAddress = baseUri;
         return new HttpSidecarToolGovernanceService(httpClient, config, logger);

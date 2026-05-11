@@ -72,6 +72,26 @@ public sealed class ToolGovernanceTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_SidecarDenyAction_TakesPrecedenceOverAllowedFlag()
+    {
+        var tool = new CountingTool("memory_search");
+        var service = CreateSidecarService(new ToolGovernanceSidecarResponse
+        {
+            Allowed = true,
+            Action = "deny",
+            Reason = "deny action wins"
+        });
+        var executor = CreateExecutor([tool], service);
+
+        var result = await ExecuteAsync(executor, "memory_search");
+
+        Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
+        Assert.Equal(ToolFailureCodes.GovernanceDenied, result.FailureCode);
+        Assert.Equal(0, tool.ExecutionCount);
+        Assert.False(result.Invocation.GovernanceAllowed);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_SidecarRequireApproval_UsesExistingApprovalCallback()
     {
         var tool = new CountingTool("memory_search");
@@ -116,9 +136,10 @@ public sealed class ToolGovernanceTests
         var result = await ExecuteAsync(executor, "shell");
 
         Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
-        Assert.Equal(ToolFailureCodes.GovernanceDenied, result.FailureCode);
+        Assert.Equal(ToolFailureCodes.GovernanceUnavailable, result.FailureCode);
         Assert.Equal(0, tool.ExecutionCount);
         Assert.False(result.Invocation.GovernanceAllowed);
+        Assert.True(result.Invocation.GovernanceUnavailable);
         Assert.Contains("timed out", result.ResultText, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -142,7 +163,27 @@ public sealed class ToolGovernanceTests
         Assert.Equal("ok", result.ResultText);
         Assert.Equal(1, tool.ExecutionCount);
         Assert.True(result.Invocation.GovernanceAllowed);
+        Assert.True(result.Invocation.GovernanceUnavailable);
         Assert.Equal(nameof(GovernanceAction.AuditOnly), result.Invocation.GovernanceAction);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_InvalidRedactedArgumentsJson_KeepsExistingArguments()
+    {
+        var tool = new CapturingTool("memory_search");
+        var service = CreateSidecarService(new ToolGovernanceSidecarResponse
+        {
+            Allowed = true,
+            Action = "allow",
+            RedactedArgumentsJson = """{"query":"unterminated"""
+        });
+        var executor = CreateExecutor([tool], service);
+
+        var result = await ExecuteAsync(executor, "memory_search");
+
+        Assert.Equal("ok", result.ResultText);
+        Assert.Equal("""{"query":"hello","command":"echo hello"}""", tool.ArgumentsJson);
+        Assert.Equal("""{"query":"hello","command":"echo hello"}""", result.Invocation.Arguments);
     }
 
     [Fact]
@@ -182,6 +223,12 @@ public sealed class ToolGovernanceTests
         var shell = ToolGovernanceDescriptorCatalog.Resolve("shell", "shell", new ToolActionDescriptor());
         Assert.Equal(ToolGovernanceRiskLevel.Critical, shell.RiskLevel);
         Assert.True(shell.CanExecuteCode);
+        var todo = ToolGovernanceDescriptorCatalog.Resolve("todo", "todo", new ToolActionDescriptor());
+        var sessions = ToolGovernanceDescriptorCatalog.Resolve("sessions", "sessions", new ToolActionDescriptor());
+        var cron = ToolGovernanceDescriptorCatalog.Resolve("cron", "cron", new ToolActionDescriptor());
+        Assert.False(todo.ReadOnly);
+        Assert.False(sessions.ReadOnly);
+        Assert.False(cron.ReadOnly);
     }
 
     private static OpenClawToolExecutor CreateExecutor(
@@ -222,14 +269,13 @@ public sealed class ToolGovernanceTests
 
     private static HttpSidecarToolGovernanceService CreateSidecarService(ToolGovernanceSidecarResponse response)
     {
-        var handler = new StubHttpMessageHandler(_ =>
+        var json = JsonSerializer.Serialize(response, CoreJsonContext.Default.ToolGovernanceSidecarResponse);
+        var okResponse = new HttpResponseMessage(HttpStatusCode.OK)
         {
-            var json = JsonSerializer.Serialize(response, CoreJsonContext.Default.ToolGovernanceSidecarResponse);
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(json)
-            });
-        });
+            Content = new StringContent(json)
+        };
+        var handler = new StubHttpMessageHandler(_ =>
+            Task.FromResult(okResponse));
         return CreateSidecarService(handler);
     }
 
@@ -271,6 +317,20 @@ public sealed class ToolGovernanceTests
         public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
         {
             ExecutionCount++;
+            return ValueTask.FromResult("ok");
+        }
+    }
+
+    private sealed class CapturingTool(string name) : ITool
+    {
+        public string? ArgumentsJson { get; private set; }
+        public string Name => name;
+        public string Description => "Capturing test tool.";
+        public string ParameterSchema => """{"type":"object"}""";
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        {
+            ArgumentsJson = argumentsJson;
             return ValueTask.FromResult("ok");
         }
     }

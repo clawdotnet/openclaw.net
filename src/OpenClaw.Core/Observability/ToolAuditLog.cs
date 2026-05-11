@@ -28,6 +28,7 @@ public sealed record ToolAuditEntry
     public string? GovernanceRuleId { get; init; }
     public double? GovernanceTrustScore { get; init; }
     public double? GovernanceEvaluationMs { get; init; }
+    public bool? GovernanceUnavailable { get; init; }
 }
 
 /// <summary>

@@ -79,7 +79,7 @@ public static class ToolGovernanceDescriptorCatalog
         Read("memory_search", "memory", ["memory.search"]),
         Write("project_memory", "memory", ToolGovernanceRiskLevel.Medium, ["memory.read", "memory.write"]),
         Read("session_search", "session", ["session.search"]),
-        Read("sessions", "session", ["session.read", "session.message"]),
+        Write("sessions", "session", ToolGovernanceRiskLevel.Medium, ["session.read", "session.message"]),
         Read("sessions_history", "session", ["session.read"]),
         Write("sessions_send", "session", ToolGovernanceRiskLevel.Medium, ["session.message", "message.send"], external: true),
         Write("sessions_spawn", "session", ToolGovernanceRiskLevel.Medium, ["session.create"]),
@@ -90,9 +90,9 @@ public static class ToolGovernanceDescriptorCatalog
 
         Read("profile_read", "profile", ["profile.read"]),
         Write("profile_write", "profile", ToolGovernanceRiskLevel.Medium, ["profile.write"]),
-        Read("todo", "productivity", ["todo.read", "todo.write"]),
+        Write("todo", "productivity", ToolGovernanceRiskLevel.Medium, ["todo.read", "todo.write"]),
         Write("automation", "automation", ToolGovernanceRiskLevel.High, ["automation.read", "automation.write", "automation.run"], approval: true),
-        Read("cron", "automation", ["automation.read", "automation.run"]),
+        Write("cron", "automation", ToolGovernanceRiskLevel.High, ["automation.read", "automation.run"], approval: true),
         Read("gateway", "runtime", ["runtime.read"]),
 
         Write("message", "messaging", ToolGovernanceRiskLevel.High, ["message.send", "data.export"], external: true, approval: true),

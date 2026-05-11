@@ -191,7 +191,17 @@ public sealed class OpenClawToolExecutor
 
         if (!string.IsNullOrWhiteSpace(governanceDecision.RedactedArgumentsJson))
         {
-            persistedArgsJson = _redaction.Redact(governanceDecision.RedactedArgumentsJson);
+            if (IsValidJson(governanceDecision.RedactedArgumentsJson))
+            {
+                persistedArgsJson = _redaction.Redact(governanceDecision.RedactedArgumentsJson);
+            }
+            else
+            {
+                _logger?.LogWarning(
+                    "[{CorrelationId}] Governance returned invalid redacted tool arguments. Keeping existing redacted arguments. Tool={Tool}",
+                    turnCtx.CorrelationId,
+                    tool.Name);
+            }
         }
 
         if (governanceDecision.Action == GovernanceAction.Redact &&
@@ -240,6 +250,9 @@ public sealed class OpenClawToolExecutor
         if (governanceDecision.Action != GovernanceAction.RequireApproval && !governanceDecision.Allowed)
         {
             var deniedByGovernance = governanceDecision.Reason ?? "Tool invocation denied by governance policy.";
+            var governanceFailureCode = governanceDecision.IsUnavailable
+                ? ToolFailureCodes.GovernanceUnavailable
+                : ToolFailureCodes.GovernanceDenied;
             _logger?.LogWarning(
                 "[{CorrelationId}] Tool invocation denied by governance. Tool={Tool}, Reason={Reason}",
                 turnCtx.CorrelationId,
@@ -258,9 +271,11 @@ public sealed class OpenClawToolExecutor
                 deniedByGovernance,
                 callId: callId,
                 resultStatus: ToolResultStatuses.Blocked,
-                failureCode: ToolFailureCodes.GovernanceDenied,
+                failureCode: governanceFailureCode,
                 failureMessage: deniedByGovernance,
-                nextStep: "Adjust the request or governance policy before retrying.",
+                nextStep: governanceDecision.IsUnavailable
+                    ? "Check governance sidecar availability or adjust fail-open/fail-closed policy before retrying."
+                    : "Adjust the request or governance policy before retrying.",
                 governanceDecision: governanceDecision);
         }
 
@@ -499,7 +514,8 @@ public sealed class OpenClawToolExecutor
             GovernancePolicyId = governanceDecision.PolicyId,
             GovernanceRuleId = governanceDecision.RuleId,
             GovernanceTrustScore = governanceDecision.TrustScore,
-            GovernanceEvaluationMs = governanceDecision.EvaluationMs
+            GovernanceEvaluationMs = governanceDecision.EvaluationMs,
+            GovernanceUnavailable = governanceDecision.IsUnavailable
         });
         _logger?.LogDebug("[{CorrelationId}] Tool {Tool} completed in {Duration}ms ok={Ok}",
             turnCtx.CorrelationId,
@@ -539,7 +555,8 @@ public sealed class OpenClawToolExecutor
             GovernancePolicyId = governanceDecision.PolicyId,
             GovernanceRuleId = governanceDecision.RuleId,
             GovernanceTrustScore = governanceDecision.TrustScore,
-            GovernanceEvaluationMs = governanceDecision.EvaluationMs
+            GovernanceEvaluationMs = governanceDecision.EvaluationMs,
+            GovernanceUnavailable = governanceDecision.IsUnavailable
         };
 
         return new ToolExecutionResult
@@ -581,7 +598,8 @@ public sealed class OpenClawToolExecutor
             GovernancePolicyId = governanceDecision?.PolicyId,
             GovernanceRuleId = governanceDecision?.RuleId,
             GovernanceTrustScore = governanceDecision?.TrustScore,
-            GovernanceEvaluationMs = governanceDecision?.EvaluationMs
+            GovernanceEvaluationMs = governanceDecision?.EvaluationMs,
+            GovernanceUnavailable = governanceDecision?.IsUnavailable
         };
 
         return new ToolExecutionResult
@@ -607,6 +625,7 @@ public sealed class OpenClawToolExecutor
             activity?.SetTag("tool.governance.trust_score", decision.TrustScore);
         if (decision.EvaluationMs is not null)
             activity?.SetTag("tool.governance.evaluation_ms", decision.EvaluationMs);
+        activity?.SetTag("tool.governance.unavailable", decision.IsUnavailable);
     }
 
     private static bool IsValidJson(string value)
@@ -684,7 +703,8 @@ public sealed class OpenClawToolExecutor
             GovernancePolicyId = decision.PolicyId,
             GovernanceRuleId = decision.RuleId,
             GovernanceTrustScore = decision.TrustScore,
-            GovernanceEvaluationMs = decision.EvaluationMs
+            GovernanceEvaluationMs = decision.EvaluationMs,
+            GovernanceUnavailable = decision.IsUnavailable
         });
     }
 

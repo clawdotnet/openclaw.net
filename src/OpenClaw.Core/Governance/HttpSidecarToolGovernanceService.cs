@@ -70,9 +70,13 @@ public sealed class HttpSidecarToolGovernanceService : IToolGovernanceService
                 return BuildUnavailableDecision(context, "Governance sidecar returned an empty response");
 
             var action = MapAction(sidecar.Action);
-            var allowed = action == GovernanceAction.RequireApproval
-                ? true
-                : sidecar.Allowed ?? action is GovernanceAction.Allow or GovernanceAction.AuditOnly or GovernanceAction.Redact;
+            var allowed = action switch
+            {
+                GovernanceAction.Deny => false,
+                GovernanceAction.RequireApproval => true,
+                GovernanceAction.Allow or GovernanceAction.AuditOnly or GovernanceAction.Redact => sidecar.Allowed ?? true,
+                _ => false
+            };
 
             return new GovernanceDecision
             {
@@ -168,7 +172,8 @@ public sealed class HttpSidecarToolGovernanceService : IToolGovernanceService
             {
                 Allowed = false,
                 Action = GovernanceAction.Deny,
-                Reason = reason
+                Reason = reason,
+                IsUnavailable = true
             };
         }
 
@@ -181,7 +186,8 @@ public sealed class HttpSidecarToolGovernanceService : IToolGovernanceService
         {
             Allowed = true,
             Action = GovernanceAction.AuditOnly,
-            Reason = reason
+            Reason = reason,
+            IsUnavailable = true
         };
     }
 

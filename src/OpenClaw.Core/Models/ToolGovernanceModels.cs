@@ -50,6 +50,7 @@ public sealed record GovernanceDecision
     public string? RuleId { get; init; }
     public GovernanceAction Action { get; init; } = GovernanceAction.Allow;
     public double? EvaluationMs { get; init; }
+    public bool IsUnavailable { get; init; }
     public string? RedactedArgumentsJson { get; init; }
     public string? ReplacementArgumentsJson { get; init; }
 
