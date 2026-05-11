@@ -70,7 +70,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
             logger,
             config: context.Config,
             toolSandbox: context.ToolSandbox,
-            auditLog: context.ToolAuditLog);
+            auditLog: context.ToolAuditLog,
+            toolGovernance: context.ToolGovernance);
         _options = options;
         _agentFactory = agentFactory;
         _sessionStateStore = sessionStateStore;

@@ -182,6 +182,8 @@ public static class ToolFailureCodes
     public const string PresetBlocked = "preset_blocked";
     public const string OperatorAuthRequired = "operator_auth_required";
     public const string ApprovalRequired = "approval_required";
+    public const string GovernanceDenied = "governance_denied";
+    public const string GovernanceUnavailable = "governance_unavailable";
     public const string RuntimeCapabilityUnavailable = "runtime_capability_unavailable";
     public const string BrowserBackendMissing = "browser_backend_missing";
     public const string Timeout = "timeout";

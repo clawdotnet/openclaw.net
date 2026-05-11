@@ -21,6 +21,13 @@ public sealed record ToolAuditEntry
     public string? ApprovalId { get; init; }
     public int ArgumentsBytes { get; init; }
     public int ResultBytes { get; init; }
+    public bool? GovernanceAllowed { get; init; }
+    public string? GovernanceAction { get; init; }
+    public string? GovernanceReason { get; init; }
+    public string? GovernancePolicyId { get; init; }
+    public string? GovernanceRuleId { get; init; }
+    public double? GovernanceTrustScore { get; init; }
+    public double? GovernanceEvaluationMs { get; init; }
 }
 
 /// <summary>

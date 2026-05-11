@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using OpenClaw.Agent.Execution;
 using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Governance;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
@@ -44,6 +45,7 @@ public sealed class OpenClawToolExecutor
     private readonly ToolAuditLog? _auditLog;
     private readonly IRedactionPipeline _redaction;
     private readonly ISentinelSubstitutionService _sentinelSubstitution;
+    private readonly IToolGovernanceService _toolGovernance;
 
     public OpenClawToolExecutor(
         IReadOnlyList<ITool> tools,
@@ -60,7 +62,8 @@ public sealed class OpenClawToolExecutor
         IToolPresetResolver? toolPresetResolver = null,
         ToolAuditLog? auditLog = null,
         IRedactionPipeline? redaction = null,
-        ISentinelSubstitutionService? sentinelSubstitution = null)
+        ISentinelSubstitutionService? sentinelSubstitution = null,
+        IToolGovernanceService? toolGovernance = null)
     {
         _toolsByName = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         _toolDeclarations = tools.Select(CreateDeclaration).Cast<AITool>().ToArray();
@@ -89,6 +92,7 @@ public sealed class OpenClawToolExecutor
         _auditLog = auditLog;
         _redaction = redaction ?? new NoopRedactionPipeline();
         _sentinelSubstitution = sentinelSubstitution ?? new NoopSentinelSubstitutionService();
+        _toolGovernance = toolGovernance ?? new NoopToolGovernanceService();
     }
 
     public IList<AITool> ToolDeclarations => _toolDeclarations;
@@ -166,6 +170,100 @@ public sealed class OpenClawToolExecutor
                 nextStep: "Use a broader preset on this surface, or change the session preset if that access is intentional.");
         }
 
+        var approvalDescriptor = ResolveToolActionDescriptor(tool, persistedArgsJson);
+        var governanceDescriptor = ToolGovernanceDescriptorCatalog.Resolve(tool.Name, tool.Description, approvalDescriptor);
+        var governanceContext = new ToolGovernanceContext
+        {
+            AgentId = session.Id,
+            SessionId = session.Id,
+            ChannelId = session.ChannelId,
+            SenderId = session.SenderId,
+            CorrelationId = turnCtx.CorrelationId,
+            CallId = callId,
+            ToolName = tool.Name,
+            ArgumentsJson = persistedArgsJson,
+            ActionDescriptor = approvalDescriptor,
+            Descriptor = governanceDescriptor,
+            IsStreaming = isStreaming
+        };
+        var governanceDecision = await _toolGovernance.AuthorizeAsync(governanceContext, ct);
+        ApplyGovernanceActivityTags(activity, governanceDecision);
+
+        if (!string.IsNullOrWhiteSpace(governanceDecision.RedactedArgumentsJson))
+        {
+            persistedArgsJson = _redaction.Redact(governanceDecision.RedactedArgumentsJson);
+        }
+
+        if (governanceDecision.Action == GovernanceAction.Redact &&
+            !string.IsNullOrWhiteSpace(governanceDecision.ReplacementArgumentsJson))
+        {
+            if (!IsValidJson(governanceDecision.ReplacementArgumentsJson))
+            {
+                var invalidReplacementMessage = "Governance returned invalid replacement tool arguments.";
+                _logger?.LogWarning(
+                    "[{CorrelationId}] {Message} Tool={Tool}",
+                    turnCtx.CorrelationId,
+                    invalidReplacementMessage,
+                    tool.Name);
+                RecordImmediateGovernanceAudit(
+                    tool,
+                    session,
+                    turnCtx,
+                    persistedArgsJson,
+                    invalidReplacementMessage,
+                    governanceDecision);
+                return CreateImmediateResult(
+                    toolName,
+                    persistedArgsJson,
+                    invalidReplacementMessage,
+                    callId: callId,
+                    resultStatus: ToolResultStatuses.Blocked,
+                    failureCode: ToolFailureCodes.GovernanceDenied,
+                    failureMessage: invalidReplacementMessage,
+                    nextStep: "Review the governance sidecar redaction response.",
+                    governanceDecision: governanceDecision);
+            }
+
+            argsJson = governanceDecision.ReplacementArgumentsJson;
+            persistedArgsJson = _redaction.Redact(governanceDecision.ReplacementArgumentsJson);
+            approvalDescriptor = ResolveToolActionDescriptor(tool, persistedArgsJson);
+            governanceDescriptor = ToolGovernanceDescriptorCatalog.Resolve(tool.Name, tool.Description, approvalDescriptor);
+        }
+
+        governanceContext = governanceContext with
+        {
+            ArgumentsJson = persistedArgsJson,
+            ActionDescriptor = approvalDescriptor,
+            Descriptor = governanceDescriptor
+        };
+
+        if (governanceDecision.Action != GovernanceAction.RequireApproval && !governanceDecision.Allowed)
+        {
+            var deniedByGovernance = governanceDecision.Reason ?? "Tool invocation denied by governance policy.";
+            _logger?.LogWarning(
+                "[{CorrelationId}] Tool invocation denied by governance. Tool={Tool}, Reason={Reason}",
+                turnCtx.CorrelationId,
+                tool.Name,
+                deniedByGovernance);
+            RecordImmediateGovernanceAudit(
+                tool,
+                session,
+                turnCtx,
+                persistedArgsJson,
+                deniedByGovernance,
+                governanceDecision);
+            return CreateImmediateResult(
+                toolName,
+                persistedArgsJson,
+                deniedByGovernance,
+                callId: callId,
+                resultStatus: ToolResultStatuses.Blocked,
+                failureCode: ToolFailureCodes.GovernanceDenied,
+                failureMessage: deniedByGovernance,
+                nextStep: "Adjust the request or governance policy before retrying.",
+                governanceDecision: governanceDecision);
+        }
+
         var hookCtx = new ToolHookContext
         {
             SessionId = session.Id,
@@ -195,7 +293,8 @@ public sealed class OpenClawToolExecutor
                         callId: callId,
                         resultStatus: ToolResultStatuses.Blocked,
                         failureCode: ToolFailureCodes.ToolFailed,
-                        failureMessage: deniedByHook);
+                        failureMessage: deniedByHook,
+                        governanceDecision: governanceDecision);
                 }
             }
             catch (Exception ex)
@@ -204,7 +303,6 @@ public sealed class OpenClawToolExecutor
             }
         }
 
-        var approvalDescriptor = ResolveToolActionDescriptor(tool, persistedArgsJson);
         var normalizedToolName = NormalizeApprovalToolName(tool.Name);
         var explicitlyConfiguredApproval = _config.Tooling.ApprovalRequiredTools
             .Any(item => string.Equals(NormalizeApprovalToolName(item), normalizedToolName, StringComparison.Ordinal));
@@ -212,7 +310,8 @@ public sealed class OpenClawToolExecutor
         var defaultActionAwareApproval = ToolActionPolicyResolver.SupportsActionAwareApproval(tool.Name)
             && (approvalDescriptor.IsMutation || approvalDescriptor.RequiresApproval);
         var listedApproval = _requireToolApproval && (_approvalRequiredTools.Contains(normalizedToolName) || presetRequiresApproval);
-        var requiresApproval = approvalDescriptor.RequiresApproval ||
+        var governanceRequiresApproval = governanceDecision.Action == GovernanceAction.RequireApproval;
+        var requiresApproval = governanceRequiresApproval || approvalDescriptor.RequiresApproval ||
             (ToolActionPolicyResolver.SupportsActionAwareApproval(tool.Name) && !explicitlyConfiguredApproval && !presetRequiresApproval
             ? defaultActionAwareApproval
             : listedApproval || defaultActionAwareApproval);
@@ -233,7 +332,8 @@ public sealed class OpenClawToolExecutor
                         resultStatus: ToolResultStatuses.Blocked,
                         failureCode: ToolFailureCodes.ApprovalRequired,
                         failureMessage: "Tool execution was denied by the reviewer.",
-                        nextStep: "Approve the tool request to allow this action.");
+                        nextStep: "Approve the tool request to allow this action.",
+                        governanceDecision: governanceDecision);
                 }
             }
             else
@@ -254,7 +354,8 @@ public sealed class OpenClawToolExecutor
                     resultStatus: ToolResultStatuses.Blocked,
                     failureCode: ToolFailureCodes.ApprovalRequired,
                     failureMessage: approvalMessage,
-                    nextStep: "Use an approval-capable surface such as /chat, or disable approval requirements for trusted local sessions.");
+                    nextStep: "Use an approval-capable surface such as /chat, or disable approval requirements for trusted local sessions.",
+                    governanceDecision: governanceDecision);
             }
         }
 
@@ -272,7 +373,8 @@ public sealed class OpenClawToolExecutor
                     resultStatus: ToolResultStatuses.Blocked,
                     failureCode: ToolFailureCodes.ApprovalRequired,
                     failureMessage: message,
-                    nextStep: "Preview the command again and request approval for the updated fingerprint.");
+                    nextStep: "Preview the command again and request approval for the updated fingerprint.",
+                    governanceDecision: governanceDecision);
             }
         }
 
@@ -365,6 +467,19 @@ public sealed class OpenClawToolExecutor
             new KeyValuePair<string, object?>("tool.success", !toolFailed));
         turnCtx.RecordToolCall(sw.Elapsed, toolFailed, toolTimedOut);
         _toolUsageTracker?.RecordToolCall(tool.Name, sw.Elapsed, toolFailed, toolTimedOut);
+        var argumentsBytes = Encoding.UTF8.GetByteCount(persistedArgsJson);
+        var resultBytes = Encoding.UTF8.GetByteCount(result);
+        await RecordGovernanceResultAsync(
+            governanceContext,
+            governanceDecision,
+            resultStatus,
+            failureCode,
+            failureMessage,
+            toolFailed,
+            toolTimedOut,
+            sw.Elapsed,
+            resultBytes,
+            ct);
         _auditLog?.Record(new ToolAuditEntry
         {
             TimestampUtc = DateTimeOffset.UtcNow,
@@ -376,8 +491,15 @@ public sealed class OpenClawToolExecutor
             DurationMs = sw.Elapsed.TotalMilliseconds,
             Failed = toolFailed,
             TimedOut = toolTimedOut,
-            ArgumentsBytes = Encoding.UTF8.GetByteCount(persistedArgsJson),
-            ResultBytes = Encoding.UTF8.GetByteCount(result)
+            ArgumentsBytes = argumentsBytes,
+            ResultBytes = resultBytes,
+            GovernanceAllowed = governanceDecision.Allowed,
+            GovernanceAction = governanceDecision.Action.ToString(),
+            GovernanceReason = governanceDecision.Reason,
+            GovernancePolicyId = governanceDecision.PolicyId,
+            GovernanceRuleId = governanceDecision.RuleId,
+            GovernanceTrustScore = governanceDecision.TrustScore,
+            GovernanceEvaluationMs = governanceDecision.EvaluationMs
         });
         _logger?.LogDebug("[{CorrelationId}] Tool {Tool} completed in {Duration}ms ok={Ok}",
             turnCtx.CorrelationId,
@@ -410,7 +532,14 @@ public sealed class OpenClawToolExecutor
             ResultStatus = resultStatus,
             FailureCode = failureCode,
             FailureMessage = failureMessage,
-            NextStep = nextStep
+            NextStep = nextStep,
+            GovernanceAllowed = governanceDecision.Allowed,
+            GovernanceAction = governanceDecision.Action.ToString(),
+            GovernanceReason = governanceDecision.Reason,
+            GovernancePolicyId = governanceDecision.PolicyId,
+            GovernanceRuleId = governanceDecision.RuleId,
+            GovernanceTrustScore = governanceDecision.TrustScore,
+            GovernanceEvaluationMs = governanceDecision.EvaluationMs
         };
 
         return new ToolExecutionResult
@@ -432,7 +561,8 @@ public sealed class OpenClawToolExecutor
         string resultStatus = ToolResultStatuses.Completed,
         string? failureCode = null,
         string? failureMessage = null,
-        string? nextStep = null)
+        string? nextStep = null,
+        GovernanceDecision? governanceDecision = null)
     {
         var invocation = new ToolInvocation
         {
@@ -444,7 +574,14 @@ public sealed class OpenClawToolExecutor
             ResultStatus = resultStatus,
             FailureCode = failureCode,
             FailureMessage = failureMessage,
-            NextStep = nextStep
+            NextStep = nextStep,
+            GovernanceAllowed = governanceDecision?.Allowed,
+            GovernanceAction = governanceDecision?.Action.ToString(),
+            GovernanceReason = governanceDecision?.Reason,
+            GovernancePolicyId = governanceDecision?.PolicyId,
+            GovernanceRuleId = governanceDecision?.RuleId,
+            GovernanceTrustScore = governanceDecision?.TrustScore,
+            GovernanceEvaluationMs = governanceDecision?.EvaluationMs
         };
 
         return new ToolExecutionResult
@@ -456,6 +593,99 @@ public sealed class OpenClawToolExecutor
             FailureMessage = failureMessage,
             NextStep = nextStep
         };
+    }
+
+    private static void ApplyGovernanceActivityTags(Activity? activity, GovernanceDecision decision)
+    {
+        activity?.SetTag("tool.governance.allowed", decision.Allowed);
+        activity?.SetTag("tool.governance.action", decision.Action.ToString());
+        if (!string.IsNullOrWhiteSpace(decision.PolicyId))
+            activity?.SetTag("tool.governance.policy_id", decision.PolicyId);
+        if (!string.IsNullOrWhiteSpace(decision.RuleId))
+            activity?.SetTag("tool.governance.rule_id", decision.RuleId);
+        if (decision.TrustScore is not null)
+            activity?.SetTag("tool.governance.trust_score", decision.TrustScore);
+        if (decision.EvaluationMs is not null)
+            activity?.SetTag("tool.governance.evaluation_ms", decision.EvaluationMs);
+    }
+
+    private static bool IsValidJson(string value)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(value);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private async ValueTask RecordGovernanceResultAsync(
+        ToolGovernanceContext context,
+        GovernanceDecision decision,
+        string resultStatus,
+        string? failureCode,
+        string? failureMessage,
+        bool failed,
+        bool timedOut,
+        TimeSpan duration,
+        int resultBytes,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _toolGovernance.RecordResultAsync(
+                context,
+                decision,
+                new ToolGovernanceExecutionResult
+                {
+                    ResultStatus = resultStatus,
+                    FailureCode = failureCode,
+                    FailureMessage = failureMessage,
+                    Failed = failed,
+                    TimedOut = timedOut,
+                    DurationMs = duration.TotalMilliseconds,
+                    ResultBytes = resultBytes
+                },
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+        {
+            _logger?.LogWarning(ex, "[{CorrelationId}] Governance result audit failed for tool {Tool}", context.CorrelationId, context.ToolName);
+        }
+    }
+
+    private void RecordImmediateGovernanceAudit(
+        ITool tool,
+        Session session,
+        TurnContext turnCtx,
+        string argumentsJson,
+        string result,
+        GovernanceDecision decision)
+    {
+        _auditLog?.Record(new ToolAuditEntry
+        {
+            TimestampUtc = DateTimeOffset.UtcNow,
+            ToolName = tool.Name,
+            SessionId = session.Id,
+            ChannelId = session.ChannelId,
+            SenderId = session.SenderId,
+            CorrelationId = turnCtx.CorrelationId,
+            DurationMs = 0,
+            Failed = true,
+            TimedOut = false,
+            ArgumentsBytes = Encoding.UTF8.GetByteCount(argumentsJson),
+            ResultBytes = Encoding.UTF8.GetByteCount(result),
+            GovernanceAllowed = decision.Allowed,
+            GovernanceAction = decision.Action.ToString(),
+            GovernanceReason = decision.Reason,
+            GovernancePolicyId = decision.PolicyId,
+            GovernanceRuleId = decision.RuleId,
+            GovernanceTrustScore = decision.TrustScore,
+            GovernanceEvaluationMs = decision.EvaluationMs
+        });
     }
 
     private static bool IsToolAllowedForSession(Session session, string toolName, ResolvedToolPreset? preset)

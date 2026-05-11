@@ -168,6 +168,13 @@ public sealed record ToolInvocation
     public string? FailureCode { get; init; }
     public string? FailureMessage { get; init; }
     public string? NextStep { get; init; }
+    public bool? GovernanceAllowed { get; init; }
+    public string? GovernanceAction { get; init; }
+    public string? GovernanceReason { get; init; }
+    public string? GovernancePolicyId { get; init; }
+    public string? GovernanceRuleId { get; init; }
+    public double? GovernanceTrustScore { get; init; }
+    public double? GovernanceEvaluationMs { get; init; }
 }
 
 public static class SessionCheckpointKinds
@@ -318,6 +325,16 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(UrlSafetyConfig))]
 [JsonSerializable(typeof(WebSocketConfig))]
 [JsonSerializable(typeof(ToolingConfig))]
+[JsonSerializable(typeof(ToolGovernanceConfig))]
+[JsonSerializable(typeof(GovernanceAction))]
+[JsonSerializable(typeof(ToolGovernanceRiskLevel))]
+[JsonSerializable(typeof(GovernanceDecision))]
+[JsonSerializable(typeof(ToolGovernanceDescriptor))]
+[JsonSerializable(typeof(ToolGovernanceContext))]
+[JsonSerializable(typeof(ToolGovernanceExecutionResult))]
+[JsonSerializable(typeof(ToolGovernanceSidecarRequest))]
+[JsonSerializable(typeof(ToolGovernanceSidecarResponse))]
+[JsonSerializable(typeof(ToolGovernanceSidecarResultRequest))]
 [JsonSerializable(typeof(PaymentConfig))]
 [JsonSerializable(typeof(PaymentPolicyConfig))]
 [JsonSerializable(typeof(PaymentMockProviderConfig))]
