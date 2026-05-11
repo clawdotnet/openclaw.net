@@ -19,6 +19,7 @@ public sealed class GatewayConfig
     public WebSocketConfig WebSocket { get; set; } = new();
     public CanvasConfig Canvas { get; set; } = new();
     public ToolingConfig Tooling { get; set; } = new();
+    public ToolGovernanceConfig Governance { get; set; } = new();
     public PaymentConfig Payments { get; set; } = new();
     public ExternalCliOptions ExternalCli { get; set; } = new();
     public SandboxConfig Sandbox { get; set; } = new();

@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openclaw-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openclaw-agent
+  template:
+    metadata:
+      labels:
+        app: openclaw-agent
+    spec:
+      containers:
+        - name: openclaw
+          image: ghcr.io/clawdotnet/openclaw-dotnet:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: OpenClaw__Governance__Enabled
+              value: "true"
+            - name: OpenClaw__Governance__Provider
+              value: "http_sidecar"
+            - name: OpenClaw__Governance__SidecarBaseUrl
+              value: "http://127.0.0.1:8088"
+            - name: OpenClaw__Governance__DecisionEndpoint
+              value: "/api/v1/execute"
+            - name: OpenClaw__Governance__FailClosed
+              value: "true"
+            - name: OpenClaw__Governance__RequireGovernanceForHighRiskTools
+              value: "true"
+        - name: governance-sidecar
+          image: mcr.microsoft.com/agent-governance/agent-os-kernel:latest
+          ports:
+            - containerPort: 8088
+          volumeMounts:
+            - name: governance-policies
+              mountPath: /policies
+              readOnly: true
+      volumes:
+        - name: governance-policies
+          configMap:
+            name: openclaw-governance-policies

@@ -9,6 +9,7 @@ using OpenClaw.Agent.Plugins;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Features;
+using OpenClaw.Core.Governance;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
@@ -44,6 +45,10 @@ internal static class CoreServicesExtensions
         services.AddSingleton(startup);
         services.AddSingleton(config);
         services.AddSingleton(config.Learning);
+        services.AddSingleton(config.Governance);
+        services.AddSingleton<IToolGovernanceService>(sp => CreateToolGovernanceService(
+            config.Governance,
+            sp.GetRequiredService<ILogger<HttpSidecarToolGovernanceService>>()));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISensitiveDataRedactor, BaselineSecretRedactor>());
         services.AddOpenClawPaymentCore(
             defaultProviderId: config.Payments.Provider,
@@ -363,4 +368,28 @@ internal static class CoreServicesExtensions
 
     private static IReadOnlyCollection<string> ResolveBlockedPluginIds(IServiceProvider services)
         => services.GetService<PluginHealthService>()?.GetBlockedPluginIds() ?? [];
+
+    private static IToolGovernanceService CreateToolGovernanceService(
+        ToolGovernanceConfig config,
+        ILogger<HttpSidecarToolGovernanceService> logger)
+    {
+        if (!config.Enabled ||
+            string.Equals(config.Provider, ToolGovernanceProviders.None, StringComparison.OrdinalIgnoreCase))
+        {
+            return new NoopToolGovernanceService();
+        }
+
+        if (!string.Equals(config.Provider, ToolGovernanceProviders.HttpSidecar, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Unsupported governance provider '{config.Provider}'.");
+
+        if (!Uri.TryCreate(config.SidecarBaseUrl, UriKind.Absolute, out var baseUri))
+            throw new InvalidOperationException("OpenClaw:Governance:SidecarBaseUrl must be an absolute URL when governance is enabled.");
+
+        if (baseUri.Scheme is not "http" and not "https")
+            throw new InvalidOperationException("OpenClaw:Governance:SidecarBaseUrl must use http or https when governance is enabled.");
+
+        var httpClient = OpenClaw.Core.Http.HttpClientFactory.Create(allowAutoRedirect: false);
+        httpClient.BaseAddress = baseUri;
+        return new HttpSidecarToolGovernanceService(httpClient, config, logger);
+    }
 }

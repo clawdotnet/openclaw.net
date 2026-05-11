@@ -28,6 +28,8 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Integrations | External Coding Backends | [external-coding-backends.md](external-coding-backends.md) |
 | Operations | Security | [SECURITY.md](../SECURITY.md) |
 | Operations | Payment Security | [security/payments.md](security/payments.md) |
+| Operations | Tool Governance Sidecar | [governance/sidecar-pattern.md](governance/sidecar-pattern.md) |
+| Operations | Microsoft Agent Governance | [governance/microsoft-agent-governance.md](governance/microsoft-agent-governance.md) |
 | Operations | Releases | [RELEASES.md](RELEASES.md) |
 | Operations | Docker Hub | [DOCKERHUB.md](DOCKERHUB.md) |
 | Operations | Optional Sandboxing | [sandboxing.md](sandboxing.md) |
@@ -77,6 +79,8 @@ Integrations
 Operations
   Security
   Payment Security
+  Tool Governance Sidecar
+  Microsoft Agent Governance
   Releases
   Docker Hub
   Optional Sandboxing

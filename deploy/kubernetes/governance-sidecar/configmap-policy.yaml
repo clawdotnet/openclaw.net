@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openclaw-governance-policies
+data:
+  policy.yaml: |
+    policies:
+      - id: require-approval-for-process-execution
+        match:
+          capabilities:
+            - process.execute
+            - code.execute
+        action: require_approval
+
+      - id: deny-external-export-from-low-trust-agent
+        match:
+          capabilities:
+            - external.http
+            - data.export
+          agentTrustBelow: 0.75
+        action: deny
+
+      - id: audit-filesystem-access
+        match:
+          capabilities:
+            - filesystem.read
+            - filesystem.write
+        action: audit_only
+
+      - id: require-approval-for-message-send
+        match:
+          capabilities:
+            - message.send
+            - email.send
+        action: require_approval
