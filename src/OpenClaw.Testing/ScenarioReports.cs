@@ -10,7 +10,7 @@ public static class ScenarioMarkdownReport
         var sb = new StringBuilder();
         sb.AppendLine("# Agent Scenario Test Report");
         sb.AppendLine();
-        sb.AppendLine($"- Run ID: `{report.RunId}`");
+        sb.AppendLine($"- Run ID: {InlineCode(report.RunId)}");
         sb.AppendLine($"- Started: `{report.StartedAtUtc:O}`");
         sb.AppendLine($"- Completed: `{report.CompletedAtUtc:O}`");
         sb.AppendLine($"- Summary: {report.Summary.Passed}/{report.Summary.Total} passed, {report.Summary.Failed} failed");
@@ -25,33 +25,74 @@ public static class ScenarioMarkdownReport
                 .Where(static oracle => !oracle.Passed)
                 .Select(static oracle => oracle.Name)
                 .ToArray();
-            sb.AppendLine($"| `{Escape(result.Scenario.Id)}` | {result.Scenario.Risk} | {(result.Passed ? "passed" : "failed")} | {Escape(failed.Length == 0 ? "" : string.Join(", ", failed))} |");
+            sb.AppendLine($"| {EscapeTableCell(InlineCode(result.Scenario.Id))} | {result.Scenario.Risk} | {(result.Passed ? "passed" : "failed")} | {EscapeTableCell(failed.Length == 0 ? "" : string.Join(", ", failed))} |");
         }
 
         foreach (var result in report.Results.Where(static result => !result.Passed))
         {
             sb.AppendLine();
-            sb.AppendLine($"## {result.Scenario.Id}");
+            sb.AppendLine($"## {EscapeHeading(result.Scenario.Id)}");
             sb.AppendLine();
-            sb.AppendLine(result.Scenario.Title);
+            sb.AppendLine(EscapeParagraph(result.Scenario.Title));
             sb.AppendLine();
             if (!string.IsNullOrWhiteSpace(result.FailureSummary))
-                sb.AppendLine(result.FailureSummary);
+                sb.AppendLine(EscapeParagraph(result.FailureSummary));
 
             foreach (var oracle in result.OracleResults.Where(static oracle => !oracle.Passed))
             {
                 sb.AppendLine();
-                sb.AppendLine($"- `{oracle.Name}`: {oracle.Message}");
+                sb.AppendLine($"- {InlineCode(oracle.Name)}: {EscapeParagraph(oracle.Message)}");
                 foreach (var evidence in oracle.Evidence)
-                    sb.AppendLine($"  - `{evidence}`");
+                    sb.AppendLine($"  - {InlineCode(evidence)}");
             }
         }
 
         return sb.ToString();
     }
 
-    private static string Escape(string value)
-        => value.Replace("|", "\\|", StringComparison.Ordinal);
+    private static string InlineCode(string value)
+    {
+        var normalized = NormalizeInline(value);
+        var delimiter = new string('`', MaxBacktickRun(normalized) + 1);
+        var padding = normalized.StartsWith('`') || normalized.EndsWith('`') ? " " : "";
+        return $"{delimiter}{padding}{normalized}{padding}{delimiter}";
+    }
+
+    private static string EscapeTableCell(string value)
+        => NormalizeInline(value).Replace("|", "\\|", StringComparison.Ordinal);
+
+    private static string EscapeHeading(string value)
+        => NormalizeInline(value)
+            .Replace("#", "\\#", StringComparison.Ordinal)
+            .Replace("`", "\\`", StringComparison.Ordinal);
+
+    private static string EscapeParagraph(string value)
+        => NormalizeInline(value);
+
+    private static string NormalizeInline(string value)
+        => value.Replace("\r\n", " ", StringComparison.Ordinal)
+            .Replace('\n', ' ')
+            .Replace('\r', ' ');
+
+    private static int MaxBacktickRun(string value)
+    {
+        var max = 0;
+        var current = 0;
+        foreach (var ch in value)
+        {
+            if (ch == '`')
+            {
+                current++;
+                max = Math.Max(max, current);
+            }
+            else
+            {
+                current = 0;
+            }
+        }
+
+        return max;
+    }
 }
 
 public sealed class JsonTraceWriter : ITraceWriter
@@ -61,14 +102,17 @@ public sealed class JsonTraceWriter : ITraceWriter
         string outputRoot,
         CancellationToken cancellationToken = default)
     {
-        var runDirectory = Path.Combine(Path.GetFullPath(outputRoot), report.RunId);
-        var traceDirectory = Path.Combine(runDirectory, "traces");
+        ValidateRunId(report.RunId);
+        var outputRootFullPath = Path.GetFullPath(outputRoot);
+        var runDirectory = Path.Join(outputRootFullPath, report.RunId);
+        var traceDirectory = Path.Join(runDirectory, "traces");
         Directory.CreateDirectory(traceDirectory);
 
         var tracePaths = new List<string>();
         foreach (var result in report.Results)
         {
-            var tracePath = Path.Combine(traceDirectory, $"{SafeFileName(result.Scenario.Id)}.trace.json");
+            var traceFileName = GetTraceFileName(result.Scenario.Id);
+            var tracePath = Path.Join(traceDirectory, traceFileName);
             await File.WriteAllTextAsync(
                 tracePath,
                 JsonSerializer.Serialize(result.Trace, ScenarioJsonContext.Default.AgentRunTrace),
@@ -87,8 +131,8 @@ public sealed class JsonTraceWriter : ITraceWriter
                 Markdown = ScenarioMarkdownReport.Build(report)
             }
             : report;
-        var resultsPath = Path.Combine(runDirectory, "results.json");
-        var reportPath = Path.Combine(runDirectory, "report.md");
+        var resultsPath = Path.Join(runDirectory, "results.json");
+        var reportPath = Path.Join(runDirectory, "report.md");
 
         await File.WriteAllTextAsync(
             resultsPath,
@@ -109,20 +153,28 @@ public sealed class JsonTraceWriter : ITraceWriter
     public static async ValueTask<ScenarioRunReport?> LoadLatestReportAsync(
         string outputRoot,
         CancellationToken cancellationToken = default)
+        => (await LoadLatestReportWithDirectoryAsync(outputRoot, cancellationToken))?.Report;
+
+    public static async ValueTask<LatestScenarioRunReport?> LoadLatestReportWithDirectoryAsync(
+        string outputRoot,
+        CancellationToken cancellationToken = default)
     {
         var latest = FindLatestRunDirectory(outputRoot);
         if (latest is null)
             return null;
 
-        var resultsPath = Path.Combine(latest, "results.json");
+        var resultsPath = Path.Join(latest, "results.json");
         if (!File.Exists(resultsPath))
             return null;
 
         await using var stream = File.OpenRead(resultsPath);
-        return await JsonSerializer.DeserializeAsync(
+        var report = await JsonSerializer.DeserializeAsync(
             stream,
             ScenarioJsonContext.Default.ScenarioRunReport,
             cancellationToken);
+        return report is null
+            ? null
+            : new LatestScenarioRunReport(report, latest);
     }
 
     public static string? FindLatestRunDirectory(string outputRoot)
@@ -136,6 +188,24 @@ public sealed class JsonTraceWriter : ITraceWriter
             .FirstOrDefault();
     }
 
+    private static void ValidateRunId(string runId)
+    {
+        if (string.IsNullOrWhiteSpace(runId) ||
+            Path.IsPathRooted(runId) ||
+            !string.Equals(runId, Path.GetFileName(runId), StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Run id must be a relative file-system segment.", nameof(runId));
+        }
+    }
+
+    private static string GetTraceFileName(string scenarioId)
+    {
+        var traceFileName = Path.GetFileName($"{SafeFileName(scenarioId)}.trace.json");
+        if (string.IsNullOrWhiteSpace(traceFileName) || Path.IsPathRooted(traceFileName))
+            throw new ArgumentException("Trace file name must be a file-system leaf name.", nameof(scenarioId));
+        return traceFileName;
+    }
+
     private static string SafeFileName(string value)
     {
         var fileName = string.IsNullOrWhiteSpace(value) ? "scenario" : value;
@@ -144,3 +214,5 @@ public sealed class JsonTraceWriter : ITraceWriter
         return fileName;
     }
 }
+
+public sealed record LatestScenarioRunReport(ScenarioRunReport Report, string DirectoryPath);

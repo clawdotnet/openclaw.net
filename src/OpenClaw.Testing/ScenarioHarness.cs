@@ -12,6 +12,16 @@ public sealed class ScriptedScenarioRunner(ScenarioOracleRegistry? oracleRegistr
         var trace = BuildTrace(scenario, startedAt);
         var oracleResults = new List<OracleResult>();
 
+        if (scenario.ScriptedTrace is null)
+        {
+            oracleResults.Add(new OracleResult
+            {
+                Passed = false,
+                Name = "scripted-trace-present",
+                Message = "ScriptedScenarioRunner requires scriptedTrace evidence for deterministic scenario execution."
+            });
+        }
+
         if (scenario.Oracles.Count == 0)
         {
             oracleResults.Add(new OracleResult
@@ -58,7 +68,7 @@ public sealed class ScriptedScenarioRunner(ScenarioOracleRegistry? oracleRegistr
             foreach (var step in script.Steps)
             {
                 var timestamp = step.TimestampUtc == default
-                    ? startedAt.AddMilliseconds(offset++ * 10)
+                    ? startedAt.AddMilliseconds(offset++ * 10d)
                     : step.TimestampUtc;
 
                 steps.Add(new TraceStep
@@ -97,7 +107,7 @@ public sealed class ScriptedScenarioRunner(ScenarioOracleRegistry? oracleRegistr
             CompletedAtUtc = completedAt,
             Steps = steps,
             FinalAnswer = script?.FinalAnswer,
-            Status = script?.Status ?? ScenarioRunStatuses.Completed,
+            Status = script?.Status ?? ScenarioRunStatuses.Failed,
             Metadata = script is null
                 ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 : CopyMetadata(script.Metadata)
@@ -112,6 +122,8 @@ public sealed class ScriptedScenarioRunner(ScenarioOracleRegistry? oracleRegistr
 
 public sealed class ScenarioHarness(IScenarioRunner? runner = null)
 {
+    private const int MaxRunIdLength = 64;
+
     private readonly IScenarioRunner _runner = runner ?? new ScriptedScenarioRunner();
 
     public async ValueTask<ScenarioRunReport> RunAsync(
@@ -128,7 +140,7 @@ public sealed class ScenarioHarness(IScenarioRunner? runner = null)
         }
 
         var completedAt = DateTimeOffset.UtcNow;
-        var runId = $"agent_scenarios_{startedAt:yyyyMMddHHmmss}_{Guid.NewGuid():N}"[..41];
+        var runId = CreateRunId(startedAt);
         var highOrCriticalFailures = results.Count(static result =>
             !result.Passed &&
             result.Scenario.Risk is ScenarioRisk.High or ScenarioRisk.Critical);
@@ -156,5 +168,11 @@ public sealed class ScenarioHarness(IScenarioRunner? runner = null)
             Results = report.Results,
             Markdown = ScenarioMarkdownReport.Build(report)
         };
+    }
+
+    private static string CreateRunId(DateTimeOffset startedAt)
+    {
+        var candidate = $"agent_scenarios_{startedAt:yyyyMMddHHmmss}_{Guid.NewGuid():N}";
+        return candidate[..Math.Min(candidate.Length, MaxRunIdLength)];
     }
 }

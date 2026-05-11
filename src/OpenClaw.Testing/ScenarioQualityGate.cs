@@ -29,7 +29,7 @@ public sealed class ScenarioQualityGate
 
         if (list.Count == 0)
         {
-            issues.Add(new ScenarioGateIssue { Message = "No scenario JSON files were found." });
+            issues.Add(new ScenarioGateIssue { ScenarioId = "<none>", Message = "No scenario JSON files were found." });
             return new ScenarioGateResult { Issues = issues };
         }
 

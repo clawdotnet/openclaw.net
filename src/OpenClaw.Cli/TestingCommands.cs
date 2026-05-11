@@ -44,10 +44,10 @@ internal static class TestingCommands
         if (!existingScenarios)
         {
             await File.WriteAllTextAsync(
-                Path.Combine(scenarioDirectory, "agent.tool.basic.json"),
+                Path.Join(scenarioDirectory, "agent.tool.basic.json"),
                 SampleToolScenarioJson);
             await File.WriteAllTextAsync(
-                Path.Combine(scenarioDirectory, "agent.approval.shell.json"),
+                Path.Join(scenarioDirectory, "agent.approval.shell.json"),
                 SampleApprovalScenarioJson);
         }
 
@@ -84,16 +84,15 @@ internal static class TestingCommands
     private static async Task<int> RegenerateReportAsync(CliArgs parsed, TextWriter output, TextWriter error)
     {
         var outputRoot = GetOutputRoot(parsed);
-        var report = await JsonTraceWriter.LoadLatestReportAsync(outputRoot);
-        var latestDirectory = JsonTraceWriter.FindLatestRunDirectory(outputRoot);
-        if (report is null || latestDirectory is null)
+        var latest = await JsonTraceWriter.LoadLatestReportWithDirectoryAsync(outputRoot);
+        if (latest is null)
         {
             error.WriteLine($"No scenario test results were found under {outputRoot}.");
             return 1;
         }
 
-        var markdown = ScenarioMarkdownReport.Build(report);
-        var reportPath = Path.Combine(latestDirectory, "report.md");
+        var markdown = ScenarioMarkdownReport.Build(latest.Report);
+        var reportPath = Path.Join(latest.DirectoryPath, "report.md");
         await File.WriteAllTextAsync(reportPath, markdown);
         output.WriteLine($"report={reportPath}");
         return 0;
@@ -145,7 +144,12 @@ internal static class TestingCommands
     {
         writer.WriteLine("Scenario gates failed:");
         foreach (var issue in result.Issues)
-            writer.WriteLine($"- {issue.ScenarioId}: {issue.Message}");
+        {
+            if (string.IsNullOrWhiteSpace(issue.ScenarioId))
+                writer.WriteLine($"- {issue.Message}");
+            else
+                writer.WriteLine($"- {issue.ScenarioId}: {issue.Message}");
+        }
     }
 
     private static void PrintHelp(TextWriter output)
