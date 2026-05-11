@@ -270,14 +270,16 @@ public sealed class ToolGovernanceTests
     private static HttpSidecarToolGovernanceService CreateSidecarService(ToolGovernanceSidecarResponse response)
     {
         var json = JsonSerializer.Serialize(response, CoreJsonContext.Default.ToolGovernanceSidecarResponse);
-        var okResponse = new HttpResponseMessage(HttpStatusCode.OK)
+        var handler = new StubHttpMessageHandler(_ =>
+            Task.FromResult(CreateOkResponse(json)));
+        return CreateSidecarService(handler);
+    }
+
+    private static HttpResponseMessage CreateOkResponse(string json)
+        => new(HttpStatusCode.OK)
         {
             Content = new StringContent(json)
         };
-        var handler = new StubHttpMessageHandler(_ =>
-            Task.FromResult(okResponse));
-        return CreateSidecarService(handler);
-    }
 
     private static HttpSidecarToolGovernanceService CreateTimedOutSidecarService(ToolGovernanceConfig config)
     {
