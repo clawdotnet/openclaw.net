@@ -51,7 +51,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
 
@@ -265,7 +265,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
 
