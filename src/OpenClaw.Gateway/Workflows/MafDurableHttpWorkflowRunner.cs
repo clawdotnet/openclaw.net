@@ -55,11 +55,12 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
         AgentWorkflowRequest request,
         CancellationToken cancellationToken = default)
     {
+        var backendRequest = WithBackendMetadata(request);
         var result = NormalizeRunResult(
             await SendAsync(
                 HttpMethod.Post,
                 $"api/workflows/{Uri.EscapeDataString(WorkflowId)}/run",
-                request,
+                backendRequest,
                 CoreJsonContext.Default.AgentWorkflowRequest,
                 CoreJsonContext.Default.AgentWorkflowRunResult,
                 cancellationToken));
@@ -114,11 +115,8 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
         while (true)
         {
             var snapshot = await GetAsync(runId, cancellationToken);
-            foreach (var evt in snapshot.Events)
-            {
-                if (seen.Add(evt.Id))
-                    yield return evt;
-            }
+            foreach (var evt in snapshot.Events.Where(evt => seen.Add(evt.Id)))
+                yield return evt;
 
             if (!string.Equals(lastStatus, snapshot.Status, StringComparison.Ordinal))
             {
@@ -181,22 +179,41 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
             request.Content = new StringContent(json, Encoding.UTF8, "application/json");
         }
 
-        using var response = await _http.SendAsync(request, cancellationToken);
-        var text = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var response = await _http.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning(
-                "Workflow backend {BackendId} returned HTTP {StatusCode} for {Path}: {Body}",
+                "Workflow backend {BackendId} returned HTTP {StatusCode}.",
                 BackendId,
-                (int)response.StatusCode,
-                path,
-                text.Length > 512 ? text[..512] : text);
+                (int)response.StatusCode);
             throw new InvalidOperationException(
-                $"Workflow backend '{BackendId}' returned HTTP {(int)response.StatusCode} for '{path}'.");
+                $"Workflow backend '{BackendId}' returned HTTP {(int)response.StatusCode}.");
         }
 
-        var parsed = JsonSerializer.Deserialize(text, responseTypeInfo);
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var parsed = await JsonSerializer.DeserializeAsync(stream, responseTypeInfo, cancellationToken);
         return parsed ?? throw new InvalidOperationException($"Workflow backend '{BackendId}' returned an empty response.");
+    }
+
+    private AgentWorkflowRequest WithBackendMetadata(AgentWorkflowRequest request)
+    {
+        var metadata = request.Metadata is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(request.Metadata, StringComparer.Ordinal);
+        metadata["backendId"] = BackendId;
+
+        return new AgentWorkflowRequest
+        {
+            Input = request.Input,
+            Payload = request.Payload,
+            ChannelId = request.ChannelId,
+            SenderId = request.SenderId,
+            SessionId = request.SessionId,
+            Metadata = metadata
+        };
     }
 
     private AgentWorkflowRunResult NormalizeRunResult(AgentWorkflowRunResult result)

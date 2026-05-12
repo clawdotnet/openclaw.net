@@ -336,7 +336,11 @@ internal static class IntegrationEndpoints
                     CoreJsonContext.Default.AgentWorkflowRequest,
                     ctx.RequestAborted);
             }
-            catch
+            catch (JsonException)
+            {
+                return BadIntegrationRequest("Invalid JSON request body.");
+            }
+            catch (NotSupportedException)
             {
                 return BadIntegrationRequest("Invalid JSON request body.");
             }
@@ -397,7 +401,11 @@ internal static class IntegrationEndpoints
                     CoreJsonContext.Default.AgentWorkflowResponse,
                     ctx.RequestAborted);
             }
-            catch
+            catch (JsonException)
+            {
+                return BadIntegrationRequest("Invalid JSON request body.");
+            }
+            catch (NotSupportedException)
             {
                 return BadIntegrationRequest("Invalid JSON request body.");
             }

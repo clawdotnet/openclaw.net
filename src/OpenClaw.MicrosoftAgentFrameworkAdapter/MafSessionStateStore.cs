@@ -24,10 +24,10 @@ public sealed class MafSessionStateStore
         IOptions<MafOptions> options,
         ILogger<MafSessionStateStore> logger)
     {
-        var sidecarPath = options.Value.SessionSidecarPath;
-        _rootPath = Path.Combine(config.Memory.StoragePath, sidecarPath);
+        var sidecarPath = NormalizeSidecarPath(options.Value.SessionSidecarPath);
+        _rootPath = Path.GetFullPath(Path.Join(config.Memory.StoragePath, sidecarPath));
         _legacyRootPath = string.Equals(sidecarPath, MafOptions.DefaultSessionSidecarPath, StringComparison.Ordinal)
-            ? Path.Combine(config.Memory.StoragePath, LegacyDefaultSessionSidecarPath)
+            ? Path.GetFullPath(Path.Join(config.Memory.StoragePath, NormalizeSidecarPath(LegacyDefaultSessionSidecarPath)))
             : null;
         _logger = logger;
         _mafPackageVersion = ResolveMafPackageVersion();
@@ -146,7 +146,7 @@ public sealed class MafSessionStateStore
     internal string GetSessionPath(string sessionId)
     {
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sessionId)));
-        return Path.Combine(_rootPath, hash + ".json");
+        return Path.Join(_rootPath, hash + ".json");
     }
 
     private string? GetLegacySessionPath(string sessionId)
@@ -155,7 +155,22 @@ public sealed class MafSessionStateStore
             return null;
 
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sessionId)));
-        return Path.Combine(_legacyRootPath, hash + ".json");
+        return Path.Join(_legacyRootPath, hash + ".json");
+    }
+
+    internal static string NormalizeSidecarPath(string? sidecarPath)
+    {
+        var normalized = string.IsNullOrWhiteSpace(sidecarPath)
+            ? MafOptions.DefaultSessionSidecarPath
+            : sidecarPath.Trim();
+        var root = Path.GetPathRoot(normalized);
+        if (!string.IsNullOrEmpty(root))
+            normalized = normalized[root.Length..];
+
+        normalized = normalized.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return string.IsNullOrWhiteSpace(normalized)
+            ? MafOptions.DefaultSessionSidecarPath
+            : normalized;
     }
 
     private static string ResolveMafPackageVersion()

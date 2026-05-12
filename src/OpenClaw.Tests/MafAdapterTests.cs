@@ -254,6 +254,14 @@ public sealed class MafAdapterTests
     }
 
     [Fact]
+    public void MafSessionStateStore_NormalizeSidecarPath_StripsRootedPath()
+    {
+        var normalized = MafSessionStateStore.NormalizeSidecarPath(Path.DirectorySeparatorChar + Path.Join("maf", "sessions"));
+
+        Assert.Equal(Path.Join("maf", "sessions"), normalized);
+    }
+
+    [Fact]
     public async Task MafSessionStateStore_HistoryHash_RemainsStableAcrossFileSessionReload()
     {
         var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-maf-sidecar-tests", Guid.NewGuid().ToString("N"));

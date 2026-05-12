@@ -6,8 +6,13 @@ using Xunit;
 
 namespace OpenClaw.Tests;
 
-public sealed class WorkflowRegistryTests
+public sealed class WorkflowRegistryTests : IDisposable
 {
+    private readonly string _storagePath = Path.Join(
+        Path.GetTempPath(),
+        "openclaw-workflow-registry-tests",
+        Guid.NewGuid().ToString("N"));
+
     [Fact]
     public void AgentWorkflowRegistry_Registers_MafDurableHttp_Backend()
     {
@@ -67,13 +72,44 @@ public sealed class WorkflowRegistryTests
             registry.GetAsync("missing", "run_123", CancellationToken.None));
     }
 
-    private static AgentWorkflowRegistry CreateRegistry(GatewayConfig config)
+    [Fact]
+    public void AgentWorkflowRegistry_Throws_For_Duplicate_Normalized_Backend_Ids()
     {
-        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-workflow-registry-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(storagePath);
+        var config = new GatewayConfig
+        {
+            Workflows = new WorkflowsConfig
+            {
+                Enabled = true,
+                Backends =
+                {
+                    ["durable-review"] = new WorkflowBackendConfig
+                    {
+                        BaseUrl = "https://durable.example.test/"
+                    },
+                    ["durable-review "] = new WorkflowBackendConfig
+                    {
+                        BaseUrl = "https://durable-duplicate.example.test/"
+                    }
+                }
+            }
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() => CreateRegistry(config));
+        Assert.Contains("Duplicate workflow backend id 'durable-review'", ex.Message);
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_storagePath))
+            Directory.Delete(_storagePath, recursive: true);
+    }
+
+    private AgentWorkflowRegistry CreateRegistry(GatewayConfig config)
+    {
+        Directory.CreateDirectory(_storagePath);
         return new AgentWorkflowRegistry(
             config,
-            new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance),
+            new RuntimeEventStore(_storagePath, NullLogger<RuntimeEventStore>.Instance),
             NullLoggerFactory.Instance);
     }
 }

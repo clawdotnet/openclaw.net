@@ -305,7 +305,14 @@ internal sealed class OpenClawMcpTools
         if (string.IsNullOrWhiteSpace(payloadJson))
             return null;
 
-        using var document = JsonDocument.Parse(payloadJson);
-        return document.RootElement.Clone();
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            return document.RootElement.Clone();
+        }
+        catch (JsonException ex)
+        {
+            throw new ArgumentException("payloadJson must be valid JSON.", nameof(payloadJson), ex);
+        }
     }
 }

@@ -30,6 +30,9 @@ internal sealed class AgentWorkflowRegistry : IDisposable
                 throw new InvalidOperationException($"Unsupported workflow backend kind '{kind}' for backend '{backendId}'.");
 
             var normalizedBackendId = backendId.Trim();
+            if (_runners.ContainsKey(normalizedBackendId))
+                throw new InvalidOperationException($"Duplicate workflow backend id '{normalizedBackendId}' after trimming whitespace.");
+
             _runners[normalizedBackendId] = new MafDurableHttpWorkflowRunner(
                 normalizedBackendId,
                 backendConfig,
@@ -79,11 +82,8 @@ internal sealed class AgentWorkflowRegistry : IDisposable
         if (_disposed)
             return;
 
-        foreach (var runner in _runners.Values)
-        {
-            if (runner is IDisposable disposable)
-                disposable.Dispose();
-        }
+        foreach (var disposable in _runners.Values.OfType<IDisposable>())
+            disposable.Dispose();
 
         _disposed = true;
     }

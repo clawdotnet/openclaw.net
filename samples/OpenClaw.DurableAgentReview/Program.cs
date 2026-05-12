@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using OpenClaw.Core.Models;
 
 var builder = WebApplication.CreateSlimBuilder(args);
@@ -28,6 +29,7 @@ app.MapPost("/api/workflows/{workflow}/run", async (string workflow, HttpContext
         return Results.BadRequest(new OperationStatusResponse { Success = false, Error = "request body is required." });
 
     var workflowId = string.IsNullOrWhiteSpace(workflow) ? "DurableAgentReview" : workflow.Trim();
+    var backendId = ResolveBackendId(request);
     var runId = $"run_{Guid.NewGuid():N}";
     var reviewPayload = BuildReviewPayload(request.Input);
     var events = new List<AgentWorkflowEvent>
@@ -40,6 +42,7 @@ app.MapPost("/api/workflows/{workflow}/run", async (string workflow, HttpContext
     };
 
     var run = new ReviewRun(
+        BackendId: backendId,
         WorkflowId: workflowId,
         RunId: runId,
         Input: request.Input,
@@ -68,7 +71,7 @@ app.MapPost("/api/workflows/{workflow}/run", async (string workflow, HttpContext
     return Results.Json(
         new AgentWorkflowRunResult
         {
-            BackendId = "durable-review",
+            BackendId = run.BackendId,
             WorkflowId = workflowId,
             RunId = runId,
             Status = run.Status,
@@ -167,31 +170,66 @@ static AgentWorkflowEvent ReviewEvent(
     };
 
 static JsonElement BuildReviewPayload(string input)
-    => JsonSerializer.SerializeToElement(new
+{
+    var payload = new JsonObject
     {
-        input,
-        reviewers = new[]
+        ["input"] = input,
+        ["reviewers"] = new JsonArray
         {
-            new { role = "security", verdict = "review-required", summary = "No critical risk detected in sample review." },
-            new { role = "architecture", verdict = "review-required", summary = "Plan is feasible with explicit approval boundary." },
-            new { role = "cost", verdict = "review-required", summary = "Execution cost is acceptable for the sample action." }
+            new JsonObject
+            {
+                ["role"] = "security",
+                ["verdict"] = "review-required",
+                ["summary"] = "No critical risk detected in sample review."
+            },
+            new JsonObject
+            {
+                ["role"] = "architecture",
+                ["verdict"] = "review-required",
+                ["summary"] = "Plan is feasible with explicit approval boundary."
+            },
+            new JsonObject
+            {
+                ["role"] = "cost",
+                ["verdict"] = "review-required",
+                ["summary"] = "Execution cost is acceptable for the sample action."
+            }
         }
-    });
+    };
+    return ToJsonElement(payload);
+}
 
 static JsonElement BuildAuditPayload(ReviewRun run)
-    => JsonSerializer.SerializeToElement(new
+{
+    var payload = new JsonObject
     {
-        run.WorkflowId,
-        run.RunId,
-        run.Input,
-        run.Approved,
-        run.Approver,
-        run.ApprovalComment,
-        eventCount = run.Events.Count,
-        completedAtUtc = DateTimeOffset.UtcNow
-    });
+        ["workflowId"] = run.WorkflowId,
+        ["runId"] = run.RunId,
+        ["input"] = run.Input,
+        ["approved"] = run.Approved,
+        ["approver"] = run.Approver,
+        ["approvalComment"] = run.ApprovalComment,
+        ["eventCount"] = run.Events.Count,
+        ["completedAtUtc"] = DateTimeOffset.UtcNow
+    };
+    return ToJsonElement(payload);
+}
+
+static JsonElement ToJsonElement(JsonNode node)
+{
+    using var document = JsonDocument.Parse(node.ToJsonString());
+    return document.RootElement.Clone();
+}
+
+static string ResolveBackendId(AgentWorkflowRequest request)
+    => request.Metadata is not null &&
+       request.Metadata.TryGetValue("backendId", out var backendId) &&
+       !string.IsNullOrWhiteSpace(backendId)
+        ? backendId.Trim()
+        : "durable-review";
 
 file sealed class ReviewRun(
+    string BackendId,
     string WorkflowId,
     string RunId,
     string Input,
@@ -203,6 +241,7 @@ file sealed class ReviewRun(
     IReadOnlyList<AgentWorkflowPendingInput> PendingInputs)
 {
     public object Sync { get; } = new();
+    public string BackendId { get; } = BackendId;
     public string WorkflowId { get; } = WorkflowId;
     public string RunId { get; } = RunId;
     public string Input { get; } = Input;
@@ -224,7 +263,7 @@ file sealed class ReviewRun(
         {
             return new AgentWorkflowRunSnapshot
             {
-                BackendId = "durable-review",
+                BackendId = BackendId,
                 WorkflowId = WorkflowId,
                 RunId = RunId,
                 Status = Status,
