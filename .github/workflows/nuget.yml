@@ -45,7 +45,7 @@ jobs:
           dotnet pack src/OpenClaw.SemanticKernelAdapter/OpenClaw.SemanticKernelAdapter.csproj -c Release --no-restore -p:PackageVersion=${PACKAGE_VERSION} -o ./artifacts/nuget
 
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages-${{ env.PACKAGE_VERSION }}
           path: ./artifacts/nuget
