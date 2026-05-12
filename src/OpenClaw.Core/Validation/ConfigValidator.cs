@@ -2,6 +2,7 @@ using OpenClaw.Core.Security;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Setup;
 using OpenClaw.Core.Plugins;
+using OpenClaw.Core.ExternalCli;
 using System.Text.RegularExpressions;
 
 namespace OpenClaw.Core.Validation;
@@ -721,7 +722,18 @@ public static class ConfigValidator
         if (config.AllowFreeformCommands)
             errors.Add("ExternalCli.AllowFreeformCommands is not supported by this native connector; use named allowlisted commands.");
 
-        foreach (var (connectorName, connector) in config.Connectors)
+        var presetIds = config.Presets ?? [];
+        for (var i = 0; i < presetIds.Length; i++)
+        {
+            if (string.IsNullOrWhiteSpace(presetIds[i]))
+                errors.Add($"ExternalCli.Presets[{i}] must not be empty.");
+        }
+
+        foreach (var presetId in ExternalCliPresetCatalog.FindUnknownPresetIds(config))
+            errors.Add($"ExternalCli.Presets contains unknown preset '{presetId}'.");
+
+        var effectiveConfig = ExternalCliPresetCatalog.Apply(config);
+        foreach (var (connectorName, connector) in effectiveConfig.Connectors)
         {
             if (string.IsNullOrWhiteSpace(connectorName))
                 errors.Add("ExternalCli.Connectors contains an empty connector name.");

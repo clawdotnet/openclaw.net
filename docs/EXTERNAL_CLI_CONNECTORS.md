@@ -25,7 +25,7 @@ The runtime expands configured argument templates directly into `ProcessStartInf
 
 ## Configuration
 
-`OpenClaw:ExternalCli:Enabled` must be true before the `external_cli` tool is registered. Each connector and each command must also be explicitly configured.
+`OpenClaw:ExternalCli:Enabled` must be true before the `external_cli` tool is registered. Connectors can be configured directly or imported from built-in presets with `Presets`, but preset connectors remain disabled until the operator explicitly enables them.
 
 ```json
 {
@@ -38,6 +38,7 @@ The runtime expands configured argument templates directly into `ProcessStartInf
       "RedactSecrets": true,
       "AllowFreeformCommands": false,
       "RequireApprovalForMutatingCommands": true,
+      "Presets": [],
       "Connectors": {
         "gh": {
           "Enabled": true,
@@ -87,11 +88,37 @@ The runtime expands configured argument templates directly into `ProcessStartInf
 }
 ```
 
+Preset opt-in keeps config short while preserving the same approval, preview, redaction, and audit behavior:
+
+```json
+{
+  "OpenClaw": {
+    "ExternalCli": {
+      "Enabled": true,
+      "Presets": [ "gh", "github-copilot", "codex", "gemini", "lark" ],
+      "Connectors": {
+        "gh": { "Enabled": true },
+        "github-copilot": { "Enabled": false },
+        "codex": { "Enabled": false },
+        "gemini": { "Enabled": false },
+        "lark": {
+          "Enabled": false,
+          "Executable": "lark-cli"
+        }
+      }
+    }
+  }
+}
+```
+
+Use `openclaw external presets` to inspect the built-in catalog. Presets only provide command templates and conservative metadata; they do not install CLIs, grant credentials, or bypass platform authentication.
+
 Important defaults:
 
 - `Enabled=false`: no tool registration.
 - `AllowFreeformCommands=false`: raw commands are rejected.
 - `RequireApprovalForMutatingCommands=true`: non-read-only commands require approval unless policy is changed.
+- `Presets=[]`: no built-in connector templates are imported.
 - `RiskLevel=high`: always approval-required.
 - `ReadOnly=false`: treated as mutating.
 
@@ -156,37 +183,37 @@ Set `StructuredOutput` per command:
 
 The connector does not inject global `--json` flags. Put output flags in each command template.
 
-## Conservative Presets
+## Built-In Presets
 
-Keep presets disabled by default and enable only the commands needed for the operator surface.
+Built-in presets are conservative templates for common CLIs. They are disabled by default, are imported only when listed under `ExternalCli:Presets`, and still require a connector override such as `"gh": { "Enabled": true }` before execution.
+
+Keep enabled presets narrow. AI-agent CLIs such as GitHub Copilot CLI, Codex CLI, and Gemini CLI are approval-required by default because a prompt can send repository context to an external service and may use tools under the operator's account.
 
 ### GitHub CLI
 
-Read-only examples:
+Preset id: `gh`
 
-- `auth status`
-- `repo view`
-- `issue list`
-- `pr list`
-- `pr view`
-- `release list`
+Read-only commands:
+
+- `repo_view`
+- `issue_list`
+- `pr_list`
+- `pr_view`
+- `release_list`
 
 Approval-required examples:
 
-- `issue create`
-- `issue comment`
-- `pr review`
-- `pr merge`
-- `release create`
+- `issue_comment`
 
 ### Azure CLI
 
-Read-only examples:
+Preset id: `az`
 
-- `account show`
-- `group list`
-- `resource list`
-- `webapp list`
+Read-only commands:
+
+- `account_show`
+- `group_list`
+- `resource_list`
 
 Approval-required examples:
 
@@ -196,13 +223,15 @@ Approval-required examples:
 
 ### kubectl
 
-Read-only examples:
+Preset id: `kubectl`
 
-- `config current-context`
-- `get pods -o json`
-- `get services -o json`
-- `get deployments -o json`
-- `describe` as text when approved by policy
+Read-only commands:
+
+- `current_context`
+- `get_pods`
+- `get_pods_all`
+- `get_services_all`
+- `get_deployments_all`
 
 High-risk approval-required examples:
 
@@ -217,11 +246,15 @@ Logs can expose secrets and should be at least medium risk.
 
 ### Stripe CLI
 
-Read-only examples:
+Preset id: `stripe`
 
-- listen status, if safe for your environment
-- fixtures/list, if applicable
-- customers/list, only with least-privilege credentials
+Read-only commands:
+
+- `version`
+
+Approval-required read commands:
+
+- `customers_list`, because customer data can contain PII
 
 High-risk approval-required examples:
 
@@ -233,25 +266,61 @@ High-risk approval-required examples:
 
 ### Lark / Feishu CLI
 
-Read-only examples:
+Preset id: `lark`
 
-- `auth status`
-- schema inspection
-- calendar agenda
-- docs search/read
-- sheets read
-- mail search/read
-- meeting minutes query
+The Lark preset assumes a `lark-cli` compatible executable. If your internal or vendor-provided CLI uses different subcommands, keep the preset disabled and override `Executable` or command templates in config.
+
+Read-only commands:
+
+- `auth_status`
+- `docs_search`
+- `docs_read`
+- `sheets_read`
 
 Approval-required examples:
 
-- send messages
-- write docs
-- write sheets
-- send email
-- approve or reject workflows
-- create or update OKRs
-- raw API calls
+- `message_send`
+
+### GitHub Copilot CLI
+
+Preset id: `github-copilot`
+
+This preset targets the `copilot` executable documented by GitHub Copilot CLI. The `prompt` command uses non-interactive prompt mode and is high-risk approval-required by default.
+
+Commands:
+
+- `version`
+- `prompt`
+
+Reference: [GitHub Copilot CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference)
+
+### Codex CLI
+
+Preset id: `codex`
+
+This preset targets `codex exec`. Read-only exec uses an explicit `--sandbox read-only`; workspace-write exec is high-risk approval-required.
+
+Commands:
+
+- `version`
+- `exec_readonly`
+- `exec_readonly_json`
+- `exec_workspace_write`
+
+Reference: [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive)
+
+### Gemini CLI
+
+Preset id: `gemini`
+
+This preset targets `gemini -p` / `gemini --prompt` non-interactive execution. The prompt command is high-risk approval-required by default because Gemini CLI can use local context and tools depending on local policy.
+
+Commands:
+
+- `version`
+- `prompt`
+
+Reference: [Gemini CLI reference](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/cli-reference.md)
 
 ## Admin API
 
@@ -268,6 +337,7 @@ POST endpoints require CSRF for browser-session auth. Execute requires operator 
 ## CLI
 
 ```bash
+openclaw external presets
 openclaw external list
 openclaw external status gh
 openclaw external commands gh

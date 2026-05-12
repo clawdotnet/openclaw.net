@@ -68,7 +68,7 @@ public sealed class ExternalCliConnectorRegistry : IExternalCliConnectorRegistry
 
     public ExternalCliConnectorRegistry(GatewayConfig config, IRedactionPipeline? redaction = null)
     {
-        _options = config.ExternalCli;
+        _options = ExternalCliPresetCatalog.Apply(config.ExternalCli);
         _redaction = redaction ?? new NoopRedactionPipeline();
     }
 

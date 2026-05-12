@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text;
+using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Models;
 
 namespace OpenClaw.Cli;
@@ -25,11 +26,21 @@ internal static class ExternalCliCommands
             return 0;
         }
 
-        using var client = CreateClient(parsed);
         var command = parsed.Positionals[0];
         var json = parsed.HasFlag("--json");
         var ct = CancellationToken.None;
 
+        if (string.Equals(command, "presets", StringComparison.OrdinalIgnoreCase))
+        {
+            var response = new ExternalCliPresetListResponse
+            {
+                Items = ExternalCliPresetCatalog.List()
+            };
+            Write(response, CoreJsonContext.Default.ExternalCliPresetListResponse, json, TextPresets);
+            return 0;
+        }
+
+        using var client = CreateClient(parsed);
         switch (command)
         {
             case "list":
@@ -187,6 +198,12 @@ internal static class ExternalCliCommands
             Console.WriteLine($"{item.Name}\t{(item.Enabled ? "enabled" : "disabled")}\t{item.Executable}\tcommands={item.CommandCount}");
     }
 
+    private static void TextPresets(ExternalCliPresetListResponse response)
+    {
+        foreach (var item in response.Items)
+            Console.WriteLine($"{item.Id}\tconnector={item.Connector}\tcommands={string.Join(",", item.Commands)}\t{item.Description}");
+    }
+
     private static void TextStatus(ExternalCliConnectorStatus status)
     {
         Console.WriteLine($"{status.Connector}\t{(status.Enabled ? "enabled" : "disabled")}\texecutableFound={status.ExecutableFound}\tauth={status.AuthenticationStatus}");
@@ -235,6 +252,7 @@ internal static class ExternalCliCommands
             openclaw external
 
             Usage:
+              openclaw external presets [--json]
               openclaw external list [--json]
               openclaw external status <connector> [--json]
               openclaw external commands <connector> [--json]
@@ -242,7 +260,7 @@ internal static class ExternalCliCommands
               openclaw external execute <connector> <command> [--param key=value]... [--yes] [--reason text] [--json]
 
             Notes:
-              - Commands talk to the gateway admin API.
+              - The presets command is local; other commands talk to the gateway admin API.
               - Mutating or high-risk commands require --yes after preview review.
               - External CLI connectors are disabled unless OpenClaw:ExternalCli:Enabled=true.
             """);

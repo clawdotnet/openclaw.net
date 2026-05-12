@@ -341,6 +341,126 @@ public sealed class ExternalCliTests
         Assert.Equal(ToolFailureCodes.ApprovalRequired, result.FailureCode);
     }
 
+    [Fact]
+    public void ExternalCliPresetCatalog_ListsConservativeBuiltInPresets()
+    {
+        var presets = ExternalCliPresetCatalog.List();
+
+        Assert.Contains(presets, preset => preset.Id == "gh");
+        Assert.Contains(presets, preset => preset.Id == "lark");
+        Assert.Contains(presets, preset => preset.Id == "github-copilot");
+        Assert.Contains(presets, preset => preset.Id == "codex");
+        Assert.Contains(presets, preset => preset.Id == "gemini");
+    }
+
+    [Fact]
+    public void ExternalCliPreset_OptInMaterializesDisabledConnector()
+    {
+        var config = new GatewayConfig
+        {
+            ExternalCli = new ExternalCliOptions
+            {
+                Enabled = true,
+                Presets = ["gh"]
+            }
+        };
+        var registry = new ExternalCliConnectorRegistry(config);
+
+        var connector = Assert.Single(registry.ListConnectors(), item => item.Name == "gh");
+
+        Assert.False(connector.Enabled);
+        Assert.Equal("gh", connector.Executable);
+        Assert.True(connector.CommandCount > 0);
+    }
+
+    [Fact]
+    public void ExternalCliPreset_ConnectorOverrideEnablesPresetWithoutRedefiningCommands()
+    {
+        var config = new GatewayConfig
+        {
+            ExternalCli = new ExternalCliOptions
+            {
+                Enabled = true,
+                Presets = ["gh"],
+                Connectors = new Dictionary<string, ExternalCliConnectorOptions>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["gh"] = new() { Enabled = true }
+                }
+            }
+        };
+        var registry = new ExternalCliConnectorRegistry(config);
+
+        var prepared = registry.BuildPreview(new ExternalCliPreviewRequest
+        {
+            Connector = "gh",
+            Command = "repo_view",
+            Parameters = Params(("repo", "clawdotnet/openclaw.net"))
+        }, dryRun: false);
+
+        Assert.Equal(["repo", "view", "clawdotnet/openclaw.net", "--json", "name,owner,description,url,isPrivate"], prepared.Arguments);
+        Assert.False(prepared.Preview.RequiresApproval);
+        Assert.Equal(ExternalCliOutputFormat.Json, prepared.Preview.StructuredOutput);
+    }
+
+    [Fact]
+    public void ConfigValidator_RejectsUnknownExternalCliPreset()
+    {
+        var config = CreateConfig(enabled: true);
+        config.ExternalCli.Presets = ["missing-preset"];
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("unknown preset 'missing-preset'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ConfigValidator_PresetConnectorOverrideUsesPresetExecutable()
+    {
+        var config = new GatewayConfig
+        {
+            ExternalCli = new ExternalCliOptions
+            {
+                Enabled = true,
+                Presets = ["gh"],
+                Connectors = new Dictionary<string, ExternalCliConnectorOptions>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["gh"] = new() { Enabled = true }
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(errors, error => error.Contains("ExternalCli.Connectors.gh.Executable", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ExternalCliPreset_ConnectorOverrideCanSetOutputFormatToText()
+    {
+        var config = new GatewayConfig
+        {
+            ExternalCli = new ExternalCliOptions
+            {
+                Enabled = true,
+                Presets = ["gh"],
+                Connectors = new Dictionary<string, ExternalCliConnectorOptions>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["gh"] = new()
+                    {
+                        Enabled = true,
+                        DefaultOutputFormat = ExternalCliOutputFormat.Text
+                    }
+                }
+            }
+        };
+        var registry = new ExternalCliConnectorRegistry(config);
+
+        var commands = registry.ListCommands("gh");
+        var issueComment = Assert.Single(commands.Items, item => item.Name == "issue_comment");
+
+        Assert.Equal(ExternalCliOutputFormat.Text, issueComment.StructuredOutput);
+    }
+
     private static GatewayConfig CreateConfig(bool enabled, string executable = "dotnet")
         => new()
         {

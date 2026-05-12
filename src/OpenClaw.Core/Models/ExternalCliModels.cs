@@ -12,6 +12,7 @@ public sealed class ExternalCliOptions
     public bool RedactSecrets { get; set; } = true;
     public bool AllowFreeformCommands { get; set; } = false;
     public bool RequireApprovalForMutatingCommands { get; set; } = true;
+    public string[] Presets { get; set; } = [];
     public Dictionary<string, ExternalCliConnectorOptions> Connectors { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
@@ -147,6 +148,21 @@ public sealed class ExternalCliConnectorSummary
 public sealed class ExternalCliConnectorListResponse
 {
     public IReadOnlyList<ExternalCliConnectorSummary> Items { get; init; } = [];
+}
+
+public sealed class ExternalCliPresetSummary
+{
+    public required string Id { get; init; }
+    public required string Connector { get; init; }
+    public string DisplayName { get; init; } = "";
+    public string Description { get; init; } = "";
+    public IReadOnlyList<string> Tags { get; init; } = [];
+    public IReadOnlyList<string> Commands { get; init; } = [];
+}
+
+public sealed class ExternalCliPresetListResponse
+{
+    public IReadOnlyList<ExternalCliPresetSummary> Items { get; init; } = [];
 }
 
 public sealed class ExternalCliCommandSummary

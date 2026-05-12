@@ -20,7 +20,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [USER_GUIDE.md](USER_GUIDE.md) | Providers, tools, skills, channels, and the day-to-day operator surface. |
 | [RELEASES.md](RELEASES.md) | Desktop download bundles, release assets, and signing/notarization status. |
 | [TOOLS_GUIDE.md](TOOLS_GUIDE.md) | Native tool catalog, behavior, and configuration. |
-| [EXTERNAL_CLI_CONNECTORS.md](EXTERNAL_CLI_CONNECTORS.md) | Governed external CLI connectors, named command allowlists, approvals, redaction, and audit behavior. |
+| [EXTERNAL_CLI_CONNECTORS.md](EXTERNAL_CLI_CONNECTORS.md) | Governed external CLI connectors, optional presets, named command allowlists, approvals, redaction, and audit behavior. |
 | [plugins/payment.md](plugins/payment.md) | Native payment tool, virtual cards, machine payments, providers, and safe agent-facing actions. |
 | [cli/payment.md](cli/payment.md) | `openclaw payment ...` gateway-backed CLI commands and safe output contract. |
 | [mempalace-memory.md](mempalace-memory.md) | Optional ElBruno.MempalaceNet memory provider and temporal KG tool. |
