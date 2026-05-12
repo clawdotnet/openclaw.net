@@ -1,0 +1,9 @@
+{
+  "id": "openclaw-microsoft-extensions-ai-provider",
+  "name": "OpenClaw Microsoft.Extensions.AI provider bridge",
+  "version": "1.0.0",
+  "assemblyPath": "OpenClaw.Providers.MicrosoftExtensionsAI.dll",
+  "typeName": "OpenClaw.Providers.MicrosoftExtensionsAI.MicrosoftExtensionsAiProviderPlugin",
+  "capabilities": ["providers"],
+  "jitOnly": true
+}

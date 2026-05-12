@@ -7,6 +7,7 @@
   <Folder Name="/samples/">
     <Project Path="samples/OpenClaw.DurableAgentReview/OpenClaw.DurableAgentReview.csproj" />
     <Project Path="samples/OpenClaw.HelloAgent/OpenClaw.HelloAgent.csproj" />
+    <Project Path="samples/OpenClaw.MicrosoftExtensionsAIProvider/OpenClaw.MicrosoftExtensionsAIProvider.csproj" />
     <Project Path="samples/OpenClaw.SemanticKernelInteropHost/OpenClaw.SemanticKernelInteropHost.csproj" />
   </Folder>
   <Folder Name="/src/">
@@ -16,6 +17,7 @@
     <Project Path="src/OpenClaw.Payments.Abstractions/OpenClaw.Payments.Abstractions.csproj" />
     <Project Path="src/OpenClaw.Payments.Core/OpenClaw.Payments.Core.csproj" />
     <Project Path="src/OpenClaw.Payments.StripeLink/OpenClaw.Payments.StripeLink.csproj" />
+    <Project Path="src/OpenClaw.Providers.MicrosoftExtensionsAI/OpenClaw.Providers.MicrosoftExtensionsAI.csproj" />
     <Project Path="src/OpenClaw.Plugins.Payment/OpenClaw.Plugins.Payment.csproj" />
     <Project Path="src/OpenClaw.Plugins.Mempalace/OpenClaw.Plugins.Mempalace.csproj" />
     <Project Path="src/OpenClaw.MicrosoftAgentFrameworkAdapter/OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />

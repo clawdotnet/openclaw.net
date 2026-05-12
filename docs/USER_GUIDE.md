@@ -180,6 +180,11 @@ OpenClaw supports native routing for several providers out-of-the-box. Change th
 - **Required**: `ApiKey`, `Model`, and usually `Endpoint`
 - **Notes**: These providers are accessed via the OpenAI-compatible REST abstractions. Ensure that you provide the proper base API URL as the `Endpoint` when required by the target service.
 
+#### 7. Microsoft.Extensions.AI provider bridge
+- **Provider**: your dynamic provider id, for example `"my-meai-provider"`
+- **Required**: JIT runtime mode, dynamic native plugins enabled, a factory implementing `IMicrosoftExtensionsAiChatClientFactory`, and at least one model id
+- **Notes**: This optional bridge is for advanced .NET integrations where you already have an `IChatClient`. OpenClaw still owns routing, policy, budget checks, tracing, approvals, sessions, and usage accounting. See [Microsoft.Extensions.AI Provider Bridge](providers/microsoft-extensions-ai.md).
+
 ---
 
 ## Tooling & Sandbox

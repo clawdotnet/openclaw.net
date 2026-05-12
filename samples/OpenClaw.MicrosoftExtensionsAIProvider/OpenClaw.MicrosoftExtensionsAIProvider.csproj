@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>OpenClaw.MicrosoftExtensionsAIProvider</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenClaw.Providers.MicrosoftExtensionsAI\OpenClaw.Providers.MicrosoftExtensionsAI.csproj" />
+  </ItemGroup>
+</Project>

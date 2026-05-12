@@ -36,6 +36,7 @@ OpenClaw.NET keeps plugin compatibility explicit by runtime mode. The goal is to
 | `api.registerCommand()` | Supported with caveats | `jit` only. Registered as dynamic chat commands. |
 | `api.on(...)` | Supported with caveats | `jit` only. `tool:before` / `tool:after` hooks are bridged with timeout protections. |
 | `api.registerProvider()` | Supported with caveats | `jit` only. Plugin-provided LLMs are wired through the dynamic provider seam. |
+| `OpenClaw.Providers.MicrosoftExtensionsAI` | Supported with caveats | `jit` only through native dynamic plugins. Use this to bring an arbitrary `IChatClient`; AOT users should use built-in providers or OpenAI-compatible endpoints. |
 | Standalone `.js`, `.mjs`, `.ts` in `.openclaw/extensions` | Supported with caveats | `.ts` requires local `jiti`. |
 | Manifest/package discovery via `Plugins:Load:Paths` | Supported | Includes `openclaw.plugin.json` and `package.json` `openclaw.extensions`. |
 | `openclaw plugins install --dry-run` trust inspection | Supported | Prints trust level, declared surface, diagnostics, and blocks install when compatibility errors are present. |
