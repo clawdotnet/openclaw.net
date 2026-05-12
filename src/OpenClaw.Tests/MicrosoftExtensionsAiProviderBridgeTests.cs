@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -38,6 +39,7 @@ public sealed class MicrosoftExtensionsAiProviderBridgeTests : IDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException)
         {
+            Debug.WriteLine($"Failed to delete temporary test directory '{_tempDir}': {ex}");
         }
     }
 
