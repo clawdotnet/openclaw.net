@@ -1,4 +1,3 @@
-#if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using System.Text.Json;
 using A2A;
 using Microsoft.AspNetCore.Http;
@@ -201,7 +200,7 @@ public sealed class A2AIntegrationTests
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMicrosoftAgentFrameworkExperiment(configuration);
+        services.AddMicrosoftAgentFramework(configuration);
 
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MafOptions>>().Value;
@@ -214,6 +213,54 @@ public sealed class A2AIntegrationTests
         Assert.Equal("search", options.A2ASkills[0].Id);
         Assert.Equal("Web Search", options.A2ASkills[0].Name);
         Assert.Equal(["web"], options.A2ASkills[0].Tags);
+    }
+
+    [Fact]
+    public void MafServiceCollectionExtensions_Parses_Legacy_Config_With_Migration_Flag()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{MafOptions.LegacySectionName}:EnableA2A"] = "true",
+                [$"{MafOptions.LegacySectionName}:A2APathPrefix"] = "/legacy/a2a"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMicrosoftAgentFramework(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<MafOptions>>().Value;
+
+        Assert.True(options.EnableA2A);
+        Assert.Equal("/legacy/a2a", options.A2APathPrefix);
+        Assert.True(options.LegacySectionUsed);
+    }
+
+    [Fact]
+    public void MafServiceCollectionExtensions_Prefers_New_Config_Over_Legacy_Config()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{MafOptions.LegacySectionName}:EnableA2A"] = "true",
+                [$"{MafOptions.LegacySectionName}:A2APathPrefix"] = "/legacy/a2a",
+                [$"{MafOptions.SectionName}:EnableA2A"] = "false",
+                [$"{MafOptions.SectionName}:A2APathPrefix"] = "/supported/a2a"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMicrosoftAgentFramework(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<MafOptions>>().Value;
+
+        Assert.False(options.EnableA2A);
+        Assert.Equal("/supported/a2a", options.A2APathPrefix);
+        Assert.False(options.LegacySectionUsed);
     }
 
     [Fact]
@@ -234,7 +281,7 @@ public sealed class A2AIntegrationTests
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMicrosoftAgentFrameworkExperiment(configuration);
+        services.AddMicrosoftAgentFramework(configuration);
 
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MafOptions>>().Value;
@@ -425,4 +472,3 @@ public sealed class A2AIntegrationTests
         }
     }
 }
-#endif

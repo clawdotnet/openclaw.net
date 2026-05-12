@@ -98,7 +98,6 @@ echo "Publishing NativeAOT gateway with HTTP tool smoke support for $RUNTIME_ID.
 dotnet publish "$ROOT_DIR/src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" \
   -c Release \
   -r "$RUNTIME_ID" \
-  -p:OpenClawEnableMafExperiment=true \
   -o "$ARTIFACTS_DIR/gateway"
 
 resolve_binary() {

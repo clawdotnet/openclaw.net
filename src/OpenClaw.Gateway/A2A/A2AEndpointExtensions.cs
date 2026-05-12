@@ -1,4 +1,3 @@
-#if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using System.Text.Json.Serialization.Metadata;
 using A2A;
 using A2A.AspNetCore;
@@ -188,4 +187,3 @@ internal static class A2AEndpointExtensions
     }
 }
 #pragma warning restore MEAI001
-#endif

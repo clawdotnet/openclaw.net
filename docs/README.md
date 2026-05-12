@@ -26,7 +26,9 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [mempalace-memory.md](mempalace-memory.md) | Optional ElBruno.MempalaceNet memory provider and temporal KG tool. |
 | [SESSIONS.md](SESSIONS.md) | Session lifecycle, the `SessionManager`, and the `sessions_spawn` / `sessions_yield` / `sessions` tools. |
 | [CANVAS_A2UI.md](CANVAS_A2UI.md) | Supported Canvas and A2UI behavior for agent-rendered visual workspaces. |
-| [a2a.md](a2a.md) | Experimental A2A v1 discovery, endpoint, authentication, and deployment contract. |
+| [integrations/microsoft-agent-framework.md](integrations/microsoft-agent-framework.md) | Supported optional Microsoft Agent Framework runtime adapter, runtime selection, A2A setup, and migration from old experimental config. |
+| [workflow-backends.md](workflow-backends.md) | Durable workflow delegation, `maf-durable-http`, integration API and MCP tools, status model, and sample host. |
+| [a2a.md](a2a.md) | A2A v1 discovery, endpoint, authentication, and deployment contract through the Microsoft Agent Framework adapter. |
 | [MODEL_PROFILES.md](MODEL_PROFILES.md) | Provider-agnostic named model profiles, including Gemma-family setups. |
 | [PROMPT_CACHING.md](PROMPT_CACHING.md) | Provider-aware prompt caching hints, dialects, diagnostics. |
 | [PULSE.md](PULSE.md) | Runtime Pulse scheduled heartbeat turns, `HEARTBEAT.md`, alert suppression, and operator controls. |

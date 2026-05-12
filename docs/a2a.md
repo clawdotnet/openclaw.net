@@ -1,22 +1,22 @@
 # A2A
 
-OpenClaw can expose its gateway agent through A2A when the Microsoft Agent Framework experiment is enabled. The A2A protocol is stable at v1, while the .NET SDK packages used by this integration are still preview packages.
+OpenClaw can expose its gateway agent through A2A through the supported Microsoft Agent Framework adapter. A2A remains opt-in by configuration, while the adapter is included in normal gateway builds.
 
 ## Enablement
 
-A2A support is compiled only when `OPENCLAW_ENABLE_MAF_EXPERIMENT` is enabled. At runtime, set:
+A2A support is available in normal gateway builds. At runtime, set:
 
 ```json
 {
   "OpenClaw": {
-    "Experimental": {
-      "MicrosoftAgentFramework": {
-        "EnableA2A": true
-      }
+    "MicrosoftAgentFramework": {
+      "EnableA2A": true
     }
   }
 }
 ```
+
+The legacy `OpenClaw:Experimental:MicrosoftAgentFramework` section is still read for one release cycle. Startup records a warning when that legacy section is used.
 
 ## Discovery
 
@@ -43,7 +43,7 @@ By default, OpenClaw exposes these A2A protocol bindings:
 | HTTP+JSON | `/a2a` |
 | JSON-RPC | `/a2a/rpc` |
 
-The path prefix can be changed with `OpenClaw:Experimental:MicrosoftAgentFramework:A2APathPrefix`.
+The path prefix can be changed with `OpenClaw:MicrosoftAgentFramework:A2APathPrefix`.
 
 ## Agent Names
 
@@ -52,24 +52,22 @@ OpenClaw uses two A2A-facing names with different stability contracts:
 | Surface | Value | Purpose |
 | --- | --- | --- |
 | Hosted A2A service id | `openclaw` | Stable Microsoft Agent Framework host key used for keyed A2A server, task store, and handler registration. |
-| Agent Card `name` | `OpenClaw:Experimental:MicrosoftAgentFramework:AgentName` | Public display name advertised to A2A clients during discovery. |
+| Agent Card `name` | `OpenClaw:MicrosoftAgentFramework:AgentName` | Public display name advertised to A2A clients during discovery. |
 
 The hosted service id intentionally stays `openclaw` even when the Agent Card display name is customized. User-visible fallback messages use the Agent Card display name so responses correlate with discovery metadata. Keep the hosted id and card name aligned only if the host registration, endpoint mapping, and compatibility tests are changed together.
 
 ## Public Base URL
 
-Agent Card URLs are generated from the current request host by default. Set `OpenClaw:Experimental:MicrosoftAgentFramework:A2APublicBaseUrl` when the gateway runs behind a reverse proxy, container ingress, tunnel, or any host where the bind address is not externally reachable.
+Agent Card URLs are generated from the current request host by default. Set `OpenClaw:MicrosoftAgentFramework:A2APublicBaseUrl` when the gateway runs behind a reverse proxy, container ingress, tunnel, or any host where the bind address is not externally reachable.
 
 Example:
 
 ```json
 {
   "OpenClaw": {
-    "Experimental": {
-      "MicrosoftAgentFramework": {
-        "EnableA2A": true,
-        "A2APublicBaseUrl": "https://agents.example.com/openclaw"
-      }
+    "MicrosoftAgentFramework": {
+      "EnableA2A": true,
+      "A2APublicBaseUrl": "https://agents.example.com/openclaw"
     }
   }
 }
@@ -112,4 +110,4 @@ If this error appears in logs, verify the active build includes the explicit key
 
 ## AOT and JIT Notes
 
-This integration stays behind the Microsoft Agent Framework experiment and uses the A2A SDK preview hosting package. Core OpenClaw runtime paths remain independent of the A2A package surface.
+This integration uses the Microsoft Agent Framework and A2A SDK package surface, so it adds dependency surface to the gateway build. Core OpenClaw runtime behavior remains independent because `Runtime.Orchestrator=native` is still the default and A2A endpoints remain disabled unless `OpenClaw:MicrosoftAgentFramework:EnableA2A=true`.

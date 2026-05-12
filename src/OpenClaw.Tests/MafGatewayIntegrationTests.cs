@@ -1,4 +1,3 @@
-#if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -631,4 +630,3 @@ public sealed class MafGatewayIntegrationTests
         public void Dispose() => _stopping.Cancel();
     }
 }
-#endif

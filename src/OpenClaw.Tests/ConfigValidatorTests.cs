@@ -262,6 +262,43 @@ public sealed class ConfigValidatorTests
     }
 
     [Fact]
+    public void Validate_WorkflowsEnabledWithoutBackends_ReturnsError()
+    {
+        var config = new GatewayConfig
+        {
+            Workflows = new WorkflowsConfig
+            {
+                Enabled = true
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.Contains(errors, e => e.Contains("Workflows", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_WorkflowBackendWithoutAbsoluteBaseUrl_ReturnsError()
+    {
+        var config = new GatewayConfig
+        {
+            Workflows = new WorkflowsConfig
+            {
+                Enabled = true,
+                Backends =
+                {
+                    ["review"] = new WorkflowBackendConfig
+                    {
+                        BaseUrl = "/relative"
+                    }
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+        Assert.Contains(errors, e => e.Contains("Workflows.Backends.review.BaseUrl", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_WorkspaceOnlyWithoutAbsoluteWorkspaceRoot_ReturnsError()
     {
         var config = new GatewayConfig

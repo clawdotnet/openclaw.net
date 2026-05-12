@@ -1,4 +1,3 @@
-#if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using A2A;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
@@ -35,4 +34,3 @@ internal static class A2AServiceExtensions
     }
 }
 #pragma warning restore MEAI001
-#endif

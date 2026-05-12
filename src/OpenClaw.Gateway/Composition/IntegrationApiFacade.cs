@@ -1,8 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Core.Compatibility;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Gateway.Bootstrap;
+using OpenClaw.Gateway.Workflows;
 
 namespace OpenClaw.Gateway.Composition;
 
@@ -19,6 +21,7 @@ internal sealed class IntegrationApiFacade
     private readonly IToolPresetResolver? _toolPresetResolver;
     private readonly TextToSpeechService? _textToSpeechService;
     private readonly GatewayMaintenanceRuntimeService? _maintenanceService;
+    private readonly AgentWorkflowRegistry _workflows;
 
     public static IntegrationApiFacade Create(
         GatewayStartupContext startup,
@@ -37,6 +40,8 @@ internal sealed class IntegrationApiFacade
         var toolPresetResolver = services.GetService<IToolPresetResolver>();
         var textToSpeechService = services.GetService<TextToSpeechService>();
         var maintenanceService = services.GetService<GatewayMaintenanceRuntimeService>();
+        var workflows = services.GetService<AgentWorkflowRegistry>()
+            ?? new AgentWorkflowRegistry(new GatewayConfig(), runtime.Operations.RuntimeEvents, NullLoggerFactory.Instance);
 
         return new IntegrationApiFacade(
             startup,
@@ -49,7 +54,8 @@ internal sealed class IntegrationApiFacade
             memoryCatalog,
             toolPresetResolver,
             textToSpeechService,
-            maintenanceService);
+            maintenanceService,
+            workflows);
     }
 
     public IntegrationApiFacade(
@@ -63,7 +69,8 @@ internal sealed class IntegrationApiFacade
         IMemoryNoteCatalog? memoryCatalog,
         IToolPresetResolver? toolPresetResolver,
         TextToSpeechService? textToSpeechService,
-        GatewayMaintenanceRuntimeService? maintenanceService)
+        GatewayMaintenanceRuntimeService? maintenanceService,
+        AgentWorkflowRegistry workflows)
     {
         _startup = startup;
         _runtime = runtime;
@@ -76,6 +83,7 @@ internal sealed class IntegrationApiFacade
         _toolPresetResolver = toolPresetResolver;
         _textToSpeechService = textToSpeechService;
         _maintenanceService = maintenanceService;
+        _workflows = workflows;
     }
 
     public IntegrationStatusResponse BuildStatusResponse()
@@ -572,6 +580,31 @@ internal sealed class IntegrationApiFacade
         {
             Items = _toolPresetResolver?.ListPresets(_runtime.RegisteredToolNames) ?? []
         };
+
+    public IntegrationWorkflowsResponse ListWorkflows()
+        => new()
+        {
+            Items = _workflows.List()
+        };
+
+    public Task<AgentWorkflowRunResult> RunWorkflowAsync(
+        string workflowId,
+        AgentWorkflowRequest request,
+        CancellationToken cancellationToken)
+        => _workflows.RunAsync(workflowId, request, cancellationToken);
+
+    public Task<AgentWorkflowRunSnapshot> GetWorkflowRunAsync(
+        string workflowId,
+        string runId,
+        CancellationToken cancellationToken)
+        => _workflows.GetAsync(workflowId, runId, cancellationToken);
+
+    public Task<AgentWorkflowRunSnapshot> RespondWorkflowRunAsync(
+        string workflowId,
+        string runId,
+        AgentWorkflowResponse response,
+        CancellationToken cancellationToken)
+        => _workflows.RespondAsync(workflowId, runId, response, cancellationToken);
 
     public async Task<IntegrationAutomationDetailResponse> GetAutomationAsync(string automationId, CancellationToken cancellationToken)
         => new()

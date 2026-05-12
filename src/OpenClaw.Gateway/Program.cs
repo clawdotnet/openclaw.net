@@ -6,10 +6,8 @@ using OpenClaw.Gateway.Mcp;
 using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.Profiles;
 using TickerQ.DependencyInjection;
-#if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using OpenClaw.Gateway.A2A;
 using OpenClaw.MicrosoftAgentFrameworkAdapter;
-#endif
 #if OPENCLAW_ENABLE_OPENSANDBOX
 using OpenClawNet.Sandbox.OpenSandbox;
 #endif
@@ -74,10 +72,8 @@ while (true)
         builder.Services.AddOpenClawSecurityServices(startup);
         builder.Services.AddOpenClawMcpServices(startup);
         builder.Services.ApplyOpenClawRuntimeProfile(startup);
-#if OPENCLAW_ENABLE_MAF_EXPERIMENT
-        builder.Services.AddMicrosoftAgentFrameworkExperiment(builder.Configuration);
+        builder.Services.AddMicrosoftAgentFramework(builder.Configuration);
         builder.Services.AddOpenClawA2AServices();
-#endif
 #if OPENCLAW_ENABLE_OPENSANDBOX
         builder.Services.AddOpenSandboxIntegration(builder.Configuration);
 #endif
@@ -90,17 +86,13 @@ while (true)
 
         app.InitializeMcpRuntime(runtime);
         app.UseOpenClawMcpAuth(startup, runtime);
-#if OPENCLAW_ENABLE_MAF_EXPERIMENT
         app.UseOpenClawA2AAuth(startup, runtime);
-#endif
 
         app.UseOpenClawPipeline(startup, runtime, launchOptions, localSession, stateStore);
         app.MapOpenApi("/openapi/{documentName}.json");
         app.MapOpenClawEndpoints(startup, runtime);
         app.MapMcp("/mcp");
-#if OPENCLAW_ENABLE_MAF_EXPERIMENT
         app.MapOpenClawA2AEndpoints(startup, runtime);
-#endif
 
         startupConsole.WritePhase("Starting listener");
         await app.RunAsync($"http://{startup.Config.BindAddress}:{startup.Config.Port}");

@@ -190,6 +190,73 @@ internal sealed class OpenClawMcpTools
         return JsonSerializer.Serialize(detail, CoreJsonContext.Default.IntegrationAutomationDetailResponse);
     }
 
+    [McpServerTool(Name = "openclaw.list_workflows", ReadOnly = true),
+     Description("List configured durable workflow backends.")]
+    public string ListWorkflows()
+        => JsonSerializer.Serialize(
+            _facade.ListWorkflows(),
+            CoreJsonContext.Default.IntegrationWorkflowsResponse);
+
+    [McpServerTool(Name = "openclaw.run_workflow"),
+     Description("Start a configured durable workflow backend run.")]
+    public async Task<string> RunWorkflow(
+        [Description("Configured workflow backend ID.")] string workflowId,
+        [Description("Primary workflow input text.")] string input,
+        [Description("Optional JSON object or value passed as workflow payload.")] string? payloadJson = null,
+        [Description("Optional channel ID.")] string? channelId = null,
+        [Description("Optional sender ID.")] string? senderId = null,
+        [Description("Optional session ID.")] string? sessionId = null,
+        CancellationToken ct = default)
+        => JsonSerializer.Serialize(
+            await _facade.RunWorkflowAsync(
+                workflowId,
+                new AgentWorkflowRequest
+                {
+                    Input = input,
+                    Payload = ParsePayloadJson(payloadJson),
+                    ChannelId = channelId,
+                    SenderId = senderId,
+                    SessionId = sessionId
+                },
+                ct),
+            CoreJsonContext.Default.AgentWorkflowRunResult);
+
+    [McpServerTool(Name = "openclaw.get_workflow_run", ReadOnly = true),
+     Description("Get the current status snapshot for a durable workflow run.")]
+    public async Task<string> GetWorkflowRun(
+        [Description("Configured workflow backend ID.")] string workflowId,
+        [Description("Workflow run ID.")] string runId,
+        CancellationToken ct)
+        => JsonSerializer.Serialize(
+            await _facade.GetWorkflowRunAsync(workflowId, runId, ct),
+            CoreJsonContext.Default.AgentWorkflowRunSnapshot);
+
+    [McpServerTool(Name = "openclaw.respond_workflow"),
+     Description("Send a response to a pending durable workflow input port.")]
+    public async Task<string> RespondWorkflow(
+        [Description("Configured workflow backend ID.")] string workflowId,
+        [Description("Workflow run ID.")] string runId,
+        [Description("Pending input port ID.")] string portId,
+        [Description("Optional approval decision.")] bool? approved = null,
+        [Description("Optional response comment.")] string? comment = null,
+        [Description("Optional actor ID for the responder.")] string? actorId = null,
+        [Description("Optional JSON object or value passed as response payload.")] string? payloadJson = null,
+        CancellationToken ct = default)
+        => JsonSerializer.Serialize(
+            await _facade.RespondWorkflowRunAsync(
+                workflowId,
+                runId,
+                new AgentWorkflowResponse
+                {
+                    PortId = portId,
+                    Approved = approved,
+                    Comment = comment,
+                    ActorId = actorId,
+                    Payload = ParsePayloadJson(payloadJson)
+                },
+                ct),
+            CoreJsonContext.Default.AgentWorkflowRunSnapshot);
+
     [McpServerTool(Name = "openclaw.query_runtime_events", ReadOnly = true),
      Description("Query recent runtime events.")]
     public string QueryRuntimeEvents(
@@ -232,4 +299,13 @@ internal sealed class OpenClawMcpTools
                 ReplyToMessageId = replyToMessageId
             }, ct),
             CoreJsonContext.Default.IntegrationMessageResponse);
+
+    private static JsonElement? ParsePayloadJson(string? payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            return null;
+
+        using var document = JsonDocument.Parse(payloadJson);
+        return document.RootElement.Clone();
+    }
 }

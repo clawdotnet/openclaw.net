@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
-    <OpenClawEnableMafExperiment Condition="'$(OpenClawEnableMafExperiment)' == ''">false</OpenClawEnableMafExperiment>
     <OpenClawEnableMempalace Condition="'$(OpenClawEnableMempalace)' == ''">false</OpenClawEnableMempalace>
     <OpenClawEnableOpenSandbox Condition="'$(OpenClawEnableOpenSandbox)' == ''">false</OpenClawEnableOpenSandbox>
     <RootNamespace>OpenClaw.Tests</RootNamespace>
@@ -26,13 +25,13 @@
     <ProjectReference Include="..\OpenClaw.WhatsApp.BaileysWorker\OpenClaw.WhatsApp.BaileysWorker.csproj" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">
+  <ItemGroup>
     <ProjectReference Include="..\OpenClaw.MicrosoftAgentFrameworkAdapter\OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(OpenClawEnableMempalace)' == 'true'">
     <ProjectReference Include="..\OpenClaw.Plugins.Mempalace\OpenClaw.Plugins.Mempalace.csproj" />
   </ItemGroup>
-  <ItemGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">
+  <ItemGroup>
     <PackageReference Include="Microsoft.Agents.AI" Version="1.3.0" />
     <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A" Version="1.3.0-preview.260423.1" />
     <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A.AspNetCore" Version="1.3.0-preview.260423.1" />
@@ -43,9 +42,6 @@
     <ProjectReference Include="..\OpenClawNet.Sandbox.OpenSandbox\OpenClawNet.Sandbox.OpenSandbox.csproj" />
   </ItemGroup>
 
-  <PropertyGroup Condition="'$(OpenClawEnableMafExperiment)' == 'true'">
-    <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_MAF_EXPERIMENT</DefineConstants>
-  </PropertyGroup>
   <PropertyGroup Condition="'$(OpenClawEnableMempalace)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_MEMPALACE</DefineConstants>
   </PropertyGroup>

@@ -25,7 +25,6 @@
 
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'OpenClaw.Gateway'">
     <OpenClawFeatureVariant>standard</OpenClawFeatureVariant>
-    <OpenClawFeatureVariant Condition="'$(OpenClawEnableMafExperiment)' == 'true'">$(OpenClawFeatureVariant)-maf</OpenClawFeatureVariant>
     <OpenClawFeatureVariant Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">$(OpenClawFeatureVariant)-opensandbox</OpenClawFeatureVariant>
     <BaseIntermediateOutputPath>obj/$(OpenClawFeatureVariant)/</BaseIntermediateOutputPath>
     <DefaultItemExcludes>$(DefaultItemExcludes);obj/**</DefaultItemExcludes>

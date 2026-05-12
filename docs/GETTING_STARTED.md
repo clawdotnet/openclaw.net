@@ -11,7 +11,8 @@ OpenClaw.NET is a self-hosted .NET agent platform made of a few distinct layers:
 1. A gateway process that exposes HTTP, WebSocket, web UI, admin UI, and webhook endpoints.
 2. An agent runtime that runs the model loop, selects tools, and coordinates sessions, memory, approvals, and routing.
 3. Tool backends and integrations that let the agent read files, run shell commands, search the web, talk to channels, and call external systems.
-4. Optional client surfaces such as the CLI, desktop Companion, TUI, and typed .NET client.
+4. Optional orchestration backends such as Microsoft Agent Framework and durable workflow hosts.
+5. Optional client surfaces such as the CLI, desktop Companion, TUI, and typed .NET client.
 
 The fastest way to stay oriented is to think of it like this:
 
@@ -53,12 +54,13 @@ These are the directories most people need first:
 | `src/OpenClaw.Tui` | Terminal UI. |
 | `src/OpenClaw.Client` | Typed .NET client for the integration API and MCP facade. |
 | `src/OpenClaw.SemanticKernelAdapter` | Semantic Kernel integration layer. |
-| `src/OpenClaw.MicrosoftAgentFrameworkAdapter` | Optional Microsoft Agent Framework adapter. |
+| `src/OpenClaw.MicrosoftAgentFrameworkAdapter` | Supported optional Microsoft Agent Framework adapter. |
 | `src/OpenClaw.PluginKit` | Support code for plugin authoring and plugin integration. |
 | `src/OpenClaw.Tests` | Unit and integration-style tests for the runtime and services. |
 | `src/OpenClaw.WhatsApp.BaileysWorker` | .NET-facing WhatsApp worker integration project. |
 | `src/whatsapp-baileys-worker` | Node.js worker used by the WhatsApp Baileys bridge. |
 | `src/whatsapp-whatsmeow-worker` | Go worker for WhatsApp-related integration work. |
+| `samples/OpenClaw.DurableAgentReview` | Durable workflow delegation sample for the `maf-durable-http` backend contract. |
 
 ## How The Pieces Fit Together
 

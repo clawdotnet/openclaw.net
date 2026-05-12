@@ -1,4 +1,3 @@
-#if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using System.Net;
 using System.Net.Http.Json;
 using A2A;
@@ -277,4 +276,3 @@ public sealed class A2AHttpEndpointTests
         }
     }
 }
-#endif

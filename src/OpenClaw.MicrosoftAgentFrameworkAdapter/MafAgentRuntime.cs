@@ -139,7 +139,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         if (skills.Count > 0)
             logger.LogInformation("{Summary}", SkillPromptBuilder.BuildSummary(skills));
         else
-            logger.LogInformation("No skills loaded for the MAF experiment runtime.");
+            logger.LogInformation("No skills loaded for the Microsoft Agent Framework runtime.");
 
         return Task.FromResult<IReadOnlyList<string>>(LoadedSkillNames);
     }
@@ -268,7 +268,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         ToolApprovalCallback? approvalCallback = null)
     {
         if (!_options.EnableStreaming)
-            throw new NotSupportedException("MAF streaming is disabled for this experiment runtime.");
+            throw new NotSupportedException("MAF streaming is disabled for this runtime.");
 
         using var activity = _telemetry.StartRunActivity("Agent.Maf.RunStreamingAsync", session, _runtimeState);
         var turnCtx = new TurnContext

@@ -86,8 +86,7 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path $staging, $archives | Out-Null
 
-          $gatewayStandard = Join-Path $staging "gateway-standard"
-          $gatewayMaf = Join-Path $staging "gateway-maf"
+          $gateway = Join-Path $staging "gateway"
           $cli = Join-Path $staging "cli"
           $companion = Join-Path $staging "desktop/companion"
           $desktopGateway = Join-Path $staging "desktop/gateway"
@@ -106,12 +105,11 @@ jobs:
             Write-Host "Using macOS Swift library paths: $env:LIBRARY_PATH"
           }
 
-          dotnet publish "$root/src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" -c Release -r $rid -p:PublishAot=true -p:OpenClawEnableMafExperiment=false -o $gatewayStandard
-          dotnet publish "$root/src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" -c Release -r $rid -p:PublishAot=true -p:OpenClawEnableMafExperiment=true -o $gatewayMaf
+          dotnet publish "$root/src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" -c Release -r $rid -p:PublishAot=true -o $gateway
           dotnet publish "$root/src/OpenClaw.Cli/OpenClaw.Cli.csproj" -c Release -r $rid -p:PublishAot=true -o $cli
           dotnet publish "$root/src/OpenClaw.Companion/OpenClaw.Companion.csproj" -c Release -r $rid --self-contained true -p:PublishAot=false -p:PublishSingleFile=false -o $companion
 
-          Copy-Item -Path $gatewayStandard -Destination $desktopGateway -Recurse -Force
+          Copy-Item -Path $gateway -Destination $desktopGateway -Recurse -Force
           Copy-Item -Path $cli -Destination $desktopCli -Recurse -Force
 
           if ($IsWindows -and $env:WINDOWS_SIGNING_CERT_BASE64 -and $env:WINDOWS_SIGNING_CERT_PASSWORD) {
@@ -172,7 +170,7 @@ jobs:
             }
           } | ConvertTo-Json -Depth 10 | Set-Content -Path $configPath -Encoding UTF8
 
-          $gatewayBin = Join-Path $gatewayStandard ("OpenClaw.Gateway" + $exe)
+          $gatewayBin = Join-Path $gateway ("OpenClaw.Gateway" + $exe)
           $cliBin = Join-Path $cli ("openclaw" + $exe)
           & $gatewayBin --config $configPath --doctor
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -180,12 +178,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $desktopArchive = Join-Path $archives "openclaw-desktop-$rid.zip"
-          $gatewayStandardArchive = Join-Path $archives "openclaw-gateway-standard-aot-$rid.zip"
-          $gatewayMafArchive = Join-Path $archives "openclaw-gateway-maf-enabled-aot-$rid.zip"
+          $gatewayArchive = Join-Path $archives "openclaw-gateway-aot-$rid.zip"
           $cliArchive = Join-Path $archives "openclaw-cli-aot-$rid.zip"
           Compress-Archive -Path (Join-Path $staging "desktop/*") -DestinationPath $desktopArchive -Force
-          Compress-Archive -Path (Join-Path $gatewayStandard "*") -DestinationPath $gatewayStandardArchive -Force
-          Compress-Archive -Path (Join-Path $gatewayMaf "*") -DestinationPath $gatewayMafArchive -Force
+          Compress-Archive -Path (Join-Path $gateway "*") -DestinationPath $gatewayArchive -Force
           Compress-Archive -Path (Join-Path $cli "*") -DestinationPath $cliArchive -Force
 
           if ($IsMacOS -and $env:APPLE_ID -and $env:APPLE_TEAM_ID -and $env:APPLE_APP_SPECIFIC_PASSWORD -and $env:APPLE_CODESIGN_IDENTITY) {
@@ -250,7 +246,7 @@ jobs:
           - openclaw-desktop-osx-arm64.zip
           - openclaw-desktop-linux-x64.zip
 
-          These archives bundle Companion, the standard NativeAOT gateway, and the NativeAOT CLI. Standalone gateway and CLI archives are also attached for operators.
+          These archives bundle Companion, the NativeAOT gateway, and the NativeAOT CLI. Standalone gateway and CLI archives are also attached for operators.
 
           Windows and macOS assets are currently unsigned unless this workflow is extended with signing secrets. See docs/RELEASES.md for the expected first-run warnings and the signing path.
           EOF

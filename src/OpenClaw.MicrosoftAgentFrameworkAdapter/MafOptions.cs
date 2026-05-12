@@ -2,14 +2,16 @@ namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
 
 public sealed class MafOptions
 {
-    public const string SectionName = "OpenClaw:Experimental:MicrosoftAgentFramework";
+    public const string SectionName = "OpenClaw:MicrosoftAgentFramework";
+    public const string LegacySectionName = "OpenClaw:Experimental:MicrosoftAgentFramework";
+    public const string DefaultSessionSidecarPath = "maf/sessions";
 
     public string AgentName { get; set; } = "OpenClaw";
 
     public string AgentDescription { get; set; } =
         "Microsoft Agent Framework orchestration backend for OpenClaw.";
 
-    public string SessionSidecarPath { get; set; } = "experiments/maf/sessions";
+    public string SessionSidecarPath { get; set; } = DefaultSessionSidecarPath;
 
     public bool EnableStreaming { get; set; } = true;
 
@@ -28,6 +30,8 @@ public sealed class MafOptions
     public string? A2APublicBaseUrl { get; set; }
 
     public List<A2ASkillConfig> A2ASkills { get; set; } = [];
+
+    public bool LegacySectionUsed { get; set; }
 }
 
 public sealed class A2ASkillConfig

@@ -26,6 +26,8 @@ The project is aimed at .NET developers and operators who want a local or self-h
 | CLI | Stable local path | `start`, `setup`, `run`, `chat`, `models`, `maintenance`, `upgrade`, plugin, skill, and diagnostic commands are available. |
 | Companion | Supported with caveats | Builds with the solution and includes managed-gateway tests. Desktop release managers should still run the manual smoke checklist in [RELEASES.md](RELEASES.md). |
 | Native tools | Supported | Core native tools are first-party .NET tools with explicit path, network, and approval guardrails. |
+| Microsoft Agent Framework adapter | Supported optional backend | Included in normal gateway builds; use `Runtime.Orchestrator=maf` to opt in while `native` remains the default. |
+| Durable workflow backends | Supported optional delegation | `maf-durable-http` can delegate long-running workflow runs to external durable hosts without making normal agent turns durable. |
 | Model providers | Supported with provider setup | OpenAI, Claude, Gemini, Azure OpenAI, Ollama, and OpenAI-compatible endpoints are represented in the provider/config surface. |
 | NativeAOT | Supported/friendly | Runtime and gateway are designed for the AOT lane. Dynamic/plugin surfaces are explicitly separated where needed. |
 | OpenClaw compatibility | Practical compatibility | `SKILL.md`, ClawHub-style skill install, mainstream tool/service plugin APIs, and package discovery are supported. Full upstream API parity is not claimed. |
@@ -33,7 +35,6 @@ The project is aimed at .NET developers and operators who want a local or self-h
 ## Experimental Or Partial
 
 - JIT-only plugin surfaces such as dynamic channels, commands, hooks, provider registration, and native dynamic .NET plugins.
-- Microsoft Agent Framework adapter experiments.
 - Browser tool local execution when dynamic code or a non-local execution backend is not configured.
 - Companion UI behavior beyond the managed-gateway unit coverage; use the release smoke checklist before public desktop releases.
 - Full production signing/notarization polish for desktop archives.

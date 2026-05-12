@@ -23,6 +23,7 @@ using OpenClaw.Gateway.Mcp;
 using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.PromptCaching;
+using OpenClaw.Gateway.Workflows;
 using OpenClaw.Core.Validation;
 using OpenClaw.PluginKit;
 using OpenClaw.Payments.Abstractions;
@@ -184,6 +185,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton<IAutomationRunDispatcher>(sp => sp.GetRequiredService<AutomationRunCoordinator>());
         services.AddSingleton<GatewayAutomationService>();
         services.AddSingleton<LearningService>();
+        services.AddSingleton<AgentWorkflowRegistry>();
         services.AddSingleton<ICronJobSource, GatewayCronJobSource>();
         services.AddSingleton<ActorRateLimitService>(sp =>
             new ActorRateLimitService(

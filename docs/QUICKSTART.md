@@ -84,7 +84,7 @@ Operators can still download standalone AOT archives from the same release:
 ```bash
 gh release download \
   --repo clawdotnet/openclaw.net \
-  --pattern 'openclaw-gateway-standard-aot-linux-x64.zip' \
+  --pattern 'openclaw-gateway-aot-linux-x64.zip' \
   --dir ./openclaw-gateway-aot
 
 gh release download \

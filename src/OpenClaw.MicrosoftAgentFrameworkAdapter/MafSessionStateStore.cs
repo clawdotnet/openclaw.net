@@ -12,8 +12,10 @@ namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
 public sealed class MafSessionStateStore
 {
     private const int CurrentSchemaVersion = 2;
+    private const string LegacyDefaultSessionSidecarPath = "experiments/maf/sessions";
 
     private readonly string _rootPath;
+    private readonly string? _legacyRootPath;
     private readonly ILogger<MafSessionStateStore> _logger;
     private readonly string _mafPackageVersion;
 
@@ -22,7 +24,11 @@ public sealed class MafSessionStateStore
         IOptions<MafOptions> options,
         ILogger<MafSessionStateStore> logger)
     {
-        _rootPath = Path.Combine(config.Memory.StoragePath, options.Value.SessionSidecarPath);
+        var sidecarPath = options.Value.SessionSidecarPath;
+        _rootPath = Path.Combine(config.Memory.StoragePath, sidecarPath);
+        _legacyRootPath = string.Equals(sidecarPath, MafOptions.DefaultSessionSidecarPath, StringComparison.Ordinal)
+            ? Path.Combine(config.Memory.StoragePath, LegacyDefaultSessionSidecarPath)
+            : null;
         _logger = logger;
         _mafPackageVersion = ResolveMafPackageVersion();
     }
@@ -31,7 +37,13 @@ public sealed class MafSessionStateStore
     {
         var path = GetSessionPath(session.Id);
         if (!File.Exists(path))
-            return await agent.CreateSessionAsync(ct);
+        {
+            var legacyPath = GetLegacySessionPath(session.Id);
+            if (legacyPath is null || !File.Exists(legacyPath))
+                return await agent.CreateSessionAsync(ct);
+
+            path = legacyPath;
+        }
 
         try
         {
@@ -135,6 +147,15 @@ public sealed class MafSessionStateStore
     {
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sessionId)));
         return Path.Combine(_rootPath, hash + ".json");
+    }
+
+    private string? GetLegacySessionPath(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(_legacyRootPath))
+            return null;
+
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sessionId)));
+        return Path.Combine(_legacyRootPath, hash + ".json");
     }
 
     private static string ResolveMafPackageVersion()

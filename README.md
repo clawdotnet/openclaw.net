@@ -38,6 +38,8 @@ Start here:
 - **NativeAOT-friendly** runtime and gateway for .NET agent workloads
 - **Agent runtime** with tool execution, streaming, cancellation, retry, memory, and session support
 - **Gateway** with chat UI, admin UI, OpenAI-compatible endpoints, MCP, websocket, health, and diagnostics
+- **First-class optional Microsoft Agent Framework adapter** for `Runtime.Orchestrator=maf` without a special build
+- **Durable workflow delegation** through supported workflow backends such as `maf-durable-http`
 - **CLI and Companion** setup flows for source checkouts and desktop bundles
 - **48 native tools** covering file ops, sessions, memory, web, messaging, home automation, databases, email, and more
 - **9 channel adapters** (Telegram, SMS, WhatsApp, Teams, Slack, Discord, Signal, email, webhooks) with DM policy, allowlists, and signature validation
@@ -46,7 +48,7 @@ Start here:
 
 Start with [docs/START_HERE.md](docs/START_HERE.md) for the evaluator overview, [docs/QUICKSTART.md](docs/QUICKSTART.md) for the supported local setup path, or [docs/RELEASES.md](docs/RELEASES.md) for desktop downloads.
 
-For the experimental A2A v1 surface, see [docs/a2a.md](docs/a2a.md).
+For Microsoft Agent Framework, A2A, and durable workflow setup, see [docs/integrations/microsoft-agent-framework.md](docs/integrations/microsoft-agent-framework.md), [docs/a2a.md](docs/a2a.md), and [docs/workflow-backends.md](docs/workflow-backends.md).
 
 ## Download And Run Desktop
 
@@ -58,7 +60,7 @@ For the lowest-friction desktop start, download the latest desktop bundle for yo
 | Apple Silicon macOS | [openclaw-desktop-osx-arm64.zip](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-osx-arm64.zip) |
 | Linux x64 | [openclaw-desktop-linux-x64.zip](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-linux-x64.zip) |
 
-Each desktop bundle includes Companion, the standard NativeAOT gateway, and the NativeAOT CLI.
+Each desktop bundle includes Companion, the NativeAOT gateway, and the NativeAOT CLI.
 
 1. Extract the archive.
 2. Launch Companion from the `companion` folder.

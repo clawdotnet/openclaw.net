@@ -58,7 +58,7 @@ public static class AgentRuntimeFactorySelector
 
         throw new InvalidOperationException(
             normalizedOrchestrator == RuntimeOrchestrator.Maf
-                ? "Runtime.Orchestrator='maf' requires the Microsoft Agent Framework experiment adapter. Build with OpenClawEnableMafExperiment=true."
+                ? "Runtime.Orchestrator='maf' requires the Microsoft Agent Framework adapter. Set OpenClaw:Runtime:Orchestrator='maf' in a build that includes OpenClaw.MicrosoftAgentFrameworkAdapter."
                 : $"No agent runtime factory is registered for orchestrator '{normalizedOrchestrator}'.");
     }
 }

@@ -73,15 +73,6 @@ jobs:
       - name: Test sandbox-enabled targets
         run: dotnet test --no-build -c Release -p:OpenClawEnableOpenSandbox=true --verbosity normal --logger "trx;LogFileName=results-sandbox.trx" src/OpenClaw.Tests
 
-      - name: Restore MAF-enabled solution
-        run: dotnet restore OpenClaw.Net.slnx -p:OpenClawEnableMafExperiment=true
-
-      - name: Build MAF-enabled solution
-        run: dotnet build OpenClaw.Net.slnx --no-restore -c Release -p:OpenClawEnableMafExperiment=true
-
-      - name: Test MAF-enabled targets
-        run: dotnet test --no-build -c Release -p:OpenClawEnableMafExperiment=true --verbosity normal --logger "trx;LogFileName=results-maf.trx" src/OpenClaw.Tests
-
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -115,19 +106,12 @@ jobs:
           chmod +x ./eng/verify-aot-maf-smoke.sh
           ./eng/verify-aot-maf-smoke.sh
 
-      - name: Upload standard gateway artifact
+      - name: Upload gateway artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
-          name: gateway-standard-aot-linux-x64
+          name: gateway-aot-linux-x64
           path: ./artifacts/aot/gateway/
-
-      - name: Upload MAF-enabled gateway artifact
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: gateway-maf-enabled-aot-linux-x64
-          path: ./artifacts/aot-maf/gateway/
 
       - name: Upload CLI artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -221,19 +205,12 @@ jobs:
           ./eng/verify-jit-smoke.sh
           ./eng/verify-jit-maf-smoke.sh
 
-      - name: Upload standard gateway artifact
+      - name: Upload gateway artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
-          name: gateway-standard-jit-linux-x64
+          name: gateway-jit-linux-x64
           path: ./artifacts/jit/gateway/
-
-      - name: Upload MAF-enabled gateway artifact
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: gateway-maf-enabled-jit-linux-x64
-          path: ./artifacts/jit-maf/gateway/
 
       - name: Upload CLI artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

@@ -43,11 +43,10 @@ cat > "$GATEWAY_CONFIG" <<JSON
 }
 JSON
 
-echo "Publishing JIT gateway with the MAF experiment enabled..."
+echo "Publishing JIT gateway with Runtime.Orchestrator=maf..."
 dotnet publish "$ROOT_DIR/src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" \
   -c Release \
   -p:PublishAot=false \
-  -p:OpenClawEnableMafExperiment=true \
   -o "$ARTIFACTS_DIR/gateway"
 
 resolve_binary() {

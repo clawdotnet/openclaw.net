@@ -3,7 +3,7 @@
 OpenClaw.NET's low-friction desktop path is the **desktop bundle** published on [GitHub Releases](https://github.com/clawdotnet/openclaw.net/releases/latest). It bundles:
 
 - Companion
-- the standard NativeAOT gateway
+- the NativeAOT gateway
 - the NativeAOT CLI
 
 Users should start with the desktop bundle for their platform instead of GitHub Actions artifacts.
@@ -13,11 +13,12 @@ Users should start with the desktop bundle for their platform instead of GitHub 
 | [`openclaw-desktop-win-x64.zip`](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-win-x64.zip) | Windows desktop users |
 | [`openclaw-desktop-osx-arm64.zip`](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-osx-arm64.zip) | Apple Silicon macOS desktop users |
 | [`openclaw-desktop-linux-x64.zip`](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-linux-x64.zip) | Linux desktop users |
-| `openclaw-gateway-standard-aot-*.zip` | Operators who only want the native gateway |
-| `openclaw-gateway-maf-enabled-aot-*.zip` | Operators who need optional `Runtime.Orchestrator=maf` |
+| `openclaw-gateway-aot-*.zip` | Operators who want the NativeAOT gateway with `native` default and optional `Runtime.Orchestrator=maf` |
 | `openclaw-cli-aot-*.zip` | CLI-only installs and scripting |
 
 Each archive has a matching `.sha256` checksum file.
+
+Gateway artifacts now include the Microsoft Agent Framework adapter in the normal build. `Runtime.Orchestrator=native` remains the default in every artifact; set `OpenClaw:Runtime:Orchestrator=maf` only when you want the supported MAF runtime path.
 
 ## User First Run
 

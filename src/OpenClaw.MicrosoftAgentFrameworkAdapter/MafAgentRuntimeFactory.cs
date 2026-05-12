@@ -107,6 +107,7 @@ public sealed class MafAgentRuntimeFactory : IAgentRuntimeFactory
             Plugins = config.Plugins,
             Skills = config.Skills,
             Delegation = config.Delegation,
+            Workflows = config.Workflows,
             Cron = config.Cron,
             Webhooks = config.Webhooks,
             UsageFooter = config.UsageFooter,

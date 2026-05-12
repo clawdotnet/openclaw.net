@@ -130,9 +130,6 @@ else
   )
 fi
 
-if [[ "$ENABLE_MAF" == "1" ]]; then
-  publish_args+=(-p:OpenClawEnableMafExperiment=true)
-fi
 
 dotnet publish "$ROOT_DIR/src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" \
   "${publish_args[@]}" \

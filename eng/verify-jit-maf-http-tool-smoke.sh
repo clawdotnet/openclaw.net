@@ -92,7 +92,6 @@ echo "Publishing JIT gateway with HTTP tool smoke support..."
 dotnet publish "$ROOT_DIR/src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" \
   -c Release \
   -p:PublishAot=false \
-  -p:OpenClawEnableMafExperiment=true \
   -o "$ARTIFACTS_DIR/gateway"
 
 resolve_binary() {

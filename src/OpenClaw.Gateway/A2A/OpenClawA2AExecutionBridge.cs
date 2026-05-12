@@ -1,4 +1,3 @@
-#if OPENCLAW_ENABLE_MAF_EXPERIMENT
 using OpenClaw.Core.Middleware;
 using OpenClaw.Core.Models;
 using OpenClaw.Gateway.Mcp;
@@ -89,4 +88,3 @@ internal sealed class OpenClawA2AExecutionBridge : IOpenClawA2AExecutionBridge
         }
     }
 }
-#endif

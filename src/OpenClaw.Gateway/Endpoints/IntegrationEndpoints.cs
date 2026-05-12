@@ -311,6 +311,118 @@ internal static class IntegrationEndpoints
                 CoreJsonContext.Default.IntegrationToolPresetsResponse);
         });
 
+        group.MapGet("/workflows", (HttpContext ctx) =>
+        {
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.read", requireCsrf: false);
+            if (failure is not null)
+                return failure;
+
+            return Results.Json(
+                facade.ListWorkflows(),
+                CoreJsonContext.Default.IntegrationWorkflowsResponse);
+        });
+
+        group.MapPost("/workflows/{workflowId}/runs", async (HttpContext ctx, string workflowId) =>
+        {
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.mutate", requireCsrf: true);
+            if (failure is not null)
+                return failure;
+
+            AgentWorkflowRequest? request;
+            try
+            {
+                request = await JsonSerializer.DeserializeAsync(
+                    ctx.Request.Body,
+                    CoreJsonContext.Default.AgentWorkflowRequest,
+                    ctx.RequestAborted);
+            }
+            catch
+            {
+                return BadIntegrationRequest("Invalid JSON request body.");
+            }
+
+            if (request is null)
+                return BadIntegrationRequest("request body is required.");
+
+            try
+            {
+                return Results.Json(
+                    await facade.RunWorkflowAsync(workflowId, request, ctx.RequestAborted),
+                    CoreJsonContext.Default.AgentWorkflowRunResult,
+                    statusCode: StatusCodes.Status202Accepted);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return IntegrationNotFound(ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return IntegrationBackendFailure(ex.Message);
+            }
+        });
+
+        group.MapGet("/workflows/{workflowId}/runs/{runId}", async (HttpContext ctx, string workflowId, string runId) =>
+        {
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.read", requireCsrf: false);
+            if (failure is not null)
+                return failure;
+
+            try
+            {
+                return Results.Json(
+                    await facade.GetWorkflowRunAsync(workflowId, runId, ctx.RequestAborted),
+                    CoreJsonContext.Default.AgentWorkflowRunSnapshot);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return IntegrationNotFound(ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return IntegrationBackendFailure(ex.Message);
+            }
+        });
+
+        group.MapPost("/workflows/{workflowId}/runs/{runId}/responses", async (HttpContext ctx, string workflowId, string runId) =>
+        {
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.mutate", requireCsrf: true);
+            if (failure is not null)
+                return failure;
+
+            AgentWorkflowResponse? response;
+            try
+            {
+                response = await JsonSerializer.DeserializeAsync(
+                    ctx.Request.Body,
+                    CoreJsonContext.Default.AgentWorkflowResponse,
+                    ctx.RequestAborted);
+            }
+            catch
+            {
+                return BadIntegrationRequest("Invalid JSON request body.");
+            }
+
+            if (response is null)
+                return BadIntegrationRequest("request body is required.");
+            if (string.IsNullOrWhiteSpace(response.PortId))
+                return BadIntegrationRequest("portId is required.");
+
+            try
+            {
+                return Results.Json(
+                    await facade.RespondWorkflowRunAsync(workflowId, runId, response, ctx.RequestAborted),
+                    CoreJsonContext.Default.AgentWorkflowRunSnapshot);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return IntegrationNotFound(ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return IntegrationBackendFailure(ex.Message);
+            }
+        });
+
         group.MapGet("/profiles/{actorId}", async (HttpContext ctx, string actorId) =>
         {
             var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.read", requireCsrf: false);
@@ -747,6 +859,24 @@ internal static class IntegrationEndpoints
             new OperationStatusResponse { Success = false, Error = message },
             CoreJsonContext.Default.OperationStatusResponse,
             statusCode: StatusCodes.Status400BadRequest);
+
+    private static IResult BadIntegrationRequest(string message)
+        => Results.Json(
+            new OperationStatusResponse { Success = false, Error = message },
+            CoreJsonContext.Default.OperationStatusResponse,
+            statusCode: StatusCodes.Status400BadRequest);
+
+    private static IResult IntegrationNotFound(string message)
+        => Results.Json(
+            new OperationStatusResponse { Success = false, Error = message },
+            CoreJsonContext.Default.OperationStatusResponse,
+            statusCode: StatusCodes.Status404NotFound);
+
+    private static IResult IntegrationBackendFailure(string message)
+        => Results.Json(
+            new OperationStatusResponse { Success = false, Error = message },
+            CoreJsonContext.Default.OperationStatusResponse,
+            statusCode: StatusCodes.Status502BadGateway);
 
     private static IResult? AuthorizeAndConsume(
         HttpContext ctx,

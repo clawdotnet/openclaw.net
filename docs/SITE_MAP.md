@@ -22,6 +22,8 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Reference | Canvas and A2UI | [CANVAS_A2UI.md](CANVAS_A2UI.md) |
 | Reference | Glossary | [GLOSSARY.md](GLOSSARY.md) |
 | Integrations | Semantic Kernel | [SEMANTIC_KERNEL.md](SEMANTIC_KERNEL.md) |
+| Integrations | Microsoft Agent Framework | [integrations/microsoft-agent-framework.md](integrations/microsoft-agent-framework.md) |
+| Integrations | Workflow Backends | [workflow-backends.md](workflow-backends.md) |
 | Integrations | Microsoft Teams | [TEAMS_SETUP.md](TEAMS_SETUP.md) |
 | Integrations | WhatsApp | [WHATSAPP_SETUP.md](WHATSAPP_SETUP.md) |
 | Integrations | A2A | [a2a.md](a2a.md) |
@@ -71,6 +73,8 @@ Reference
 
 Integrations
   Semantic Kernel
+  Microsoft Agent Framework
+  Workflow Backends
   Microsoft Teams
   WhatsApp
   A2A

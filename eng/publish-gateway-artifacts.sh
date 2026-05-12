@@ -26,40 +26,23 @@ if [[ -z "$RUNTIME_ID" ]]; then
 fi
 
 publish_artifact \
-  "gateway-standard-jit" \
+  "gateway-jit" \
   -c "$CONFIGURATION" \
-  -p:PublishAot=false \
-  -p:OpenClawEnableMafExperiment=false
+  -p:PublishAot=false
 
 publish_artifact \
-  "gateway-maf-enabled-jit" \
-  -c "$CONFIGURATION" \
-  -p:PublishAot=false \
-  -p:OpenClawEnableMafExperiment=true
-
-publish_artifact \
-  "gateway-standard-aot" \
+  "gateway-aot" \
   -c "$CONFIGURATION" \
   -r "$RUNTIME_ID" \
-  -p:PublishAot=true \
-  -p:OpenClawEnableMafExperiment=false
-
-publish_artifact \
-  "gateway-maf-enabled-aot" \
-  -c "$CONFIGURATION" \
-  -r "$RUNTIME_ID" \
-  -p:PublishAot=true \
-  -p:OpenClawEnableMafExperiment=true
+  -p:PublishAot=true
 
 cat <<EOF
 
 Published artifacts:
-- $OUTPUT_ROOT/gateway-standard-jit
-- $OUTPUT_ROOT/gateway-maf-enabled-jit
-- $OUTPUT_ROOT/gateway-standard-aot
-- $OUTPUT_ROOT/gateway-maf-enabled-aot
+- $OUTPUT_ROOT/gateway-jit
+- $OUTPUT_ROOT/gateway-aot
 
 Runtime selection:
-- Standard artifacts: Runtime.Orchestrator=native only; maf fails fast at startup.
-- MAF-enabled artifacts: Runtime.Orchestrator=native|maf; native remains the default.
+- Normal artifacts: Runtime.Orchestrator=native|maf; native remains the default.
+- A2A and durable workflow backends remain opt-in by configuration.
 EOF
