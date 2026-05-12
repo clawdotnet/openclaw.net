@@ -92,7 +92,7 @@ Configure one or more providers under the bridge plugin entry:
 }
 ```
 
-`factoryAssemblyPath` may be absolute or relative to the bridge plugin assembly directory. `factoryTypeName` may also be assembly-qualified when the factory assembly is already loadable.
+`factoryAssemblyPath` may be absolute or relative to the bridge plugin assembly directory. Relative paths must resolve inside the bridge plugin directory. `factoryTypeName` may also be assembly-qualified when the factory assembly is already loadable.
 
 ## Validation
 

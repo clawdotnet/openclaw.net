@@ -23,13 +23,22 @@ public sealed class MicrosoftExtensionsAiProviderBridgeTests : IDisposable
 
     public MicrosoftExtensionsAiProviderBridgeTests()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), "openclaw-meai-provider-tests", Guid.NewGuid().ToString("n"));
+        var tempRoot = Path.Join(Path.GetTempPath(), "openclaw-meai-provider-tests");
+        Directory.CreateDirectory(tempRoot);
+        _tempDir = Path.Join(tempRoot, Guid.NewGuid().ToString("n"));
         Directory.CreateDirectory(_tempDir);
     }
 
     public void Dispose()
     {
-        try { Directory.Delete(_tempDir, recursive: true); } catch { }
+        try
+        {
+            if (Directory.Exists(_tempDir))
+                Directory.Delete(_tempDir, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException)
+        {
+        }
     }
 
     [Fact]
@@ -157,6 +166,27 @@ public sealed class MicrosoftExtensionsAiProviderBridgeTests : IDisposable
     }
 
     [Fact]
+    public void Register_RelativeFactoryAssemblyOutsidePluginDirectory_Throws()
+    {
+        var context = CreateContext(new
+        {
+            providers = new[]
+            {
+                new
+                {
+                    providerId = "meai-test",
+                    models = new[] { "model-a" },
+                    factoryAssemblyPath = "../OpenClaw.TestPluginFixtures.dll",
+                    factoryTypeName = typeof(DeterministicMicrosoftExtensionsAiChatClientFactory).FullName
+                }
+            }
+        });
+
+        var ex = Assert.Throws<InvalidOperationException>(() => new MicrosoftExtensionsAiProviderPlugin().Register(context));
+        Assert.Contains("must stay within the bridge plugin directory", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task LoadAsync_NativeDynamicPlugin_RegistersChatClientProvider()
     {
         var pluginDir = CreateBridgePluginDirectory("meai-native-load");
@@ -201,7 +231,7 @@ public sealed class MicrosoftExtensionsAiProviderBridgeTests : IDisposable
         };
         var providerRegistry = new LlmProviderRegistry();
         Assert.True(providerRegistry.TryRegisterDynamic(provider.ProviderId, provider.Client, "test", provider.Models));
-        var storagePath = Path.Combine(_tempDir, "runtime");
+        var storagePath = Path.Join(_tempDir, "runtime");
         Directory.CreateDirectory(storagePath);
         var providerUsage = new ProviderUsageTracker();
         var service = new GatewayLlmExecutionService(
@@ -273,14 +303,14 @@ public sealed class MicrosoftExtensionsAiProviderBridgeTests : IDisposable
 
     private string CreateBridgePluginDirectory(string directoryName)
     {
-        var pluginDir = Path.Combine(_tempDir, directoryName);
+        var pluginDir = Path.Join(_tempDir, directoryName);
         Directory.CreateDirectory(pluginDir);
         var bridgeAssembly = typeof(MicrosoftExtensionsAiProviderPlugin).Assembly.Location;
         var fixtureAssembly = typeof(DeterministicMicrosoftExtensionsAiChatClientFactory).Assembly.Location;
-        File.Copy(bridgeAssembly, Path.Combine(pluginDir, Path.GetFileName(bridgeAssembly)), overwrite: true);
-        File.Copy(fixtureAssembly, Path.Combine(pluginDir, Path.GetFileName(fixtureAssembly)), overwrite: true);
+        File.Copy(bridgeAssembly, Path.Join(pluginDir, Path.GetFileName(bridgeAssembly)), overwrite: true);
+        File.Copy(fixtureAssembly, Path.Join(pluginDir, Path.GetFileName(fixtureAssembly)), overwrite: true);
         File.WriteAllText(
-            Path.Combine(pluginDir, "openclaw.native-plugin.json"),
+            Path.Join(pluginDir, "openclaw.native-plugin.json"),
             $$"""
             {
               "id": "openclaw-microsoft-extensions-ai-provider",

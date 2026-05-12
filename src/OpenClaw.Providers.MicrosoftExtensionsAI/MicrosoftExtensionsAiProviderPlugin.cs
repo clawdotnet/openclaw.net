@@ -133,21 +133,36 @@ public sealed class MicrosoftExtensionsAiProviderPlugin : INativeDynamicPlugin
     {
         var pluginDirectory = Path.GetDirectoryName(typeof(MicrosoftExtensionsAiProviderPlugin).Assembly.Location)
             ?? AppContext.BaseDirectory;
+        var pluginRoot = EnsureTrailingSeparator(Path.GetFullPath(pluginDirectory));
         var fullPath = Path.IsPathRooted(factoryAssemblyPath)
             ? Path.GetFullPath(factoryAssemblyPath)
-            : Path.GetFullPath(Path.Combine(pluginDirectory, factoryAssemblyPath));
+            : Path.GetFullPath(Path.Join(pluginRoot, factoryAssemblyPath));
+
+        if (!Path.IsPathRooted(factoryAssemblyPath) &&
+            !fullPath.StartsWith(pluginRoot, GetPathComparison()))
+        {
+            throw new InvalidOperationException(
+                $"Microsoft.Extensions.AI factory assembly '{factoryAssemblyPath}' must stay within the bridge plugin directory.");
+        }
 
         if (!File.Exists(fullPath))
             throw new InvalidOperationException($"Microsoft.Extensions.AI factory assembly '{factoryAssemblyPath}' was not found at '{fullPath}'.");
 
         var loadContext = AssemblyLoadContext.GetLoadContext(typeof(MicrosoftExtensionsAiProviderPlugin).Assembly)
             ?? AssemblyLoadContext.Default;
+        var pathComparison = GetPathComparison();
         var loaded = loadContext.Assemblies.FirstOrDefault(assembly =>
             !string.IsNullOrWhiteSpace(assembly.Location) &&
-            string.Equals(Path.GetFullPath(assembly.Location), fullPath, StringComparison.Ordinal));
+            string.Equals(Path.GetFullPath(assembly.Location), fullPath, pathComparison));
 
         return loaded ?? loadContext.LoadFromAssemblyPath(fullPath);
     }
+
+    private static string EnsureTrailingSeparator(string path)
+        => Path.EndsInDirectorySeparator(path) ? path : path + Path.DirectorySeparatorChar;
+
+    private static StringComparison GetPathComparison()
+        => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     private static string RemoveAssemblyQualification(string typeName)
     {
