@@ -167,13 +167,23 @@ internal sealed class DefaultModelSelectionPolicy : IModelSelectionPolicy
         if (request.Messages.Any(static message => message.Role == ChatRole.System))
             combined.SupportsSystemMessages = true;
 
-        if (request.Messages.SelectMany(static message => message.Contents).OfType<UriContent>().Any(static content => HasMediaPrefix(content.MediaType, "image/")))
+        var contents = request.Messages.SelectMany(static message => message.Contents).ToArray();
+        if (contents.OfType<UriContent>().Any(static content => HasMediaPrefix(content.MediaType, "image/")) ||
+            contents.OfType<DataContent>().Any(static content => HasMediaPrefix(content.MediaType, "image/")))
         {
             combined.SupportsVision = true;
             combined.SupportsImageInput = true;
         }
 
-        if (request.Messages.SelectMany(static message => message.Contents).OfType<UriContent>().Any(static content => HasMediaPrefix(content.MediaType, "audio/")))
+        if (contents.OfType<UriContent>().Any(static content => HasMediaPrefix(content.MediaType, "video/")) ||
+            contents.OfType<DataContent>().Any(static content => HasMediaPrefix(content.MediaType, "video/")))
+        {
+            combined.SupportsVision = true;
+            combined.SupportsVideoInput = true;
+        }
+
+        if (contents.OfType<UriContent>().Any(static content => HasMediaPrefix(content.MediaType, "audio/")) ||
+            contents.OfType<DataContent>().Any(static content => HasMediaPrefix(content.MediaType, "audio/")))
             combined.SupportsAudioInput = true;
 
         var reservedOutputTokens = request.ReservedOutputTokens ?? 0;
@@ -208,6 +218,7 @@ internal sealed class DefaultModelSelectionPolicy : IModelSelectionPolicy
                 SupportsReasoningEffort = source.SupportsReasoningEffort,
                 SupportsSystemMessages = source.SupportsSystemMessages,
                 SupportsImageInput = source.SupportsImageInput,
+                SupportsVideoInput = source.SupportsVideoInput,
                 SupportsAudioInput = source.SupportsAudioInput,
                 MinContextTokens = source.MinContextTokens,
                 MinOutputTokens = source.MinOutputTokens
@@ -225,6 +236,7 @@ internal sealed class DefaultModelSelectionPolicy : IModelSelectionPolicy
             && Meets(requirements.SupportsReasoningEffort, caps.SupportsReasoningEffort)
             && Meets(requirements.SupportsSystemMessages, caps.SupportsSystemMessages)
             && Meets(requirements.SupportsImageInput, caps.SupportsImageInput)
+            && Meets(requirements.SupportsVideoInput, caps.SupportsVideoInput)
             && Meets(requirements.SupportsAudioInput, caps.SupportsAudioInput)
             && (!requirements.MinContextTokens.HasValue || caps.MaxContextTokens >= requirements.MinContextTokens.Value)
             && (!requirements.MinOutputTokens.HasValue || caps.MaxOutputTokens >= requirements.MinOutputTokens.Value);
@@ -250,6 +262,8 @@ internal sealed class DefaultModelSelectionPolicy : IModelSelectionPolicy
             missing.Add("reasoning effort was required");
         if (requirements.SupportsImageInput == true && !profile.Capabilities.SupportsImageInput)
             missing.Add("image input was required");
+        if (requirements.SupportsVideoInput == true && !profile.Capabilities.SupportsVideoInput)
+            missing.Add("video input was required");
         if (requirements.SupportsAudioInput == true && !profile.Capabilities.SupportsAudioInput)
             missing.Add("audio input was required");
         return missing.Count == 0 ? "required capabilities were not satisfied" : string.Join(", ", missing);
@@ -284,6 +298,8 @@ internal sealed class DefaultModelSelectionPolicy : IModelSelectionPolicy
             items.Add("reasoning effort");
         if (requirements.SupportsImageInput == true)
             items.Add("image input");
+        if (requirements.SupportsVideoInput == true)
+            items.Add("video input");
         if (requirements.SupportsAudioInput == true)
             items.Add("audio input");
         return items.Count == 0 ? "the requested capabilities" : string.Join("+", items);

@@ -44,6 +44,7 @@ Start here:
 - **48 native tools** covering file ops, sessions, memory, web, messaging, home automation, databases, email, and more
 - **9 channel adapters** (Telegram, SMS, WhatsApp, Teams, Slack, Discord, Signal, email, webhooks) with DM policy, allowlists, and signature validation
 - **Native LLM providers** for OpenAI, Claude, Gemini, Azure OpenAI, Ollama, and OpenAI-compatible endpoints
+- **Optional embedded local models** with package install/verify CLI commands, supervised sidecar inference, and frame-based video understanding
 - **Practical reuse** of existing OpenClaw TS/JS plugins and `SKILL.md` packages
 
 Start with [docs/START_HERE.md](docs/START_HERE.md) for the evaluator overview, [docs/QUICKSTART.md](docs/QUICKSTART.md) for the supported local setup path, or [docs/RELEASES.md](docs/RELEASES.md) for desktop downloads.
@@ -65,7 +66,7 @@ Each desktop bundle includes Companion, the NativeAOT gateway, and the NativeAOT
 1. Extract the archive.
 2. Launch Companion from the `companion` folder.
 3. Open the **Setup** tab.
-4. Choose a provider/model and enter the provider key, or choose Ollama for a local model.
+4. Choose a provider/model and enter the provider key, choose Ollama for a local model server, or choose Embedded for an OpenClaw-managed local model.
 5. Click **Set Up and Start**.
 
 Companion writes a local config, starts the bundled gateway on `127.0.0.1`, and connects to it. The current Windows and macOS release archives are unsigned, so first-run OS warnings are expected. See [docs/RELEASES.md](docs/RELEASES.md) for checksums, standalone CLI/gateway archives, signing status, and maintainer release flow.
@@ -114,6 +115,8 @@ Useful follow-up commands and surfaces:
 
 ```bash
 openclaw models presets
+openclaw models packages
+openclaw models install gemma-local-small-q4 --accept-license --path ~/Downloads/model.gguf
 openclaw models doctor
 openclaw maintenance scan --config ~/.openclaw/config/openclaw.settings.json
 openclaw maintenance fix --config ~/.openclaw/config/openclaw.settings.json --dry-run
@@ -142,6 +145,16 @@ openclaw setup --non-interactive --profile local --workspace ./workspace --provi
 
 OpenClaw.NET now treats Ollama as a first-class native provider at `http://127.0.0.1:11434`. Older `/v1` endpoints still work for one compatibility cycle, but `openclaw models doctor` will flag them so you can migrate cleanly.
 
+For OpenClaw-managed local inference, use provider `embedded` with an installable package:
+
+```bash
+openclaw setup --provider embedded --model-preset embedded-gemma-small-q4 --model gemma-local-small-q4
+openclaw models packages
+openclaw models status gemma-local-small-q4
+```
+
+Embedded video support is frame-based: OpenClaw samples local `video/*` inputs into ordered image frames before calling the local sidecar. LiteRT-LM packages are experimental and require an OpenClaw-compatible adapter binary; see [docs/LOCAL_MODELS.md](docs/LOCAL_MODELS.md).
+
 > **Breaking change**: browser admin usage is account/session-first. Use named operator accounts for `/admin`, and use operator account tokens for Companion, CLI, API, and websocket clients.
 
 ## Security
@@ -161,6 +174,7 @@ The public documentation site is **[AgentQi.dev](https://agentqi.dev)**. The sou
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Providers, tools, skills, memory, channels, and day-to-day operation |
 | [docs/RELEASES.md](docs/RELEASES.md) | Desktop downloads, release assets, and signing status |
 | [docs/TOOLS_GUIDE.md](docs/TOOLS_GUIDE.md) | Native tool catalog and configuration |
+| [docs/LOCAL_MODELS.md](docs/LOCAL_MODELS.md) | Embedded local models, frame-based video, and experimental LiteRT-LM adapter notes |
 | [docs/mempalace-memory.md](docs/mempalace-memory.md) | Optional MemPalace.NET memory provider and temporal knowledge graph |
 | [docs/CANVAS_A2UI.md](docs/CANVAS_A2UI.md) | Supported Canvas and A2UI visual workspace behavior |
 | [docs/MODEL_PROFILES.md](docs/MODEL_PROFILES.md) | Provider-agnostic named model profiles (including Gemma) |

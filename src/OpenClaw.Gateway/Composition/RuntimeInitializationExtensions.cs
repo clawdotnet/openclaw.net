@@ -79,10 +79,11 @@ internal static partial class RuntimeInitializationExtensions
             await services.McpRegistry.RegisterToolsAsync(services.NativeRegistry, app.Lifetime.ApplicationStopping);
 
         LlmClientFactory.ResetDynamicProviders();
+        var videoFrameExtraction = app.Services.GetRequiredService<IVideoFrameExtractionService>();
         string? builtInInitError = null;
         try
         {
-            services.ProviderRegistry.RegisterDefault(config.Llm, LlmClientFactory.CreateChatClient(config.Llm));
+            services.ProviderRegistry.RegisterDefault(config.Llm, LlmClientFactory.CreateChatClient(config.Llm, config.LocalInference, config.Multimodal, videoFrameExtraction));
         }
         catch (InvalidOperationException ex)
         {
@@ -114,7 +115,7 @@ internal static partial class RuntimeInitializationExtensions
 
         var chatClient = services.ProviderRegistry.TryGet("default", out var defaultRegistration) && defaultRegistration is not null
             ? defaultRegistration.Client
-            : LlmClientFactory.CreateChatClient(config.Llm);
+            : LlmClientFactory.CreateChatClient(config.Llm, config.LocalInference, config.Multimodal, videoFrameExtraction);
 
         var resolveLogger = loggerFactory.CreateLogger("PluginResolver");
         IReadOnlyList<ITool> tools = NativePluginRegistry.ResolvePreference(

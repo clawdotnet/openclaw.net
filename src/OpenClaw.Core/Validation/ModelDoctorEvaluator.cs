@@ -174,11 +174,31 @@ public static class ModelDoctorEvaluator
         => providerId is "openai-compatible" or "groq" or "together" or "lmstudio" or "anthropic-vertex" or "amazon-bedrock" or "azure-openai";
 
     private static bool RequiresCredentials(string providerId)
-        => providerId is not "ollama" and not "lmstudio";
+        => providerId is not "ollama" and not "lmstudio" and not "embedded";
 
     private static ModelCapabilities GuessCapabilities(string providerId)
     {
         var provider = Normalize(providerId) ?? string.Empty;
+        if (provider == "embedded")
+        {
+            return new ModelCapabilities
+            {
+                SupportsTools = false,
+                SupportsVision = false,
+                SupportsJsonSchema = false,
+                SupportsStructuredOutputs = false,
+                SupportsStreaming = true,
+                SupportsParallelToolCalls = false,
+                SupportsReasoningEffort = false,
+                SupportsSystemMessages = true,
+                SupportsImageInput = false,
+                SupportsVideoInput = false,
+                SupportsAudioInput = false,
+                MaxContextTokens = 4096,
+                MaxOutputTokens = 1024
+            };
+        }
+
         var supportsTools = provider is "openai" or "openai-compatible" or "azure-openai" or "groq" or "together" or "lmstudio" or "anthropic" or "claude" or "anthropic-vertex" or "amazon-bedrock" or "gemini" or "google";
         var supportsVision = provider is "openai" or "openai-compatible" or "azure-openai" or "gemini" or "google" or "ollama" or "amazon-bedrock";
         var supportsPromptCaching = provider is "openai" or "azure-openai" or "anthropic" or "claude" or "anthropic-vertex" or "gemini" or "google";
@@ -194,6 +214,7 @@ public static class ModelDoctorEvaluator
             SupportsReasoningEffort = provider is "openai" or "openai-compatible" or "azure-openai",
             SupportsSystemMessages = true,
             SupportsImageInput = supportsVision,
+            SupportsVideoInput = supportsVision,
             SupportsAudioInput = provider is "openai" or "openai-compatible" or "azure-openai",
             SupportsPromptCaching = supportsPromptCaching,
             SupportsExplicitCacheRetention = supportsExplicitCacheRetention,
@@ -284,6 +305,16 @@ public static class ModelDoctorEvaluator
             string.IsNullOrWhiteSpace(status.PresetId))
         {
             warnings.Add($"Profile '{status.Id}' is an Ollama profile without a PresetId. Use a local preset so doctor and setup can apply local-model guidance.");
+        }
+
+        if (status.ProviderId.Equals("embedded", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(status.PresetId))
+                warnings.Add($"Profile '{status.Id}' is embedded local but has no PresetId. Use an embedded preset so model install and verification can find the package.");
+            if (config is not null && !config.LocalInference.Enabled)
+                warnings.Add($"Profile '{status.Id}' uses the embedded provider but OpenClaw:LocalInference:Enabled is false.");
+            if (status.FallbackProfileIds.Length == 0 && status.FallbackModels.Length == 0)
+                warnings.Add($"Profile '{status.Id}' has no fallback profile configured for tool-heavy or long-context routes.");
         }
 
         if (status.UsesCompatibilityTransport)

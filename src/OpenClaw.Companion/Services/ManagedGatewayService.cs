@@ -63,13 +63,14 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
             return ManagedGatewaySetupResult.Fail("The bundled OpenClaw CLI was not found.");
 
         var provider = string.IsNullOrWhiteSpace(request.Provider) ? "openai" : request.Provider.Trim();
-        var model = string.IsNullOrWhiteSpace(request.Model) ? "gpt-4o" : request.Model.Trim();
+        var model = string.IsNullOrWhiteSpace(request.Model) ? GetDefaultSetupModel(provider) : request.Model.Trim();
+        var modelPreset = string.IsNullOrWhiteSpace(request.ModelPresetId) ? GetDefaultSetupModelPreset(provider) : request.ModelPresetId.Trim();
         var workspace = string.IsNullOrWhiteSpace(request.WorkspacePath) ? WorkspacePath : request.WorkspacePath.Trim();
         var config = string.IsNullOrWhiteSpace(request.ConfigPath) ? ConfigPath : request.ConfigPath.Trim();
         var apiKey = request.ApiKey?.Trim();
 
-        if (!provider.Equals("ollama", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(apiKey))
-            return ManagedGatewaySetupResult.Fail("A provider API key is required unless you choose Ollama.");
+        if (ProviderRequiresApiKey(provider) && string.IsNullOrWhiteSpace(apiKey))
+            return ManagedGatewaySetupResult.Fail("A provider API key is required unless you choose Ollama or Embedded.");
 
         var args = new List<string>
         {
@@ -82,10 +83,10 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
             "--config", config
         };
 
-        if (!string.IsNullOrWhiteSpace(request.ModelPresetId))
+        if (!string.IsNullOrWhiteSpace(modelPreset))
         {
             args.Add("--model-preset");
-            args.Add(request.ModelPresetId.Trim());
+            args.Add(modelPreset);
         }
 
         if (!string.IsNullOrWhiteSpace(apiKey))
@@ -108,6 +109,54 @@ public sealed class ManagedGatewayService : IAsyncDisposable, IDisposable
         SetProviderApiKey(apiKey);
         return ManagedGatewaySetupResult.Success(result.Output);
     }
+
+    public async Task<ManagedGatewayCommandResult> RunLocalModelCommandAsync(
+        string subcommand,
+        string packageId,
+        string? modelPath,
+        CancellationToken ct)
+    {
+        if (CliExecutable is null)
+            return ManagedGatewayCommandResult.Fail("The bundled OpenClaw CLI was not found.");
+
+        var normalizedPackageId = string.IsNullOrWhiteSpace(packageId) ? "gemma-local-small-q4" : packageId.Trim();
+        var args = new List<string>
+        {
+            "models",
+            subcommand,
+            normalizedPackageId
+        };
+
+        if (subcommand.Equals("install", StringComparison.OrdinalIgnoreCase))
+        {
+            args.Add("--accept-license");
+            if (!string.IsNullOrWhiteSpace(modelPath))
+            {
+                args.Add("--path");
+                args.Add(modelPath.Trim());
+            }
+        }
+
+        var result = await RunProcessToCompletionAsync(CliExecutable, args, environment: null, TimeSpan.FromMinutes(10), ct);
+        var message = string.IsNullOrWhiteSpace(result.Error) ? result.Output : result.Error;
+        return result.ExitCode == 0
+            ? ManagedGatewayCommandResult.Success(message)
+            : ManagedGatewayCommandResult.Fail(message);
+    }
+
+    private static bool ProviderRequiresApiKey(string provider)
+        => !provider.Equals("ollama", StringComparison.OrdinalIgnoreCase) &&
+           !provider.Equals("embedded", StringComparison.OrdinalIgnoreCase);
+
+    private static string GetDefaultSetupModel(string provider)
+        => provider.Equals("embedded", StringComparison.OrdinalIgnoreCase)
+            ? "gemma-local-small-q4"
+            : "gpt-4o";
+
+    private static string? GetDefaultSetupModelPreset(string provider)
+        => provider.Equals("embedded", StringComparison.OrdinalIgnoreCase)
+            ? "embedded-gemma-small-q4"
+            : null;
 
     public async Task<ManagedGatewayStartResult> StartAsync(string? authToken, CancellationToken ct)
     {
@@ -615,4 +664,10 @@ public sealed record ManagedGatewayStartResult(bool IsSuccess, string Message)
 {
     public static ManagedGatewayStartResult Success(string message) => new(true, message);
     public static ManagedGatewayStartResult Fail(string message) => new(false, message);
+}
+
+public sealed record ManagedGatewayCommandResult(bool IsSuccess, string Message)
+{
+    public static ManagedGatewayCommandResult Success(string message) => new(true, message);
+    public static ManagedGatewayCommandResult Fail(string message) => new(false, message);
 }

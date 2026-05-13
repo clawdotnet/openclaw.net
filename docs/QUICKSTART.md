@@ -210,6 +210,20 @@ openclaw models doctor
 
 Plain `openclaw run "hello"` requests work as prompt-only chat with non-tool Ollama profiles when no explicit tool preset is requested. Tool-heavy routes and explicit presets still need a tool-capable model profile or configured fallback. The doctor now warns when an Ollama profile still points at `/v1` or when a local agentic profile is missing a deterministic fallback.
 
+## Optional Embedded Local Model
+
+Embedded local mode lets OpenClaw manage the model package and local sidecar process. It does not require a provider API key.
+
+```bash
+openclaw setup --provider embedded --model-preset embedded-gemma-small-q4 --model gemma-local-small-q4
+openclaw models packages
+openclaw models install gemma-local-small-q4 --accept-license --path ~/Downloads/model.gguf
+openclaw models verify gemma-local-small-q4
+openclaw setup launch --config ~/.openclaw/config/openclaw.settings.json
+```
+
+Use embedded mode for private/offline helper tasks. Video input support is frame-based and requires local `ffmpeg`/`ffprobe`; OpenClaw samples video into ordered image frames before calling the model. LiteRT-LM packages are experimental and require an adapter binary configured with `OpenClaw:LocalInference:LiteRtRuntimePath`. See [LOCAL_MODELS.md](LOCAL_MODELS.md).
+
 After the first successful run, use the maintenance surface to keep the install healthy without touching user-authored prompt files:
 
 ```bash

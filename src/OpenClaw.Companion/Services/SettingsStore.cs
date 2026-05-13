@@ -95,7 +95,8 @@ public sealed class SettingsStore
             SetupProvider = settings.SetupProvider,
             SetupModel = settings.SetupModel,
             SetupModelPreset = settings.SetupModelPreset,
-            SetupWorkspacePath = settings.SetupWorkspacePath
+            SetupWorkspacePath = settings.SetupWorkspacePath,
+            SetupLocalModelPath = settings.SetupLocalModelPath
         };
 
         var json = JsonSerializer.Serialize(toSave, JsonOptions);

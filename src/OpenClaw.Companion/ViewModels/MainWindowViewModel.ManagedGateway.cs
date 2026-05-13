@@ -50,6 +50,12 @@ public sealed partial class MainWindowViewModel
     [ObservableProperty]
     private string _setupApiKey = "";
 
+    [ObservableProperty]
+    private string _setupLocalModelPath = "";
+
+    [ObservableProperty]
+    private string _embeddedLocalModelStatus = "Local model status not checked. Video uses sampled frames; LiteRT packages require an experimental adapter.";
+
     public bool CanRunLocalGatewaySetup => LocalGatewayCanRunSetup && !IsManagedGatewayBusy;
 
     public async Task InitializeLocalGatewayAsync()
@@ -69,6 +75,112 @@ public sealed partial class MainWindowViewModel
             : LocalGatewayConfigExists
                 ? "Local gateway is configured but not running."
                 : "Local gateway is not set up.";
+    }
+
+    [RelayCommand]
+    private async Task RefreshEmbeddedLocalModelStatusAsync()
+    {
+        if (IsManagedGatewayBusy)
+            return;
+
+        IsManagedGatewayBusy = true;
+        try
+        {
+            var result = await _managedGateway.RunLocalModelCommandAsync(
+                "status",
+                ResolveEmbeddedPackageId(),
+                modelPath: null,
+                CancellationToken.None);
+            EmbeddedLocalModelStatus = result.Message.Trim();
+            if (!result.IsSuccess)
+                AddSystemMessageCore($"Local model status failed: {result.Message}");
+        }
+        finally
+        {
+            IsManagedGatewayBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task InstallEmbeddedLocalModelAsync()
+    {
+        if (IsManagedGatewayBusy)
+            return;
+
+        if (string.IsNullOrWhiteSpace(SetupLocalModelPath))
+        {
+            EmbeddedLocalModelStatus = "Choose a local model file path (.gguf or .litertlm) before installing.";
+            return;
+        }
+
+        IsManagedGatewayBusy = true;
+        try
+        {
+            SaveSettings();
+            var result = await _managedGateway.RunLocalModelCommandAsync(
+                "install",
+                ResolveEmbeddedPackageId(),
+                SetupLocalModelPath,
+                CancellationToken.None);
+            EmbeddedLocalModelStatus = result.Message.Trim();
+            AddSystemMessageCore(result.IsSuccess
+                ? "Embedded local model installed."
+                : $"Embedded local model install failed: {result.Message}");
+        }
+        finally
+        {
+            IsManagedGatewayBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task VerifyEmbeddedLocalModelAsync()
+    {
+        if (IsManagedGatewayBusy)
+            return;
+
+        IsManagedGatewayBusy = true;
+        try
+        {
+            var result = await _managedGateway.RunLocalModelCommandAsync(
+                "verify",
+                ResolveEmbeddedPackageId(),
+                modelPath: null,
+                CancellationToken.None);
+            EmbeddedLocalModelStatus = result.Message.Trim();
+            AddSystemMessageCore(result.IsSuccess
+                ? "Embedded local model verified."
+                : $"Embedded local model verification failed: {result.Message}");
+        }
+        finally
+        {
+            IsManagedGatewayBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task RemoveEmbeddedLocalModelAsync()
+    {
+        if (IsManagedGatewayBusy)
+            return;
+
+        IsManagedGatewayBusy = true;
+        try
+        {
+            var result = await _managedGateway.RunLocalModelCommandAsync(
+                "remove",
+                ResolveEmbeddedPackageId(),
+                modelPath: null,
+                CancellationToken.None);
+            EmbeddedLocalModelStatus = result.Message.Trim();
+            AddSystemMessageCore(result.IsSuccess
+                ? "Embedded local model removed."
+                : $"Embedded local model removal failed: {result.Message}");
+        }
+        finally
+        {
+            IsManagedGatewayBusy = false;
+        }
     }
 
     [RelayCommand]
@@ -196,6 +308,13 @@ public sealed partial class MainWindowViewModel
             SetupWorkspacePath = _managedGateway.WorkspacePath;
     }
 
+    private string ResolveEmbeddedPackageId()
+        => !string.IsNullOrWhiteSpace(SetupModelPreset)
+            ? SetupModelPreset.Trim()
+            : !string.IsNullOrWhiteSpace(SetupModel)
+                ? SetupModel.Trim()
+                : "gemma-local-small-q4";
+
     partial void OnAutoStartLocalGatewayChanged(bool value)
     {
         if (!_isLoadingSettings)
@@ -206,12 +325,27 @@ public sealed partial class MainWindowViewModel
     {
         if (value.Equals("ollama", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.IsNullOrWhiteSpace(SetupModel) || SetupModel.Equals("gpt-4o", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(SetupModel) ||
+                SetupModel.Equals("gpt-4o", StringComparison.OrdinalIgnoreCase) ||
+                SetupModel.Equals("gemma-local-small-q4", StringComparison.OrdinalIgnoreCase))
                 SetupModel = "llama3.2";
             if (string.IsNullOrWhiteSpace(SetupModelPreset))
                 SetupModelPreset = "ollama-general";
         }
-        else if (string.IsNullOrWhiteSpace(SetupModel) || SetupModel.Equals("llama3.2", StringComparison.OrdinalIgnoreCase))
+        else if (value.Equals("embedded", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(SetupModel) ||
+                SetupModel.Equals("gpt-4o", StringComparison.OrdinalIgnoreCase) ||
+                SetupModel.Equals("llama3.2", StringComparison.OrdinalIgnoreCase))
+                SetupModel = "gemma-local-small-q4";
+            if (string.IsNullOrWhiteSpace(SetupModelPreset) ||
+                SetupModelPreset.Equals("ollama-general", StringComparison.OrdinalIgnoreCase))
+                SetupModelPreset = "embedded-gemma-small-q4";
+            SetupApiKey = "";
+        }
+        else if (string.IsNullOrWhiteSpace(SetupModel) ||
+                 SetupModel.Equals("llama3.2", StringComparison.OrdinalIgnoreCase) ||
+                 SetupModel.Equals("gemma-local-small-q4", StringComparison.OrdinalIgnoreCase))
         {
             SetupModel = "gpt-4o";
             SetupModelPreset = "";
@@ -234,6 +368,12 @@ public sealed partial class MainWindowViewModel
     }
 
     partial void OnSetupWorkspacePathChanged(string value)
+    {
+        if (!_isLoadingSettings)
+            SaveSettings();
+    }
+
+    partial void OnSetupLocalModelPathChanged(string value)
     {
         if (!_isLoadingSettings)
             SaveSettings();

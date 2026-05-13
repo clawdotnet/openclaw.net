@@ -86,14 +86,35 @@
                             <StackPanel Spacing="10">
                                 <TextBlock Text="First Run" FontWeight="SemiBold" />
                                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
-                                    <TextBox Grid.Column="0" Text="{Binding SetupProvider}" Watermark="openai / anthropic / gemini / ollama" />
+                                    <TextBox Grid.Column="0" Text="{Binding SetupProvider}" Watermark="openai / anthropic / gemini / ollama / embedded" />
                                     <TextBox Grid.Column="1" Text="{Binding SetupModel}" Watermark="gpt-4o" />
-                                    <TextBox Grid.Column="2" Text="{Binding SetupModelPreset}" Watermark="ollama-general" />
+                                    <TextBox Grid.Column="2" Text="{Binding SetupModelPreset}" Watermark="ollama-general / embedded-gemma-small-q4" />
                                 </Grid>
                                 <Grid ColumnDefinitions="2*,*" ColumnSpacing="10">
                                     <TextBox Grid.Column="0" Text="{Binding SetupWorkspacePath}" Watermark="Workspace path" />
-                                    <TextBox Grid.Column="1" Text="{Binding SetupApiKey}" PasswordChar="•" Watermark="Provider API key" />
+                                    <TextBox Grid.Column="1" Text="{Binding SetupApiKey}" PasswordChar="•" Watermark="Provider API key (not needed for embedded)" />
                                 </Grid>
+                                <TextBlock Text="Embedded local mode: frame-based video understanding; LiteRT is an experimental edge runtime."
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <Grid ColumnDefinitions="2*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+                                    <TextBox Grid.Column="0" Text="{Binding SetupLocalModelPath}" Watermark="Local model path (.gguf / .litertlm)" />
+                                    <Button Grid.Column="1" Content="Status"
+                                            Command="{Binding RefreshEmbeddedLocalModelStatusCommand}"
+                                            IsEnabled="{Binding CanRunLocalGatewaySetup}" />
+                                    <Button Grid.Column="2" Content="Install"
+                                            Command="{Binding InstallEmbeddedLocalModelCommand}"
+                                            IsEnabled="{Binding CanRunLocalGatewaySetup}" />
+                                    <Button Grid.Column="3" Content="Verify"
+                                            Command="{Binding VerifyEmbeddedLocalModelCommand}"
+                                            IsEnabled="{Binding CanRunLocalGatewaySetup}" />
+                                    <Button Grid.Column="4" Content="Remove"
+                                            Command="{Binding RemoveEmbeddedLocalModelCommand}"
+                                            IsEnabled="{Binding CanRunLocalGatewaySetup}" />
+                                </Grid>
+                                <TextBlock Text="{Binding EmbeddedLocalModelStatus}"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Button Content="Set Up and Start"
                                             Command="{Binding SetupAndStartLocalGatewayCommand}"

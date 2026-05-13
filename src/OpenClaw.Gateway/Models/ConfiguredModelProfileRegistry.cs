@@ -10,7 +10,7 @@ using OpenClaw.Gateway.Extensions;
 
 namespace OpenClaw.Gateway.Models;
 
-internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
+internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, IDisposable
 {
     internal sealed class Registration
     {
@@ -18,12 +18,14 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
         public required LlmProviderConfig ProviderConfig { get; init; }
         public required string[] ValidationIssues { get; init; }
         public IChatClient? Client { get; init; }
+        public bool OwnsClient { get; init; }
         public bool IsDefault { get; init; }
     }
 
     private readonly ConcurrentDictionary<string, Registration> _registrations = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<ConfiguredModelProfileRegistry> _logger;
     private readonly LlmProviderRegistry? _providerRegistry;
+    private readonly IVideoFrameExtractionService? _videoFrameExtraction;
 
     public ConfiguredModelProfileRegistry(GatewayConfig config, ILogger<ConfiguredModelProfileRegistry> logger)
         : this(config, logger, null)
@@ -33,10 +35,12 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
     public ConfiguredModelProfileRegistry(
         GatewayConfig config,
         ILogger<ConfiguredModelProfileRegistry> logger,
-        LlmProviderRegistry? providerRegistry)
+        LlmProviderRegistry? providerRegistry,
+        IVideoFrameExtractionService? videoFrameExtraction = null)
     {
         _logger = logger;
         _providerRegistry = providerRegistry;
+        _videoFrameExtraction = videoFrameExtraction;
         DefaultProfileId = BuildRegistrations(config);
     }
 
@@ -95,13 +99,15 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
             var issues = ValidateProfile(profile, config).ToArray();
             var providerConfig = BuildProviderConfig(config, profile);
             IChatClient? client = null;
+            var ownsClient = false;
             if (issues.Length == 0)
             {
                 if (!TryResolveRegisteredClient(profile, out client))
                 {
                     try
                     {
-                        client = LlmClientFactory.CreateChatClient(providerConfig);
+                        client = LlmClientFactory.CreateChatClient(providerConfig, config.LocalInference, config.Multimodal, _videoFrameExtraction);
+                        ownsClient = true;
                     }
                     catch (Exception ex)
                     {
@@ -120,6 +126,7 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
                 ProviderConfig = providerConfig,
                 ValidationIssues = issues,
                 Client = client,
+                OwnsClient = ownsClient,
                 IsDefault = isDefault
             };
 
@@ -138,6 +145,7 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
                     ProviderConfig = registration.ProviderConfig,
                     ValidationIssues = registration.ValidationIssues,
                     Client = registration.Client,
+                    OwnsClient = registration.OwnsClient,
                     IsDefault = true
                 };
             }
@@ -163,6 +171,26 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
     private static ModelCapabilities GuessCapabilities(string providerId)
     {
         var provider = (providerId ?? string.Empty).Trim().ToLowerInvariant();
+        if (provider == "embedded")
+        {
+            return new ModelCapabilities
+            {
+                SupportsTools = false,
+                SupportsVision = false,
+                SupportsJsonSchema = false,
+                SupportsStructuredOutputs = false,
+                SupportsStreaming = true,
+                SupportsParallelToolCalls = false,
+                SupportsReasoningEffort = false,
+                SupportsSystemMessages = true,
+                SupportsImageInput = false,
+                SupportsVideoInput = false,
+                SupportsAudioInput = false,
+                MaxContextTokens = 4096,
+                MaxOutputTokens = 1024
+            };
+        }
+
         var supportsTools = provider is "openai" or "openai-compatible" or "azure-openai" or "groq" or "together" or "lmstudio" or "anthropic" or "claude" or "anthropic-vertex" or "amazon-bedrock" or "gemini" or "google";
         var supportsVision = provider is "openai" or "openai-compatible" or "azure-openai" or "gemini" or "google" or "ollama" or "amazon-bedrock";
         var supportsPromptCaching = provider is "openai" or "azure-openai" or "anthropic" or "claude" or "anthropic-vertex" or "gemini" or "google";
@@ -180,6 +208,7 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
             SupportsReasoningEffort = provider is "openai" or "openai-compatible" or "azure-openai",
             SupportsSystemMessages = true,
             SupportsImageInput = supportsVision,
+            SupportsVideoInput = supportsVision,
             SupportsAudioInput = provider is "openai" or "openai-compatible" or "azure-openai",
             SupportsPromptCaching = supportsPromptCaching,
             SupportsExplicitCacheRetention = supportsExplicitCacheRetention,
@@ -288,33 +317,66 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
 
     private static ModelCapabilities ResolveCapabilities(GatewayConfig config, ModelProfileConfig model)
     {
+        ModelCapabilities capabilities;
         if (model.Capabilities is not null)
-            return model.Capabilities;
-
-        if (LocalModelPresetCatalog.TryGet(model.PresetId, out var preset) && preset is not null)
         {
-            return new ModelCapabilities
-            {
-                SupportsTools = preset.Capabilities.SupportsTools,
-                SupportsVision = preset.Capabilities.SupportsVision,
-                SupportsJsonSchema = preset.Capabilities.SupportsJsonSchema,
-                SupportsStructuredOutputs = preset.Capabilities.SupportsStructuredOutputs,
-                SupportsStreaming = preset.Capabilities.SupportsStreaming,
-                SupportsParallelToolCalls = preset.Capabilities.SupportsParallelToolCalls,
-                SupportsReasoningEffort = preset.Capabilities.SupportsReasoningEffort,
-                SupportsSystemMessages = preset.Capabilities.SupportsSystemMessages,
-                SupportsImageInput = preset.Capabilities.SupportsImageInput,
-                SupportsAudioInput = preset.Capabilities.SupportsAudioInput,
-                SupportsPromptCaching = preset.Capabilities.SupportsPromptCaching,
-                SupportsExplicitCacheRetention = preset.Capabilities.SupportsExplicitCacheRetention,
-                ReportsCacheReadTokens = preset.Capabilities.ReportsCacheReadTokens,
-                ReportsCacheWriteTokens = preset.Capabilities.ReportsCacheWriteTokens,
-                MaxContextTokens = preset.Capabilities.MaxContextTokens,
-                MaxOutputTokens = preset.Capabilities.MaxOutputTokens
-            };
+            capabilities = CloneCapabilities(model.Capabilities);
+        }
+        else if (LocalModelPresetCatalog.TryGet(model.PresetId, out var preset) && preset is not null)
+        {
+            capabilities = CloneCapabilities(preset.Capabilities);
+        }
+        else
+        {
+            capabilities = GuessCapabilities(Normalize(model.Provider) ?? config.Llm.Provider);
         }
 
-        return GuessCapabilities(Normalize(model.Provider) ?? config.Llm.Provider);
+        return ApplyRuntimeCapabilityConstraints(config, model, capabilities);
+    }
+
+    private static ModelCapabilities ApplyRuntimeCapabilityConstraints(
+        GatewayConfig config,
+        ModelProfileConfig model,
+        ModelCapabilities capabilities)
+    {
+        var provider = Normalize(model.Provider)
+            ?? (LocalModelPresetCatalog.TryGet(model.PresetId, out var preset) ? preset?.Provider : null)
+            ?? config.Llm.Provider;
+        if (!provider.Equals("embedded", StringComparison.OrdinalIgnoreCase))
+            return capabilities;
+
+        if (!config.Multimodal.Enabled ||
+            !config.Multimodal.Video.Enabled ||
+            !capabilities.SupportsImageInput)
+        {
+            capabilities.SupportsVideoInput = false;
+        }
+
+        return capabilities;
+    }
+
+    private static ModelCapabilities CloneCapabilities(ModelCapabilities source)
+    {
+        return new ModelCapabilities
+        {
+            SupportsTools = source.SupportsTools,
+            SupportsVision = source.SupportsVision,
+            SupportsJsonSchema = source.SupportsJsonSchema,
+            SupportsStructuredOutputs = source.SupportsStructuredOutputs,
+            SupportsStreaming = source.SupportsStreaming,
+            SupportsParallelToolCalls = source.SupportsParallelToolCalls,
+            SupportsReasoningEffort = source.SupportsReasoningEffort,
+            SupportsSystemMessages = source.SupportsSystemMessages,
+            SupportsImageInput = source.SupportsImageInput,
+            SupportsVideoInput = source.SupportsVideoInput,
+            SupportsAudioInput = source.SupportsAudioInput,
+            SupportsPromptCaching = source.SupportsPromptCaching,
+            SupportsExplicitCacheRetention = source.SupportsExplicitCacheRetention,
+            ReportsCacheReadTokens = source.ReportsCacheReadTokens,
+            ReportsCacheWriteTokens = source.ReportsCacheWriteTokens,
+            MaxContextTokens = source.MaxContextTokens,
+            MaxOutputTokens = source.MaxOutputTokens
+        };
     }
 
     private static string? ResolveEndpoint(GatewayConfig config, ModelProfile profile)
@@ -395,5 +457,14 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry
 
         client = registration.Client;
         return true;
+    }
+
+    public void Dispose()
+    {
+        foreach (var registration in _registrations.Values.Distinct())
+        {
+            if (registration.OwnsClient)
+                registration.Client?.Dispose();
+        }
     }
 }

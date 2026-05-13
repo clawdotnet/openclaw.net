@@ -12,6 +12,7 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Overview | Getting Started | [GETTING_STARTED.md](GETTING_STARTED.md) |
 | Guides | User Guide | [USER_GUIDE.md](USER_GUIDE.md) |
 | Guides | Tools Guide | [TOOLS_GUIDE.md](TOOLS_GUIDE.md) |
+| Guides | Embedded Local Models | [LOCAL_MODELS.md](LOCAL_MODELS.md) |
 | Guides | External CLI Connectors | [EXTERNAL_CLI_CONNECTORS.md](EXTERNAL_CLI_CONNECTORS.md) |
 | Guides | Model Profiles | [MODEL_PROFILES.md](MODEL_PROFILES.md) |
 | Guides | Prompt Caching | [PROMPT_CACHING.md](PROMPT_CACHING.md) |
@@ -59,6 +60,7 @@ Overview
 Guides
   User Guide
   Tools Guide
+  Embedded Local Models
   External CLI Connectors
   Model Profiles
   Prompt Caching

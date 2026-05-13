@@ -74,7 +74,24 @@ public static class LlmClientFactory
             static kvp => kvp.Value.OwnerId,
             StringComparer.OrdinalIgnoreCase);
 
-    public static IChatClient CreateChatClient(LlmProviderConfig config)
+    public static IChatClient CreateChatClient(
+        LlmProviderConfig config,
+        LocalInferenceConfig? localInference = null,
+        MultimodalConfig? multimodal = null)
+        => CreateChatClientCore(config, localInference, multimodal, videoFrames: null);
+
+    internal static IChatClient CreateChatClient(
+        LlmProviderConfig config,
+        LocalInferenceConfig? localInference,
+        MultimodalConfig? multimodal,
+        IVideoFrameExtractionService? videoFrames)
+        => CreateChatClientCore(config, localInference, multimodal, videoFrames);
+
+    private static IChatClient CreateChatClientCore(
+        LlmProviderConfig config,
+        LocalInferenceConfig? localInference,
+        MultimodalConfig? multimodal,
+        IVideoFrameExtractionService? videoFrames)
     {
         // Check dynamic providers first (plugin-registered)
         if (_dynamicProviders.TryGetValue(config.Provider, out var dynamicClient))
@@ -104,6 +121,11 @@ public static class LlmClientFactory
                     Endpoint = OllamaEndpointNormalizer.NormalizeBaseUrl(config.Endpoint),
                     Model = config.Model
                 }),
+            "embedded" => new EmbeddedLocalChatClient(
+                config,
+                localInference ?? new LocalInferenceConfig(),
+                multimodal,
+                videoFrames: videoFrames),
             "azure-openai" => CreateAzureOpenAiClient(config)
                 .GetChatClient(config.Model)
                 .AsIChatClient(),
@@ -131,7 +153,7 @@ public static class LlmClientFactory
                 .AsIChatClient(config.Model),
             _ => throw new InvalidOperationException(
                 $"Unsupported LLM provider: {config.Provider}. " +
-                "Supported: openai, anthropic, claude, anthropic-vertex, gemini, google, ollama, azure-openai, openai-compatible, groq, together, lmstudio, amazon-bedrock")
+                "Supported: openai, anthropic, claude, anthropic-vertex, gemini, google, ollama, embedded, azure-openai, openai-compatible, groq, together, lmstudio, amazon-bedrock")
         };
     }
 

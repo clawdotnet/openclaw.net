@@ -131,6 +131,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             SetupWorkspacePath = string.IsNullOrWhiteSpace(settings.SetupWorkspacePath)
                 ? _managedGateway.WorkspacePath
                 : settings.SetupWorkspacePath;
+            SetupLocalModelPath = settings.SetupLocalModelPath ?? "";
             _managedGateway.SetProviderApiKey(_settingsStore.LoadProviderApiKey(settings.AllowPlaintextTokenFallback));
             ApplyEnvironmentSettings();
         }
@@ -159,6 +160,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             SetupModel = SetupModel,
             SetupModelPreset = SetupModelPreset,
             SetupWorkspacePath = SetupWorkspacePath,
+            SetupLocalModelPath = SetupLocalModelPath,
             AuthToken = string.IsNullOrWhiteSpace(AuthToken) ? null : AuthToken
         });
         ShowSettingsWarningIfNeeded();

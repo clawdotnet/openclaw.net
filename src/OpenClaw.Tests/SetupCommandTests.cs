@@ -194,6 +194,119 @@ public sealed class SetupCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_NonInteractiveEmbeddedPreset_WritesKeylessLocalInferenceProfile()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var configPath = Path.Combine(root, "config", "openclaw.embedded.json");
+            var workspace = Path.Combine(root, "workspace");
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+
+            var exitCode = await SetupCommand.RunAsync(
+                [
+                    "--non-interactive",
+                    "--profile", "local",
+                    "--config", configPath,
+                    "--workspace", workspace,
+                    "--provider", "embedded"
+                ],
+                new StringReader(string.Empty),
+                output,
+                error,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(configPath));
+            var openClaw = document.RootElement.GetProperty("OpenClaw");
+            var llm = openClaw.GetProperty("llm");
+            Assert.Equal("embedded", llm.GetProperty("provider").GetString());
+            Assert.Equal("gemma-local-small-q4", llm.GetProperty("model").GetString());
+            Assert.False(llm.TryGetProperty("apiKey", out var apiKey) && apiKey.ValueKind == JsonValueKind.String);
+
+            var localInference = openClaw.GetProperty("localInference");
+            Assert.True(localInference.GetProperty("enabled").GetBoolean());
+            Assert.True(localInference.GetProperty("autoStart").GetBoolean());
+            Assert.Equal("llama.cpp", localInference.GetProperty("backend").GetString());
+
+            var models = openClaw.GetProperty("models");
+            Assert.Equal("embedded-local", models.GetProperty("defaultProfile").GetString());
+            var profile = Assert.Single(models.GetProperty("profiles").EnumerateArray());
+            Assert.Equal("embedded-local", profile.GetProperty("id").GetString());
+            Assert.Equal("embedded", profile.GetProperty("provider").GetString());
+            Assert.Equal("embedded-gemma-small-q4", profile.GetProperty("presetId").GetString());
+            Assert.False(profile.GetProperty("capabilities").GetProperty("supportsTools").GetBoolean());
+            Assert.True(profile.GetProperty("capabilities").GetProperty("supportsStreaming").GetBoolean());
+
+            var envExample = await File.ReadAllTextAsync(Path.Combine(root, "config", "openclaw.embedded.env.example"));
+            Assert.DoesNotContain("MODEL_PROVIDER_KEY=replace-me", envExample, StringComparison.Ordinal);
+            Assert.Contains($"OPENCLAW_WORKSPACE={workspace}", envExample, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_NonInteractiveEmbeddedGemma4Preset_WritesPackageCapabilitiesAndContext()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var configPath = Path.Combine(root, "config", "openclaw.embedded-gemma4.json");
+            var workspace = Path.Combine(root, "workspace");
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+
+            var exitCode = await SetupCommand.RunAsync(
+                [
+                    "--non-interactive",
+                    "--profile", "local",
+                    "--config", configPath,
+                    "--workspace", workspace,
+                    "--provider", "embedded",
+                    "--model", "gemma-4-e4b",
+                    "--model-preset", "embedded-gemma-4-e4b"
+                ],
+                new StringReader(string.Empty),
+                output,
+                error,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(configPath));
+            var openClaw = document.RootElement.GetProperty("OpenClaw");
+            var localInference = openClaw.GetProperty("localInference");
+            Assert.Equal(128000, localInference.GetProperty("contextSize").GetInt32());
+            Assert.True(localInference.GetProperty("enableJinja").GetBoolean());
+            Assert.Equal("gemma", localInference.GetProperty("chatTemplate").GetString());
+
+            var profile = Assert.Single(openClaw.GetProperty("models").GetProperty("profiles").EnumerateArray());
+            Assert.Equal("embedded-gemma-4-e4b", profile.GetProperty("presetId").GetString());
+            Assert.Equal("gemma-4-e4b", profile.GetProperty("model").GetString());
+            var capabilities = profile.GetProperty("capabilities");
+            Assert.True(capabilities.GetProperty("supportsTools").GetBoolean());
+            Assert.True(capabilities.GetProperty("supportsVision").GetBoolean());
+            Assert.True(capabilities.GetProperty("supportsImageInput").GetBoolean());
+            Assert.True(capabilities.GetProperty("supportsVideoInput").GetBoolean());
+            Assert.True(capabilities.GetProperty("supportsAudioInput").GetBoolean());
+            Assert.Equal(128000, capabilities.GetProperty("maxContextTokens").GetInt32());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_NonInteractiveWithoutProfile_FailsFast()
     {
         var root = CreateTempRoot();

@@ -14,6 +14,7 @@ public sealed class GatewayConfig
     public RuntimeConfig Runtime { get; set; } = new();
     public LlmProviderConfig Llm { get; set; } = new();
     public ModelsConfig Models { get; set; } = new();
+    public LocalInferenceConfig LocalInference { get; set; } = new();
     public MemoryConfig Memory { get; set; } = new();
     public SecurityConfig Security { get; set; } = new();
     public WebSocketConfig WebSocket { get; set; } = new();
@@ -104,6 +105,35 @@ public sealed class LlmProviderConfig
     public int CircuitBreakerCooldownSeconds { get; set; } = 30;
 
     public PromptCachingConfig PromptCaching { get; set; } = new();
+}
+
+public sealed class LocalInferenceConfig
+{
+    public bool Enabled { get; set; } = false;
+    public bool AutoStart { get; set; } = true;
+    public string Backend { get; set; } = "llama.cpp";
+    public string? RuntimePath { get; set; }
+    public string? ModelsRoot { get; set; }
+    public string? LogsPath { get; set; }
+    public string Host { get; set; } = "127.0.0.1";
+    public int Port { get; set; } = 0;
+    public string Threads { get; set; } = "auto";
+    public string GpuLayers { get; set; } = "auto";
+    public int ContextSize { get; set; } = 0;
+    public int StartupTimeoutSeconds { get; set; } = 30;
+    public int MaxRestartAttempts { get; set; } = 3;
+    public bool EnableJinja { get; set; } = true;
+    public string? ChatTemplate { get; set; }
+    public string? ChatTemplateFilePath { get; set; }
+    public string? MultimodalProjectorPath { get; set; }
+    public string? MediaPath { get; set; }
+    public string? DraftModelPath { get; set; }
+    public string DraftModelGpuLayers { get; set; } = "auto";
+    public string? ReasoningEffort { get; set; }
+    public string? ReasoningMode { get; set; }
+    public int? ReasoningBudget { get; set; }
+    public string? LiteRtRuntimePath { get; set; }
+    public string? LiteRtMediaPipeGraphPath { get; set; }
 }
 
 public sealed class PromptCachingConfig

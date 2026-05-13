@@ -27,7 +27,8 @@ public static class ConfigValidator
         "amazon-bedrock",
         "groq",
         "together",
-        "lmstudio"
+        "lmstudio",
+        "embedded"
     };
 
     public static IReadOnlyList<string> Validate(Models.GatewayConfig config)
@@ -53,6 +54,14 @@ public static class ConfigValidator
             errors.Add($"Llm.TimeoutSeconds must be >= 0 (got {config.Llm.TimeoutSeconds}).");
         if (config.Llm.RetryCount < 0)
             errors.Add($"Llm.RetryCount must be >= 0 (got {config.Llm.RetryCount}).");
+        if (config.LocalInference.Port is < 0 or > 65535)
+            errors.Add($"LocalInference.Port must be between 0 and 65535 (got {config.LocalInference.Port}).");
+        if (config.LocalInference.ContextSize < 0)
+            errors.Add($"LocalInference.ContextSize must be >= 0 (got {config.LocalInference.ContextSize}).");
+        if (config.LocalInference.StartupTimeoutSeconds < 1)
+            errors.Add($"LocalInference.StartupTimeoutSeconds must be >= 1 (got {config.LocalInference.StartupTimeoutSeconds}).");
+        if (config.LocalInference.ReasoningBudget < -1)
+            errors.Add($"LocalInference.ReasoningBudget must be >= -1 (got {config.LocalInference.ReasoningBudget}).");
         if (config.Llm.CircuitBreakerThreshold < 1)
             errors.Add($"Llm.CircuitBreakerThreshold must be >= 1 (got {config.Llm.CircuitBreakerThreshold}).");
         if (config.Llm.CircuitBreakerCooldownSeconds < 1)
@@ -620,8 +629,9 @@ public static class ConfigValidator
             {
                 if (!LocalModelPresetCatalog.TryGet(profile.PresetId, out _))
                     errors.Add($"Models.Profiles.{profile.Id}.PresetId '{profile.PresetId}' is not a known local model preset.");
-                else if (!string.Equals(profile.Provider, "ollama", StringComparison.OrdinalIgnoreCase))
-                    errors.Add($"Models.Profiles.{profile.Id}.PresetId '{profile.PresetId}' currently requires Provider='ollama'.");
+                else if (LocalModelPresetCatalog.TryGet(profile.PresetId, out var preset) &&
+                         !string.Equals(profile.Provider, preset?.Provider, StringComparison.OrdinalIgnoreCase))
+                    errors.Add($"Models.Profiles.{profile.Id}.PresetId '{profile.PresetId}' requires Provider='{preset?.Provider}'.");
             }
             if (profile.Capabilities?.MaxContextTokens < 0)
                 errors.Add($"Models.Profiles.{profile.Id}.Capabilities.MaxContextTokens must be >= 0.");

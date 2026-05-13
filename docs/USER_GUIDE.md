@@ -163,24 +163,30 @@ OpenClaw supports native routing for several providers out-of-the-box. Change th
 - **Recommended Setup**: choose an explicit preset such as `ollama-general`, `ollama-agentic`, or `ollama-vision`
 - **Notes**: OpenClaw uses Ollama's native `/api/chat` and `/api/embed` endpoints. Legacy `/v1` compatibility URLs still load, but `openclaw models doctor` warns so you can migrate to the native base URL.
 
-#### 4. Claude / Anthropic
+#### 4. Embedded Local Models
+- **Provider**: `"embedded"`
+- **Required**: a verified local model package and a local sidecar runtime
+- **Recommended Setup**: `embedded-gemma-small-q4` for first-run private/offline helper tasks
+- **Notes**: OpenClaw owns package install/verify, cache paths, sidecar startup, health checks, and request mapping. Video support is frame-based: local `video/*` inputs are sampled into ordered image frames before the model call. LiteRT-LM packages are experimental and require an OpenClaw-compatible adapter binary. See [Embedded Local Models](LOCAL_MODELS.md).
+
+#### 5. Claude / Anthropic
 - **Provider**: `"anthropic"` or `"claude"`
 - **Required**: `ApiKey` and `Model`
 - **Optional**: `Endpoint`
 - **Notes**: This uses the native Anthropic client. You only need `Endpoint` when routing through a proxy or compatible gateway.
 
-#### 5. Gemini / Google
+#### 6. Gemini / Google
 - **Provider**: `"gemini"` or `"google"`
 - **Required**: `ApiKey` and `Model`
 - **Optional**: `Endpoint`
 - **Notes**: This uses the native Gemini client for chat and embeddings. You only need `Endpoint` when routing through a proxy or compatible gateway.
 
-#### 6. Groq / Together AI / LM Studio / OpenAI-compatible
+#### 7. Groq / Together AI / LM Studio / OpenAI-compatible
 - **Provider**: `"groq"`, `"together"`, `"lmstudio"`, or `"openai-compatible"`
 - **Required**: `ApiKey`, `Model`, and usually `Endpoint`
 - **Notes**: These providers are accessed via the OpenAI-compatible REST abstractions. Ensure that you provide the proper base API URL as the `Endpoint` when required by the target service.
 
-#### 7. Microsoft.Extensions.AI provider bridge
+#### 8. Microsoft.Extensions.AI provider bridge
 - **Provider**: your dynamic provider id, for example `"my-meai-provider"`
 - **Required**: JIT runtime mode, dynamic native plugins enabled, a factory implementing `IMicrosoftExtensionsAiChatClientFactory`, and at least one model id
 - **Notes**: This optional bridge is for advanced .NET integrations where you already have an `IChatClient`. OpenClaw still owns routing, policy, budget checks, tracing, approvals, sessions, and usage accounting. See [Microsoft.Extensions.AI Provider Bridge](providers/microsoft-extensions-ai.md).

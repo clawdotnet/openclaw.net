@@ -8,6 +8,45 @@ public static class LocalModelPresetCatalog
     [
         new()
         {
+            Id = "embedded-gemma-small-q4",
+            Label = "Embedded Gemma Small Q4",
+            Description = "OpenClaw-managed local Gemma profile for private/offline helper tasks.",
+            Provider = "embedded",
+            DefaultBaseUrl = "",
+            PackageId = "gemma-local-small-q4",
+            ModelId = "gemma-local-small-q4",
+            Installable = true,
+            Tags = ["local", "private", "offline", "cheap"],
+            Capabilities = new ModelCapabilities
+            {
+                SupportsTools = false,
+                SupportsVision = false,
+                SupportsJsonSchema = false,
+                SupportsStructuredOutputs = false,
+                SupportsStreaming = true,
+                SupportsParallelToolCalls = false,
+                SupportsReasoningEffort = false,
+                SupportsSystemMessages = true,
+                SupportsImageInput = false,
+                SupportsAudioInput = false,
+                MaxContextTokens = 4096,
+                MaxOutputTokens = 1024
+            },
+            RecommendedContextTokens = 4096,
+            RecommendedOutputTokens = 1024,
+            CompatibilityNotes =
+            [
+                "Requires a verified local GGUF model package and a llama.cpp llama-server runtime.",
+                "Use a fallback profile for tool-heavy, structured-output, vision, or long-context routes."
+            ],
+            DoctorExpectations =
+            [
+                "Warn when the package is not installed or cannot be verified.",
+                "Warn when routes require tool calling, structured outputs, vision, or larger context than the embedded profile advertises."
+            ]
+        },
+        new()
+        {
             Id = "ollama-general",
             Label = "Ollama General",
             Description = "Balanced local preset for everyday chat and mixed tasks.",
@@ -111,14 +150,62 @@ public static class LocalModelPresetCatalog
     ];
 
     public static IReadOnlyList<LocalModelPresetDefinition> List()
-        => Presets;
+        => Presets
+            .Concat(LocalModelPackageCatalog.List()
+                .Where(package => !Presets.Any(preset => string.Equals(preset.Id, package.PresetId, StringComparison.OrdinalIgnoreCase)))
+                .Select(ToPreset))
+            .ToArray();
 
     public static bool TryGet(string? presetId, out LocalModelPresetDefinition? preset)
     {
         preset = Presets.FirstOrDefault(item => string.Equals(item.Id, presetId, StringComparison.OrdinalIgnoreCase));
-        return preset is not null;
+        if (preset is not null)
+            return true;
+
+        if (LocalModelPackageCatalog.TryGet(presetId, out var package) && package is not null)
+        {
+            preset = ToPreset(package);
+            return true;
+        }
+
+        return false;
     }
 
     public static LocalModelPresetDefinition? GetForProfile(ModelProfile profile)
         => TryGet(profile.PresetId, out var preset) ? preset : null;
+
+    private static LocalModelPresetDefinition ToPreset(LocalModelPackageDefinition package)
+        => new()
+        {
+            Id = package.PresetId,
+            Label = package.DisplayName,
+            Description = package.Description,
+            Provider = package.Provider,
+            DefaultBaseUrl = "",
+            PackageId = package.Id,
+            ModelId = package.ModelId,
+            Installable = true,
+            Tags = package.Tags,
+            Capabilities = package.Capabilities,
+            RecommendedContextTokens = package.ContextWindow,
+            RecommendedOutputTokens = package.MaxOutputTokens,
+            CompatibilityNotes =
+            [
+                package.Runtime.Backend.Equals("litert", StringComparison.OrdinalIgnoreCase)
+                    ? "Experimental: requires a verified LiteRT-LM package and an OpenClaw-compatible LiteRT adapter binary."
+                    : "Requires a verified local GGUF model package and a llama.cpp llama-server runtime.",
+                package.Capabilities.SupportsTools
+                    ? "Tool calling requires llama-server Jinja chat-template support and OpenClaw policy approval."
+                    : "Use a fallback profile for tool-heavy or structured-output routes.",
+                package.Capabilities.SupportsVision
+                    ? "Multimodal input requires the package projector file or OpenClaw:LocalInference:MultimodalProjectorPath."
+                    : "This package is text-only."
+            ],
+            DoctorExpectations =
+            [
+                "Warn when the package is not installed or cannot be verified.",
+                "Warn when routes require capabilities outside the package profile.",
+                "Warn when requested context routinely exceeds local RAM guidance."
+            ]
+        };
 }

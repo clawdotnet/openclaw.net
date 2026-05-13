@@ -15,6 +15,8 @@ internal static class SetupCommand
     private const string DefaultApiKeyRef = "env:MODEL_PROVIDER_KEY";
     private const string DefaultProvider = "openai";
     private const string DefaultOllamaPresetId = "ollama-general";
+    private const string DefaultEmbeddedPresetId = "embedded-gemma-small-q4";
+    private const string DefaultEmbeddedModelId = "gemma-local-small-q4";
     private const string DefaultBackendChoice = "none";
 
     internal static async Task<int> RunAsync(
@@ -160,13 +162,11 @@ internal static class SetupCommand
 
         var providerDefault = parsed.GetOption("--provider") ?? (discoveredOllama.IsAvailable ? "ollama" : DefaultProvider);
         var provider = Prompt(output, input, "Provider", providerDefault);
-        var modelPresetId = string.Equals(provider, "ollama", StringComparison.OrdinalIgnoreCase)
-            ? Prompt(output, input, "Model preset", parsed.GetOption("--model-preset") ?? DefaultOllamaPresetId)
-            : null;
+        var modelPresetId = GetDefaultModelPreset(provider, parsed.GetOption("--model-preset"));
+        if (RequiresModelPresetPrompt(provider))
+            modelPresetId = Prompt(output, input, "Model preset", modelPresetId!);
         var modelDefault = parsed.GetOption("--model")
-            ?? (string.Equals(provider, "ollama", StringComparison.OrdinalIgnoreCase) && discoveredOllama.Models.Count > 0
-                ? discoveredOllama.Models[0]
-                : new GatewayConfig().Llm.Model);
+            ?? GetDefaultModel(provider, discoveredOllama.Models);
         var model = Prompt(output, input, "Model", modelDefault);
         var apiKey = ProviderRequiresApiKey(provider)
             ? Prompt(output, input, "API key or env: reference", parsed.GetOption("--api-key") ?? DefaultApiKeyRef)
@@ -237,8 +237,8 @@ internal static class SetupCommand
             ConfigPath = Path.GetFullPath(GatewayConfigFile.ExpandPath(parsed.GetOption("--config") ?? DefaultConfigPath)),
             Workspace = Path.GetFullPath(GatewayConfigFile.ExpandPath(parsed.GetOption("--workspace") ?? Path.Combine(currentDirectory, "workspace"))),
             Provider = parsed.GetOption("--provider") ?? DefaultProvider,
-            ModelPresetId = parsed.GetOption("--model-preset"),
-            Model = parsed.GetOption("--model") ?? new GatewayConfig().Llm.Model,
+            ModelPresetId = GetDefaultModelPreset(parsed.GetOption("--provider") ?? DefaultProvider, parsed.GetOption("--model-preset")),
+            Model = parsed.GetOption("--model") ?? GetDefaultModel(parsed.GetOption("--provider") ?? DefaultProvider, []),
             ApiKey = ProviderRequiresApiKey(parsed.GetOption("--provider"))
                 ? parsed.GetOption("--api-key") ?? DefaultApiKeyRef
                 : parsed.GetOption("--api-key"),
@@ -432,7 +432,33 @@ internal static class SetupCommand
     }
 
     private static bool ProviderRequiresApiKey(string? provider)
-        => !string.Equals(provider?.Trim(), "ollama", StringComparison.OrdinalIgnoreCase);
+        => !string.Equals(provider?.Trim(), "ollama", StringComparison.OrdinalIgnoreCase) &&
+           !string.Equals(provider?.Trim(), "embedded", StringComparison.OrdinalIgnoreCase);
+
+    private static bool RequiresModelPresetPrompt(string? provider)
+        => string.Equals(provider?.Trim(), "ollama", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(provider?.Trim(), "embedded", StringComparison.OrdinalIgnoreCase);
+
+    private static string? GetDefaultModelPreset(string? provider, string? configured)
+    {
+        if (!string.IsNullOrWhiteSpace(configured))
+            return configured.Trim();
+
+        return provider?.Trim().ToLowerInvariant() switch
+        {
+            "ollama" => DefaultOllamaPresetId,
+            "embedded" => DefaultEmbeddedPresetId,
+            _ => null
+        };
+    }
+
+    private static string GetDefaultModel(string? provider, IReadOnlyList<string> discoveredOllamaModels)
+        => provider?.Trim().ToLowerInvariant() switch
+        {
+            "embedded" => DefaultEmbeddedModelId,
+            "ollama" when discoveredOllamaModels.Count > 0 => discoveredOllamaModels[0],
+            _ => new GatewayConfig().Llm.Model
+        };
 
     private static OllamaDiscoveryResult TryDiscoverOllamaModels()
     {

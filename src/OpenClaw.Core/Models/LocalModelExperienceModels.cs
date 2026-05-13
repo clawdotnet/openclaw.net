@@ -14,6 +14,9 @@ public sealed class LocalModelPresetDefinition
     public string Description { get; init; } = "";
     public string Provider { get; init; } = "ollama";
     public string DefaultBaseUrl { get; init; } = "http://127.0.0.1:11434";
+    public string? PackageId { get; init; }
+    public string? ModelId { get; init; }
+    public bool Installable { get; init; }
     public IReadOnlyList<string> Tags { get; init; } = [];
     public required ModelCapabilities Capabilities { get; init; }
     public int RecommendedContextTokens { get; init; }
@@ -25,6 +28,116 @@ public sealed class LocalModelPresetDefinition
 public sealed class LocalModelPresetListResponse
 {
     public IReadOnlyList<LocalModelPresetDefinition> Items { get; init; } = [];
+}
+
+public sealed class LocalModelRuntimeDefaults
+{
+    public string Backend { get; init; } = "llama.cpp";
+    public string Threads { get; init; } = "auto";
+    public string GpuLayers { get; init; } = "auto";
+    public int ContextSize { get; init; } = 4096;
+    public bool EnableJinja { get; init; }
+    public string? ChatTemplate { get; init; }
+    public string? ChatTemplateFileName { get; init; }
+    public string? MultimodalProjectorFileName { get; init; }
+    public string? DraftModelFileName { get; init; }
+    public string ReasoningMode { get; init; } = "auto";
+    public int? ReasoningBudget { get; init; }
+}
+
+public static class LocalModelPackageFileRoles
+{
+    public const string Model = "model";
+    public const string MultimodalProjector = "mmproj";
+    public const string DraftModel = "draft";
+}
+
+public sealed class LocalModelPackageFileDefinition
+{
+    public required string Role { get; init; }
+    public required string FileName { get; init; }
+    public string? DownloadUrl { get; init; }
+    public string? ExpectedSha256 { get; init; }
+    public bool Required { get; init; } = true;
+    public bool InstallByDefault { get; init; } = true;
+}
+
+public sealed class LocalModelPackageDefinition
+{
+    public required string Id { get; init; }
+    public required string PresetId { get; init; }
+    public string DisplayName { get; init; } = "";
+    public string Description { get; init; } = "";
+    public string Provider { get; init; } = "embedded";
+    public string ModelId { get; init; } = "";
+    public string Family { get; init; } = "";
+    public string Format { get; init; } = "gguf";
+    public string Quantization { get; init; } = "";
+    public string FileName { get; init; } = "model.gguf";
+    public string? DownloadUrl { get; init; }
+    public string? ExpectedSha256 { get; init; }
+    public string? ModelPageUrl { get; init; }
+    public string? LicenseUrl { get; init; }
+    public bool RequiresLicenseAcceptance { get; init; }
+    public bool RequiresDownloadToken { get; init; }
+    public bool Experimental { get; init; }
+    public int MinRamGb { get; init; }
+    public int RecommendedRamGb { get; init; }
+    public int ContextWindow { get; init; } = 4096;
+    public int MaxOutputTokens { get; init; } = 1024;
+    public IReadOnlyList<string> Tags { get; init; } = [];
+    public IReadOnlyList<LocalModelPackageFileDefinition> Files { get; init; } = [];
+    public required ModelCapabilities Capabilities { get; init; }
+    public LocalModelRuntimeDefaults Runtime { get; init; } = new();
+}
+
+public sealed class LocalModelInstallFileManifest
+{
+    public required string Role { get; init; }
+    public required string FileName { get; init; }
+    public required string Sha256 { get; init; }
+    public string? Source { get; init; }
+}
+
+public sealed class LocalModelInstallManifest
+{
+    public int SchemaVersion { get; init; } = 1;
+    public required string PackageId { get; init; }
+    public required string PresetId { get; init; }
+    public required string ModelId { get; init; }
+    public required string FileName { get; init; }
+    public required string Sha256 { get; init; }
+    public string? Source { get; init; }
+    public string? LicenseUrl { get; init; }
+    public bool LicenseAccepted { get; init; }
+    public DateTimeOffset InstalledAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    public IReadOnlyList<LocalModelInstallFileManifest> Files { get; init; } = [];
+}
+
+public sealed class LocalModelPackageFileStatus
+{
+    public required string Role { get; init; }
+    public required string FileName { get; init; }
+    public bool Required { get; init; }
+    public bool Installed { get; init; }
+    public bool Verified { get; init; }
+    public string? Path { get; init; }
+    public string? Sha256 { get; init; }
+    public string? Issue { get; init; }
+}
+
+public sealed class LocalModelPackageStatus
+{
+    public required string PackageId { get; init; }
+    public required string PresetId { get; init; }
+    public required string ModelId { get; init; }
+    public string DisplayName { get; init; } = "";
+    public bool Installed { get; init; }
+    public bool Verified { get; init; }
+    public string? ModelPath { get; init; }
+    public string? Sha256 { get; init; }
+    public string? Issue { get; init; }
+    public IReadOnlyList<LocalModelPackageFileStatus> Files { get; init; } = [];
 }
 
 public static class MaintenanceFindingSeverities

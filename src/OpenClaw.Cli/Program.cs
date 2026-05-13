@@ -276,6 +276,11 @@ internal static class Program
               openclaw models list [--url <url>] [--token <token>]
               openclaw models doctor [--url <url>] [--token <token>]
               openclaw models presets
+              openclaw models packages
+              openclaw models status [package] [--models-root <path>]
+              openclaw models install <package> --accept-license [--path <gguf>] [--mmproj-path <gguf>] [--draft-path <gguf>] [--token <hf-token>] [--models-root <path>]
+              openclaw models verify <package> [--models-root <path>]
+              openclaw models remove <package> [--models-root <path>]
             """);
     }
 
@@ -912,6 +917,9 @@ internal static class Program
                 Console.WriteLine($"- {preset.Id} | {preset.Label} | tags={string.Join(",", preset.Tags)} | {preset.Description}");
             return 0;
         }
+
+        if (subcommand is "packages" or "status" or "install" or "verify" or "remove")
+            return await ModelCommands.RunLocalPackageCommandAsync(subcommand, args.Skip(1).ToArray());
 
         var baseUrl = parsed.GetOption("--url") ?? Environment.GetEnvironmentVariable(EnvBaseUrl) ?? DefaultBaseUrl;
         var token = ResolveAuthToken(parsed, Console.Error);

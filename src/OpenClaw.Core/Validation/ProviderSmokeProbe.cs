@@ -267,7 +267,7 @@ public static class ProviderSmokeProbe
     private static bool HasRequiredCredentials(string provider, string? apiKey)
         => provider switch
         {
-            "ollama" or "lmstudio" => true,
+            "ollama" or "lmstudio" or "embedded" => true,
             _ => !string.IsNullOrWhiteSpace(apiKey)
         };
 

@@ -81,6 +81,47 @@ internal sealed class AudioTranscriptionService
         }
     }
 
+    public async Task<AudioTranscriptionResult> TranscribeAudioUrlAsync(
+        string audioUrl,
+        string? mimeType,
+        string? fileName,
+        CancellationToken ct)
+    {
+        if (!_config.Multimodal.Enabled || !_config.Multimodal.Transcription.Enabled)
+            throw new InvalidOperationException("Voice transcription is disabled by configuration.");
+
+        if (string.IsNullOrWhiteSpace(audioUrl))
+            throw new InvalidOperationException("An audio URL is required for transcription.");
+
+        var providerName = ResolveProviderName(_config.Multimodal.Transcription.Provider);
+
+        if (!_providers.TryGetValue(providerName, out var provider))
+            throw new InvalidOperationException($"Unknown audio transcription provider '{providerName}'.");
+
+        var timeoutSeconds = Math.Max(1, _config.Multimodal.Transcription.TimeoutSeconds);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+        try
+        {
+            return await provider.TranscribeAsync(new AudioTranscriptionRequest
+            {
+                AudioUrl = audioUrl,
+                MimeType = mimeType,
+                FileName = fileName,
+                Provider = providerName,
+                Model = NormalizeOptional(_config.Multimodal.Transcription.Model),
+                MaxAudioBytes = Math.Max(1, _config.Multimodal.Transcription.MaxAudioBytes),
+                AllowedLocalFileRoots = BuildAllowedLocalFileRoots(_config)
+            }, timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("Voice transcription timed out after {TimeoutSeconds}s.", timeoutSeconds);
+            throw new TimeoutException($"Voice transcription timed out after {timeoutSeconds}s.");
+        }
+    }
+
     public IReadOnlyList<string> ListProviders()
         => _providers.Keys.OrderBy(static item => item, StringComparer.OrdinalIgnoreCase).ToArray();
 

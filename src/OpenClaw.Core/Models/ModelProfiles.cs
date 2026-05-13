@@ -32,6 +32,7 @@ public sealed class ModelCapabilities
     public bool SupportsReasoningEffort { get; set; }
     public bool SupportsSystemMessages { get; set; } = true;
     public bool SupportsImageInput { get; set; }
+    public bool SupportsVideoInput { get; set; }
     public bool SupportsAudioInput { get; set; }
     public bool SupportsPromptCaching { get; set; }
     public bool SupportsExplicitCacheRetention { get; set; }
@@ -52,6 +53,7 @@ public sealed class ModelSelectionRequirements
     public bool? SupportsReasoningEffort { get; set; }
     public bool? SupportsSystemMessages { get; set; }
     public bool? SupportsImageInput { get; set; }
+    public bool? SupportsVideoInput { get; set; }
     public bool? SupportsAudioInput { get; set; }
     public int? MinContextTokens { get; set; }
     public int? MinOutputTokens { get; set; }

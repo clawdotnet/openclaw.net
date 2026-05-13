@@ -138,6 +138,8 @@ internal static class CoreServicesExtensions
         services.AddSingleton<GeminiAudioTranscriptionProvider>();
         services.AddSingleton<IAudioTranscriptionProvider>(sp => sp.GetRequiredService<GeminiAudioTranscriptionProvider>());
         services.AddSingleton<AudioTranscriptionService>();
+        services.AddSingleton<VideoFrameExtractionService>();
+        services.AddSingleton<IVideoFrameExtractionService>(sp => sp.GetRequiredService<VideoFrameExtractionService>());
         services.AddSingleton<GeminiLiveProxyService>();
         services.AddSingleton<ILiveSessionProvider>(sp => sp.GetRequiredService<GeminiLiveProxyService>());
         services.AddSingleton<GeminiTextToSpeechProvider>();

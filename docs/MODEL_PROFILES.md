@@ -13,7 +13,8 @@ Gemma is treated as a **model backend** that can be reached through:
 
 1. **Ollama** for local and development workflows
 2. **OpenAI-compatible endpoints** for production or self-hosted inference gateways
-3. future provider extensions if needed, without changing the runtime architecture
+3. **embedded** for OpenClaw-managed local packages and sidecar inference
+4. future provider extensions if needed, without changing the runtime architecture
 
 ## Why profiles exist
 
@@ -170,6 +171,29 @@ Notes:
 - OpenClaw talks to Ollama through the existing OpenAI-compatible adapter path.
 - `BaseUrl` defaults to `http://localhost:11434/v1` if omitted by the legacy provider config, but setting it explicitly is clearer for named profiles.
 - If the profile does not advertise `SupportsTools`, routes that require tools will fail clearly or fall back.
+
+## Gemma through embedded local inference
+
+Use this when OpenClaw should manage the local model package, cache, and sidecar lifecycle.
+
+```json
+{
+  "Id": "embedded-local",
+  "PresetId": "embedded-gemma-4-e4b",
+  "Provider": "embedded",
+  "Model": "gemma-4-e4b",
+  "Tags": ["local", "private", "offline"],
+  "FallbackProfileIds": ["frontier-tools"]
+}
+```
+
+Notes:
+
+- `openclaw models packages` lists installable packages, backend, context, checksum, and experimental status.
+- GGUF packages run through a supervised `llama-server` sidecar.
+- LiteRT-LM packages are experimental and require `OpenClaw:LocalInference:LiteRtRuntimePath` to point to an OpenClaw-compatible adapter binary; OpenClaw does not assume a generic `litert-server`.
+- Embedded video support is frame-based in v1: OpenClaw samples local `video/*` content with `ffprobe`/`ffmpeg`, writes frames to the media cache, and sends ordered `image_url` frame parts to the sidecar.
+- A profile only advertises video input when the embedded model supports image input and `OpenClaw:Multimodal:Video:Enabled` is true.
 
 ## Gemma through an OpenAI-compatible gateway
 

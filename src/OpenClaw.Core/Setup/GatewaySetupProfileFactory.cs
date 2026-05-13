@@ -93,8 +93,14 @@ public static class GatewaySetupProfileFactory
     {
         if (!provider.Equals("ollama", StringComparison.OrdinalIgnoreCase))
         {
+            if (provider.Equals("embedded", StringComparison.OrdinalIgnoreCase))
+            {
+                ConfigureEmbeddedModelProfile(config, model, modelPresetId, warnings);
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(modelPresetId))
-                warnings?.Add($"Ignoring model preset '{modelPresetId}' because native local presets currently apply only to the Ollama provider.");
+                warnings?.Add($"Ignoring model preset '{modelPresetId}' because local presets currently apply only to Ollama or embedded providers.");
             return;
         }
 
@@ -131,6 +137,61 @@ public static class GatewaySetupProfileFactory
         ];
     }
 
+    private static void ConfigureEmbeddedModelProfile(
+        GatewayConfig config,
+        string model,
+        string? modelPresetId,
+        List<string>? warnings)
+    {
+        config.Llm.ApiKey = null;
+        config.LocalInference.Enabled = true;
+        config.LocalInference.AutoStart = true;
+        config.Models.DefaultProfile = "embedded-local";
+
+        LocalModelPackageDefinition? package = null;
+        if (!string.IsNullOrWhiteSpace(modelPresetId))
+        {
+            if (!LocalModelPackageCatalog.TryGet(modelPresetId, out package))
+                warnings?.Add($"Unknown embedded local model preset or package '{modelPresetId}'. Falling back to inferred embedded capabilities.");
+        }
+        else if (!LocalModelPackageCatalog.TryGet(model, out package))
+        {
+            _ = LocalModelPackageCatalog.TryGet("gemma-local-small-q4", out package);
+        }
+
+        var capabilities = package?.Capabilities ?? new ModelCapabilities
+        {
+            SupportsStreaming = true,
+            SupportsSystemMessages = true,
+            MaxContextTokens = 4096,
+            MaxOutputTokens = 1024
+        };
+
+        var modelId = package?.ModelId ?? model;
+        config.Llm.Model = modelId;
+        if (package is not null)
+        {
+            config.LocalInference.Backend = package.Runtime.Backend;
+            config.LocalInference.ContextSize = package.Runtime.ContextSize;
+            config.LocalInference.EnableJinja = package.Runtime.EnableJinja;
+            config.LocalInference.ChatTemplate = package.Runtime.ChatTemplate;
+            config.LocalInference.ReasoningMode = package.Runtime.ReasoningMode;
+            config.LocalInference.ReasoningBudget = package.Runtime.ReasoningBudget;
+        }
+        config.Models.Profiles =
+        [
+            new ModelProfileConfig
+            {
+                Id = "embedded-local",
+                PresetId = package?.PresetId,
+                Provider = "embedded",
+                Model = modelId,
+                Tags = package?.Tags?.ToArray() ?? ["local", "private", "offline", "cheap"],
+                Capabilities = CloneCapabilities(capabilities)
+            }
+        ];
+    }
+
     private static ModelCapabilities CloneCapabilities(ModelCapabilities source)
         => new()
         {
@@ -143,6 +204,7 @@ public static class GatewaySetupProfileFactory
             SupportsReasoningEffort = source.SupportsReasoningEffort,
             SupportsSystemMessages = source.SupportsSystemMessages,
             SupportsImageInput = source.SupportsImageInput,
+            SupportsVideoInput = source.SupportsVideoInput,
             SupportsAudioInput = source.SupportsAudioInput,
             SupportsPromptCaching = source.SupportsPromptCaching,
             SupportsExplicitCacheRetention = source.SupportsExplicitCacheRetention,

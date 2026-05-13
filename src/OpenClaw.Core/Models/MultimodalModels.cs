@@ -8,6 +8,7 @@ public sealed class MultimodalConfig
     public string VisionProvider { get; set; } = "gemini";
     public string VisionModel { get; set; } = "gemini-2.5-flash";
     public AudioTranscriptionConfig Transcription { get; set; } = new();
+    public VideoProcessingConfig Video { get; set; } = new();
     public TextToSpeechConfig TextToSpeech { get; set; } = new();
     public GeminiLiveConfig GeminiLive { get; set; } = new();
     public ElevenLabsConfig ElevenLabs { get; set; } = new();
@@ -21,6 +22,20 @@ public sealed class AudioTranscriptionConfig
     public int MaxAudioBytes { get; set; } = 25 * 1024 * 1024;
     public int TimeoutSeconds { get; set; } = 30;
     public bool InjectAudioMarker { get; set; } = true;
+    public string FailureMode { get; set; } = "degrade";
+}
+
+public sealed class VideoProcessingConfig
+{
+    public bool Enabled { get; set; } = true;
+    public string FfmpegPath { get; set; } = "ffmpeg";
+    public string FfprobePath { get; set; } = "ffprobe";
+    public int MaxVideoBytes { get; set; } = 100 * 1024 * 1024;
+    public int MaxDurationSeconds { get; set; } = 120;
+    public int MaxFrames { get; set; } = 8;
+    public double FrameIntervalSeconds { get; set; } = 5;
+    public int FrameWidth { get; set; } = 768;
+    public bool ExtractAudioTranscript { get; set; }
     public string FailureMode { get; set; } = "degrade";
 }
 

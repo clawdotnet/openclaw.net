@@ -17,6 +17,7 @@ public sealed class CompanionSettings
     public string SetupModel { get; set; } = "gpt-4o";
     public string SetupModelPreset { get; set; } = "";
     public string SetupWorkspacePath { get; set; } = "";
+    public string SetupLocalModelPath { get; set; } = "";
 
     [JsonIgnore]
     public string? AuthToken { get; set; }
