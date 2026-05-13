@@ -232,6 +232,7 @@ internal sealed class EmbeddedLocalChatClient : IChatClient
                     break;
                 case DataContent data:
                 {
+                    var bytes = data.Data.ToArray();
                     if (IsVideo(data.MediaType))
                     {
                         await AddVideoFramesAsync(
@@ -240,7 +241,7 @@ internal sealed class EmbeddedLocalChatClient : IChatClient
                             {
                                 SourceLabel = data.MediaType ?? "video/data",
                                 MediaType = data.MediaType ?? "video/mp4",
-                                Data = data.Data.ToArray(),
+                                Data = bytes,
                                 FileName = "input-video"
                             },
                             ct);
@@ -250,7 +251,7 @@ internal sealed class EmbeddedLocalChatClient : IChatClient
                     AddMediaUrl(
                         array,
                         GetOpenAiContentType(data.MediaType),
-                        $"data:{data.MediaType ?? "application/octet-stream"};base64,{Convert.ToBase64String(data.Data.ToArray())}");
+                        $"data:{data.MediaType ?? "application/octet-stream"};base64,{Convert.ToBase64String(bytes)}");
                     break;
                 }
                 case UriContent uri:

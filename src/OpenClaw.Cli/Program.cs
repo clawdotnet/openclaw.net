@@ -278,7 +278,7 @@ internal static class Program
               openclaw models presets
               openclaw models packages
               openclaw models status [package] [--models-root <path>]
-              openclaw models install <package> --accept-license [--path <gguf>] [--mmproj-path <gguf>] [--draft-path <gguf>] [--token <hf-token>] [--models-root <path>]
+              openclaw models install <package> --accept-license [--path <model>] [--mmproj-path <gguf>] [--draft-path <model>] [--download-url <url>] [--token <hf-token>] [--models-root <path>] [--no-optional-files]
               openclaw models verify <package> [--models-root <path>]
               openclaw models remove <package> [--models-root <path>]
             """);

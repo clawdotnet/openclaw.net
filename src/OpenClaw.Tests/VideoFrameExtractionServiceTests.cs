@@ -157,6 +157,38 @@ public class VideoFrameExtractionServiceTests
         Assert.Equal("video_not_found", result.Issue);
     }
 
+    [Fact]
+    public async Task ExtractFramesAsync_RejectsNonBase64VideoDataUrlsBeforeFfmpeg()
+    {
+        using var temp = new TempDirectory();
+        var config = new GatewayConfig
+        {
+            Multimodal = new MultimodalConfig
+            {
+                MediaCachePath = Path.Combine(temp.Path, "media"),
+                Video = new VideoProcessingConfig
+                {
+                    FailureMode = "strict"
+                }
+            }
+        };
+        var service = new VideoFrameExtractionService(
+            config,
+            new MediaCacheStore(config.Multimodal.MediaCachePath),
+            NullLogger<VideoFrameExtractionService>.Instance);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ExtractFramesAsync(
+            new VideoFrameExtractionRequest
+            {
+                SourceLabel = "inline",
+                MediaType = "video/mp4",
+                Uri = new Uri("data:video/mp4,not-binary-safe")
+            },
+            CancellationToken.None));
+
+        Assert.Contains("base64", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string CreateFakeFfprobe(string root, string duration)
     {
         var path = Path.Combine(root, OperatingSystem.IsWindows() ? "ffprobe.cmd" : "ffprobe");

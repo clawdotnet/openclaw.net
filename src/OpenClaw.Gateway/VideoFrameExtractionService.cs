@@ -134,7 +134,7 @@ internal sealed class VideoFrameExtractionService : IVideoFrameExtractionService
         var uriText = request.Uri.ToString();
         if (uriText.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
-            var (data, mediaType) = ParseDataUrl(uriText);
+            var (data, mediaType) = ParseDataUrl(uriText, request.MediaType);
             EnforceVideoSize(data.Length, video);
             var path = Path.Combine(workingRoot, "input" + GuessExtension(mediaType ?? request.MediaType, request.FileName));
             await File.WriteAllBytesAsync(path, data, ct);
@@ -148,6 +148,7 @@ internal sealed class VideoFrameExtractionService : IVideoFrameExtractionService
     {
         var result = await RunProcessAsync(
             ffprobePath,
+            "ffprobe",
             [
                 "-v", "error",
                 "-show_entries", "format=duration",
@@ -251,7 +252,15 @@ internal sealed class VideoFrameExtractionService : IVideoFrameExtractionService
             var asset = await _mediaCache.SaveAsync(bytes, "audio/wav", "video-audio.wav", ct);
             return await _audioTranscription.TranscribeAudioUrlAsync(asset.Path, "audio/wav", asset.FileName, ct);
         }
-        catch when (AudioTranscriptionService.ShouldDegrade(video.FailureMode))
+        catch (IOException) when (AudioTranscriptionService.ShouldDegrade(video.FailureMode))
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException) when (AudioTranscriptionService.ShouldDegrade(video.FailureMode))
+        {
+            return null;
+        }
+        catch (InvalidOperationException) when (AudioTranscriptionService.ShouldDegrade(video.FailureMode))
         {
             return null;
         }
@@ -273,16 +282,20 @@ internal sealed class VideoFrameExtractionService : IVideoFrameExtractionService
 
     private static async Task RunFfmpegOrThrowAsync(string executable, IReadOnlyList<string> arguments, CancellationToken ct)
     {
-        var result = await RunProcessAsync(executable, arguments, ct);
+        var result = await RunProcessAsync(executable, "ffmpeg", arguments, ct);
         if (result.ExitCode != 0)
             throw new InvalidOperationException($"ffmpeg failed: {TrimProcessOutput(result)}");
     }
 
-    private static async Task<ProcessResult> RunProcessAsync(string executable, IReadOnlyList<string> arguments, CancellationToken ct)
+    private static async Task<ProcessResult> RunProcessAsync(
+        string executable,
+        string defaultExecutable,
+        IReadOnlyList<string> arguments,
+        CancellationToken ct)
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = string.IsNullOrWhiteSpace(executable) ? "ffmpeg" : executable,
+            FileName = string.IsNullOrWhiteSpace(executable) ? defaultExecutable : executable,
             RedirectStandardError = true,
             RedirectStandardOutput = true,
             UseShellExecute = false,
@@ -295,10 +308,18 @@ internal sealed class VideoFrameExtractionService : IVideoFrameExtractionService
         if (!process.Start())
             throw new InvalidOperationException($"{startInfo.FileName} did not start.");
 
-        var stdout = process.StandardOutput.ReadToEndAsync(ct);
-        var stderr = process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
-        return new ProcessResult(process.ExitCode, await stdout, await stderr);
+        try
+        {
+            var stdout = process.StandardOutput.ReadToEndAsync(ct);
+            var stderr = process.StandardError.ReadToEndAsync(ct);
+            await process.WaitForExitAsync(ct);
+            return new ProcessResult(process.ExitCode, await stdout, await stderr);
+        }
+        catch (OperationCanceledException)
+        {
+            TryKillProcess(process);
+            throw;
+        }
     }
 
     private static void EnforceVideoSize(long size, VideoProcessingConfig video)
@@ -342,7 +363,7 @@ internal sealed class VideoFrameExtractionService : IVideoFrameExtractionService
         };
     }
 
-    private static (byte[] Data, string? MimeType) ParseDataUrl(string url)
+    private static (byte[] Data, string? MimeType) ParseDataUrl(string url, string? fallbackMediaType)
     {
         var commaIndex = url.IndexOf(',', StringComparison.Ordinal);
         if (commaIndex < 0)
@@ -354,6 +375,10 @@ internal sealed class VideoFrameExtractionService : IVideoFrameExtractionService
         var mediaType = header.Length > "data:".Length
             ? header["data:".Length..].Split(';', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()
             : null;
+        var effectiveMediaType = mediaType ?? fallbackMediaType;
+        if (!isBase64 && effectiveMediaType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true)
+            throw new InvalidOperationException("Video data URLs must be base64 encoded.");
+
         return (isBase64 ? Convert.FromBase64String(payload) : System.Text.Encoding.UTF8.GetBytes(Uri.UnescapeDataString(payload)), mediaType);
     }
 
@@ -364,9 +389,35 @@ internal sealed class VideoFrameExtractionService : IVideoFrameExtractionService
             if (Directory.Exists(path))
                 Directory.Delete(path, recursive: true);
         }
-        catch
+        catch (DirectoryNotFoundException)
         {
             // Best-effort cleanup only.
+        }
+        catch (IOException)
+        {
+            // Best-effort cleanup only.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Best-effort cleanup only.
+        }
+    }
+
+    private static void TryKillProcess(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+        }
+        catch (NotSupportedException)
+        {
         }
     }
 

@@ -28,6 +28,28 @@ public sealed class CliProgramTests
     }
 
     [Fact]
+    public async Task Main_ModelsHelp_ListsInstallOptions()
+    {
+        var previousOut = Console.Out;
+        using var output = new StringWriter();
+        try
+        {
+            Console.SetOut(output);
+
+            var exitCode = await OpenClaw.Cli.Program.Main(["models", "--help"]);
+
+            var help = output.ToString();
+            Assert.Equal(0, exitCode);
+            Assert.Contains("--download-url <url>", help, StringComparison.Ordinal);
+            Assert.Contains("--no-optional-files", help, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Console.SetOut(previousOut);
+        }
+    }
+
+    [Fact]
     public void ResolveAuthToken_CliToken_WarnsAndTakesPrecedence()
     {
         var previous = Environment.GetEnvironmentVariable("OPENCLAW_AUTH_TOKEN");

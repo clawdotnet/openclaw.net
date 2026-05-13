@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OpenClaw.Companion.Services;
+using OpenClaw.Core.Setup;
 
 namespace OpenClaw.Companion.ViewModels;
 
@@ -339,11 +340,29 @@ public sealed partial class MainWindowViewModel
     }
 
     private string ResolveEmbeddedPackageId()
-        => !string.IsNullOrWhiteSpace(SetupModelPreset)
-            ? SetupModelPreset.Trim()
-            : !string.IsNullOrWhiteSpace(SetupModel)
-                ? SetupModel.Trim()
-                : "gemma-local-small-q4";
+    {
+        if (TryResolveEmbeddedPackageId(SetupModelPreset, out var presetPackageId))
+            return presetPackageId;
+
+        if (TryResolveEmbeddedPackageId(SetupModel, out var modelPackageId))
+            return modelPackageId;
+
+        return "gemma-local-small-q4";
+    }
+
+    private static bool TryResolveEmbeddedPackageId(string? value, out string packageId)
+    {
+        packageId = "";
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var id = value.Trim();
+        if (!LocalModelPackageCatalog.TryGet(id, out var package) || package is null)
+            return false;
+
+        packageId = package.Id;
+        return true;
+    }
 
     private bool IsEmbeddedSetupProvider()
         => SetupProvider.Equals("embedded", StringComparison.OrdinalIgnoreCase);

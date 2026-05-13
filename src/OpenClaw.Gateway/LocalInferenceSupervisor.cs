@@ -48,7 +48,7 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
         return new LocalInferenceStatus
         {
             Running = running,
-            ProcessId = running && process is not null ? process.Id : null,
+            ProcessId = running ? process!.Id : null,
             BaseUrl = _endpoint?.BaseUrl,
             PackageId = _endpoint?.Package.Id,
             ModelPath = _endpoint?.ModelPath,
@@ -400,8 +400,17 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
                     using var gracefulCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
                     await process.WaitForExitAsync(gracefulCts.Token);
                 }
-                catch
+                catch (OperationCanceledException ex)
                 {
+                    LogGracefulShutdownFailure(ex);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    LogGracefulShutdownFailure(ex);
+                }
+                catch (System.ComponentModel.Win32Exception ex)
+                {
+                    LogGracefulShutdownFailure(ex);
                 }
 
                 if (!process.HasExited)
@@ -412,7 +421,19 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
                 }
             }
         }
-        catch
+        catch (InvalidOperationException)
+        {
+            TryKill(process);
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            TryKill(process);
+        }
+        catch (OperationCanceledException)
+        {
+            TryKill(process);
+        }
+        catch (SystemException)
         {
             TryKill(process);
         }
@@ -506,7 +527,11 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
         {
             return process is not null && !process.HasExited;
         }
-        catch
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+        catch (System.ComponentModel.Win32Exception)
         {
             return false;
         }
@@ -525,11 +550,34 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
             Directory.CreateDirectory(logsPath);
             File.AppendAllText(Path.Combine(logsPath, $"{packageId}.localinfer.log"), line + Environment.NewLine);
         }
-        catch
+        catch (DirectoryNotFoundException)
+        {
+            // Logging must not break local inference.
+        }
+        catch (PathTooLongException)
+        {
+            // Logging must not break local inference.
+        }
+        catch (IOException)
+        {
+            // Logging must not break local inference.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Logging must not break local inference.
+        }
+        catch (NotSupportedException)
+        {
+            // Logging must not break local inference.
+        }
+        catch (ArgumentException)
         {
             // Logging must not break local inference.
         }
     }
+
+    private void LogGracefulShutdownFailure(Exception ex)
+        => _logger.LogDebug(ex, "Graceful local inference sidecar shutdown failed; falling back to force kill if needed.");
 
     private void ThrowIfDisposed()
     {
@@ -544,7 +592,13 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
             if (!process.HasExited)
                 process.Kill(entireProcessTree: true);
         }
-        catch
+        catch (InvalidOperationException)
+        {
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+        }
+        catch (NotSupportedException)
         {
         }
     }

@@ -74,6 +74,9 @@ public static class LlmClientFactory
             static kvp => kvp.Value.OwnerId,
             StringComparer.OrdinalIgnoreCase);
 
+    public static IChatClient CreateChatClient(LlmProviderConfig config)
+        => CreateChatClientCore(config, localInference: null, multimodal: null, videoFrames: null);
+
     public static IChatClient CreateChatClient(
         LlmProviderConfig config,
         LocalInferenceConfig? localInference = null,
