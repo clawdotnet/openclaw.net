@@ -16,10 +16,23 @@ if [ "${#missing[@]}" -eq 0 ]; then
   exit 0
 fi
 
+require_positive_integer() {
+  local name="$1"
+  local value="$2"
+
+  if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+    echo "::error::${name} must be a positive integer; got '${value}'."
+    exit 2
+  fi
+}
+
 attempts="${APT_INSTALL_ATTEMPTS:-3}"
 timeout_seconds="${APT_INSTALL_TIMEOUT_SECONDS:-120}"
 
-for attempt in $(seq 1 "$attempts"); do
+require_positive_integer "APT_INSTALL_ATTEMPTS" "$attempts"
+require_positive_integer "APT_INSTALL_TIMEOUT_SECONDS" "$timeout_seconds"
+
+for ((attempt = 1; attempt <= attempts; attempt++)); do
   echo "::group::Install missing NativeAOT prerequisites, attempt ${attempt}/${attempts}"
   set +e
   timeout "${timeout_seconds}s" sudo env DEBIAN_FRONTEND=noninteractive apt-get install \
