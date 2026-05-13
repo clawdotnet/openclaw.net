@@ -123,6 +123,40 @@ public class VideoFrameExtractionServiceTests
         Assert.Contains("too large", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ExtractFramesAsync_ReportsMissingLocalVideoBeforeFileInfoFailure()
+    {
+        using var temp = new TempDirectory();
+        var config = new GatewayConfig
+        {
+            Multimodal = new MultimodalConfig
+            {
+                MediaCachePath = Path.Combine(temp.Path, "media"),
+                Video = new VideoProcessingConfig
+                {
+                    FailureMode = "degrade"
+                }
+            }
+        };
+        var service = new VideoFrameExtractionService(
+            config,
+            new MediaCacheStore(config.Multimodal.MediaCachePath),
+            NullLogger<VideoFrameExtractionService>.Instance);
+
+        var missingPath = Path.Combine(temp.Path, "missing.mp4");
+        var result = await service.ExtractFramesAsync(
+            new VideoFrameExtractionRequest
+            {
+                SourceLabel = "missing",
+                MediaType = "video/mp4",
+                Uri = new UriBuilder { Scheme = Uri.UriSchemeFile, Path = missingPath }.Uri
+            },
+            CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("video_not_found", result.Issue);
+    }
+
     private static string CreateFakeFfprobe(string root, string duration)
     {
         var path = Path.Combine(root, OperatingSystem.IsWindows() ? "ffprobe.cmd" : "ffprobe");

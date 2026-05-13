@@ -31,6 +31,7 @@ public sealed class SetupCommandTests
             var workspace = Path.Combine(root, "workspace");
             using var output = new StringWriter();
             using var error = new StringWriter();
+            using var input = new StringReader(string.Empty);
 
             var exitCode = await SetupCommand.RunAsync(
                 [
@@ -42,7 +43,7 @@ public sealed class SetupCommandTests
                     "--model", "gpt-4o",
                     "--api-key", "env:OPENAI_API_KEY"
                 ],
-                new StringReader(string.Empty),
+                input,
                 output,
                 error,
                 root,
@@ -94,6 +95,7 @@ public sealed class SetupCommandTests
             var workspace = Path.Combine(root, "workspace");
             using var output = new StringWriter();
             using var error = new StringWriter();
+            using var input = new StringReader(string.Empty);
 
             var exitCode = await SetupCommand.RunAsync(
                 [
@@ -105,7 +107,7 @@ public sealed class SetupCommandTests
                     "--model", "gpt-4o",
                     "--api-key", "env:OPENAI_API_KEY"
                 ],
-                new StringReader(string.Empty),
+                input,
                 output,
                 error,
                 root,
@@ -203,6 +205,7 @@ public sealed class SetupCommandTests
             var workspace = Path.Combine(root, "workspace");
             using var output = new StringWriter();
             using var error = new StringWriter();
+            using var input = new StringReader(string.Empty);
 
             var exitCode = await SetupCommand.RunAsync(
                 [
@@ -212,7 +215,7 @@ public sealed class SetupCommandTests
                     "--workspace", workspace,
                     "--provider", "embedded"
                 ],
-                new StringReader(string.Empty),
+                input,
                 output,
                 error,
                 root,
@@ -262,6 +265,7 @@ public sealed class SetupCommandTests
             var workspace = Path.Combine(root, "workspace");
             using var output = new StringWriter();
             using var error = new StringWriter();
+            using var input = new StringReader(string.Empty);
 
             var exitCode = await SetupCommand.RunAsync(
                 [
@@ -273,7 +277,7 @@ public sealed class SetupCommandTests
                     "--model", "gemma-4-e4b",
                     "--model-preset", "embedded-gemma-4-e4b"
                 ],
-                new StringReader(string.Empty),
+                input,
                 output,
                 error,
                 root,

@@ -392,7 +392,9 @@ internal sealed class EmbeddedLocalChatClient : IChatClient
                                     dict[prop.Name] = prop.Value.Clone();
                                 }
                             }
-                            catch { }
+                            catch (JsonException)
+                            {
+                            }
                         }
                         message.Contents.Add(new FunctionCallContent(idElement.GetString() ?? "", name, dict));
                     }
@@ -492,7 +494,7 @@ internal sealed class EmbeddedLocalChatClient : IChatClient
             foreach (var prop in doc.RootElement.EnumerateObject())
                 dict[prop.Name] = prop.Value.Clone();
         }
-        catch
+        catch (JsonException)
         {
         }
 

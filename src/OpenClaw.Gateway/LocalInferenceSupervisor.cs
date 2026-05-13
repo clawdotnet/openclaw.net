@@ -43,11 +43,12 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
 
     public LocalInferenceStatus GetStatus()
     {
-        var running = IsProcessRunning(_process);
+        var process = _process;
+        var running = IsProcessRunning(process);
         return new LocalInferenceStatus
         {
             Running = running,
-            ProcessId = running ? _process?.Id : null,
+            ProcessId = running && process is not null ? process.Id : null,
             BaseUrl = _endpoint?.BaseUrl,
             PackageId = _endpoint?.Package.Id,
             ModelPath = _endpoint?.ModelPath,
@@ -268,7 +269,7 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
             args.AddRange(["--mmproj", mmprojPath]);
 
         if (!string.IsNullOrWhiteSpace(_config.MediaPath))
-            args.AddRange(["--media-path", Path.GetFullPath(Environment.ExpandEnvironmentVariables(_config.MediaPath))]);
+            args.AddRange(["--media-path", LocalModelCache.ResolveConfiguredPath(_config.MediaPath)]);
 
         var reasoningMode = ResolveValue(_config.ReasoningMode, package.Runtime.ReasoningMode);
         if (!string.IsNullOrWhiteSpace(reasoningMode))
@@ -321,7 +322,7 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
             args.AddRange(["--threads", threads]);
 
         if (!string.IsNullOrWhiteSpace(_config.LiteRtMediaPipeGraphPath))
-            args.AddRange(["--experimental-mediapipe-graph", Path.GetFullPath(Environment.ExpandEnvironmentVariables(_config.LiteRtMediaPipeGraphPath))]);
+            args.AddRange(["--experimental-mediapipe-graph", LocalModelCache.ResolveConfiguredPath(_config.LiteRtMediaPipeGraphPath)]);
 
         return new ProcessStartInfo
         {
@@ -376,7 +377,7 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
             using var response = await _httpClient.SendAsync(request, ct);
             return response.IsSuccessStatusCode;
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
         {
             return false;
         }
@@ -427,7 +428,7 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
         if (backend == "litert")
         {
             if (!string.IsNullOrWhiteSpace(_config.LiteRtRuntimePath))
-                return Path.GetFullPath(Environment.ExpandEnvironmentVariables(_config.LiteRtRuntimePath));
+                return LocalModelCache.ResolveConfiguredPath(_config.LiteRtRuntimePath);
 
             throw new InvalidOperationException(
                 "LiteRT local inference requires OpenClaw:LocalInference:LiteRtRuntimePath to point to an OpenClaw-compatible LiteRT adapter binary. " +
@@ -435,7 +436,7 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
         }
 
         if (!string.IsNullOrWhiteSpace(_config.RuntimePath))
-            return Path.GetFullPath(Environment.ExpandEnvironmentVariables(_config.RuntimePath));
+            return LocalModelCache.ResolveConfiguredPath(_config.RuntimePath);
 
         return OperatingSystem.IsWindows() ? "llama-server.exe" : "llama-server";
     }
@@ -454,7 +455,7 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
     {
         if (!string.IsNullOrWhiteSpace(configuredPath))
         {
-            var path = Path.GetFullPath(Environment.ExpandEnvironmentVariables(configuredPath));
+            var path = LocalModelCache.ResolveConfiguredPath(configuredPath);
             if (!requireExists || File.Exists(path))
                 return path;
 
@@ -487,7 +488,7 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
 
     private static int ReserveLoopbackPort()
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         try
         {
@@ -520,7 +521,7 @@ internal class LocalInferenceSupervisor : IAsyncDisposable, IDisposable
         {
             var logsPath = string.IsNullOrWhiteSpace(_config.LogsPath)
                 ? Path.Combine(Path.GetDirectoryName(LocalModelCache.ResolveModelsRoot(_config.ModelsRoot)) ?? ".", "logs")
-                : _config.LogsPath;
+                : LocalModelCache.ResolveConfiguredPath(_config.LogsPath);
             Directory.CreateDirectory(logsPath);
             File.AppendAllText(Path.Combine(logsPath, $"{packageId}.localinfer.log"), line + Environment.NewLine);
         }

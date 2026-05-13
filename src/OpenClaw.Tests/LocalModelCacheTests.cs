@@ -87,6 +87,15 @@ public sealed class LocalModelCacheTests : IDisposable
     }
 
     [Fact]
+    public void ResolveConfiguredPath_ExpandsHomeDirectory()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var expected = Path.Combine(home, "openclaw-local-models");
+
+        Assert.Equal(expected, LocalModelCache.ResolveConfiguredPath("~/openclaw-local-models"));
+    }
+
+    [Fact]
     public async Task InstallVerifyAndRemove_LocalPackage_FromManualPath()
     {
         var sourcePath = Path.Combine(_tempDir, "manual.gguf");

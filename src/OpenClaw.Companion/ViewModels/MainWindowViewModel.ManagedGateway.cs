@@ -23,6 +23,7 @@ public sealed partial class MainWindowViewModel
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanRunLocalGatewaySetup))]
+    [NotifyPropertyChangedFor(nameof(CanRunEmbeddedLocalModelCommands))]
     private bool _localGatewayCanRunSetup;
 
     [ObservableProperty]
@@ -30,12 +31,14 @@ public sealed partial class MainWindowViewModel
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanRunLocalGatewaySetup))]
+    [NotifyPropertyChangedFor(nameof(CanRunEmbeddedLocalModelCommands))]
     private bool _isManagedGatewayBusy;
 
     [ObservableProperty]
     private bool _autoStartLocalGateway = true;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRunEmbeddedLocalModelCommands))]
     private string _setupProvider = "openai";
 
     [ObservableProperty]
@@ -57,6 +60,9 @@ public sealed partial class MainWindowViewModel
     private string _embeddedLocalModelStatus = "Local model status not checked. Video uses sampled frames; LiteRT packages require an experimental adapter.";
 
     public bool CanRunLocalGatewaySetup => LocalGatewayCanRunSetup && !IsManagedGatewayBusy;
+
+    public bool CanRunEmbeddedLocalModelCommands =>
+        CanRunLocalGatewaySetup && IsEmbeddedSetupProvider();
 
     public async Task InitializeLocalGatewayAsync()
     {
@@ -83,6 +89,12 @@ public sealed partial class MainWindowViewModel
         if (IsManagedGatewayBusy)
             return;
 
+        if (!IsEmbeddedSetupProvider())
+        {
+            EmbeddedLocalModelStatus = "Choose the Embedded provider before running local model commands.";
+            return;
+        }
+
         IsManagedGatewayBusy = true;
         try
         {
@@ -106,6 +118,12 @@ public sealed partial class MainWindowViewModel
     {
         if (IsManagedGatewayBusy)
             return;
+
+        if (!IsEmbeddedSetupProvider())
+        {
+            EmbeddedLocalModelStatus = "Choose the Embedded provider before installing a local model.";
+            return;
+        }
 
         if (string.IsNullOrWhiteSpace(SetupLocalModelPath))
         {
@@ -139,6 +157,12 @@ public sealed partial class MainWindowViewModel
         if (IsManagedGatewayBusy)
             return;
 
+        if (!IsEmbeddedSetupProvider())
+        {
+            EmbeddedLocalModelStatus = "Choose the Embedded provider before verifying a local model.";
+            return;
+        }
+
         IsManagedGatewayBusy = true;
         try
         {
@@ -163,6 +187,12 @@ public sealed partial class MainWindowViewModel
     {
         if (IsManagedGatewayBusy)
             return;
+
+        if (!IsEmbeddedSetupProvider())
+        {
+            EmbeddedLocalModelStatus = "Choose the Embedded provider before removing a local model.";
+            return;
+        }
 
         IsManagedGatewayBusy = true;
         try
@@ -314,6 +344,9 @@ public sealed partial class MainWindowViewModel
             : !string.IsNullOrWhiteSpace(SetupModel)
                 ? SetupModel.Trim()
                 : "gemma-local-small-q4";
+
+    private bool IsEmbeddedSetupProvider()
+        => SetupProvider.Equals("embedded", StringComparison.OrdinalIgnoreCase);
 
     partial void OnAutoStartLocalGatewayChanged(bool value)
     {

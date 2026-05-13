@@ -124,6 +124,9 @@ internal sealed class VideoFrameExtractionService : IVideoFrameExtractionService
         if (request.Uri.IsFile)
         {
             var localPath = Path.GetFullPath(request.Uri.LocalPath);
+            if (!File.Exists(localPath))
+                throw new InvalidOperationException($"Video file was not found: {localPath}");
+
             EnforceVideoSize(new FileInfo(localPath).Length, video);
             return localPath;
         }
@@ -310,6 +313,7 @@ internal sealed class VideoFrameExtractionService : IVideoFrameExtractionService
         {
             System.ComponentModel.Win32Exception => "ffmpeg_or_ffprobe_missing",
             InvalidOperationException invalid when invalid.Message.Contains("too large", StringComparison.OrdinalIgnoreCase) => "video_too_large",
+            InvalidOperationException invalid when invalid.Message.Contains("not found", StringComparison.OrdinalIgnoreCase) => "video_not_found",
             InvalidOperationException invalid when invalid.Message.Contains("duration", StringComparison.OrdinalIgnoreCase) => "video_too_long",
             InvalidOperationException invalid when invalid.Message.Contains("Remote video URLs", StringComparison.OrdinalIgnoreCase) => "unsupported_video_url",
             _ => "video_preprocessing_failed"

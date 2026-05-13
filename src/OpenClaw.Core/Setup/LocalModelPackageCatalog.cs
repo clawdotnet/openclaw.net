@@ -453,7 +453,7 @@ public static class LocalModelCache
     public static string ResolveModelsRoot(string? configuredRoot = null)
     {
         if (!string.IsNullOrWhiteSpace(configuredRoot))
-            return Path.GetFullPath(Environment.ExpandEnvironmentVariables(configuredRoot));
+            return ResolveConfiguredPath(configuredRoot);
 
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (OperatingSystem.IsWindows())
@@ -463,6 +463,27 @@ public static class LocalModelCache
         }
 
         return Path.Combine(home, ".openclaw", "models");
+    }
+
+    public static string ResolveConfiguredPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("Configured path cannot be empty.", nameof(path));
+
+        var expanded = Environment.ExpandEnvironmentVariables(path.Trim());
+        if (expanded == "~")
+        {
+            expanded = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        }
+        else if (expanded.StartsWith("~/", StringComparison.Ordinal) ||
+                 expanded.StartsWith("~\\", StringComparison.Ordinal))
+        {
+            expanded = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                expanded[2..]);
+        }
+
+        return Path.GetFullPath(expanded);
     }
 
     public static string GetPackageDirectory(LocalModelPackageDefinition package, string? modelsRoot = null)
@@ -711,7 +732,7 @@ public static class LocalModelCache
         string? modelsRoot,
         CancellationToken ct)
     {
-        var sourcePath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(source));
+        var sourcePath = ResolveConfiguredPath(source);
         if (!File.Exists(sourcePath))
         {
             return new InstallFileWrite(
@@ -942,7 +963,7 @@ public static class LocalModelCache
         {
             return JsonSerializer.Deserialize(File.ReadAllText(path), CoreJsonContext.Default.LocalModelInstallManifest);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException)
         {
             error = $"Install manifest could not be read: {ex.Message}";
             return null;

@@ -101,16 +101,16 @@
                                     <TextBox Grid.Column="0" Text="{Binding SetupLocalModelPath}" Watermark="Local model path (.gguf / .litertlm)" />
                                     <Button Grid.Column="1" Content="Status"
                                             Command="{Binding RefreshEmbeddedLocalModelStatusCommand}"
-                                            IsEnabled="{Binding CanRunLocalGatewaySetup}" />
+                                            IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
                                     <Button Grid.Column="2" Content="Install"
                                             Command="{Binding InstallEmbeddedLocalModelCommand}"
-                                            IsEnabled="{Binding CanRunLocalGatewaySetup}" />
+                                            IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
                                     <Button Grid.Column="3" Content="Verify"
                                             Command="{Binding VerifyEmbeddedLocalModelCommand}"
-                                            IsEnabled="{Binding CanRunLocalGatewaySetup}" />
+                                            IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
                                     <Button Grid.Column="4" Content="Remove"
                                             Command="{Binding RemoveEmbeddedLocalModelCommand}"
-                                            IsEnabled="{Binding CanRunLocalGatewaySetup}" />
+                                            IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
                                 </Grid>
                                 <TextBlock Text="{Binding EmbeddedLocalModelStatus}"
                                            TextWrapping="Wrap"
