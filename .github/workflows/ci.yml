@@ -92,8 +92,9 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Install AOT prerequisites
-        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - name: Ensure AOT prerequisites
+        timeout-minutes: 8
+        run: bash .github/scripts/install-nativeaot-prereqs.sh
 
       - name: Publish and smoke-test standard NativeAOT binaries
         run: |

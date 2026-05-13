@@ -60,9 +60,10 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Install Linux NativeAOT prerequisites
+      - name: Ensure Linux NativeAOT prerequisites
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+        timeout-minutes: 8
+        run: bash .github/scripts/install-nativeaot-prereqs.sh
 
       - name: Publish, smoke-test, and package assets
         shell: pwsh
