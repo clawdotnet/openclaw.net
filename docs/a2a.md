@@ -45,6 +45,19 @@ By default, OpenClaw exposes these A2A protocol bindings:
 
 The path prefix can be changed with `OpenClaw:MicrosoftAgentFramework:A2APathPrefix`.
 
+## Task Support
+
+OpenClaw's A2A surface includes the protocol task model.
+
+- `message:send` and `message:stream` execute in a task context and return task-scoped ids
+- streaming emits standard task lifecycle states (`submitted`, `working`, terminal `completed`/`failed`)
+- cancellation is wired through the A2A handler (`CancelAsync`) when clients provide a task id
+
+Implementation notes for operators:
+
+- task state is stored in an in-memory `ITaskStore` (not durable across process restarts)
+- A2A server run mode is `DisallowBackground`, so background task execution is intentionally disabled
+
 ## Agent Names
 
 OpenClaw uses two A2A-facing names with different stability contracts:
@@ -83,7 +96,22 @@ For public deployments, configure gateway authentication before exposing the A2A
 
 ## Streaming
 
-The current A2A endpoint does not advertise protocol-level streaming. OpenClaw's internal agent runtime can stream, but the current A2A handler completes responses as a single A2A result until protocol-level streaming is implemented and tested.
+OpenClaw now advertises protocol-level A2A streaming when `OpenClaw:MicrosoftAgentFramework:EnableStreaming=true`.
+
+When streaming is enabled:
+
+- the Agent Card exposes `capabilities.streaming=true`
+- `POST /a2a/message:stream` emits task lifecycle and artifact events over SSE
+- `POST /a2a/rpc` exposes the same streaming semantics through the JSON-RPC binding
+
+The streaming contract is:
+
+- submitted -> working -> artifact chunks -> completed/failed
+- all text deltas append to `artifactId: "text-delta"`
+- successful streams mark the final emitted `text-delta` chunk with `lastChunk=true` before task completion
+- failed/canceled streams may terminate without a `lastChunk=true` artifact close event
+- if a failure happens after partial text has already been emitted, previously sent chunks are retained and the task terminates as `failed`
+- task completion is finalized with `CompleteAsync`; no extra artifact chunks are emitted after completion
 
 ## REST Response Materialization
 
@@ -97,16 +125,23 @@ OpenClaw avoids this by using an explicit keyed `OpenClawA2AAgentHandler` for th
 
 Expected handler behavior:
 
-| Runtime outcome | A2A REST response behavior |
-| --- | --- |
-| Text deltas are produced | Concatenate text deltas into one agent message. |
-| The runtime completes without text | Return `[<AgentName>] Request completed.` as an agent message. |
-| A recoverable bridge/runtime exception occurs | Log the exception and return `A2A request failed.` as an agent message. |
-| The request is cancelled | Propagate cancellation instead of fabricating a response. |
+| Endpoint | Runtime outcome | A2A response behavior |
+| --- | --- | --- |
+| `POST /a2a/message:send` | Text deltas are produced | Concatenate text deltas into one agent message. |
+| `POST /a2a/message:send` | The runtime completes without text | Return `[<AgentName>] Request completed.` as an agent message. |
+| `POST /a2a/message:send` | A recoverable bridge/runtime exception occurs | Log the exception and return `A2A request failed.` as an agent message. |
+| `POST /a2a/message:send` | The request is cancelled | Propagate cancellation instead of fabricating a response. |
+| `POST /a2a/message:stream` | Text deltas are produced | Emit `submitted -> working -> artifactUpdate* -> completed` over SSE. |
+| `POST /a2a/message:stream` | The runtime completes without text | Emit a fallback artifact chunk with `[<AgentName>] Request completed.` and then complete the task. |
+| `POST /a2a/message:stream` | A runtime error or bridge exception occurs before any text | Emit `failed` with an error message. |
+| `POST /a2a/message:stream` | A runtime error or bridge exception occurs after partial text | Preserve emitted artifact chunks and then emit `failed`. |
+| `POST /a2a/message:stream` | The request is cancelled | Propagate cancellation so the SDK can move the task to `canceled`. |
 
 The gateway still registers the Microsoft Agent Framework `AIAgent` host surface for metadata and session integration, but REST execution is intentionally routed through the explicit A2A event-queue handler. This is important because the preview hosting package can otherwise finish an OpenClaw turn while producing no materializable A2A response events.
 
-If this error appears in logs, verify the active build includes the explicit keyed `IAgentHandler` registration for the `openclaw` A2A service and that the process was restarted after rebuilding. Focused regression coverage lives in the A2A HTTP endpoint tests and includes bridge exceptions, complete-without-text turns, and requests that omit `MessageId`.
+HTTP+JSON and JSON-RPC are expected to stay semantically aligned. The transport payloads do not need to be byte-for-byte identical, but both bindings must preserve the same event order, artifact append semantics, and terminal state behavior.
+
+If the materialization error above appears in logs, verify the active build includes the explicit keyed `IAgentHandler` registration for the `openclaw` A2A service and that the process was restarted after rebuilding. Focused regression coverage lives in the A2A HTTP endpoint tests and A2A integration tests, and now includes protocol-level streaming for REST and JSON-RPC.
 
 ## AOT and JIT Notes
 

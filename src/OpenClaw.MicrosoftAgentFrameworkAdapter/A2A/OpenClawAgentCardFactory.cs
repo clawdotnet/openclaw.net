@@ -26,7 +26,7 @@ public sealed class OpenClawAgentCardFactory
             },
             Capabilities = new AgentCapabilities
             {
-                Streaming = false,
+                Streaming = _options.EnableStreaming,
                 PushNotifications = false
             },
             DefaultInputModes = ["text/plain"],

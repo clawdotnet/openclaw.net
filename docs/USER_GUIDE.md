@@ -71,6 +71,24 @@ Important distinction:
 - directly editing `src/OpenClaw.Gateway/appsettings.json` is a lower-level path and can expose optional features that are not part of the easiest first run
 - direct gateway startup now prints explicit startup phases and a ready banner with `/chat`, `/admin`, `/doctor/text`, `/health`, `/mcp`, and `/ws`
 
+## A2A Task Quick View
+
+If A2A is enabled (`OpenClaw:MicrosoftAgentFramework:EnableA2A=true`), OpenClaw exposes:
+
+- HTTP+JSON: `/a2a`
+- JSON-RPC: `/a2a/rpc`
+- Agent Card discovery: `/.well-known/agent-card.json`
+
+A2A requests run with protocol task semantics. `message:send` and `message:stream` both execute in task context, and streaming follows the standard lifecycle:
+
+- `submitted`
+- `working`
+- terminal `completed` or `failed`
+
+Task cancellation is wired through the A2A handler when a task id is provided. The current task store is in-memory (`ITaskStore`), so task state is not durable across process restarts.
+
+For the full A2A behavior and operator notes, see [a2a.md](a2a.md).
+
 ## Operator Auth Model
 
 OpenClaw.NET now has three fixed operator roles:
