@@ -151,6 +151,21 @@ public sealed class CanvasToolTests
         Assert.Empty(ws.Sent);
     }
 
+    [Fact]
+    public async Task A2UiCreateSurface_RejectsNonStringComponentArray()
+    {
+        var (broker, ws) = CreateConnectedBroker(["a2ui.v0_9"], [A2UiCatalogRegistry.AGenUiCatalogId]);
+        var tool = new A2UiCreateSurfaceTool(broker, new GatewayConfig());
+
+        var result = await tool.ExecuteAsync(
+            """{"surfaceId":"surface-1","components":[123]}""",
+            Context(senderId: "client"),
+            CancellationToken.None);
+
+        Assert.Contains("must be a JSON string array", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(ws.Sent);
+    }
+
     [Theory]
     [InlineData("not-json", "not valid JSON")]
     [InlineData("[]", "must be a JSON object")]
@@ -285,6 +300,21 @@ public sealed class CanvasToolTests
         Assert.Equal([component], sent.Components);
     }
 
+    [Fact]
+    public async Task A2UiUpdateComponents_RejectsNonStringComponentArray()
+    {
+        var (broker, ws) = CreateConnectedBroker(["a2ui.v0_9"], [A2UiCatalogRegistry.AGenUiCatalogId]);
+        var tool = new A2UiUpdateComponentsTool(broker, new GatewayConfig());
+
+        var result = await tool.ExecuteAsync(
+            """{"surfaceId":"surface-1","components":[true]}""",
+            Context(senderId: "client"),
+            CancellationToken.None);
+
+        Assert.Contains("must be a JSON string array", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(ws.Sent);
+    }
+
     [Theory]
     [InlineData("not-json", "not valid JSON")]
     [InlineData("[]", "must be a JSON object")]
@@ -376,6 +406,117 @@ public sealed class CanvasToolTests
         Assert.Null(sent.DataModelJson);
     }
 
+    [Fact]
+    public async Task A2UiV09Lifecycle_WebSocketRoundTrip_CoversCreateUpdateSnapshotSyncAndDelete()
+    {
+        var (broker, ws) = CreateConnectedBroker(["a2ui.v0_9", "snapshot.state"], [A2UiCatalogRegistry.AGenUiCatalogId]);
+        var config = new GatewayConfig();
+        var context = Context(senderId: "client");
+
+        var createTool = new A2UiCreateSurfaceTool(broker, config);
+        var updateModelTool = new A2UiUpdateDataModelTool(broker, config);
+        var updateComponentsTool = new A2UiUpdateComponentsTool(broker, config);
+        var snapshotTool = new CanvasSnapshotTool(broker, config);
+        var syncTool = new A2UiSyncUiToDataTool(broker, config);
+        var deleteTool = new A2UiDeleteSurfaceTool(broker, config);
+
+        var createTask = createTool.ExecuteAsync(
+            """{"surfaceId":"details","components":["{\"type\":\"Text\",\"id\":\"title\",\"text\":\"ok\"}"],"dataModelJson":"{\"status\":\"draft\"}"}""",
+            context,
+            CancellationToken.None);
+        var createSent = await WaitForSentEnvelopeAsync(ws);
+        await AckAsync(broker, "client", createSent, "sess");
+        var createResult = await createTask;
+
+        Assert.Contains("Canvas command accepted", createResult, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("a2ui_create_surface", createSent.Type);
+        Assert.Equal("createSurface", createSent.Operation);
+        Assert.Equal("details", createSent.SurfaceId);
+
+        var snapshotTask1 = snapshotTool.ExecuteAsync("""{"surfaceId":"details"}""", context, CancellationToken.None);
+        var snapshotSent1 = await WaitForSentEnvelopeAsync(ws, skip: 1);
+        await RespondWithSnapshotAsync(
+            broker,
+            requestId: snapshotSent1.RequestId!,
+            surfaceId: "details",
+            snapshotJson: """{"dataModelJson":"{\"status\":\"draft\"}","components":[{"type":"Text","id":"title","text":"ok"}],"frameCount":1,"diagnostics":[]}""");
+        var snapshotResult1 = await snapshotTask1;
+
+        CanvasSnapshotAssertions.AssertV09Snapshot(
+            snapshotResult1,
+            expectedFrameCount: 1,
+            expectedComponentCount: 1,
+            expectedDataModelFragment: "status",
+            expectedDiagnosticContains: null);
+
+        var updateModelTask = updateModelTool.ExecuteAsync(
+            """{"surfaceId":"details","dataModelJson":"{\"status\":\"approved\"}"}""",
+            context,
+            CancellationToken.None);
+        var updateModelSent = await WaitForSentEnvelopeAsync(ws, skip: 2);
+        await AckAsync(broker, "client", updateModelSent, "sess");
+        var updateModelResult = await updateModelTask;
+
+        Assert.Contains("Canvas command accepted", updateModelResult, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("a2ui_update_data_model", updateModelSent.Type);
+
+        var updateComponentsTask = updateComponentsTool.ExecuteAsync(
+            """{"surfaceId":"details","components":["{\"type\":\"Text\",\"id\":\"title\",\"text\":\"updated\"}"]}""",
+            context,
+            CancellationToken.None);
+        var updateComponentsSent = await WaitForSentEnvelopeAsync(ws, skip: 3);
+        await AckAsync(broker, "client", updateComponentsSent, "sess");
+        var updateComponentsResult = await updateComponentsTask;
+
+        Assert.Contains("Canvas command accepted", updateComponentsResult, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("a2ui_update_components", updateComponentsSent.Type);
+        Assert.Equal("updateComponents", updateComponentsSent.Operation);
+
+        var snapshotTask2 = snapshotTool.ExecuteAsync("""{"surfaceId":"details"}""", context, CancellationToken.None);
+        var snapshotSent2 = await WaitForSentEnvelopeAsync(ws, skip: 4);
+        await RespondWithSnapshotAsync(
+            broker,
+            requestId: snapshotSent2.RequestId!,
+            surfaceId: "details",
+            snapshotJson: """{"dataModelJson":"{\"status\":\"approved\"}","components":[{"type":"Text","id":"title","text":"updated"}],"frameCount":1,"diagnostics":["surface validated"]}""");
+        var snapshotResult2 = await snapshotTask2;
+
+        CanvasSnapshotAssertions.AssertV09Snapshot(
+            snapshotResult2,
+            expectedFrameCount: 1,
+            expectedComponentCount: 1,
+            expectedDataModelFragment: "approved",
+            expectedDiagnosticContains: "validated");
+
+        var syncTask = syncTool.ExecuteAsync(
+            """{"surfaceId":"details","syncMode":"full"}""",
+            context,
+            CancellationToken.None);
+        var syncSent = await WaitForSentEnvelopeAsync(ws, skip: 5);
+        await broker.HandleClientEnvelopeAsync("client", new WsClientEnvelope
+        {
+            Type = "a2ui_sync_result",
+            RequestId = syncSent.RequestId,
+            SessionId = "sess",
+            SurfaceId = "details",
+            Success = true,
+            ValueJson = "{\"status\":\"approved\"}"
+        }, CancellationToken.None);
+        var syncResult = await syncTask;
+
+        Assert.Equal("{\"status\":\"approved\"}", syncResult);
+        Assert.Equal("a2ui_sync_ui_to_data", syncSent.Type);
+
+        var deleteTask = deleteTool.ExecuteAsync("""{"surfaceId":"details"}""", context, CancellationToken.None);
+        var deleteSent = await WaitForSentEnvelopeAsync(ws, skip: 6);
+        await AckAsync(broker, "client", deleteSent, "sess");
+        var deleteResult = await deleteTask;
+
+        Assert.Contains("Canvas command accepted", deleteResult, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("a2ui_delete_surface", deleteSent.Type);
+        Assert.Equal("deleteSurface", deleteSent.Operation);
+    }
+
     private static CanvasCommandBroker CreateBroker(GatewayConfig? config = null)
         => new(
             config ?? new GatewayConfig(),
@@ -391,6 +532,21 @@ public sealed class CanvasToolTests
             RequestId = sent.RequestId,
             SessionId = sessionId,
             Success = true
+        }, CancellationToken.None);
+
+    private static async Task RespondWithSnapshotAsync(
+        CanvasCommandBroker broker,
+        string requestId,
+        string surfaceId,
+        string snapshotJson)
+        => await broker.HandleClientEnvelopeAsync("client", new WsClientEnvelope
+        {
+            Type = "canvas_snapshot_result",
+            RequestId = requestId,
+            SessionId = "sess",
+            SurfaceId = surfaceId,
+            Success = true,
+            SnapshotJson = snapshotJson
         }, CancellationToken.None);
 
     private static (CanvasCommandBroker Broker, TestWebSocket WebSocket) CreateConnectedBroker(
