@@ -1589,7 +1589,7 @@
                 <div id="canvas-empty">
                     <div><strong>Canvas ready</strong>Ask the agent to render UI.</div>
                 </div>
-                <iframe id="canvas-html-frame" title="Canvas HTML" sandbox="allow-scripts" hidden></iframe>
+                <iframe id="canvas-html-frame" title="Canvas HTML" sandbox="" hidden></iframe>
                 <div id="a2ui-surfaces">
                     <div id="a2ui-tabs" aria-label="A2UI surfaces"></div>
                     <div id="a2ui-surface-host"></div>
@@ -2835,6 +2835,7 @@
             activeCanvasSurfaceId = null;
             a2uiSurfaces.hidden = false;
             canvasHtmlFrame.hidden = true;
+            canvasHtmlFrame.setAttribute('sandbox', '');
             canvasHtmlFrame.removeAttribute('srcdoc');
             renderCanvasSurfaces();
             canvasStatus.textContent = 'Reset';
@@ -2898,6 +2899,7 @@
             if (env.html) {
                 canvasHtmlFrame.hidden = false;
                 a2uiSurfaces.hidden = true;
+                canvasHtmlFrame.setAttribute('sandbox', '');
                 canvasHtmlFrame.srcdoc = env.html;
                 canvasStatus.textContent = 'Local HTML';
                 updateCanvasMetadata();
@@ -3567,12 +3569,16 @@
             const approvalId = activeApproval.approvalId || '';
             if (!approvalId) {
                 appendSystem(`Tool approval decision not sent (missing approval id): ${toolName}`, true);
-                approvalApproveButton.focus();
+                activeApproval = null;
+                closeModal(approvalModal, messageInput);
+                showNextToolApproval();
                 return;
             }
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 appendSystem(`Tool approval decision not sent (disconnected): ${toolName}`, true);
-                approvalApproveButton.focus();
+                activeApproval = null;
+                closeModal(approvalModal, messageInput);
+                showNextToolApproval();
                 return;
             }
             ws.send(JSON.stringify({
@@ -3764,6 +3770,18 @@
             };
         }
 
+        function refreshChatStateAndReconnectIfAuthRequired() {
+            refreshChatState();
+            if (connectionState !== 'auth_required') return;
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+            reconnectAttempts = 0;
+            connect();
+        }
+
         function readImageAsDataUrl(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -3923,10 +3941,10 @@
             } else if (!rememberToken.checked) {
                 localStorage.removeItem(TOKEN_KEY_PERSIST);
             }
-            refreshChatState();
+            refreshChatStateAndReconnectIfAuthRequired();
         });
-        tokenInput.addEventListener('change', refreshChatState);
-        tokenInput.addEventListener('blur', refreshChatState);
+        tokenInput.addEventListener('change', refreshChatStateAndReconnectIfAuthRequired);
+        tokenInput.addEventListener('blur', refreshChatStateAndReconnectIfAuthRequired);
 
         authToggleButton.addEventListener('click', () => {
             const expanded = authPopover.hidden;
