@@ -1827,6 +1827,7 @@
         let latestChatState = null;
         let connectionState = 'connecting';
         let latestDoctorText = '';
+        let lastFocusedBeforeModal = null;
         const approvalQueue = [];
         let activeApproval = null;
         const canvasSurfaces = new Map();
@@ -1966,6 +1967,44 @@
                 });
                 pre.prepend(button);
             });
+        }
+
+        function focusableElements(container) {
+            if (!container) return [];
+            return Array.from(container.querySelectorAll('button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])'))
+                .filter((el) => !el.disabled && !el.hidden && el.getClientRects().length > 0);
+        }
+
+        function openModal(modal, preferredFocus) {
+            lastFocusedBeforeModal = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            modal.hidden = false;
+            const target = preferredFocus || focusableElements(modal)[0];
+            target?.focus();
+        }
+
+        function closeModal(modal, fallbackFocus) {
+            modal.hidden = true;
+            const target = lastFocusedBeforeModal || fallbackFocus;
+            lastFocusedBeforeModal = null;
+            target?.focus();
+        }
+
+        function trapModalFocus(event, modal) {
+            if (event.key !== 'Tab' || modal.hidden) return;
+            const focusables = focusableElements(modal);
+            if (!focusables.length) {
+                event.preventDefault();
+                return;
+            }
+            const first = focusables[0];
+            const last = focusables[focusables.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
         }
 
         async function refreshChatState() {
@@ -2505,7 +2544,12 @@
                     case 'audio':
                         liveResponseHasAudio = true;
                         if (speechProviderSelect.value === 'live-native' && env.base64Data) {
-                            enqueueLiveAudio(env.base64Data, env.mimeType || 'audio/wav');
+                            try {
+                                enqueueLiveAudio(env.base64Data, env.mimeType || 'audio/wav');
+                            } catch (_) {
+                                appendLiveTimeline('Error', 'Audio decode failed');
+                                appendSystem('Live audio decode failed.', true);
+                            }
                         }
                         break;
                     case 'input_transcription':
@@ -2838,6 +2882,7 @@
                 a2uiSurfaces.hidden = true;
                 canvasHtmlFrame.srcdoc = env.html;
                 canvasStatus.textContent = 'Local HTML';
+                updateCanvasMetadata();
                 sendCanvasAck(env);
                 return;
             }
@@ -2848,9 +2893,11 @@
                 return;
             }
             if (String(env.url).startsWith('openclaw-canvas://')) {
+                updateCanvasMetadata();
                 sendCanvasAck(env, false, 'openclaw-canvas:// artifact loading is not implemented in webchat v1.');
                 return;
             }
+            updateCanvasMetadata();
             sendCanvasAck(env, false, 'Canvas v1 rejects remote webpage navigation; use the browser tool.');
         }
 
@@ -3425,15 +3472,10 @@
             }));
         }
 
-        function sendCanvasSnapshot(env) {
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                appendSystem('Canvas snapshot needs an active chat connection.', true);
-                return;
-            }
-            const requestedSurfaceId = env.surfaceId || activeCanvasSurfaceId || 'main';
+        function buildCanvasSnapshot(requestedSurfaceId = activeCanvasSurfaceId || 'main') {
             const surface = canvasSurfaces.get(requestedSurfaceId) || null;
             const components = surface?.components || [];
-            const snapshot = {
+            return {
                 type: 'canvas_snapshot',
                 surfaceId: surface?.surfaceId || requestedSurfaceId,
                 catalogId: surface?.catalogId || null,
@@ -3453,6 +3495,14 @@
                 diagnostics: surface?.diagnostics || [],
                 localHtmlText: canvasHtmlFrame.hidden ? null : canvasHtmlFrame.srcdoc
             };
+        }
+
+        function sendCanvasSnapshot(env) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                appendSystem('Canvas snapshot needs an active chat connection.', true);
+                return false;
+            }
+            const snapshot = buildCanvasSnapshot(env.surfaceId || activeCanvasSurfaceId || 'main');
             ws.send(JSON.stringify({
                 type: 'canvas_snapshot_result',
                 requestId: env.requestId,
@@ -3462,6 +3512,7 @@
                 success: true,
                 snapshotJson: JSON.stringify(snapshot)
             }));
+            return true;
         }
 
         function handleA2uiEval(env) {
@@ -3489,32 +3540,38 @@
             approvalIdEl.textContent = approvalId || 'missing';
             approvalArgs.textContent = activeApproval.argumentsPreview || activeApproval.argumentsJson || JSON.stringify(activeApproval.arguments || {}, null, 2);
             approvalRisk.textContent = activeApproval.riskHint || activeApproval.mutationHint || 'Review arguments before approving.';
-            approvalModal.hidden = false;
-            approvalApproveButton.focus();
+            openModal(approvalModal, approvalApproveButton);
         }
 
         function decideToolApproval(approved) {
             if (!activeApproval) return;
             const toolName = activeApproval.toolName || 'unknown';
             const approvalId = activeApproval.approvalId || '';
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'tool_approval_decision',
-                    approvalId,
-                    approved
-                }));
+            if (!approvalId) {
+                appendSystem(`Tool approval decision not sent (missing approval id): ${toolName}`, true);
+                approvalApproveButton.focus();
+                return;
             }
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                appendSystem(`Tool approval decision not sent (disconnected): ${toolName}`, true);
+                approvalApproveButton.focus();
+                return;
+            }
+            ws.send(JSON.stringify({
+                type: 'tool_approval_decision',
+                approvalId,
+                approved
+            }));
             appendSystem(`Tool approval ${approved ? 'approved' : 'denied'}: ${toolName}`);
             activeApproval = null;
-            approvalModal.hidden = true;
+            closeModal(approvalModal, messageInput);
             showNextToolApproval();
         }
 
         async function openDoctorDiagnostics(addToChat = false) {
             latestDoctorText = '';
             doctorOutput.textContent = 'Loading diagnostics...';
-            doctorModal.hidden = false;
-            doctorCopyButton.focus();
+            openModal(doctorModal, doctorCopyButton);
             try {
                 const token = getCurrentToken();
                 const headers = {};
@@ -3868,14 +3925,18 @@
         });
 
         document.addEventListener('keydown', (event) => {
+            if (!approvalModal.hidden) {
+                trapModalFocus(event, approvalModal);
+            } else if (!doctorModal.hidden) {
+                trapModalFocus(event, doctorModal);
+            }
             if (event.key !== 'Escape') return;
             if (!approvalModal.hidden) {
                 decideToolApproval(false);
                 return;
             }
             if (!doctorModal.hidden) {
-                doctorModal.hidden = true;
-                doctorButton.focus();
+                closeModal(doctorModal, doctorButton);
                 return;
             }
             if (!authPopover.hidden) {
@@ -3891,8 +3952,7 @@
 
         doctorButton.addEventListener('click', () => void openDoctorDiagnostics(false));
         doctorCloseButton.addEventListener('click', () => {
-            doctorModal.hidden = true;
-            doctorButton.focus();
+            closeModal(doctorModal, doctorButton);
         });
         doctorCopyButton.addEventListener('click', async () => {
             try {
@@ -3922,12 +3982,9 @@
         canvasHideButton.addEventListener('click', hideCanvas);
         canvasResetButton.addEventListener('click', resetA2ui);
         canvasSnapshotButton.addEventListener('click', () => {
-            sendCanvasSnapshot({
-                requestId: `manual-${Date.now()}`,
-                surfaceId: activeCanvasSurfaceId || 'main',
-                snapshotMode: 'state'
-            });
-            appendSystem('Canvas snapshot requested.');
+            const snapshot = buildCanvasSnapshot(activeCanvasSurfaceId || 'main');
+            appendAssistantMarkdown("```json\n" + JSON.stringify(snapshot, null, 2) + "\n```");
+            appendSystem('Canvas snapshot captured locally.');
         });
 
         refreshChatState();
