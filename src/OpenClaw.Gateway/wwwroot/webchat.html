@@ -15,9 +15,12 @@
             --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif;
             --font-mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
-            --bg: #000000;
-            --bg-elevated: #1c1c1e;
-            --bg-elevated-2: #2c2c2e;
+            --bg: #08090b;
+            --bg-elevated: #17191d;
+            --bg-elevated-2: #22252b;
+            --bg-panel: rgba(18, 20, 24, 0.92);
+            --bg-panel-strong: rgba(28, 31, 37, 0.96);
+            --bg-card: rgba(255, 255, 255, 0.055);
             --bg-field: rgba(118, 118, 128, 0.24);
             --bg-field-hover: rgba(118, 118, 128, 0.36);
 
@@ -34,6 +37,8 @@
             --success: #30d158;
             --warning: #ff9f0a;
             --error: #ff453a;
+            --info: #64d2ff;
+            --neutral: rgba(235, 235, 245, 0.64);
 
             --radius-chip: 980px;
             --radius-bubble: 18px;
@@ -72,19 +77,109 @@
             font-family: inherit;
         }
 
+        button:focus-visible,
+        select:focus-visible,
+        input:focus-visible,
+        textarea:focus-visible {
+            outline: 2px solid rgba(100, 210, 255, 0.9);
+            outline-offset: 2px;
+        }
+
+        .button {
+            border: 1px solid transparent;
+            min-height: 32px;
+            border-radius: var(--radius-chip);
+            color: var(--text);
+            background: var(--bg-field);
+            padding: 0.4rem 0.85rem;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 150ms var(--ease), border-color 150ms var(--ease), transform 90ms var(--ease), color 150ms var(--ease);
+        }
+
+        .button:hover:not(:disabled) {
+            background: var(--bg-field-hover);
+        }
+
+        .button:active:not(:disabled) {
+            transform: scale(0.97);
+        }
+
+        .button:disabled {
+            opacity: 0.48;
+            cursor: not-allowed;
+        }
+
+        .button.primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .button.primary:hover:not(:disabled) {
+            background: var(--accent-hover);
+        }
+
+        .button.secondary {
+            border-color: var(--separator-strong);
+            background: var(--bg-card);
+        }
+
+        .button.ghost {
+            background: transparent;
+            border-color: var(--separator);
+            color: var(--text-secondary);
+        }
+
+        .button.danger {
+            background: rgba(255, 69, 58, 0.14);
+            border-color: rgba(255, 69, 58, 0.26);
+            color: #ffb3ad;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            border-radius: var(--radius-chip);
+            border: 1px solid var(--separator);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            padding: 0.32rem 0.65rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            min-width: 0;
+        }
+
+        .badge::before {
+            content: '';
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--neutral);
+            flex-shrink: 0;
+        }
+
+        .badge.success::before { background: var(--success); }
+        .badge.warning::before { background: var(--warning); }
+        .badge.error::before { background: var(--error); }
+        .badge.info::before { background: var(--info); }
+        .badge.neutral::before { background: var(--neutral); }
+
         /* ============================== Header ============================== */
 
         #header {
-            background: rgba(28, 28, 30, 0.72);
+            background: rgba(14, 16, 19, 0.86);
             backdrop-filter: saturate(180%) blur(28px);
             -webkit-backdrop-filter: saturate(180%) blur(28px);
-            padding: 0.75rem 1.5rem;
+            padding: 0.75rem 1.25rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
             border-bottom: 1px solid var(--separator);
-            z-index: 10;
+            z-index: 20;
             flex-shrink: 0;
+            gap: 1rem;
         }
 
         .header-brand {
@@ -100,10 +195,19 @@
         }
 
         #header h2 {
-            font-size: 1.0625rem;
+            font-size: 1rem;
             font-weight: 600;
             letter-spacing: -0.02em;
             color: var(--text);
+        }
+
+        .brand-subtitle {
+            display: block;
+            margin-top: 0.1rem;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            font-weight: 500;
+            letter-spacing: 0;
         }
 
         #header .header-right {
@@ -112,6 +216,92 @@
             gap: 0.5rem;
             flex-wrap: wrap;
             justify-content: flex-end;
+            position: relative;
+        }
+
+        .control-cluster {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.25rem;
+            border: 1px solid var(--separator);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        #header-runtime-badge {
+            max-width: 170px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .popover {
+            position: absolute;
+            top: calc(100% + 0.6rem);
+            right: 0;
+            width: min(360px, calc(100vw - 2rem));
+            border: 1px solid var(--separator-strong);
+            border-radius: 12px;
+            background: var(--bg-panel-strong);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.42);
+            padding: 0.9rem;
+            z-index: 30;
+        }
+
+        .popover[hidden] {
+            display: none;
+        }
+
+        .popover h3 {
+            font-size: 0.9rem;
+            margin-bottom: 0.7rem;
+        }
+
+        .auth-field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            color: var(--text-secondary);
+            font-size: 0.76rem;
+        }
+
+        .auth-panel-grid {
+            display: grid;
+            gap: 0.65rem;
+        }
+
+        .auth-summary {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.5rem;
+            margin-top: 0.7rem;
+        }
+
+        .summary-item {
+            min-width: 0;
+            border: 1px solid var(--separator);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.035);
+            padding: 0.55rem;
+        }
+
+        .summary-item span {
+            display: block;
+            color: var(--text-tertiary);
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 0.2rem;
+        }
+
+        .summary-item strong {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--text);
+            font-size: 0.82rem;
         }
 
         /* ============================== Controls ============================== */
@@ -255,6 +445,39 @@
             cursor: pointer;
         }
 
+        /* ============================== Runtime Status ============================== */
+
+        #runtime-status-strip {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.55rem 1.25rem;
+            border-bottom: 1px solid var(--separator);
+            background: rgba(8, 9, 11, 0.88);
+            overflow-x: auto;
+        }
+
+        #runtime-status-strip .badge {
+            white-space: nowrap;
+        }
+
+        #status-capabilities {
+            display: inline-flex;
+            gap: 0.4rem;
+            min-width: 0;
+        }
+
+        #status-canvas,
+        #status-live {
+            margin-left: auto;
+        }
+
+        #status-live[hidden],
+        #status-canvas[hidden] {
+            display: none;
+        }
+
         /* ============================== Chat Stream ============================== */
 
         #workspace {
@@ -277,7 +500,7 @@
             width: min(44vw, 560px);
             min-width: 360px;
             border-right: 1px solid var(--separator);
-            background: #101012;
+            background: var(--bg-panel);
             display: flex;
             flex-direction: column;
             min-height: 0;
@@ -288,8 +511,7 @@
         }
 
         #canvas-header {
-            height: 42px;
-            padding: 0 1rem;
+            padding: 0.85rem 1rem;
             border-bottom: 1px solid var(--separator);
             display: flex;
             align-items: center;
@@ -304,11 +526,93 @@
             font-weight: 600;
         }
 
+        .canvas-title {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .canvas-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .canvas-actions .button {
+            min-height: 28px;
+            padding: 0.25rem 0.55rem;
+            font-size: 0.72rem;
+        }
+
         #canvas-surface {
             min-height: 0;
             flex: 1;
             overflow: auto;
             padding: 1rem;
+        }
+
+        #canvas-meta {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.5rem;
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid var(--separator);
+            background: rgba(255, 255, 255, 0.025);
+        }
+
+        .canvas-meta-item {
+            min-width: 0;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+        }
+
+        .canvas-meta-item span {
+            display: block;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 0.15rem;
+        }
+
+        .canvas-meta-item strong {
+            display: block;
+            color: var(--text);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #canvas-empty {
+            min-height: 260px;
+            display: grid;
+            place-items: center;
+            color: var(--text-secondary);
+            text-align: center;
+            border: 1px dashed var(--separator-strong);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.025);
+        }
+
+        #canvas-empty strong {
+            display: block;
+            color: var(--text);
+            margin-bottom: 0.25rem;
+        }
+
+        #canvas-diagnostics {
+            margin-top: 1rem;
+            border: 1px solid rgba(255, 159, 10, 0.22);
+            border-radius: 10px;
+            background: rgba(255, 159, 10, 0.08);
+            padding: 0.75rem;
+            color: #ffd69a;
+            font-size: 0.8rem;
+        }
+
+        #canvas-diagnostics[hidden] {
+            display: none;
         }
 
         #canvas-html-frame {
@@ -355,7 +659,7 @@
         .a2ui-card,
         .a2ui-frame {
             border: 1px solid var(--separator-strong);
-            background: rgba(255, 255, 255, 0.045);
+            background: var(--bg-card);
             border-radius: 8px;
             padding: 0.875rem;
         }
@@ -392,10 +696,22 @@
             cursor: pointer;
         }
 
+        .a2ui-button:hover {
+            background: var(--accent-hover);
+        }
+
         .a2ui-table {
             width: 100%;
             border-collapse: collapse;
             font-size: 0.875rem;
+            overflow: hidden;
+            border-radius: 8px;
+        }
+
+        .a2ui-table th {
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.045);
+            font-weight: 650;
         }
 
         .a2ui-table th,
@@ -415,33 +731,40 @@
             height: 22px;
             min-width: 2px;
             border-radius: 5px;
-            background: var(--accent);
+            background: linear-gradient(90deg, var(--accent), var(--info));
+            margin-bottom: 0.45rem;
         }
 
         #chat-state-bar {
             width: 100%;
             max-width: 780px;
-            padding: 0.75rem 1.5rem 0;
-            display: flex;
-            flex-wrap: wrap;
+            margin-bottom: 0.75rem;
+            padding: 0.9rem;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 0.5rem;
+            border: 1px solid var(--separator);
+            border-radius: 12px;
+            background: var(--bg-panel);
         }
 
         .state-pill {
             display: inline-flex;
             align-items: center;
             gap: 0.4rem;
-            padding: 0.45rem 0.75rem;
-            border-radius: 999px;
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            min-width: 0;
+            padding: 0.55rem 0.65rem;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.035);
+            border: 1px solid var(--separator);
             color: var(--text-secondary);
-            font-size: 0.88rem;
+            font-size: 0.78rem;
         }
 
         .state-pill strong {
-            color: var(--text-primary);
+            color: var(--text);
             font-weight: 600;
+            white-space: nowrap;
         }
 
         #chat-container {
@@ -525,6 +848,7 @@
             border-radius: var(--radius-bubble);
             line-height: 1.4;
             word-wrap: break-word;
+            overflow-wrap: anywhere;
             font-size: 0.9375rem;
         }
 
@@ -559,12 +883,52 @@
             padding: 0.25rem 0.75rem;
         }
 
+        .message-meta {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            margin-bottom: 0.25rem;
+            color: var(--text-tertiary);
+            font-size: 0.68rem;
+            font-weight: 650;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .message.user .message-meta {
+            color: rgba(255, 255, 255, 0.68);
+        }
+
+        .message.system .message-meta {
+            margin: 0;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 500;
+        }
+
+        .tool-failure {
+            border: 1px solid rgba(255, 69, 58, 0.28);
+            border-radius: 10px;
+            background: rgba(255, 69, 58, 0.1);
+            color: #ffb3ad;
+            padding: 0.7rem 0.85rem;
+            max-width: min(100%, 680px);
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+
+        .tool-failure strong {
+            display: block;
+            color: #ffd1cd;
+            margin-bottom: 0.2rem;
+        }
+
         /* ============================== Tool pills ============================== */
 
         .tool-pill {
-            background: var(--bg-elevated);
+            background: rgba(10, 132, 255, 0.1);
             border: 1px solid var(--separator);
-            color: var(--text-secondary);
+            color: #b9ddff;
             padding: 0.25rem 0.75rem;
             border-radius: var(--radius-chip);
             font-size: 0.75rem;
@@ -611,12 +975,14 @@
         }
 
         .message.assistant pre {
+            position: relative;
             background: var(--bg);
             border: 1px solid var(--separator);
             border-radius: 10px;
             padding: 0.875rem 1rem;
             margin: 0.75rem 0;
             overflow-x: auto;
+            max-width: 100%;
         }
 
         .message.assistant pre code {
@@ -649,6 +1015,49 @@
         .message.assistant h1 { font-size: 1.1rem; }
         .message.assistant h2 { font-size: 1.0rem; }
         .message.assistant h3 { font-size: 0.95rem; }
+
+        .code-copy-button {
+            position: sticky;
+            left: 100%;
+            top: 0.4rem;
+            float: right;
+            margin: 0.15rem 0 0.35rem 0.5rem;
+            border: 1px solid var(--separator);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-secondary);
+            font-size: 0.68rem;
+            padding: 0.22rem 0.45rem;
+            cursor: pointer;
+        }
+
+        #empty-state {
+            border: 1px solid var(--separator);
+            border-radius: 14px;
+            background: var(--bg-panel);
+            padding: 1.1rem;
+            margin-bottom: 0.75rem;
+        }
+
+        #empty-state h1 {
+            font-size: 1.05rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .suggested-prompts {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.5rem;
+            margin-top: 0.9rem;
+        }
+
+        .suggested-prompts button {
+            text-align: left;
+            border-radius: 8px;
+            white-space: normal;
+            line-height: 1.25;
+            min-height: 42px;
+        }
 
         /* ============================== Typing indicator ============================== */
 
@@ -722,10 +1131,79 @@
         }
 
         #live-toolbar {
+            display: none;
+        }
+
+        #live-toolbar.active {
+            display: grid;
+            gap: 0.75rem;
+            border: 1px solid var(--separator);
+            border-radius: 12px;
+            background: var(--bg-panel);
+            padding: 0.85rem;
+        }
+
+        #live-connect-button.primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        #live-connect-button.primary:hover:not(:disabled) {
+            background: var(--accent-hover);
+        }
+
+        #live-interrupt-button.danger {
+            background: rgba(255, 69, 58, 0.14);
+            border-color: rgba(255, 69, 58, 0.26);
+            color: #ffb3ad;
+        }
+
+        .live-panel-main,
+        .live-panel-fields,
+        .live-panel-advanced {
             display: flex;
             flex-wrap: wrap;
-            gap: 0.4rem;
+            gap: 0.5rem;
             align-items: center;
+        }
+
+        .live-panel-fields label,
+        .live-panel-advanced label {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+        }
+
+        details.live-panel-advanced {
+            display: block;
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+        }
+
+        details.live-panel-advanced label {
+            margin-top: 0.5rem;
+            max-width: 260px;
+        }
+
+        .live-timeline {
+            display: grid;
+            gap: 0.35rem;
+            max-height: 92px;
+            overflow-y: auto;
+            color: var(--text-secondary);
+            font-size: 0.76rem;
+        }
+
+        .live-timeline-entry {
+            border-left: 2px solid var(--separator-strong);
+            padding-left: 0.55rem;
+        }
+
+        .live-timeline-entry strong {
+            color: var(--text);
+            font-weight: 650;
         }
 
         #input-container {
@@ -733,6 +1211,38 @@
             display: flex;
             gap: 0.625rem;
             align-items: flex-end;
+        }
+
+        #attachment-summary {
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+        }
+
+        #attachment-summary.active {
+            display: flex;
+        }
+
+        #attachment-list {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: min(100%, 520px);
+        }
+
+        #composer-hint {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.75rem;
+            color: var(--text-tertiary);
+            font-size: 0.72rem;
+        }
+
+        #composer-disabled-reason {
+            color: #ffd69a;
         }
 
         #attach-button {
@@ -822,6 +1332,87 @@
             cursor: not-allowed;
         }
 
+        /* ============================== Modals ============================== */
+
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.58);
+            z-index: 100;
+        }
+
+        .modal-backdrop[hidden] {
+            display: none;
+        }
+
+        .modal-card {
+            width: min(720px, 100%);
+            max-height: min(86vh, 760px);
+            display: flex;
+            flex-direction: column;
+            border: 1px solid var(--separator-strong);
+            border-radius: 14px;
+            background: var(--bg-panel-strong);
+            box-shadow: 0 30px 90px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+        }
+
+        .modal-header,
+        .modal-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding: 1rem;
+            border-bottom: 1px solid var(--separator);
+        }
+
+        .modal-actions {
+            justify-content: flex-end;
+            border-top: 1px solid var(--separator);
+            border-bottom: 0;
+        }
+
+        .modal-header h3 {
+            font-size: 0.98rem;
+        }
+
+        .modal-body {
+            padding: 1rem;
+            overflow: auto;
+            display: grid;
+            gap: 0.75rem;
+        }
+
+        .modal-field {
+            display: grid;
+            gap: 0.25rem;
+        }
+
+        .modal-field span {
+            color: var(--text-tertiary);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .modal-pre {
+            margin: 0;
+            padding: 0.9rem;
+            border: 1px solid var(--separator);
+            border-radius: 10px;
+            background: #050607;
+            color: var(--text);
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
         /* ============================== Scrollbars ============================== */
 
         ::-webkit-scrollbar {
@@ -863,6 +1454,21 @@
                 padding: 1.25rem 1rem 0.75rem;
             }
 
+            #chat-state-bar,
+            .suggested-prompts,
+            .auth-summary {
+                grid-template-columns: 1fr;
+            }
+
+            #runtime-status-strip {
+                padding: 0.5rem 1rem;
+            }
+
+            #status-canvas,
+            #status-live {
+                margin-left: 0;
+            }
+
             .message {
                 max-width: 82%;
             }
@@ -882,6 +1488,16 @@
             #token-input,
             #voice-id-input {
                 width: 160px;
+            }
+
+            .control-cluster {
+                border-radius: 12px;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+            }
+
+            #header-runtime-badge {
+                max-width: 100%;
             }
         }
 
@@ -903,41 +1519,100 @@
     <div id="header">
         <div class="header-brand">
             <img src="image.png" alt="OpenClaw.NET Logo">
-            <h2>OpenClaw.NET</h2>
+            <div>
+                <h2>OpenClaw.NET</h2>
+                <span class="brand-subtitle">Runtime Chat</span>
+            </div>
         </div>
         <div class="header-right">
-            <button id="doctor-button" title="Fetch /doctor/text">Doctor</button>
-            <select id="mode-select" title="Composer mode">
-                <option value="chat">Chat</option>
-                <option value="live">Live</option>
-            </select>
-            <input type="password" id="token-input" placeholder="Auth Token (optional)">
-            <label id="remember-token-wrap" title="Persist token in this browser">
-                <input type="checkbox" id="remember-token">
-                Remember
-            </label>
+            <div class="control-cluster" aria-label="Runtime controls">
+                <button id="doctor-button" class="button secondary" type="button" title="Fetch /doctor/text">Doctor</button>
+                <span id="header-runtime-badge" class="badge neutral">Runtime</span>
+                <select id="mode-select" title="Composer mode" aria-label="Composer mode">
+                    <option value="chat">Chat</option>
+                    <option value="live">Live</option>
+                </select>
+                <button id="auth-toggle-button" class="button ghost" type="button" aria-expanded="false" aria-controls="auth-popover">Connection/Auth</button>
+            </div>
+            <div id="auth-popover" class="popover" hidden>
+                <h3>Connection/Auth</h3>
+                <div class="auth-panel-grid">
+                    <label class="auth-field">
+                        Token
+                        <input type="password" id="token-input" placeholder="Auth Token (optional)" autocomplete="off">
+                    </label>
+                    <label id="remember-token-wrap" title="Persist token in this browser">
+                        <input type="checkbox" id="remember-token">
+                        Remember token on this browser
+                    </label>
+                </div>
+                <div class="auth-summary" aria-label="Runtime auth summary">
+                    <div class="summary-item"><span>Auth</span><strong id="auth-summary-mode">unknown</strong></div>
+                    <div class="summary-item"><span>Surface</span><strong id="auth-summary-surface">web</strong></div>
+                    <div class="summary-item"><span>Remember</span><strong id="auth-summary-remember">off</strong></div>
+                    <div class="summary-item"><span>Capabilities</span><strong id="auth-summary-capabilities">loading</strong></div>
+                </div>
+            </div>
         </div>
+    </div>
+
+    <!-- Persistent runtime state visible while chatting or working in live mode. -->
+    <div id="runtime-status-strip" aria-label="Runtime status">
+        <span id="status-connection" class="badge neutral">Connecting</span>
+        <span id="status-auth" class="badge neutral">Auth unknown</span>
+        <span id="status-surface" class="badge neutral">Surface web</span>
+        <span id="status-capabilities"></span>
+        <span id="status-canvas" class="badge info" hidden>Canvas ready</span>
+        <span id="status-live" class="badge neutral" hidden>Live offline</span>
     </div>
 
     <div id="workspace">
         <section id="canvas-panel" aria-label="Canvas" hidden>
             <div id="canvas-header">
-                <strong>Canvas</strong>
-                <span id="canvas-status">Ready</span>
+                <div class="canvas-title">
+                    <strong>Canvas Workspace</strong>
+                    <span id="canvas-status">Ready</span>
+                </div>
+                <div class="canvas-actions" aria-label="Canvas actions">
+                    <button id="canvas-hide-button" class="button ghost" type="button">Hide</button>
+                    <button id="canvas-reset-button" class="button ghost" type="button">Reset</button>
+                    <button id="canvas-snapshot-button" class="button secondary" type="button">Snapshot</button>
+                </div>
+            </div>
+            <div id="canvas-meta" aria-label="Canvas metadata">
+                <div class="canvas-meta-item"><span>Surface</span><strong id="canvas-meta-surface">none</strong></div>
+                <div class="canvas-meta-item"><span>Frames</span><strong id="canvas-meta-count">0</strong></div>
+                <div class="canvas-meta-item"><span>Protocol</span><strong id="canvas-meta-protocol">pending</strong></div>
+                <div class="canvas-meta-item"><span>Updated</span><strong id="canvas-meta-updated">never</strong></div>
             </div>
             <div id="canvas-surface">
+                <div id="canvas-empty">
+                    <div><strong>Canvas ready</strong>Ask the agent to render UI.</div>
+                </div>
                 <iframe id="canvas-html-frame" title="Canvas HTML" sandbox="allow-scripts" hidden></iframe>
                 <div id="a2ui-surfaces">
                     <div id="a2ui-tabs" aria-label="A2UI surfaces"></div>
                     <div id="a2ui-surface-host"></div>
                 </div>
+                <div id="canvas-diagnostics" hidden></div>
             </div>
         </section>
 
         <div id="chat-wrapper">
             <div id="chat-container">
                 <div id="chat-state-bar"></div>
-                <!-- Messages will render here -->
+                <!-- Empty runtime prompt suggestions disappear after the first user message. -->
+                <div id="empty-state">
+                    <h1>Chat with OpenClaw.NET</h1>
+                    <p class="a2ui-muted">Use the runtime chat to inspect tools, auth, live sessions, and canvas output.</p>
+                    <div class="suggested-prompts">
+                        <button class="button secondary suggested-prompt" type="button" data-action="doctor">Run doctor diagnostics</button>
+                        <button class="button secondary suggested-prompt" type="button" data-prompt="Show available tools">Show available tools</button>
+                        <button class="button secondary suggested-prompt" type="button" data-prompt="Create a small canvas UI">Create a small canvas UI</button>
+                        <button class="button secondary suggested-prompt" type="button" data-prompt="Explain the active tool preset">Explain the active tool preset</button>
+                    </div>
+                </div>
+                <!-- Messages render here. -->
                 <div class="message-row typing-row" id="typing-row">
                     <div class="agent-avatar"><img src="image.png" alt="Agent" /></div>
                     <div class="typing-indicator">
@@ -953,31 +1628,95 @@
     <div id="input-wrapper">
         <div id="composer-shell">
             <div id="live-toolbar">
-                <span id="live-status-badge" class="live-status-badge">Live offline</span>
-                <select id="live-provider-select" title="Live provider">
-                    <option value="gemini">Gemini Live</option>
-                </select>
-                <select id="speech-provider-select" title="Speech output">
-                    <option value="live-native">Live native audio</option>
-                    <option value="gemini">Gemini TTS</option>
-                    <option value="elevenlabs">ElevenLabs TTS</option>
-                </select>
-                <input id="voice-id-input" placeholder="Voice ID (optional)" title="Provider voice id override">
-                <button id="live-connect-button" type="button" title="Connect live session">Start Live</button>
-                <button id="live-mic-button" type="button" title="Toggle microphone streaming" disabled>Mic</button>
-                <button id="live-interrupt-button" type="button" title="Interrupt live generation" disabled>Interrupt</button>
+                <div class="live-panel-main">
+                    <button id="live-connect-button" class="button primary" type="button" title="Connect live session">Start Live</button>
+                    <span id="live-status-badge" class="live-status-badge">Live offline</span>
+                    <span id="live-mic-status" class="badge neutral">Mic muted</span>
+                    <button id="live-mic-button" class="button secondary" type="button" title="Toggle microphone streaming" disabled>Mic</button>
+                    <button id="live-interrupt-button" class="button danger" type="button" title="Interrupt live generation" disabled hidden>Interrupt</button>
+                </div>
+                <div class="live-panel-fields">
+                    <label>
+                        Provider
+                        <select id="live-provider-select" title="Live provider">
+                            <option value="gemini">Gemini Live</option>
+                        </select>
+                    </label>
+                    <label>
+                        Speech output
+                        <select id="speech-provider-select" title="Speech output">
+                            <option value="live-native">Live native audio</option>
+                            <option value="gemini">Gemini TTS</option>
+                            <option value="elevenlabs">ElevenLabs TTS</option>
+                        </select>
+                    </label>
+                </div>
+                <details class="live-panel-advanced">
+                    <summary class="a2ui-muted">Advanced</summary>
+                    <label>
+                        Voice ID
+                        <input id="voice-id-input" placeholder="Voice ID (optional)" title="Provider voice id override">
+                    </label>
+                </details>
+                <div id="live-timeline" class="live-timeline" aria-live="polite"></div>
+            </div>
+            <div id="attachment-summary">
+                <span id="attachment-count"></span>
+                <span id="attachment-list"></span>
+                <button id="clear-attachments-button" class="button ghost" type="button">Clear</button>
             </div>
             <div id="input-container">
                 <button id="attach-button" type="button" title="Attach image" aria-label="Attach image">+</button>
                 <input id="image-input" type="file" accept="image/*" multiple>
-                <textarea id="message-input" rows="1" placeholder="Message OpenClaw.NET..." disabled></textarea>
-                <button id="send-button" disabled title="Send Message">
+                <textarea id="message-input" rows="1" placeholder="Message OpenClaw.NET..." aria-label="Message OpenClaw.NET" disabled></textarea>
+                <button id="send-button" type="button" disabled title="Send Message" aria-label="Send message">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
                         stroke-linecap="round" stroke-linejoin="round">
                         <line x1="22" y1="2" x2="11" y2="13"></line>
                         <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                     </svg>
                 </button>
+            </div>
+            <div id="composer-hint">
+                <span>Enter to send / Shift+Enter for newline</span>
+                <span id="composer-disabled-reason"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tool approvals stay in-page so decisions are inspectable and keyboard-accessible. -->
+    <div id="approval-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="approval-title">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="approval-title">Tool approval required</h3>
+                <button id="approval-close-button" class="button ghost" type="button" aria-label="Deny approval and close">Esc</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-field"><span>Tool</span><strong id="approval-tool-name"></strong></div>
+                <div class="modal-field"><span>Approval ID</span><code id="approval-id"></code></div>
+                <div class="modal-field"><span>Risk</span><strong id="approval-risk">Review arguments before approving.</strong></div>
+                <div class="modal-field"><span>Arguments</span><pre id="approval-args" class="modal-pre"></pre></div>
+            </div>
+            <div class="modal-actions">
+                <button id="approval-deny-button" class="button danger" type="button">Deny</button>
+                <button id="approval-approve-button" class="button primary" type="button">Approve</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Doctor diagnostics render in a drawer-like modal and can still be appended to chat. -->
+    <div id="doctor-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="doctor-title">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="doctor-title">Doctor diagnostics</h3>
+                <button id="doctor-close-button" class="button ghost" type="button" aria-label="Close diagnostics">Close</button>
+            </div>
+            <div class="modal-body">
+                <pre id="doctor-output" class="modal-pre">Loading diagnostics...</pre>
+            </div>
+            <div class="modal-actions">
+                <button id="doctor-copy-button" class="button secondary" type="button">Copy</button>
+                <button id="doctor-add-chat-button" class="button secondary" type="button">Also add to chat</button>
             </div>
         </div>
     </div>
@@ -1006,22 +1745,66 @@
         const tokenInput = document.getElementById('token-input');
         const rememberToken = document.getElementById('remember-token');
         const doctorButton = document.getElementById('doctor-button');
+        const authToggleButton = document.getElementById('auth-toggle-button');
+        const authPopover = document.getElementById('auth-popover');
+        const headerRuntimeBadge = document.getElementById('header-runtime-badge');
+        const statusConnection = document.getElementById('status-connection');
+        const statusAuth = document.getElementById('status-auth');
+        const statusSurface = document.getElementById('status-surface');
+        const statusCapabilities = document.getElementById('status-capabilities');
+        const statusCanvas = document.getElementById('status-canvas');
+        const statusLive = document.getElementById('status-live');
+        const authSummaryMode = document.getElementById('auth-summary-mode');
+        const authSummarySurface = document.getElementById('auth-summary-surface');
+        const authSummaryRemember = document.getElementById('auth-summary-remember');
+        const authSummaryCapabilities = document.getElementById('auth-summary-capabilities');
         const modeSelect = document.getElementById('mode-select');
         const liveProviderSelect = document.getElementById('live-provider-select');
         const speechProviderSelect = document.getElementById('speech-provider-select');
         const voiceIdInput = document.getElementById('voice-id-input');
+        const liveToolbar = document.getElementById('live-toolbar');
         const liveConnectButton = document.getElementById('live-connect-button');
         const liveMicButton = document.getElementById('live-mic-button');
         const liveInterruptButton = document.getElementById('live-interrupt-button');
         const liveStatusBadge = document.getElementById('live-status-badge');
+        const liveMicStatus = document.getElementById('live-mic-status');
+        const liveTimeline = document.getElementById('live-timeline');
         const chatStateBar = document.getElementById('chat-state-bar');
         const typingRow = document.getElementById('typing-row');
+        const emptyState = document.getElementById('empty-state');
         const canvasPanel = document.getElementById('canvas-panel');
         const canvasStatus = document.getElementById('canvas-status');
+        const canvasHideButton = document.getElementById('canvas-hide-button');
+        const canvasResetButton = document.getElementById('canvas-reset-button');
+        const canvasSnapshotButton = document.getElementById('canvas-snapshot-button');
+        const canvasMetaSurface = document.getElementById('canvas-meta-surface');
+        const canvasMetaCount = document.getElementById('canvas-meta-count');
+        const canvasMetaProtocol = document.getElementById('canvas-meta-protocol');
+        const canvasMetaUpdated = document.getElementById('canvas-meta-updated');
+        const canvasEmpty = document.getElementById('canvas-empty');
         const canvasHtmlFrame = document.getElementById('canvas-html-frame');
         const a2uiSurfaces = document.getElementById('a2ui-surfaces');
         const a2uiTabs = document.getElementById('a2ui-tabs');
         const a2uiSurfaceHost = document.getElementById('a2ui-surface-host');
+        const canvasDiagnostics = document.getElementById('canvas-diagnostics');
+        const attachmentSummary = document.getElementById('attachment-summary');
+        const attachmentCount = document.getElementById('attachment-count');
+        const attachmentList = document.getElementById('attachment-list');
+        const clearAttachmentsButton = document.getElementById('clear-attachments-button');
+        const composerDisabledReason = document.getElementById('composer-disabled-reason');
+        const approvalModal = document.getElementById('approval-modal');
+        const approvalToolName = document.getElementById('approval-tool-name');
+        const approvalIdEl = document.getElementById('approval-id');
+        const approvalRisk = document.getElementById('approval-risk');
+        const approvalArgs = document.getElementById('approval-args');
+        const approvalApproveButton = document.getElementById('approval-approve-button');
+        const approvalDenyButton = document.getElementById('approval-deny-button');
+        const approvalCloseButton = document.getElementById('approval-close-button');
+        const doctorModal = document.getElementById('doctor-modal');
+        const doctorOutput = document.getElementById('doctor-output');
+        const doctorCloseButton = document.getElementById('doctor-close-button');
+        const doctorCopyButton = document.getElementById('doctor-copy-button');
+        const doctorAddChatButton = document.getElementById('doctor-add-chat-button');
         const TOKEN_KEY_PERSIST = 'openclaw_token';
         const TOKEN_KEY_SESSION = 'openclaw_token_session';
 
@@ -1041,6 +1824,11 @@
         let liveAudioProcessor = null;
         let canvasSessionId = null;
         let canvasEventSequence = 0;
+        let latestChatState = null;
+        let connectionState = 'connecting';
+        let latestDoctorText = '';
+        const approvalQueue = [];
+        let activeApproval = null;
         const canvasSurfaces = new Map();
         let activeCanvasSurfaceId = 'main';
 
@@ -1080,6 +1868,106 @@
                 .replaceAll("'", '&#39;');
         }
 
+        function nowTime() {
+            return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function shortText(value, max = 72) {
+            const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+            return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+        }
+
+        function setBadge(el, text, tone = 'neutral') {
+            if (!el) return;
+            el.textContent = text;
+            el.className = `badge ${tone}`;
+        }
+
+        function safeJsonParse(value, fallback = null) {
+            try {
+                return JSON.parse(value);
+            } catch (_) {
+                return fallback;
+            }
+        }
+
+        function setConnectionState(state) {
+            connectionState = state;
+            const labels = {
+                connected: ['Connected', 'success'],
+                connecting: ['Connecting', 'info'],
+                reconnecting: ['Reconnecting', 'warning'],
+                disconnected: ['Disconnected', 'error'],
+                auth_required: ['Auth required', 'warning']
+            };
+            const [label, tone] = labels[state] || labels.disconnected;
+            setBadge(statusConnection, label, tone);
+            setBadge(headerRuntimeBadge, label, tone);
+            updateComposerAvailability();
+        }
+
+        function renderRuntimeStatus() {
+            const data = latestChatState || {};
+            const authMode = data.authMode || 'unknown';
+            const presetId = data.effectiveToolPresetId || 'web';
+            const surface = data.effectiveToolSurface || 'web';
+            const remembered = rememberToken.checked || Boolean(localStorage.getItem(TOKEN_KEY_PERSIST));
+            const capabilities = Array.isArray(data.capabilitySummary) ? data.capabilitySummary : [];
+            const authLabel = formatAuthMode(authMode, data);
+            const authTone = authMode === 'unauthorized' ? 'warning' : authMode === 'unknown' ? 'neutral' : 'info';
+
+            setBadge(statusAuth, `Auth ${authLabel}`, authTone);
+            setBadge(statusSurface, `${surface}/${presetId}`, 'neutral');
+            authSummaryMode.textContent = authLabel;
+            authSummarySurface.textContent = `${surface}/${presetId}`;
+            authSummaryRemember.textContent = remembered ? 'on' : 'off';
+            authSummaryCapabilities.textContent = capabilities.length ? `${capabilities.length} available` : 'none reported';
+
+            statusCapabilities.innerHTML = '';
+            for (const item of capabilities.slice(0, 3)) {
+                const chip = document.createElement('span');
+                chip.className = 'badge info';
+                chip.textContent = shortText(item, 38);
+                statusCapabilities.appendChild(chip);
+            }
+        }
+
+        function updateEmptyState() {
+            if (!emptyState) return;
+            const hasUserMessage = Boolean(chatContainer.querySelector('.message-row.user-row'));
+            emptyState.hidden = hasUserMessage;
+        }
+
+        function addMessageMeta(div, label) {
+            if (!div || div.querySelector('.message-meta')) return;
+            const meta = document.createElement('div');
+            meta.className = 'message-meta';
+            meta.textContent = `${label} / ${nowTime()}`;
+            div.prepend(meta);
+        }
+
+        function addCodeCopyButtons(container) {
+            if (!container) return;
+            container.querySelectorAll('pre').forEach((pre) => {
+                if (pre.querySelector('.code-copy-button')) return;
+                const code = pre.querySelector('code');
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'code-copy-button';
+                button.textContent = 'Copy';
+                button.addEventListener('click', async () => {
+                    try {
+                        await navigator.clipboard.writeText(code?.innerText || pre.innerText || '');
+                        button.textContent = 'Copied';
+                        setTimeout(() => { button.textContent = 'Copy'; }, 1200);
+                    } catch (_) {
+                        button.textContent = 'Failed';
+                    }
+                });
+                pre.prepend(button);
+            });
+        }
+
         async function refreshChatState() {
             try {
                 const token = getCurrentToken();
@@ -1112,6 +2000,9 @@
         }
 
         function renderChatState(data) {
+            latestChatState = data || {};
+            renderRuntimeStatus();
+            updateComposerAvailability();
             const pills = [];
             const authMode = data?.authMode || 'unknown';
             const presetId = data?.effectiveToolPresetId || 'web';
@@ -1120,10 +2011,10 @@
             const capabilities = Array.isArray(data?.capabilitySummary) ? data.capabilitySummary : [];
 
             pills.push(`<span class="state-pill"><strong>Auth</strong>${escapeHtml(formatAuthMode(authMode, data))}</span>`);
-            pills.push(`<span class="state-pill"><strong>Preset</strong>${escapeHtml(`${surface}/${presetId}`)}</span>`);
+            pills.push(`<span class="state-pill"><strong>Surface</strong>${escapeHtml(`${surface}/${presetId}`)}</span>`);
             pills.push(`<span class="state-pill"><strong>Remember</strong>${remembered ? 'on' : 'off'}</span>`);
 
-            for (const item of capabilities.slice(0, 2)) {
+            for (const item of capabilities.slice(0, 3)) {
                 pills.push(`<span class="state-pill">${escapeHtml(item)}</span>`);
             }
 
@@ -1187,8 +2078,12 @@
             const div = document.createElement('div');
             div.className = 'message assistant';
             div.innerHTML = sanitizeRenderedHtml(marked.parse(preprocessMediaMarkers(md)));
+            addMessageMeta(div, 'Assistant');
+            div.querySelectorAll('pre code').forEach((block) => hljs.highlightElement(block));
+            addCodeCopyButtons(div);
             row.appendChild(div);
             chatContainer.insertBefore(row, typingRow);
+            updateEmptyState();
             scrollToBottom();
         }
 
@@ -1204,12 +2099,14 @@
                 return;
             }
 
-            activeResponseDiv.innerHTML = sanitizeRenderedHtml(marked.parse(preprocessMediaMarkers(activeRawContent)));
+            const meta = activeResponseDiv.querySelector('.message-meta')?.outerHTML || '';
+            activeResponseDiv.innerHTML = meta + sanitizeRenderedHtml(marked.parse(preprocessMediaMarkers(activeRawContent)));
 
             if (finalRender) {
                 activeResponseDiv.querySelectorAll('pre code').forEach((block) => {
                     hljs.highlightElement(block);
                 });
+                addCodeCopyButtons(activeResponseDiv);
                 scrollToBottom();
                 return;
             }
@@ -1298,10 +2195,28 @@
                 div.className = 'message system';
                 div.textContent = text;
             }
+            addMessageMeta(div, 'System');
 
             row.appendChild(div);
 
             chatContainer.insertBefore(row, typingRow);
+            updateEmptyState();
+            scrollToBottom();
+        }
+
+        function appendToolFailure(text) {
+            const row = createRow('system');
+            const div = document.createElement('div');
+            div.className = 'tool-failure';
+            const title = document.createElement('strong');
+            title.textContent = `Tool failure - ${nowTime()}`;
+            const body = document.createElement('div');
+            body.textContent = text;
+            div.appendChild(title);
+            div.appendChild(body);
+            row.appendChild(div);
+            chatContainer.insertBefore(row, typingRow);
+            updateEmptyState();
             scrollToBottom();
         }
 
@@ -1314,6 +2229,7 @@
 
             row.appendChild(pill);
             chatContainer.insertBefore(row, typingRow);
+            updateEmptyState();
             scrollToBottom();
         }
 
@@ -1395,13 +2311,31 @@
             const chatReady = ws && ws.readyState === WebSocket.OPEN;
             const liveReady = isLiveConnected();
             const canSend = isLiveMode() ? liveReady : chatReady;
+            const tokenRequired = latestChatState?.authMode === 'unauthorized';
             messageInput.disabled = !canSend;
             sendButton.disabled = !canSend;
             liveMicButton.disabled = !liveReady;
             liveInterruptButton.disabled = !liveReady;
+            liveInterruptButton.hidden = !liveReady;
             liveConnectButton.textContent = liveReady ? 'Stop Live' : 'Start Live';
             liveStatusBadge.textContent = liveReady ? `Live online (${liveProviderSelect.value})` : 'Live offline';
             liveStatusBadge.classList.toggle('online', liveReady);
+            liveMicStatus.textContent = liveMediaStream ? 'Mic streaming' : 'Mic muted';
+            liveMicStatus.className = `badge ${liveMediaStream ? 'success' : 'neutral'}`;
+            liveToolbar.classList.toggle('active', isLiveMode());
+            setBadge(statusLive, liveReady ? `Live ${liveProviderSelect.value}` : 'Live offline', liveReady ? 'success' : 'neutral');
+            statusLive.hidden = !isLiveMode();
+            if (canSend) {
+                composerDisabledReason.textContent = '';
+            } else if (isLiveMode()) {
+                composerDisabledReason.textContent = 'Start Live first';
+            } else if (tokenRequired) {
+                composerDisabledReason.textContent = 'Token required';
+            } else if (connectionState === 'reconnecting' || connectionState === 'connecting') {
+                composerDisabledReason.textContent = 'Connecting...';
+            } else {
+                composerDisabledReason.textContent = 'Disconnected';
+            }
         }
 
         function buildLiveWsUrl() {
@@ -1461,6 +2395,15 @@
             if (!liveAudioPlaying) {
                 playNextLiveAudio();
             }
+        }
+
+        function appendLiveTimeline(label, text = '') {
+            if (!liveTimeline) return;
+            const item = document.createElement('div');
+            item.className = 'live-timeline-entry';
+            item.innerHTML = `<strong>${escapeHtml(label)}</strong> ${escapeHtml(shortText(text, 120))}`;
+            liveTimeline.appendChild(item);
+            liveTimeline.scrollTop = liveTimeline.scrollHeight;
         }
 
         function playNextLiveAudio() {
@@ -1534,15 +2477,17 @@
                     voiceName: voiceIdInput.value.trim() || null
                 }));
                 appendSystem(`Live session connecting via ${liveProviderSelect.value}...`);
+                appendLiveTimeline('Connecting', liveProviderSelect.value);
                 updateComposerAvailability();
                 messageInput.focus();
             };
 
             liveWs.onmessage = async (event) => {
-                const env = JSON.parse(event.data);
+                const env = safeJsonParse(event.data, { type: 'text', text: event.data });
                 switch (env.type) {
                     case 'opened':
                         appendSystem(`Live session opened: ${env.text || liveProviderSelect.value}`);
+                        appendLiveTimeline('Opened', env.text || liveProviderSelect.value);
                         break;
                     case 'text':
                         typingRow.style.display = 'flex';
@@ -1550,6 +2495,7 @@
                             const row = createRow('assistant');
                             activeResponseDiv = document.createElement('div');
                             activeResponseDiv.className = 'message assistant';
+                            addMessageMeta(activeResponseDiv, 'Assistant');
                             row.appendChild(activeResponseDiv);
                             chatContainer.insertBefore(row, typingRow);
                         }
@@ -1564,9 +2510,11 @@
                         break;
                     case 'input_transcription':
                         appendSystem(`You said: ${env.text || ''}`);
+                        appendLiveTimeline('You', env.text || '');
                         break;
                     case 'output_transcription':
                         appendSystem(`Live transcript: ${env.text || ''}`);
+                        appendLiveTimeline('Assistant', env.text || '');
                         break;
                     case 'turn_complete': {
                         typingRow.style.display = 'none';
@@ -1586,9 +2534,11 @@
                     }
                     case 'interrupted':
                         appendSystem('Live generation interrupted.');
+                        appendLiveTimeline('Interrupted');
                         break;
                     case 'error':
                         appendSystem(env.error || env.text || 'Live session error.', true);
+                        appendLiveTimeline('Error', env.error || env.text || '');
                         break;
                 }
                 scrollToBottom();
@@ -1597,6 +2547,7 @@
             liveWs.onclose = () => {
                 stopLiveMicCapture(false);
                 liveWs = null;
+                appendLiveTimeline('Closed');
                 updateComposerAvailability();
             };
 
@@ -1649,6 +2600,8 @@
             liveAudioProcessor.connect(liveAudioContext.destination);
             liveMicButton.classList.add('active');
             liveMicButton.textContent = 'Stop Mic';
+            updateComposerAvailability();
+            appendLiveTimeline('Mic', 'streaming');
             appendSystem('Live microphone streaming started.');
         }
 
@@ -1679,6 +2632,8 @@
 
             liveMicButton.classList.remove('active');
             liveMicButton.textContent = 'Mic';
+            updateComposerAvailability();
+            appendLiveTimeline('Mic', 'muted');
         }
 
         function sendCanvasReady() {
@@ -1722,11 +2677,38 @@
         function showCanvas() {
             canvasPanel.hidden = false;
             canvasStatus.textContent = 'Visible';
+            statusCanvas.hidden = false;
+            updateCanvasMetadata();
         }
 
         function hideCanvas() {
             canvasPanel.hidden = true;
             canvasStatus.textContent = 'Hidden';
+            statusCanvas.hidden = true;
+            updateCanvasMetadata();
+        }
+
+        function updateCanvasMetadata() {
+            const surface = activeCanvasSurfaceId ? canvasSurfaces.get(activeCanvasSurfaceId) : null;
+            const components = surface?.components || [];
+            const isHtml = !canvasHtmlFrame.hidden;
+            canvasMetaSurface.textContent = surface?.surfaceId || (isHtml ? 'local html' : 'none');
+            canvasMetaCount.textContent = isHtml ? 'HTML' : String(components.length);
+            canvasMetaProtocol.textContent = surface ? `${surface.protocolVersion || 'unknown'} / ${surface.catalogId || 'catalog unknown'}` : 'pending';
+            canvasMetaUpdated.textContent = surface?.updatedAt ? new Date(surface.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'never';
+            const hasCanvasContent = isHtml || components.length > 0 || canvasSurfaces.size > 0;
+            canvasEmpty.hidden = hasCanvasContent;
+            a2uiSurfaces.hidden = isHtml || !hasCanvasContent;
+            setBadge(statusCanvas, canvasPanel.hidden ? 'Canvas hidden' : hasCanvasContent ? `Canvas ${canvasMetaSurface.textContent}` : 'Canvas ready', hasCanvasContent ? 'info' : 'neutral');
+
+            const diagnostics = surface?.diagnostics || [];
+            if (diagnostics.length) {
+                canvasDiagnostics.hidden = false;
+                canvasDiagnostics.textContent = diagnostics.slice(-4).join('\n');
+            } else {
+                canvasDiagnostics.hidden = true;
+                canvasDiagnostics.textContent = '';
+            }
         }
 
         function getCanvasSurface(surfaceId = 'main') {
@@ -1772,10 +2754,14 @@
 
             a2uiSurfaceHost.innerHTML = '';
             const surface = activeCanvasSurfaceId ? canvasSurfaces.get(activeCanvasSurfaceId) : null;
-            if (!surface || surface.deleted) return;
+            if (!surface || surface.deleted) {
+                updateCanvasMetadata();
+                return;
+            }
             for (const component of surface.components) {
                 renderA2uiFrame(component, surface.surfaceId, surface);
             }
+            updateCanvasMetadata();
         }
 
         function parseA2UiComponent(component) {
@@ -1790,6 +2776,7 @@
             canvasHtmlFrame.removeAttribute('srcdoc');
             renderCanvasSurfaces();
             canvasStatus.textContent = 'Reset';
+            updateCanvasMetadata();
         }
 
         function handleCanvasEnvelope(env) {
@@ -1839,6 +2826,7 @@
             } catch (error) {
                 const message = String(error?.message || error);
                 getCanvasSurface(env.surfaceId || activeCanvasSurfaceId || 'main').diagnostics.push(message);
+                updateCanvasMetadata();
                 sendCanvasAck(env, false, message);
             }
         }
@@ -2438,6 +3426,10 @@
         }
 
         function sendCanvasSnapshot(env) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                appendSystem('Canvas snapshot needs an active chat connection.', true);
+                return;
+            }
             const requestedSurfaceId = env.surfaceId || activeCanvasSurfaceId || 'main';
             const surface = canvasSurfaces.get(requestedSurfaceId) || null;
             const components = surface?.components || [];
@@ -2483,7 +3475,73 @@
             }));
         }
 
+        function enqueueToolApproval(env) {
+            approvalQueue.push(env || {});
+            showNextToolApproval();
+        }
+
+        function showNextToolApproval() {
+            if (activeApproval || approvalQueue.length === 0) return;
+            activeApproval = approvalQueue.shift();
+            const toolName = activeApproval.toolName || 'unknown';
+            const approvalId = activeApproval.approvalId || '';
+            approvalToolName.textContent = toolName;
+            approvalIdEl.textContent = approvalId || 'missing';
+            approvalArgs.textContent = activeApproval.argumentsPreview || activeApproval.argumentsJson || JSON.stringify(activeApproval.arguments || {}, null, 2);
+            approvalRisk.textContent = activeApproval.riskHint || activeApproval.mutationHint || 'Review arguments before approving.';
+            approvalModal.hidden = false;
+            approvalApproveButton.focus();
+        }
+
+        function decideToolApproval(approved) {
+            if (!activeApproval) return;
+            const toolName = activeApproval.toolName || 'unknown';
+            const approvalId = activeApproval.approvalId || '';
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'tool_approval_decision',
+                    approvalId,
+                    approved
+                }));
+            }
+            appendSystem(`Tool approval ${approved ? 'approved' : 'denied'}: ${toolName}`);
+            activeApproval = null;
+            approvalModal.hidden = true;
+            showNextToolApproval();
+        }
+
+        async function openDoctorDiagnostics(addToChat = false) {
+            latestDoctorText = '';
+            doctorOutput.textContent = 'Loading diagnostics...';
+            doctorModal.hidden = false;
+            doctorCopyButton.focus();
+            try {
+                const token = getCurrentToken();
+                const headers = {};
+                if (token && token !== 'bypass') {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+                const resp = await fetch('/doctor/text', { method: 'GET', headers: headers });
+                if (!resp.ok) {
+                    latestDoctorText = `Doctor request failed (${resp.status}).`;
+                    doctorOutput.textContent = latestDoctorText;
+                    appendSystem(latestDoctorText, true);
+                    return;
+                }
+                latestDoctorText = await resp.text();
+                doctorOutput.textContent = latestDoctorText;
+                if (addToChat) {
+                    appendAssistantMarkdown("```\n" + latestDoctorText + "\n```");
+                }
+            } catch (_) {
+                latestDoctorText = 'Doctor request failed.';
+                doctorOutput.textContent = latestDoctorText;
+                appendSystem(latestDoctorText, true);
+            }
+        }
+
         function connect() {
+            setConnectionState(reconnectAttempts > 0 ? 'reconnecting' : 'connecting');
             appendSystem('Connecting to OpenClaw.NET Gateway...');
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const baseWsUrl = `${protocol}//${window.location.host}/ws`;
@@ -2497,6 +3555,7 @@
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
+                setConnectionState('connected');
                 reconnectAttempts = 0;
                 if (reconnectTimer) {
                     clearTimeout(reconnectTimer);
@@ -2539,6 +3598,7 @@
                                 const row = createRow('assistant');
                                 activeResponseDiv = document.createElement('div');
                                 activeResponseDiv.className = 'message assistant';
+                                addMessageMeta(activeResponseDiv, 'Assistant');
                                 row.appendChild(activeResponseDiv);
                                 chatContainer.insertBefore(row, typingRow);
                             }
@@ -2565,22 +3625,12 @@
 
                         case 'tool_result':
                             if (isToolFailureEnvelope(env)) {
-                                appendSystem(explainToolFailure(env), true);
+                                appendToolFailure(explainToolFailure(env));
                             }
                             break;
 
                         case 'tool_approval_required': {
-                            const toolName = env.toolName || 'unknown';
-                            const approvalId = env.approvalId || '';
-                            const argsPreview = env.argumentsPreview || '';
-                            const prompt = `Tool approval required:\n\nTool: ${toolName}\nApprovalId: ${approvalId}\n\nArgs:\n${argsPreview}\n\nApprove?`;
-                            const approved = window.confirm(prompt);
-                            appendSystem(`Tool approval ${approved ? 'approved' : 'denied'}: ${toolName}`);
-                            ws.send(JSON.stringify({
-                                type: "tool_approval_decision",
-                                approvalId: approvalId,
-                                approved: approved
-                            }));
+                            enqueueToolApproval(env);
                             break;
                         }
                     }
@@ -2589,6 +3639,7 @@
                         const row = createRow('assistant');
                         activeResponseDiv = document.createElement('div');
                         activeResponseDiv.className = 'message assistant';
+                        addMessageMeta(activeResponseDiv, 'Assistant');
                         row.appendChild(activeResponseDiv);
                         chatContainer.insertBefore(row, typingRow);
                     }
@@ -2608,6 +3659,7 @@
 
                 const isAuthClose = event.code === 1008 || (event.code >= 4000 && event.code < 5000);
                 if (isAuthClose && !WEBCHAT_CONFIG.retryOnAuthCloseCodes) {
+                    setConnectionState('auth_required');
                     refreshChatState();
                     appendSystem('Connection closed due to authentication/authorization. Update token and reconnect.', true);
                     return;
@@ -2615,6 +3667,7 @@
 
                 reconnectAttempts += 1;
                 if (WEBCHAT_CONFIG.maxReconnectAttempts > 0 && reconnectAttempts > WEBCHAT_CONFIG.maxReconnectAttempts) {
+                    setConnectionState('disconnected');
                     appendSystem('Connection dropped and reconnect limit reached. Refresh to retry.', true);
                     return;
                 }
@@ -2626,6 +3679,7 @@
                         Math.pow(WEBCHAT_CONFIG.reconnectBackoffFactor, Math.max(0, reconnectAttempts - 1))
                     )
                 );
+                setConnectionState('reconnecting');
                 appendSystem(`Connection dropped. Retrying in ${Math.max(1, Math.ceil(delay / 1000))}s...`, true);
                 reconnectTimer = setTimeout(connect, delay);
             };
@@ -2647,6 +3701,14 @@
         function clearImageSelection() {
             imageInput.value = '';
             attachButton.classList.remove('has-files');
+            updateAttachmentSummary();
+        }
+
+        function updateAttachmentSummary() {
+            const files = Array.from(imageInput.files || []);
+            attachmentSummary.classList.toggle('active', files.length > 0);
+            attachmentCount.textContent = files.length ? `${files.length} image${files.length === 1 ? '' : 's'} selected` : '';
+            attachmentList.textContent = files.map(file => file.name).join(', ');
         }
 
         async function sendMessage() {
@@ -2684,10 +3746,12 @@
             const row = createRow('user');
             const div = document.createElement('div');
             div.className = 'message user';
-            div.textContent = text;
+            div.textContent = text || `${imageFiles.length} image attachment${imageFiles.length === 1 ? '' : 's'}`;
+            addMessageMeta(div, 'User');
             row.appendChild(div);
 
             chatContainer.insertBefore(row, typingRow);
+            updateEmptyState();
 
             if (isLiveMode()) {
                 liveWs.send(JSON.stringify({
@@ -2740,8 +3804,15 @@
         attachButton.addEventListener('click', () => imageInput.click());
         imageInput.addEventListener('change', () => {
             attachButton.classList.toggle('has-files', (imageInput.files || []).length > 0);
+            updateAttachmentSummary();
         });
-        modeSelect.addEventListener('change', updateComposerAvailability);
+        clearAttachmentsButton.addEventListener('click', clearImageSelection);
+        modeSelect.addEventListener('change', () => {
+            updateComposerAvailability();
+            renderRuntimeStatus();
+        });
+        liveProviderSelect.addEventListener('change', updateComposerAvailability);
+        speechProviderSelect.addEventListener('change', updateComposerAvailability);
         liveConnectButton.addEventListener('click', connectLive);
         liveInterruptButton.addEventListener('click', () => {
             if (isLiveConnected()) {
@@ -2782,28 +3853,89 @@
         tokenInput.addEventListener('change', refreshChatState);
         tokenInput.addEventListener('blur', refreshChatState);
 
-        doctorButton.addEventListener('click', async () => {
+        authToggleButton.addEventListener('click', () => {
+            const expanded = authPopover.hidden;
+            authPopover.hidden = !expanded;
+            authToggleButton.setAttribute('aria-expanded', String(expanded));
+            if (expanded) tokenInput.focus();
+        });
+
+        document.addEventListener('click', (event) => {
+            if (authPopover.hidden) return;
+            if (authPopover.contains(event.target) || authToggleButton.contains(event.target)) return;
+            authPopover.hidden = true;
+            authToggleButton.setAttribute('aria-expanded', 'false');
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+            if (!approvalModal.hidden) {
+                decideToolApproval(false);
+                return;
+            }
+            if (!doctorModal.hidden) {
+                doctorModal.hidden = true;
+                doctorButton.focus();
+                return;
+            }
+            if (!authPopover.hidden) {
+                authPopover.hidden = true;
+                authToggleButton.setAttribute('aria-expanded', 'false');
+                authToggleButton.focus();
+            }
+        });
+
+        approvalApproveButton.addEventListener('click', () => decideToolApproval(true));
+        approvalDenyButton.addEventListener('click', () => decideToolApproval(false));
+        approvalCloseButton.addEventListener('click', () => decideToolApproval(false));
+
+        doctorButton.addEventListener('click', () => void openDoctorDiagnostics(false));
+        doctorCloseButton.addEventListener('click', () => {
+            doctorModal.hidden = true;
+            doctorButton.focus();
+        });
+        doctorCopyButton.addEventListener('click', async () => {
             try {
-                const token = getCurrentToken();
-                const headers = {};
-                if (token && token !== 'bypass') {
-                    headers['Authorization'] = `Bearer ${token}`;
-                }
-                const resp = await fetch('/doctor/text', { method: 'GET', headers: headers });
-                if (!resp.ok) {
-                    appendSystem(`Doctor request failed (${resp.status}).`, true);
+                await navigator.clipboard.writeText(latestDoctorText || doctorOutput.textContent || '');
+                doctorCopyButton.textContent = 'Copied';
+                setTimeout(() => { doctorCopyButton.textContent = 'Copy'; }, 1200);
+            } catch (_) {
+                doctorCopyButton.textContent = 'Copy failed';
+            }
+        });
+        doctorAddChatButton.addEventListener('click', () => {
+            if (latestDoctorText) appendAssistantMarkdown("```\n" + latestDoctorText + "\n```");
+        });
+
+        document.querySelectorAll('.suggested-prompt').forEach((button) => {
+            button.addEventListener('click', () => {
+                if (button.dataset.action === 'doctor') {
+                    void openDoctorDiagnostics(false);
                     return;
                 }
-                const text = await resp.text();
-                appendAssistantMarkdown("```\n" + text + "\n```");
-            } catch (e) {
-                appendSystem('Doctor request failed.', true);
-            }
+                messageInput.value = button.dataset.prompt || '';
+                messageInput.dispatchEvent(new Event('input'));
+                messageInput.focus();
+            });
+        });
+
+        canvasHideButton.addEventListener('click', hideCanvas);
+        canvasResetButton.addEventListener('click', resetA2ui);
+        canvasSnapshotButton.addEventListener('click', () => {
+            sendCanvasSnapshot({
+                requestId: `manual-${Date.now()}`,
+                surfaceId: activeCanvasSurfaceId || 'main',
+                snapshotMode: 'state'
+            });
+            appendSystem('Canvas snapshot requested.');
         });
 
         refreshChatState();
         connect();
         updateComposerAvailability();
+        updateAttachmentSummary();
+        updateCanvasMetadata();
+        updateEmptyState();
     </script>
 </body>
 

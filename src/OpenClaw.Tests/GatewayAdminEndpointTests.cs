@@ -5130,7 +5130,7 @@ public sealed class GatewayAdminEndpointTests
         Assert.Contains("refreshChatState()", html, StringComparison.Ordinal);
         Assert.Contains("case 'tool_result':", html, StringComparison.Ordinal);
         Assert.Contains("if (isToolFailureEnvelope(env))", html, StringComparison.Ordinal);
-        Assert.Contains("appendSystem(explainToolFailure(env), true);", html, StringComparison.Ordinal);
+        Assert.Contains("appendToolFailure(explainToolFailure(env));", html, StringComparison.Ordinal);
     }
 
     [Fact]
