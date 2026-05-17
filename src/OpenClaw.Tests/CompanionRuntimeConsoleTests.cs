@@ -16,7 +16,9 @@ public sealed class CompanionRuntimeConsoleTests : IDisposable
         foreach (var dir in _tempDirs)
         {
             try { Directory.Delete(dir, recursive: true); }
-            catch { }
+            catch (DirectoryNotFoundException) { }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 

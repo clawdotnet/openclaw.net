@@ -28,7 +28,7 @@ public sealed partial class MainWindowViewModel
         : "Choose the Embedded provider before using local model package commands.";
 
     internal void AttachConfirmationDialogService(IConfirmationDialogService dialogService)
-        => _confirmationDialogService = dialogService;
+        => _confirmationDialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
 
     partial void OnIsConnectedChanged(bool value) => OnPropertyChanged(nameof(GatewayStatusBadge));
 
