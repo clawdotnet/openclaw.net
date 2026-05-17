@@ -478,6 +478,11 @@
             display: none;
         }
 
+        .status-action {
+            cursor: pointer;
+            font: inherit;
+        }
+
         /* ============================== Chat Stream ============================== */
 
         #workspace {
@@ -915,6 +920,8 @@
             max-width: min(100%, 680px);
             font-size: 0.84rem;
             line-height: 1.45;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         .tool-failure strong {
@@ -1562,7 +1569,7 @@
         <span id="status-auth" class="badge neutral">Auth unknown</span>
         <span id="status-surface" class="badge neutral">Surface web</span>
         <span id="status-capabilities"></span>
-        <span id="status-canvas" class="badge info" hidden>Canvas ready</span>
+        <button id="status-canvas" class="badge info status-action" type="button" hidden>Canvas ready</button>
         <span id="status-live" class="badge neutral" hidden>Live offline</span>
     </div>
 
@@ -1832,6 +1839,7 @@
         let activeApproval = null;
         const canvasSurfaces = new Map();
         let activeCanvasSurfaceId = 'main';
+        let canvasHtmlUpdatedAt = null;
 
         const WEBCHAT_CONFIG = {
             streamRenderDebounceMs: Math.max(20, Number(window.OPENCLAW_WEBCHAT_CONFIG?.streamRenderDebounceMs ?? 120)),
@@ -1922,7 +1930,7 @@
             authSummaryMode.textContent = authLabel;
             authSummarySurface.textContent = `${surface}/${presetId}`;
             authSummaryRemember.textContent = remembered ? 'on' : 'off';
-            authSummaryCapabilities.textContent = capabilities.length ? `${capabilities.length} available` : 'none reported';
+            authSummaryCapabilities.textContent = capabilities.length ? `${capabilities.length} status item${capabilities.length === 1 ? '' : 's'}` : 'none reported';
 
             statusCapabilities.innerHTML = '';
             for (const item of capabilities.slice(0, 3)) {
@@ -2173,6 +2181,19 @@
             }, WEBCHAT_CONFIG.streamRenderDebounceMs);
         }
 
+        function resetActiveResponse() {
+            typingRow.style.display = 'none';
+            if (streamRenderTimer) {
+                clearTimeout(streamRenderTimer);
+                streamRenderTimer = null;
+            }
+            if (activeResponseDiv && activeRawContent) {
+                renderActiveResponse(true);
+            }
+            activeResponseDiv = null;
+            activeRawContent = '';
+        }
+
         function createRow(type) {
             const row = document.createElement('div');
             row.className = `message-row ${type}-row`;
@@ -2367,9 +2388,9 @@
             liveStatusBadge.classList.toggle('online', liveReady);
             liveMicStatus.textContent = liveMediaStream ? 'Mic streaming' : 'Mic muted';
             liveMicStatus.className = `badge ${liveMediaStream ? 'success' : 'neutral'}`;
-            liveToolbar.classList.toggle('active', isLiveMode());
+            liveToolbar.classList.toggle('active', isLiveMode() || Boolean(liveWs) || Boolean(liveMediaStream));
             setBadge(statusLive, liveReady ? `Live ${liveProviderSelect.value}` : liveConnecting ? 'Live connecting' : 'Live offline', liveReady ? 'success' : liveConnecting ? 'info' : 'neutral');
-            statusLive.hidden = !isLiveMode();
+            statusLive.hidden = !isLiveMode() && !liveWs && !liveMediaStream;
             if (canSend) {
                 composerDisabledReason.textContent = '';
             } else if (isLiveMode()) {
@@ -2608,6 +2629,7 @@
             liveWs.onclose = () => {
                 stopLiveMicCapture(false);
                 liveWs = null;
+                resetActiveResponse();
                 appendLiveTimeline('Closed');
                 updateComposerAvailability();
             };
@@ -2746,7 +2768,6 @@
         function hideCanvas() {
             canvasPanel.hidden = true;
             canvasStatus.textContent = 'Hidden';
-            statusCanvas.hidden = true;
             updateCanvasMetadata();
         }
 
@@ -2754,13 +2775,15 @@
             const surface = activeCanvasSurfaceId ? canvasSurfaces.get(activeCanvasSurfaceId) : null;
             const components = surface?.components || [];
             const isHtml = !canvasHtmlFrame.hidden;
-            canvasMetaSurface.textContent = surface?.surfaceId || (isHtml ? 'local html' : 'none');
+            canvasMetaSurface.textContent = isHtml ? 'local html' : surface?.surfaceId || 'none';
             canvasMetaCount.textContent = isHtml ? 'HTML' : String(components.length);
-            canvasMetaProtocol.textContent = surface ? `${surface.protocolVersion || 'unknown'} / ${surface.catalogId || 'catalog unknown'}` : 'pending';
-            canvasMetaUpdated.textContent = surface?.updatedAt ? new Date(surface.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'never';
+            canvasMetaProtocol.textContent = isHtml ? 'sandboxed srcdoc' : surface ? `${surface.protocolVersion || 'unknown'} / ${surface.catalogId || 'catalog unknown'}` : 'pending';
+            const updatedAt = isHtml ? canvasHtmlUpdatedAt : surface?.updatedAt;
+            canvasMetaUpdated.textContent = updatedAt ? new Date(updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'never';
             const hasCanvasContent = isHtml || components.length > 0 || canvasSurfaces.size > 0;
             canvasEmpty.hidden = hasCanvasContent;
             a2uiSurfaces.hidden = isHtml || !hasCanvasContent;
+            statusCanvas.hidden = !hasCanvasContent && canvasPanel.hidden;
             setBadge(statusCanvas, canvasPanel.hidden ? 'Canvas hidden' : hasCanvasContent ? `Canvas ${canvasMetaSurface.textContent}` : 'Canvas ready', hasCanvasContent ? 'info' : 'neutral');
 
             const diagnostics = surface?.diagnostics || [];
@@ -2837,6 +2860,7 @@
             canvasHtmlFrame.hidden = true;
             canvasHtmlFrame.setAttribute('sandbox', '');
             canvasHtmlFrame.removeAttribute('srcdoc');
+            canvasHtmlUpdatedAt = null;
             renderCanvasSurfaces();
             canvasStatus.textContent = 'Reset';
             updateCanvasMetadata();
@@ -2901,6 +2925,7 @@
                 a2uiSurfaces.hidden = true;
                 canvasHtmlFrame.setAttribute('sandbox', '');
                 canvasHtmlFrame.srcdoc = env.html;
+                canvasHtmlUpdatedAt = new Date().toISOString();
                 canvasStatus.textContent = 'Local HTML';
                 updateCanvasMetadata();
                 sendCanvasAck(env);
@@ -2924,6 +2949,7 @@
         function handleA2uiPush(env) {
             showCanvas();
             canvasHtmlFrame.hidden = true;
+            canvasHtmlUpdatedAt = null;
             a2uiSurfaces.hidden = false;
             const surface = getCanvasSurface('main');
             surface.catalogId = surface.catalogId || 'urn:a2ui:catalog:openclaw_v0_8';
@@ -2943,6 +2969,7 @@
         function handleA2uiCreateSurface(env) {
             showCanvas();
             canvasHtmlFrame.hidden = true;
+            canvasHtmlUpdatedAt = null;
             a2uiSurfaces.hidden = false;
             const surface = getCanvasSurface(env.surfaceId || 'main');
             surface.catalogId = env.catalogId || surface.catalogId || 'urn:a2ui:catalog:agenui_catalog';
@@ -2964,6 +2991,7 @@
         function handleA2uiUpdateComponents(env) {
             showCanvas();
             canvasHtmlFrame.hidden = true;
+            canvasHtmlUpdatedAt = null;
             a2uiSurfaces.hidden = false;
             const surface = getCanvasSurface(env.surfaceId || 'main');
             if (env.catalogId) surface.catalogId = env.catalogId;
@@ -3552,14 +3580,14 @@
         }
 
         function showNextToolApproval() {
-            if (activeApproval || approvalQueue.length === 0) return;
+            if (activeApproval || approvalQueue.length === 0 || !doctorModal.hidden) return;
             activeApproval = approvalQueue.shift();
             const toolName = activeApproval.toolName || 'unknown';
             const approvalId = activeApproval.approvalId || '';
             approvalToolName.textContent = toolName;
             approvalIdEl.textContent = approvalId || 'missing';
             approvalArgs.textContent = activeApproval.argumentsPreview || activeApproval.argumentsJson || JSON.stringify(activeApproval.arguments || {}, null, 2);
-            approvalRisk.textContent = activeApproval.riskHint || activeApproval.mutationHint || 'Review arguments before approving.';
+            approvalRisk.textContent = activeApproval.riskHint || activeApproval.mutationHint || activeApproval.text || activeApproval.content || 'Review arguments before approving.';
             openModal(approvalModal, approvalApproveButton);
         }
 
@@ -3731,12 +3759,7 @@
 
             ws.onclose = (event) => {
                 updateComposerAvailability();
-                typingRow.style.display = 'none';
-
-                if (streamRenderTimer) {
-                    clearTimeout(streamRenderTimer);
-                    streamRenderTimer = null;
-                }
+                resetActiveResponse();
 
                 const isAuthClose = event.code === 1008 || (event.code >= 4000 && event.code < 5000);
                 if (isAuthClose && !WEBCHAT_CONFIG.retryOnAuthCloseCodes) {
@@ -3901,6 +3924,10 @@
         });
         clearAttachmentsButton.addEventListener('click', clearImageSelection);
         modeSelect.addEventListener('change', () => {
+            if (!isLiveMode() && (liveWs || liveMediaStream)) {
+                disconnectLive();
+                appendSystem('Live session stopped after switching to Chat mode.');
+            }
             updateComposerAvailability();
             renderRuntimeStatus();
         });
@@ -3973,6 +4000,7 @@
             }
             if (!doctorModal.hidden) {
                 closeModal(doctorModal, doctorButton);
+                showNextToolApproval();
                 return;
             }
             if (!authPopover.hidden) {
@@ -3989,6 +4017,7 @@
         doctorButton.addEventListener('click', () => void openDoctorDiagnostics(false));
         doctorCloseButton.addEventListener('click', () => {
             closeModal(doctorModal, doctorButton);
+            showNextToolApproval();
         });
         doctorCopyButton.addEventListener('click', async () => {
             try {
@@ -4016,6 +4045,9 @@
         });
 
         canvasHideButton.addEventListener('click', hideCanvas);
+        statusCanvas.addEventListener('click', () => {
+            if (canvasPanel.hidden) showCanvas();
+        });
         canvasResetButton.addEventListener('click', resetA2ui);
         canvasSnapshotButton.addEventListener('click', () => {
             const snapshot = buildCanvasSnapshot(activeCanvasSurfaceId || 'main');

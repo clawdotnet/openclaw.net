@@ -5134,6 +5134,23 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task WebChat_ToolApprovalModal_RendersAndSendsDecisions()
+    {
+        var webChatHtmlPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/OpenClaw.Gateway/wwwroot/webchat.html"));
+        var html = await File.ReadAllTextAsync(webChatHtmlPath);
+
+        Assert.Contains("id=\"approval-modal\"", html, StringComparison.Ordinal);
+        Assert.Contains("case 'tool_approval_required':", html, StringComparison.Ordinal);
+        Assert.Contains("enqueueToolApproval(env);", html, StringComparison.Ordinal);
+        Assert.Contains("approvalRisk.textContent = activeApproval.riskHint || activeApproval.mutationHint || activeApproval.text || activeApproval.content", html, StringComparison.Ordinal);
+        Assert.Contains("type: 'tool_approval_decision'", html, StringComparison.Ordinal);
+        Assert.Contains("approvalId,", html, StringComparison.Ordinal);
+        Assert.Contains("approved", html, StringComparison.Ordinal);
+        Assert.Contains("approvalApproveButton.addEventListener('click', () => decideToolApproval(true));", html, StringComparison.Ordinal);
+        Assert.Contains("approvalDenyButton.addEventListener('click', () => decideToolApproval(false));", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task WebChat_A2UiReset_ClearsAllSurfaces()
     {
         var webChatHtmlPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/OpenClaw.Gateway/wwwroot/webchat.html"));
