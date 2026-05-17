@@ -2346,9 +2346,14 @@
             return liveWs && liveWs.readyState === WebSocket.OPEN;
         }
 
+        function isLiveConnecting() {
+            return liveWs && liveWs.readyState === WebSocket.CONNECTING;
+        }
+
         function updateComposerAvailability() {
             const chatReady = ws && ws.readyState === WebSocket.OPEN;
             const liveReady = isLiveConnected();
+            const liveConnecting = isLiveConnecting();
             const canSend = isLiveMode() ? liveReady : chatReady;
             const tokenRequired = latestChatState?.authMode === 'unauthorized';
             messageInput.disabled = !canSend;
@@ -2356,18 +2361,19 @@
             liveMicButton.disabled = !liveReady;
             liveInterruptButton.disabled = !liveReady;
             liveInterruptButton.hidden = !liveReady;
-            liveConnectButton.textContent = liveReady ? 'Stop Live' : 'Start Live';
-            liveStatusBadge.textContent = liveReady ? `Live online (${liveProviderSelect.value})` : 'Live offline';
+            liveConnectButton.disabled = liveConnecting;
+            liveConnectButton.textContent = liveReady ? 'Stop Live' : liveConnecting ? 'Starting Live...' : 'Start Live';
+            liveStatusBadge.textContent = liveReady ? `Live online (${liveProviderSelect.value})` : liveConnecting ? 'Live connecting' : 'Live offline';
             liveStatusBadge.classList.toggle('online', liveReady);
             liveMicStatus.textContent = liveMediaStream ? 'Mic streaming' : 'Mic muted';
             liveMicStatus.className = `badge ${liveMediaStream ? 'success' : 'neutral'}`;
             liveToolbar.classList.toggle('active', isLiveMode());
-            setBadge(statusLive, liveReady ? `Live ${liveProviderSelect.value}` : 'Live offline', liveReady ? 'success' : 'neutral');
+            setBadge(statusLive, liveReady ? `Live ${liveProviderSelect.value}` : liveConnecting ? 'Live connecting' : 'Live offline', liveReady ? 'success' : liveConnecting ? 'info' : 'neutral');
             statusLive.hidden = !isLiveMode();
             if (canSend) {
                 composerDisabledReason.textContent = '';
             } else if (isLiveMode()) {
-                composerDisabledReason.textContent = 'Start Live first';
+                composerDisabledReason.textContent = liveConnecting ? 'Connecting...' : 'Start Live first';
             } else if (tokenRequired) {
                 composerDisabledReason.textContent = 'Token required';
             } else if (connectionState === 'reconnecting' || connectionState === 'connecting') {
@@ -2486,7 +2492,8 @@
                 body: JSON.stringify({
                     text,
                     provider,
-                    voiceId: voiceIdInput.value.trim() || null
+                    voiceId: voiceIdInput.value.trim() || null,
+                    voiceName: voiceIdInput.value.trim() || null
                 })
             });
 
@@ -2504,10 +2511,20 @@
                 disconnectLive();
                 return;
             }
+            if (isLiveConnecting()) {
+                return;
+            }
+            if (window.location.protocol === 'file:' || !window.location.host) {
+                appendSystem('Live mode requires opening webchat through the Gateway HTTP/S origin, not file://.', true);
+                appendLiveTimeline('Error', 'Open through the Gateway URL');
+                updateComposerAvailability();
+                return;
+            }
 
             persistToken(tokenInput.value.trim());
             const responseModalities = speechProviderSelect.value === 'live-native' ? ['TEXT', 'AUDIO'] : ['TEXT'];
             liveWs = new WebSocket(buildLiveWsUrl());
+            updateComposerAvailability();
 
             liveWs.onopen = () => {
                 liveWs.send(JSON.stringify({
@@ -2618,6 +2635,7 @@
 
             liveMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             liveAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            const liveInputSampleRate = Math.round(liveAudioContext.sampleRate || 16000);
             liveAudioSource = liveAudioContext.createMediaStreamSource(liveMediaStream);
             liveAudioProcessor = liveAudioContext.createScriptProcessor(4096, 1, 1);
             liveAudioProcessor.onaudioprocess = (event) => {
@@ -2636,7 +2654,7 @@
                 liveWs.send(JSON.stringify({
                     type: 'audio',
                     base64Data: btoa(binary),
-                    mimeType: 'audio/pcm;rate=16000',
+                    mimeType: `audio/pcm;rate=${liveInputSampleRate}`,
                     turnComplete: false
                 }));
             };
