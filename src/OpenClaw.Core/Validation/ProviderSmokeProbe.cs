@@ -47,7 +47,7 @@ public static class ProviderSmokeProbe
         }
 
         var apiKey = SecretResolver.Resolve(config.ApiKey);
-        if (!HasRequiredCredentials(provider, apiKey))
+        if (!HasRequiredCredentials(provider, apiKey, config.AuthMode))
         {
             return new ProviderSmokeProbeResult
             {
@@ -141,14 +141,14 @@ public static class ProviderSmokeProbe
             return registration.TreatAsConfigured;
 
         var apiKey = SecretResolver.Resolve(config.ApiKey);
-        return HasRequiredCredentials(provider, apiKey);
+        return HasRequiredCredentials(provider, apiKey, config.AuthMode);
     }
 
     private static HttpRequestMessage BuildRequest(string provider, LlmProviderConfig config, string? apiKey)
     {
         return provider switch
         {
-            "openai" or "openai-compatible" or "groq" or "together" or "lmstudio" or "azure-openai"
+            "openai" or "openai-compatible" or "aperture" or "groq" or "together" or "lmstudio" or "azure-openai"
                 => BuildOpenAiStyleRequest(provider, config, apiKey),
             "ollama" => BuildOllamaRequest(config),
             "anthropic" or "claude" or "anthropic-vertex" or "amazon-bedrock"
@@ -168,6 +168,7 @@ public static class ProviderSmokeProbe
             "together" => AppendPath(config.Endpoint, "https://api.together.xyz/v1", "chat/completions"),
             "lmstudio" => AppendPath(config.Endpoint, "http://127.0.0.1:1234/v1", "chat/completions"),
             "azure-openai" => AppendPath(config.Endpoint, null, "chat/completions"),
+            "aperture" => AppendPath(config.Endpoint, null, "chat/completions"),
             _ => AppendPath(config.Endpoint, null, "chat/completions")
         };
 
@@ -264,15 +265,19 @@ public static class ProviderSmokeProbe
         return $"{uri}{separator}{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}";
     }
 
-    private static bool HasRequiredCredentials(string provider, string? apiKey)
+    private static bool HasRequiredCredentials(string provider, string? apiKey, string? authMode)
         => provider switch
         {
             "ollama" or "lmstudio" or "embedded" => true,
+            "aperture" or "openai-compatible" when IsTailnetIdentityAuth(authMode) => true,
             _ => !string.IsNullOrWhiteSpace(apiKey)
         };
 
     private static string NormalizeProvider(string? provider)
         => string.IsNullOrWhiteSpace(provider) ? string.Empty : provider.Trim().ToLowerInvariant();
+
+    private static bool IsTailnetIdentityAuth(string? authMode)
+        => string.Equals(authMode?.Trim(), "tailnet-identity", StringComparison.OrdinalIgnoreCase);
 
     private static TimeSpan GetProbeTimeout(int configuredTimeoutSeconds)
     {

@@ -23,6 +23,7 @@ public static class ConfigValidator
         "ollama",
         "azure-openai",
         "openai-compatible",
+        "aperture",
         "anthropic-vertex",
         "amazon-bedrock",
         "groq",
@@ -66,6 +67,8 @@ public static class ConfigValidator
             errors.Add($"Llm.CircuitBreakerThreshold must be >= 1 (got {config.Llm.CircuitBreakerThreshold}).");
         if (config.Llm.CircuitBreakerCooldownSeconds < 1)
             errors.Add($"Llm.CircuitBreakerCooldownSeconds must be >= 1 (got {config.Llm.CircuitBreakerCooldownSeconds}).");
+        if (!IsValidProviderAuthMode(config.Llm.AuthMode))
+            errors.Add("Llm.AuthMode must be 'bearer' or 'tailnet-identity'.");
         ValidatePromptCaching("Llm.PromptCaching", config.Llm.Provider, config.Llm.PromptCaching, errors, isDynamicProvider: false);
         ValidateModelProfiles(config, errors, pluginBackedProvidersPossible);
 
@@ -625,6 +628,8 @@ public static class ConfigValidator
 
             if (string.IsNullOrWhiteSpace(profile.Model))
                 errors.Add($"Models.Profiles.{profile.Id}.Model must be set.");
+            if (!string.IsNullOrWhiteSpace(profile.AuthMode) && !IsValidProviderAuthMode(profile.AuthMode))
+                errors.Add($"Models.Profiles.{profile.Id}.AuthMode must be 'bearer' or 'tailnet-identity'.");
             if (!string.IsNullOrWhiteSpace(profile.PresetId))
             {
                 if (!LocalModelPresetCatalog.TryGet(profile.PresetId, out _))
@@ -829,6 +834,7 @@ public static class ConfigValidator
         var provider = (providerId ?? string.Empty).Trim();
         var requireExplicitDialect =
             provider.Equals("openai-compatible", StringComparison.OrdinalIgnoreCase)
+            || provider.Equals("aperture", StringComparison.OrdinalIgnoreCase)
             || provider.Equals("groq", StringComparison.OrdinalIgnoreCase)
             || provider.Equals("together", StringComparison.OrdinalIgnoreCase)
             || provider.Equals("lmstudio", StringComparison.OrdinalIgnoreCase)
@@ -847,6 +853,12 @@ public static class ConfigValidator
                 errors.Add($"{prefix}.KeepWarmEnabled is only valid for providers with explicit cache TTL semantics.");
             }
         }
+    }
+
+    private static bool IsValidProviderAuthMode(string? authMode)
+    {
+        var normalized = string.IsNullOrWhiteSpace(authMode) ? "bearer" : authMode.Trim().ToLowerInvariant();
+        return normalized is "bearer" or "tailnet-identity";
     }
 
     private static bool SupportsExplicitCacheTtl(string? providerId, string? dialect)

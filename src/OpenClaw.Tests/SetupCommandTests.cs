@@ -629,6 +629,57 @@ public sealed class SetupCommandTests
         }
     }
 
+    [Fact]
+    public async Task RunAsync_SetupProviderAperture_WritesTailnetIdentityProfile()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var configPath = Path.Combine(root, "config", "openclaw.settings.json");
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+
+            var exitCode = await SetupCommand.RunAsync(
+                [
+                    "provider",
+                    "aperture",
+                    "--non-interactive",
+                    "--config", configPath,
+                    "--endpoint", "https://aperture.example.test/v1",
+                    "--model", "team/default",
+                    "--auth-mode", "tailnet-identity",
+                    "--send-request-metadata", "true"
+                ],
+                new StringReader(string.Empty),
+                output,
+                error,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(configPath));
+            var openClaw = document.RootElement.GetProperty("OpenClaw");
+            var profile = Assert.Single(openClaw.GetProperty("models").GetProperty("profiles").EnumerateArray());
+            Assert.Equal("aperture-default", profile.GetProperty("id").GetString());
+            Assert.Equal("aperture", profile.GetProperty("provider").GetString());
+            Assert.Equal("team/default", profile.GetProperty("model").GetString());
+            Assert.Equal("https://aperture.example.test/v1", profile.GetProperty("baseUrl").GetString());
+            Assert.Equal("tailnet-identity", profile.GetProperty("authMode").GetString());
+            Assert.True(profile.GetProperty("sendRequestMetadata").GetBoolean());
+            Assert.False(profile.TryGetProperty("apiKey", out _));
+
+            var envExample = await File.ReadAllTextAsync(Path.Combine(root, "config", "openclaw.settings.env.example"));
+            Assert.DoesNotContain("OPENCLAW_APERTURE_TOKEN", envExample, StringComparison.Ordinal);
+            Assert.Contains("OPENCLAW_AUTH_TOKEN=", envExample, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTempRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "openclaw-setup-tests", Guid.NewGuid().ToString("n"));

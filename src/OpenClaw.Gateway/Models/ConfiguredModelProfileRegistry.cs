@@ -73,6 +73,9 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
                 IsDefault = item.IsDefault,
                 IsImplicit = item.Profile.IsImplicit,
                 IsAvailable = item.Client is not null && item.ValidationIssues.Length == 0,
+                ProviderGateway = ResolveProviderGateway(item.Profile),
+                AuthMode = item.Profile.AuthMode,
+                SendRequestMetadata = item.Profile.SendRequestMetadata,
                 Tags = item.Profile.Tags,
                 Capabilities = item.Profile.Capabilities,
                 PromptCaching = item.Profile.PromptCaching,
@@ -163,6 +166,8 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
             Model = config.Llm.Model,
             BaseUrl = config.Llm.Endpoint,
             ApiKey = config.Llm.ApiKey,
+            AuthMode = config.Llm.AuthMode,
+            SendRequestMetadata = config.Llm.SendRequestMetadata,
             FallbackModels = config.Llm.FallbackModels,
             Capabilities = GuessCapabilities(config.Llm.Provider),
             PromptCaching = ClonePromptCaching(config.Llm.PromptCaching)
@@ -191,8 +196,8 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
             };
         }
 
-        var supportsTools = provider is "openai" or "openai-compatible" or "azure-openai" or "groq" or "together" or "lmstudio" or "anthropic" or "claude" or "anthropic-vertex" or "amazon-bedrock" or "gemini" or "google";
-        var supportsVision = provider is "openai" or "openai-compatible" or "azure-openai" or "gemini" or "google" or "ollama" or "amazon-bedrock";
+        var supportsTools = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai" or "groq" or "together" or "lmstudio" or "anthropic" or "claude" or "anthropic-vertex" or "amazon-bedrock" or "gemini" or "google";
+        var supportsVision = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai" or "gemini" or "google" or "ollama" or "amazon-bedrock";
         var supportsPromptCaching = provider is "openai" or "azure-openai" or "anthropic" or "claude" or "anthropic-vertex" or "gemini" or "google";
         var supportsExplicitCacheRetention = provider is "anthropic" or "claude" or "anthropic-vertex";
         var reportsCacheReadTokens = supportsPromptCaching;
@@ -201,15 +206,15 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
         {
             SupportsTools = supportsTools,
             SupportsVision = supportsVision,
-            SupportsJsonSchema = provider is "openai" or "openai-compatible" or "azure-openai",
-            SupportsStructuredOutputs = provider is "openai" or "openai-compatible" or "azure-openai",
+            SupportsJsonSchema = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai",
+            SupportsStructuredOutputs = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai",
             SupportsStreaming = true,
-            SupportsParallelToolCalls = provider is "openai" or "openai-compatible" or "azure-openai",
-            SupportsReasoningEffort = provider is "openai" or "openai-compatible" or "azure-openai",
+            SupportsParallelToolCalls = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai",
+            SupportsReasoningEffort = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai",
             SupportsSystemMessages = true,
             SupportsImageInput = supportsVision,
             SupportsVideoInput = supportsVision,
-            SupportsAudioInput = provider is "openai" or "openai-compatible" or "azure-openai",
+            SupportsAudioInput = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai",
             SupportsPromptCaching = supportsPromptCaching,
             SupportsExplicitCacheRetention = supportsExplicitCacheRetention,
             ReportsCacheReadTokens = reportsCacheReadTokens,
@@ -226,6 +231,8 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
             ModelId = Normalize(model.Model) ?? config.Llm.Model,
             BaseUrl = ResolveSecretValue(model.BaseUrl),
             ApiKey = ResolveSecretValue(model.ApiKey),
+            AuthMode = Normalize(model.AuthMode) ?? Normalize(config.Llm.AuthMode) ?? "bearer",
+            SendRequestMetadata = model.SendRequestMetadata ?? config.Llm.SendRequestMetadata,
             Tags = MergeTags(model),
             FallbackProfileIds = NormalizeDistinct(model.FallbackProfileIds),
             FallbackModels = NormalizeDistinct(model.FallbackModels),
@@ -244,6 +251,7 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
         if (string.IsNullOrWhiteSpace(profile.ModelId))
             yield return "Model is required.";
         if ((profile.ProviderId.Equals("openai-compatible", StringComparison.OrdinalIgnoreCase) ||
+             profile.ProviderId.Equals("aperture", StringComparison.OrdinalIgnoreCase) ||
              profile.ProviderId.Equals("groq", StringComparison.OrdinalIgnoreCase) ||
              profile.ProviderId.Equals("together", StringComparison.OrdinalIgnoreCase) ||
              profile.ProviderId.Equals("lmstudio", StringComparison.OrdinalIgnoreCase) ||
@@ -253,11 +261,12 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
             string.IsNullOrWhiteSpace(profile.BaseUrl) &&
             string.IsNullOrWhiteSpace(config.Llm.Endpoint))
         {
-            yield return "BaseUrl is required for OpenAI-compatible, Anthropic Vertex, Amazon Bedrock, and Azure OpenAI profiles unless inherited from OpenClaw:Llm:Endpoint.";
+            yield return "BaseUrl is required for OpenAI-compatible, Aperture, Anthropic Vertex, Amazon Bedrock, and Azure OpenAI profiles unless inherited from OpenClaw:Llm:Endpoint.";
         }
 
         if ((profile.ProviderId.Equals("openai", StringComparison.OrdinalIgnoreCase) ||
              profile.ProviderId.Equals("openai-compatible", StringComparison.OrdinalIgnoreCase) ||
+             profile.ProviderId.Equals("aperture", StringComparison.OrdinalIgnoreCase) ||
              profile.ProviderId.Equals("groq", StringComparison.OrdinalIgnoreCase) ||
              profile.ProviderId.Equals("together", StringComparison.OrdinalIgnoreCase) ||
              profile.ProviderId.Equals("azure-openai", StringComparison.OrdinalIgnoreCase) ||
@@ -267,6 +276,7 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
              profile.ProviderId.Equals("amazon-bedrock", StringComparison.OrdinalIgnoreCase) ||
              profile.ProviderId.Equals("gemini", StringComparison.OrdinalIgnoreCase) ||
              profile.ProviderId.Equals("google", StringComparison.OrdinalIgnoreCase)) &&
+            !AllowsTailnetIdentityAuth(profile.ProviderId, profile.AuthMode) &&
             string.IsNullOrWhiteSpace(profile.ApiKey) &&
             string.IsNullOrWhiteSpace(config.Llm.ApiKey))
         {
@@ -281,6 +291,8 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
             Model = profile.ModelId,
             ApiKey = profile.ApiKey ?? config.Llm.ApiKey,
             Endpoint = ResolveEndpoint(config, profile),
+            AuthMode = profile.AuthMode,
+            SendRequestMetadata = profile.SendRequestMetadata,
             FallbackModels = profile.FallbackModels,
             MaxTokens = profile.Capabilities.MaxOutputTokens > 0 ? profile.Capabilities.MaxOutputTokens : config.Llm.MaxTokens,
             Temperature = config.Llm.Temperature,
@@ -390,6 +402,20 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
     private static bool ProfileUsesCompatibilityTransport(ModelProfile profile)
         => profile.ProviderId.Equals("ollama", StringComparison.OrdinalIgnoreCase) &&
            OllamaEndpointNormalizer.UsesCompatibilityEndpoint(profile.BaseUrl);
+
+    private static string? ResolveProviderGateway(ModelProfile profile)
+        => IsApertureProfile(profile) ? "Aperture" : null;
+
+    private static bool IsApertureProfile(ModelProfile profile)
+        => profile.ProviderId.Equals("aperture", StringComparison.OrdinalIgnoreCase) ||
+           profile.Tags.Contains("aperture", StringComparer.OrdinalIgnoreCase) ||
+           (!string.IsNullOrWhiteSpace(profile.BaseUrl) &&
+            profile.BaseUrl.Contains("aperture", StringComparison.OrdinalIgnoreCase));
+
+    private static bool AllowsTailnetIdentityAuth(string providerId, string? authMode)
+        => (providerId.Equals("aperture", StringComparison.OrdinalIgnoreCase) ||
+            providerId.Equals("openai-compatible", StringComparison.OrdinalIgnoreCase)) &&
+           string.Equals(authMode?.Trim(), "tailnet-identity", StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyList<string> BuildCompatibilityNotes(ModelProfile profile)
     {

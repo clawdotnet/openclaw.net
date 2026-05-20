@@ -7,6 +7,7 @@ using OpenClaw.Agent;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
+using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.PromptCaching;
 
@@ -248,6 +249,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
                 }
 
                 effectiveOptions.ModelId = modelId;
+                AddRequestMetadataIfEnabled(effectiveOptions, session, candidate.Profile, streaming: false);
                 var prepared = _promptCacheCoordinator.Prepare(session, candidate.Profile, modelId, messages, effectiveOptions);
                 _promptCacheWarmRegistry.Record(prepared);
 
@@ -376,6 +378,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
             }
 
             var selectedModelId = ResolveRequestedModelId(session, candidate.Profile);
+            AddRequestMetadataIfEnabled(effectiveOptions, session, candidate.Profile, streaming: true);
             var prepared = _promptCacheCoordinator.Prepare(session, candidate.Profile, selectedModelId, messages, effectiveOptions);
             _promptCacheWarmRegistry.Record(prepared);
             var routeState = GetOrAddRouteState(candidate.Profile.Id, candidate.Profile.ProviderId, selectedModelId);
@@ -621,6 +624,37 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         return true;
     }
 
+    private static void AddRequestMetadataIfEnabled(ChatOptions options, Session session, ModelProfile profile, bool streaming)
+    {
+        if (!profile.SendRequestMetadata)
+            return;
+
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        AddHeader(headers, "X-OpenClaw-Session-Id", session.Id);
+        AddHeader(headers, "X-OpenClaw-Actor-Id", session.SenderId);
+        AddHeader(headers, "X-OpenClaw-Channel-Id", session.ChannelId);
+        AddHeader(headers, "X-OpenClaw-Model-Profile", profile.Id);
+        AddHeader(headers, "X-OpenClaw-Run-Mode", streaming ? "streaming" : "standard");
+        AddHeader(headers, "X-OpenClaw-Purpose", "chat");
+
+        if (headers.Count == 0)
+            return;
+
+        options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+        options.AdditionalProperties[OpenClawProviderRequestPolicy.MetadataHeadersPropertyName] = headers;
+    }
+
+    private static void AddHeader(Dictionary<string, string> headers, string name, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
+        var sanitized = value.Trim();
+        if (sanitized.Length > 256)
+            sanitized = sanitized[..256];
+        headers[name] = sanitized;
+    }
+
     private static void NormalizePromptCacheUsage(ChatResponse response)
     {
         if (response.Usage is null)
@@ -767,6 +801,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         => providerId.Trim().ToLowerInvariant() switch
         {
             "openai" => "MODEL_PROVIDER_KEY or OPENAI_API_KEY",
+            "aperture" => "OPENCLAW_APERTURE_TOKEN, MODEL_PROVIDER_KEY, or AuthMode=tailnet-identity",
             _ => "MODEL_PROVIDER_KEY"
         };
 
@@ -774,6 +809,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         => providerId.Trim().ToLowerInvariant() switch
         {
             "openai" => "OpenAI",
+            "aperture" => "Aperture",
             "azure-openai" => "Azure OpenAI",
             "anthropic" or "claude" => "Anthropic",
             "gemini" or "google" => "Gemini",
