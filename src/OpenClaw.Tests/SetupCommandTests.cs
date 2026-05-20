@@ -399,7 +399,7 @@ public sealed class SetupCommandTests
         var root = CreateTempRoot();
         try
         {
-            var configPath = Path.Combine(root, "config", "openclaw.settings.json");
+            var configPath = Path.Join(root, "config", "openclaw.settings.json");
             var workspace = Path.Combine(root, "workspace");
             using var setupOutput = new StringWriter();
             using var setupError = new StringWriter();
@@ -470,7 +470,7 @@ public sealed class SetupCommandTests
         var root = CreateTempRoot();
         try
         {
-            var configPath = Path.Combine(root, "config", "openclaw.settings.json");
+            var configPath = Path.Join(root, "config", "openclaw.settings.json");
             var workspace = Path.Combine(root, "workspace");
             using var setupOutput = new StringWriter();
             using var setupError = new StringWriter();
@@ -635,7 +635,7 @@ public sealed class SetupCommandTests
         var root = CreateTempRoot();
         try
         {
-            var configPath = Path.Combine(root, "config", "openclaw.settings.json");
+            var configPath = Path.Join(root, "config", "openclaw.settings.json");
             using var output = new StringWriter();
             using var error = new StringWriter();
             using var input = new StringReader(string.Empty);
@@ -672,7 +672,7 @@ public sealed class SetupCommandTests
             Assert.True(profile.GetProperty("sendRequestMetadata").GetBoolean());
             Assert.False(profile.TryGetProperty("apiKey", out _));
 
-            var envExample = await File.ReadAllTextAsync(Path.Combine(root, "config", "openclaw.settings.env.example"));
+            var envExample = await File.ReadAllTextAsync(Path.Join(root, "config", "openclaw.settings.env.example"));
             Assert.DoesNotContain("OPENCLAW_APERTURE_TOKEN", envExample, StringComparison.Ordinal);
             Assert.Contains("OPENCLAW_AUTH_TOKEN=", envExample, StringComparison.Ordinal);
         }
