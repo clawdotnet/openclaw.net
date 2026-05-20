@@ -650,6 +650,87 @@ public sealed class ModelProfileSelectionTests
     }
 
     [Fact]
+    public void ModelDoctor_ApertureTailnetIdentity_DoesNotRequireApiKey()
+    {
+        var config = new GatewayConfig
+        {
+            Llm = new LlmProviderConfig
+            {
+                Provider = "openai",
+                Model = "gpt-4o",
+                ApiKey = "env:MODEL_PROVIDER_KEY"
+            },
+            Models = new ModelsConfig
+            {
+                Profiles =
+                [
+                    new ModelProfileConfig
+                    {
+                        Id = "aperture-default",
+                        Provider = "aperture",
+                        Model = "route/default",
+                        BaseUrl = "https://aperture.example.test/v1",
+                        AuthMode = "tailnet-identity",
+                        SendRequestMetadata = true
+                    }
+                ]
+            }
+        };
+
+        var doctor = ModelDoctorEvaluator.Build(config);
+        var profile = Assert.Single(doctor.Profiles);
+
+        Assert.Empty(profile.ValidationIssues);
+        Assert.Equal("Aperture", profile.ProviderGateway);
+        Assert.Equal("tailnet-identity", profile.AuthMode);
+        Assert.True(profile.SendRequestMetadata);
+    }
+
+    [Fact]
+    public void Registry_ApertureProfileFailure_IsolatedFromDefaultProvider()
+    {
+        LlmClientFactory.ResetDynamicProviders();
+        LlmClientFactory.RegisterProvider("fake-profile-tests", new EvaluationChatClient());
+
+        var config = new GatewayConfig
+        {
+            Llm = new LlmProviderConfig
+            {
+                Provider = "fake-profile-tests",
+                Model = "default-model"
+            },
+            Models = new ModelsConfig
+            {
+                DefaultProfile = "default",
+                Profiles =
+                [
+                    new ModelProfileConfig
+                    {
+                        Id = "default",
+                        Provider = "fake-profile-tests",
+                        Model = "default-model"
+                    },
+                    new ModelProfileConfig
+                    {
+                        Id = "broken-aperture",
+                        Provider = "aperture",
+                        Model = "route/default",
+                        AuthMode = "bearer"
+                    }
+                ]
+            }
+        };
+
+        using var registry = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        var statuses = registry.ListStatuses();
+
+        Assert.Contains(statuses, status => status.Id == "default" && status.IsAvailable);
+        var broken = Assert.Single(statuses, status => status.Id == "broken-aperture");
+        Assert.False(broken.IsAvailable);
+        Assert.Contains(broken.ValidationIssues, issue => issue.Contains("BaseUrl is required", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task GatewayExecution_FallsBackWhenSelectedProfileContextTooSmall()
     {
         LlmClientFactory.ResetDynamicProviders();

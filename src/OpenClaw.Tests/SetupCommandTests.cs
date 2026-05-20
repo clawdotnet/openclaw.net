@@ -27,7 +27,7 @@ public sealed class SetupCommandTests
         var root = CreateTempRoot();
         try
         {
-            var configPath = Path.Combine(root, "config", "openclaw.settings.json");
+            var configPath = Path.Join(root, "config", "openclaw.settings.json");
             var workspace = Path.Combine(root, "workspace");
             using var output = new StringWriter();
             using var error = new StringWriter();
@@ -69,7 +69,7 @@ public sealed class SetupCommandTests
             var memory = openClaw.GetProperty("memory");
             Assert.Equal(Path.Combine(root, "config", "memory"), memory.GetProperty("storagePath").GetString());
 
-            var envExample = await File.ReadAllTextAsync(Path.Combine(root, "config", "openclaw.settings.env.example"));
+            var envExample = await File.ReadAllTextAsync(Path.Join(root, "config", "openclaw.settings.env.example"));
             Assert.Contains("OPENAI_API_KEY=replace-me", envExample, StringComparison.Ordinal);
             Assert.Contains($"OPENCLAW_WORKSPACE={workspace}", envExample, StringComparison.Ordinal);
 
@@ -399,7 +399,7 @@ public sealed class SetupCommandTests
         var root = CreateTempRoot();
         try
         {
-            var configPath = Path.Combine(root, "config", "openclaw.settings.json");
+            var configPath = Path.Join(root, "config", "openclaw.settings.json");
             var workspace = Path.Combine(root, "workspace");
             using var setupOutput = new StringWriter();
             using var setupError = new StringWriter();
@@ -470,7 +470,7 @@ public sealed class SetupCommandTests
         var root = CreateTempRoot();
         try
         {
-            var configPath = Path.Combine(root, "config", "openclaw.settings.json");
+            var configPath = Path.Join(root, "config", "openclaw.settings.json");
             var workspace = Path.Combine(root, "workspace");
             using var setupOutput = new StringWriter();
             using var setupError = new StringWriter();
@@ -622,6 +622,59 @@ public sealed class SetupCommandTests
             var plist = await File.ReadAllTextAsync(plistPath);
             Assert.Contains("<string>--config</string>", plist, StringComparison.Ordinal);
             Assert.Contains($"<string>{System.Security.SecurityElement.Escape(configPath)}</string>", plist, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_SetupProviderAperture_WritesTailnetIdentityProfile()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var configPath = Path.Join(root, "config", "openclaw.settings.json");
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            using var input = new StringReader(string.Empty);
+
+            var exitCode = await SetupCommand.RunAsync(
+                [
+                    "provider",
+                    "Aperture",
+                    "--non-interactive",
+                    "--config", configPath,
+                    "--profile-id", "aperture",
+                    "--endpoint", "https://aperture.example.test/v1",
+                    "--model", "team/default",
+                    "--auth-mode", "tailnet-identity",
+                    "--send-request-metadata", "true"
+                ],
+                input,
+                output,
+                error,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(configPath));
+            var openClaw = document.RootElement.GetProperty("OpenClaw");
+            var profile = Assert.Single(openClaw.GetProperty("models").GetProperty("profiles").EnumerateArray());
+            Assert.Equal("aperture", profile.GetProperty("id").GetString());
+            Assert.Equal("aperture", profile.GetProperty("provider").GetString());
+            Assert.Equal("team/default", profile.GetProperty("model").GetString());
+            Assert.Equal("https://aperture.example.test/v1", profile.GetProperty("baseUrl").GetString());
+            Assert.Equal("tailnet-identity", profile.GetProperty("authMode").GetString());
+            Assert.True(profile.GetProperty("sendRequestMetadata").GetBoolean());
+            Assert.False(profile.TryGetProperty("apiKey", out _));
+
+            var envExample = await File.ReadAllTextAsync(Path.Join(root, "config", "openclaw.settings.env.example"));
+            Assert.DoesNotContain("OPENCLAW_APERTURE_TOKEN", envExample, StringComparison.Ordinal);
+            Assert.Contains("OPENCLAW_AUTH_TOKEN=", envExample, StringComparison.Ordinal);
         }
         finally
         {

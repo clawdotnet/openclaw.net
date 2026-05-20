@@ -1,6 +1,13 @@
 using Microsoft.Extensions.AI;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using NSubstitute;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Validation;
 using OpenClaw.Gateway.Extensions;
 using Xunit;
 
@@ -82,5 +89,164 @@ public sealed class LlmClientFactoryTests
         });
 
         Assert.NotNull(client);
+    }
+
+    [Fact]
+    public async Task ApertureTailnetIdentity_DoesNotSendAuthorizationHeader()
+    {
+        await using var server = await StartOpenAiCompatibleServerAsync();
+        var client = LlmClientFactory.CreateChatClient(new LlmProviderConfig
+        {
+            Provider = "aperture",
+            Endpoint = $"{server.BaseUrl}/v1",
+            Model = "aperture-route",
+            AuthMode = "tailnet-identity"
+        });
+
+        var response = await client.GetResponseAsync(
+            [new ChatMessage(ChatRole.User, "ready?")],
+            new ChatOptions { ModelId = "aperture-route" },
+            CancellationToken.None);
+
+        Assert.Equal("READY", response.Text);
+        Assert.False(server.Headers.ContainsKey("Authorization"));
+    }
+
+    [Fact]
+    public async Task ApertureMetadata_OptInSendsHeadersAndKeepsBearerAuth()
+    {
+        await using var server = await StartOpenAiCompatibleServerAsync();
+        var client = LlmClientFactory.CreateChatClient(new LlmProviderConfig
+        {
+            Provider = "aperture",
+            Endpoint = $"{server.BaseUrl}/v1",
+            Model = "aperture-route",
+            ApiKey = "test-token",
+            SendRequestMetadata = true
+        });
+
+        var options = new ChatOptions { ModelId = "aperture-route" };
+        options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+        options.AdditionalProperties[OpenClawProviderRequestPolicy.MetadataHeadersPropertyName] =
+            new Dictionary<string, string>
+            {
+                ["Authorization"] = "Bearer attacker",
+                ["Cookie"] = "session=attacker",
+                ["X-OpenClaw-Session-Id"] = "sess-1",
+                ["X-OpenClaw-Model-Profile"] = "aperture-default"
+            };
+
+        var response = await client.GetResponseAsync(
+            [new ChatMessage(ChatRole.User, "ready?")],
+            options,
+            CancellationToken.None);
+
+        Assert.Equal("READY", response.Text);
+        Assert.Equal("Bearer test-token", server.Headers["Authorization"]);
+        Assert.False(server.Headers.ContainsKey("Cookie"));
+        Assert.Equal("sess-1", server.Headers["X-OpenClaw-Session-Id"]);
+        Assert.Equal("aperture-default", server.Headers["X-OpenClaw-Model-Profile"]);
+    }
+
+    [Fact]
+    public void ApertureTailnetIdentity_EmbeddingsFailFastWithoutApiKey()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            LlmClientFactory.CreateEmbeddingGenerator(
+                new LlmProviderConfig
+                {
+                    Provider = "aperture",
+                    Endpoint = "https://aperture.example.test/v1",
+                    Model = "aperture-route",
+                    AuthMode = "tailnet-identity"
+                },
+                "text-embedding-3-small"));
+
+        Assert.Contains("AuthMode=tailnet-identity", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ApertureTailnetIdentity_SmokeProbeSuppressesAuthorizationEvenWithStaleKey()
+    {
+        await using var server = await StartOpenAiCompatibleServerAsync();
+
+        var result = await ProviderSmokeProbe.ProbeAsync(
+            new LlmProviderConfig
+            {
+                Provider = "aperture",
+                Endpoint = $"{server.BaseUrl}/v1",
+                Model = "aperture-route",
+                ApiKey = "stale-token",
+                AuthMode = "tailnet-identity"
+            },
+            CancellationToken.None);
+
+        Assert.Equal(SetupCheckStates.Pass, result.Status);
+        Assert.False(server.Headers.ContainsKey("Authorization"));
+    }
+
+    [Fact]
+    public async Task UnsupportedTailnetIdentityProvider_SmokeProbeKeepsAuthorization()
+    {
+        await using var server = await StartOpenAiCompatibleServerAsync();
+
+        var result = await ProviderSmokeProbe.ProbeAsync(
+            new LlmProviderConfig
+            {
+                Provider = "groq",
+                Endpoint = $"{server.BaseUrl}/v1",
+                Model = "llama-test",
+                ApiKey = "provider-token",
+                AuthMode = "tailnet-identity"
+            },
+            CancellationToken.None);
+
+        Assert.Equal(SetupCheckStates.Pass, result.Status);
+        Assert.Equal("Bearer provider-token", server.Headers["Authorization"]);
+    }
+
+    private static async Task<OpenAiCompatibleTestServer> StartOpenAiCompatibleServerAsync()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        var app = builder.Build();
+        app.MapPost("/v1/chat/completions", (HttpContext ctx) =>
+        {
+            headers.Clear();
+            foreach (var header in ctx.Request.Headers)
+                headers[header.Key] = header.Value.ToString();
+
+            return Results.Json(new
+            {
+                id = "chatcmpl-test",
+                @object = "chat.completion",
+                created = 0,
+                model = "aperture-route",
+                choices = new[]
+                {
+                    new
+                    {
+                        index = 0,
+                        message = new { role = "assistant", content = "READY" },
+                        finish_reason = "stop"
+                    }
+                }
+            });
+        });
+
+        await app.StartAsync();
+        var address = app.Services
+            .GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>()
+            .Features
+            .Get<IServerAddressesFeature>()!
+            .Addresses
+            .First();
+        return new OpenAiCompatibleTestServer(app, address.TrimEnd('/'), headers);
+    }
+
+    private sealed record OpenAiCompatibleTestServer(WebApplication App, string BaseUrl, Dictionary<string, string> Headers) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync() => await App.DisposeAsync();
     }
 }

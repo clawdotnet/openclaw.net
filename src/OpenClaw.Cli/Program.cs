@@ -146,11 +146,13 @@ internal static class Program
               openclaw tui
               openclaw insights
               openclaw setup
+              openclaw setup provider aperture --config ~/.openclaw/config/openclaw.settings.json --endpoint https://YOUR_APERTURE_ENDPOINT --model YOUR_APERTURE_MODEL_ROUTE --auth-mode bearer --env-var OPENCLAW_APERTURE_TOKEN
               openclaw upgrade check
               openclaw upgrade check --config ~/.openclaw/config/openclaw.settings.json --offline
               openclaw upgrade rollback --config ~/.openclaw/config/openclaw.settings.json --offline
               openclaw setup --non-interactive --profile local --workspace ./workspace --provider openai --model gpt-4o --api-key env:MODEL_PROVIDER_KEY
               openclaw setup --non-interactive --profile local --workspace ./workspace --provider ollama --model llama3.2 --model-preset ollama-general
+              openclaw setup provider aperture --endpoint https://YOUR_APERTURE_ENDPOINT --model YOUR_APERTURE_MODEL_ROUTE --auth-mode tailnet-identity
               openclaw setup verify --config ~/.openclaw/config/openclaw.settings.json
               openclaw setup launch --config ~/.openclaw/config/openclaw.settings.json --with-companion --open-browser
               openclaw setup service --config ~/.openclaw/config/openclaw.settings.json --platform all

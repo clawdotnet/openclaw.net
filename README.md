@@ -163,6 +163,20 @@ Embedded video support is frame-based: OpenClaw samples local `video/*` inputs i
 
 > **Breaking change**: browser admin usage is account/session-first. Use named operator accounts for `/admin`, and use operator account tokens for Companion, CLI, API, and websocket clients.
 
+## Tailscale And Aperture Integration
+
+OpenClaw.NET can integrate with Tailscale for secure private runtime access and with Aperture by Tailscale for upstream model routing.
+
+In this setup:
+
+- OpenClaw.NET remains the self-hosted agent runtime and gateway.
+- Tailscale provides private networking and identity-aware access.
+- Aperture optionally manages upstream provider routing, model access, telemetry, and spend controls.
+
+OpenClaw.NET still manages agents, tools, sessions, approvals, memory, channels, runtime governance, MCP, and OpenAI-compatible surfaces. Tailscale/Aperture support is optional and does not change the default local-first OpenClaw.NET experience.
+
+See [docs/deployment/TAILSCALE.md](docs/deployment/TAILSCALE.md) for Serve/Funnel deployment patterns, Aperture profile examples, and security notes.
+
 ## Security
 
 When binding to a non-loopback address, the gateway **refuses to start** unless dangerous settings are explicitly hardened (auth token required, tooling roots restricted, signature validation enforced, `raw:` secret refs rejected). See [SECURITY.md](SECURITY.md) before exposing the gateway publicly.
@@ -184,6 +198,7 @@ The public documentation site is **[AgentQi.dev](https://agentqi.dev)**. The sou
 | [docs/mempalace-memory.md](docs/mempalace-memory.md) | Optional MemPalace.NET memory provider and temporal knowledge graph |
 | [docs/CANVAS_A2UI.md](docs/CANVAS_A2UI.md) | Supported Canvas and A2UI visual workspace behavior |
 | [docs/MODEL_PROFILES.md](docs/MODEL_PROFILES.md) | Provider-agnostic named model profiles (including Gemma) |
+| [docs/deployment/TAILSCALE.md](docs/deployment/TAILSCALE.md) | Optional Tailscale private access and Aperture provider routing |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Supported upstream skill, plugin, and channel surface |
 | [SECURITY.md](SECURITY.md) | Hardening guidance for public deployments |
 

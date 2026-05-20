@@ -204,7 +204,25 @@ OpenClaw supports native routing for several providers out-of-the-box. Change th
 - **Required**: `ApiKey`, `Model`, and usually `Endpoint`
 - **Notes**: These providers are accessed via the OpenAI-compatible REST abstractions. Ensure that you provide the proper base API URL as the `Endpoint` when required by the target service.
 
-#### 8. Microsoft.Extensions.AI provider bridge
+#### 8. Aperture by Tailscale
+- **Provider**: `"aperture"` or `"openai-compatible"` with an Aperture endpoint
+- **Required**: `Endpoint`/`BaseUrl` and `Model`; `ApiKey` is required for bearer-token mode
+- **Optional**: `AuthMode = "tailnet-identity"` for tailnet identity access without a provider bearer token
+- **Notes**: Aperture is an optional upstream AI gateway route. OpenClaw.NET still owns agents, tools, sessions, approvals, memory, channels, MCP, and runtime governance. Request metadata headers are disabled by default and are sent only when `SendRequestMetadata` is explicitly enabled.
+
+Setup helper:
+
+```bash
+openclaw setup provider aperture \
+  --endpoint https://YOUR_APERTURE_ENDPOINT \
+  --model YOUR_APERTURE_MODEL_ROUTE \
+  --auth-mode bearer \
+  --env-var OPENCLAW_APERTURE_TOKEN
+```
+
+For private access and Aperture deployment guidance, see [deployment/TAILSCALE.md](deployment/TAILSCALE.md).
+
+#### 9. Microsoft.Extensions.AI provider bridge
 - **Provider**: your dynamic provider id, for example `"my-meai-provider"`
 - **Required**: JIT runtime mode, dynamic native plugins enabled, a factory implementing `IMicrosoftExtensionsAiChatClientFactory`, and at least one model id
 - **Notes**: This optional bridge is for advanced .NET integrations where you already have an `IChatClient`. OpenClaw still owns routing, policy, budget checks, tracing, approvals, sessions, and usage accounting. See [Microsoft.Extensions.AI Provider Bridge](providers/microsoft-extensions-ai.md).

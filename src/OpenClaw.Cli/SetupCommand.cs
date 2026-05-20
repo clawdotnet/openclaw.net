@@ -46,6 +46,8 @@ internal static class SetupCommand
             return new SetupCommandResult { ExitCode = await SetupLifecycleCommand.RunVerifyAsync(args[1..], output, error) };
         if (args.Length > 0 && string.Equals(args[0], "channel", StringComparison.OrdinalIgnoreCase))
             return new SetupCommandResult { ExitCode = await ChannelSetupCommand.RunAsync(args[1..], input, output, error, canPrompt) };
+        if (args.Length > 0 && string.Equals(args[0], "provider", StringComparison.OrdinalIgnoreCase))
+            return new SetupCommandResult { ExitCode = await RunProviderSetupAsync(args[1..], input, output, error, currentDirectory, canPrompt) };
 
         var parsed = CliArgs.Parse(args);
         var nonInteractive = parsed.HasFlag("--non-interactive");
@@ -497,6 +499,219 @@ internal static class SetupCommand
         {
             return OllamaDiscoveryResult.Empty;
         }
+    }
+
+    private static async Task<int> RunProviderSetupAsync(
+        string[] args,
+        TextReader input,
+        TextWriter output,
+        TextWriter error,
+        string currentDirectory,
+        bool canPrompt)
+    {
+        var providerIndex = Array.FindIndex(args, static arg => !arg.StartsWith("--", StringComparison.Ordinal));
+        var provider = providerIndex >= 0 ? args[providerIndex] : null;
+        if (!string.Equals(provider, "aperture", StringComparison.OrdinalIgnoreCase))
+        {
+            error.WriteLine("Usage: openclaw setup provider aperture [--config <path>] [--profile-id <id>] [--endpoint <url>] [--model <route>] [--auth-mode <bearer|tailnet-identity>] [--env-var <name>] [--send-request-metadata <true|false>] [--workspace <path>] [--non-interactive]");
+            return 2;
+        }
+
+        var filteredArgs = args.Where((_, index) => index != providerIndex).ToArray();
+        CliArgs parsed;
+        try
+        {
+            parsed = CliArgs.Parse(filteredArgs);
+        }
+        catch (ArgumentException ex)
+        {
+            error.WriteLine(ex.Message);
+            return 2;
+        }
+
+        var nonInteractive = parsed.HasFlag("--non-interactive");
+        var configPath = Path.GetFullPath(GatewayConfigFile.ExpandPath(parsed.GetOption("--config") ?? DefaultConfigPath));
+        var profileId = parsed.GetOption("--profile-id") ?? "aperture-default";
+        var endpoint = parsed.GetOption("--endpoint");
+        var model = parsed.GetOption("--model");
+        string authMode;
+        try
+        {
+            authMode = NormalizeApertureAuthMode(parsed.GetOption("--auth-mode") ?? "bearer");
+        }
+        catch (ArgumentException ex)
+        {
+            error.WriteLine(ex.Message);
+            return 2;
+        }
+        var envVar = parsed.GetOption("--env-var") ?? "OPENCLAW_APERTURE_TOKEN";
+        bool sendMetadata;
+        try
+        {
+            sendMetadata = ParseBooleanOption(parsed.GetOption("--send-request-metadata"), defaultValue: false);
+        }
+        catch (ArgumentException ex)
+        {
+            error.WriteLine(ex.Message);
+            return 2;
+        }
+
+        if (!nonInteractive && canPrompt)
+        {
+            endpoint = Prompt(output, input, "Aperture endpoint", endpoint ?? "https://YOUR_APERTURE_ENDPOINT");
+            model = Prompt(output, input, "Aperture model route", model ?? "YOUR_APERTURE_MODEL_ROUTE");
+            try
+            {
+                authMode = NormalizeApertureAuthMode(Prompt(output, input, "Auth mode (bearer|tailnet-identity)", authMode));
+            }
+            catch (ArgumentException ex)
+            {
+                error.WriteLine(ex.Message);
+                return 2;
+            }
+            if (authMode == "bearer")
+                envVar = Prompt(output, input, "Bearer token env var", envVar);
+            try
+            {
+                sendMetadata = ParseBooleanOption(Prompt(output, input, "Send request metadata (true|false)", sendMetadata ? "true" : "false"), defaultValue: false);
+            }
+            catch (ArgumentException ex)
+            {
+                error.WriteLine(ex.Message);
+                return 2;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(model))
+        {
+            error.WriteLine("Aperture endpoint and model route are required. Re-run with --endpoint and --model, or run from an interactive terminal.");
+            return 2;
+        }
+
+        GatewayConfig config;
+        if (File.Exists(configPath))
+        {
+            config = GatewayConfigFile.Load(configPath);
+        }
+        else
+        {
+            var workspace = Path.GetFullPath(GatewayConfigFile.ExpandPath(parsed.GetOption("--workspace") ?? Path.Join(currentDirectory, "workspace")));
+            var configDirectory = Path.GetDirectoryName(configPath)
+                ?? throw new InvalidOperationException("Config path must contain a directory.");
+            var warnings = new List<string>();
+            config = GatewaySetupProfileFactory.CreateProfileConfig(
+                "local",
+                "127.0.0.1",
+                18789,
+                GenerateAuthToken(),
+                workspace,
+                Path.Join(configDirectory, "memory"),
+                "aperture",
+                model,
+                authMode == "bearer" ? $"env:{envVar}" : string.Empty,
+                modelPresetId: null,
+                warnings);
+            config.Llm.Endpoint = endpoint;
+            config.Llm.AuthMode = authMode;
+            config.Llm.SendRequestMetadata = sendMetadata;
+        }
+
+        var existingIndex = config.Models.Profiles.FindIndex(item => string.Equals(item.Id, profileId, StringComparison.OrdinalIgnoreCase));
+        var profile = new ModelProfileConfig
+        {
+            Id = profileId,
+            Provider = "aperture",
+            Model = model,
+            BaseUrl = endpoint,
+            ApiKey = authMode == "bearer" ? $"env:{envVar}" : null,
+            AuthMode = authMode,
+            SendRequestMetadata = sendMetadata,
+            Tags = ["aperture", "remote", "optional"]
+        };
+
+        if (existingIndex >= 0)
+            config.Models.Profiles[existingIndex] = profile;
+        else
+            config.Models.Profiles.Add(profile);
+
+        if (string.IsNullOrWhiteSpace(config.Models.DefaultProfile) && config.Models.Profiles.Count == 1)
+            config.Models.DefaultProfile = profileId;
+
+        var validationErrors = ConfigValidator.Validate(config);
+        if (validationErrors.Count > 0)
+        {
+            error.WriteLine("Config validation failed:");
+            foreach (var validationError in validationErrors)
+                error.WriteLine($"- {validationError}");
+            return 1;
+        }
+
+        var resolvedWorkspaceRoot = ResolveConfiguredPath(config.Tooling.WorkspaceRoot);
+        var resolvedMemoryStoragePath = ResolveConfiguredPath(config.Memory.StoragePath);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+        if (!string.IsNullOrWhiteSpace(resolvedWorkspaceRoot))
+            Directory.CreateDirectory(resolvedWorkspaceRoot);
+        if (!string.IsNullOrWhiteSpace(resolvedMemoryStoragePath))
+            Directory.CreateDirectory(resolvedMemoryStoragePath);
+        await GatewayConfigFile.SaveAsync(config, configPath);
+
+        var envExamplePath = GatewaySetupArtifacts.BuildEnvExamplePath(configPath);
+        await File.WriteAllTextAsync(
+            envExamplePath,
+            GatewaySetupArtifacts.BuildEnvExample(
+                authMode == "bearer" ? $"env:{envVar}" : null,
+                config.AuthToken ?? GenerateAuthToken(),
+                string.IsNullOrWhiteSpace(resolvedWorkspaceRoot) ? Path.Join(currentDirectory, "workspace") : resolvedWorkspaceRoot,
+                BuildReachableBaseUrl(config.BindAddress, config.Port)),
+            CancellationToken.None);
+
+        output.WriteLine($"Wrote config: {configPath}");
+        output.WriteLine($"Wrote env example: {envExamplePath}");
+        output.WriteLine($"Aperture profile: {profileId}");
+        output.WriteLine($"Endpoint: {endpoint}");
+        output.WriteLine($"Model route: {model}");
+        output.WriteLine($"Auth mode: {authMode}");
+        output.WriteLine($"Request metadata: {(sendMetadata ? "enabled" : "disabled")}");
+        output.WriteLine();
+        output.WriteLine("Next steps:");
+        output.WriteLine($"openclaw setup verify --config {GatewayConfigFile.QuoteIfNeeded(configPath)} --offline");
+        output.WriteLine("openclaw models doctor");
+        return 0;
+    }
+
+    private static string NormalizeApertureAuthMode(string raw)
+    {
+        var normalized = raw.Trim().ToLowerInvariant();
+        if (normalized is not ("bearer" or "tailnet-identity"))
+            throw new ArgumentException("Aperture auth mode must be one of: bearer, tailnet-identity.");
+        return normalized;
+    }
+
+    private static bool ParseBooleanOption(string? raw, bool defaultValue)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return defaultValue;
+        if (bool.TryParse(raw.Trim(), out var parsed))
+            return parsed;
+        throw new ArgumentException($"Invalid boolean value: {raw}");
+    }
+
+    private static string? ResolveConfiguredPath(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var resolved = SecretResolver.Resolve(value);
+        if (string.IsNullOrWhiteSpace(resolved))
+        {
+            if (value.TrimStart().StartsWith("env:", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            resolved = value;
+        }
+        resolved = GatewayConfigFile.ExpandPath(resolved);
+        return Path.IsPathRooted(resolved) ? resolved : Path.GetFullPath(resolved);
     }
 
     private sealed class SetupAnswers

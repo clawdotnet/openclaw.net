@@ -94,6 +94,9 @@ public static class ModelDoctorEvaluator
                 IsDefault = string.Equals(normalizedId, defaultProfileId, StringComparison.OrdinalIgnoreCase),
                 IsImplicit = config.Models.Profiles.Count == 0 && string.Equals(normalizedId, "default", StringComparison.OrdinalIgnoreCase),
                 IsAvailable = validationIssues.Length == 0,
+                ProviderGateway = ResolveProviderGateway(profile, providerId),
+                AuthMode = Normalize(profile.AuthMode) ?? Normalize(config.Llm.AuthMode) ?? "bearer",
+                SendRequestMetadata = profile.SendRequestMetadata ?? config.Llm.SendRequestMetadata,
                 Tags = ResolveTags(profile),
                 Capabilities = ResolveCapabilities(profile, providerId),
                 PromptCaching = MergePromptCaching(config.Llm.PromptCaching, profile.PromptCaching),
@@ -162,7 +165,7 @@ public static class ModelDoctorEvaluator
             yield return "BaseUrl is required for this provider unless inherited from OpenClaw:Llm:Endpoint.";
         }
 
-        if (RequiresCredentials(providerId) &&
+        if (RequiresCredentials(providerId, profile, config) &&
             string.IsNullOrWhiteSpace(ResolveSecretValue(profile.ApiKey)) &&
             string.IsNullOrWhiteSpace(ResolveSecretValue(config.Llm.ApiKey)))
         {
@@ -171,10 +174,17 @@ public static class ModelDoctorEvaluator
     }
 
     private static bool RequiresEndpoint(string providerId)
-        => providerId is "openai-compatible" or "groq" or "together" or "lmstudio" or "anthropic-vertex" or "amazon-bedrock" or "azure-openai";
+        => providerId is "openai-compatible" or "aperture" or "groq" or "together" or "lmstudio" or "anthropic-vertex" or "amazon-bedrock" or "azure-openai";
 
-    private static bool RequiresCredentials(string providerId)
-        => providerId is not "ollama" and not "lmstudio" and not "embedded";
+    private static bool RequiresCredentials(string providerId, ModelProfileConfig profile, GatewayConfig config)
+    {
+        if (providerId is "ollama" or "lmstudio" or "embedded")
+            return false;
+
+        var authMode = Normalize(profile.AuthMode) ?? Normalize(config.Llm.AuthMode);
+        return !(providerId is "aperture" or "openai-compatible" &&
+                 string.Equals(authMode, "tailnet-identity", StringComparison.OrdinalIgnoreCase));
+    }
 
     private static ModelCapabilities GuessCapabilities(string providerId)
     {
@@ -199,23 +209,23 @@ public static class ModelDoctorEvaluator
             };
         }
 
-        var supportsTools = provider is "openai" or "openai-compatible" or "azure-openai" or "groq" or "together" or "lmstudio" or "anthropic" or "claude" or "anthropic-vertex" or "amazon-bedrock" or "gemini" or "google";
-        var supportsVision = provider is "openai" or "openai-compatible" or "azure-openai" or "gemini" or "google" or "ollama" or "amazon-bedrock";
+        var supportsTools = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai" or "groq" or "together" or "lmstudio" or "anthropic" or "claude" or "anthropic-vertex" or "amazon-bedrock" or "gemini" or "google";
+        var supportsVision = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai" or "gemini" or "google" or "ollama" or "amazon-bedrock";
         var supportsPromptCaching = provider is "openai" or "azure-openai" or "anthropic" or "claude" or "anthropic-vertex" or "gemini" or "google";
         var supportsExplicitCacheRetention = provider is "anthropic" or "claude" or "anthropic-vertex";
         return new ModelCapabilities
         {
             SupportsTools = supportsTools,
             SupportsVision = supportsVision,
-            SupportsJsonSchema = provider is "openai" or "openai-compatible" or "azure-openai",
-            SupportsStructuredOutputs = provider is "openai" or "openai-compatible" or "azure-openai",
+            SupportsJsonSchema = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai",
+            SupportsStructuredOutputs = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai",
             SupportsStreaming = true,
-            SupportsParallelToolCalls = provider is "openai" or "openai-compatible" or "azure-openai",
-            SupportsReasoningEffort = provider is "openai" or "openai-compatible" or "azure-openai",
+            SupportsParallelToolCalls = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai",
+            SupportsReasoningEffort = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai",
             SupportsSystemMessages = true,
             SupportsImageInput = supportsVision,
             SupportsVideoInput = supportsVision,
-            SupportsAudioInput = provider is "openai" or "openai-compatible" or "azure-openai",
+            SupportsAudioInput = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai",
             SupportsPromptCaching = supportsPromptCaching,
             SupportsExplicitCacheRetention = supportsExplicitCacheRetention,
             ReportsCacheReadTokens = supportsPromptCaching,
@@ -273,6 +283,19 @@ public static class ModelDoctorEvaluator
             .Concat(preset.Tags)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static string? ResolveProviderGateway(ModelProfileConfig profile, string providerId)
+    {
+        if (providerId.Equals("aperture", StringComparison.OrdinalIgnoreCase) ||
+            profile.Tags.Contains("aperture", StringComparer.OrdinalIgnoreCase) ||
+            (!string.IsNullOrWhiteSpace(profile.BaseUrl) &&
+             profile.BaseUrl.Contains("aperture", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "Aperture";
+        }
+
+        return null;
     }
 
     private static IReadOnlyList<string> ResolveCompatibilityNotes(ModelProfileConfig profile, GatewayConfig config)

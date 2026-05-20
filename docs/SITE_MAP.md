@@ -29,6 +29,7 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Integrations | WhatsApp | [WHATSAPP_SETUP.md](WHATSAPP_SETUP.md) |
 | Integrations | A2A | [a2a.md](a2a.md) |
 | Integrations | External Coding Backends | [external-coding-backends.md](external-coding-backends.md) |
+| Integrations | Tailscale And Aperture | [deployment/TAILSCALE.md](deployment/TAILSCALE.md) |
 | Operations | Security | [SECURITY.md](../SECURITY.md) |
 | Operations | Payment Security | [security/payments.md](security/payments.md) |
 | Operations | Tool Governance Sidecar | [governance/sidecar-pattern.md](governance/sidecar-pattern.md) |
@@ -81,6 +82,7 @@ Integrations
   WhatsApp
   A2A
   External Coding Backends
+  Tailscale And Aperture
 
 Operations
   Security
