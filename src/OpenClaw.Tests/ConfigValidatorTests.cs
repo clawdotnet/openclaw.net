@@ -103,6 +103,25 @@ public sealed class ConfigValidatorTests
     }
 
     [Fact]
+    public void Validate_UnsupportedTailnetIdentityProvider_ReturnsError()
+    {
+        var config = new GatewayConfig
+        {
+            Llm = new LlmProviderConfig
+            {
+                Provider = "openai",
+                Model = "gpt-4.1",
+                ApiKey = "env:MODEL_PROVIDER_KEY",
+                AuthMode = "tailnet-identity"
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("tailnet-identity", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Validate_WebhookHmacEnabledWithoutSecret_ReturnsError()
     {
         var config = new GatewayConfig

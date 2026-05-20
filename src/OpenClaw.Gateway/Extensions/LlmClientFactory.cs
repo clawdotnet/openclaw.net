@@ -188,6 +188,7 @@ public static class LlmClientFactory
                     Provider = config.Provider,
                     ApiKey = config.ApiKey,
                     AuthMode = config.AuthMode,
+                    SendRequestMetadata = config.SendRequestMetadata,
                     Model = config.Model,
                     Endpoint = config.Endpoint
                 }, embeddingModel!),

@@ -69,6 +69,8 @@ public static class ConfigValidator
             errors.Add($"Llm.CircuitBreakerCooldownSeconds must be >= 1 (got {config.Llm.CircuitBreakerCooldownSeconds}).");
         if (!IsValidProviderAuthMode(config.Llm.AuthMode))
             errors.Add("Llm.AuthMode must be 'bearer' or 'tailnet-identity'.");
+        else if (IsTailnetIdentityAuth(config.Llm.AuthMode) && !SupportsTailnetIdentity(config.Llm.Provider))
+            errors.Add($"Llm.AuthMode 'tailnet-identity' is not supported for provider '{config.Llm.Provider}'.");
         ValidateApertureProviderConfig("Llm", "Endpoint", config.Llm.Provider, config.Llm.Endpoint, config.Llm.ApiKey, config.Llm.AuthMode, errors);
         ValidatePromptCaching("Llm.PromptCaching", config.Llm.Provider, config.Llm.PromptCaching, errors, isDynamicProvider: false);
         ValidateModelProfiles(config, errors, pluginBackedProvidersPossible);
@@ -631,6 +633,8 @@ public static class ConfigValidator
                 errors.Add($"Models.Profiles.{profile.Id}.Model must be set.");
             if (!string.IsNullOrWhiteSpace(profile.AuthMode) && !IsValidProviderAuthMode(profile.AuthMode))
                 errors.Add($"Models.Profiles.{profile.Id}.AuthMode must be 'bearer' or 'tailnet-identity'.");
+            else if (IsTailnetIdentityAuth(profile.AuthMode) && !SupportsTailnetIdentity(profile.Provider))
+                errors.Add($"Models.Profiles.{profile.Id}.AuthMode 'tailnet-identity' is not supported for provider '{profile.Provider}'.");
             ValidateApertureProviderConfig(
                 $"Models.Profiles.{profile.Id}",
                 "BaseUrl",
@@ -898,6 +902,11 @@ public static class ConfigValidator
 
     private static bool IsTailnetIdentityAuth(string? authMode)
         => string.Equals(authMode?.Trim(), "tailnet-identity", StringComparison.OrdinalIgnoreCase);
+
+    private static bool SupportsTailnetIdentity(string? provider)
+        => provider is not null &&
+           (provider.Equals("aperture", StringComparison.OrdinalIgnoreCase) ||
+            provider.Equals("openai-compatible", StringComparison.OrdinalIgnoreCase));
 
     private static bool SupportsExplicitCacheTtl(string? providerId, string? dialect)
     {

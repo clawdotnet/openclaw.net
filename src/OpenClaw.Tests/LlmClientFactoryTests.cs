@@ -185,6 +185,26 @@ public sealed class LlmClientFactoryTests
         Assert.False(server.Headers.ContainsKey("Authorization"));
     }
 
+    [Fact]
+    public async Task UnsupportedTailnetIdentityProvider_SmokeProbeKeepsAuthorization()
+    {
+        await using var server = await StartOpenAiCompatibleServerAsync();
+
+        var result = await ProviderSmokeProbe.ProbeAsync(
+            new LlmProviderConfig
+            {
+                Provider = "groq",
+                Endpoint = $"{server.BaseUrl}/v1",
+                Model = "llama-test",
+                ApiKey = "provider-token",
+                AuthMode = "tailnet-identity"
+            },
+            CancellationToken.None);
+
+        Assert.Equal(SetupCheckStates.Pass, result.Status);
+        Assert.Equal("Bearer provider-token", server.Headers["Authorization"]);
+    }
+
     private static async Task<OpenAiCompatibleTestServer> StartOpenAiCompatibleServerAsync()
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

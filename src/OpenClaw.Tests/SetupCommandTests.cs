@@ -27,7 +27,7 @@ public sealed class SetupCommandTests
         var root = CreateTempRoot();
         try
         {
-            var configPath = Path.Combine(root, "config", "openclaw.settings.json");
+            var configPath = Path.Join(root, "config", "openclaw.settings.json");
             var workspace = Path.Combine(root, "workspace");
             using var output = new StringWriter();
             using var error = new StringWriter();
@@ -69,7 +69,7 @@ public sealed class SetupCommandTests
             var memory = openClaw.GetProperty("memory");
             Assert.Equal(Path.Combine(root, "config", "memory"), memory.GetProperty("storagePath").GetString());
 
-            var envExample = await File.ReadAllTextAsync(Path.Combine(root, "config", "openclaw.settings.env.example"));
+            var envExample = await File.ReadAllTextAsync(Path.Join(root, "config", "openclaw.settings.env.example"));
             Assert.Contains("OPENAI_API_KEY=replace-me", envExample, StringComparison.Ordinal);
             Assert.Contains($"OPENCLAW_WORKSPACE={workspace}", envExample, StringComparison.Ordinal);
 
@@ -643,9 +643,10 @@ public sealed class SetupCommandTests
             var exitCode = await SetupCommand.RunAsync(
                 [
                     "provider",
-                    "aperture",
+                    "Aperture",
                     "--non-interactive",
                     "--config", configPath,
+                    "--profile-id", "aperture",
                     "--endpoint", "https://aperture.example.test/v1",
                     "--model", "team/default",
                     "--auth-mode", "tailnet-identity",
@@ -663,7 +664,7 @@ public sealed class SetupCommandTests
             using var document = JsonDocument.Parse(await File.ReadAllTextAsync(configPath));
             var openClaw = document.RootElement.GetProperty("OpenClaw");
             var profile = Assert.Single(openClaw.GetProperty("models").GetProperty("profiles").EnumerateArray());
-            Assert.Equal("aperture-default", profile.GetProperty("id").GetString());
+            Assert.Equal("aperture", profile.GetProperty("id").GetString());
             Assert.Equal("aperture", profile.GetProperty("provider").GetString());
             Assert.Equal("team/default", profile.GetProperty("model").GetString());
             Assert.Equal("https://aperture.example.test/v1", profile.GetProperty("baseUrl").GetString());

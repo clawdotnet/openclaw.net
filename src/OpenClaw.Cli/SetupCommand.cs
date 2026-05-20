@@ -509,14 +509,15 @@ internal static class SetupCommand
         string currentDirectory,
         bool canPrompt)
     {
-        var provider = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal));
+        var providerIndex = Array.FindIndex(args, static arg => !arg.StartsWith("--", StringComparison.Ordinal));
+        var provider = providerIndex >= 0 ? args[providerIndex] : null;
         if (!string.Equals(provider, "aperture", StringComparison.OrdinalIgnoreCase))
         {
             error.WriteLine("Usage: openclaw setup provider aperture [--config <path>] [--profile-id <id>] [--endpoint <url>] [--model <route>] [--auth-mode <bearer|tailnet-identity>] [--env-var <name>] [--send-request-metadata <true|false>] [--workspace <path>] [--non-interactive]");
             return 2;
         }
 
-        var filteredArgs = args.Where(arg => !string.Equals(arg, provider, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var filteredArgs = args.Where((_, index) => index != providerIndex).ToArray();
         CliArgs parsed;
         try
         {
@@ -594,7 +595,7 @@ internal static class SetupCommand
         }
         else
         {
-            var workspace = Path.GetFullPath(GatewayConfigFile.ExpandPath(parsed.GetOption("--workspace") ?? Path.Combine(currentDirectory, "workspace")));
+            var workspace = Path.GetFullPath(GatewayConfigFile.ExpandPath(parsed.GetOption("--workspace") ?? Path.Join(currentDirectory, "workspace")));
             var configDirectory = Path.GetDirectoryName(configPath)
                 ?? throw new InvalidOperationException("Config path must contain a directory.");
             var warnings = new List<string>();

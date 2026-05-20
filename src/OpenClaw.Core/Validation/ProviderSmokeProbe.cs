@@ -149,7 +149,11 @@ public static class ProviderSmokeProbe
         return provider switch
         {
             "openai" or "openai-compatible" or "aperture" or "groq" or "together" or "lmstudio" or "azure-openai"
-                => BuildOpenAiStyleRequest(provider, config, apiKey, suppressAuthorization: IsTailnetIdentityAuth(config.AuthMode)),
+                => BuildOpenAiStyleRequest(
+                    provider,
+                    config,
+                    apiKey,
+                    suppressAuthorization: IsTailnetIdentityAuth(config.AuthMode) && SupportsTailnetIdentity(provider)),
             "ollama" => BuildOllamaRequest(config),
             "anthropic" or "claude" or "anthropic-vertex" or "amazon-bedrock"
                 => BuildAnthropicStyleRequest(provider, config, apiKey),
@@ -282,6 +286,9 @@ public static class ProviderSmokeProbe
 
     private static bool IsTailnetIdentityAuth(string? authMode)
         => string.Equals(authMode?.Trim(), "tailnet-identity", StringComparison.OrdinalIgnoreCase);
+
+    private static bool SupportsTailnetIdentity(string provider)
+        => provider is "aperture" or "openai-compatible";
 
     private static TimeSpan GetProbeTimeout(int configuredTimeoutSeconds)
     {
