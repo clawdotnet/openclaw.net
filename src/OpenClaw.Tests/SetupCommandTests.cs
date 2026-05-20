@@ -638,6 +638,7 @@ public sealed class SetupCommandTests
             var configPath = Path.Combine(root, "config", "openclaw.settings.json");
             using var output = new StringWriter();
             using var error = new StringWriter();
+            using var input = new StringReader(string.Empty);
 
             var exitCode = await SetupCommand.RunAsync(
                 [
@@ -650,7 +651,7 @@ public sealed class SetupCommandTests
                     "--auth-mode", "tailnet-identity",
                     "--send-request-metadata", "true"
                 ],
-                new StringReader(string.Empty),
+                input,
                 output,
                 error,
                 root,

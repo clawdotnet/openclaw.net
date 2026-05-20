@@ -512,11 +512,11 @@ internal static class SetupCommand
         var provider = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal));
         if (!string.Equals(provider, "aperture", StringComparison.OrdinalIgnoreCase))
         {
-            error.WriteLine("Usage: openclaw setup provider aperture [--config <path>] [--endpoint <url>] [--model <route>] [--auth-mode <bearer|tailnet-identity>] [--env-var <name>] [--send-request-metadata <true|false>]");
+            error.WriteLine("Usage: openclaw setup provider aperture [--config <path>] [--profile-id <id>] [--endpoint <url>] [--model <route>] [--auth-mode <bearer|tailnet-identity>] [--env-var <name>] [--send-request-metadata <true|false>] [--workspace <path>] [--non-interactive]");
             return 2;
         }
 
-        var filteredArgs = args.Where(arg => !string.Equals(arg, provider, StringComparison.Ordinal)).ToArray();
+        var filteredArgs = args.Where(arg => !string.Equals(arg, provider, StringComparison.OrdinalIgnoreCase)).ToArray();
         CliArgs parsed;
         try
         {
@@ -604,7 +604,7 @@ internal static class SetupCommand
                 18789,
                 GenerateAuthToken(),
                 workspace,
-                Path.Combine(configDirectory, "memory"),
+                Path.Join(configDirectory, "memory"),
                 "aperture",
                 model,
                 authMode == "bearer" ? $"env:{envVar}" : string.Empty,
@@ -636,10 +636,23 @@ internal static class SetupCommand
         if (string.IsNullOrWhiteSpace(config.Models.DefaultProfile) && config.Models.Profiles.Count == 1)
             config.Models.DefaultProfile = profileId;
 
+        var validationErrors = ConfigValidator.Validate(config);
+        if (validationErrors.Count > 0)
+        {
+            error.WriteLine("Config validation failed:");
+            foreach (var validationError in validationErrors)
+                error.WriteLine($"- {validationError}");
+            return 1;
+        }
+
+        var resolvedWorkspaceRoot = ResolveConfiguredPath(config.Tooling.WorkspaceRoot);
+        var resolvedMemoryStoragePath = ResolveConfiguredPath(config.Memory.StoragePath);
+
         Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
-        if (!string.IsNullOrWhiteSpace(config.Tooling.WorkspaceRoot))
-            Directory.CreateDirectory(config.Tooling.WorkspaceRoot);
-        Directory.CreateDirectory(config.Memory.StoragePath);
+        if (!string.IsNullOrWhiteSpace(resolvedWorkspaceRoot))
+            Directory.CreateDirectory(resolvedWorkspaceRoot);
+        if (!string.IsNullOrWhiteSpace(resolvedMemoryStoragePath))
+            Directory.CreateDirectory(resolvedMemoryStoragePath);
         await GatewayConfigFile.SaveAsync(config, configPath);
 
         var envExamplePath = GatewaySetupArtifacts.BuildEnvExamplePath(configPath);
@@ -648,7 +661,7 @@ internal static class SetupCommand
             GatewaySetupArtifacts.BuildEnvExample(
                 authMode == "bearer" ? $"env:{envVar}" : null,
                 config.AuthToken ?? GenerateAuthToken(),
-                string.IsNullOrWhiteSpace(config.Tooling.WorkspaceRoot) ? Path.Combine(currentDirectory, "workspace") : config.Tooling.WorkspaceRoot,
+                string.IsNullOrWhiteSpace(resolvedWorkspaceRoot) ? Path.Join(currentDirectory, "workspace") : resolvedWorkspaceRoot,
                 BuildReachableBaseUrl(config.BindAddress, config.Port)),
             CancellationToken.None);
 
@@ -681,6 +694,23 @@ internal static class SetupCommand
         if (bool.TryParse(raw.Trim(), out var parsed))
             return parsed;
         throw new ArgumentException($"Invalid boolean value: {raw}");
+    }
+
+    private static string? ResolveConfiguredPath(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var resolved = SecretResolver.Resolve(value);
+        if (string.IsNullOrWhiteSpace(resolved))
+        {
+            if (value.TrimStart().StartsWith("env:", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            resolved = value;
+        }
+        resolved = GatewayConfigFile.ExpandPath(resolved);
+        return Path.IsPathRooted(resolved) ? resolved : Path.GetFullPath(resolved);
     }
 
     private sealed class SetupAnswers

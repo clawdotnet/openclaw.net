@@ -185,7 +185,9 @@ public static class LlmClientFactory
             "openai-compatible" or "aperture" or "groq" or "together" or "lmstudio" =>
                 CreateOpenAiEmbeddingClient(new LlmProviderConfig
                 {
+                    Provider = config.Provider,
                     ApiKey = config.ApiKey,
+                    AuthMode = config.AuthMode,
                     Model = config.Model,
                     Endpoint = config.Endpoint
                 }, embeddingModel!),
@@ -231,6 +233,9 @@ public static class LlmClientFactory
     private static IEmbeddingGenerator<string, Embedding<float>> CreateOpenAiEmbeddingClient(
         LlmProviderConfig config, string embeddingModel)
     {
+        if (IsTailnetIdentityAuth(config.AuthMode))
+            throw new InvalidOperationException("Embeddings do not support AuthMode=tailnet-identity yet. Configure bearer auth for embeddings or disable embeddings for this profile.");
+
         var transport = CreateTransportOptions(config.Endpoint);
         var client = new OpenAI.OpenAIClient(
             new ApiKeyCredential(config.ApiKey ?? throw new InvalidOperationException("API key required for embeddings.")),
@@ -257,7 +262,7 @@ public static class LlmClientFactory
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             if (!IsTailnetIdentityAuth(llm.AuthMode))
-                throw new InvalidOperationException("MODEL_PROVIDER_KEY must be set for the OpenAI-compatible provider.");
+                throw new InvalidOperationException(BuildMissingOpenAiCompatibleKeyMessage(llm.Provider));
 
             apiKey = "openclaw-tailnet-identity";
         }
@@ -333,12 +338,24 @@ public static class LlmClientFactory
 
     private static bool IsTailnetIdentityAuth(string? authMode)
         => string.Equals(authMode?.Trim(), "tailnet-identity", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildMissingOpenAiCompatibleKeyMessage(string provider)
+        => string.Equals(provider, "aperture", StringComparison.OrdinalIgnoreCase)
+            ? "OPENCLAW_APERTURE_TOKEN or OpenClaw:Llm:ApiKey must be set for provider 'aperture' when AuthMode is 'bearer'."
+            : $"MODEL_PROVIDER_KEY must be set for provider '{provider}'.";
 }
 
 internal sealed class OpenClawProviderRequestPolicy : PipelinePolicy
 {
     internal const string MetadataHeadersPropertyName = "openclaw.request_metadata_headers";
     private static readonly AsyncLocal<IReadOnlyDictionary<string, string>?> RequestHeaders = new();
+    private static readonly HashSet<string> BlockedMetadataHeaderNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Authorization",
+        "Cookie",
+        "Proxy-Authorization",
+        "WWW-Authenticate"
+    };
     private readonly bool _removeAuthorization;
 
     public OpenClawProviderRequestPolicy(bool removeAuthorization)
@@ -374,8 +391,14 @@ internal sealed class OpenClawProviderRequestPolicy : PipelinePolicy
 
         foreach (var (name, value) in headers)
         {
-            if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(value))
-                message.Request.Headers.Set(name, value);
+            var headerName = name.Trim();
+            var headerValue = value.Trim();
+            if (!string.IsNullOrWhiteSpace(headerName) &&
+                !string.IsNullOrWhiteSpace(headerValue) &&
+                !BlockedMetadataHeaderNames.Contains(headerName))
+            {
+                message.Request.Headers.Set(headerName, headerValue);
+            }
         }
     }
 

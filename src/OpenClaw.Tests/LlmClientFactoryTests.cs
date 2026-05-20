@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NSubstitute;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Validation;
 using OpenClaw.Gateway.Extensions;
 using Xunit;
 
@@ -129,6 +130,8 @@ public sealed class LlmClientFactoryTests
         options.AdditionalProperties[OpenClawProviderRequestPolicy.MetadataHeadersPropertyName] =
             new Dictionary<string, string>
             {
+                ["Authorization"] = "Bearer attacker",
+                ["Cookie"] = "session=attacker",
                 ["X-OpenClaw-Session-Id"] = "sess-1",
                 ["X-OpenClaw-Model-Profile"] = "aperture-default"
             };
@@ -140,8 +143,46 @@ public sealed class LlmClientFactoryTests
 
         Assert.Equal("READY", response.Text);
         Assert.Equal("Bearer test-token", server.Headers["Authorization"]);
+        Assert.False(server.Headers.ContainsKey("Cookie"));
         Assert.Equal("sess-1", server.Headers["X-OpenClaw-Session-Id"]);
         Assert.Equal("aperture-default", server.Headers["X-OpenClaw-Model-Profile"]);
+    }
+
+    [Fact]
+    public void ApertureTailnetIdentity_EmbeddingsFailFastWithoutApiKey()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            LlmClientFactory.CreateEmbeddingGenerator(
+                new LlmProviderConfig
+                {
+                    Provider = "aperture",
+                    Endpoint = "https://aperture.example.test/v1",
+                    Model = "aperture-route",
+                    AuthMode = "tailnet-identity"
+                },
+                "text-embedding-3-small"));
+
+        Assert.Contains("AuthMode=tailnet-identity", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ApertureTailnetIdentity_SmokeProbeSuppressesAuthorizationEvenWithStaleKey()
+    {
+        await using var server = await StartOpenAiCompatibleServerAsync();
+
+        var result = await ProviderSmokeProbe.ProbeAsync(
+            new LlmProviderConfig
+            {
+                Provider = "aperture",
+                Endpoint = $"{server.BaseUrl}/v1",
+                Model = "aperture-route",
+                ApiKey = "stale-token",
+                AuthMode = "tailnet-identity"
+            },
+            CancellationToken.None);
+
+        Assert.Equal(SetupCheckStates.Pass, result.Status);
+        Assert.False(server.Headers.ContainsKey("Authorization"));
     }
 
     private static async Task<OpenAiCompatibleTestServer> StartOpenAiCompatibleServerAsync()
@@ -175,8 +216,12 @@ public sealed class LlmClientFactoryTests
         });
 
         await app.StartAsync();
-        var address = app.Urls.FirstOrDefault()
-            ?? app.Services.GetRequiredService<IServerAddressesFeature>().Addresses.First();
+        var address = app.Services
+            .GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>()
+            .Features
+            .Get<IServerAddressesFeature>()!
+            .Addresses
+            .First();
         return new OpenAiCompatibleTestServer(app, address.TrimEnd('/'), headers);
     }
 

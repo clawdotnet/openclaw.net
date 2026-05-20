@@ -149,7 +149,7 @@ public static class ProviderSmokeProbe
         return provider switch
         {
             "openai" or "openai-compatible" or "aperture" or "groq" or "together" or "lmstudio" or "azure-openai"
-                => BuildOpenAiStyleRequest(provider, config, apiKey),
+                => BuildOpenAiStyleRequest(provider, config, apiKey, suppressAuthorization: IsTailnetIdentityAuth(config.AuthMode)),
             "ollama" => BuildOllamaRequest(config),
             "anthropic" or "claude" or "anthropic-vertex" or "amazon-bedrock"
                 => BuildAnthropicStyleRequest(provider, config, apiKey),
@@ -159,7 +159,11 @@ public static class ProviderSmokeProbe
         };
     }
 
-    private static HttpRequestMessage BuildOpenAiStyleRequest(string provider, LlmProviderConfig config, string? apiKey)
+    private static HttpRequestMessage BuildOpenAiStyleRequest(
+        string provider,
+        LlmProviderConfig config,
+        string? apiKey,
+        bool suppressAuthorization)
     {
         var endpoint = provider switch
         {
@@ -176,7 +180,7 @@ public static class ProviderSmokeProbe
             throw new InvalidOperationException($"Provider '{provider}' requires OpenClaw:Llm:Endpoint to run a smoke probe.");
 
         var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-        if (!string.IsNullOrWhiteSpace(apiKey))
+        if (!suppressAuthorization && !string.IsNullOrWhiteSpace(apiKey))
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         request.Content = BuildJsonContent(
             $$"""

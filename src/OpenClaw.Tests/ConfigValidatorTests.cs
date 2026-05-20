@@ -56,6 +56,53 @@ public sealed class ConfigValidatorTests
     }
 
     [Fact]
+    public void Validate_RootApertureBearerWithoutEndpointOrApiKey_ReturnsErrors()
+    {
+        var config = new GatewayConfig
+        {
+            Llm = new LlmProviderConfig
+            {
+                Provider = "aperture",
+                Model = "team/default",
+                AuthMode = "bearer"
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("Llm.Endpoint", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("Llm.ApiKey", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_ApertureProfileTailnetIdentityWithoutApiKey_IsAccepted()
+    {
+        var config = new GatewayConfig
+        {
+            Models = new ModelsConfig
+            {
+                Profiles =
+                [
+                    new ModelProfileConfig
+                    {
+                        Id = "aperture-default",
+                        Provider = "aperture",
+                        Model = "team/default",
+                        BaseUrl = "https://aperture.example.test/v1",
+                        AuthMode = "tailnet-identity"
+                    }
+                ],
+                DefaultProfile = "aperture-default"
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(errors, error => error.Contains("Models.Profiles.aperture-default.ApiKey", StringComparison.Ordinal));
+        Assert.DoesNotContain(errors, error => error.Contains("Models.Profiles.aperture-default.Endpoint", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_WebhookHmacEnabledWithoutSecret_ReturnsError()
     {
         var config = new GatewayConfig

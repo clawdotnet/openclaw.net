@@ -82,6 +82,7 @@ Integrations
   WhatsApp
   A2A
   External Coding Backends
+  Tailscale And Aperture
 
 Operations
   Security
