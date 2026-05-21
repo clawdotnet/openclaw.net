@@ -2090,7 +2090,7 @@
                     <input type="text" id="provider-model-input" class="input" placeholder="e.g. gpt-4o-mini">
                 </label>
                 <p style="color: var(--text-muted); font-size: 0.78rem;">
-                    Provider details are stored only in this browser's localStorage. Backend persistence is not wired yet.
+                    Provider settings persist in this browser. The API key is kept only for this session (sessionStorage) — you'll re-enter it after a restart. Backend persistence is not wired yet.
                 </p>
             </div>
             <div class="modal-actions">
@@ -2383,16 +2383,34 @@
             applyTheme(value);
         }
 
-        /* ---------- Provider setup (frontend-only; TODO: wire to backend later) ---------- */
+        /* ---------- Provider setup (frontend-only; TODO: wire to backend later) ----------
+           Security note: the API key is intentionally NOT persisted to
+           localStorage. Anything in localStorage is readable by any
+           JavaScript running on this origin (e.g. via an XSS bug), so we
+           split storage:
+             - non-secret metadata (provider, baseUrl, model) → localStorage
+             - the API key → sessionStorage (cleared when the tab closes)
+           Future backend wiring should store the key server-side instead. */
+        const PROVIDER_KEY_SESSION = 'openclaw_provider_key_session';
+
         function loadProviderSetup() {
-            return safeJsonParse(localStorage.getItem(PROVIDER_SETUP_KEY), null);
+            const meta = safeJsonParse(localStorage.getItem(PROVIDER_SETUP_KEY), null);
+            if (!meta) return null;
+            const key = sessionStorage.getItem(PROVIDER_KEY_SESSION) || null;
+            return { ...meta, key };
         }
 
         function saveProviderSetup(data) {
             // TODO: wire to backend provider endpoint once available.
-            // We never log the key; it is stored locally only.
+            // We never log the key; metadata persists locally, key is session-only.
+            const { key, ...meta } = data || {};
             try {
-                localStorage.setItem(PROVIDER_SETUP_KEY, JSON.stringify(data));
+                localStorage.setItem(PROVIDER_SETUP_KEY, JSON.stringify(meta));
+                if (key) {
+                    sessionStorage.setItem(PROVIDER_KEY_SESSION, key);
+                } else {
+                    sessionStorage.removeItem(PROVIDER_KEY_SESSION);
+                }
             } catch (_) { /* ignore quota errors */ }
         }
 
@@ -2427,9 +2445,23 @@
             if (firstRunProvider) firstRunProvider.textContent = label;
         }
 
-        /* ---------- Settings drawer ---------- */
+        /* ---------- Settings drawer ----------
+           Close uses a transition-end fallback timer; opening cancels any
+           pending close so a quick re-open can't be undone by the prior
+           hide. Focus is restored only after the drawer has actually been
+           hidden, so keyboard focus never lands behind a still-visible
+           modal during the closing animation. */
+        let settingsCloseTimer = null;
+        let pendingSettingsFocus = null;
+
         function openSettingsDrawer() {
             if (!settingsDrawer) return;
+            // Cancel a pending close so we never hide an open drawer.
+            if (settingsCloseTimer) {
+                clearTimeout(settingsCloseTimer);
+                settingsCloseTimer = null;
+            }
+            pendingSettingsFocus = null;
             lastFocusedBeforeModal = document.activeElement instanceof HTMLElement ? document.activeElement : null;
             settingsDrawer.hidden = false;
             settingsBackdrop.hidden = false;
@@ -2448,14 +2480,23 @@
             settingsDrawer.removeAttribute('data-open');
             settingsBackdrop.removeAttribute('data-open');
             settingsButton?.setAttribute('aria-expanded', 'false');
-            // hide after transition
-            setTimeout(() => {
+            pendingSettingsFocus = lastFocusedBeforeModal || settingsButton;
+            lastFocusedBeforeModal = null;
+            if (settingsCloseTimer) clearTimeout(settingsCloseTimer);
+            settingsCloseTimer = setTimeout(() => {
+                settingsCloseTimer = null;
+                // Re-check: if a reopen happened during the animation,
+                // the drawer is now data-open=true and we must not hide it.
+                if (settingsDrawer.getAttribute('data-open') === 'true') {
+                    pendingSettingsFocus = null;
+                    return;
+                }
                 settingsDrawer.hidden = true;
                 settingsBackdrop.hidden = true;
+                const target = pendingSettingsFocus;
+                pendingSettingsFocus = null;
+                target?.focus();
             }, 220);
-            const target = lastFocusedBeforeModal || settingsButton;
-            lastFocusedBeforeModal = null;
-            target?.focus();
         }
 
         /* ---------- Provider modal ---------- */
@@ -2491,7 +2532,11 @@
             updateEmptyState();
         }
 
-        /* ---------- Connection / auth banners ---------- */
+        /* ---------- Connection / auth banners ----------
+           These two banners are mutually exclusive: when auth is required
+           (token needed), we show the auth banner and suppress the
+           connection banner entirely so the user is not shown two
+           overlapping prompts. */
         function updateConnectionBanner() {
             if (!connectionBanner || !authBanner) return;
             const tokenRequired = latestChatState?.authMode === 'unauthorized';
@@ -2499,12 +2544,14 @@
             const action = connectionBannerAction;
             const text = connectionBannerText;
 
-            // Auth-required banner takes priority — only show when chat WS is open or auth-required.
             if (tokenRequired) {
                 authBanner.hidden = false;
-            } else {
-                authBanner.hidden = true;
+                banner.hidden = true;
+                if (action) action.hidden = true;
+                return;
             }
+
+            authBanner.hidden = true;
 
             if (connectionState === 'reconnecting') {
                 banner.hidden = false;
@@ -2516,8 +2563,6 @@
                 banner.className = 'banner banner--error';
                 text.textContent = 'Connection lost. Reconnect to continue.';
                 if (action) action.hidden = false;
-            } else if (connectionState === 'auth_required') {
-                banner.hidden = true;
             } else {
                 banner.hidden = true;
                 if (action) action.hidden = true;
@@ -4687,6 +4732,7 @@
         advancedResetUi?.addEventListener('click', () => {
             localStorage.removeItem(FIRST_RUN_DISMISSED_KEY);
             localStorage.removeItem(PROVIDER_SETUP_KEY);
+            sessionStorage.removeItem(PROVIDER_KEY_SESSION);
             renderProviderStatus();
             updateEmptyState();
             appendSystem('Local UI state reset.');
