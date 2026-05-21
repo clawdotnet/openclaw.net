@@ -30,6 +30,11 @@ internal static partial class AdminEndpoints
 {
     private const int MaxAdminJsonBodyBytes = 256 * 1024;
 
+    private static bool HasTailscaleIdentityHeaders(IHeaderDictionary headers)
+        => headers.Keys.Any(static key =>
+            key.StartsWith("Tailscale-User-", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("X-Tailscale-", StringComparison.OrdinalIgnoreCase));
+
     private sealed class AdminEndpointServices
     {
         public GatewayStartupContext Startup { get; init; } = null!;
@@ -274,7 +279,8 @@ internal static partial class AdminEndpoints
         SetupVerificationSnapshotStore setupVerificationSnapshots,
         GatewayMaintenanceRuntimeService maintenance,
         bool includeReliability,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool tailscaleIdentityHeadersPresent = false)
     {
         var policy = organizationPolicy.GetSnapshot();
         var publicBind = startup.IsNonLoopbackBind;
@@ -292,10 +298,18 @@ internal static partial class AdminEndpoints
             warnings.Add("Reverse proxy and TLS are recommended for public bind deployments.");
         if (string.IsNullOrWhiteSpace(startup.Config.AuthToken))
             warnings.Add("No auth token is configured.");
+        var tailscaleServe = await TailscaleServeAdvisor.BuildStatusAsync(
+            startup.Config,
+            new TailscaleServeProbeOptions
+            {
+                IdentityHeadersPresent = tailscaleIdentityHeadersPresent,
+                CheckCli = false
+            },
+            ct);
 
         var status = new SetupStatusResponse
         {
-            Profile = publicBind ? "public" : "local",
+            Profile = TailscaleServeAdvisor.IsTailscaleServeConfigured(startup.Config) ? "tailscale-serve" : publicBind ? "public" : "local",
             BindAddress = startup.Config.BindAddress,
             Port = startup.Config.Port,
             PublicBind = publicBind,
@@ -331,7 +345,8 @@ internal static partial class AdminEndpoints
                 providerSmokeRegistry),
             ChannelReadiness = MapChannelReadiness(ChannelReadinessEvaluator.Evaluate(startup.Config, startup.IsNonLoopbackBind)),
             Artifacts = BuildSetupArtifacts(deployDirectory),
-            Warnings = warnings
+            Warnings = warnings,
+            TailscaleServe = tailscaleServe
         };
 
         if (!includeReliability)
@@ -370,6 +385,7 @@ internal static partial class AdminEndpoints
             ChannelReadiness = status.ChannelReadiness,
             Artifacts = status.Artifacts,
             Warnings = status.Warnings,
+            TailscaleServe = status.TailscaleServe,
             Reliability = maintenanceReport.Reliability
         };
     }

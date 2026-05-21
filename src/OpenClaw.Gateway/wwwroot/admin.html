@@ -452,6 +452,20 @@
                 <pre id="setup-status-output">Loading…</pre>
                 <div id="setup-recommended-output" class="muted" style="margin-top:0.75rem;">Loading…</div>
                 <div id="setup-verify-output" class="muted" style="margin-top:0.75rem;">Verification has not been run yet.</div>
+                <div id="tailscale-serve-card" class="card" style="margin-top:0.9rem; display:none;">
+                    <div class="section-title">
+                        <div>
+                            <h3>Tailscale Serve</h3>
+                            <div class="muted">Private tailnet access while the gateway remains loopback-bound.</div>
+                        </div>
+                        <div class="actions">
+                            <button id="tailscale-copy-command-button" class="secondary">Copy Command</button>
+                            <button id="tailscale-run-doctor-button" class="secondary">Run Doctor</button>
+                            <a href="https://github.com/clawdotnet/openclaw.net/blob/main/docs/deployment/TAILSCALE.md" target="_blank" rel="noopener noreferrer">Docs</a>
+                        </div>
+                    </div>
+                    <pre id="tailscale-serve-output">Not configured.</pre>
+                </div>
                 <div class="card" style="margin-top:0.9rem;" data-min-role="admin">
                     <h3>First Operator Wizard</h3>
                     <div class="muted">Create the first admin account, mint an operator token, start a browser session, and optionally retire the bootstrap token.</div>
@@ -1427,6 +1441,9 @@
         const setupStatusOutput = document.getElementById('setup-status-output');
         const setupRecommendedOutput = document.getElementById('setup-recommended-output');
         const setupVerifyOutput = document.getElementById('setup-verify-output');
+        const tailscaleServeCard = document.getElementById('tailscale-serve-card');
+        const tailscaleServeOutput = document.getElementById('tailscale-serve-output');
+        const tailscaleCopyCommandButton = document.getElementById('tailscale-copy-command-button');
         const setupWizardOutput = document.getElementById('setup-wizard-output');
         const setupWizardInputs = {
             username: document.getElementById('setup-wizard-username-input'),
@@ -1660,6 +1677,7 @@
         let whatsAppSetupState = null;
         let whatsAppAuthState = new Map();
         let whatsAppAuthStream = null;
+        let tailscaleSuggestedCommand = '';
 
         async function api(url, options = {}) {
             const resp = await fetch(url, {
@@ -2116,6 +2134,7 @@
             if (!resp.ok) {
                 setupStatusOutput.textContent = `Setup status failed (${resp.status})`;
                 setupRecommendedOutput.textContent = 'Unable to load recommended actions.';
+                renderTailscaleServeStatus(null);
                 return;
             }
 
@@ -2136,6 +2155,7 @@
                 `Last verification: ${data.lastVerificationAtUtc ? `${data.lastVerificationStatus} via ${data.lastVerificationSource || 'unknown'} at ${data.lastVerificationAtUtc}` : 'not_run'}`
             ];
             setupStatusOutput.textContent = lines.join('\n');
+            renderTailscaleServeStatus(data.tailscaleServe);
 
             const actions = data.recommendedNextActions || [];
             if (!actions.length) {
@@ -2146,6 +2166,29 @@
                     <ul class="list">${actions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
                 `;
             }
+        }
+
+        function renderTailscaleServeStatus(status) {
+            if (!status) {
+                tailscaleServeCard.style.display = 'none';
+                tailscaleServeOutput.textContent = 'Not configured.';
+                tailscaleSuggestedCommand = '';
+                return;
+            }
+
+            tailscaleServeCard.style.display = '';
+            tailscaleSuggestedCommand = status.suggestedServeCommand || '';
+            const warnings = status.warnings || [];
+            const lines = [
+                `Deployment mode: ${status.mode || 'unknown'}`,
+                `Local gateway URL: ${status.localGatewayUrl || 'unknown'}`,
+                `Serve detected: ${status.serveDetected || 'unknown'}`,
+                `Identity headers present: ${Boolean(status.identityHeadersPresent)}`,
+                `Public bind status: ${Boolean(status.publicBind)}`,
+                `Last doctor warning: ${warnings.length ? warnings[0] : 'none'}`,
+                `Suggested command: ${tailscaleSuggestedCommand || 'n/a'}`
+            ];
+            tailscaleServeOutput.textContent = lines.join('\n');
         }
 
         async function loadSetupVerification() {
@@ -4375,6 +4418,7 @@
                 learningListOutput.textContent = 'Login required.';
                 learningDetailOutput.innerHTML = '<div class="muted">Login required.</div>';
                 setupStatusOutput.textContent = 'Login required.';
+                renderTailscaleServeStatus(null);
                 operatorAccountsOutput.textContent = 'Login required.';
                 organizationPolicyOutput.textContent = 'Login required.';
                 setupVerifyOutput.textContent = 'Login required.';
@@ -4462,6 +4506,19 @@
         refreshButton.addEventListener('click', refreshAll);
         document.getElementById('setup-status-refresh-button').addEventListener('click', loadSetupStatus);
         document.getElementById('setup-verify-button').addEventListener('click', loadSetupVerification);
+        document.getElementById('tailscale-run-doctor-button').addEventListener('click', loadDoctor);
+        tailscaleCopyCommandButton.addEventListener('click', async () => {
+            if (!tailscaleSuggestedCommand) {
+                showFlash('No Tailscale Serve command is available.', 'warn');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(tailscaleSuggestedCommand);
+                showFlash('Tailscale Serve command copied.', 'ok');
+            } catch {
+                showFlash('Copy failed. Select the command from the Tailscale Serve card.', 'warn');
+            }
+        });
         document.getElementById('setup-wizard-run-button').addEventListener('click', runFirstOperatorWizard);
         document.getElementById('operator-accounts-refresh-button').addEventListener('click', loadOperatorAccounts);
         document.getElementById('operator-account-create-button').addEventListener('click', createOperatorAccount);

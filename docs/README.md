@@ -36,7 +36,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [PULSE.md](PULSE.md) | Runtime Pulse scheduled heartbeat turns, `HEARTBEAT.md`, alert suppression, and operator controls. |
 | [governance/sidecar-pattern.md](governance/sidecar-pattern.md) | Optional central tool-governance middleware, sidecar flow, decisions, and audit fields. |
 | [governance/microsoft-agent-governance.md](governance/microsoft-agent-governance.md) | Microsoft Agent Governance sidecar integration notes and deployment cautions. |
-| [deployment/TAILSCALE.md](deployment/TAILSCALE.md) | Optional Tailscale private access and Aperture upstream provider routing guidance. |
+| [deployment/TAILSCALE.md](deployment/TAILSCALE.md) | Optional Tailscale Serve private runtime access guidance. |
 
 ## Testing and Evaluation
 
@@ -65,7 +65,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [COMPATIBILITY.md](COMPATIBILITY.md) | Supported upstream skill, plugin, and channel surface. |
 | [sandboxing.md](sandboxing.md) | Optional sandbox execution backends. |
 | [DOCKERHUB.md](DOCKERHUB.md) | Official container image reference. |
-| [deployment/TAILSCALE.md](deployment/TAILSCALE.md) | Tailscale Serve/Funnel patterns, Aperture profile setup, and security notes. |
+| [deployment/TAILSCALE.md](deployment/TAILSCALE.md) | Tailscale Serve/Funnel patterns and private runtime access security notes. |
 | [PRODUCTION_FIXES.md](PRODUCTION_FIXES.md) | Known production-readiness fixes and their verification. |
 
 ## Extending It

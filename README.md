@@ -163,19 +163,19 @@ Embedded video support is frame-based: OpenClaw samples local `video/*` inputs i
 
 > **Breaking change**: browser admin usage is account/session-first. Use named operator accounts for `/admin`, and use operator account tokens for Companion, CLI, API, and websocket clients.
 
-## Tailscale And Aperture Integration
+## Private Access With Tailscale Serve
 
-OpenClaw.NET can integrate with Tailscale for secure private runtime access and with Aperture by Tailscale for upstream model routing.
+OpenClaw.NET can be exposed privately inside a tailnet using Tailscale Serve while keeping the gateway bound to `127.0.0.1`.
 
-In this setup:
+This is useful for private access to `/chat`, `/admin`, `/mcp`, `/api/integration/*`, and `/ws` without binding the gateway publicly.
 
-- OpenClaw.NET remains the self-hosted agent runtime and gateway.
-- Tailscale provides private networking and identity-aware access.
-- Aperture optionally manages upstream provider routing, model access, telemetry, and spend controls.
+Use the guided helper for instructions:
 
-OpenClaw.NET still manages agents, tools, sessions, approvals, memory, channels, runtime governance, MCP, and OpenAI-compatible surfaces. Tailscale/Aperture support is optional and does not change the default local-first OpenClaw.NET experience.
+```bash
+openclaw setup tailscale serve
+```
 
-See [docs/deployment/TAILSCALE.md](docs/deployment/TAILSCALE.md) for Serve/Funnel deployment patterns, Aperture profile examples, and security notes.
+See [docs/deployment/TAILSCALE.md](docs/deployment/TAILSCALE.md).
 
 ## Security
 
@@ -198,7 +198,7 @@ The public documentation site is **[AgentQi.dev](https://agentqi.dev)**. The sou
 | [docs/mempalace-memory.md](docs/mempalace-memory.md) | Optional MemPalace.NET memory provider and temporal knowledge graph |
 | [docs/CANVAS_A2UI.md](docs/CANVAS_A2UI.md) | Supported Canvas and A2UI visual workspace behavior |
 | [docs/MODEL_PROFILES.md](docs/MODEL_PROFILES.md) | Provider-agnostic named model profiles (including Gemma) |
-| [docs/deployment/TAILSCALE.md](docs/deployment/TAILSCALE.md) | Optional Tailscale private access and Aperture provider routing |
+| [docs/deployment/TAILSCALE.md](docs/deployment/TAILSCALE.md) | Optional Tailscale Serve private access |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Supported upstream skill, plugin, and channel surface |
 | [SECURITY.md](SECURITY.md) | Hardening guidance for public deployments |
 

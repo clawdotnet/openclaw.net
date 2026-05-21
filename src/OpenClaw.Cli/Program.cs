@@ -92,7 +92,7 @@ internal static class Program
               openclaw tui [options]
               openclaw insights [options]
               openclaw setup [options]
-              openclaw setup <launch|service|status|verify|channel> [options]
+              openclaw setup <launch|service|status|verify|channel|provider|tailscale> [options]
               openclaw upgrade <check|rollback> [options]
               openclaw init [options]
               openclaw migrate [options]
@@ -146,6 +146,7 @@ internal static class Program
               openclaw tui
               openclaw insights
               openclaw setup
+              openclaw setup tailscale serve
               openclaw setup provider aperture --config ~/.openclaw/config/openclaw.settings.json --endpoint https://YOUR_APERTURE_ENDPOINT --model YOUR_APERTURE_MODEL_ROUTE --auth-mode bearer --env-var OPENCLAW_APERTURE_TOKEN
               openclaw upgrade check
               openclaw upgrade check --config ~/.openclaw/config/openclaw.settings.json --offline
@@ -346,7 +347,7 @@ internal static class Program
             openclaw setup
 
             Usage:
-              openclaw setup [--profile <local|public>] [--non-interactive]
+              openclaw setup [--profile <local|public|tailscale-serve>] [--non-interactive]
                               [--config <path>] [--workspace <path>] [--provider <id>] [--model <id>] [--model-preset <id>] [--api-key <secret-or-envref>]
                               [--bind <address>] [--port <n>] [--auth-token <token>]
                               [--docker-image <image>] [--opensandbox-endpoint <url>] [--ssh-host <host>] [--ssh-user <user>] [--ssh-key <path>]
@@ -355,6 +356,7 @@ internal static class Program
               openclaw setup status [--config <path>]
               openclaw setup verify [--config <path>] [--offline] [--require-provider] [--json]
               openclaw setup channel <telegram|slack|discord|teams|whatsapp> [--config <path>] [--non-interactive] [...]
+              openclaw setup tailscale serve [--config <path>] [--local-url <url>] [--non-interactive]
 
             Notes:
               - Prefer 'openclaw start' for the one-command local path.
@@ -366,6 +368,7 @@ internal static class Program
               - 'openclaw setup status' summarizes bind/auth posture and deploy artifact presence.
               - 'openclaw setup verify' runs the first-run verification checks without launching the gateway.
               - 'openclaw setup channel ...' updates an existing external config with channel-specific settings.
+              - 'openclaw setup tailscale serve' prints private tailnet Serve instructions without enabling public bind or changing providers.
               - Use --non-interactive for automation or CI.
               - Writes an external JSON config file plus an adjacent env example.
               - Prints gateway, companion, doctor, and admin posture commands.

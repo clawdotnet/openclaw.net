@@ -10,6 +10,11 @@ namespace OpenClaw.Gateway.Endpoints;
 
 internal static class DiagnosticsEndpoints
 {
+    private static bool HasTailscaleIdentityHeaders(IHeaderDictionary headers)
+        => headers.Keys.Any(static key =>
+            key.StartsWith("Tailscale-User-", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("X-Tailscale-", StringComparison.OrdinalIgnoreCase));
+
     public static void MapOpenClawDiagnosticsEndpoints(
         this WebApplication app,
         GatewayStartupContext startup,
@@ -154,7 +159,8 @@ internal static class DiagnosticsEndpoints
                 WorkspacePath = startup.Config.Tooling.WorkspaceRoot,
                 ModelDoctor = ModelDoctorEvaluator.Build(startup.Config, modelProfiles),
                 ModelProfiles = modelProfiles,
-                ProviderSmokeRegistry = providerSmokeRegistry
+                ProviderSmokeRegistry = providerSmokeRegistry,
+                TailscaleIdentityHeadersPresent = HasTailscaleIdentityHeaders(ctx.Request.Headers)
             }, ctx.RequestAborted);
 
             return Results.Json(report, CoreJsonContext.Default.DoctorReportResponse);
@@ -177,7 +183,8 @@ internal static class DiagnosticsEndpoints
                 WorkspacePath = startup.Config.Tooling.WorkspaceRoot,
                 ModelDoctor = ModelDoctorEvaluator.Build(startup.Config, modelProfiles),
                 ModelProfiles = modelProfiles,
-                ProviderSmokeRegistry = providerSmokeRegistry
+                ProviderSmokeRegistry = providerSmokeRegistry,
+                TailscaleIdentityHeadersPresent = HasTailscaleIdentityHeaders(ctx.Request.Headers)
             }, ctx.RequestAborted);
 
             return Results.Text(SetupVerificationService.RenderDoctorText(report), "text/plain; charset=utf-8");

@@ -21,6 +21,8 @@ public sealed class SetupVerificationRequest
     public IModelProfileRegistry? ModelProfiles { get; init; }
     public ProviderSmokeRegistry? ProviderSmokeRegistry { get; init; }
     public ConfigSourceDiagnostics? ConfigSources { get; init; }
+    public bool IncludeTailscaleServeCheck { get; init; }
+    public bool TailscaleIdentityHeadersPresent { get; init; }
 }
 
 public sealed class DoctorReportRequest
@@ -37,6 +39,8 @@ public sealed class DoctorReportRequest
     public IModelProfileRegistry? ModelProfiles { get; init; }
     public ProviderSmokeRegistry? ProviderSmokeRegistry { get; init; }
     public ConfigSourceDiagnostics? ConfigSources { get; init; }
+    public bool IncludeTailscaleServeCheck { get; init; }
+    public bool TailscaleIdentityHeadersPresent { get; init; }
 }
 
 public static class SetupVerificationService
@@ -49,7 +53,8 @@ public static class SetupVerificationService
         "browser_capability",
         "operator_readiness",
         "model_doctor",
-        "provider_smoke"
+        "provider_smoke",
+        "tailscale_serve"
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public static async Task<SetupVerificationResponse> VerifyAsync(SetupVerificationRequest request, CancellationToken ct)
@@ -67,7 +72,9 @@ public static class SetupVerificationService
             ModelDoctor = request.ModelDoctor,
             ModelProfiles = request.ModelProfiles,
             ProviderSmokeRegistry = request.ProviderSmokeRegistry,
-            ConfigSources = request.ConfigSources
+            ConfigSources = request.ConfigSources,
+            IncludeTailscaleServeCheck = request.IncludeTailscaleServeCheck,
+            TailscaleIdentityHeadersPresent = request.TailscaleIdentityHeadersPresent
         }, ct);
 
         return BuildSetupVerificationResponse(report);
@@ -101,6 +108,18 @@ public static class SetupVerificationService
         checks.AddRange(BuildMcpChecks(config));
         checks.AddRange(BuildChannelChecks(config));
         checks.AddRange(await BuildOpenSandboxChecksAsync(config, request.Offline, ct));
+        var tailscaleServeConfigured = TailscaleServeAdvisor.IsTailscaleServeConfigured(config);
+        var tailscaleServe = await TailscaleServeAdvisor.BuildStatusAsync(
+            config,
+            new TailscaleServeProbeOptions
+            {
+                ForceInclude = request.IncludeTailscaleServeCheck,
+                IdentityHeadersPresent = request.TailscaleIdentityHeadersPresent,
+                CheckCli = !request.Offline && (tailscaleServeConfigured || request.IncludeTailscaleServeCheck)
+            },
+            ct);
+        if (tailscaleServe is not null)
+            checks.Add(TailscaleServeAdvisor.BuildDoctorCheck(tailscaleServe, request.Offline));
         checks.Add(BuildStorageWritableCheck(config));
         checks.Add(BuildStorageFreeSpaceCheck(config));
 

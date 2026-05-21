@@ -39,6 +39,7 @@ public sealed class GatewayConfig
     public LearningConfig Learning { get; set; } = new();
     public WebhooksConfig Webhooks { get; set; } = new();
     public RoutingConfig Routing { get; set; } = new();
+    public DeploymentConfig Deployment { get; set; } = new();
     public TailscaleConfig Tailscale { get; set; } = new();
     public GmailPubSubConfig GmailPubSub { get; set; } = new();
     public MdnsConfig Mdns { get; set; } = new();
@@ -784,7 +785,15 @@ public sealed class AgentRouteConfig
     public string[] AllowedTools { get; set; } = [];
 }
 
-// ── Tailscale ───────────────────────────────────────────────────
+// ── Deployment ──────────────────────────────────────────────────
+
+public sealed class DeploymentConfig
+{
+    public string Mode { get; set; } = "local";
+    public bool PublicExposure { get; set; } = false;
+    public string? ReverseProxy { get; set; }
+    public string? ExpectedLocalUrl { get; set; }
+}
 
 public sealed class TailscaleConfig
 {

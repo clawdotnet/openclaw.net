@@ -19,6 +19,7 @@ public static class GatewaySetupProfileFactory
         List<string>? warnings = null)
     {
         var normalizedProfile = NormalizeProfile(profile);
+        var localLikeProfile = normalizedProfile is "local" or "tailscale-serve";
         var normalizedProvider = provider.Trim();
         var config = new GatewayConfig
         {
@@ -44,7 +45,7 @@ public static class GatewaySetupProfileFactory
             {
                 WorkspaceRoot = workspacePath,
                 WorkspaceOnly = true,
-                AllowShell = normalizedProfile == "local",
+                AllowShell = localLikeProfile,
                 EnableBrowserTool = false,
                 AllowedReadRoots = [workspacePath],
                 AllowedWriteRoots = [workspacePath],
@@ -57,6 +58,17 @@ public static class GatewaySetupProfileFactory
                 RequireRequesterMatchForHttpToolApproval = normalizedProfile == "public"
             }
         };
+
+        if (normalizedProfile == "tailscale-serve")
+        {
+            config.Deployment = new DeploymentConfig
+            {
+                Mode = "tailscale-serve",
+                PublicExposure = false,
+                ReverseProxy = "tailscale-serve",
+                ExpectedLocalUrl = GatewaySetupArtifacts.BuildReachableBaseUrl(bindAddress, port)
+            };
+        }
 
         ConfigureModelProfiles(config, normalizedProvider, model, modelPresetId, warnings);
 
@@ -79,8 +91,8 @@ public static class GatewaySetupProfileFactory
     public static string NormalizeProfile(string profile)
     {
         var normalized = profile.Trim().ToLowerInvariant();
-        if (normalized is not ("local" or "public"))
-            throw new ArgumentException("Invalid value for --profile (expected: local|public).");
+        if (normalized is not ("local" or "public" or "tailscale-serve"))
+            throw new ArgumentException("Invalid value for --profile (expected: local|public|tailscale-serve).");
         return normalized;
     }
 

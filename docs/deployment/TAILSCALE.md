@@ -1,180 +1,142 @@
-# Tailscale And Aperture Deployment
+# Tailscale Deployment
 
-This guide explains how OpenClaw.NET can fit with Tailscale and Aperture by Tailscale without changing the default local-first runtime.
+OpenClaw.NET can be exposed privately inside a tailnet using Tailscale Serve.
 
-## Overview
-
-OpenClaw.NET is the runtime and harness layer. It owns agents, tools, sessions, memory, approvals, MCP, channels, the Admin UI, runtime events, evidence, governance, and harness execution.
-
-Tailscale is the private networking and identity-aware access layer. It owns tailnet reachability, ACLs, remote connectivity, and optional secure transport to the runtime.
-
-Aperture is an optional upstream AI gateway layer. It owns model/provider routing, model access governance, usage telemetry, and spend or access controls. OpenClaw.NET does not become an Aperture replacement.
+In this setup, OpenClaw.NET remains the local agent runtime and gateway. Tailscale provides private network access and identity-aware connectivity between devices.
 
 ```text
-Client / Operator
+Tailnet user/device
     |
-Tailscale Serve / Tailnet
+Tailscale Serve
     |
-OpenClaw.NET
+http://127.0.0.1:18789
     |
-Aperture (optional provider profile)
-    |
-OpenAI / Anthropic / Gemini / others
+OpenClaw.NET Gateway
+    |-- /chat
+    |-- /admin
+    |-- /mcp
+    |-- /api/integration/*
+    |-- /ws
+    |-- /health
+    `-- /doctor/text
 ```
 
-## Recommended Deployment Patterns
+## Recommended Pattern: Loopback + Serve
 
-- Local-only development: keep OpenClaw.NET bound to `127.0.0.1`, use the normal setup flow, and do not enable Tailscale or Aperture unless you need them.
-- Private tailnet deployment: keep OpenClaw.NET loopback-bound and expose `/admin`, `/chat`, `/mcp`, and `/ws` through Tailscale Serve.
-- Team/shared deployment: use Tailscale ACLs for operator access, keep OpenClaw.NET auth and approvals enabled, and review `/doctor/text` before sharing.
-- Aperture-backed provider deployment: add an Aperture model profile while leaving existing Ollama, OpenAI, Anthropic, Gemini, Azure OpenAI, and OpenAI-compatible profiles unchanged.
-- Public demo deployment: prefer a short-lived, hardened deployment. Avoid exposing admin surfaces publicly unless auth, tool posture, webhook signatures, and public-bind checks are all clean.
-
-## Tailscale Serve
-
-Tailscale Serve is the preferred way to make a private OpenClaw.NET runtime available to operators on a tailnet.
-
-Recommended posture:
-
-- Keep OpenClaw.NET bound to loopback, for example `127.0.0.1:18789`.
-- Let Tailscale handle private tailnet access.
-- Keep OpenClaw.NET auth tokens, operator accounts, and tool approvals enabled.
-
-Example:
+Run OpenClaw.NET locally:
 
 ```bash
-tailscale serve 18789
+dotnet run --project src/OpenClaw.Cli -c Release -- start
 ```
 
-For explicit HTTPS serving, use the current Tailscale CLI syntax for your platform. OpenClaw.NET also has optional Serve/Funnel lifecycle support through `OpenClaw:Tailscale`, but it is disabled by default.
-
-Serve is safer than a public bind because the gateway is not directly exposed to the internet. Access is limited to tailnet reachability and Tailscale identity/ACL policy, while OpenClaw.NET still enforces its own runtime governance.
-
-## Tailscale Funnel
-
-Tailscale Funnel exposes a service publicly. Use it only for deliberate cases such as temporary demos or webhook testing.
-
-Do not use Funnel as the default admin exposure pattern.
-
-Before using Funnel:
-
-- Require OpenClaw.NET auth.
-- Disable unsafe tools or route them through hardened execution backends.
-- Validate webhook signatures for public webhooks.
-- Review `/doctor/text` and public-bind posture.
-- Keep exposure time short and revoke it when the demo or test is done.
-
-## Aperture By Tailscale
-
-Aperture is an optional upstream AI gateway. OpenClaw.NET remains responsible for agent runtime behavior, tools, sessions, approvals, memory, runtime governance, and evidence.
-
-Aperture can handle provider routing, model access, spend controls, usage telemetry, and identity-aware provider access. Treat it as an upstream provider route, not as a replacement for OpenClaw.NET runtime governance.
-
-## Example Aperture Configuration
-
-Use the existing model profile system. A bearer-token Aperture route can be configured as an OpenAI-compatible profile:
-
-```json
-{
-  "OpenClaw": {
-    "Models": {
-      "Profiles": [
-        {
-          "Id": "aperture-default",
-          "Provider": "openai-compatible",
-          "BaseUrl": "https://YOUR_APERTURE_ENDPOINT",
-          "Model": "YOUR_APERTURE_MODEL_ROUTE",
-          "ApiKey": "env:OPENCLAW_APERTURE_TOKEN",
-          "Tags": ["aperture", "remote", "optional"]
-        }
-      ]
-    }
-  }
-}
-```
-
-OpenClaw.NET also accepts `Provider = "aperture"` as a first-class alias for the same OpenAI-compatible transport:
-
-```json
-{
-  "OpenClaw": {
-    "Models": {
-      "Profiles": [
-        {
-          "Id": "aperture-default",
-          "Provider": "aperture",
-          "BaseUrl": "https://YOUR_APERTURE_ENDPOINT",
-          "Model": "YOUR_APERTURE_MODEL_ROUTE",
-          "AuthMode": "tailnet-identity",
-          "SendRequestMetadata": false,
-          "Tags": ["aperture", "remote", "optional"]
-        }
-      ]
-    }
-  }
-}
-```
-
-This profile is optional. Users can continue using Ollama, OpenAI, Anthropic, Gemini, Azure OpenAI, embedded local models, or other OpenAI-compatible endpoints normally.
-
-The CLI helper writes the same profile shape:
+or:
 
 ```bash
-openclaw setup provider aperture \
-  --config ~/.openclaw/config/openclaw.settings.json \
-  --endpoint https://YOUR_APERTURE_ENDPOINT \
-  --model YOUR_APERTURE_MODEL_ROUTE \
-  --auth-mode bearer \
-  --env-var OPENCLAW_APERTURE_TOKEN
+openclaw start
 ```
 
-For tailnet identity mode:
+OpenClaw.NET listens locally, usually at:
+
+```text
+http://127.0.0.1:18789
+```
+
+Then expose it privately:
 
 ```bash
-openclaw setup provider aperture \
-  --endpoint https://YOUR_APERTURE_ENDPOINT \
-  --model YOUR_APERTURE_MODEL_ROUTE \
-  --auth-mode tailnet-identity
+tailscale serve --bg http://127.0.0.1:18789
 ```
 
-## Tailscale Identity Headers
+Open the Tailscale-provided HTTPS URL from a device in your tailnet.
 
-Future OpenClaw.NET deployments may map Tailscale identity to operator identity, roles, or approval scopes. That is not enabled by default.
+Do not bind OpenClaw.NET publicly just to use Tailscale Serve. Keep the gateway loopback-bound and let Tailscale handle private tailnet reachability.
 
-Important trust boundaries:
+## Useful Paths
 
-- Only trust identity headers from a trusted Serve path or proxy boundary.
-- Do not accept identity headers from arbitrary public clients.
-- Keep OpenClaw.NET auth and approval policy active unless you have a reviewed deployment-specific replacement.
+- `/chat`
+- `/admin`
+- `/mcp`
+- `/api/integration/status`
+- `/ws`
+- `/health/ready`
+- `/doctor/text`
 
-OpenClaw.NET can optionally send request metadata to an Aperture profile, but this is disabled by default. When enabled, the metadata is limited to OpenClaw-owned routing context such as session id, actor id, channel id, profile id, run mode, and purpose.
+## Why Use Tailscale Serve?
 
-## Tailscale SSH Future Direction
+- Avoids direct public internet exposure.
+- Keeps OpenClaw.NET bound to `127.0.0.1`.
+- Works well for private admin access.
+- Supports tailnet ACLs.
+- Helps teams and multi-device development without changing provider, tool, memory, approval, or channel settings.
 
-Tailscale SSH is a future/experimental direction for OpenClaw.NET remote execution scenarios:
+## Serve vs Funnel
 
-- Approval-gated remote execution backends.
-- Private diagnostics on trusted machines.
-- Remote builders.
-- Remote agent workspaces.
+Tailscale Serve is for private tailnet access.
 
-Do not treat this as implemented runtime behavior unless a specific execution backend is configured and documented.
+Tailscale Funnel is for public internet exposure.
 
-## Security Notes
+Use Funnel only for:
 
-- Loopback-first remains the safest default.
-- Prefer Tailscale Serve over public binds for private operator access.
-- Funnel requires explicit hardening and should be temporary.
-- Tool approvals remain important even on a tailnet.
-- OpenClaw.NET governance, evidence, runtime events, and audit behavior still apply when Tailscale or Aperture is used.
-- Aperture/Tailscale metadata is never sent unless explicitly enabled.
+- short-lived demos
+- webhook testing
+- public integrations that require internet reachability
+
+Do not expose `/admin` through Funnel unless:
+
+- operator auth is enabled
+- public-bind hardening has been reviewed
+- unsafe tools are disabled or approval-gated
+- webhook signatures are configured
+- admin posture and doctor checks are clean
+
+Treat Funnel like any other public deployment path.
+
+## Suggested Setup Command
+
+Use the guided setup helper to print the recommended Serve command and validation steps:
+
+```bash
+openclaw setup tailscale serve
+```
+
+With an external config:
+
+```bash
+openclaw setup tailscale serve --config ~/.openclaw/config/openclaw.settings.json
+```
+
+The command does not enable Tailscale automatically and does not change provider config. It prints private-access instructions, checks the local Tailscale CLI when available, and reminds you to keep OpenClaw.NET loopback-bound.
+
+To generate a config that records the deployment profile while preserving local defaults:
+
+```bash
+openclaw setup --profile tailscale-serve --workspace ./workspace --provider openai --model gpt-4o --api-key env:MODEL_PROVIDER_KEY
+```
+
+The `tailscale-serve` profile behaves like the local setup profile and adds deployment metadata for status/doctor visibility. It does not set `OpenClaw:Tailscale:Enabled`.
+
+## Security Checklist
+
+- Keep OpenClaw.NET bound to `127.0.0.1` when using Serve.
+- Keep operator accounts enabled.
+- Use operator tokens for CLI, API, and WebSocket clients.
+- Do not put provider keys in URLs.
+- Do not disable approvals for high-risk tools.
+- Run `openclaw setup status`, `/doctor/text`, and `openclaw admin posture` before any public exposure.
+- Treat Funnel as public exposure.
+- Do not trust Tailscale identity headers for OpenClaw.NET operator auth unless a reviewed auth integration explicitly enables that behavior.
 
 ## Troubleshooting
 
-- Unreachable Aperture endpoint: verify the endpoint URL, tailnet reachability, DNS, and ACLs. `openclaw setup verify --offline` should still skip online probes rather than failing.
-- Tailnet not connected: run `tailscale status` and confirm the machine is logged in to the expected tailnet.
-- Serve misconfiguration: confirm Serve points to the OpenClaw.NET loopback port, usually `18789`.
-- Invalid model route: confirm the Aperture route name matches the route configured in Aperture.
-- Auth failures: for bearer mode, confirm `OPENCLAW_APERTURE_TOKEN` is set. For tailnet identity mode, confirm Aperture accepts requests without a bearer token from that tailnet identity.
-- Metadata missing: confirm `SendRequestMetadata` is enabled on the selected profile or `OpenClaw:Llm:SendRequestMetadata` is enabled for the root provider.
-- Metadata unexpected: disable `SendRequestMetadata`; it is opt-in and should stay off unless Aperture policy needs it.
+- `tailscale` command not found: install Tailscale or configure Serve manually from the Tailscale app.
+- Tailnet device cannot connect: run `tailscale status`, confirm both devices are in the same tailnet, and review ACLs.
+- Gateway not running: start OpenClaw.NET and check `http://127.0.0.1:18789/health/ready`.
+- Wrong local port: pass `--local-url http://127.0.0.1:<port>` to `openclaw setup tailscale serve` and update the Serve command.
+- `/admin` auth fails: confirm the browser session, bootstrap token, account token, or `OPENCLAW_AUTH_TOKEN` flow you intend to use.
+- `/ws` connection fails: use the Tailscale HTTPS URL, confirm auth headers/tokens, and verify WebSocket clients are allowed by the gateway config.
+- Mixed Funnel/Serve confusion: run `tailscale serve status` and confirm you are not using Funnel for admin surfaces unintentionally.
+- Identity headers not present: this is expected for many setups. OpenClaw.NET only reports them for visibility and does not use them for auth in this feature.
+
+## Aperture Note
+
+Aperture by Tailscale is a separate model gateway integration. Use Aperture when you want centralized model access, provider routing, usage telemetry, or spend controls. Use Tailscale Serve when you want private access to the OpenClaw.NET runtime itself.

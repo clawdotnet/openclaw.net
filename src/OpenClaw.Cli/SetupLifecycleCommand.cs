@@ -233,10 +233,14 @@ internal static class SetupLifecycleCommand
             warnings.Add("Reverse proxy and TLS are recommended for public bind deployments.");
         if (string.IsNullOrWhiteSpace(config.AuthToken))
             warnings.Add("No auth token is configured.");
+        var tailscaleServe = TailscaleServeAdvisor.BuildStatusAsync(
+            config,
+            new TailscaleServeProbeOptions(),
+            CancellationToken.None).GetAwaiter().GetResult();
 
         var status = new SetupStatusResponse
         {
-            Profile = publicBind ? "public" : "local",
+            Profile = TailscaleServeAdvisor.IsTailscaleServeConfigured(config) ? "tailscale-serve" : publicBind ? "public" : "local",
             BindAddress = config.BindAddress,
             Port = config.Port,
             PublicBind = publicBind,
@@ -271,7 +275,8 @@ internal static class SetupLifecycleCommand
                 publicBind),
             ChannelReadiness = [],
             Artifacts = BuildArtifactItems(GetDeployDirectory(configPath)),
-            Warnings = warnings
+            Warnings = warnings,
+            TailscaleServe = tailscaleServe
         };
 
         var maintenance = MaintenanceCoordinator.ScanAsync(config, new MaintenanceScanInputs
@@ -313,6 +318,7 @@ internal static class SetupLifecycleCommand
             ChannelReadiness = status.ChannelReadiness,
             Artifacts = status.Artifacts,
             Warnings = status.Warnings,
+            TailscaleServe = status.TailscaleServe,
             Reliability = maintenance.Reliability
         };
     }
@@ -639,6 +645,20 @@ internal static class SetupLifecycleCommand
         output.WriteLine($"Browser tool: registered={status.BrowserToolRegistered.ToString().ToLowerInvariant()} backend_configured={status.BrowserExecutionBackendConfigured.ToString().ToLowerInvariant()} reason={status.BrowserCapabilityReason}");
         output.WriteLine($"Last verification: {(status.LastVerificationAtUtc.HasValue ? $"{status.LastVerificationStatus} at {status.LastVerificationAtUtc:O} via {status.LastVerificationSource}" : SetupCheckStates.NotRun)}");
         output.WriteLine($"Bootstrap guidance: {status.BootstrapGuidanceState}");
+
+        if (status.TailscaleServe is not null)
+        {
+            output.WriteLine();
+            output.WriteLine("Tailscale Serve:");
+            output.WriteLine($"- Mode: {status.TailscaleServe.Mode}");
+            output.WriteLine($"- Local gateway: {status.TailscaleServe.LocalGatewayUrl}");
+            output.WriteLine($"- Suggested command: {status.TailscaleServe.SuggestedServeCommand}");
+            output.WriteLine($"- CLI detected: {status.TailscaleServe.TailscaleCliDetected.ToString().ToLowerInvariant()}");
+            output.WriteLine($"- Tailnet reachability: {status.TailscaleServe.TailnetReachability}");
+            output.WriteLine($"- Serve detected: {status.TailscaleServe.ServeDetected}");
+            output.WriteLine($"- Identity headers present: {status.TailscaleServe.IdentityHeadersPresent.ToString().ToLowerInvariant()}");
+            output.WriteLine($"- Public bind: {status.TailscaleServe.PublicBind.ToString().ToLowerInvariant()}");
+        }
 
         output.WriteLine();
         output.WriteLine("Artifacts:");

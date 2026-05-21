@@ -20,6 +20,14 @@ dotnet run --project src/OpenClaw.Cli -c Release -- start
 
 Use `--profile public` when you are preparing a reverse-proxy or internet-facing deployment. If `openclaw start` finds an existing config, it reuses it; if it needs to run setup, the flow writes an external config file, a matching env example, and prints the exact gateway launch, `--doctor`, and `openclaw admin posture` commands for that config.
 
+For private access from other devices in your tailnet, keep OpenClaw.NET bound to `127.0.0.1` and use Tailscale Serve. The guided helper prints the recommended Serve command and checks:
+
+```bash
+openclaw setup tailscale serve
+```
+
+See [deployment/TAILSCALE.md](deployment/TAILSCALE.md).
+
 Continue the supported bootstrap flow with:
 
 ```bash
@@ -220,7 +228,7 @@ openclaw setup provider aperture \
   --env-var OPENCLAW_APERTURE_TOKEN
 ```
 
-For private access and Aperture deployment guidance, see [deployment/TAILSCALE.md](deployment/TAILSCALE.md).
+For private runtime access, see [deployment/TAILSCALE.md](deployment/TAILSCALE.md). Aperture is a separate optional upstream model-gateway route.
 
 #### 9. Microsoft.Extensions.AI provider bridge
 - **Provider**: your dynamic provider id, for example `"my-meai-provider"`
