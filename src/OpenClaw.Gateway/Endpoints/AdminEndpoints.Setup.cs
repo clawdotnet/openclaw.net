@@ -285,11 +285,13 @@ internal static partial class AdminEndpoints
                 ? rawSessionId.ToString()
                 : null;
             var anonymize = GetQueryBool(ctx.Request, "anonymize") ?? false;
+            var includeEvidence = GetQueryBool(ctx.Request, "includeEvidence") ?? false;
             var bytes = await observability.ExportTrajectoryJsonlAsync(
                 GetQueryDateTimeOffset(ctx.Request, "fromUtc"),
                 GetQueryDateTimeOffset(ctx.Request, "toUtc"),
                 sessionId,
                 anonymize,
+                includeEvidence,
                 ctx.RequestAborted);
             var scope = string.IsNullOrWhiteSpace(sessionId) ? "range" : "session";
             var fileName = $"openclaw-trajectory-{scope}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.jsonl";

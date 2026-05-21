@@ -277,6 +277,123 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task EvidenceBundles_AdminApi_RequiresAuthAndSupportsCreateListDetailAndAppend()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+
+        var anonymousResponse = await harness.Client.GetAsync("/admin/harness/evidence");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var viewer = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "evidence-viewer",
+            Password = "viewer-pass",
+            Role = OperatorRoleNames.Viewer
+        });
+        var viewerToken = operatorAccounts.CreateToken(viewer.Id, new OperatorAccountTokenCreateRequest { Label = "viewer" });
+        Assert.NotNull(viewerToken);
+
+        using var viewerListRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/evidence");
+        viewerListRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken!.Token);
+        var viewerListResponse = await harness.Client.SendAsync(viewerListRequest);
+        Assert.Equal(HttpStatusCode.OK, viewerListResponse.StatusCode);
+
+        using var viewerCreateRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/evidence")
+        {
+            Content = JsonContent("""{"title":"viewer cannot create"}""")
+        };
+        viewerCreateRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken.Token);
+        var viewerCreateResponse = await harness.Client.SendAsync(viewerCreateRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, viewerCreateResponse.StatusCode);
+
+        var (cookie, csrfToken) = await LoginAsync(harness.Client, harness.AuthToken);
+        var bundleJson = JsonSerializer.Serialize(new EvidenceBundle
+        {
+            Id = "evb_admin",
+            Title = "Admin evidence",
+            Summary = "Manual evidence created through the admin API.",
+            SourceSessionId = "session-evidence",
+            HarnessContractId = "hctr_admin",
+            ChannelId = "web",
+            SenderId = "operator",
+            Confidence = EvidenceConfidenceLevels.Medium,
+            Tags = ["evidence"]
+        }, CoreJsonContext.Default.EvidenceBundle);
+
+        using var missingCsrfRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/evidence")
+        {
+            Content = JsonContent(bundleJson)
+        };
+        missingCsrfRequest.Headers.Add("Cookie", cookie);
+        var missingCsrfResponse = await harness.Client.SendAsync(missingCsrfRequest);
+        Assert.Equal(HttpStatusCode.Unauthorized, missingCsrfResponse.StatusCode);
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/evidence")
+        {
+            Content = JsonContent(bundleJson)
+        };
+        createRequest.Headers.Add("Cookie", cookie);
+        createRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var createResponse = await harness.Client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        using var createPayload = await ReadJsonAsync(createResponse);
+        Assert.True(createPayload.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(EvidenceConfidenceLevels.Medium, createPayload.RootElement.GetProperty("bundle").GetProperty("confidence").GetString());
+
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/evidence/evb_admin");
+        detailRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var detailResponse = await harness.Client.SendAsync(detailRequest);
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailPayload = await ReadJsonAsync(detailResponse);
+        Assert.Equal("evb_admin", detailPayload.RootElement.GetProperty("bundle").GetProperty("id").GetString());
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/evidence?sourceSessionId=session-evidence&harnessContractId=hctr_admin");
+        listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var listResponse = await harness.Client.SendAsync(listRequest);
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listPayload = await ReadJsonAsync(listResponse);
+        Assert.Single(listPayload.RootElement.GetProperty("items").EnumerateArray());
+
+        using var itemRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/evidence/evb_admin/items")
+        {
+            Content = JsonContent("""{"kind":"note","title":"Operator note","summary":"Reviewed output."}""")
+        };
+        itemRequest.Headers.Add("Cookie", cookie);
+        itemRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var itemResponse = await harness.Client.SendAsync(itemRequest);
+        Assert.Equal(HttpStatusCode.OK, itemResponse.StatusCode);
+        using var itemPayload = await ReadJsonAsync(itemResponse);
+        Assert.Single(itemPayload.RootElement.GetProperty("bundle").GetProperty("items").EnumerateArray());
+
+        using var checkRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/evidence/evb_admin/checks")
+        {
+            Content = JsonContent("""{"name":"Focused tests","status":"passed","summary":"Tests passed."}""")
+        };
+        checkRequest.Headers.Add("Cookie", cookie);
+        checkRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var checkResponse = await harness.Client.SendAsync(checkRequest);
+        Assert.Equal(HttpStatusCode.OK, checkResponse.StatusCode);
+        using var checkPayload = await ReadJsonAsync(checkResponse);
+        Assert.Single(checkPayload.RootElement.GetProperty("bundle").GetProperty("checks").EnumerateArray());
+
+        using var reviewRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/evidence/evb_admin/reviews")
+        {
+            Content = JsonContent("""{"reviewer":"operator","decision":"accepted","notes":"Looks good."}""")
+        };
+        reviewRequest.Headers.Add("Cookie", cookie);
+        reviewRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var reviewResponse = await harness.Client.SendAsync(reviewRequest);
+        Assert.Equal(HttpStatusCode.OK, reviewResponse.StatusCode);
+        using var reviewPayload = await ReadJsonAsync(reviewResponse);
+        Assert.Single(reviewPayload.RootElement.GetProperty("bundle").GetProperty("humanReviews").EnumerateArray());
+
+        var events = harness.Runtime.Operations.RuntimeEvents.Query(new RuntimeEventQuery { Component = "harness", Limit = 10 });
+        Assert.Contains(events, item => item.Action == "evidence_bundle_created" && item.CorrelationId == "evb_admin");
+        Assert.Contains(events, item => item.Action == "evidence_bundle_updated" && item.CorrelationId == "evb_admin");
+    }
+
+    [Fact]
     public async Task AuthOperatorToken_ExchangeAndRevocation_Work()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -891,6 +1008,27 @@ public sealed class GatewayAdminEndpointTests
         });
         session.History.Add(new ChatTurn { Role = "assistant", Content = "Done for alice@example.com" });
         await harness.Runtime.SessionManager.PersistAsync(session, CancellationToken.None);
+        var evidenceService = new EvidenceBundleService(
+            new FileEvidenceBundleStore(harness.StoragePath),
+            harness.Runtime.Operations.RuntimeEvents,
+            NullLogger<EvidenceBundleService>.Instance);
+        await evidenceService.CreateAsync(new EvidenceBundle
+        {
+            Id = "evb-trajectory",
+            Title = "Evidence for alice@example.com",
+            Summary = "Verified result with sk-testsecret123.",
+            SourceSessionId = "sess-trajectory",
+            Confidence = EvidenceConfidenceLevels.High,
+            Items =
+            [
+                new EvidenceItem
+                {
+                    Kind = EvidenceItemKinds.Note,
+                    Title = "Review",
+                    Summary = "Contains alice@example.com and sk-testsecret123."
+                }
+            ]
+        }, CancellationToken.None);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/trajectory/export?sessionId=sess-trajectory&anonymize=true");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -903,9 +1041,22 @@ public sealed class GatewayAdminEndpointTests
         Assert.Contains("\"type\":\"tool_call\"", jsonl);
         Assert.Contains("\"type\":\"tool_result\"", jsonl);
         Assert.Contains("anon_", jsonl);
+        Assert.DoesNotContain("\"type\":\"evidence_bundle\"", jsonl);
         Assert.DoesNotContain("alice@example.com", jsonl);
         Assert.DoesNotContain("sk-testsecret123", jsonl);
         Assert.DoesNotContain("secret-value", jsonl);
+
+        using var evidenceRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/trajectory/export?sessionId=sess-trajectory&anonymize=true&includeEvidence=true");
+        evidenceRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var evidenceResponse = await harness.Client.SendAsync(evidenceRequest);
+
+        evidenceResponse.EnsureSuccessStatusCode();
+        var evidenceJsonl = await evidenceResponse.Content.ReadAsStringAsync();
+        Assert.Contains("\"type\":\"evidence_bundle\"", evidenceJsonl);
+        Assert.Contains("\"evidenceBundle\"", evidenceJsonl);
+        Assert.DoesNotContain("alice@example.com", evidenceJsonl);
+        Assert.DoesNotContain("sk-testsecret123", evidenceJsonl);
+        Assert.DoesNotContain("secret-value", evidenceJsonl);
     }
 
     [Fact]
@@ -5176,6 +5327,7 @@ public sealed class GatewayAdminEndpointTests
             "/admin/observability/summary",
             "/admin/observability/series",
             "/admin/audit/export",
+            "/admin/trajectory/export",
             "/admin/providers",
             "/admin/providers/policies",
             "/admin/providers/{providerId}/circuit/reset",
@@ -5224,6 +5376,11 @@ public sealed class GatewayAdminEndpointTests
             "/admin/harness/contracts",
             "/admin/harness/contracts/{id}",
             "/admin/harness/contracts/{id}/status",
+            "/admin/harness/evidence",
+            "/admin/harness/evidence/{id}",
+            "/admin/harness/evidence/{id}/items",
+            "/admin/harness/evidence/{id}/checks",
+            "/admin/harness/evidence/{id}/reviews",
             "/admin/channels/auth",
             "/admin/channels/{channelId}/auth",
             "/admin/channels/{channelId}/auth/stream",

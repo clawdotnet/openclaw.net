@@ -39,6 +39,7 @@ Start here:
 - **Agent runtime** with tool execution, streaming, cancellation, retry, memory, and session support
 - **Gateway** with chat UI, admin UI, OpenAI-compatible endpoints, MCP, websocket, health, and diagnostics
 - **Passive Harness Contracts** for inspectable agent-work plans without changing default chat or approval behavior
+- **Passive Evidence Bundles** for inspectable run evidence, checks, risks, and human review without default runtime interception
 - **First-class optional Microsoft Agent Framework adapter** for `Runtime.Orchestrator=maf` without a special build
 - **Durable workflow delegation** through supported workflow backends such as `maf-durable-http`
 - **CLI and Companion** setup flows for source checkouts and desktop bundles
