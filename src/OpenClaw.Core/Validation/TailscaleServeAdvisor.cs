@@ -180,10 +180,7 @@ public static class TailscaleServeAdvisor
             return "false";
         }
 
-        if (text.Contains(localGatewayUrl, StringComparison.OrdinalIgnoreCase) ||
-            text.Contains("serve", StringComparison.OrdinalIgnoreCase) ||
-            text.Contains("https://", StringComparison.OrdinalIgnoreCase) ||
-            text.Contains("http://", StringComparison.OrdinalIgnoreCase))
+        if (ServeStatusTargetsLocalGateway(text, localGatewayUrl))
         {
             return "true";
         }
@@ -191,28 +188,52 @@ public static class TailscaleServeAdvisor
         return "unknown";
     }
 
+    private static bool ServeStatusTargetsLocalGateway(string text, string localGatewayUrl)
+    {
+        if (text.Contains(localGatewayUrl, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!Uri.TryCreate(localGatewayUrl, UriKind.Absolute, out var localGateway) ||
+            localGateway.Port <= 0)
+        {
+            return false;
+        }
+
+        var port = localGateway.Port.ToString(CultureInfo.InvariantCulture);
+        var targets = new[]
+        {
+            $"127.0.0.1:{port}",
+            $"localhost:{port}",
+            $"[::1]:{port}"
+        };
+
+        return targets.Any(target => text.Contains(target, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static async Task<TailscaleCommandResult> RunTailscaleAsync(string arguments, CancellationToken ct)
     {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "tailscale",
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+        Task<string>? stdoutTask = null;
+        Task<string>? stderrTask = null;
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(3));
-            using var process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "tailscale",
-                    Arguments = arguments,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-            };
 
             process.Start();
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(timeout.Token);
-            var stderrTask = process.StandardError.ReadToEndAsync(timeout.Token);
+            stdoutTask = process.StandardOutput.ReadToEndAsync(timeout.Token);
+            stderrTask = process.StandardError.ReadToEndAsync(timeout.Token);
             await process.WaitForExitAsync(timeout.Token);
             var stdout = await stdoutTask;
             var stderr = await stderrTask;
@@ -224,11 +245,81 @@ public static class TailscaleServeAdvisor
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
+            await KillProcessAsync(process);
+            await ObserveReadTaskAsync(stdoutTask);
+            await ObserveReadTaskAsync(stderrTask);
             return new TailscaleCommandResult(124, string.Empty, "tailscale command timed out");
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             return new TailscaleCommandResult(1, string.Empty, ex.Message);
+        }
+        catch (IOException ex)
+        {
+            return new TailscaleCommandResult(1, string.Empty, ex.Message);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return new TailscaleCommandResult(1, string.Empty, ex.Message);
+        }
+        finally
+        {
+            await KillProcessAsync(process);
+        }
+    }
+
+    private static async Task KillProcessAsync(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync();
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            // Best-effort cleanup for advisory CLI probes.
+        }
+        catch (InvalidOperationException)
+        {
+            // Best-effort cleanup for advisory CLI probes.
+        }
+        catch (Win32Exception)
+        {
+            // Best-effort cleanup for advisory CLI probes.
+        }
+        catch (NotSupportedException)
+        {
+            // Best-effort cleanup for advisory CLI probes.
+        }
+    }
+
+    private static async Task ObserveReadTaskAsync(Task<string>? task)
+    {
+        if (task is null)
+            return;
+
+        try
+        {
+            _ = await task;
+        }
+        catch (OperationCanceledException)
+        {
+            // Best-effort cleanup for advisory CLI probes.
+        }
+        catch (IOException)
+        {
+            // Best-effort cleanup for advisory CLI probes.
+        }
+        catch (ObjectDisposedException)
+        {
+            // Best-effort cleanup for advisory CLI probes.
+        }
+        catch (InvalidOperationException)
+        {
+            // Best-effort cleanup for advisory CLI probes.
         }
     }
 }

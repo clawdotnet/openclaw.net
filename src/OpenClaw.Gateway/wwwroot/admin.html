@@ -461,7 +461,7 @@
                         <div class="actions">
                             <button id="tailscale-copy-command-button" class="secondary">Copy Command</button>
                             <button id="tailscale-run-doctor-button" class="secondary">Run Doctor</button>
-                            <a href="https://github.com/clawdotnet/openclaw.net/blob/main/docs/deployment/TAILSCALE.md" target="_blank" rel="noreferrer">Docs</a>
+                            <a href="https://github.com/clawdotnet/openclaw.net/blob/main/docs/deployment/TAILSCALE.md" target="_blank" rel="noopener noreferrer">Docs</a>
                         </div>
                     </div>
                     <pre id="tailscale-serve-output">Not configured.</pre>
@@ -2134,6 +2134,7 @@
             if (!resp.ok) {
                 setupStatusOutput.textContent = `Setup status failed (${resp.status})`;
                 setupRecommendedOutput.textContent = 'Unable to load recommended actions.';
+                renderTailscaleServeStatus(null);
                 return;
             }
 
@@ -4417,6 +4418,7 @@
                 learningListOutput.textContent = 'Login required.';
                 learningDetailOutput.innerHTML = '<div class="muted">Login required.</div>';
                 setupStatusOutput.textContent = 'Login required.';
+                renderTailscaleServeStatus(null);
                 operatorAccountsOutput.textContent = 'Login required.';
                 organizationPolicyOutput.textContent = 'Login required.';
                 setupVerifyOutput.textContent = 'Login required.';
@@ -4512,7 +4514,7 @@
             }
             try {
                 await navigator.clipboard.writeText(tailscaleSuggestedCommand);
-                showFlash('Tailscale Serve command copied.', 'success');
+                showFlash('Tailscale Serve command copied.', 'ok');
             } catch {
                 showFlash('Copy failed. Select the command from the Tailscale Serve card.', 'warn');
             }

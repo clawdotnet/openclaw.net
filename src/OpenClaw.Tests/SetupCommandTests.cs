@@ -561,6 +561,34 @@ public sealed class SetupCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_TailscaleServeSetup_HelpAfterServePrintsUsage()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            using var input = new StringReader(string.Empty);
+
+            var exitCode = await SetupCommand.RunAsync(
+                ["tailscale", "serve", "--help"],
+                input,
+                output,
+                error,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(string.Empty, error.ToString());
+            Assert.Contains("Usage: openclaw setup tailscale serve", output.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_NonInteractiveTailscaleServeProfile_WritesLoopbackDeploymentMetadata()
     {
         var root = CreateTempRoot();

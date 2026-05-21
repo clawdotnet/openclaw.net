@@ -10,7 +10,7 @@ public sealed class DoctorCheckTests
     [Fact]
     public async Task RunAsync_Ipv6LoopbackDoesNotRequirePublicBindAuthToken()
     {
-        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-doctor-tests", Guid.NewGuid().ToString("N"));
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-doctor-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(storagePath);
 
         try
@@ -45,7 +45,7 @@ public sealed class DoctorCheckTests
     [Fact]
     public async Task BuildDoctorReport_IncludesConfigSourceDiagnosticsWithoutSecrets()
     {
-        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-doctor-tests", Guid.NewGuid().ToString("N"));
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-doctor-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(storagePath);
 
         try
@@ -103,7 +103,7 @@ public sealed class DoctorCheckTests
     [Fact]
     public async Task BuildDoctorReport_TailscaleServeOfflineMode_AddsAdvisorySkip()
     {
-        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-doctor-tests", Guid.NewGuid().ToString("N"));
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-doctor-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(storagePath);
 
         try
@@ -183,5 +183,55 @@ public sealed class DoctorCheckTests
         var roundTripped = JsonSerializer.Deserialize(json, CoreJsonContext.Default.TailscaleServeStatusResponse);
         Assert.Equal("tailscale-serve", roundTripped!.Mode);
         Assert.Equal("tailscale serve --bg http://127.0.0.1:18789", roundTripped.SuggestedServeCommand);
+    }
+
+    [Fact]
+    public async Task TailscaleServeAdvisor_CheckCliFalse_DoesNotRunCommandRunner()
+    {
+        var config = new GatewayConfig();
+
+        var status = await TailscaleServeAdvisor.BuildStatusAsync(
+            config,
+            new TailscaleServeProbeOptions
+            {
+                ForceInclude = true,
+                IdentityHeadersPresent = true,
+                CheckCli = false,
+                CommandRunner = (_, _) => throw new InvalidOperationException("CLI probe should not run.")
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(status);
+        Assert.False(status!.TailscaleCliDetected);
+        Assert.Equal("unknown", status.ServeDetected);
+        Assert.Equal("unknown", status.TailnetReachability);
+        Assert.Contains(status.Warnings, warning => warning.Contains("identity headers", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task TailscaleServeAdvisor_ServeStatusRequiresLocalGatewayTarget()
+    {
+        var config = new GatewayConfig
+        {
+            Deployment = new DeploymentConfig
+            {
+                Mode = "tailscale-serve",
+                ExpectedLocalUrl = "http://127.0.0.1:18789"
+            }
+        };
+
+        var status = await TailscaleServeAdvisor.BuildStatusAsync(
+            config,
+            new TailscaleServeProbeOptions
+            {
+                CommandRunner = (arguments, _) => Task.FromResult(arguments == "status"
+                    ? new TailscaleCommandResult(0, "connected", string.Empty)
+                    : new TailscaleCommandResult(0, "serve is configured for https://example.tailnet.ts.net", string.Empty))
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(status);
+        Assert.Equal("unknown", status!.ServeDetected);
+        Assert.Contains(status.Warnings, warning => warning.Contains("Serve status could not be confirmed", StringComparison.Ordinal));
     }
 }

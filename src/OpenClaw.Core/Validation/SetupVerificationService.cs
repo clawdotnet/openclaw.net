@@ -108,13 +108,14 @@ public static class SetupVerificationService
         checks.AddRange(BuildMcpChecks(config));
         checks.AddRange(BuildChannelChecks(config));
         checks.AddRange(await BuildOpenSandboxChecksAsync(config, request.Offline, ct));
+        var tailscaleServeConfigured = TailscaleServeAdvisor.IsTailscaleServeConfigured(config);
         var tailscaleServe = await TailscaleServeAdvisor.BuildStatusAsync(
             config,
             new TailscaleServeProbeOptions
             {
                 ForceInclude = request.IncludeTailscaleServeCheck,
                 IdentityHeadersPresent = request.TailscaleIdentityHeadersPresent,
-                CheckCli = !request.Offline
+                CheckCli = !request.Offline && (tailscaleServeConfigured || request.IncludeTailscaleServeCheck)
             },
             ct);
         if (tailscaleServe is not null)

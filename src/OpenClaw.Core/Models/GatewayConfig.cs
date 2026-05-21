@@ -785,7 +785,7 @@ public sealed class AgentRouteConfig
     public string[] AllowedTools { get; set; } = [];
 }
 
-// ── Tailscale ───────────────────────────────────────────────────
+// ── Deployment ──────────────────────────────────────────────────
 
 public sealed class DeploymentConfig
 {

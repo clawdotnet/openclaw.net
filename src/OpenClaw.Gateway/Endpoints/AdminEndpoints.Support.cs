@@ -302,7 +302,8 @@ internal static partial class AdminEndpoints
             startup.Config,
             new TailscaleServeProbeOptions
             {
-                IdentityHeadersPresent = tailscaleIdentityHeadersPresent
+                IdentityHeadersPresent = tailscaleIdentityHeadersPresent,
+                CheckCli = false
             },
             ct);
 

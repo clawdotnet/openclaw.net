@@ -515,7 +515,7 @@ internal static class SetupCommand
             helpRequested ||
             !string.Equals(args[0], "serve", StringComparison.OrdinalIgnoreCase))
         {
-            error.WriteLine("Usage: openclaw setup tailscale serve [--config <path>] [--local-url <url>] [--non-interactive]");
+            (helpRequested ? output : error).WriteLine("Usage: openclaw setup tailscale serve [--config <path>] [--local-url <url>] [--non-interactive]");
             return helpRequested ? 0 : 2;
         }
 
@@ -530,6 +530,12 @@ internal static class SetupCommand
             return 2;
         }
 
+        if (parsed.ShowHelp)
+        {
+            output.WriteLine("Usage: openclaw setup tailscale serve [--config <path>] [--local-url <url>] [--non-interactive]");
+            return 0;
+        }
+
         var explicitConfig = !string.IsNullOrWhiteSpace(parsed.GetOption("--config"));
         var configPath = Path.GetFullPath(GatewayConfigFile.ExpandPath(parsed.GetOption("--config") ?? DefaultConfigPath));
         GatewayConfig config;
@@ -541,7 +547,17 @@ internal static class SetupCommand
                 config = GatewayConfigFile.Load(configPath);
                 configLoaded = true;
             }
-            catch (Exception ex)
+            catch (JsonException ex)
+            {
+                error.WriteLine($"Could not load config {configPath}: {ex.Message}");
+                return 1;
+            }
+            catch (IOException ex)
+            {
+                error.WriteLine($"Could not load config {configPath}: {ex.Message}");
+                return 1;
+            }
+            catch (UnauthorizedAccessException ex)
             {
                 error.WriteLine($"Could not load config {configPath}: {ex.Message}");
                 return 1;
