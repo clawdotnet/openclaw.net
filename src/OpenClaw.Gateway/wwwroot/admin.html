@@ -1084,6 +1084,7 @@
                 <div class="filters">
                     <input id="trajectory-session-input" type="text" placeholder="Session ID (optional)">
                     <label><input id="trajectory-anonymize-input" type="checkbox"> Anonymize</label>
+                    <label><input id="trajectory-include-evidence-input" type="checkbox"> Include evidence</label>
                 </div>
                 <pre id="trajectory-export-output">Ready.</pre>
             </div>
@@ -1357,6 +1358,34 @@
             <div class="card">
                 <h2>Contract Detail</h2>
                 <div id="harness-detail-output" class="muted">Select a harness contract.</div>
+            </div>
+            <div class="card">
+                <div class="section-title">
+                    <div>
+                        <h2>Evidence Bundles</h2>
+                        <div class="muted">Inspect manual evidence records linked to sessions, contracts, proposals, and tool calls.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="evidence-refresh-button" class="secondary">Reload</button>
+                    </div>
+                </div>
+                <div class="filters">
+                    <input id="evidence-session-input" type="text" placeholder="Session ID">
+                    <input id="evidence-contract-input" type="text" placeholder="Contract ID">
+                    <select id="evidence-confidence-input">
+                        <option value="">All confidence</option>
+                        <option value="unknown">Unknown</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                    <input id="evidence-tag-input" type="text" placeholder="Tag filter">
+                </div>
+                <div id="evidence-list-output" class="muted">Loading…</div>
+            </div>
+            <div class="card">
+                <h2>Evidence Detail</h2>
+                <div id="evidence-detail-output" class="muted">Select an evidence bundle.</div>
             </div>
         </section>
 
@@ -2110,6 +2139,7 @@
         const auditExportOutput = document.getElementById('audit-export-output');
         const trajectorySessionInput = document.getElementById('trajectory-session-input');
         const trajectoryAnonymizeInput = document.getElementById('trajectory-anonymize-input');
+        const trajectoryIncludeEvidenceInput = document.getElementById('trajectory-include-evidence-input');
         const trajectoryExportOutput = document.getElementById('trajectory-export-output');
         const migrationReportInput = document.getElementById('migration-report-input');
         const migrationReportOutput = document.getElementById('migration-report-output');
@@ -2190,6 +2220,12 @@
         const harnessStatusInput = document.getElementById('harness-status-input');
         const harnessRiskInput = document.getElementById('harness-risk-input');
         const harnessTagInput = document.getElementById('harness-tag-input');
+        const evidenceListOutput = document.getElementById('evidence-list-output');
+        const evidenceDetailOutput = document.getElementById('evidence-detail-output');
+        const evidenceSessionInput = document.getElementById('evidence-session-input');
+        const evidenceContractInput = document.getElementById('evidence-contract-input');
+        const evidenceConfidenceInput = document.getElementById('evidence-confidence-input');
+        const evidenceTagInput = document.getElementById('evidence-tag-input');
         const memorySearchInput = document.getElementById('memory-search-input');
         const memoryPrefixInput = document.getElementById('memory-prefix-input');
         const memoryClassFilterInput = document.getElementById('memory-class-filter-input');
@@ -2314,6 +2350,10 @@
             detail: null
         };
         let harnessState = {
+            selectedId: null,
+            detail: null
+        };
+        let evidenceState = {
             selectedId: null,
             detail: null
         };
@@ -3167,6 +3207,7 @@
             const sessionId = trajectorySessionInput.value.trim();
             if (sessionId) params.set('sessionId', sessionId);
             if (trajectoryAnonymizeInput.checked) params.set('anonymize', 'true');
+            if (trajectoryIncludeEvidenceInput.checked) params.set('includeEvidence', 'true');
             const url = `/admin/trajectory/export${params.toString() ? `?${params.toString()}` : ''}`;
             const resp = await fetch(url, { credentials: 'same-origin' });
             if (!resp.ok) {
@@ -4512,6 +4553,85 @@
             renderHarnessDetail(data.contract);
         }
 
+        async function loadEvidenceBundles() {
+            const params = new URLSearchParams();
+            if (evidenceSessionInput.value.trim()) params.set('sourceSessionId', evidenceSessionInput.value.trim());
+            if (evidenceContractInput.value.trim()) params.set('harnessContractId', evidenceContractInput.value.trim());
+            if (evidenceConfidenceInput.value) params.set('confidence', evidenceConfidenceInput.value);
+            if (evidenceTagInput.value.trim()) params.set('tag', evidenceTagInput.value.trim());
+            const query = params.toString();
+            const { resp, data } = await api(`/admin/harness/evidence${query ? `?${query}` : ''}`);
+            if (!resp.ok) {
+                evidenceListOutput.textContent = `Evidence bundles request failed (${resp.status})`;
+                return;
+            }
+
+            const items = data.items || [];
+            if (!items.length) {
+                evidenceListOutput.textContent = 'No evidence bundles matched the current filters.';
+                return;
+            }
+
+            evidenceListOutput.innerHTML = items.map(item => `
+                <div class="card" style="margin-bottom:0.75rem;">
+                    <strong>${escapeHtml(item.title || item.id)}</strong>
+                    <div class="muted">Confidence ${escapeHtml(item.confidence || 'unknown')} · Items ${(item.items || []).length} · Checks ${(item.checks || []).length}</div>
+                    <div class="muted">${escapeHtml(item.summary || '')}</div>
+                    <div class="muted">Session: ${escapeHtml(item.sourceSessionId || 'none')} · Contract: ${escapeHtml(item.harnessContractId || 'none')}</div>
+                    <div class="muted">Updated: ${escapeHtml(formatDateTime(item.updatedAtUtc || item.createdAtUtc))}</div>
+                    <div class="actions" style="margin-top:0.75rem;">
+                        <button data-evidence-inspect="${encodeURIComponent(item.id)}">Inspect</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderEvidenceBlock(label, values) {
+            const items = values || [];
+            if (!items.length) return '';
+            return `<h3>${escapeHtml(label)}</h3><pre>${escapeHtml(JSON.stringify(items, null, 2))}</pre>`;
+        }
+
+        function renderEvidenceDetail(bundle) {
+            evidenceState.detail = bundle;
+            if (!bundle) {
+                evidenceDetailOutput.innerHTML = '<div class="muted">Select an evidence bundle.</div>';
+                return;
+            }
+
+            evidenceDetailOutput.innerHTML = `
+                <div class="stack">
+                    <div>
+                        <strong>${escapeHtml(bundle.title || bundle.id)}</strong>
+                        <div class="muted">Confidence ${escapeHtml(bundle.confidence || 'unknown')} · Session ${escapeHtml(bundle.sourceSessionId || 'none')}</div>
+                        <div class="muted">Contract: ${escapeHtml(bundle.harnessContractId || 'none')} · Proposal: ${escapeHtml(bundle.learningProposalId || 'none')}</div>
+                        <div class="muted">Tool call: ${escapeHtml(bundle.toolCallId || 'none')} · Automation: ${escapeHtml(bundle.automationRunId || 'none')}</div>
+                        <div class="muted">Created: ${escapeHtml(formatDateTime(bundle.createdAtUtc))} · Updated: ${escapeHtml(formatDateTime(bundle.updatedAtUtc))}</div>
+                        <div class="muted">${escapeHtml(bundle.summary || '')}</div>
+                    </div>
+                    ${renderEvidenceBlock('Items', bundle.items)}
+                    ${renderEvidenceBlock('Checks', bundle.checks)}
+                    ${renderEvidenceBlock('Risks', bundle.risks)}
+                    ${renderEvidenceBlock('Assumptions', bundle.assumptions)}
+                    ${renderEvidenceBlock('Untested Areas', bundle.untestedAreas)}
+                    ${renderEvidenceBlock('Human Reviews', bundle.humanReviews)}
+                    <pre>${escapeHtml(JSON.stringify(bundle, null, 2))}</pre>
+                </div>
+            `;
+        }
+
+        async function loadEvidenceBundleDetail(id) {
+            if (!id) return;
+            evidenceState.selectedId = id;
+            const { resp, data } = await api(`/admin/harness/evidence/${encodeURIComponent(id)}`);
+            if (!resp.ok) {
+                evidenceDetailOutput.innerHTML = `<div class="muted">Evidence bundle detail failed (${resp.status})</div>`;
+                return;
+            }
+
+            renderEvidenceDetail(data.bundle);
+        }
+
         async function loadDoctor() {
             const { resp, data } = await api('/doctor/text');
             doctorOutput.textContent = resp.ok ? data : `Doctor request failed (${resp.status})`;
@@ -5186,6 +5306,7 @@
                 loadAutomations(),
                 loadLearningProposals(),
                 loadHarnessContracts(),
+                loadEvidenceBundles(),
                 loadSettings(),
                 loadWhatsAppSetup(),
                 loadPairing(),
@@ -5293,6 +5414,16 @@
             if (event.key !== 'Enter') return;
             await loadHarnessContracts();
         });
+        document.getElementById('evidence-refresh-button').addEventListener('click', loadEvidenceBundles);
+        [evidenceConfidenceInput].forEach(input => {
+            input.addEventListener('change', loadEvidenceBundles);
+        });
+        [evidenceSessionInput, evidenceContractInput, evidenceTagInput].forEach(input => {
+            input.addEventListener('keydown', async (event) => {
+                if (event.key !== 'Enter') return;
+                await loadEvidenceBundles();
+            });
+        });
         document.getElementById('memory-refresh-button').addEventListener('click', loadMemoryNotes);
         document.getElementById('memory-search-button').addEventListener('click', loadMemoryNotes);
         document.getElementById('memory-load-button').addEventListener('click', async () => {
@@ -5395,6 +5526,16 @@
             if (!encodedId) return;
 
             await loadHarnessContractDetail(decodeURIComponent(encodedId));
+        });
+
+        evidenceListOutput.addEventListener('click', async (event) => {
+            const button = event.target.closest('button[data-evidence-inspect]');
+            if (!button) return;
+
+            const encodedId = button.getAttribute('data-evidence-inspect');
+            if (!encodedId) return;
+
+            await loadEvidenceBundleDetail(decodeURIComponent(encodedId));
         });
 
         memoryNotesOutput.addEventListener('click', async (event) => {

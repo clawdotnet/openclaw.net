@@ -67,6 +67,17 @@ internal static class FeatureFallbackServices
                services.GetService<RuntimeEventStore>()
                ?? new RuntimeEventStore(startup.Config.Memory.StoragePath, NullLogger<RuntimeEventStore>.Instance),
                NullLogger<HarnessContractService>.Instance);
+
+    public static EvidenceBundleService ResolveEvidenceBundleService(
+        GatewayStartupContext startup,
+        IServiceProvider services)
+        => services.GetService<EvidenceBundleService>()
+           ?? new EvidenceBundleService(
+               services.GetService<IEvidenceBundleStore>()
+               ?? new FileEvidenceBundleStore(startup.Config.Memory.StoragePath),
+               services.GetService<RuntimeEventStore>()
+               ?? new RuntimeEventStore(startup.Config.Memory.StoragePath, NullLogger<RuntimeEventStore>.Instance),
+               NullLogger<EvidenceBundleService>.Instance);
 }
 
 internal sealed class EmptySessionSearchStore : ISessionSearchStore

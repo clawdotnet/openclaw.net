@@ -27,6 +27,7 @@ internal sealed class AdminObservabilityService
     private readonly ToolUsageTracker _toolUsage;
     private readonly ISessionAdminStore _sessionAdminStore;
     private readonly IRedactionPipeline _redaction;
+    private readonly EvidenceBundleService? _evidenceBundles;
 
     public AdminObservabilityService(
         GatewayStartupContext startup,
@@ -35,7 +36,8 @@ internal sealed class AdminObservabilityService
         OrganizationPolicyService organizationPolicy,
         ToolUsageTracker toolUsage,
         ISessionAdminStore sessionAdminStore,
-        IRedactionPipeline? redaction = null)
+        IRedactionPipeline? redaction = null,
+        EvidenceBundleService? evidenceBundles = null)
     {
         _startup = startup;
         _runtime = runtime;
@@ -44,6 +46,7 @@ internal sealed class AdminObservabilityService
         _toolUsage = toolUsage;
         _sessionAdminStore = sessionAdminStore;
         _redaction = redaction ?? new NoopRedactionPipeline();
+        _evidenceBundles = evidenceBundles;
     }
 
     public async Task<OperatorInsightsResponse> BuildInsightsAsync(
@@ -295,6 +298,7 @@ internal sealed class AdminObservabilityService
         DateTimeOffset? toUtc,
         string? sessionId,
         bool anonymize,
+        bool includeEvidence,
         CancellationToken ct)
     {
         DateTimeOffset startUtc;
@@ -309,11 +313,15 @@ internal sealed class AdminObservabilityService
             (startUtc, endUtc, _) = NormalizeRange(fromUtc, toUtc, defaultWindow: TimeSpan.FromHours(24), applyRetention: false);
         }
 
-        var sessions = await ListTrajectorySessionsAsync(sessionId, ct);
+        var sessions = (await ListTrajectorySessionsAsync(sessionId, ct))
+            .OrderBy(static item => item.CreatedAt)
+            .ThenBy(static item => item.Id, StringComparer.Ordinal)
+            .ToArray();
+        var evidenceBySession = await LoadEvidenceBySessionAsync(sessions, startUtc, endUtc, includeEvidence, ct);
         await using var ms = new MemoryStream();
         await using (var writer = new StreamWriter(ms, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), leaveOpen: true))
         {
-            foreach (var session in sessions.OrderBy(static item => item.CreatedAt).ThenBy(static item => item.Id, StringComparer.Ordinal))
+            foreach (var session in sessions)
             {
                 ct.ThrowIfCancellationRequested();
 
@@ -334,10 +342,55 @@ internal sealed class AdminObservabilityService
                         await WriteTrajectoryRecordAsync(writer, BuildToolResultTrajectoryRecord(session, turn, i, toolCall, anonymize), ct);
                     }
                 }
+
+                if (evidenceBySession.TryGetValue(session.Id, out var evidence))
+                {
+                    foreach (var bundle in evidence)
+                    {
+                        await WriteTrajectoryRecordAsync(writer, BuildEvidenceTrajectoryRecord(session, bundle, anonymize), ct);
+                    }
+                }
             }
         }
 
         return ms.ToArray();
+    }
+
+    private async Task<IReadOnlyDictionary<string, IReadOnlyList<EvidenceBundle>>> LoadEvidenceBySessionAsync(
+        IReadOnlyList<Session> sessions,
+        DateTimeOffset startUtc,
+        DateTimeOffset endUtc,
+        bool includeEvidence,
+        CancellationToken ct)
+    {
+        if (!includeEvidence || _evidenceBundles is null || sessions.Count == 0)
+            return new Dictionary<string, IReadOnlyList<EvidenceBundle>>(StringComparer.Ordinal);
+
+        var sessionIds = sessions
+            .Select(static session => session.Id)
+            .Where(static id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
+        if (sessionIds.Count == 0)
+            return new Dictionary<string, IReadOnlyList<EvidenceBundle>>(StringComparer.Ordinal);
+
+        var query = new EvidenceBundleListQuery
+        {
+            SourceSessionId = sessions.Count == 1 ? sessions[0].Id : null,
+            CreatedFromUtc = startUtc == DateTimeOffset.MinValue ? null : startUtc,
+            CreatedToUtc = endUtc,
+            Limit = 5000
+        };
+        var evidence = await _evidenceBundles.ListAsync(query, ct);
+        return evidence
+            .Where(bundle => !string.IsNullOrWhiteSpace(bundle.SourceSessionId) && sessionIds.Contains(bundle.SourceSessionId))
+            .GroupBy(static bundle => bundle.SourceSessionId!, StringComparer.Ordinal)
+            .ToDictionary(
+                static group => group.Key,
+                static group => (IReadOnlyList<EvidenceBundle>)group
+                    .OrderBy(static item => item.CreatedAtUtc)
+                    .ThenBy(static item => item.Id, StringComparer.Ordinal)
+                    .ToArray(),
+                StringComparer.Ordinal);
     }
 
     private IReadOnlyList<ApprovalHistoryEntry> ReadApprovalHistory(DateTimeOffset startUtc, DateTimeOffset endUtc)
@@ -469,6 +522,153 @@ internal sealed class AdminObservabilityService
             FailureMessage = ExportText(toolCall.FailureMessage, anonymize, _redaction),
             Anonymized = anonymize
         };
+
+    private TrajectoryExportRecord BuildEvidenceTrajectoryRecord(Session session, EvidenceBundle bundle, bool anonymize)
+        => new()
+        {
+            Type = "evidence_bundle",
+            TimestampUtc = bundle.UpdatedAtUtc == default ? bundle.CreatedAtUtc : bundle.UpdatedAtUtc,
+            SessionId = ExportSessionId(session.Id, anonymize),
+            ChannelId = ExportSessionId(session.ChannelId, anonymize),
+            SenderId = ExportSessionId(session.SenderId, anonymize),
+            TurnIndex = -1,
+            EvidenceBundle = ExportEvidenceBundle(bundle, anonymize),
+            Anonymized = anonymize
+        };
+
+    private EvidenceBundle ExportEvidenceBundle(EvidenceBundle bundle, bool anonymize)
+    {
+        if (!anonymize)
+            return bundle;
+
+        return new EvidenceBundle
+        {
+            Id = ExportSessionId(bundle.Id, anonymize),
+            Title = ExportText(bundle.Title, anonymize, _redaction) ?? "",
+            Summary = ExportText(bundle.Summary, anonymize, _redaction) ?? "",
+            CreatedAtUtc = bundle.CreatedAtUtc,
+            UpdatedAtUtc = bundle.UpdatedAtUtc,
+            SourceSessionId = ExportOptionalId(bundle.SourceSessionId, anonymize),
+            HarnessContractId = ExportOptionalId(bundle.HarnessContractId, anonymize),
+            LearningProposalId = ExportOptionalId(bundle.LearningProposalId, anonymize),
+            ToolCallId = ExportOptionalId(bundle.ToolCallId, anonymize),
+            AutomationRunId = ExportOptionalId(bundle.AutomationRunId, anonymize),
+            ActorId = ExportOptionalId(bundle.ActorId, anonymize),
+            ChannelId = ExportOptionalId(bundle.ChannelId, anonymize),
+            SenderId = ExportOptionalId(bundle.SenderId, anonymize),
+            Confidence = bundle.Confidence,
+            Items = bundle.Items.Select(item => ExportEvidenceItem(item, anonymize)).ToArray(),
+            Checks = bundle.Checks.Select(check => ExportEvidenceCheck(check, anonymize)).ToArray(),
+            Risks = bundle.Risks.Select(risk => ExportEvidenceRisk(risk, anonymize)).ToArray(),
+            Assumptions = bundle.Assumptions.Select(assumption => new EvidenceAssumption
+            {
+                Id = ExportSessionId(assumption.Id, anonymize),
+                Text = ExportText(assumption.Text, anonymize, _redaction) ?? "",
+                Verified = assumption.Verified,
+                EvidenceItemId = ExportOptionalId(assumption.EvidenceItemId, anonymize)
+            }).ToArray(),
+            UntestedAreas = bundle.UntestedAreas.Select(area => new EvidenceUntestedArea
+            {
+                Id = ExportSessionId(area.Id, anonymize),
+                Description = ExportText(area.Description, anonymize, _redaction) ?? "",
+                Reason = ExportText(area.Reason, anonymize, _redaction),
+                RiskLevel = area.RiskLevel
+            }).ToArray(),
+            HumanReviews = bundle.HumanReviews.Select(review => new EvidenceHumanReview
+            {
+                Reviewer = ExportOptionalId(review.Reviewer, anonymize),
+                Decision = ExportText(review.Decision, anonymize, _redaction),
+                Notes = ExportText(review.Notes, anonymize, _redaction),
+                ReviewedAtUtc = review.ReviewedAtUtc
+            }).ToArray(),
+            Tags = bundle.Tags
+                .Select(tag => ExportText(tag, anonymize, _redaction))
+                .Where(static tag => !string.IsNullOrWhiteSpace(tag))
+                .Select(static tag => tag!)
+                .ToArray(),
+            Metadata = ExportEvidenceMetadata(bundle.Metadata, anonymize)
+        };
+    }
+
+    private EvidenceItem ExportEvidenceItem(EvidenceItem item, bool anonymize)
+        => new()
+        {
+            Id = ExportSessionId(item.Id, anonymize),
+            Kind = item.Kind,
+            Title = ExportText(item.Title, anonymize, _redaction) ?? "",
+            Summary = ExportText(item.Summary, anonymize, _redaction) ?? "",
+            Source = ExportEvidenceSource(item.Source, anonymize),
+            CreatedAtUtc = item.CreatedAtUtc,
+            ToolName = item.ToolName,
+            ToolCallId = ExportOptionalId(item.ToolCallId, anonymize),
+            RuntimeEventId = ExportOptionalId(item.RuntimeEventId, anonymize),
+            AuditEventId = ExportOptionalId(item.AuditEventId, anonymize),
+            Status = item.Status,
+            InputSummary = ExportText(item.InputSummary, anonymize, _redaction),
+            OutputSummary = ExportText(item.OutputSummary, anonymize, _redaction),
+            ErrorSummary = ExportText(item.ErrorSummary, anonymize, _redaction),
+            RedactedPayload = ExportText(item.RedactedPayload, anonymize, _redaction),
+            Metadata = ExportStringDictionary(item.Metadata, anonymize)
+        };
+
+    private EvidenceCheck ExportEvidenceCheck(EvidenceCheck check, bool anonymize)
+        => new()
+        {
+            Id = ExportSessionId(check.Id, anonymize),
+            Name = ExportText(check.Name, anonymize, _redaction) ?? "",
+            Kind = check.Kind,
+            Required = check.Required,
+            Status = check.Status,
+            StartedAtUtc = check.StartedAtUtc,
+            CompletedAtUtc = check.CompletedAtUtc,
+            Summary = ExportText(check.Summary, anonymize, _redaction) ?? "",
+            Details = ExportText(check.Details, anonymize, _redaction),
+            Command = ExportText(check.Command, anonymize, _redaction),
+            ExitCode = check.ExitCode,
+            Error = ExportText(check.Error, anonymize, _redaction)
+        };
+
+    private EvidenceRisk ExportEvidenceRisk(EvidenceRisk risk, bool anonymize)
+        => new()
+        {
+            RiskLevel = risk.RiskLevel,
+            Description = ExportText(risk.Description, anonymize, _redaction) ?? "",
+            Mitigation = ExportText(risk.Mitigation, anonymize, _redaction),
+            Accepted = risk.Accepted,
+            AcceptedBy = ExportOptionalId(risk.AcceptedBy, anonymize),
+            AcceptedAtUtc = risk.AcceptedAtUtc
+        };
+
+    private EvidenceSource? ExportEvidenceSource(EvidenceSource? source, bool anonymize)
+        => source is null
+            ? null
+            : new EvidenceSource
+            {
+                Kind = source.Kind,
+                Id = ExportOptionalId(source.Id, anonymize),
+                Path = ExportText(source.Path, anonymize, _redaction),
+                Uri = ExportText(source.Uri, anonymize, _redaction),
+                Description = ExportText(source.Description, anonymize, _redaction)
+            };
+
+    private EvidenceBundleMetadata? ExportEvidenceMetadata(EvidenceBundleMetadata? metadata, bool anonymize)
+        => metadata is null
+            ? null
+            : new EvidenceBundleMetadata
+            {
+                CreatedBy = ExportOptionalId(metadata.CreatedBy, anonymize),
+                Source = ExportText(metadata.Source, anonymize, _redaction),
+                CorrelationId = ExportOptionalId(metadata.CorrelationId, anonymize),
+                Properties = ExportStringDictionary(metadata.Properties, anonymize)
+            };
+
+    private Dictionary<string, string> ExportStringDictionary(Dictionary<string, string>? values, bool anonymize)
+        => values is null
+            ? []
+            : values.ToDictionary(
+                static pair => pair.Key,
+                pair => ExportText(pair.Value, anonymize, _redaction) ?? "",
+                StringComparer.Ordinal);
 
     private static string ExportSessionId(string value, bool anonymize)
         => anonymize ? $"anon_{HashForExport(value)}" : value;
