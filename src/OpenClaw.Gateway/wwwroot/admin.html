@@ -4,6 +4,23 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>OpenClaw.NET Admin</title>
+    <!--
+        Apply the stored theme before any stylesheet/body parse so users
+        with a saved dark theme don't see a flash of light on load.
+        localStorage failures (private mode, storage disabled, cross-
+        origin sandboxing) are swallowed — the document already
+        defaults to data-theme="light".
+    -->
+    <script>
+        (function () {
+            try {
+                var stored = window.localStorage && localStorage.getItem('openclaw_theme');
+                if (stored === 'light' || stored === 'dark') {
+                    document.documentElement.setAttribute('data-theme', stored);
+                }
+            } catch (_) { /* ignore */ }
+        })();
+    </script>
     <style>
         /* ============================================================
            1. THEME TOKENS — light is default; dark via [data-theme]
@@ -1897,14 +1914,32 @@
     </main>
 
     <script>
-        /* ---------- Theme (shared key with webchat) ---------- */
+        /* ---------- Theme ----------
+           The localStorage key 'openclaw_theme' is also used by the new
+           webchat redesign (PR #124). Once both ship, toggling theme on
+           either page will carry to the other on next load. Until then,
+           admin is the only page using it.
+
+           Storage access is guarded — localStorage can throw in private
+           mode, sandboxed iframes, or storage-disabled browsers, and we
+           must never let that break the rest of the page. */
         const THEME_KEY = 'openclaw_theme';
         const themeToggleButton = document.getElementById('theme-toggle');
         const themeIconLight = document.getElementById('theme-icon-light');
         const themeIconDark = document.getElementById('theme-icon-dark');
 
+        function safeStorageGet(key) {
+            try { return window.localStorage ? localStorage.getItem(key) : null; }
+            catch (_) { return null; }
+        }
+
+        function safeStorageSet(key, value) {
+            try { if (window.localStorage) localStorage.setItem(key, value); }
+            catch (_) { /* ignore */ }
+        }
+
         function getPreferredTheme() {
-            const stored = localStorage.getItem(THEME_KEY);
+            const stored = safeStorageGet(THEME_KEY);
             if (stored === 'light' || stored === 'dark') return stored;
             return 'light';
         }
@@ -1921,35 +1956,67 @@
 
         function toggleTheme() {
             const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-            localStorage.setItem(THEME_KEY, next);
+            safeStorageSet(THEME_KEY, next);
             applyTheme(next);
         }
 
         applyTheme(getPreferredTheme());
         themeToggleButton?.addEventListener('click', toggleTheme);
 
-        /* ---------- Section-nav active-state highlighting ---------- */
+        /* ---------- Section-nav active-state highlighting ----------
+           IntersectionObserver can fire with multiple entries in a single
+           callback (e.g., a section enters while another exits). We track
+           the most-visible ratio for every observed section, then pick a
+           single winner per callback — the section with the highest
+           current ratio — and update aria-current exactly once. That
+           keeps the active pill from jittering when several sections are
+           briefly co-visible. */
         (function initSectionNavHighlight() {
             const nav = document.querySelector('.section-nav');
             if (!nav) return;
             const links = Array.from(nav.querySelectorAll('a[href^="#"]'));
             if (!links.length) return;
             const sectionMap = new Map();
+            const orderedSections = [];
             for (const link of links) {
                 const id = link.getAttribute('href').slice(1);
                 const target = document.getElementById(id);
-                if (target) sectionMap.set(target, link);
+                if (target) {
+                    sectionMap.set(target, link);
+                    orderedSections.push(target);
+                }
             }
             if (!sectionMap.size || !('IntersectionObserver' in window)) return;
+
+            // Persisted across callbacks so we know each section's last reported visibility.
+            const visibility = new Map();
+            let currentActive = null;
+
+            function setActive(section) {
+                if (section === currentActive) return;
+                currentActive = section;
+                for (const link of links) link.removeAttribute('aria-current');
+                sectionMap.get(section)?.setAttribute('aria-current', 'true');
+            }
+
             const observer = new IntersectionObserver((entries) => {
                 for (const entry of entries) {
-                    if (entry.isIntersecting && entry.intersectionRatio >= 0.15) {
-                        for (const link of links) link.removeAttribute('aria-current');
-                        sectionMap.get(entry.target)?.setAttribute('aria-current', 'true');
+                    visibility.set(entry.target, entry.isIntersecting ? entry.intersectionRatio : 0);
+                }
+                // Pick the single best section across all currently-visible entries.
+                let best = null;
+                let bestRatio = 0;
+                for (const section of orderedSections) {
+                    const ratio = visibility.get(section) || 0;
+                    if (ratio >= 0.15 && ratio > bestRatio) {
+                        best = section;
+                        bestRatio = ratio;
                     }
                 }
+                if (best) setActive(best);
             }, { rootMargin: '-30% 0px -55% 0px', threshold: [0.15, 0.3, 0.6] });
-            sectionMap.forEach((_, section) => observer.observe(section));
+
+            for (const section of orderedSections) observer.observe(section);
         })();
 
         const tokenInput = document.getElementById('token-input');
