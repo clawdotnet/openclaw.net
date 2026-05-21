@@ -515,6 +515,105 @@ public sealed class SetupCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_TailscaleServeSetup_PrintsGuidedPrivateAccessInstructions()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            using var input = new StringReader(string.Empty);
+
+            var exitCode = await SetupCommand.RunAsync(
+                [
+                    "tailscale",
+                    "serve",
+                    "--non-interactive",
+                    "--local-url", "http://127.0.0.1:18789"
+                ],
+                input,
+                output,
+                error,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            var stdout = output.ToString();
+            Assert.Contains("Tailscale Serve setup for OpenClaw.NET", stdout, StringComparison.Ordinal);
+            Assert.Contains("tailscale serve --bg http://127.0.0.1:18789", stdout, StringComparison.Ordinal);
+            Assert.Contains("- Chat: /chat", stdout, StringComparison.Ordinal);
+            Assert.Contains("- Admin: /admin", stdout, StringComparison.Ordinal);
+            Assert.Contains("- MCP: /mcp", stdout, StringComparison.Ordinal);
+            Assert.Contains("- Integration API: /api/integration/status", stdout, StringComparison.Ordinal);
+            Assert.Contains("- WebSocket: /ws", stdout, StringComparison.Ordinal);
+            Assert.Contains("- Doctor: /doctor/text", stdout, StringComparison.Ordinal);
+            Assert.Contains("Do not use Funnel for /admin", stdout, StringComparison.Ordinal);
+            Assert.Contains("openclaw setup status --config", stdout, StringComparison.Ordinal);
+            Assert.Contains("openclaw admin posture", stdout, StringComparison.Ordinal);
+            Assert.Contains("http://127.0.0.1:18789/health/ready", stdout, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_NonInteractiveTailscaleServeProfile_WritesLoopbackDeploymentMetadata()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var configPath = Path.Join(root, "config", "openclaw.tailscale.json");
+            var workspace = Path.Join(root, "workspace");
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            using var input = new StringReader(string.Empty);
+
+            var exitCode = await SetupCommand.RunAsync(
+                [
+                    "--non-interactive",
+                    "--profile", "tailscale-serve",
+                    "--config", configPath,
+                    "--workspace", workspace,
+                    "--provider", "openai",
+                    "--model", "gpt-4o",
+                    "--api-key", "env:OPENAI_API_KEY"
+                ],
+                input,
+                output,
+                error,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(configPath));
+            var openClaw = document.RootElement.GetProperty("OpenClaw");
+            Assert.Equal("127.0.0.1", openClaw.GetProperty("bindAddress").GetString());
+            Assert.Equal("openai", openClaw.GetProperty("llm").GetProperty("provider").GetString());
+            Assert.Equal("gpt-4o", openClaw.GetProperty("llm").GetProperty("model").GetString());
+            Assert.False(openClaw.GetProperty("tailscale").GetProperty("enabled").GetBoolean());
+
+            var deployment = openClaw.GetProperty("deployment");
+            Assert.Equal("tailscale-serve", deployment.GetProperty("mode").GetString());
+            Assert.False(deployment.GetProperty("publicExposure").GetBoolean());
+            Assert.Equal("tailscale-serve", deployment.GetProperty("reverseProxy").GetString());
+            Assert.Equal("http://127.0.0.1:18789", deployment.GetProperty("expectedLocalUrl").GetString());
+
+            var tooling = openClaw.GetProperty("tooling");
+            Assert.False(tooling.GetProperty("enableBrowserTool").GetBoolean());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_VerifyJson_PersistsSnapshotIntoSetupStatus()
     {
         var root = CreateTempRoot();

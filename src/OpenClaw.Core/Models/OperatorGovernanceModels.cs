@@ -199,6 +199,19 @@ public sealed class BrowserToolCapabilitySummary
     public string Reason { get; init; } = "";
 }
 
+public sealed class TailscaleServeStatusResponse
+{
+    public string Mode { get; init; } = "off";
+    public string LocalGatewayUrl { get; init; } = "http://127.0.0.1:18789";
+    public string SuggestedServeCommand { get; init; } = "tailscale serve --bg http://127.0.0.1:18789";
+    public string ServeDetected { get; init; } = "unknown";
+    public bool TailscaleCliDetected { get; init; }
+    public string TailnetReachability { get; init; } = "unknown";
+    public bool IdentityHeadersPresent { get; init; }
+    public bool PublicBind { get; init; }
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+}
+
 public sealed class SetupStatusResponse
 {
     public string Profile { get; init; } = "local";
@@ -231,6 +244,7 @@ public sealed class SetupStatusResponse
     public IReadOnlyList<ChannelReadinessDto> ChannelReadiness { get; init; } = [];
     public IReadOnlyList<SetupArtifactStatusItem> Artifacts { get; init; } = [];
     public IReadOnlyList<string> Warnings { get; init; } = [];
+    public TailscaleServeStatusResponse? TailscaleServe { get; init; }
     public ReliabilitySnapshot Reliability { get; init; } = new();
 }
 

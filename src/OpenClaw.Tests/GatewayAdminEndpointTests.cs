@@ -303,6 +303,45 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task AdminSetupStatus_IncludesTailscaleServeStatusWhenConfiguredAndHeadersPresent()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: false, config =>
+        {
+            config.Deployment = new DeploymentConfig
+            {
+                Mode = "tailscale-serve",
+                PublicExposure = false,
+                ReverseProxy = "tailscale-serve",
+                ExpectedLocalUrl = "http://127.0.0.1:18789"
+            };
+        });
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var admin = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "admin-user",
+            Password = "admin-pass",
+            Role = OperatorRoleNames.Admin
+        });
+        var token = operatorAccounts.CreateToken(admin.Id, new OperatorAccountTokenCreateRequest { Label = "admin" });
+        Assert.NotNull(token);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/setup/status");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token!.Token);
+        request.Headers.Add("Tailscale-User-Login", "operator@example.test");
+        var response = await harness.Client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        using var payload = await ReadJsonAsync(response);
+        Assert.Equal("tailscale-serve", payload.RootElement.GetProperty("profile").GetString());
+        var tailscale = payload.RootElement.GetProperty("tailscaleServe");
+        Assert.Equal("tailscale-serve", tailscale.GetProperty("mode").GetString());
+        Assert.Equal("http://127.0.0.1:18789", tailscale.GetProperty("localGatewayUrl").GetString());
+        Assert.True(tailscale.GetProperty("identityHeadersPresent").GetBoolean());
+        Assert.False(tailscale.GetProperty("publicBind").GetBoolean());
+        Assert.Equal("tailscale serve --bg http://127.0.0.1:18789", tailscale.GetProperty("suggestedServeCommand").GetString());
+    }
+
+    [Fact]
     public async Task AdminMaintenance_ReportsFindings_AndFixesManagedArtifacts()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: false);

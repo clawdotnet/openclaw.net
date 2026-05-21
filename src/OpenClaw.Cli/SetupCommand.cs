@@ -48,6 +48,8 @@ internal static class SetupCommand
             return new SetupCommandResult { ExitCode = await ChannelSetupCommand.RunAsync(args[1..], input, output, error, canPrompt) };
         if (args.Length > 0 && string.Equals(args[0], "provider", StringComparison.OrdinalIgnoreCase))
             return new SetupCommandResult { ExitCode = await RunProviderSetupAsync(args[1..], input, output, error, currentDirectory, canPrompt) };
+        if (args.Length > 0 && string.Equals(args[0], "tailscale", StringComparison.OrdinalIgnoreCase))
+            return new SetupCommandResult { ExitCode = await RunTailscaleSetupAsync(args[1..], input, output, error, canPrompt) };
 
         var parsed = CliArgs.Parse(args);
         var nonInteractive = parsed.HasFlag("--non-interactive");
@@ -155,7 +157,7 @@ internal static class SetupCommand
 
     private static SetupAnswers PromptForAnswers(CliArgs parsed, TextReader input, TextWriter output, string currentDirectory)
     {
-        var profile = BootstrapConfigFactory.NormalizeProfile(Prompt(output, input, "Deployment profile (local|public)", parsed.GetOption("--profile") ?? "local"));
+        var profile = BootstrapConfigFactory.NormalizeProfile(Prompt(output, input, "Deployment profile (local|public|tailscale-serve)", parsed.GetOption("--profile") ?? "local"));
         var configPath = Path.GetFullPath(GatewayConfigFile.ExpandPath(Prompt(output, input, "Config path", parsed.GetOption("--config") ?? DefaultConfigPath)));
         var workspace = Path.GetFullPath(GatewayConfigFile.ExpandPath(Prompt(output, input, "Workspace path", parsed.GetOption("--workspace") ?? Path.Combine(currentDirectory, "workspace"))));
         var discoveredOllama = TryDiscoverOllamaModels();
@@ -499,6 +501,166 @@ internal static class SetupCommand
         {
             return OllamaDiscoveryResult.Empty;
         }
+    }
+
+    private static async Task<int> RunTailscaleSetupAsync(
+        string[] args,
+        TextReader input,
+        TextWriter output,
+        TextWriter error,
+        bool canPrompt)
+    {
+        var helpRequested = args.Length > 0 && (args[0] is "-h" or "--help");
+        if (args.Length == 0 ||
+            helpRequested ||
+            !string.Equals(args[0], "serve", StringComparison.OrdinalIgnoreCase))
+        {
+            error.WriteLine("Usage: openclaw setup tailscale serve [--config <path>] [--local-url <url>] [--non-interactive]");
+            return helpRequested ? 0 : 2;
+        }
+
+        CliArgs parsed;
+        try
+        {
+            parsed = CliArgs.Parse(args[1..]);
+        }
+        catch (ArgumentException ex)
+        {
+            error.WriteLine(ex.Message);
+            return 2;
+        }
+
+        var explicitConfig = !string.IsNullOrWhiteSpace(parsed.GetOption("--config"));
+        var configPath = Path.GetFullPath(GatewayConfigFile.ExpandPath(parsed.GetOption("--config") ?? DefaultConfigPath));
+        GatewayConfig config;
+        var configLoaded = false;
+        if (File.Exists(configPath))
+        {
+            try
+            {
+                config = GatewayConfigFile.Load(configPath);
+                configLoaded = true;
+            }
+            catch (Exception ex)
+            {
+                error.WriteLine($"Could not load config {configPath}: {ex.Message}");
+                return 1;
+            }
+        }
+        else if (explicitConfig)
+        {
+            error.WriteLine($"Config file not found: {configPath}");
+            return 1;
+        }
+        else
+        {
+            config = CreateTailscaleServePreviewConfig("http://127.0.0.1:18789");
+        }
+
+        var localGatewayUrl = parsed.GetOption("--local-url") ?? parsed.GetOption("--url") ?? TailscaleServeAdvisor.BuildLocalGatewayUrl(config);
+        if (!parsed.HasFlag("--non-interactive") && canPrompt)
+            localGatewayUrl = Prompt(output, input, "Local gateway URL", localGatewayUrl);
+
+        if (!Uri.TryCreate(localGatewayUrl, UriKind.Absolute, out var localGatewayUri) ||
+            (!localGatewayUri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+             !localGatewayUri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+        {
+            error.WriteLine($"Invalid local gateway URL: {localGatewayUrl}");
+            return 2;
+        }
+
+        config.Deployment = new DeploymentConfig
+        {
+            Mode = "tailscale-serve",
+            PublicExposure = false,
+            ReverseProxy = "tailscale-serve",
+            ExpectedLocalUrl = localGatewayUri.ToString().TrimEnd('/')
+        };
+
+        var status = await TailscaleServeAdvisor.BuildStatusAsync(
+            config,
+            new TailscaleServeProbeOptions { ForceInclude = true, CheckCli = true },
+            CancellationToken.None) ?? throw new InvalidOperationException("Expected Tailscale Serve status.");
+
+        WriteTailscaleServeInstructions(output, configPath, configLoaded, status);
+        return 0;
+    }
+
+    private static GatewayConfig CreateTailscaleServePreviewConfig(string localGatewayUrl)
+    {
+        var port = 18789;
+        if (Uri.TryCreate(localGatewayUrl, UriKind.Absolute, out var uri) && uri.Port > 0)
+            port = uri.Port;
+
+        return new GatewayConfig
+        {
+            BindAddress = "127.0.0.1",
+            Port = port,
+            Deployment = new DeploymentConfig
+            {
+                Mode = "tailscale-serve",
+                PublicExposure = false,
+                ReverseProxy = "tailscale-serve",
+                ExpectedLocalUrl = localGatewayUrl.TrimEnd('/')
+            }
+        };
+    }
+
+    private static void WriteTailscaleServeInstructions(
+        TextWriter output,
+        string configPath,
+        bool configLoaded,
+        TailscaleServeStatusResponse status)
+    {
+        var localGateway = status.LocalGatewayUrl.TrimEnd('/');
+        output.WriteLine("Tailscale Serve setup for OpenClaw.NET");
+        output.WriteLine();
+        output.WriteLine("This profile keeps OpenClaw.NET bound to 127.0.0.1 and uses Tailscale Serve to expose it privately inside your tailnet.");
+        output.WriteLine(configLoaded
+            ? $"Config: {configPath}"
+            : $"Config: {configPath} (not found; using default local gateway guidance)");
+        output.WriteLine();
+        output.WriteLine("Local gateway:");
+        output.WriteLine(localGateway);
+        output.WriteLine();
+        output.WriteLine("Recommended command:");
+        output.WriteLine();
+        output.WriteLine(status.SuggestedServeCommand);
+        output.WriteLine();
+        output.WriteLine("After enabling Serve, open the Tailscale-provided HTTPS URL from a device in your tailnet.");
+        output.WriteLine();
+        output.WriteLine("Useful OpenClaw.NET surfaces:");
+        output.WriteLine("- Chat: /chat");
+        output.WriteLine("- Admin: /admin");
+        output.WriteLine("- MCP: /mcp");
+        output.WriteLine("- Integration API: /api/integration/status");
+        output.WriteLine("- WebSocket: /ws");
+        output.WriteLine("- Doctor: /doctor/text");
+        output.WriteLine();
+        output.WriteLine("Tailscale CLI status:");
+        output.WriteLine($"- CLI detected: {status.TailscaleCliDetected.ToString().ToLowerInvariant()}");
+        output.WriteLine($"- Tailnet reachability: {status.TailnetReachability}");
+        output.WriteLine($"- Serve detected: {status.ServeDetected}");
+        if (status.Warnings.Count > 0)
+        {
+            output.WriteLine();
+            output.WriteLine("Advisory warnings:");
+            foreach (var warning in status.Warnings)
+                output.WriteLine($"- {warning}");
+        }
+        output.WriteLine();
+        output.WriteLine("Security notes:");
+        output.WriteLine("- Tailscale Serve is for private tailnet access.");
+        output.WriteLine("- Do not use Funnel for /admin unless you have reviewed public exposure hardening.");
+        output.WriteLine("- Keep OpenClaw.NET auth enabled.");
+        output.WriteLine("- Use operator accounts/tokens for admin, API, and websocket clients.");
+        output.WriteLine();
+        output.WriteLine("Follow-up checks:");
+        output.WriteLine($"openclaw setup status --config {GatewayConfigFile.QuoteIfNeeded(configPath)}");
+        output.WriteLine($"OPENCLAW_BASE_URL={localGateway} OPENCLAW_AUTH_TOKEN=... openclaw admin posture");
+        output.WriteLine();
+        output.WriteLine("If the gateway is running, check:");
+        output.WriteLine($"{localGateway}/health/ready");
     }
 
     private static async Task<int> RunProviderSetupAsync(

@@ -66,7 +66,8 @@ internal static partial class AdminEndpoints
                 setupVerificationSnapshots,
                 maintenance,
                 includeReliability: true,
-                ctx.RequestAborted);
+                ctx.RequestAborted,
+                tailscaleIdentityHeadersPresent: HasTailscaleIdentityHeaders(ctx.Request.Headers));
 
             var response = new AdminSummaryResponse
             {
@@ -139,7 +140,8 @@ internal static partial class AdminEndpoints
                     setupVerificationSnapshots,
                     maintenance,
                     includeReliability: true,
-                    ctx.RequestAborted),
+                    ctx.RequestAborted,
+                    tailscaleIdentityHeadersPresent: HasTailscaleIdentityHeaders(ctx.Request.Headers)),
                 CoreJsonContext.Default.SetupStatusResponse);
         });
 
@@ -158,7 +160,8 @@ internal static partial class AdminEndpoints
                 setupVerificationSnapshots,
                 maintenance,
                 includeReliability: false,
-                ctx.RequestAborted);
+                ctx.RequestAborted,
+                tailscaleIdentityHeadersPresent: HasTailscaleIdentityHeaders(ctx.Request.Headers));
             var report = await maintenance.ScanAsync(setupStatus, ctx.RequestAborted);
             return Results.Json(report, CoreJsonContext.Default.MaintenanceReportResponse);
         });
@@ -182,7 +185,8 @@ internal static partial class AdminEndpoints
                 setupVerificationSnapshots,
                 maintenance,
                 includeReliability: false,
-                ctx.RequestAborted);
+                ctx.RequestAborted,
+                tailscaleIdentityHeadersPresent: HasTailscaleIdentityHeaders(ctx.Request.Headers));
             var result = await maintenance.FixAsync(requestPayload.Value ?? new MaintenanceFixRequest(), setupStatus, ctx.RequestAborted);
             return Results.Json(result, CoreJsonContext.Default.MaintenanceFixResponse);
         });
