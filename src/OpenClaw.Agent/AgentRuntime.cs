@@ -112,7 +112,8 @@ public sealed class AgentRuntime : IAgentRuntime
         ToolAuditLog? toolAuditLog = null,
         IRedactionPipeline? redaction = null,
         ISentinelSubstitutionService? sentinelSubstitution = null,
-        IToolGovernanceService? toolGovernance = null)
+        IToolGovernanceService? toolGovernance = null,
+        IPlanExecuteVerifyOrchestrator? planExecuteVerify = null)
     {
         _chatClient = chatClient;
         _tools = tools;
@@ -162,6 +163,7 @@ public sealed class AgentRuntime : IAgentRuntime
             redaction: _redaction,
             sentinelSubstitution: _sentinelSubstitution,
             toolGovernance: toolGovernance,
+            planExecuteVerify: planExecuteVerify,
             auditLog: toolAuditLog);
         _sessionTokenBudget = sessionTokenBudget;
         _estimateTokenBudgetAdmission = gatewayConfig?.EnableEstimatedTokenAdmissionControl ?? false;

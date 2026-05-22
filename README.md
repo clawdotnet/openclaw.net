@@ -40,6 +40,7 @@ Start here:
 - **Gateway** with chat UI, admin UI, OpenAI-compatible endpoints, MCP, websocket, health, and diagnostics
 - **Passive Harness Contracts** for inspectable agent-work plans without changing default chat or approval behavior
 - **Passive Evidence Bundles** for inspectable run evidence, checks, risks, and human review without default runtime interception
+- **Optional Plan-Execute-Verify Mode** for governed high-risk tool execution with contracts, evidence, and verification
 - **Passive Governance Ledger** for durable approval and oversight decisions without auto-approving future actions
 - **Harness Regression Suite** via `openclaw harness test` for offline checks before trusting harness/runtime changes
 - **First-class optional Microsoft Agent Framework adapter** for `Runtime.Orchestrator=maf` without a special build

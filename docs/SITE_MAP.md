@@ -19,6 +19,7 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Guides | Agent Testing Harness | [testing/agent-testing-harness.md](testing/agent-testing-harness.md) |
 | Guides | AI-Assisted Testing Playbook | [testing/ai-assisted-testing-playbook.md](testing/ai-assisted-testing-playbook.md) |
 | Guides | Harness Regression Suite | [HARNESS_REGRESSION.md](HARNESS_REGRESSION.md) |
+| Guides | Plan-Execute-Verify Mode | [PLAN_EXECUTE_VERIFY.md](PLAN_EXECUTE_VERIFY.md) |
 | Reference | Compatibility | [COMPATIBILITY.md](COMPATIBILITY.md) |
 | Reference | Sessions | [SESSIONS.md](SESSIONS.md) |
 | Reference | Canvas and A2UI | [CANVAS_A2UI.md](CANVAS_A2UI.md) |
@@ -69,6 +70,7 @@ Guides
   Agent Testing Harness
   AI-Assisted Testing Playbook
   Harness Regression Suite
+  Plan-Execute-Verify Mode
 
 Reference
   Compatibility

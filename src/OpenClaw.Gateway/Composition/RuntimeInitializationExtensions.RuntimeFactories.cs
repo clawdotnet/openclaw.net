@@ -296,6 +296,7 @@ internal static partial class RuntimeInitializationExtensions
             ApprovalRequiredTools = approvalRequiredTools,
             ToolSandbox = toolSandbox,
             ToolGovernance = services.GetRequiredService<IToolGovernanceService>(),
+            PlanExecuteVerify = services.GetService<IPlanExecuteVerifyOrchestrator>(),
             ToolUsageTracker = services.GetRequiredService<ToolUsageTracker>(),
             ToolAuditLog = services.GetRequiredService<ToolAuditLog>(),
             IsContractTokenBudgetExceeded = contractGovernance.IsTokenBudgetExceeded,

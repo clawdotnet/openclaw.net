@@ -190,6 +190,8 @@ internal static class CoreServicesExtensions
         services.AddSingleton<HarnessContractService>();
         services.AddSingleton<EvidenceBundleService>();
         services.AddSingleton<GovernanceLedgerService>();
+        services.AddSingleton<PlanExecuteVerifyService>();
+        services.AddSingleton<IPlanExecuteVerifyOrchestrator>(sp => sp.GetRequiredService<PlanExecuteVerifyService>());
         services.AddSingleton<AgentWorkflowRegistry>();
         services.AddSingleton<ICronJobSource, GatewayCronJobSource>();
         services.AddSingleton<ActorRateLimitService>(sp =>

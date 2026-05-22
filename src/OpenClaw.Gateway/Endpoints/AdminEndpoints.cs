@@ -51,6 +51,14 @@ internal static partial class AdminEndpoints
         var harnessContracts = FeatureFallbackServices.ResolveHarnessContractService(startup, app.Services);
         var evidenceBundles = FeatureFallbackServices.ResolveEvidenceBundleService(startup, app.Services);
         var governanceLedger = FeatureFallbackServices.ResolveGovernanceLedgerService(startup, app.Services);
+        var planExecuteVerify = app.Services.GetService<PlanExecuteVerifyService>()
+            ?? new PlanExecuteVerifyService(
+                startup.Config,
+                harnessContracts,
+                evidenceBundles,
+                governanceLedger,
+                runtime.Operations.RuntimeEvents,
+                NullLogger<PlanExecuteVerifyService>.Instance);
         var facade = IntegrationApiFacade.Create(startup, runtime, app.Services);
         var sessionMetadataStore = app.Services.GetService<SessionMetadataStore>()
             ?? new SessionMetadataStore(startup.Config.Memory.StoragePath, NullLogger<SessionMetadataStore>.Instance);
@@ -112,6 +120,7 @@ internal static partial class AdminEndpoints
             HarnessContracts = harnessContracts,
             EvidenceBundles = evidenceBundles,
             GovernanceLedger = governanceLedger,
+            PlanExecuteVerify = planExecuteVerify,
             Facade = facade,
             ToolPresetResolver = toolPresetResolver,
             Observability = observability,
@@ -135,6 +144,7 @@ internal static partial class AdminEndpoints
         MapMemoryEndpoints(app, services);
         MapProfilesAndLearningEndpoints(app, services);
         MapHarnessContractEndpoints(app, services);
+        MapPlanExecuteVerifyEndpoints(app, services);
         MapEvidenceBundleEndpoints(app, services);
         MapGovernanceLedgerEndpoints(app, services);
         MapRuntimeEndpoints(app, services);

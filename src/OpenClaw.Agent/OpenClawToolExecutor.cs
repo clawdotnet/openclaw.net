@@ -46,6 +46,7 @@ public sealed class OpenClawToolExecutor
     private readonly IRedactionPipeline _redaction;
     private readonly ISentinelSubstitutionService _sentinelSubstitution;
     private readonly IToolGovernanceService _toolGovernance;
+    private readonly IPlanExecuteVerifyOrchestrator _planExecuteVerify;
 
     public OpenClawToolExecutor(
         IReadOnlyList<ITool> tools,
@@ -63,7 +64,8 @@ public sealed class OpenClawToolExecutor
         ToolAuditLog? auditLog = null,
         IRedactionPipeline? redaction = null,
         ISentinelSubstitutionService? sentinelSubstitution = null,
-        IToolGovernanceService? toolGovernance = null)
+        IToolGovernanceService? toolGovernance = null,
+        IPlanExecuteVerifyOrchestrator? planExecuteVerify = null)
     {
         _toolsByName = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         _toolDeclarations = tools.Select(CreateDeclaration).Cast<AITool>().ToArray();
@@ -93,6 +95,7 @@ public sealed class OpenClawToolExecutor
         _redaction = redaction ?? new NoopRedactionPipeline();
         _sentinelSubstitution = sentinelSubstitution ?? new NoopSentinelSubstitutionService();
         _toolGovernance = toolGovernance ?? new NoopToolGovernanceService();
+        _planExecuteVerify = planExecuteVerify ?? NoopPlanExecuteVerifyOrchestrator.Instance;
     }
 
     public IList<AITool> ToolDeclarations => _toolDeclarations;
@@ -330,16 +333,30 @@ public sealed class OpenClawToolExecutor
             (ToolActionPolicyResolver.SupportsActionAwareApproval(tool.Name) && !explicitlyConfiguredApproval && !presetRequiresApproval
             ? defaultActionAwareApproval
             : listedApproval || defaultActionAwareApproval);
+        var pevDecision = await _planExecuteVerify.EvaluateToolAsync(new PlanExecuteVerifyToolContext
+        {
+            Session = session,
+            CorrelationId = turnCtx.CorrelationId,
+            CallId = callId,
+            ToolName = tool.Name,
+            ArgumentsJson = persistedArgsJson,
+            ActionDescriptor = approvalDescriptor,
+            GovernanceDescriptor = governanceDescriptor,
+            ExistingApprovalRequired = requiresApproval,
+            IsStreaming = isStreaming
+        }, ct);
+        requiresApproval = requiresApproval || pevDecision.RequiresApproval;
 
         if (requiresApproval)
         {
             if (approvalCallback is not null)
             {
                 var approved = await approvalCallback(tool.Name, persistedArgsJson, ct);
+                await _planExecuteVerify.RecordApprovalDecisionAsync(pevDecision.Run, approved, ct);
                 if (!approved)
                 {
                     _logger?.LogInformation("[{CorrelationId}] Tool {Tool} denied by user", turnCtx.CorrelationId, tool.Name);
-                    return CreateImmediateResult(
+                    var deniedResult = CreateImmediateResult(
                         toolName,
                         persistedArgsJson,
                         "Tool execution denied by user.",
@@ -349,6 +366,8 @@ public sealed class OpenClawToolExecutor
                         failureMessage: "Tool execution was denied by the reviewer.",
                         nextStep: "Approve the tool request to allow this action.",
                         governanceDecision: governanceDecision);
+                    await _planExecuteVerify.CompleteToolAsync(pevDecision.Run, deniedResult.Invocation, ct);
+                    return deniedResult;
                 }
             }
             else
@@ -361,7 +380,7 @@ public sealed class OpenClawToolExecutor
                     $"Tool '{tool.Name}' requires approval but this session has no approval channel — auto-denied. " +
                     "To enable this tool: connect through the browser chat at /chat (it supports interactive approvals) " +
                     "or set OpenClaw:Tooling:RequireToolApproval=false for trusted local sessions.";
-                return CreateImmediateResult(
+                var deniedResult = CreateImmediateResult(
                     toolName,
                     persistedArgsJson,
                     _redaction.Redact(approvalMessage),
@@ -371,6 +390,9 @@ public sealed class OpenClawToolExecutor
                     failureMessage: approvalMessage,
                     nextStep: "Use an approval-capable surface such as /chat, or disable approval requirements for trusted local sessions.",
                     governanceDecision: governanceDecision);
+                await _planExecuteVerify.RecordApprovalDecisionAsync(pevDecision.Run, approved: false, ct);
+                await _planExecuteVerify.CompleteToolAsync(pevDecision.Run, deniedResult.Invocation, ct);
+                return deniedResult;
             }
         }
 
@@ -558,6 +580,7 @@ public sealed class OpenClawToolExecutor
             GovernanceEvaluationMs = governanceDecision.EvaluationMs,
             GovernanceUnavailable = governanceDecision.IsUnavailable
         };
+        await _planExecuteVerify.CompleteToolAsync(pevDecision.Run, invocation, ct);
 
         return new ToolExecutionResult
         {
