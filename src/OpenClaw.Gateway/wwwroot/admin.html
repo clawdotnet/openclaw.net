@@ -4791,6 +4791,8 @@
             if (!items.length) {
                 governanceState.selectedId = null;
                 governanceState.detail = null;
+                governanceRevokeReasonInput.value = '';
+                governanceDetailOutput.innerHTML = '<div class="muted">Select a governance ledger entry.</div>';
                 applyGovernanceAccessState();
                 governanceListOutput.textContent = 'No governance ledger entries matched the current filters.';
                 return;
