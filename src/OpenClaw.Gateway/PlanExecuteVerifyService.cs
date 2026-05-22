@@ -308,9 +308,23 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
         var started = DateTimeOffset.UtcNow;
         var checks = new List<HarnessVerificationCheck>();
         var maxSteps = Math.Clamp(_config.Harness.PlanExecuteVerify.MaxVerificationSteps, 1, _verifiers.Count);
-        foreach (var verifier in _verifiers.Where(verifier => verifier.CanVerify(run, invocation)).Take(maxSteps))
+        var applicableVerifiers = _verifiers.Where(verifier => verifier.CanVerify(run, invocation)).ToArray();
+        foreach (var verifier in applicableVerifiers.Take(maxSteps))
         {
             checks.Add(await verifier.VerifyAsync(run, invocation, ct));
+        }
+
+        if (applicableVerifiers.Length > maxSteps)
+        {
+            checks.Add(new HarnessVerificationCheck
+            {
+                Id = "verification.omitted",
+                Name = "Omitted verification checks",
+                Status = HarnessVerificationStatus.Warning,
+                Required = false,
+                Summary = $"PEV MaxVerificationSteps limited verification to {maxSteps} checks.",
+                Details = string.Join(", ", applicableVerifiers.Skip(maxSteps).Select(static verifier => verifier.Name))
+            });
         }
 
         if (checks.Count == 0)
@@ -556,11 +570,11 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
             if (doc.RootElement.ValueKind != JsonValueKind.Object)
                 return null;
 
-            foreach (var property in properties)
+            foreach (var property in properties.Where(property =>
+                         doc.RootElement.TryGetProperty(property, out var value) &&
+                         value.ValueKind == JsonValueKind.String))
             {
-                if (doc.RootElement.TryGetProperty(property, out var value) &&
-                    value.ValueKind == JsonValueKind.String)
-                    return value.GetString();
+                return doc.RootElement.GetProperty(property).GetString();
             }
 
             return null;
@@ -636,27 +650,36 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
         string eventSummary,
         CancellationToken cancellationToken)
     {
-        if (IsTerminalNonExecutionStatus(run.Status))
+        if (!_runs.TryGetValue(run.Id, out var latest))
             return run;
+        if (IsTerminalNonExecutionStatus(latest.Status))
+            return latest;
 
         var failed = string.Equals(verification.Status, HarnessVerificationStatus.Failed, StringComparison.OrdinalIgnoreCase);
-        var status = failed ? PlanExecuteVerifyStatus.Failed : PlanExecuteVerifyStatus.Verified;
+        var skipped = string.Equals(verification.Status, HarnessVerificationStatus.Skipped, StringComparison.OrdinalIgnoreCase);
+        var status = skipped
+            ? PlanExecuteVerifyStatus.Escalated
+            : failed
+                ? PlanExecuteVerifyStatus.Failed
+                : PlanExecuteVerifyStatus.Verified;
         var decision = failed
             ? (_config.Harness.PlanExecuteVerify.AutoRollbackOnFailedVerification
                 ? PlanExecuteVerifyDecisionKinds.Rollback
                 : PlanExecuteVerifyDecisionKinds.Escalate)
+            : skipped
+                ? PlanExecuteVerifyDecisionKinds.Escalate
             : PlanExecuteVerifyDecisionKinds.Proceed;
         var completed = CopyRun(
-            run,
+            latest,
             status,
             decision,
-            approved: run.Approved,
+            approved: latest.Approved,
             verification,
             completedAtUtc: DateTimeOffset.UtcNow,
             recommendations: verification.Recommendations);
         Upsert(completed);
 
-        if (completed.HarnessContractId is not null)
+        if (completed.HarnessContractId is not null && !skipped)
             await _contracts.MarkStatusAsync(completed.HarnessContractId, failed ? HarnessContractStatus.Failed : HarnessContractStatus.Verified, cancellationToken);
 
         await AddVerificationEvidenceAsync(completed, verification, cancellationToken);
@@ -711,7 +734,11 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
         if (_runs.Count <= MaxStoredRuns)
             return;
 
-        foreach (var run in _runs.Values.OrderBy(static run => run.UpdatedAtUtc).Take(_runs.Count - MaxStoredRuns))
+        var overflow = _runs.Count - MaxStoredRuns;
+        foreach (var run in _runs.Values
+                     .Where(static run => IsTerminalStatus(run.Status))
+                     .OrderBy(static run => run.UpdatedAtUtc)
+                     .Take(overflow))
         {
             _runs.TryRemove(run.Id, out _);
             _lastInvocations.TryRemove(run.Id, out _);

@@ -255,7 +255,26 @@ public sealed class PlanExecuteVerifyTests
 
         var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), CancellationToken.None);
 
-        Assert.Single(completed!.Verification!.Checks);
+        Assert.Contains(completed!.Verification!.Checks, check => check.Id == "verification.omitted");
+        Assert.DoesNotContain(completed.Verification.Checks, check => check.Id == "approval");
+    }
+
+    [Fact]
+    public async Task DisabledVerification_DoesNotMarkRunOrContractVerified()
+    {
+        var root = CreateTempDir();
+        var config = CreateEnabledConfig();
+        config.Harness.PlanExecuteVerify.RunVerification = false;
+        var service = CreateService(root, config);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
+        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, CancellationToken.None);
+
+        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), CancellationToken.None);
+
+        Assert.Equal(PlanExecuteVerifyStatus.Escalated, completed!.Status);
+        Assert.Equal(HarnessVerificationStatus.Skipped, completed.Verification!.Status);
+        var contract = await new FileHarnessContractStore(root).GetAsync(completed.HarnessContractId!, CancellationToken.None);
+        Assert.Equal(HarnessContractStatus.Executing, contract!.Status);
     }
 
     [Fact]
