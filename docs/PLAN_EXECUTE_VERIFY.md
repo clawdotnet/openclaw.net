@@ -94,6 +94,7 @@ Defaults are conservative:
 - evidence bundles are created only when PEV is enabled.
 - verification runs only when PEV is enabled and `runVerification` is true.
 - automatic rollback is disabled.
+- `multi_tool_workflows` applies when one model response asks OpenClaw to run more than one tool call.
 
 ## Admin API
 

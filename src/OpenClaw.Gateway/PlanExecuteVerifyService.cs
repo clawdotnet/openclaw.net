@@ -50,7 +50,8 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
             new ToolOutcomeVerifier(),
             new ApprovalVerifier(),
             new ContractCompletenessVerifier(contracts),
-            new SecurityPostureVerifier(config)
+            new SecurityPostureVerifier(config),
+            new RegressionVerifier(config)
         ];
     }
 
@@ -79,6 +80,16 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
                 RequiresPlanExecuteVerify = false,
                 RiskLevel = risk,
                 Summary = $"Tool '{context.ToolName}' does not match configured PEV triggers."
+            };
+        }
+        if (_config.Harness.PlanExecuteVerify.MaxPlanActions < 1)
+        {
+            return new PlanExecuteVerifyDecision
+            {
+                Decision = PlanExecuteVerifyDecisionKinds.Reject,
+                RequiresPlanExecuteVerify = true,
+                RiskLevel = risk,
+                Summary = "Plan-Execute-Verify MaxPlanActions must be at least 1."
             };
         }
 
@@ -296,7 +307,8 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
     {
         var started = DateTimeOffset.UtcNow;
         var checks = new List<HarnessVerificationCheck>();
-        foreach (var verifier in _verifiers.Where(verifier => verifier.CanVerify(run, invocation)))
+        var maxSteps = Math.Clamp(_config.Harness.PlanExecuteVerify.MaxVerificationSteps, 1, _verifiers.Count);
+        foreach (var verifier in _verifiers.Where(verifier => verifier.CanVerify(run, invocation)).Take(maxSteps))
         {
             checks.Add(await verifier.VerifyAsync(run, invocation, ct));
         }
@@ -891,4 +903,23 @@ internal sealed class SecurityPostureVerifier(GatewayConfig config) : IHarnessVe
                 : "No PEV-specific public-bind approval warning was detected."
         });
     }
+}
+
+internal sealed class RegressionVerifier(GatewayConfig config) : IHarnessVerifier
+{
+    public string Name => "regression";
+
+    public bool CanVerify(PlanExecuteVerifyRun run, ToolInvocation? invocation)
+        => config.Harness.PlanExecuteVerify.RegressionCategories.Length > 0;
+
+    public ValueTask<HarnessVerificationCheck> VerifyAsync(PlanExecuteVerifyRun run, ToolInvocation? invocation, CancellationToken ct)
+        => ValueTask.FromResult(new HarnessVerificationCheck
+        {
+            Id = "regression",
+            Name = "Harness regression suite",
+            Status = HarnessVerificationStatus.Skipped,
+            Required = false,
+            Summary = "Regression categories are configured; run `openclaw harness test` for the selected categories before accepting the work.",
+            Details = string.Join(", ", config.Harness.PlanExecuteVerify.RegressionCategories)
+        });
 }

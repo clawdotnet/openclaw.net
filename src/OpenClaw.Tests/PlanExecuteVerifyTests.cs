@@ -230,6 +230,50 @@ public sealed class PlanExecuteVerifyTests
     }
 
     [Fact]
+    public async Task MaxPlanActionsBelowOne_RejectsPevDecisionBeforeContractCreation()
+    {
+        var root = CreateTempDir();
+        var config = CreateEnabledConfig();
+        config.Harness.PlanExecuteVerify.MaxPlanActions = 0;
+        var service = CreateService(root, config);
+
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
+
+        Assert.Equal(PlanExecuteVerifyDecisionKinds.Reject, decision.Decision);
+        Assert.Empty(service.ListRuns());
+    }
+
+    [Fact]
+    public async Task MaxVerificationSteps_LimitsVerifierChecks()
+    {
+        var root = CreateTempDir();
+        var config = CreateEnabledConfig();
+        config.Harness.PlanExecuteVerify.MaxVerificationSteps = 1;
+        var service = CreateService(root, config);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
+        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, CancellationToken.None);
+
+        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), CancellationToken.None);
+
+        Assert.Single(completed!.Verification!.Checks);
+    }
+
+    [Fact]
+    public async Task RegressionCategories_AddSkippedVerificationCheck()
+    {
+        var root = CreateTempDir();
+        var config = CreateEnabledConfig();
+        config.Harness.PlanExecuteVerify.RegressionCategories = ["security"];
+        var service = CreateService(root, config);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
+        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, CancellationToken.None);
+
+        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), CancellationToken.None);
+
+        Assert.Contains(completed!.Verification!.Checks, check => check.Id == "regression" && check.Status == HarnessVerificationStatus.Skipped);
+    }
+
+    [Fact]
     public async Task InferResourceSet_DoesNotTreatShellCommandAsFilePath()
     {
         var root = CreateTempDir();
