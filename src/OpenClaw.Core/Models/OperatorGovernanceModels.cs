@@ -469,6 +469,7 @@ public sealed class TrajectoryExportRecord
     public string? FailureCode { get; init; }
     public string? FailureMessage { get; init; }
     public EvidenceBundle? EvidenceBundle { get; init; }
+    public GovernanceLedgerEntry? GovernanceLedgerEntry { get; init; }
     public bool Anonymized { get; init; }
 }
 

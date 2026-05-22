@@ -15,6 +15,7 @@ internal static class ControlEndpoints
         GatewayAppRuntime runtime)
     {
         var browserSessions = app.Services.GetRequiredService<BrowserSessionAuthService>();
+        var governanceLedger = FeatureFallbackServices.ResolveGovernanceLedgerService(startup, app.Services);
         var operations = runtime.Operations;
 
         app.MapPost("/pairing/approve", (HttpContext ctx, string channelId, string senderId, string code) =>
@@ -162,7 +163,7 @@ internal static class ControlEndpoints
                 CoreJsonContext.Default.SkillsReloadResponse);
         });
 
-        app.MapPost("/tools/approve", (HttpContext ctx, string approvalId, bool approved, string? requesterChannelId, string? requesterSenderId) =>
+        app.MapPost("/tools/approve", async (HttpContext ctx, string approvalId, bool approved, string? requesterChannelId, string? requesterSenderId) =>
         {
             var authResult = EndpointHelpers.AuthorizeOperatorEndpoint(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.approvals.mutate");
             if (authResult.Failure is not null)
@@ -203,6 +204,17 @@ internal static class ControlEndpoints
                         "http_admin",
                         auth.AuthMode == "browser-session" ? "browser" : "http",
                         auth.AuthMode);
+                    if (governanceLedger is not null)
+                    {
+                        await governanceLedger.TryRecordApprovalDecisionAsync(
+                            adminOutcome.Request,
+                            approved,
+                            GovernanceLedgerSources.ToolApproval,
+                            EndpointHelpers.GetOperatorActorId(ctx, auth),
+                            auth.AuthMode == "browser-session" ? "browser" : "http",
+                            auth.AuthMode,
+                            ctx.RequestAborted);
+                    }
                     AppendApprovalRuntimeEvent(
                         runtime,
                         adminOutcome.Request,
@@ -264,6 +276,17 @@ internal static class ControlEndpoints
                     "http_requester",
                     requesterChannelId,
                     requesterSenderId);
+                if (governanceLedger is not null)
+                {
+                    await governanceLedger.TryRecordApprovalDecisionAsync(
+                        outcome.Request,
+                        approved,
+                        GovernanceLedgerSources.ToolApproval,
+                        EndpointHelpers.GetOperatorActorId(ctx, auth),
+                        requesterChannelId,
+                        requesterSenderId,
+                        ctx.RequestAborted);
+                }
                 AppendApprovalRuntimeEvent(
                     runtime,
                     outcome.Request,

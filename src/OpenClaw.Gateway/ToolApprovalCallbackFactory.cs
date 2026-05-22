@@ -13,6 +13,7 @@ internal static class ToolApprovalCallbackFactory
         Session session,
         string approvalChannelId,
         string senderId,
+        GovernanceLedgerService? governanceLedger = null,
         Func<ToolApprovalRequest, string, CancellationToken, Task>? onApprovalRequested = null)
         => Create(
             config,
@@ -22,6 +23,7 @@ internal static class ToolApprovalCallbackFactory
             session,
             approvalChannelId,
             senderId,
+            governanceLedger,
             onApprovalRequested);
 
     public static ToolApprovalCallback Create(
@@ -32,6 +34,7 @@ internal static class ToolApprovalCallbackFactory
         Session session,
         string approvalChannelId,
         string senderId,
+        GovernanceLedgerService? governanceLedger = null,
         Func<ToolApprovalRequest, string, CancellationToken, Task>? onApprovalRequested = null)
     {
         var approvalTimeout = TimeSpan.FromSeconds(Math.Clamp(config.Tooling.ToolApprovalTimeoutSeconds, 5, 3600));
@@ -59,6 +62,30 @@ internal static class ToolApprovalCallbackFactory
                         ["scope"] = grant.Scope
                     }
                 });
+                if (governanceLedger is not null)
+                {
+                    await governanceLedger.TryRecordApprovalDecisionAsync(
+                        new ToolApprovalRequest
+                        {
+                            ApprovalId = grant.Id,
+                            SessionId = session.Id,
+                            ChannelId = approvalChannelId,
+                            SenderId = senderId,
+                            ToolName = toolName,
+                            Arguments = argsJson,
+                            Action = actionDescriptor.Action,
+                            IsMutation = actionDescriptor.IsMutation,
+                            Summary = string.IsNullOrWhiteSpace(actionDescriptor.Summary)
+                                ? $"Reusable approval grant '{grant.Id}' applied for tool '{toolName}'."
+                                : actionDescriptor.Summary
+                        },
+                        approved: true,
+                        GovernanceLedgerSources.ApprovalGrantConsumed,
+                        grant.GrantedBy,
+                        actorChannelId: null,
+                        actorSenderId: grant.GrantedBy,
+                        ct);
+                }
                 return true;
             }
 
@@ -108,6 +135,14 @@ internal static class ToolApprovalCallbackFactory
                     "timeout",
                     actorChannelId: null,
                     actorSenderId: null);
+                if (governanceLedger is not null)
+                {
+                    await governanceLedger.TryRecordExpiredAsync(
+                        outcome.Request,
+                        GovernanceLedgerSources.ApprovalTimeout,
+                        decidedBy: "timeout",
+                        ct);
+                }
                 RecordApprovalTimedOutEvent(operations, outcome.Request);
             }
 

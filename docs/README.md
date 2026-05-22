@@ -36,6 +36,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [PULSE.md](PULSE.md) | Runtime Pulse scheduled heartbeat turns, `HEARTBEAT.md`, alert suppression, and operator controls. |
 | [HARNESS_CONTRACTS.md](HARNESS_CONTRACTS.md) | Passive, inspectable Harness Contract records for future plan-execute-verify and evidence workflows. |
 | [EVIDENCE_BUNDLES.md](EVIDENCE_BUNDLES.md) | Passive evidence records for what happened, what was checked, remaining uncertainty, and operator trust. |
+| [GOVERNANCE_LEDGER.md](GOVERNANCE_LEDGER.md) | Passive approval and oversight decision history as durable harness state. |
 | [governance/sidecar-pattern.md](governance/sidecar-pattern.md) | Optional central tool-governance middleware, sidecar flow, decisions, and audit fields. |
 | [governance/microsoft-agent-governance.md](governance/microsoft-agent-governance.md) | Microsoft Agent Governance sidecar integration notes and deployment cautions. |
 | [deployment/TAILSCALE.md](deployment/TAILSCALE.md) | Optional Tailscale Serve private runtime access guidance. |

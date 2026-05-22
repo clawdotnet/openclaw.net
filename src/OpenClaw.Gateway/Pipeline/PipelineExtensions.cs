@@ -116,6 +116,7 @@ internal static class PipelineExtensions
             app.Services.GetService<LearningService>(),
             app.Services.GetService<GatewayAutomationService>(),
             app.Services.GetService<ContractGovernanceService>(),
+            FeatureFallbackServices.ResolveGovernanceLedgerService(startup, app.Services),
             app.Services.GetService<AudioTranscriptionService>());
     }
 

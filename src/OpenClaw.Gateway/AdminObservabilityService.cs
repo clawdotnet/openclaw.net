@@ -28,6 +28,7 @@ internal sealed class AdminObservabilityService
     private readonly ISessionAdminStore _sessionAdminStore;
     private readonly IRedactionPipeline _redaction;
     private readonly EvidenceBundleService? _evidenceBundles;
+    private readonly GovernanceLedgerService? _governanceLedger;
 
     public AdminObservabilityService(
         GatewayStartupContext startup,
@@ -37,7 +38,8 @@ internal sealed class AdminObservabilityService
         ToolUsageTracker toolUsage,
         ISessionAdminStore sessionAdminStore,
         IRedactionPipeline? redaction = null,
-        EvidenceBundleService? evidenceBundles = null)
+        EvidenceBundleService? evidenceBundles = null,
+        GovernanceLedgerService? governanceLedger = null)
     {
         _startup = startup;
         _runtime = runtime;
@@ -47,6 +49,7 @@ internal sealed class AdminObservabilityService
         _sessionAdminStore = sessionAdminStore;
         _redaction = redaction ?? new NoopRedactionPipeline();
         _evidenceBundles = evidenceBundles;
+        _governanceLedger = governanceLedger;
     }
 
     public async Task<OperatorInsightsResponse> BuildInsightsAsync(
@@ -226,6 +229,7 @@ internal sealed class AdminObservabilityService
     public async Task<byte[]> ExportAuditBundleAsync(
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        bool includeGovernance,
         CancellationToken ct)
     {
         var (startUtc, endUtc, warnings) = NormalizeRange(fromUtc, toUtc, defaultWindow: TimeSpan.FromDays(30), applyRetention: true);
@@ -238,8 +242,9 @@ internal sealed class AdminObservabilityService
         var sessionMetadata = _runtime.Operations.SessionMetadata.GetAll().Values
             .OrderBy(static item => item.SessionId, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var governance = await LoadGovernanceForRangeAsync(startUtc, endUtc, includeGovernance, ct);
         var policy = _organizationPolicy.GetSnapshot();
-        var files = new[]
+        var files = new List<string>
         {
             "manifest.json",
             "operator-audit.jsonl",
@@ -250,6 +255,21 @@ internal sealed class AdminObservabilityService
             "dead-letter.jsonl",
             "session-metadata.json"
         };
+        if (includeGovernance)
+            files.Add("governance-ledger.jsonl");
+
+        var fileEntryCounts = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["operator-audit.jsonl"] = operatorAudit.Count,
+            ["runtime-events.jsonl"] = runtimeEvents.Count,
+            ["approval-history.jsonl"] = approvals.Count,
+            ["provider-usage.json"] = providerUsage.Count,
+            ["provider-routes.json"] = providerRoutes.Count,
+            ["dead-letter.jsonl"] = deadLetters.Count,
+            ["session-metadata.json"] = sessionMetadata.Count
+        };
+        if (includeGovernance)
+            fileEntryCounts["governance-ledger.jsonl"] = governance.Count;
 
         var manifest = new AuditExportManifest
         {
@@ -263,16 +283,7 @@ internal sealed class AdminObservabilityService
             OperatorAuditSequenceEnd = operatorAudit.LastOrDefault()?.Sequence,
             OperatorAuditPreviousEntryHash = operatorAudit.FirstOrDefault()?.PreviousEntryHash,
             OperatorAuditLastEntryHash = operatorAudit.LastOrDefault()?.EntryHash,
-            FileEntryCounts = new Dictionary<string, int>(StringComparer.Ordinal)
-            {
-                ["operator-audit.jsonl"] = operatorAudit.Count,
-                ["runtime-events.jsonl"] = runtimeEvents.Count,
-                ["approval-history.jsonl"] = approvals.Count,
-                ["provider-usage.json"] = providerUsage.Count,
-                ["provider-routes.json"] = providerRoutes.Count,
-                ["dead-letter.jsonl"] = deadLetters.Count,
-                ["session-metadata.json"] = sessionMetadata.Count
-            },
+            FileEntryCounts = fileEntryCounts,
             Warnings = warnings
         };
 
@@ -283,6 +294,8 @@ internal sealed class AdminObservabilityService
             WriteJsonlEntry(zip, "operator-audit.jsonl", operatorAudit, CoreJsonContext.Default.OperatorAuditEntry);
             WriteJsonlEntry(zip, "runtime-events.jsonl", runtimeEvents, CoreJsonContext.Default.RuntimeEventEntry);
             WriteJsonlEntry(zip, "approval-history.jsonl", approvals, CoreJsonContext.Default.ApprovalHistoryEntry);
+            if (includeGovernance)
+                WriteJsonlEntry(zip, "governance-ledger.jsonl", governance, CoreJsonContext.Default.GovernanceLedgerEntry);
             WriteJsonEntry(zip, "provider-usage.json", providerUsage, CoreJsonContext.Default.ListProviderUsageSnapshot);
             WriteJsonEntry(zip, "provider-routes.json", providerRoutes, CoreJsonContext.Default.ListProviderRouteHealthSnapshot);
             WriteJsonlEntry(zip, "dead-letter.jsonl", deadLetters, CoreJsonContext.Default.WebhookDeadLetterEntry);
@@ -299,6 +312,7 @@ internal sealed class AdminObservabilityService
         string? sessionId,
         bool anonymize,
         bool includeEvidence,
+        bool includeGovernance,
         CancellationToken ct)
     {
         DateTimeOffset startUtc;
@@ -318,6 +332,7 @@ internal sealed class AdminObservabilityService
             .ThenBy(static item => item.Id, StringComparer.Ordinal)
             .ToArray();
         var evidenceBySession = await LoadEvidenceBySessionAsync(sessions, startUtc, endUtc, includeEvidence, ct);
+        var governanceBySession = await LoadGovernanceBySessionAsync(sessions, startUtc, endUtc, includeGovernance, ct);
         await using var ms = new MemoryStream();
         await using (var writer = new StreamWriter(ms, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), leaveOpen: true))
         {
@@ -350,10 +365,72 @@ internal sealed class AdminObservabilityService
                         await WriteTrajectoryRecordAsync(writer, BuildEvidenceTrajectoryRecord(session, bundle, anonymize), ct);
                     }
                 }
+
+                if (governanceBySession.TryGetValue(session.Id, out var governance))
+                {
+                    foreach (var entry in governance)
+                    {
+                        await WriteTrajectoryRecordAsync(writer, BuildGovernanceTrajectoryRecord(session, entry, anonymize), ct);
+                    }
+                }
             }
         }
 
         return ms.ToArray();
+    }
+
+    private async Task<IReadOnlyList<GovernanceLedgerEntry>> LoadGovernanceForRangeAsync(
+        DateTimeOffset startUtc,
+        DateTimeOffset endUtc,
+        bool includeGovernance,
+        CancellationToken ct)
+    {
+        if (!includeGovernance || _governanceLedger is null)
+            return [];
+
+        return await _governanceLedger.ListAsync(new GovernanceLedgerListQuery
+        {
+            CreatedFromUtc = startUtc,
+            CreatedToUtc = endUtc,
+            Limit = 5000
+        }, ct);
+    }
+
+    private async Task<IReadOnlyDictionary<string, IReadOnlyList<GovernanceLedgerEntry>>> LoadGovernanceBySessionAsync(
+        IReadOnlyList<Session> sessions,
+        DateTimeOffset startUtc,
+        DateTimeOffset endUtc,
+        bool includeGovernance,
+        CancellationToken ct)
+    {
+        if (!includeGovernance || _governanceLedger is null || sessions.Count == 0)
+            return new Dictionary<string, IReadOnlyList<GovernanceLedgerEntry>>(StringComparer.Ordinal);
+
+        var sessionIds = sessions
+            .Select(static session => session.Id)
+            .Where(static id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
+        if (sessionIds.Count == 0)
+            return new Dictionary<string, IReadOnlyList<GovernanceLedgerEntry>>(StringComparer.Ordinal);
+
+        var query = new GovernanceLedgerListQuery
+        {
+            SessionId = sessions.Count == 1 ? sessions[0].Id : null,
+            CreatedFromUtc = startUtc == DateTimeOffset.MinValue ? null : startUtc,
+            CreatedToUtc = endUtc,
+            Limit = 5000
+        };
+        var governance = await _governanceLedger.ListAsync(query, ct);
+        return governance
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.SessionId) && sessionIds.Contains(entry.SessionId))
+            .GroupBy(static entry => entry.SessionId!, StringComparer.Ordinal)
+            .ToDictionary(
+                static group => group.Key,
+                static group => (IReadOnlyList<GovernanceLedgerEntry>)group
+                    .OrderBy(static item => item.CreatedAtUtc)
+                    .ThenBy(static item => item.Id, StringComparer.Ordinal)
+                    .ToArray(),
+                StringComparer.Ordinal);
     }
 
     private async Task<IReadOnlyDictionary<string, IReadOnlyList<EvidenceBundle>>> LoadEvidenceBySessionAsync(
@@ -535,6 +612,83 @@ internal sealed class AdminObservabilityService
             EvidenceBundle = ExportEvidenceBundle(bundle, anonymize),
             Anonymized = anonymize
         };
+
+    private TrajectoryExportRecord BuildGovernanceTrajectoryRecord(Session session, GovernanceLedgerEntry entry, bool anonymize)
+        => new()
+        {
+            Type = "governance_ledger_entry",
+            TimestampUtc = entry.UpdatedAtUtc == default ? entry.CreatedAtUtc : entry.UpdatedAtUtc,
+            SessionId = ExportSessionId(session.Id, anonymize),
+            ChannelId = ExportSessionId(session.ChannelId, anonymize),
+            SenderId = ExportSessionId(session.SenderId, anonymize),
+            TurnIndex = -1,
+            GovernanceLedgerEntry = ExportGovernanceLedgerEntry(entry, anonymize),
+            Anonymized = anonymize
+        };
+
+    private GovernanceLedgerEntry ExportGovernanceLedgerEntry(GovernanceLedgerEntry entry, bool anonymize)
+    {
+        if (!anonymize)
+            return entry;
+
+        return new GovernanceLedgerEntry
+        {
+            Id = ExportSessionId(entry.Id, anonymize),
+            CreatedAtUtc = entry.CreatedAtUtc,
+            UpdatedAtUtc = entry.UpdatedAtUtc,
+            Decision = entry.Decision,
+            Status = entry.Status,
+            Source = entry.Source,
+            ActionType = ExportText(entry.ActionType, anonymize, _redaction),
+            ToolName = entry.ToolName,
+            ActionSummary = ExportText(entry.ActionSummary, anonymize, _redaction) ?? "",
+            ArgumentSummary = ExportText(entry.ArgumentSummary, anonymize, _redaction),
+            RedactedArguments = ExportText(entry.RedactedArguments, anonymize, _redaction),
+            RiskLevel = entry.RiskLevel,
+            Scope = entry.Scope,
+            ScopeKey = ExportOptionalId(entry.ScopeKey, anonymize),
+            SessionId = ExportOptionalId(entry.SessionId, anonymize),
+            HarnessContractId = ExportOptionalId(entry.HarnessContractId, anonymize),
+            EvidenceBundleId = ExportOptionalId(entry.EvidenceBundleId, anonymize),
+            LearningProposalId = ExportOptionalId(entry.LearningProposalId, anonymize),
+            ApprovalId = ExportOptionalId(entry.ApprovalId, anonymize),
+            ActorId = ExportOptionalId(entry.ActorId, anonymize),
+            ChannelId = ExportOptionalId(entry.ChannelId, anonymize),
+            SenderId = ExportOptionalId(entry.SenderId, anonymize),
+            DecidedBy = ExportOptionalId(entry.DecidedBy, anonymize),
+            DecisionReason = ExportText(entry.DecisionReason, anonymize, _redaction),
+            ExpiresAtUtc = entry.ExpiresAtUtc,
+            RevokedAtUtc = entry.RevokedAtUtc,
+            RevokedBy = ExportOptionalId(entry.RevokedBy, anonymize),
+            RevocationReason = ExportText(entry.RevocationReason, anonymize, _redaction),
+            PolicyHint = ExportGovernancePolicyHint(entry.PolicyHint, anonymize),
+            Tags = entry.Tags
+                .Select(tag => ExportText(tag, anonymize, _redaction))
+                .Where(static tag => !string.IsNullOrWhiteSpace(tag))
+                .Select(static tag => tag!)
+                .ToArray(),
+            Metadata = entry.Metadata is null
+                ? null
+                : new GovernanceLedgerMetadata
+                {
+                    CreatedBy = ExportOptionalId(entry.Metadata.CreatedBy, anonymize),
+                    CorrelationId = ExportOptionalId(entry.Metadata.CorrelationId, anonymize),
+                    Properties = ExportStringDictionary(entry.Metadata.Properties, anonymize)
+                }
+        };
+    }
+
+    private GovernancePolicyHint? ExportGovernancePolicyHint(GovernancePolicyHint? hint, bool anonymize)
+        => hint is null
+            ? null
+            : new GovernancePolicyHint
+            {
+                SuggestedFutureBehavior = ExportText(hint.SuggestedFutureBehavior, anonymize, _redaction),
+                SuggestedScope = hint.SuggestedScope,
+                Confidence = hint.Confidence,
+                RequiresReview = hint.RequiresReview,
+                Notes = ExportText(hint.Notes, anonymize, _redaction)
+            };
 
     private EvidenceBundle ExportEvidenceBundle(EvidenceBundle bundle, bool anonymize)
     {

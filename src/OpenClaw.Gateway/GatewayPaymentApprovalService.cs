@@ -10,15 +10,18 @@ internal sealed class GatewayPaymentApprovalService : IPaymentApprovalService
     private readonly GatewayConfig _config;
     private readonly ToolApprovalService _approvals;
     private readonly ApprovalAuditStore _audit;
+    private readonly GovernanceLedgerService? _governanceLedger;
 
     public GatewayPaymentApprovalService(
         GatewayConfig config,
         ToolApprovalService approvals,
-        ApprovalAuditStore audit)
+        ApprovalAuditStore audit,
+        GovernanceLedgerService? governanceLedger = null)
     {
         _config = config;
         _approvals = approvals;
         _audit = audit;
+        _governanceLedger = governanceLedger;
     }
 
     public async ValueTask<ApprovalResult> RequestApprovalAsync(ApprovalRequest request, CancellationToken ct)
@@ -59,6 +62,28 @@ internal sealed class GatewayPaymentApprovalService : IPaymentApprovalService
                 outcome.Result == ToolApprovalWaitResult.TimedOut ? "timeout" : "payment",
                 actorChannelId: null,
                 actorSenderId: null);
+            if (_governanceLedger is not null)
+            {
+                if (outcome.Result == ToolApprovalWaitResult.TimedOut)
+                {
+                    await _governanceLedger.TryRecordExpiredAsync(
+                        outcome.Request,
+                        GovernanceLedgerSources.ApprovalTimeout,
+                        decidedBy: "timeout",
+                        ct);
+                }
+                else
+                {
+                    await _governanceLedger.TryRecordApprovalDecisionAsync(
+                        outcome.Request,
+                        approved,
+                        GovernanceLedgerSources.ToolApproval,
+                        decidedBy: "payment",
+                        actorChannelId: null,
+                        actorSenderId: null,
+                        ct);
+                }
+            }
         }
 
         return new ApprovalResult

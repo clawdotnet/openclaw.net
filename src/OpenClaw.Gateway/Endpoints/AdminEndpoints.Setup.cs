@@ -270,6 +270,7 @@ internal static partial class AdminEndpoints
             var bytes = await observability.ExportAuditBundleAsync(
                 GetQueryDateTimeOffset(ctx.Request, "fromUtc"),
                 GetQueryDateTimeOffset(ctx.Request, "toUtc"),
+                GetQueryBool(ctx.Request, "includeGovernance") ?? false,
                 ctx.RequestAborted);
             var fileName = $"openclaw-audit-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.zip";
             return Results.File(bytes, "application/zip", fileName);
@@ -286,12 +287,14 @@ internal static partial class AdminEndpoints
                 : null;
             var anonymize = GetQueryBool(ctx.Request, "anonymize") ?? false;
             var includeEvidence = GetQueryBool(ctx.Request, "includeEvidence") ?? false;
+            var includeGovernance = GetQueryBool(ctx.Request, "includeGovernance") ?? false;
             var bytes = await observability.ExportTrajectoryJsonlAsync(
                 GetQueryDateTimeOffset(ctx.Request, "fromUtc"),
                 GetQueryDateTimeOffset(ctx.Request, "toUtc"),
                 sessionId,
                 anonymize,
                 includeEvidence,
+                includeGovernance,
                 ctx.RequestAborted);
             var scope = string.IsNullOrWhiteSpace(sessionId) ? "range" : "session";
             var fileName = $"openclaw-trajectory-{scope}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.jsonl";

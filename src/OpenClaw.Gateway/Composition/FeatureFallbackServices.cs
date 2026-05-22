@@ -4,6 +4,7 @@ using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Features;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
+using OpenClaw.Core.Security;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 
@@ -78,6 +79,19 @@ internal static class FeatureFallbackServices
                services.GetService<RuntimeEventStore>()
                ?? new RuntimeEventStore(startup.Config.Memory.StoragePath, NullLogger<RuntimeEventStore>.Instance),
                NullLogger<EvidenceBundleService>.Instance);
+
+    public static GovernanceLedgerService ResolveGovernanceLedgerService(
+        GatewayStartupContext startup,
+        IServiceProvider services)
+        => services.GetService<GovernanceLedgerService>()
+           ?? new GovernanceLedgerService(
+               services.GetService<IGovernanceLedgerStore>()
+               ?? new FileGovernanceLedgerStore(startup.Config.Memory.StoragePath),
+               services.GetService<RuntimeEventStore>()
+               ?? new RuntimeEventStore(startup.Config.Memory.StoragePath, NullLogger<RuntimeEventStore>.Instance),
+               services.GetService<IRedactionPipeline>()
+               ?? new RedactionPipeline([new BaselineSecretRedactor()]),
+               NullLogger<GovernanceLedgerService>.Instance);
 }
 
 internal sealed class EmptySessionSearchStore : ISessionSearchStore

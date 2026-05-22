@@ -55,6 +55,7 @@ internal static partial class AdminEndpoints
         public LearningService LearningService { get; init; } = null!;
         public HarnessContractService HarnessContracts { get; init; } = null!;
         public EvidenceBundleService EvidenceBundles { get; init; } = null!;
+        public GovernanceLedgerService GovernanceLedger { get; init; } = null!;
         public IntegrationApiFacade Facade { get; init; } = null!;
         public ToolPresetResolver ToolPresetResolver { get; init; } = null!;
         public AdminObservabilityService Observability { get; init; } = null!;

@@ -394,6 +394,102 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task GovernanceLedger_AdminApi_RequiresAuthAndSupportsCreateListDetailAndRevoke()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+
+        var anonymousResponse = await harness.Client.GetAsync("/admin/governance/ledger");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+
+        var viewerToken = CreateOperatorToken(harness, OperatorRoleNames.Viewer, "governance-viewer");
+        using var viewerListRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/governance/ledger");
+        viewerListRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken);
+        var viewerListResponse = await harness.Client.SendAsync(viewerListRequest);
+        Assert.Equal(HttpStatusCode.OK, viewerListResponse.StatusCode);
+
+        using var viewerCreateRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/governance/ledger")
+        {
+            Content = JsonContent("""{"actionSummary":"viewer cannot create"}""")
+        };
+        viewerCreateRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken);
+        var viewerCreateResponse = await harness.Client.SendAsync(viewerCreateRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, viewerCreateResponse.StatusCode);
+
+        var (cookie, csrfToken) = await LoginAsync(harness.Client, harness.AuthToken);
+        var entryJson = JsonSerializer.Serialize(new GovernanceLedgerEntry
+        {
+            Id = "gov_admin",
+            Decision = GovernanceDecisions.Approved,
+            Status = GovernanceDecisionStatuses.Active,
+            Source = GovernanceLedgerSources.Manual,
+            ToolName = "shell",
+            ActionType = "write",
+            ActionSummary = "Operator approved a governed shell action.",
+            ArgumentSummary = """{"cmd":"echo sk-testsecret123"}""",
+            RedactedArguments = """{"cmd":"echo sk-testsecret123"}""",
+            RiskLevel = GovernanceRiskLevels.High,
+            Scope = GovernanceScopes.Session,
+            ScopeKey = "session-governance",
+            SessionId = "session-governance",
+            ApprovalId = "apr_admin",
+            DecidedBy = "operator",
+            DecisionReason = "manual review passed",
+            Tags = ["approval"]
+        }, CoreJsonContext.Default.GovernanceLedgerEntry);
+
+        using var missingCsrfRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/governance/ledger")
+        {
+            Content = JsonContent(entryJson)
+        };
+        missingCsrfRequest.Headers.Add("Cookie", cookie);
+        var missingCsrfResponse = await harness.Client.SendAsync(missingCsrfRequest);
+        Assert.Equal(HttpStatusCode.Unauthorized, missingCsrfResponse.StatusCode);
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/governance/ledger")
+        {
+            Content = JsonContent(entryJson)
+        };
+        createRequest.Headers.Add("Cookie", cookie);
+        createRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var createResponse = await harness.Client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        using var createPayload = await ReadJsonAsync(createResponse);
+        Assert.True(createPayload.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(GovernanceDecisions.Approved, createPayload.RootElement.GetProperty("entry").GetProperty("decision").GetString());
+        Assert.DoesNotContain("sk-testsecret123", createPayload.RootElement.GetProperty("entry").GetProperty("redactedArguments").GetString());
+
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/governance/ledger/gov_admin");
+        detailRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var detailResponse = await harness.Client.SendAsync(detailRequest);
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailPayload = await ReadJsonAsync(detailResponse);
+        Assert.Equal("gov_admin", detailPayload.RootElement.GetProperty("entry").GetProperty("id").GetString());
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/governance/ledger?decision=approved&toolName=shell&sessionId=session-governance");
+        listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var listResponse = await harness.Client.SendAsync(listRequest);
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listPayload = await ReadJsonAsync(listResponse);
+        Assert.Single(listPayload.RootElement.GetProperty("items").EnumerateArray());
+
+        using var revokeRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/governance/ledger/gov_admin/revoke")
+        {
+            Content = JsonContent("""{"reason":"scope changed"}""")
+        };
+        revokeRequest.Headers.Add("Cookie", cookie);
+        revokeRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var revokeResponse = await harness.Client.SendAsync(revokeRequest);
+        Assert.Equal(HttpStatusCode.OK, revokeResponse.StatusCode);
+        using var revokePayload = await ReadJsonAsync(revokeResponse);
+        Assert.Equal(GovernanceDecisionStatuses.Revoked, revokePayload.RootElement.GetProperty("entry").GetProperty("status").GetString());
+        Assert.Equal("scope changed", revokePayload.RootElement.GetProperty("entry").GetProperty("revocationReason").GetString());
+
+        var events = harness.Runtime.Operations.RuntimeEvents.Query(new RuntimeEventQuery { Component = "harness", Limit = 10 });
+        Assert.Contains(events, item => item.Action == "governance_ledger_entry_recorded" && item.CorrelationId == "gov_admin");
+        Assert.Contains(events, item => item.Action == "governance_ledger_entry_revoked" && item.CorrelationId == "gov_admin");
+    }
+
+    [Fact]
     public async Task AuthOperatorToken_ExchangeAndRevocation_Work()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -925,6 +1021,16 @@ public sealed class GatewayAdminEndpointTests
             Summary = "new",
             Success = true
         });
+        await CreateGovernanceLedgerService(harness).CreateAsync(new GovernanceLedgerEntry
+        {
+            Id = "gov_audit_export",
+            Decision = GovernanceDecisions.Approved,
+            Status = GovernanceDecisionStatuses.Active,
+            Source = GovernanceLedgerSources.Manual,
+            ActionSummary = "Audit export governance record.",
+            ToolName = "shell",
+            SessionId = "sess-audit-export"
+        }, CancellationToken.None);
 
         using var exportRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/audit/export?fromUtc={Uri.EscapeDataString(DateTimeOffset.UtcNow.AddDays(-30).ToString("O"))}");
         exportRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token!.Token);
@@ -942,6 +1048,7 @@ public sealed class GatewayAdminEndpointTests
         Assert.Contains("provider-routes.json", names);
         Assert.Contains("dead-letter.jsonl", names);
         Assert.Contains("session-metadata.json", names);
+        Assert.DoesNotContain("governance-ledger.jsonl", names);
 
         using var manifestStream = archive.GetEntry("manifest.json")!.Open();
         using var manifestDoc = await JsonDocument.ParseAsync(manifestStream);
@@ -950,6 +1057,14 @@ public sealed class GatewayAdminEndpointTests
             manifestDoc.RootElement.GetProperty("warnings").EnumerateArray().Select(static item => item.GetString()).OfType<string>(),
             value => value.Contains("retention window", StringComparison.OrdinalIgnoreCase));
         Assert.True(manifestDoc.RootElement.GetProperty("fileEntryCounts").GetProperty("operator-audit.jsonl").GetInt32() >= 1);
+
+        using var governanceExportRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/audit/export?includeGovernance=true&fromUtc={Uri.EscapeDataString(DateTimeOffset.UtcNow.AddDays(-1).ToString("O"))}");
+        governanceExportRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+        var governanceExportResponse = await harness.Client.SendAsync(governanceExportRequest);
+        governanceExportResponse.EnsureSuccessStatusCode();
+        var governanceBytes = await governanceExportResponse.Content.ReadAsByteArrayAsync();
+        using var governanceArchive = new ZipArchive(new MemoryStream(governanceBytes), ZipArchiveMode.Read);
+        Assert.Contains(governanceArchive.Entries, entry => entry.FullName == "governance-ledger.jsonl");
     }
 
     [Fact]
@@ -1047,6 +1162,25 @@ public sealed class GatewayAdminEndpointTests
                 }
             }
         }, CancellationToken.None);
+        await CreateGovernanceLedgerService(harness).CreateAsync(new GovernanceLedgerEntry
+        {
+            Id = "gov-trajectory",
+            Decision = GovernanceDecisions.Approved,
+            Status = GovernanceDecisionStatuses.Active,
+            Source = GovernanceLedgerSources.Manual,
+            ActionSummary = "Approved action for alice@example.com with sk-testsecret123.",
+            ArgumentSummary = """{"email":"alice@example.com","token":"sk-testsecret123"}""",
+            RedactedArguments = """{"email":"alice@example.com","token":"sk-testsecret123"}""",
+            ToolName = "web_fetch",
+            RiskLevel = GovernanceRiskLevels.Medium,
+            Scope = GovernanceScopes.Session,
+            SessionId = "sess-trajectory",
+            ChannelId = "web",
+            SenderId = "alice@example.com",
+            DecidedBy = "alice@example.com",
+            DecisionReason = "reviewed with sk-testsecret123",
+            Tags = ["alice@example.com", "sk-testsecret123"]
+        }, CancellationToken.None);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/trajectory/export?sessionId=sess-trajectory&anonymize=true");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -1060,6 +1194,7 @@ public sealed class GatewayAdminEndpointTests
         Assert.Contains("\"type\":\"tool_result\"", jsonl);
         Assert.Contains("anon_", jsonl);
         Assert.DoesNotContain("\"type\":\"evidence_bundle\"", jsonl);
+        Assert.DoesNotContain("\"type\":\"governance_ledger_entry\"", jsonl);
         Assert.DoesNotContain("alice@example.com", jsonl);
         Assert.DoesNotContain("sk-testsecret123", jsonl);
         Assert.DoesNotContain("secret-value", jsonl);
@@ -1072,9 +1207,22 @@ public sealed class GatewayAdminEndpointTests
         var evidenceJsonl = await evidenceResponse.Content.ReadAsStringAsync();
         Assert.Contains("\"type\":\"evidence_bundle\"", evidenceJsonl);
         Assert.Contains("\"evidenceBundle\"", evidenceJsonl);
+        Assert.DoesNotContain("\"type\":\"governance_ledger_entry\"", evidenceJsonl);
         Assert.DoesNotContain("alice@example.com", evidenceJsonl);
         Assert.DoesNotContain("sk-testsecret123", evidenceJsonl);
         Assert.DoesNotContain("secret-value", evidenceJsonl);
+
+        using var governanceRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/trajectory/export?sessionId=sess-trajectory&anonymize=true&includeGovernance=true");
+        governanceRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var governanceResponse = await harness.Client.SendAsync(governanceRequest);
+
+        governanceResponse.EnsureSuccessStatusCode();
+        var governanceJsonl = await governanceResponse.Content.ReadAsStringAsync();
+        Assert.Contains("\"type\":\"governance_ledger_entry\"", governanceJsonl);
+        Assert.Contains("\"governanceLedgerEntry\"", governanceJsonl);
+        Assert.DoesNotContain("alice@example.com", governanceJsonl);
+        Assert.DoesNotContain("sk-testsecret123", governanceJsonl);
+        Assert.DoesNotContain("secret-value", governanceJsonl);
     }
 
     [Fact]
@@ -3367,6 +3515,12 @@ public sealed class GatewayAdminEndpointTests
             .Single(item => item.EventType == "decision");
         Assert.Equal("timeout", decision.DecisionSource);
         Assert.False(decision.Approved);
+
+        var governance = await CreateGovernanceLedgerService(harness)
+            .ListAsync(new GovernanceLedgerListQuery { SessionId = approval.SessionId, Decision = GovernanceDecisions.Expired }, CancellationToken.None);
+        var expired = Assert.Single(governance);
+        Assert.Equal(GovernanceDecisionStatuses.Expired, expired.Status);
+        Assert.Equal(approval.ApprovalId, expired.ApprovalId);
     }
 
     [Fact]
@@ -3476,6 +3630,37 @@ public sealed class GatewayAdminEndpointTests
         var historyPayload = await ReadJsonAsync(historyResponse);
         Assert.Equal(1, historyPayload.RootElement.GetProperty("items").GetArrayLength());
         Assert.Equal("created", historyPayload.RootElement.GetProperty("items")[0].GetProperty("eventType").GetString());
+    }
+
+    [Fact]
+    public async Task ToolsApprove_RecordsGovernanceLedgerEntry()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var approval = harness.Runtime.ToolApprovalService.Create(
+            "sess-governance-approve",
+            "telegram",
+            "sender1",
+            "shell",
+            """{"cmd":"echo sk-testsecret123"}""",
+            TimeSpan.FromMinutes(5),
+            action: "execute",
+            isMutation: true,
+            summary: "Run a shell command.");
+        harness.Runtime.ApprovalAuditStore.RecordCreated(approval);
+
+        using var approvalResponse = await SubmitApprovalDecisionAsync(harness.Client, harness.AuthToken, approval, approved: true);
+        Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+
+        using var ledgerRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/governance/ledger?sessionId=sess-governance-approve&decision=approved");
+        ledgerRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var ledgerResponse = await harness.Client.SendAsync(ledgerRequest);
+        Assert.Equal(HttpStatusCode.OK, ledgerResponse.StatusCode);
+        using var ledgerPayload = await ReadJsonAsync(ledgerResponse);
+        var items = ledgerPayload.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Single(items);
+        Assert.Equal(approval.ApprovalId, items[0].GetProperty("approvalId").GetString());
+        Assert.Equal(GovernanceRiskLevels.High, items[0].GetProperty("riskLevel").GetString());
+        Assert.DoesNotContain("sk-testsecret123", items[0].GetProperty("redactedArguments").GetString());
     }
 
     [Fact]
@@ -5399,6 +5584,9 @@ public sealed class GatewayAdminEndpointTests
             "/admin/harness/evidence/{id}/items",
             "/admin/harness/evidence/{id}/checks",
             "/admin/harness/evidence/{id}/reviews",
+            "/admin/governance/ledger",
+            "/admin/governance/ledger/{id}",
+            "/admin/governance/ledger/{id}/revoke",
             "/admin/channels/auth",
             "/admin/channels/{channelId}/auth",
             "/admin/channels/{channelId}/auth/stream",
@@ -5545,6 +5733,13 @@ public sealed class GatewayAdminEndpointTests
             Assert.Single(response.Headers.GetValues("Set-Cookie")),
             payload.RootElement.GetProperty("csrfToken").GetString()!);
     }
+
+    private static GovernanceLedgerService CreateGovernanceLedgerService(GatewayTestHarness harness)
+        => new(
+            new FileGovernanceLedgerStore(harness.StoragePath),
+            harness.Runtime.Operations.RuntimeEvents,
+            new RedactionPipeline([new BaselineSecretRedactor()]),
+            NullLogger<GovernanceLedgerService>.Instance);
 
     private const string ShellApprovalArgumentsJson = """{"command":"pwd"}""";
 
