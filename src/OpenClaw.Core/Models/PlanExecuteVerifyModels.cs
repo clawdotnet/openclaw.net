@@ -94,7 +94,7 @@ public sealed class HarnessVerificationResult
     public IReadOnlyList<string> UntestedAreas { get; init; } = [];
     public IReadOnlyList<string> Recommendations { get; init; } = [];
     public DateTimeOffset StartedAtUtc { get; init; } = DateTimeOffset.UtcNow;
-    public DateTimeOffset CompletedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? CompletedAtUtc { get; init; }
 }
 
 public sealed class HarnessVerificationCheck

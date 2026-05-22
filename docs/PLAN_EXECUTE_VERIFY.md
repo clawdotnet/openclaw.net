@@ -113,7 +113,7 @@ Plan-Execute-Verify Mode is:
 - not enabled by default
 - not required for normal chat
 - not automatic rollback by default
-- not a replacement for human review
+- not a substitute for human review
 - not a guarantee that every task is semantically correct
 - not a replacement for unit, integration, or harness regression tests
 

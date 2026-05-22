@@ -122,6 +122,10 @@ public sealed class PlanExecuteVerifyTests
         Assert.Equal(run.HarnessContractId, ledger[0].HarnessContractId);
         Assert.NotNull(evidence);
         Assert.Contains(evidence!.Items, item => item.Kind == EvidenceItemKinds.Approval && item.Status == GovernanceDecisions.Approved);
+
+        var contract = await new FileHarnessContractStore(root).GetAsync(run.HarnessContractId!, CancellationToken.None);
+        Assert.Equal(HarnessContractStatus.Executing, contract!.Status);
+        Assert.NotNull(contract.ApprovedAtUtc);
     }
 
     [Fact]
@@ -159,6 +163,88 @@ public sealed class PlanExecuteVerifyTests
     }
 
     [Fact]
+    public async Task RejectedApproval_PreservesRejectedRunAndContractStatus()
+    {
+        var root = CreateTempDir();
+        var service = CreateService(root, CreateEnabledConfig());
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
+
+        await service.RecordApprovalDecisionAsync(decision.Run, approved: false, CancellationToken.None);
+        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Blocked, ToolFailureCodes.ApprovalRequired), CancellationToken.None);
+
+        Assert.Equal(PlanExecuteVerifyStatus.Rejected, completed!.Status);
+        var contract = await new FileHarnessContractStore(root).GetAsync(completed.HarnessContractId!, CancellationToken.None);
+        Assert.Equal(HarnessContractStatus.Rejected, contract!.Status);
+    }
+
+    [Fact]
+    public async Task ManualVerify_UpdatesRunContractAndEvidence()
+    {
+        var root = CreateTempDir();
+        var service = CreateService(root, CreateEnabledConfig());
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
+        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, CancellationToken.None);
+        await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), CancellationToken.None);
+
+        var verified = await service.VerifyRunAsync(decision.Run!.Id, CancellationToken.None);
+
+        Assert.Equal(PlanExecuteVerifyStatus.Verified, verified!.Status);
+        var contract = await new FileHarnessContractStore(root).GetAsync(verified.HarnessContractId!, CancellationToken.None);
+        var evidence = await new FileEvidenceBundleStore(root).GetAsync(verified.EvidenceBundleId!, CancellationToken.None);
+        Assert.Equal(HarnessContractStatus.Verified, contract!.Status);
+        Assert.Contains(evidence!.Checks, check => check.Kind == EvidenceItemKinds.VerificationResult);
+    }
+
+    [Fact]
+    public async Task CancelRun_UpdatesContractAndEvidence()
+    {
+        var root = CreateTempDir();
+        var service = CreateService(root, CreateEnabledConfig());
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
+
+        var cancelled = await service.CancelRunAsync(decision.Run!.Id, CancellationToken.None);
+
+        Assert.Equal(PlanExecuteVerifyStatus.Cancelled, cancelled!.Status);
+        var contract = await new FileHarnessContractStore(root).GetAsync(cancelled.HarnessContractId!, CancellationToken.None);
+        var evidence = await new FileEvidenceBundleStore(root).GetAsync(cancelled.EvidenceBundleId!, CancellationToken.None);
+        Assert.Equal(HarnessContractStatus.Cancelled, contract!.Status);
+        Assert.Contains(evidence!.Checks, check => check.Name == "Plan-Execute-Verify cancellation");
+    }
+
+    [Fact]
+    public async Task MultiToolWorkflowTrigger_CreatesContractForConfiguredMultiToolRun()
+    {
+        var root = CreateTempDir();
+        var config = CreateEnabledConfig();
+        config.Harness.PlanExecuteVerify.ContractRequiredFor = [PlanExecuteVerifyContractTriggers.MultiToolWorkflows];
+        config.Harness.PlanExecuteVerify.RequireApprovalForRisk = [];
+        var service = CreateService(root, config);
+
+        var decision = await service.EvaluateToolAsync(
+            CreateContext("read_file", ToolGovernanceRiskLevel.Low, readOnly: true, toolCallCount: 2),
+            CancellationToken.None);
+
+        Assert.True(decision.RequiresPlanExecuteVerify);
+        Assert.False(decision.RequiresApproval);
+        Assert.Equal(PlanExecuteVerifyStatus.Executing, decision.Run!.Status);
+    }
+
+    [Fact]
+    public async Task InferResourceSet_DoesNotTreatShellCommandAsFilePath()
+    {
+        var root = CreateTempDir();
+        var service = CreateService(root, CreateEnabledConfig());
+
+        var decision = await service.EvaluateToolAsync(
+            CreateContext("shell", ToolGovernanceRiskLevel.Critical, argumentsJson: """{"cmd":"dotnet test"}"""),
+            CancellationToken.None);
+
+        var contract = await new FileHarnessContractStore(root).GetAsync(decision.Run!.HarnessContractId!, CancellationToken.None);
+        Assert.DoesNotContain(contract!.ReadSet, item => item.Path == "dotnet test");
+        Assert.DoesNotContain(contract.WriteSet, item => item.Path == "dotnet test");
+    }
+
+    [Fact]
     public async Task ToolExecutor_PevEnabledWrapsHighRiskToolWithoutChangingExecutionPipeline()
     {
         var root = CreateTempDir();
@@ -191,6 +277,35 @@ public sealed class PlanExecuteVerifyTests
         Assert.Equal(PlanExecuteVerifyStatus.Verified, run.Status);
         Assert.NotNull(run.HarnessContractId);
         Assert.NotNull(run.EvidenceBundleId);
+    }
+
+    [Fact]
+    public async Task ToolExecutor_BlocksNonProceedPevDecision()
+    {
+        var tool = new EchoTool("shell", "ok");
+        var executor = new OpenClawToolExecutor(
+            [tool],
+            toolTimeoutSeconds: 5,
+            requireToolApproval: false,
+            approvalRequiredTools: [],
+            hooks: [],
+            metrics: null,
+            logger: NullLogger.Instance,
+            config: CreateEnabledConfig(),
+            planExecuteVerify: new RejectingPlanExecuteVerifyOrchestrator());
+
+        var result = await executor.ExecuteAsync(
+            "shell",
+            """{"cmd":"dotnet test"}""",
+            "call_1",
+            CreateSession(),
+            CreateTurnContext(),
+            isStreaming: false,
+            approvalCallback: (_, _, _) => ValueTask.FromResult(true),
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
+        Assert.Equal(0, tool.ExecutionCount);
     }
 
     [Fact]
@@ -257,14 +372,16 @@ public sealed class PlanExecuteVerifyTests
     private static PlanExecuteVerifyToolContext CreateContext(
         string toolName,
         ToolGovernanceRiskLevel risk,
-        bool readOnly = false)
+        bool readOnly = false,
+        int toolCallCount = 1,
+        string argumentsJson = """{"cmd":"dotnet test","path":"README.md"}""")
         => new()
         {
             Session = CreateSession(),
             CorrelationId = "corr_1",
             CallId = "call_1",
             ToolName = toolName,
-            ArgumentsJson = """{"cmd":"dotnet test","path":"README.md"}""",
+            ArgumentsJson = argumentsJson,
             ActionDescriptor = new ToolActionDescriptor
             {
                 Action = readOnly ? "read" : "execute",
@@ -282,7 +399,8 @@ public sealed class PlanExecuteVerifyTests
                     RequiresApproval = risk is ToolGovernanceRiskLevel.High or ToolGovernanceRiskLevel.Critical,
                     RiskLevel = risk.ToString().ToLowerInvariant()
                 }) with { ReadOnly = readOnly },
-            ExistingApprovalRequired = risk is ToolGovernanceRiskLevel.High or ToolGovernanceRiskLevel.Critical
+            ExistingApprovalRequired = risk is ToolGovernanceRiskLevel.High or ToolGovernanceRiskLevel.Critical,
+            ToolCallCount = toolCallCount
         };
 
     private static ToolInvocation CreateInvocation(string status, string? failureCode = null)
@@ -333,5 +451,31 @@ public sealed class PlanExecuteVerifyTests
             ExecutionCount++;
             return ValueTask.FromResult(result);
         }
+    }
+
+    private sealed class RejectingPlanExecuteVerifyOrchestrator : IPlanExecuteVerifyOrchestrator
+    {
+        public ValueTask<PlanExecuteVerifyDecision> EvaluateToolAsync(
+            PlanExecuteVerifyToolContext context,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(new PlanExecuteVerifyDecision
+            {
+                Decision = PlanExecuteVerifyDecisionKinds.Reject,
+                RequiresPlanExecuteVerify = true,
+                Summary = "Rejected by test orchestrator."
+            });
+
+        public ValueTask RecordApprovalDecisionAsync(PlanExecuteVerifyRun? run, bool approved, CancellationToken cancellationToken = default)
+            => ValueTask.CompletedTask;
+
+        public ValueTask<PlanExecuteVerifyRun?> CompleteToolAsync(PlanExecuteVerifyRun? run, ToolInvocation invocation, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<PlanExecuteVerifyRun?>(run);
+
+        public ValueTask<PlanExecuteVerifyRun?> VerifyRunAsync(string runId, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<PlanExecuteVerifyRun?>(null);
+
+        public PlanExecuteVerifyRun? GetRun(string id) => null;
+
+        public IReadOnlyList<PlanExecuteVerifyRun> ListRuns(int limit = 100) => [];
     }
 }

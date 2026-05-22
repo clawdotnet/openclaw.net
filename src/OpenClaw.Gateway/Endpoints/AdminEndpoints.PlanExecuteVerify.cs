@@ -34,8 +34,8 @@ internal static partial class AdminEndpoints
             if (run is null)
             {
                 return Results.Json(
-                    new PlanExecuteVerifyRunMutationResponse { Success = false, Error = "PEV run not found." },
-                    CoreJsonContext.Default.PlanExecuteVerifyRunMutationResponse,
+                    new PlanExecuteVerifyRunDetailResponse { Run = null },
+                    CoreJsonContext.Default.PlanExecuteVerifyRunDetailResponse,
                     statusCode: StatusCodes.Status404NotFound);
             }
 
@@ -77,14 +77,14 @@ internal static partial class AdminEndpoints
                 CoreJsonContext.Default.PlanExecuteVerifyRunMutationResponse);
         });
 
-        app.MapPost("/admin/harness/pev/runs/{id}/cancel", (HttpContext ctx, string id) =>
+        app.MapPost("/admin/harness/pev/runs/{id}/cancel", async (HttpContext ctx, string id) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.harness.mutate");
             if (authResult.Failure is not null)
                 return authResult.Failure;
 
             var before = pev.GetRun(id);
-            var updated = pev.CancelRun(id);
+            var updated = await pev.CancelRunAsync(id, ctx.RequestAborted);
             if (updated is null)
             {
                 return Results.Json(

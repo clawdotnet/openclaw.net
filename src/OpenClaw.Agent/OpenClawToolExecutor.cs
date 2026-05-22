@@ -118,13 +118,14 @@ public sealed class OpenClawToolExecutor
         bool isStreaming,
         ToolApprovalCallback? approvalCallback,
         CancellationToken ct,
-        Func<string, ValueTask>? onDelta = null)
+        Func<string, ValueTask>? onDelta = null,
+        int toolCallCount = 1)
     {
         var argsJson = call.Arguments is not null
             ? JsonSerializer.Serialize(call.Arguments, CoreJsonContext.Default.IDictionaryStringObject)
             : "{}";
 
-        return await ExecuteAsync(call.Name, argsJson, call.CallId, session, turnCtx, isStreaming, approvalCallback, ct, onDelta);
+        return await ExecuteAsync(call.Name, argsJson, call.CallId, session, turnCtx, isStreaming, approvalCallback, ct, onDelta, toolCallCount);
     }
 
     public async Task<ToolExecutionResult> ExecuteAsync(
@@ -136,7 +137,8 @@ public sealed class OpenClawToolExecutor
         bool isStreaming,
         ToolApprovalCallback? approvalCallback,
         CancellationToken ct,
-        Func<string, ValueTask>? onDelta = null)
+        Func<string, ValueTask>? onDelta = null,
+        int toolCallCount = 1)
     {
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.ExecuteTool");
         activity?.SetTag("tool.name", toolName);
@@ -343,8 +345,24 @@ public sealed class OpenClawToolExecutor
             ActionDescriptor = approvalDescriptor,
             GovernanceDescriptor = governanceDescriptor,
             ExistingApprovalRequired = requiresApproval,
-            IsStreaming = isStreaming
+            IsStreaming = isStreaming,
+            ToolCallCount = toolCallCount
         }, ct);
+        if (BlocksPlanExecuteVerifyDecision(pevDecision.Decision))
+        {
+            var blocked = $"Plan-Execute-Verify decision '{pevDecision.Decision}' blocked tool execution: {pevDecision.Summary}";
+            _logger?.LogInformation("[{CorrelationId}] {Message}", turnCtx.CorrelationId, blocked);
+            return CreateImmediateResult(
+                toolName,
+                persistedArgsJson,
+                _redaction.Redact(blocked),
+                callId: callId,
+                resultStatus: ToolResultStatuses.Blocked,
+                failureCode: ToolFailureCodes.ApprovalRequired,
+                failureMessage: blocked,
+                nextStep: "Review the linked Plan-Execute-Verify run before retrying.",
+                governanceDecision: governanceDecision);
+        }
         requiresApproval = requiresApproval || pevDecision.RequiresApproval;
 
         if (requiresApproval)
@@ -366,7 +384,6 @@ public sealed class OpenClawToolExecutor
                         failureMessage: "Tool execution was denied by the reviewer.",
                         nextStep: "Approve the tool request to allow this action.",
                         governanceDecision: governanceDecision);
-                    await _planExecuteVerify.CompleteToolAsync(pevDecision.Run, deniedResult.Invocation, ct);
                     return deniedResult;
                 }
             }
@@ -391,7 +408,6 @@ public sealed class OpenClawToolExecutor
                     nextStep: "Use an approval-capable surface such as /chat, or disable approval requirements for trusted local sessions.",
                     governanceDecision: governanceDecision);
                 await _planExecuteVerify.RecordApprovalDecisionAsync(pevDecision.Run, approved: false, ct);
-                await _planExecuteVerify.CompleteToolAsync(pevDecision.Run, deniedResult.Invocation, ct);
                 return deniedResult;
             }
         }
@@ -974,6 +990,11 @@ public sealed class OpenClawToolExecutor
         string.Equals(toolName, "file_write", StringComparison.Ordinal)
             ? "write_file"
             : toolName;
+
+    private static bool BlocksPlanExecuteVerifyDecision(string? decision)
+        => decision is not null &&
+           !string.Equals(decision, PlanExecuteVerifyDecisionKinds.Proceed, StringComparison.OrdinalIgnoreCase) &&
+           !string.Equals(decision, PlanExecuteVerifyDecisionKinds.RequireApproval, StringComparison.OrdinalIgnoreCase);
 
     private static string ClassifyToolFailureCode(string toolName, string message)
     {

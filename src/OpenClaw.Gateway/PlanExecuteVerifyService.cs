@@ -18,6 +18,9 @@ internal interface IHarnessVerifier
 
 internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
 {
+    private const int MaxStoredRuns = 1_000;
+    private static readonly TimeSpan RunRetention = TimeSpan.FromHours(24);
+
     private readonly GatewayConfig _config;
     private readonly HarnessContractService _contracts;
     private readonly EvidenceBundleService _evidence;
@@ -26,7 +29,7 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
     private readonly ILogger<PlanExecuteVerifyService> _logger;
     private readonly IReadOnlyList<IHarnessVerifier> _verifiers;
     private readonly ConcurrentDictionary<string, PlanExecuteVerifyRun> _runs = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, ToolInvocation> _lastInvocations = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, RetainedToolInvocation> _lastInvocations = new(StringComparer.Ordinal);
 
     public PlanExecuteVerifyService(
         GatewayConfig config,
@@ -180,8 +183,18 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
             }, cancellationToken);
         }
 
-        if (!approved && current.HarnessContractId is not null)
-            await _contracts.MarkStatusAsync(current.HarnessContractId, HarnessContractStatus.Rejected, cancellationToken);
+        if (current.HarnessContractId is not null)
+        {
+            if (approved)
+            {
+                await _contracts.MarkStatusAsync(current.HarnessContractId, HarnessContractStatus.Approved, cancellationToken);
+                await _contracts.MarkStatusAsync(current.HarnessContractId, HarnessContractStatus.Executing, cancellationToken);
+            }
+            else
+            {
+                await _contracts.MarkStatusAsync(current.HarnessContractId, HarnessContractStatus.Rejected, cancellationToken);
+            }
+        }
     }
 
     public async ValueTask<PlanExecuteVerifyRun?> CompleteToolAsync(
@@ -195,72 +208,43 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
         if (current.EvidenceBundleId is not null)
             await _evidence.AddItemAsync(current.EvidenceBundleId, EvidenceBundleService.FromToolInvocation(invocation), cancellationToken);
 
-        _lastInvocations[current.Id] = invocation;
+        _lastInvocations[current.Id] = new RetainedToolInvocation(invocation, DateTimeOffset.UtcNow);
+
+        if (IsTerminalNonExecutionStatus(current.Status))
+            return current;
 
         var verification = _config.Harness.PlanExecuteVerify.RunVerification
             ? await RunVerificationAsync(current, invocation, cancellationToken)
             : new HarnessVerificationResult
             {
                 Status = HarnessVerificationStatus.Skipped,
-                Summary = "Verification is disabled by PlanExecuteVerify.RunVerification."
+                Summary = "Verification is disabled by PlanExecuteVerify.RunVerification.",
+                CompletedAtUtc = DateTimeOffset.UtcNow
             };
 
-        var failed = string.Equals(verification.Status, HarnessVerificationStatus.Failed, StringComparison.OrdinalIgnoreCase);
-        var status = failed ? PlanExecuteVerifyStatus.Failed : PlanExecuteVerifyStatus.Verified;
-        var decision = failed
-            ? (_config.Harness.PlanExecuteVerify.AutoRollbackOnFailedVerification
-                ? PlanExecuteVerifyDecisionKinds.Rollback
-                : PlanExecuteVerifyDecisionKinds.Escalate)
-            : PlanExecuteVerifyDecisionKinds.Proceed;
-        var completed = CopyRun(
+        return await ApplyVerificationResultAsync(
             current,
-            status,
-            decision,
-            approved: current.Approved,
             verification,
-            completedAtUtc: DateTimeOffset.UtcNow,
-            recommendations: verification.Recommendations);
-        Upsert(completed);
-
-        if (current.HarnessContractId is not null)
-            await _contracts.MarkStatusAsync(current.HarnessContractId, failed ? HarnessContractStatus.Failed : HarnessContractStatus.Verified, cancellationToken);
-
-        if (current.EvidenceBundleId is not null)
-        {
-            await _evidence.AddCheckAsync(current.EvidenceBundleId, new EvidenceCheck
-            {
-                Name = "Plan-Execute-Verify result",
-                Status = ToEvidenceStatus(verification.Status),
-                Summary = verification.Summary,
-                Details = string.Join("; ", verification.Checks.Select(static check => $"{check.Name}: {check.Status}"))
-            }, cancellationToken);
-        }
-
-        AppendEvent(completed, "pev_run_completed", failed ? "warning" : "info", $"PEV run '{completed.Id}' completed with status '{completed.Status}'.");
-        return completed;
+            eventAction: "pev_run_completed",
+            eventSummary: "PEV run completed",
+            cancellationToken);
     }
 
     public async ValueTask<PlanExecuteVerifyRun?> VerifyRunAsync(string runId, CancellationToken cancellationToken = default)
     {
         if (!_runs.TryGetValue(runId, out var run))
             return null;
+        if (IsTerminalNonExecutionStatus(run.Status))
+            return run;
 
-        _lastInvocations.TryGetValue(run.Id, out var invocation);
-        var verification = await RunVerificationAsync(run, invocation, cancellationToken);
-        var updated = CopyRun(
+        _lastInvocations.TryGetValue(run.Id, out var retainedInvocation);
+        var verification = await RunVerificationAsync(run, retainedInvocation?.Invocation, cancellationToken);
+        return await ApplyVerificationResultAsync(
             run,
-            status: string.Equals(verification.Status, HarnessVerificationStatus.Failed, StringComparison.OrdinalIgnoreCase)
-                ? PlanExecuteVerifyStatus.Failed
-                : PlanExecuteVerifyStatus.Verified,
-            decision: string.Equals(verification.Status, HarnessVerificationStatus.Failed, StringComparison.OrdinalIgnoreCase)
-                ? PlanExecuteVerifyDecisionKinds.Escalate
-                : PlanExecuteVerifyDecisionKinds.Proceed,
-            approved: run.Approved,
-            verification: verification,
-            completedAtUtc: DateTimeOffset.UtcNow,
-            recommendations: verification.Recommendations);
-        Upsert(updated);
-        return updated;
+            verification,
+            eventAction: "pev_run_verified",
+            eventSummary: "PEV run manually verified",
+            cancellationToken);
     }
 
     public PlanExecuteVerifyRun? GetRun(string id)
@@ -272,10 +256,12 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
             .Take(Math.Clamp(limit, 1, 500))
             .ToArray();
 
-    public PlanExecuteVerifyRun? CancelRun(string runId)
+    public async ValueTask<PlanExecuteVerifyRun?> CancelRunAsync(string runId, CancellationToken cancellationToken = default)
     {
         if (!_runs.TryGetValue(runId, out var run))
             return null;
+        if (IsTerminalStatus(run.Status))
+            return run;
 
         var cancelled = CopyRun(
             run,
@@ -285,6 +271,20 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
             completedAtUtc: DateTimeOffset.UtcNow,
             recommendations: ["Review the linked contract and evidence before retrying."]);
         Upsert(cancelled);
+        if (cancelled.HarnessContractId is not null)
+            await _contracts.MarkStatusAsync(cancelled.HarnessContractId, HarnessContractStatus.Cancelled, cancellationToken);
+        if (cancelled.EvidenceBundleId is not null)
+        {
+            await _evidence.AddCheckAsync(cancelled.EvidenceBundleId, new EvidenceCheck
+            {
+                Name = "Plan-Execute-Verify cancellation",
+                Kind = EvidenceItemKinds.RuntimeEvent,
+                Required = false,
+                Status = EvidenceCheckStatuses.Warning,
+                CompletedAtUtc = DateTimeOffset.UtcNow,
+                Summary = "PEV run was cancelled by an operator."
+            }, cancellationToken);
+        }
         AppendEvent(cancelled, "pev_run_cancelled", "warning", $"PEV run '{cancelled.Id}' was cancelled by an operator.");
         return cancelled;
     }
@@ -296,11 +296,8 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
     {
         var started = DateTimeOffset.UtcNow;
         var checks = new List<HarnessVerificationCheck>();
-        foreach (var verifier in _verifiers)
+        foreach (var verifier in _verifiers.Where(verifier => verifier.CanVerify(run, invocation)))
         {
-            if (!verifier.CanVerify(run, invocation))
-                continue;
-
             checks.Add(await verifier.VerifyAsync(run, invocation, ct));
         }
 
@@ -372,6 +369,8 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
         if (Has(PlanExecuteVerifyContractTriggers.ExternalApi) &&
             (context.GovernanceDescriptor.CanAccessNetwork || context.GovernanceDescriptor.CanSendDataExternally))
             triggers.Add(PlanExecuteVerifyContractTriggers.ExternalApi);
+        if (Has(PlanExecuteVerifyContractTriggers.MultiToolWorkflows) && context.ToolCallCount > 1)
+            triggers.Add(PlanExecuteVerifyContractTriggers.MultiToolWorkflows);
         return triggers.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
@@ -515,10 +514,7 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
     private static IReadOnlyList<HarnessContractResourceRef> InferResourceSet(PlanExecuteVerifyToolContext context, bool write)
     {
         var refs = new List<HarnessContractResourceRef>();
-        var path = TryReadStringProperty(context.ArgumentsJson, "path")
-                   ?? TryReadStringProperty(context.ArgumentsJson, "file")
-                   ?? TryReadStringProperty(context.ArgumentsJson, "command")
-                   ?? TryReadStringProperty(context.ArgumentsJson, "cmd");
+        var path = TryReadStringProperty(context.ArgumentsJson, "path", "file");
         if (!string.IsNullOrWhiteSpace(path))
         {
             refs.Add(new HarnessContractResourceRef
@@ -540,16 +536,22 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
         return refs;
     }
 
-    private static string? TryReadStringProperty(string json, string property)
+    private static string? TryReadStringProperty(string json, params string[] properties)
     {
         try
         {
             using var doc = JsonDocument.Parse(json);
-            return doc.RootElement.ValueKind == JsonValueKind.Object &&
-                   doc.RootElement.TryGetProperty(property, out var value) &&
-                   value.ValueKind == JsonValueKind.String
-                ? value.GetString()
-                : null;
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return null;
+
+            foreach (var property in properties)
+            {
+                if (doc.RootElement.TryGetProperty(property, out var value) &&
+                    value.ValueKind == JsonValueKind.String)
+                    return value.GetString();
+            }
+
+            return null;
         }
         catch (JsonException)
         {
@@ -615,8 +617,104 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
             _ => EvidenceCheckStatuses.Unknown
         };
 
+    private async ValueTask<PlanExecuteVerifyRun> ApplyVerificationResultAsync(
+        PlanExecuteVerifyRun run,
+        HarnessVerificationResult verification,
+        string eventAction,
+        string eventSummary,
+        CancellationToken cancellationToken)
+    {
+        if (IsTerminalNonExecutionStatus(run.Status))
+            return run;
+
+        var failed = string.Equals(verification.Status, HarnessVerificationStatus.Failed, StringComparison.OrdinalIgnoreCase);
+        var status = failed ? PlanExecuteVerifyStatus.Failed : PlanExecuteVerifyStatus.Verified;
+        var decision = failed
+            ? (_config.Harness.PlanExecuteVerify.AutoRollbackOnFailedVerification
+                ? PlanExecuteVerifyDecisionKinds.Rollback
+                : PlanExecuteVerifyDecisionKinds.Escalate)
+            : PlanExecuteVerifyDecisionKinds.Proceed;
+        var completed = CopyRun(
+            run,
+            status,
+            decision,
+            approved: run.Approved,
+            verification,
+            completedAtUtc: DateTimeOffset.UtcNow,
+            recommendations: verification.Recommendations);
+        Upsert(completed);
+
+        if (completed.HarnessContractId is not null)
+            await _contracts.MarkStatusAsync(completed.HarnessContractId, failed ? HarnessContractStatus.Failed : HarnessContractStatus.Verified, cancellationToken);
+
+        await AddVerificationEvidenceAsync(completed, verification, cancellationToken);
+        AppendEvent(completed, eventAction, failed ? "warning" : "info", $"{eventSummary} with status '{completed.Status}'.");
+        return completed;
+    }
+
+    private async ValueTask AddVerificationEvidenceAsync(
+        PlanExecuteVerifyRun run,
+        HarnessVerificationResult verification,
+        CancellationToken cancellationToken)
+    {
+        if (run.EvidenceBundleId is null)
+            return;
+
+        await _evidence.AddCheckAsync(run.EvidenceBundleId, new EvidenceCheck
+        {
+            Name = "Plan-Execute-Verify result",
+            Kind = EvidenceItemKinds.VerificationResult,
+            Status = ToEvidenceStatus(verification.Status),
+            StartedAtUtc = verification.StartedAtUtc,
+            CompletedAtUtc = verification.CompletedAtUtc,
+            Summary = verification.Summary,
+            Details = string.Join("; ", verification.Checks.Select(static check => $"{check.Name}: {check.Status}"))
+        }, cancellationToken);
+    }
+
     private void Upsert(PlanExecuteVerifyRun run)
-        => _runs[run.Id] = run;
+    {
+        _runs[run.Id] = run;
+        PruneRetainedState(DateTimeOffset.UtcNow);
+    }
+
+    private void PruneRetainedState(DateTimeOffset now)
+    {
+        var cutoff = now - RunRetention;
+        foreach (var (id, run) in _runs)
+        {
+            if (IsTerminalStatus(run.Status) && run.UpdatedAtUtc < cutoff)
+            {
+                _runs.TryRemove(id, out _);
+                _lastInvocations.TryRemove(id, out _);
+            }
+        }
+
+        foreach (var (id, retained) in _lastInvocations)
+        {
+            if (retained.UpdatedAtUtc < cutoff || !_runs.ContainsKey(id))
+                _lastInvocations.TryRemove(id, out _);
+        }
+
+        if (_runs.Count <= MaxStoredRuns)
+            return;
+
+        foreach (var run in _runs.Values.OrderBy(static run => run.UpdatedAtUtc).Take(_runs.Count - MaxStoredRuns))
+        {
+            _runs.TryRemove(run.Id, out _);
+            _lastInvocations.TryRemove(run.Id, out _);
+        }
+    }
+
+    private static bool IsTerminalNonExecutionStatus(string status)
+        => string.Equals(status, PlanExecuteVerifyStatus.Rejected, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, PlanExecuteVerifyStatus.Cancelled, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsTerminalStatus(string status)
+        => IsTerminalNonExecutionStatus(status) ||
+           string.Equals(status, PlanExecuteVerifyStatus.Verified, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, PlanExecuteVerifyStatus.Failed, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, PlanExecuteVerifyStatus.RolledBack, StringComparison.OrdinalIgnoreCase);
 
     private void AppendEvent(PlanExecuteVerifyRun run, string action, string severity, string summary)
     {
@@ -680,6 +778,8 @@ internal sealed class PlanExecuteVerifyService : IPlanExecuteVerifyOrchestrator
             Warnings = source.Warnings,
             Recommendations = recommendations ?? source.Recommendations
         };
+
+    private sealed record RetainedToolInvocation(ToolInvocation Invocation, DateTimeOffset UpdatedAtUtc);
 }
 
 internal sealed class ToolOutcomeVerifier : IHarnessVerifier

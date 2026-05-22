@@ -13,6 +13,7 @@ public sealed record PlanExecuteVerifyToolContext
     public required ToolGovernanceDescriptor GovernanceDescriptor { get; init; }
     public bool ExistingApprovalRequired { get; init; }
     public bool IsStreaming { get; init; }
+    public int ToolCallCount { get; init; } = 1;
 }
 
 public interface IPlanExecuteVerifyOrchestrator
