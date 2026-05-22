@@ -64,7 +64,8 @@ internal static class ToolApprovalCallbackFactory
                 });
                 if (governanceLedger is not null)
                 {
-                    await governanceLedger.TryRecordApprovalDecisionAsync(
+                    await governanceLedger.TryRecordApprovalGrantConsumedAsync(
+                        grant,
                         new ToolApprovalRequest
                         {
                             ApprovalId = grant.Id,
@@ -79,11 +80,6 @@ internal static class ToolApprovalCallbackFactory
                                 ? $"Reusable approval grant '{grant.Id}' applied for tool '{toolName}'."
                                 : actionDescriptor.Summary
                         },
-                        approved: true,
-                        GovernanceLedgerSources.ApprovalGrantConsumed,
-                        grant.GrantedBy,
-                        actorChannelId: null,
-                        actorSenderId: grant.GrantedBy,
                         ct);
                 }
                 return true;

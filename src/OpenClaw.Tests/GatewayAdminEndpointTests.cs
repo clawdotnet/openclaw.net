@@ -445,6 +445,15 @@ public sealed class GatewayAdminEndpointTests
         var missingCsrfResponse = await harness.Client.SendAsync(missingCsrfRequest);
         Assert.Equal(HttpStatusCode.Unauthorized, missingCsrfResponse.StatusCode);
 
+        using var malformedCreateRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/governance/ledger")
+        {
+            Content = new StringContent("{", Encoding.UTF8, "application/json")
+        };
+        malformedCreateRequest.Headers.Add("Cookie", cookie);
+        malformedCreateRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var malformedCreateResponse = await harness.Client.SendAsync(malformedCreateRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, malformedCreateResponse.StatusCode);
+
         using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/governance/ledger")
         {
             Content = JsonContent(entryJson)
@@ -483,6 +492,15 @@ public sealed class GatewayAdminEndpointTests
         using var revokePayload = await ReadJsonAsync(revokeResponse);
         Assert.Equal(GovernanceDecisionStatuses.Revoked, revokePayload.RootElement.GetProperty("entry").GetProperty("status").GetString());
         Assert.Equal("scope changed", revokePayload.RootElement.GetProperty("entry").GetProperty("revocationReason").GetString());
+
+        using var malformedRevokeRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/governance/ledger/gov_admin/revoke")
+        {
+            Content = new StringContent("{", Encoding.UTF8, "application/json")
+        };
+        malformedRevokeRequest.Headers.Add("Cookie", cookie);
+        malformedRevokeRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var malformedRevokeResponse = await harness.Client.SendAsync(malformedRevokeRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, malformedRevokeResponse.StatusCode);
 
         var events = harness.Runtime.Operations.RuntimeEvents.Query(new RuntimeEventQuery { Component = "harness", Limit = 10 });
         Assert.Contains(events, item => item.Action == "governance_ledger_entry_recorded" && item.CorrelationId == "gov_admin");

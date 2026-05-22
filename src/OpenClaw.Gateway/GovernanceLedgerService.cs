@@ -116,10 +116,15 @@ internal sealed class GovernanceLedgerService
 
     public async ValueTask<GovernanceLedgerEntry?> RevokeAsync(string id, string revokedBy, string reason, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(revokedBy))
+            throw new ArgumentException("Governance ledger revocation actor is required.", nameof(revokedBy));
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("Governance ledger revocation reason is required.", nameof(reason));
+
         var revoked = await _store.RevokeAsync(
             id,
-            string.IsNullOrWhiteSpace(revokedBy) ? "operator" : revokedBy.Trim(),
-            string.IsNullOrWhiteSpace(reason) ? "revoked by operator" : reason.Trim(),
+            revokedBy.Trim(),
+            reason.Trim(),
             ct);
         if (revoked is null)
             return null;
@@ -167,6 +172,58 @@ internal sealed class GovernanceLedgerService
         catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException and not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Failed to record governance ledger timeout for {ApprovalId}.", request.ApprovalId);
+        }
+    }
+
+    public async ValueTask TryRecordApprovalGrantConsumedAsync(
+        ToolApprovalGrant grant,
+        ToolApprovalRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var scope = NormalizeGrantScope(grant.Scope);
+            await RecordDecisionAsync(new GovernanceLedgerEntry
+            {
+                Id = $"gov_{Guid.NewGuid():N}"[..24],
+                Decision = GovernanceDecisions.Approved,
+                Status = GovernanceDecisionStatuses.Active,
+                Source = GovernanceLedgerSources.ApprovalGrantConsumed,
+                ToolName = request.ToolName,
+                ActionType = request.Action,
+                ActionSummary = string.IsNullOrWhiteSpace(request.Summary)
+                    ? $"Reusable approval grant '{grant.Id}' applied for tool '{request.ToolName}'."
+                    : request.Summary,
+                ArgumentSummary = request.Arguments,
+                RedactedArguments = request.Arguments,
+                RiskLevel = DeriveRiskLevel(request),
+                Scope = scope,
+                ScopeKey = ScopeKeyForGrant(grant, scope),
+                SessionId = request.SessionId,
+                ApprovalId = grant.Id,
+                ActorId = grant.GrantedBy,
+                ChannelId = request.ChannelId,
+                SenderId = request.SenderId,
+                DecidedBy = grant.GrantedBy,
+                DecisionReason = "approval grant consumed",
+                Tags = ["approval", "approval_grant"],
+                Metadata = new GovernanceLedgerMetadata
+                {
+                    CorrelationId = grant.Id,
+                    Properties = BuildMetadata(
+                        ("grantId", grant.Id),
+                        ("grantScope", grant.Scope),
+                        ("grantSessionId", grant.SessionId),
+                        ("grantChannelId", grant.ChannelId),
+                        ("grantSenderId", grant.SenderId),
+                        ("grantSource", grant.GrantSource),
+                        ("isMutation", request.IsMutation ? "true" : "false"))
+                }
+            }, ct);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException and not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to record governance ledger approval grant consumption for {GrantId}.", grant.Id);
         }
     }
 
@@ -242,9 +299,9 @@ internal sealed class GovernanceLedgerService
             Decision = decision,
             Status = status,
             Source = NormalizeSource(entry.Source),
-            ActionType = CleanOptional(entry.ActionType),
-            ToolName = CleanOptional(entry.ToolName),
-            ActionSummary = entry.ActionSummary,
+            ActionType = CleanRedactedOptional(entry.ActionType),
+            ToolName = CleanRedactedOptional(entry.ToolName),
+            ActionSummary = CleanRedactedOptional(entry.ActionSummary) ?? "",
             ArgumentSummary = argumentSummary,
             RedactedArguments = redactedArgs,
             RiskLevel = string.IsNullOrWhiteSpace(entry.RiskLevel)
@@ -253,7 +310,7 @@ internal sealed class GovernanceLedgerService
             Scope = string.IsNullOrWhiteSpace(entry.Scope)
                 ? GovernanceScopes.Unknown
                 : NormalizeScope(entry.Scope),
-            ScopeKey = CleanOptional(entry.ScopeKey),
+            ScopeKey = CleanRedactedOptional(entry.ScopeKey),
             SessionId = CleanOptional(entry.SessionId),
             HarnessContractId = CleanOptional(entry.HarnessContractId),
             EvidenceBundleId = CleanOptional(entry.EvidenceBundleId),
@@ -262,14 +319,14 @@ internal sealed class GovernanceLedgerService
             ActorId = CleanOptional(entry.ActorId),
             ChannelId = CleanOptional(entry.ChannelId),
             SenderId = CleanOptional(entry.SenderId),
-            DecidedBy = CleanOptional(entry.DecidedBy),
-            DecisionReason = CleanOptional(entry.DecisionReason),
+            DecidedBy = CleanRedactedOptional(entry.DecidedBy),
+            DecisionReason = CleanRedactedOptional(entry.DecisionReason),
             ExpiresAtUtc = entry.ExpiresAtUtc,
             RevokedAtUtc = entry.RevokedAtUtc,
-            RevokedBy = CleanOptional(entry.RevokedBy),
-            RevocationReason = CleanOptional(entry.RevocationReason),
+            RevokedBy = CleanRedactedOptional(entry.RevokedBy),
+            RevocationReason = CleanRedactedOptional(entry.RevocationReason),
             PolicyHint = NormalizePolicyHint(entry.PolicyHint),
-            Tags = CleanStrings(entry.Tags),
+            Tags = CleanRedactedStrings(entry.Tags),
             Metadata = NormalizeMetadata(entry.Metadata)
         };
     }
@@ -304,31 +361,33 @@ internal sealed class GovernanceLedgerService
         }
     }
 
-    private static GovernancePolicyHint? NormalizePolicyHint(GovernancePolicyHint? hint)
+    private GovernancePolicyHint? NormalizePolicyHint(GovernancePolicyHint? hint)
         => hint is null
             ? null
             : new GovernancePolicyHint
             {
-                SuggestedFutureBehavior = CleanOptional(hint.SuggestedFutureBehavior),
+                SuggestedFutureBehavior = CleanRedactedOptional(hint.SuggestedFutureBehavior),
                 SuggestedScope = string.IsNullOrWhiteSpace(hint.SuggestedScope)
                     ? null
                     : NormalizeScope(hint.SuggestedScope),
-                Confidence = CleanOptional(hint.Confidence),
+                Confidence = CleanRedactedOptional(hint.Confidence),
                 RequiresReview = hint.RequiresReview,
-                Notes = CleanOptional(hint.Notes)
+                Notes = CleanRedactedOptional(hint.Notes)
             };
 
-    private static GovernanceLedgerMetadata? NormalizeMetadata(GovernanceLedgerMetadata? metadata)
+    private GovernanceLedgerMetadata? NormalizeMetadata(GovernanceLedgerMetadata? metadata)
         => metadata is null
             ? null
             : new GovernanceLedgerMetadata
             {
-                CreatedBy = CleanOptional(metadata.CreatedBy),
+                CreatedBy = CleanRedactedOptional(metadata.CreatedBy),
                 CorrelationId = CleanOptional(metadata.CorrelationId),
                 Properties = metadata.Properties is null
                     ? []
                     : new Dictionary<string, string>(
-                        metadata.Properties.Where(static item => !string.IsNullOrWhiteSpace(item.Key)),
+                        metadata.Properties
+                            .Where(static item => !string.IsNullOrWhiteSpace(item.Key))
+                            .Select(item => new KeyValuePair<string, string>(item.Key.Trim(), _redaction.Redact(item.Value))),
                         StringComparer.Ordinal)
             };
 
@@ -338,8 +397,17 @@ internal sealed class GovernanceLedgerService
             .Select(static item => item.Trim())
             .ToArray() ?? [];
 
+    private IReadOnlyList<string> CleanRedactedStrings(IReadOnlyList<string>? items)
+        => CleanStrings(items)
+            .Select(item => _redaction.Redact(item))
+            .Where(static item => !string.IsNullOrWhiteSpace(item))
+            .ToArray();
+
     private static string? CleanOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private string? CleanRedactedOptional(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : _redaction.Redact(value.Trim());
 
     private static string Truncate(string? value)
     {
@@ -434,6 +502,33 @@ internal sealed class GovernanceLedgerService
                 GovernanceRiskLevels.Critical => GovernanceRiskLevels.Critical,
                 _ => throw new ArgumentException($"Unsupported governance risk level '{riskLevel}'.", nameof(riskLevel))
             };
+
+    private static string NormalizeGrantScope(string? scope)
+        => string.IsNullOrWhiteSpace(scope)
+            ? GovernanceScopes.Unknown
+            : scope.Trim().ToLowerInvariant() switch
+            {
+                GovernanceScopes.Once => GovernanceScopes.Once,
+                GovernanceScopes.Session => GovernanceScopes.Session,
+                "sender_tool_window" => GovernanceScopes.Actor,
+                GovernanceScopes.Actor => GovernanceScopes.Actor,
+                GovernanceScopes.Channel => GovernanceScopes.Channel,
+                GovernanceScopes.Project => GovernanceScopes.Project,
+                GovernanceScopes.Tool => GovernanceScopes.Tool,
+                GovernanceScopes.Global => GovernanceScopes.Global,
+                _ => GovernanceScopes.Unknown
+            };
+
+    private static string? ScopeKeyForGrant(ToolApprovalGrant grant, string scope)
+        => scope switch
+        {
+            GovernanceScopes.Session => CleanOptional(grant.SessionId),
+            GovernanceScopes.Actor => CleanOptional($"{grant.ChannelId}:{grant.SenderId}:{grant.ToolName}".Trim(':')),
+            GovernanceScopes.Channel => CleanOptional(grant.ChannelId),
+            GovernanceScopes.Tool => CleanOptional(grant.ToolName),
+            GovernanceScopes.Global => "global",
+            _ => CleanOptional(grant.Id)
+        };
 
     private static string NormalizeSource(string? source)
         => string.IsNullOrWhiteSpace(source)

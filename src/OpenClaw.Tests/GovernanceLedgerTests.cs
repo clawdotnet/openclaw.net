@@ -82,6 +82,18 @@ public sealed class GovernanceLedgerTests
     }
 
     [Fact]
+    public async Task FileGovernanceLedgerStore_RevokeRejectsBlankActorOrReason()
+    {
+        var store = new FileGovernanceLedgerStore(CreateTempDir());
+        await store.SaveAsync(BuildEntry("gov_revoke_blank", GovernanceDecisions.Approved, "shell", "sess"), CancellationToken.None);
+
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await store.RevokeAsync("gov_revoke_blank", "", "scope changed", CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await store.RevokeAsync("gov_revoke_blank", "operator", " ", CancellationToken.None));
+    }
+
+    [Fact]
     public async Task GovernanceLedgerService_RecordsDecisionsAndRuntimeEvents()
     {
         var root = CreateTempDir();
@@ -107,6 +119,70 @@ public sealed class GovernanceLedgerTests
         var events = new RuntimeEventStore(root, NullLogger<RuntimeEventStore>.Instance)
             .Query(new RuntimeEventQuery { Component = "harness", Action = "governance_ledger_entry_recorded", Limit = 10 });
         Assert.Equal(4, events.Count);
+    }
+
+    [Fact]
+    public async Task GovernanceLedgerService_RedactsFreeformFieldsAndGrantScope()
+    {
+        var root = CreateTempDir();
+        var service = CreateService(root);
+        var redacted = await service.CreateAsync(new GovernanceLedgerEntry
+        {
+            Id = "gov_redacted",
+            Decision = GovernanceDecisions.Approved,
+            Status = GovernanceDecisionStatuses.Active,
+            Source = GovernanceLedgerSources.Manual,
+            ActionSummary = "approved sk-testsecret123",
+            DecisionReason = "reason sk-testsecret123",
+            RevocationReason = "revoked sk-testsecret123",
+            RiskLevel = GovernanceRiskLevels.Medium,
+            Scope = GovernanceScopes.Session,
+            Tags = ["tag-sk-testsecret123"],
+            PolicyHint = new GovernancePolicyHint
+            {
+                SuggestedFutureBehavior = "reuse sk-testsecret123",
+                SuggestedScope = GovernanceScopes.Session,
+                Notes = "note sk-testsecret123"
+            },
+            Metadata = new GovernanceLedgerMetadata
+            {
+                CreatedBy = "operator sk-testsecret123",
+                CorrelationId = "corr_redacted",
+                Properties = new Dictionary<string, string> { ["secret"] = "value sk-testsecret123" }
+            }
+        }, CancellationToken.None);
+
+        Assert.DoesNotContain("sk-testsecret123", redacted.ActionSummary);
+        Assert.DoesNotContain("sk-testsecret123", redacted.DecisionReason ?? "");
+        Assert.DoesNotContain("sk-testsecret123", redacted.RevocationReason ?? "");
+        Assert.DoesNotContain("sk-testsecret123", redacted.Tags[0]);
+        Assert.DoesNotContain("sk-testsecret123", redacted.PolicyHint?.SuggestedFutureBehavior ?? "");
+        Assert.DoesNotContain("sk-testsecret123", redacted.PolicyHint?.Notes ?? "");
+        Assert.DoesNotContain("sk-testsecret123", redacted.Metadata?.CreatedBy ?? "");
+        Assert.DoesNotContain("sk-testsecret123", redacted.Metadata?.Properties["secret"] ?? "");
+
+        await service.TryRecordApprovalGrantConsumedAsync(
+            new ToolApprovalGrant
+            {
+                Id = "grant_scope",
+                Scope = "session",
+                SessionId = "sess_grant",
+                ToolName = "file_read",
+                GrantedBy = "operator",
+                GrantSource = "test",
+                RemainingUses = 2
+            },
+            BuildApprovalRequest("grant_scope", "file_read", isMutation: false) with
+            {
+                SessionId = "sess_grant"
+            },
+            CancellationToken.None);
+
+        var grantEntries = await service.ListAsync(new GovernanceLedgerListQuery { SessionId = "sess_grant", Limit = 0 }, CancellationToken.None);
+        var grantEntry = Assert.Single(grantEntries);
+        Assert.Equal(GovernanceLedgerSources.ApprovalGrantConsumed, grantEntry.Source);
+        Assert.Equal(GovernanceScopes.Session, grantEntry.Scope);
+        Assert.Equal("sess_grant", grantEntry.ScopeKey);
     }
 
     [Theory]

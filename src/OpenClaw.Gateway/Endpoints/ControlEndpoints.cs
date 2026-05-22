@@ -206,13 +206,14 @@ internal static class ControlEndpoints
                         auth.AuthMode);
                     if (governanceLedger is not null)
                     {
+                        var operatorActorId = EndpointHelpers.GetOperatorActorId(ctx, auth);
                         await governanceLedger.TryRecordApprovalDecisionAsync(
                             adminOutcome.Request,
                             approved,
                             GovernanceLedgerSources.ToolApproval,
-                            EndpointHelpers.GetOperatorActorId(ctx, auth),
-                            auth.AuthMode == "browser-session" ? "browser" : "http",
-                            auth.AuthMode,
+                            operatorActorId,
+                            "http_admin",
+                            operatorActorId,
                             ctx.RequestAborted);
                     }
                     AppendApprovalRuntimeEvent(

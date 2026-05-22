@@ -1,3 +1,4 @@
+using System.Text.Json;
 using OpenClaw.Core.Models;
 
 namespace OpenClaw.Gateway.Endpoints;
@@ -90,7 +91,16 @@ internal static partial class AdminEndpoints
                 return authResult.Failure;
             var auth = authResult.Authorization!;
 
-            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.GovernanceLedgerEntry);
+            JsonBodyReadResult<GovernanceLedgerEntry> requestPayload;
+            try
+            {
+                requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.GovernanceLedgerEntry);
+            }
+            catch (Exception ex) when (ex is JsonException or IOException)
+            {
+                return BadGovernanceRequest("Invalid governance ledger JSON payload.");
+            }
+
             if (requestPayload.Failure is not null)
                 return requestPayload.Failure;
 
@@ -138,7 +148,16 @@ internal static partial class AdminEndpoints
                 return authResult.Failure;
             var auth = authResult.Authorization!;
 
-            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.GovernanceLedgerRevokeRequest);
+            JsonBodyReadResult<GovernanceLedgerRevokeRequest> requestPayload;
+            try
+            {
+                requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.GovernanceLedgerRevokeRequest);
+            }
+            catch (Exception ex) when (ex is JsonException or IOException)
+            {
+                return BadGovernanceRequest("Invalid governance ledger revoke JSON payload.");
+            }
+
             if (requestPayload.Failure is not null)
                 return requestPayload.Failure;
 
@@ -184,4 +203,10 @@ internal static partial class AdminEndpoints
             }
         });
     }
+
+    private static IResult BadGovernanceRequest(string message)
+        => Results.Json(
+            new GovernanceLedgerMutationResponse { Success = false, Error = message },
+            CoreJsonContext.Default.GovernanceLedgerMutationResponse,
+            statusCode: StatusCodes.Status400BadRequest);
 }

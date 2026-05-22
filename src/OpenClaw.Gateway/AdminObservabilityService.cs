@@ -392,7 +392,7 @@ internal sealed class AdminObservabilityService
         {
             CreatedFromUtc = startUtc,
             CreatedToUtc = endUtc,
-            Limit = 5000
+            Limit = 0
         }, ct);
     }
 
@@ -418,7 +418,7 @@ internal sealed class AdminObservabilityService
             SessionId = sessions.Count == 1 ? sessions[0].Id : null,
             CreatedFromUtc = startUtc == DateTimeOffset.MinValue ? null : startUtc,
             CreatedToUtc = endUtc,
-            Limit = 5000
+            Limit = 0
         };
         var governance = await _governanceLedger.ListAsync(query, ct);
         return governance

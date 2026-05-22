@@ -76,17 +76,22 @@ public sealed class FileGovernanceLedgerStore : IGovernanceLedgerStore
             }
         }
 
-        var limit = Math.Clamp(query.Limit, 1, 5000);
-        return results
+        var ordered = results
             .OrderByDescending(static item => item.UpdatedAtUtc)
-            .ThenByDescending(static item => item.CreatedAtUtc)
-            .Take(limit)
-            .ToArray();
+            .ThenByDescending(static item => item.CreatedAtUtc);
+        return query.Limit <= 0
+            ? ordered.ToArray()
+            : ordered.Take(Math.Clamp(query.Limit, 1, 5000)).ToArray();
     }
 
     public async ValueTask<GovernanceLedgerEntry?> RevokeAsync(string id, string revokedBy, string reason, CancellationToken ct)
     {
         EnsureSafeId(id);
+        if (string.IsNullOrWhiteSpace(revokedBy))
+            throw new ArgumentException("Governance ledger revocation actor is required.", nameof(revokedBy));
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("Governance ledger revocation reason is required.", nameof(reason));
+
         var existing = await LoadOneAsync(FileForId(id), ct);
         if (existing is null)
             return null;
@@ -120,8 +125,8 @@ public sealed class FileGovernanceLedgerStore : IGovernanceLedgerStore
             DecisionReason = existing.DecisionReason,
             ExpiresAtUtc = existing.ExpiresAtUtc,
             RevokedAtUtc = now,
-            RevokedBy = revokedBy,
-            RevocationReason = reason,
+            RevokedBy = revokedBy.Trim(),
+            RevocationReason = reason.Trim(),
             PolicyHint = existing.PolicyHint,
             Tags = existing.Tags,
             Metadata = existing.Metadata
@@ -244,8 +249,15 @@ public sealed class FileGovernanceLedgerStore : IGovernanceLedgerStore
         finally
         {
             var cleanupFile = new FileInfo(tempPath);
-            if (cleanupFile.Exists)
-                cleanupFile.Delete();
+            try
+            {
+                if (cleanupFile.Exists)
+                    cleanupFile.Delete();
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+            {
+                Trace.TraceWarning("Failed to delete temp governance ledger file '{0}': {1}", cleanupFile.FullName, ex);
+            }
         }
     }
 
