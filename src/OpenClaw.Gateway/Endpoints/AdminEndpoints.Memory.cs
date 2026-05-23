@@ -36,10 +36,148 @@ internal static partial class AdminEndpoints
         var memoryStore = services.MemoryStore;
         var memorySearch = services.MemorySearch;
         var memoryCatalog = services.MemoryCatalog;
+        var structuredMemoryProvider = services.StructuredMemoryProvider;
         var profileStore = services.ProfileStore;
         var proposalStore = services.ProposalStore;
         var automationService = services.AutomationService;
         var operations = services.Operations;
+
+        app.MapGet("/admin/memory/fractal/status", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.memory");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            var response = structuredMemoryProvider is null
+                ? BuildUnavailableFractalStatus(startup.Config, "Structured memory provider is not registered in this runtime.")
+                : await structuredMemoryProvider.GetStatusAsync(ctx.RequestAborted);
+            return Results.Json(response, CoreJsonContext.Default.StructuredMemoryStatusResponse);
+        });
+
+        app.MapGet("/admin/memory/fractal/search", async (HttpContext ctx, string query, int limit = 10, string? scope = null) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.memory");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            if (structuredMemoryProvider is null)
+                return Results.Json(new StructuredMemorySearchResult { Success = false, Query = query ?? "", Scope = scope, Error = "Structured memory provider is not registered in this runtime." }, CoreJsonContext.Default.StructuredMemorySearchResult);
+
+            var result = await structuredMemoryProvider.SearchAsync(query, limit, scope, ctx.RequestAborted);
+            return Results.Json(result, CoreJsonContext.Default.StructuredMemorySearchResult);
+        });
+
+        app.MapGet("/admin/memory/fractal/open", async (HttpContext ctx, string path, int? depth = null, string? view = null) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.memory");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            if (structuredMemoryProvider is null)
+                return Results.Json(new StructuredMemoryOpenResult { Success = false, Path = path ?? "", Error = "Structured memory provider is not registered in this runtime." }, CoreJsonContext.Default.StructuredMemoryOpenResult);
+
+            var fractal = startup.Config.Memory.Fractal;
+            var result = await structuredMemoryProvider.OpenAsync(path, depth ?? fractal.DefaultDepth, view ?? fractal.DefaultView, ctx.RequestAborted);
+            return Results.Json(result, CoreJsonContext.Default.StructuredMemoryOpenResult);
+        });
+
+        app.MapGet("/admin/memory/fractal/export", async (HttpContext ctx, string path, string? mode = null) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.memory");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            if (structuredMemoryProvider is null)
+                return Results.Json(new StructuredMemoryExportResult { Success = false, Path = path ?? "", Error = "Structured memory provider is not registered in this runtime." }, CoreJsonContext.Default.StructuredMemoryExportResult);
+
+            var result = await structuredMemoryProvider.ExportAsync(path, mode ?? startup.Config.Memory.Fractal.DefaultExportMode, ctx.RequestAborted);
+            return Results.Json(result, CoreJsonContext.Default.StructuredMemoryExportResult);
+        });
+
+        app.MapGet("/admin/memory/fractal/recent", async (HttpContext ctx, int days = 30, int limit = 10, string? scope = null) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.memory");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            if (structuredMemoryProvider is null)
+                return Results.Json(new StructuredMemoryRecentResult { Success = false, Days = days, Scope = scope, Error = "Structured memory provider is not registered in this runtime." }, CoreJsonContext.Default.StructuredMemoryRecentResult);
+
+            var result = await structuredMemoryProvider.RecentAsync(days, limit, scope, ctx.RequestAborted);
+            return Results.Json(result, CoreJsonContext.Default.StructuredMemoryRecentResult);
+        });
+
+        app.MapPost("/admin/memory/fractal/validate", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.memory");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+
+            if (structuredMemoryProvider is null)
+                return Results.Json(new StructuredMemoryValidationResult { Success = false, Error = "Structured memory provider is not registered in this runtime." }, CoreJsonContext.Default.StructuredMemoryValidationResult);
+
+            var result = await structuredMemoryProvider.ValidateAsync(ctx.RequestAborted);
+            return Results.Json(result, CoreJsonContext.Default.StructuredMemoryValidationResult);
+        });
+
+        app.MapPost("/admin/memory/fractal/index/refresh", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.memory.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            if (!startup.Config.Memory.Fractal.AllowWrites)
+                return Results.Json(new StructuredMemoryValidationResult { Success = false, Error = "Fractal Memory writes are disabled by configuration." }, CoreJsonContext.Default.StructuredMemoryValidationResult, statusCode: StatusCodes.Status403Forbidden);
+            if (structuredMemoryProvider is null)
+                return Results.Json(new StructuredMemoryValidationResult { Success = false, Error = "Structured memory provider is not registered in this runtime." }, CoreJsonContext.Default.StructuredMemoryValidationResult);
+
+            var result = await structuredMemoryProvider.RefreshIndexAsync(ctx.RequestAborted);
+            operations.RuntimeEvents.Append(new RuntimeEventEntry
+            {
+                Id = $"evt_{Guid.NewGuid():N}"[..20],
+                TimestampUtc = DateTimeOffset.UtcNow,
+                Component = "fractal_memory",
+                Action = "index_refresh",
+                Severity = result.Success ? "info" : "warning",
+                Summary = result.Success ? "Fractal Memory index refresh requested." : $"Fractal Memory index refresh failed: {result.Error}"
+            });
+            RecordOperatorAudit(ctx, operations, auth, "fractal_memory_index_refresh", "fractal_memory", "Requested Fractal Memory index refresh.", result.Success, before: null, after: result);
+            return Results.Json(result, CoreJsonContext.Default.StructuredMemoryValidationResult);
+        });
+
+        app.MapPost("/admin/memory/fractal/handoff", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.memory.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            if (!startup.Config.Memory.Fractal.AllowWrites)
+                return Results.Json(new StructuredMemoryHandoffResult { Success = false, Error = "Fractal Memory writes are disabled by configuration." }, CoreJsonContext.Default.StructuredMemoryHandoffResult, statusCode: StatusCodes.Status403Forbidden);
+            if (structuredMemoryProvider is null)
+                return Results.Json(new StructuredMemoryHandoffResult { Success = false, Error = "Structured memory provider is not registered in this runtime." }, CoreJsonContext.Default.StructuredMemoryHandoffResult);
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.StructuredMemoryPathRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+            var path = requestPayload.Value?.Path;
+            if (string.IsNullOrWhiteSpace(path))
+                return Results.BadRequest(new MutationResponse { Success = false, Error = "path is required." });
+
+            var result = await structuredMemoryProvider.CreateHandoffAsync(path, ctx.RequestAborted);
+            operations.RuntimeEvents.Append(new RuntimeEventEntry
+            {
+                Id = $"evt_{Guid.NewGuid():N}"[..20],
+                TimestampUtc = DateTimeOffset.UtcNow,
+                Component = "fractal_memory",
+                Action = "handoff_create",
+                Severity = result.Success ? "info" : "warning",
+                Summary = result.Success ? $"Fractal Memory handoff created for '{path}'." : $"Fractal Memory handoff failed for '{path}': {result.Error}"
+            });
+            RecordOperatorAudit(ctx, operations, auth, "fractal_memory_handoff_create", path, $"Requested Fractal Memory handoff for '{path}'.", result.Success, before: null, after: result);
+            return Results.Json(result, CoreJsonContext.Default.StructuredMemoryHandoffResult);
+        });
 
         app.MapGet("/admin/memory/notes", async (HttpContext ctx, string? prefix = null, string? memoryClass = null, string? projectId = null, int limit = 100) =>
         {
@@ -674,4 +812,19 @@ internal static partial class AdminEndpoints
                 CoreJsonContext.Default.AgentBundleImportResponse);
         });
     }
+
+    private static StructuredMemoryStatusResponse BuildUnavailableFractalStatus(GatewayConfig config, string error)
+        => new()
+        {
+            Enabled = config.Memory.Fractal.Enabled,
+            Mode = string.IsNullOrWhiteSpace(config.Memory.Fractal.Mode) ? "mcp" : config.Memory.Fractal.Mode.Trim(),
+            RepositoryRoot = config.Memory.Fractal.RepositoryRoot,
+            McpCommand = config.Memory.Fractal.McpCommand,
+            AutoContextMode = config.Memory.Fractal.AutoContextMode,
+            AllowWrites = config.Memory.Fractal.AllowWrites,
+            WriteToolsAvailable = false,
+            Available = false,
+            Status = config.Memory.Fractal.Enabled ? "unavailable" : "disabled",
+            Error = error
+        };
 }

@@ -35,6 +35,7 @@ internal static class Program
                 "maintenance" => await MaintenanceAsync(rest),
                 "payment" => await PaymentCommands.RunAsync(rest),
                 "external" => await ExternalCliCommands.RunAsync(rest),
+                "memory" => await MemoryCommands.RunAsync(rest),
                 "test" => await TestingCommands.RunAsync(rest),
                 "harness" => await HarnessCommands.RunAsync(rest),
                 "regression" => await HarnessCommands.RunRegressionAliasAsync(rest, Console.Out, Console.Error),
@@ -105,6 +106,7 @@ internal static class Program
               openclaw maintenance <scan|fix> [options]
               openclaw payment <setup|funding list|virtual-card issue|execute|status> [options]
               openclaw external <list|status|commands|preview|execute> [options]
+              openclaw memory fractal <status|search|open|export|recent|handoff create|validate|index refresh> [options]
               openclaw test <init|run|report|gates> [options]
               openclaw harness <test|regression> [options]
               openclaw regression test [options]
@@ -169,6 +171,8 @@ internal static class Program
               openclaw pulse status
               openclaw pulse run --text "Check for urgent follow-ups"
               openclaw external list
+              openclaw memory fractal status
+              openclaw memory fractal search "context bloat"
               openclaw test run
               openclaw test gates
               openclaw harness test

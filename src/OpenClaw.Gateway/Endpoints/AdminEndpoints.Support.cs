@@ -49,6 +49,7 @@ internal static partial class AdminEndpoints
         public IMemoryStore MemoryStore { get; init; } = null!;
         public IMemoryNoteSearch? MemorySearch { get; init; }
         public IMemoryNoteCatalog? MemoryCatalog { get; init; }
+        public IStructuredMemoryProvider? StructuredMemoryProvider { get; init; }
         public IUserProfileStore ProfileStore { get; init; } = null!;
         public ILearningProposalStore ProposalStore { get; init; } = null!;
         public GatewayAutomationService AutomationService { get; init; } = null!;
