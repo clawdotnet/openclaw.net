@@ -20,6 +20,7 @@ public sealed class GatewayConfig
     public WebSocketConfig WebSocket { get; set; } = new();
     public CanvasConfig Canvas { get; set; } = new();
     public ToolingConfig Tooling { get; set; } = new();
+    public HarnessConfig Harness { get; set; } = new();
     public ToolGovernanceConfig Governance { get; set; } = new();
     public PaymentConfig Payments { get; set; } = new();
     public ExternalCliOptions ExternalCli { get; set; } = new();
@@ -175,6 +176,7 @@ public sealed class MemoryConfig
 
     public MemorySqliteConfig Sqlite { get; set; } = new();
     public MemoryMempalaceConfig Mempalace { get; set; } = new();
+    public FractalMemoryConfig Fractal { get; set; } = new();
     public MemoryRecallConfig Recall { get; set; } = new();
     public MemoryRetentionConfig Retention { get; set; } = new();
 
@@ -230,6 +232,26 @@ public sealed class MemoryMempalaceConfig
     public string SessionDbPath { get; set; } = "./memory/mempalace/openclaw-sessions.db";
     public string KnowledgeGraphDbPath { get; set; } = "./memory/mempalace/kg.db";
     public int MaxSearchCandidates { get; set; } = 200;
+}
+
+public sealed class FractalMemoryConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string Mode { get; set; } = "mcp";
+    public string RepositoryRoot { get; set; } = "";
+    public string McpCommand { get; set; } = "fractalmem-mcp";
+    public int DefaultDepth { get; set; } = 1;
+    public string DefaultView { get; set; } = "index";
+    public string DefaultExportMode { get; set; } = "compact";
+    public int MaxContextChars { get; set; } = 24_000;
+    public int MaxContextTokens { get; set; } = 6_000;
+    public string AutoContextMode { get; set; } = "off";
+    public bool AllowWrites { get; set; } = false;
+    public bool RequireApprovalForWrites { get; set; } = true;
+    public bool AutoRefreshIndexes { get; set; } = false;
+    public bool IncludeTimeline { get; set; } = false;
+    public bool IncludeDecisions { get; set; } = true;
+    public bool IncludeArtifacts { get; set; } = false;
 }
 
 /// <summary>
@@ -425,6 +447,39 @@ public sealed class ToolingConfig
     public Dictionary<string, ToolsetConfig> Toolsets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ToolPresetConfig> Presets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> SurfaceBindings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+public sealed class HarnessConfig
+{
+    /// <summary>Runtime harness mode. Defaults to normal so chat/tool behavior is unchanged.</summary>
+    public string ExecutionMode { get; set; } = HarnessExecutionModes.Normal;
+
+    public PlanExecuteVerifyOptions PlanExecuteVerify { get; set; } = new();
+}
+
+public sealed class PlanExecuteVerifyOptions
+{
+    public bool Enabled { get; set; } = false;
+    public string[] ContractRequiredFor { get; set; } =
+    [
+        PlanExecuteVerifyContractTriggers.HighRiskTools,
+        PlanExecuteVerifyContractTriggers.WriteTools,
+        PlanExecuteVerifyContractTriggers.Shell,
+        PlanExecuteVerifyContractTriggers.Browser,
+        PlanExecuteVerifyContractTriggers.ExternalApi,
+        PlanExecuteVerifyContractTriggers.MultiToolWorkflows
+    ];
+    public string[] RequireApprovalForRisk { get; set; } =
+    [
+        HarnessContractRiskLevels.High,
+        HarnessContractRiskLevels.Critical
+    ];
+    public bool CreateEvidenceBundles { get; set; } = true;
+    public bool RunVerification { get; set; } = true;
+    public bool AutoRollbackOnFailedVerification { get; set; } = false;
+    public int MaxPlanActions { get; set; } = 20;
+    public int MaxVerificationSteps { get; set; } = 20;
+    public string[] RegressionCategories { get; set; } = [];
 }
 
 public sealed class PaymentConfig

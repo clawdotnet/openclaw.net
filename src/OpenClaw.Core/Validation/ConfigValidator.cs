@@ -97,6 +97,7 @@ public static class ConfigValidator
             if (config.Memory.CompactionThreshold <= config.Memory.MaxHistoryTurns)
                 errors.Add("Memory.CompactionThreshold must be greater than MaxHistoryTurns when EnableCompaction=true.");
         }
+        ValidateFractalMemory(config.Memory.Fractal, errors);
 
         if (config.Memory.Retention.SweepIntervalMinutes < 5)
             errors.Add($"Memory.Retention.SweepIntervalMinutes must be >= 5 (got {config.Memory.Retention.SweepIntervalMinutes}).");
@@ -402,6 +403,29 @@ public static class ConfigValidator
 
         return errors;
     }
+
+    private static void ValidateFractalMemory(FractalMemoryConfig config, List<string> errors)
+    {
+        if (!IsOneOf(config.Mode, "mcp"))
+            errors.Add("Memory.Fractal.Mode must be 'mcp'.");
+        if (config.Enabled && string.IsNullOrWhiteSpace(config.McpCommand))
+            errors.Add("Memory.Fractal.McpCommand must be set when Fractal Memory is enabled.");
+        if (config.DefaultDepth is < 0 or > 3)
+            errors.Add($"Memory.Fractal.DefaultDepth must be between 0 and 3 (got {config.DefaultDepth}).");
+        if (!IsOneOf(config.DefaultView, "index", "state", "timeline", "decisions", "children"))
+            errors.Add("Memory.Fractal.DefaultView must be one of 'index', 'state', 'timeline', 'decisions', or 'children'.");
+        if (!IsOneOf(config.DefaultExportMode, "compact", "standard", "verbose"))
+            errors.Add("Memory.Fractal.DefaultExportMode must be one of 'compact', 'standard', or 'verbose'.");
+        if (!IsOneOf(config.AutoContextMode, "off", "manual", "pulse", "auto"))
+            errors.Add("Memory.Fractal.AutoContextMode must be one of 'off', 'manual', 'pulse', or 'auto'.");
+        if (config.MaxContextChars < 1024)
+            errors.Add($"Memory.Fractal.MaxContextChars must be >= 1024 (got {config.MaxContextChars}).");
+        if (config.MaxContextTokens < 256)
+            errors.Add($"Memory.Fractal.MaxContextTokens must be >= 256 (got {config.MaxContextTokens}).");
+    }
+
+    private static bool IsOneOf(string? value, params string[] allowed)
+        => allowed.Any(candidate => string.Equals(value?.Trim(), candidate, StringComparison.OrdinalIgnoreCase));
 
     private static void ValidateCodingBackends(CodingBackendsConfig config, List<string> errors)
     {

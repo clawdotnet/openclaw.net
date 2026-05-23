@@ -49,10 +49,16 @@ internal static partial class AdminEndpoints
         public IMemoryStore MemoryStore { get; init; } = null!;
         public IMemoryNoteSearch? MemorySearch { get; init; }
         public IMemoryNoteCatalog? MemoryCatalog { get; init; }
+        public IStructuredMemoryProvider? StructuredMemoryProvider { get; init; }
         public IUserProfileStore ProfileStore { get; init; } = null!;
         public ILearningProposalStore ProposalStore { get; init; } = null!;
         public GatewayAutomationService AutomationService { get; init; } = null!;
         public LearningService LearningService { get; init; } = null!;
+        public HarnessContractService HarnessContracts { get; init; } = null!;
+        public EvidenceBundleService EvidenceBundles { get; init; } = null!;
+        public GovernanceLedgerService GovernanceLedger { get; init; } = null!;
+        public SharedHarnessStateService SharedHarnessState { get; init; } = null!;
+        public PlanExecuteVerifyService PlanExecuteVerify { get; init; } = null!;
         public IntegrationApiFacade Facade { get; init; } = null!;
         public ToolPresetResolver ToolPresetResolver { get; init; } = null!;
         public AdminObservabilityService Observability { get; init; } = null!;

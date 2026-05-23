@@ -82,6 +82,7 @@ internal sealed class CliArgs
             or "--apply"
             or "--non-interactive"
             or "--offline"
+            or "--strict"
             or "--require-provider"
             or "--with-companion"
             or "--open-browser"

@@ -40,6 +40,7 @@ internal static class GatewayWorkers
         LearningService? learningService = null,
         GatewayAutomationService? automationService = null,
         ContractGovernanceService? contractGovernance = null,
+        GovernanceLedgerService? governanceLedger = null,
         AudioTranscriptionService? audioTranscriptionService = null)
     {
         new GatewaySessionCleanupWorker().Start(lifetime, logger, sessionManager);
@@ -69,6 +70,7 @@ internal static class GatewayWorkers
             learningService,
             automationService,
             contractGovernance,
+            governanceLedger,
             audioTranscriptionService);
 
         new GatewayOutboundDeliveryWorker().Start(

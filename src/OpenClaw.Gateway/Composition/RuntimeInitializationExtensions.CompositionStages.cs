@@ -52,6 +52,7 @@ internal static partial class RuntimeInitializationExtensions
             AutomationService = app.Services.GetRequiredService<GatewayAutomationService>(),
             PluginHealth = app.Services.GetRequiredService<PluginHealthService>(),
             MemoryStore = app.Services.GetRequiredService<IMemoryStore>(),
+            StructuredMemoryProviderFactory = () => app.Services.GetRequiredService<IStructuredMemoryProvider>(),
             SessionSearchStore = app.Services.GetRequiredService<ISessionSearchStore>(),
             UserProfileStore = app.Services.GetRequiredService<IUserProfileStore>(),
             ProcessService = app.Services.GetRequiredService<ExecutionProcessService>(),
@@ -568,6 +569,7 @@ internal static partial class RuntimeInitializationExtensions
         public required GatewayAutomationService AutomationService { get; init; }
         public required PluginHealthService PluginHealth { get; init; }
         public required IMemoryStore MemoryStore { get; init; }
+        public required Func<IStructuredMemoryProvider> StructuredMemoryProviderFactory { get; init; }
         public required ISessionSearchStore SessionSearchStore { get; init; }
         public required IUserProfileStore UserProfileStore { get; init; }
         public required ExecutionProcessService ProcessService { get; init; }

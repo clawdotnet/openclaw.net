@@ -143,5 +143,41 @@ internal sealed class OpenClawHttpClient : IDisposable
     public Task<PaymentStatus> GetPaymentStatusAsync(string id, string? provider, string? environment, CancellationToken cancellationToken)
         => _inner.GetPaymentStatusAsync(id, provider, environment, cancellationToken);
 
+    public Task<StructuredMemoryStatusResponse> GetFractalMemoryStatusAsync(CancellationToken cancellationToken)
+        => _inner.GetFractalMemoryStatusAsync(cancellationToken);
+
+    public Task<StructuredMemorySearchResult> SearchFractalMemoryAsync(string query, int limit, string? scope, CancellationToken cancellationToken)
+        => _inner.SearchFractalMemoryAsync(query, limit, scope, cancellationToken);
+
+    public Task<StructuredMemoryOpenResult> OpenFractalMemoryAsync(string path, int? depth, string? view, CancellationToken cancellationToken)
+        => _inner.OpenFractalMemoryAsync(path, depth, view, cancellationToken);
+
+    public Task<StructuredMemoryExportResult> ExportFractalMemoryAsync(string path, string? mode, CancellationToken cancellationToken)
+        => _inner.ExportFractalMemoryAsync(path, mode, cancellationToken);
+
+    public Task<StructuredMemoryRecentResult> GetRecentFractalMemoryAsync(int days, int limit, string? scope, CancellationToken cancellationToken)
+        => _inner.GetRecentFractalMemoryAsync(days, limit, scope, cancellationToken);
+
+    public Task<StructuredMemoryValidationResult> ValidateFractalMemoryAsync(CancellationToken cancellationToken)
+        => _inner.ValidateFractalMemoryAsync(cancellationToken);
+
+    public Task<StructuredMemoryValidationResult> RefreshFractalMemoryIndexAsync(CancellationToken cancellationToken)
+        => _inner.RefreshFractalMemoryIndexAsync(cancellationToken);
+
+    public Task<StructuredMemoryHandoffResult> CreateFractalMemoryHandoffAsync(string path, CancellationToken cancellationToken)
+        => _inner.CreateFractalMemoryHandoffAsync(path, cancellationToken);
+
+    public Task<SharedHarnessStateListResponse> ListSharedHarnessStateAsync(SharedHarnessStateListQuery query, CancellationToken cancellationToken)
+        => _inner.ListSharedHarnessStateAsync(query, cancellationToken);
+
+    public Task<SharedHarnessStateDetailResponse> GetSharedHarnessStateAsync(string id, CancellationToken cancellationToken)
+        => _inner.GetSharedHarnessStateAsync(id, cancellationToken);
+
+    public Task<SharedHarnessStateDetailResponse> GetSharedHarnessStateForSessionAsync(string sessionId, CancellationToken cancellationToken)
+        => _inner.GetSharedHarnessStateForSessionAsync(sessionId, cancellationToken);
+
+    public Task<SharedHarnessStateMutationResponse> DetectSharedHarnessStateConflictsAsync(string id, CancellationToken cancellationToken)
+        => _inner.DetectSharedHarnessStateConflictsAsync(id, cancellationToken);
+
     public void Dispose() => _inner.Dispose();
 }

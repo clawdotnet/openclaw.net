@@ -38,6 +38,14 @@ Start here:
 - **NativeAOT-friendly** runtime and gateway for .NET agent workloads
 - **Agent runtime** with tool execution, streaming, cancellation, retry, memory, and session support
 - **Gateway** with chat UI, admin UI, OpenAI-compatible endpoints, MCP, websocket, health, and diagnostics
+- **Passive Harness Contracts** for inspectable agent-work plans without changing default chat or approval behavior
+- **Passive Evidence Bundles** for inspectable run evidence, checks, risks, and human review without default runtime interception
+- **Optional Plan-Execute-Verify Mode** for governed high-risk tool execution with contracts, evidence, and verification
+- **Passive Governance Ledger** for durable approval and oversight decisions without auto-approving future actions
+- **Harness Regression Suite** via `openclaw harness test` for offline checks before trusting harness/runtime changes
+- **Harness Evolution Proposals** for review-first suggestions to improve harness policies, routing, memory retrieval, verification, pulse behavior, and tool governance
+- **Optional Fractal Memory MCP integration** for compact structured project memory and Runtime Pulse context without replacing OpenClaw memory/session stores
+- **Shared Harness State** for passive delegated-work coordination across participants, actions, read/write sets, assumptions, verifier obligations, evidence links, and conflicts
 - **First-class optional Microsoft Agent Framework adapter** for `Runtime.Orchestrator=maf` without a special build
 - **Durable workflow delegation** through supported workflow backends such as `maf-durable-http`
 - **CLI and Companion** setup flows for source checkouts and desktop bundles

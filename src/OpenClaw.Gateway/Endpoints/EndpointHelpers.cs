@@ -275,6 +275,8 @@ internal static class EndpointHelpers
             scope.StartsWith("admin.agent-bundle.mutate", StringComparison.Ordinal) ||
             scope.StartsWith("admin.profiles.mutate", StringComparison.Ordinal) ||
             scope.StartsWith("admin.learning.mutate", StringComparison.Ordinal) ||
+            scope.StartsWith("admin.harness.mutate", StringComparison.Ordinal) ||
+            scope.StartsWith("admin.governance.mutate", StringComparison.Ordinal) ||
             scope.StartsWith("admin.webhooks.mutate", StringComparison.Ordinal) ||
             scope.StartsWith("admin.automations.mutate", StringComparison.Ordinal) ||
             scope.StartsWith("admin.automations.run", StringComparison.Ordinal) ||

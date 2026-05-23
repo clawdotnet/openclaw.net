@@ -42,6 +42,7 @@ internal sealed class GatewayInboundMessageWorker
         LearningService? learningService,
         GatewayAutomationService? automationService,
         ContractGovernanceService? contractGovernance,
+        GovernanceLedgerService? governanceLedger,
         AudioTranscriptionService? audioTranscriptionService = null)
     {
         _ = isNonLoopbackBind;
@@ -139,6 +140,17 @@ internal sealed class GatewayInboundMessageWorker
                                         "chat",
                                         msg.ChannelId,
                                         msg.SenderId);
+                                    if (governanceLedger is not null)
+                                    {
+                                        await governanceLedger.TryRecordApprovalDecisionAsync(
+                                            decisionOutcome.Request,
+                                            msg.Approved.Value,
+                                            GovernanceLedgerSources.ToolApproval,
+                                            msg.SenderId,
+                                            msg.ChannelId,
+                                            msg.SenderId,
+                                            lifetime.ApplicationStopping);
+                                    }
                                     RecordApprovalDecisionEvent(
                                         operations,
                                         decisionOutcome.Request,
@@ -212,6 +224,17 @@ internal sealed class GatewayInboundMessageWorker
                                                 "chat",
                                                 msg.ChannelId,
                                                 msg.SenderId);
+                                            if (governanceLedger is not null)
+                                            {
+                                                await governanceLedger.TryRecordApprovalDecisionAsync(
+                                                    decisionOutcome.Request,
+                                                    approved,
+                                                    GovernanceLedgerSources.ToolApproval,
+                                                    msg.SenderId,
+                                                    msg.ChannelId,
+                                                    msg.SenderId,
+                                                    lifetime.ApplicationStopping);
+                                            }
                                             RecordApprovalDecisionEvent(
                                                 operations,
                                                 decisionOutcome.Request,
@@ -507,6 +530,7 @@ internal sealed class GatewayInboundMessageWorker
                                 session,
                                 msg.ChannelId,
                                 msg.SenderId,
+                                governanceLedger,
                                 async (request, preview, ct) =>
                                 {
                                     if (msg.ChannelId == "websocket" && wsChannel.IsClientUsingEnvelopes(msg.SenderId))

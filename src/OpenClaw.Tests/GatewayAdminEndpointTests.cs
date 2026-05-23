@@ -164,6 +164,462 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task HarnessContracts_AdminApi_RequiresAuthAndSupportsCreateListDetailAndStatus()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+
+        var anonymousResponse = await harness.Client.GetAsync("/admin/harness/contracts");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var viewer = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "harness-viewer",
+            Password = "viewer-pass",
+            Role = OperatorRoleNames.Viewer
+        });
+        var viewerToken = operatorAccounts.CreateToken(viewer.Id, new OperatorAccountTokenCreateRequest { Label = "viewer" });
+        Assert.NotNull(viewerToken);
+
+        using var viewerListRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/contracts");
+        viewerListRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken!.Token);
+        var viewerListResponse = await harness.Client.SendAsync(viewerListRequest);
+        Assert.Equal(HttpStatusCode.OK, viewerListResponse.StatusCode);
+
+        using var viewerCreateRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/contracts")
+        {
+            Content = JsonContent("""{"goal":"viewer cannot create"}""")
+        };
+        viewerCreateRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken.Token);
+        var viewerCreateResponse = await harness.Client.SendAsync(viewerCreateRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, viewerCreateResponse.StatusCode);
+
+        var (cookie, csrfToken) = await LoginAsync(harness.Client, harness.AuthToken);
+        var contractJson = JsonSerializer.Serialize(new HarnessContract
+        {
+            Id = "hctr_admin",
+            Goal = "Create a passive harness contract",
+            UserRequestSummary = "Admin test contract",
+            SourceSessionId = "session-harness",
+            ChannelId = "web",
+            SenderId = "operator",
+            PlannedActions =
+            [
+                new HarnessContractAction
+                {
+                    Id = "write",
+                    Title = "Write docs",
+                    ToolName = "file_write",
+                    ActionType = "write",
+                    WriteSet = [new HarnessContractResourceRef { Kind = HarnessContractResourceKinds.File, Path = "docs/HARNESS_CONTRACTS.md" }]
+                }
+            ],
+            VerificationPlan =
+            [
+                new HarnessContractVerificationStep
+                {
+                    Id = "test",
+                    Title = "Run tests",
+                    Kind = "command",
+                    Command = "dotnet test"
+                }
+            ]
+        }, CoreJsonContext.Default.HarnessContract);
+
+        using var missingCsrfRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/contracts")
+        {
+            Content = JsonContent(contractJson)
+        };
+        missingCsrfRequest.Headers.Add("Cookie", cookie);
+        var missingCsrfResponse = await harness.Client.SendAsync(missingCsrfRequest);
+        Assert.Equal(HttpStatusCode.Unauthorized, missingCsrfResponse.StatusCode);
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/contracts")
+        {
+            Content = JsonContent(contractJson)
+        };
+        createRequest.Headers.Add("Cookie", cookie);
+        createRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var createResponse = await harness.Client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        using var createPayload = await ReadJsonAsync(createResponse);
+        Assert.True(createPayload.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(HarnessContractRiskLevels.Medium, createPayload.RootElement.GetProperty("contract").GetProperty("riskLevel").GetString());
+
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/contracts/hctr_admin");
+        detailRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var detailResponse = await harness.Client.SendAsync(detailRequest);
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailPayload = await ReadJsonAsync(detailResponse);
+        Assert.Equal("hctr_admin", detailPayload.RootElement.GetProperty("contract").GetProperty("id").GetString());
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/contracts?status=draft&riskLevel=medium");
+        listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var listResponse = await harness.Client.SendAsync(listRequest);
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listPayload = await ReadJsonAsync(listResponse);
+        Assert.Single(listPayload.RootElement.GetProperty("items").EnumerateArray());
+
+        using var statusRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/contracts/hctr_admin/status")
+        {
+            Content = JsonContent("""{"status":"verified"}""")
+        };
+        statusRequest.Headers.Add("Cookie", cookie);
+        statusRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var statusResponse = await harness.Client.SendAsync(statusRequest);
+        Assert.Equal(HttpStatusCode.OK, statusResponse.StatusCode);
+        using var statusPayload = await ReadJsonAsync(statusResponse);
+        Assert.Equal(HarnessContractStatus.Verified, statusPayload.RootElement.GetProperty("contract").GetProperty("status").GetString());
+
+        var events = harness.Runtime.Operations.RuntimeEvents.Query(new RuntimeEventQuery { Component = "harness", Limit = 10 });
+        Assert.Contains(events, item => item.Action == "contract_created" && item.CorrelationId == "hctr_admin");
+        Assert.Contains(events, item => item.Action == "contract_status_changed" && item.CorrelationId == "hctr_admin");
+    }
+
+    [Fact]
+    public async Task SharedHarnessState_AdminApi_RequiresAuthAndSupportsCreateListDetailAndConflicts()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+
+        var anonymousResponse = await harness.Client.GetAsync("/admin/harness/shared-state");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+
+        var viewerToken = CreateOperatorToken(harness, OperatorRoleNames.Viewer, "shared-state-viewer");
+        using var viewerListRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/shared-state");
+        viewerListRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken);
+        var viewerListResponse = await harness.Client.SendAsync(viewerListRequest);
+        Assert.Equal(HttpStatusCode.OK, viewerListResponse.StatusCode);
+
+        using var viewerCreateRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state")
+        {
+            Content = JsonContent("""{"goal":"viewer cannot create"}""")
+        };
+        viewerCreateRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken);
+        var viewerCreateResponse = await harness.Client.SendAsync(viewerCreateRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, viewerCreateResponse.StatusCode);
+
+        var (cookie, csrfToken) = await LoginAsync(harness.Client, harness.AuthToken);
+        var stateJson = JsonSerializer.Serialize(new SharedHarnessState
+        {
+            Id = "shs_admin",
+            SessionId = "session-shared",
+            ParentSessionId = "session-parent",
+            HarnessContractId = "hctr_shared",
+            Goal = "Coordinate delegated test work",
+            Tags = ["shared"]
+        }, CoreJsonContext.Default.SharedHarnessState);
+
+        using var missingCsrfRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state")
+        {
+            Content = JsonContent(stateJson)
+        };
+        missingCsrfRequest.Headers.Add("Cookie", cookie);
+        var missingCsrfResponse = await harness.Client.SendAsync(missingCsrfRequest);
+        Assert.Equal(HttpStatusCode.Unauthorized, missingCsrfResponse.StatusCode);
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state")
+        {
+            Content = JsonContent(stateJson)
+        };
+        createRequest.Headers.Add("Cookie", cookie);
+        createRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var createResponse = await harness.Client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        using var createPayload = await ReadJsonAsync(createResponse);
+        Assert.True(createPayload.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal("shs_admin", createPayload.RootElement.GetProperty("state").GetProperty("id").GetString());
+
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/shared-state/shs_admin");
+        detailRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var detailResponse = await harness.Client.SendAsync(detailRequest);
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailPayload = await ReadJsonAsync(detailResponse);
+        Assert.Equal("session-shared", detailPayload.RootElement.GetProperty("state").GetProperty("sessionId").GetString());
+
+        using var bySessionRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/sessions/session-shared/harness-state");
+        bySessionRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var bySessionResponse = await harness.Client.SendAsync(bySessionRequest);
+        Assert.Equal(HttpStatusCode.OK, bySessionResponse.StatusCode);
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/shared-state?sessionId=session-shared&tag=shared");
+        listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var listResponse = await harness.Client.SendAsync(listRequest);
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listPayload = await ReadJsonAsync(listResponse);
+        Assert.Single(listPayload.RootElement.GetProperty("items").EnumerateArray());
+
+        using var participantRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state/shs_admin/participants")
+        {
+            Content = JsonContent("""{"id":"coder","role":"coder","sessionId":"session-coder"}""")
+        };
+        participantRequest.Headers.Add("Cookie", cookie);
+        participantRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var participantResponse = await harness.Client.SendAsync(participantRequest);
+        Assert.Equal(HttpStatusCode.OK, participantResponse.StatusCode);
+
+        using var firstActionRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state/shs_admin/actions")
+        {
+            Content = JsonContent("""{"id":"write-a","participantId":"coder","title":"Write A","writeSet":[{"kind":"file","path":"README.md"}]}""")
+        };
+        firstActionRequest.Headers.Add("Cookie", cookie);
+        firstActionRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var firstActionResponse = await harness.Client.SendAsync(firstActionRequest);
+        Assert.Equal(HttpStatusCode.OK, firstActionResponse.StatusCode);
+
+        using var secondActionRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state/shs_admin/actions")
+        {
+            Content = JsonContent("""{"id":"write-b","participantId":"coder","title":"Write B","writeSet":[{"kind":"file","path":"README.md"}]}""")
+        };
+        secondActionRequest.Headers.Add("Cookie", cookie);
+        secondActionRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var secondActionResponse = await harness.Client.SendAsync(secondActionRequest);
+        Assert.Equal(HttpStatusCode.OK, secondActionResponse.StatusCode);
+
+        using var detectRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state/shs_admin/detect-conflicts");
+        detectRequest.Headers.Add("Cookie", cookie);
+        detectRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var detectResponse = await harness.Client.SendAsync(detectRequest);
+        Assert.Equal(HttpStatusCode.OK, detectResponse.StatusCode);
+        using var detectPayload = await ReadJsonAsync(detectResponse);
+        Assert.Single(detectPayload.RootElement.GetProperty("state").GetProperty("conflicts").EnumerateArray());
+
+        var events = harness.Runtime.Operations.RuntimeEvents.Query(new RuntimeEventQuery { Component = "harness", Limit = 20 });
+        Assert.Contains(events, item => item.Action == "shared_state_created" && item.CorrelationId == "shs_admin");
+        Assert.Contains(events, item => item.Action == "shared_state_conflicts_detected" && item.CorrelationId == "shs_admin");
+    }
+
+    [Fact]
+    public async Task EvidenceBundles_AdminApi_RequiresAuthAndSupportsCreateListDetailAndAppend()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+
+        var anonymousResponse = await harness.Client.GetAsync("/admin/harness/evidence");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var viewer = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "evidence-viewer",
+            Password = "viewer-pass",
+            Role = OperatorRoleNames.Viewer
+        });
+        var viewerToken = operatorAccounts.CreateToken(viewer.Id, new OperatorAccountTokenCreateRequest { Label = "viewer" });
+        Assert.NotNull(viewerToken);
+
+        using var viewerListRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/evidence");
+        viewerListRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken!.Token);
+        var viewerListResponse = await harness.Client.SendAsync(viewerListRequest);
+        Assert.Equal(HttpStatusCode.OK, viewerListResponse.StatusCode);
+
+        using var viewerCreateRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/evidence")
+        {
+            Content = JsonContent("""{"title":"viewer cannot create"}""")
+        };
+        viewerCreateRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken.Token);
+        var viewerCreateResponse = await harness.Client.SendAsync(viewerCreateRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, viewerCreateResponse.StatusCode);
+
+        var (cookie, csrfToken) = await LoginAsync(harness.Client, harness.AuthToken);
+        var bundleJson = JsonSerializer.Serialize(new EvidenceBundle
+        {
+            Id = "evb_admin",
+            Title = "Admin evidence",
+            Summary = "Manual evidence created through the admin API.",
+            SourceSessionId = "session-evidence",
+            HarnessContractId = "hctr_admin",
+            ChannelId = "web",
+            SenderId = "operator",
+            Confidence = EvidenceConfidenceLevels.Medium,
+            Tags = ["evidence"]
+        }, CoreJsonContext.Default.EvidenceBundle);
+
+        using var missingCsrfRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/evidence")
+        {
+            Content = JsonContent(bundleJson)
+        };
+        missingCsrfRequest.Headers.Add("Cookie", cookie);
+        var missingCsrfResponse = await harness.Client.SendAsync(missingCsrfRequest);
+        Assert.Equal(HttpStatusCode.Unauthorized, missingCsrfResponse.StatusCode);
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/evidence")
+        {
+            Content = JsonContent(bundleJson)
+        };
+        createRequest.Headers.Add("Cookie", cookie);
+        createRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var createResponse = await harness.Client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        using var createPayload = await ReadJsonAsync(createResponse);
+        Assert.True(createPayload.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(EvidenceConfidenceLevels.Medium, createPayload.RootElement.GetProperty("bundle").GetProperty("confidence").GetString());
+
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/evidence/evb_admin");
+        detailRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var detailResponse = await harness.Client.SendAsync(detailRequest);
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailPayload = await ReadJsonAsync(detailResponse);
+        Assert.Equal("evb_admin", detailPayload.RootElement.GetProperty("bundle").GetProperty("id").GetString());
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/evidence?sourceSessionId=session-evidence&harnessContractId=hctr_admin");
+        listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var listResponse = await harness.Client.SendAsync(listRequest);
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listPayload = await ReadJsonAsync(listResponse);
+        Assert.Single(listPayload.RootElement.GetProperty("items").EnumerateArray());
+
+        using var itemRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/evidence/evb_admin/items")
+        {
+            Content = JsonContent("""{"kind":"note","title":"Operator note","summary":"Reviewed output."}""")
+        };
+        itemRequest.Headers.Add("Cookie", cookie);
+        itemRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var itemResponse = await harness.Client.SendAsync(itemRequest);
+        Assert.Equal(HttpStatusCode.OK, itemResponse.StatusCode);
+        using var itemPayload = await ReadJsonAsync(itemResponse);
+        Assert.Single(itemPayload.RootElement.GetProperty("bundle").GetProperty("items").EnumerateArray());
+
+        using var checkRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/evidence/evb_admin/checks")
+        {
+            Content = JsonContent("""{"name":"Focused tests","status":"passed","summary":"Tests passed."}""")
+        };
+        checkRequest.Headers.Add("Cookie", cookie);
+        checkRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var checkResponse = await harness.Client.SendAsync(checkRequest);
+        Assert.Equal(HttpStatusCode.OK, checkResponse.StatusCode);
+        using var checkPayload = await ReadJsonAsync(checkResponse);
+        Assert.Single(checkPayload.RootElement.GetProperty("bundle").GetProperty("checks").EnumerateArray());
+
+        using var reviewRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/evidence/evb_admin/reviews")
+        {
+            Content = JsonContent("""{"reviewer":"operator","decision":"accepted","notes":"Looks good."}""")
+        };
+        reviewRequest.Headers.Add("Cookie", cookie);
+        reviewRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var reviewResponse = await harness.Client.SendAsync(reviewRequest);
+        Assert.Equal(HttpStatusCode.OK, reviewResponse.StatusCode);
+        using var reviewPayload = await ReadJsonAsync(reviewResponse);
+        Assert.Single(reviewPayload.RootElement.GetProperty("bundle").GetProperty("humanReviews").EnumerateArray());
+
+        var events = harness.Runtime.Operations.RuntimeEvents.Query(new RuntimeEventQuery { Component = "harness", Limit = 10 });
+        Assert.Contains(events, item => item.Action == "evidence_bundle_created" && item.CorrelationId == "evb_admin");
+        Assert.Contains(events, item => item.Action == "evidence_bundle_updated" && item.CorrelationId == "evb_admin");
+    }
+
+    [Fact]
+    public async Task GovernanceLedger_AdminApi_RequiresAuthAndSupportsCreateListDetailAndRevoke()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+
+        var anonymousResponse = await harness.Client.GetAsync("/admin/governance/ledger");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+
+        var viewerToken = CreateOperatorToken(harness, OperatorRoleNames.Viewer, "governance-viewer");
+        using var viewerListRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/governance/ledger");
+        viewerListRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken);
+        var viewerListResponse = await harness.Client.SendAsync(viewerListRequest);
+        Assert.Equal(HttpStatusCode.OK, viewerListResponse.StatusCode);
+
+        using var viewerCreateRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/governance/ledger")
+        {
+            Content = JsonContent("""{"actionSummary":"viewer cannot create"}""")
+        };
+        viewerCreateRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken);
+        var viewerCreateResponse = await harness.Client.SendAsync(viewerCreateRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, viewerCreateResponse.StatusCode);
+
+        var (cookie, csrfToken) = await LoginAsync(harness.Client, harness.AuthToken);
+        var entryJson = JsonSerializer.Serialize(new GovernanceLedgerEntry
+        {
+            Id = "gov_admin",
+            Decision = GovernanceDecisions.Approved,
+            Status = GovernanceDecisionStatuses.Active,
+            Source = GovernanceLedgerSources.Manual,
+            ToolName = "shell",
+            ActionType = "write",
+            ActionSummary = "Operator approved a governed shell action.",
+            ArgumentSummary = """{"cmd":"echo sk-testsecret123"}""",
+            RedactedArguments = """{"cmd":"echo sk-testsecret123"}""",
+            RiskLevel = GovernanceRiskLevels.High,
+            Scope = GovernanceScopes.Session,
+            ScopeKey = "session-governance",
+            SessionId = "session-governance",
+            ApprovalId = "apr_admin",
+            DecidedBy = "operator",
+            DecisionReason = "manual review passed",
+            Tags = ["approval"]
+        }, CoreJsonContext.Default.GovernanceLedgerEntry);
+
+        using var missingCsrfRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/governance/ledger")
+        {
+            Content = JsonContent(entryJson)
+        };
+        missingCsrfRequest.Headers.Add("Cookie", cookie);
+        var missingCsrfResponse = await harness.Client.SendAsync(missingCsrfRequest);
+        Assert.Equal(HttpStatusCode.Unauthorized, missingCsrfResponse.StatusCode);
+
+        using var malformedCreateRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/governance/ledger")
+        {
+            Content = new StringContent("{", Encoding.UTF8, "application/json")
+        };
+        malformedCreateRequest.Headers.Add("Cookie", cookie);
+        malformedCreateRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var malformedCreateResponse = await harness.Client.SendAsync(malformedCreateRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, malformedCreateResponse.StatusCode);
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/governance/ledger")
+        {
+            Content = JsonContent(entryJson)
+        };
+        createRequest.Headers.Add("Cookie", cookie);
+        createRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var createResponse = await harness.Client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        using var createPayload = await ReadJsonAsync(createResponse);
+        Assert.True(createPayload.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(GovernanceDecisions.Approved, createPayload.RootElement.GetProperty("entry").GetProperty("decision").GetString());
+        Assert.DoesNotContain("sk-testsecret123", createPayload.RootElement.GetProperty("entry").GetProperty("redactedArguments").GetString());
+
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/governance/ledger/gov_admin");
+        detailRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var detailResponse = await harness.Client.SendAsync(detailRequest);
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailPayload = await ReadJsonAsync(detailResponse);
+        Assert.Equal("gov_admin", detailPayload.RootElement.GetProperty("entry").GetProperty("id").GetString());
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/governance/ledger?decision=approved&toolName=shell&sessionId=session-governance");
+        listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var listResponse = await harness.Client.SendAsync(listRequest);
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listPayload = await ReadJsonAsync(listResponse);
+        Assert.Single(listPayload.RootElement.GetProperty("items").EnumerateArray());
+
+        using var revokeRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/governance/ledger/gov_admin/revoke")
+        {
+            Content = JsonContent("""{"reason":"scope changed"}""")
+        };
+        revokeRequest.Headers.Add("Cookie", cookie);
+        revokeRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var revokeResponse = await harness.Client.SendAsync(revokeRequest);
+        Assert.Equal(HttpStatusCode.OK, revokeResponse.StatusCode);
+        using var revokePayload = await ReadJsonAsync(revokeResponse);
+        Assert.Equal(GovernanceDecisionStatuses.Revoked, revokePayload.RootElement.GetProperty("entry").GetProperty("status").GetString());
+        Assert.Equal("scope changed", revokePayload.RootElement.GetProperty("entry").GetProperty("revocationReason").GetString());
+
+        using var malformedRevokeRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/governance/ledger/gov_admin/revoke")
+        {
+            Content = new StringContent("{", Encoding.UTF8, "application/json")
+        };
+        malformedRevokeRequest.Headers.Add("Cookie", cookie);
+        malformedRevokeRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var malformedRevokeResponse = await harness.Client.SendAsync(malformedRevokeRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, malformedRevokeResponse.StatusCode);
+
+        var events = harness.Runtime.Operations.RuntimeEvents.Query(new RuntimeEventQuery { Component = "harness", Limit = 10 });
+        Assert.Contains(events, item => item.Action == "governance_ledger_entry_recorded" && item.CorrelationId == "gov_admin");
+        Assert.Contains(events, item => item.Action == "governance_ledger_entry_revoked" && item.CorrelationId == "gov_admin");
+    }
+
+    [Fact]
     public async Task AuthOperatorToken_ExchangeAndRevocation_Work()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -695,6 +1151,16 @@ public sealed class GatewayAdminEndpointTests
             Summary = "new",
             Success = true
         });
+        await CreateGovernanceLedgerService(harness).CreateAsync(new GovernanceLedgerEntry
+        {
+            Id = "gov_audit_export",
+            Decision = GovernanceDecisions.Approved,
+            Status = GovernanceDecisionStatuses.Active,
+            Source = GovernanceLedgerSources.Manual,
+            ActionSummary = "Audit export governance record.",
+            ToolName = "shell",
+            SessionId = "sess-audit-export"
+        }, CancellationToken.None);
 
         using var exportRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/audit/export?fromUtc={Uri.EscapeDataString(DateTimeOffset.UtcNow.AddDays(-30).ToString("O"))}");
         exportRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token!.Token);
@@ -712,6 +1178,7 @@ public sealed class GatewayAdminEndpointTests
         Assert.Contains("provider-routes.json", names);
         Assert.Contains("dead-letter.jsonl", names);
         Assert.Contains("session-metadata.json", names);
+        Assert.DoesNotContain("governance-ledger.jsonl", names);
 
         using var manifestStream = archive.GetEntry("manifest.json")!.Open();
         using var manifestDoc = await JsonDocument.ParseAsync(manifestStream);
@@ -720,6 +1187,14 @@ public sealed class GatewayAdminEndpointTests
             manifestDoc.RootElement.GetProperty("warnings").EnumerateArray().Select(static item => item.GetString()).OfType<string>(),
             value => value.Contains("retention window", StringComparison.OrdinalIgnoreCase));
         Assert.True(manifestDoc.RootElement.GetProperty("fileEntryCounts").GetProperty("operator-audit.jsonl").GetInt32() >= 1);
+
+        using var governanceExportRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/audit/export?includeGovernance=true&fromUtc={Uri.EscapeDataString(DateTimeOffset.UtcNow.AddDays(-1).ToString("O"))}");
+        governanceExportRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+        var governanceExportResponse = await harness.Client.SendAsync(governanceExportRequest);
+        governanceExportResponse.EnsureSuccessStatusCode();
+        var governanceBytes = await governanceExportResponse.Content.ReadAsByteArrayAsync();
+        using var governanceArchive = new ZipArchive(new MemoryStream(governanceBytes), ZipArchiveMode.Read);
+        Assert.Contains(governanceArchive.Entries, entry => entry.FullName == "governance-ledger.jsonl");
     }
 
     [Fact]
@@ -778,6 +1253,64 @@ public sealed class GatewayAdminEndpointTests
         });
         session.History.Add(new ChatTurn { Role = "assistant", Content = "Done for alice@example.com" });
         await harness.Runtime.SessionManager.PersistAsync(session, CancellationToken.None);
+        var evidenceService = new EvidenceBundleService(
+            new FileEvidenceBundleStore(harness.StoragePath),
+            harness.Runtime.Operations.RuntimeEvents,
+            NullLogger<EvidenceBundleService>.Instance);
+        await evidenceService.CreateAsync(new EvidenceBundle
+        {
+            Id = "evb-trajectory",
+            Title = "Evidence for alice@example.com",
+            Summary = "Verified result with sk-testsecret123.",
+            SourceSessionId = "sess-trajectory",
+            Confidence = EvidenceConfidenceLevels.High,
+            Items =
+            [
+                new EvidenceItem
+                {
+                    Kind = EvidenceItemKinds.Note,
+                    Title = "Review",
+                    Summary = "Contains alice@example.com and sk-testsecret123."
+                }
+            ],
+            HumanReviews =
+            [
+                new EvidenceHumanReview
+                {
+                    Reviewer = "alice@example.com",
+                    Decision = "accepted for alice@example.com with sk-testsecret123",
+                    Notes = "Reviewed with sk-testsecret123."
+                }
+            ],
+            Tags = ["alice@example.com", "sk-testsecret123"],
+            Metadata = new EvidenceBundleMetadata
+            {
+                Source = "ticket for alice@example.com using sk-testsecret123",
+                Properties = new Dictionary<string, string>
+                {
+                    ["ticket"] = "alice@example.com sk-testsecret123"
+                }
+            }
+        }, CancellationToken.None);
+        await CreateGovernanceLedgerService(harness).CreateAsync(new GovernanceLedgerEntry
+        {
+            Id = "gov-trajectory",
+            Decision = GovernanceDecisions.Approved,
+            Status = GovernanceDecisionStatuses.Active,
+            Source = GovernanceLedgerSources.Manual,
+            ActionSummary = "Approved action for alice@example.com with sk-testsecret123.",
+            ArgumentSummary = """{"email":"alice@example.com","token":"sk-testsecret123"}""",
+            RedactedArguments = """{"email":"alice@example.com","token":"sk-testsecret123"}""",
+            ToolName = "web_fetch",
+            RiskLevel = GovernanceRiskLevels.Medium,
+            Scope = GovernanceScopes.Session,
+            SessionId = "sess-trajectory",
+            ChannelId = "web",
+            SenderId = "alice@example.com",
+            DecidedBy = "alice@example.com",
+            DecisionReason = "reviewed with sk-testsecret123",
+            Tags = ["alice@example.com", "sk-testsecret123"]
+        }, CancellationToken.None);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/trajectory/export?sessionId=sess-trajectory&anonymize=true");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -790,9 +1323,36 @@ public sealed class GatewayAdminEndpointTests
         Assert.Contains("\"type\":\"tool_call\"", jsonl);
         Assert.Contains("\"type\":\"tool_result\"", jsonl);
         Assert.Contains("anon_", jsonl);
+        Assert.DoesNotContain("\"type\":\"evidence_bundle\"", jsonl);
+        Assert.DoesNotContain("\"type\":\"governance_ledger_entry\"", jsonl);
         Assert.DoesNotContain("alice@example.com", jsonl);
         Assert.DoesNotContain("sk-testsecret123", jsonl);
         Assert.DoesNotContain("secret-value", jsonl);
+
+        using var evidenceRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/trajectory/export?sessionId=sess-trajectory&anonymize=true&includeEvidence=true");
+        evidenceRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var evidenceResponse = await harness.Client.SendAsync(evidenceRequest);
+
+        evidenceResponse.EnsureSuccessStatusCode();
+        var evidenceJsonl = await evidenceResponse.Content.ReadAsStringAsync();
+        Assert.Contains("\"type\":\"evidence_bundle\"", evidenceJsonl);
+        Assert.Contains("\"evidenceBundle\"", evidenceJsonl);
+        Assert.DoesNotContain("\"type\":\"governance_ledger_entry\"", evidenceJsonl);
+        Assert.DoesNotContain("alice@example.com", evidenceJsonl);
+        Assert.DoesNotContain("sk-testsecret123", evidenceJsonl);
+        Assert.DoesNotContain("secret-value", evidenceJsonl);
+
+        using var governanceRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/trajectory/export?sessionId=sess-trajectory&anonymize=true&includeGovernance=true");
+        governanceRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var governanceResponse = await harness.Client.SendAsync(governanceRequest);
+
+        governanceResponse.EnsureSuccessStatusCode();
+        var governanceJsonl = await governanceResponse.Content.ReadAsStringAsync();
+        Assert.Contains("\"type\":\"governance_ledger_entry\"", governanceJsonl);
+        Assert.Contains("\"governanceLedgerEntry\"", governanceJsonl);
+        Assert.DoesNotContain("alice@example.com", governanceJsonl);
+        Assert.DoesNotContain("sk-testsecret123", governanceJsonl);
+        Assert.DoesNotContain("secret-value", governanceJsonl);
     }
 
     [Fact]
@@ -1183,6 +1743,77 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task FractalMemory_AdminEndpoints_RequireAuthAndUseStructuredProvider()
+    {
+        var structuredProvider = new AdminFakeStructuredMemoryProvider();
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configure: config =>
+            {
+                config.Memory.Fractal.Enabled = true;
+                config.Memory.Fractal.AutoContextMode = "manual";
+                config.Memory.Fractal.AllowWrites = false;
+            },
+            configureServices: (services, _) =>
+                services.AddSingleton<IStructuredMemoryProvider>(structuredProvider));
+
+        var anonymous = await harness.Client.GetAsync("/admin/memory/fractal/status");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+
+        using var statusRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/fractal/status");
+        statusRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var statusResponse = await harness.Client.SendAsync(statusRequest);
+        Assert.Equal(HttpStatusCode.OK, statusResponse.StatusCode);
+        using var statusPayload = await ReadJsonAsync(statusResponse);
+        Assert.True(statusPayload.RootElement.GetProperty("enabled").GetBoolean());
+        Assert.True(statusPayload.RootElement.GetProperty("available").GetBoolean());
+
+        using var emptySearchRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/fractal/search?query=%20%20");
+        emptySearchRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var emptySearchResponse = await harness.Client.SendAsync(emptySearchRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, emptySearchResponse.StatusCode);
+
+        using var searchRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/fractal/search?query=%20context%20&limit=999&scope=%20project%20");
+        searchRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var searchResponse = await harness.Client.SendAsync(searchRequest);
+        Assert.Equal(HttpStatusCode.OK, searchResponse.StatusCode);
+        using var searchPayload = await ReadJsonAsync(searchResponse);
+        Assert.True(searchPayload.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal("context", searchPayload.RootElement.GetProperty("query").GetString());
+        Assert.Equal("project", searchPayload.RootElement.GetProperty("scope").GetString());
+        Assert.Equal(50, structuredProvider.LastSearchLimit);
+        Assert.Equal("projects/admin", Assert.Single(searchPayload.RootElement.GetProperty("items").EnumerateArray()).GetProperty("path").GetString());
+
+        using var openRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/fractal/open?path=%20projects/admin%20&depth=99&view=bad-view");
+        openRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var openResponse = await harness.Client.SendAsync(openRequest);
+        Assert.Equal(HttpStatusCode.OK, openResponse.StatusCode);
+        using var openPayload = await ReadJsonAsync(openResponse);
+        Assert.Equal("projects/admin", openPayload.RootElement.GetProperty("path").GetString());
+        Assert.Equal(3, openPayload.RootElement.GetProperty("depth").GetInt32());
+        Assert.Equal("index", openPayload.RootElement.GetProperty("view").GetString());
+
+        using var recentRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/fractal/recent?days=0&limit=999&scope=%20workspace%20");
+        recentRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var recentResponse = await harness.Client.SendAsync(recentRequest);
+        Assert.Equal(HttpStatusCode.OK, recentResponse.StatusCode);
+        using var recentPayload = await ReadJsonAsync(recentResponse);
+        Assert.Equal(1, recentPayload.RootElement.GetProperty("days").GetInt32());
+        Assert.Equal("workspace", recentPayload.RootElement.GetProperty("scope").GetString());
+        Assert.Equal(100, structuredProvider.LastRecentLimit);
+
+        var (cookie, csrfToken) = await LoginAsync(harness.Client, harness.AuthToken);
+        using var handoffRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/memory/fractal/handoff")
+        {
+            Content = JsonContent("""{"path":"projects/admin"}""")
+        };
+        handoffRequest.Headers.Add("Cookie", cookie);
+        handoffRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var handoffResponse = await harness.Client.SendAsync(handoffRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, handoffResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task LearningProposalRollback_ProfileUpdate_RestoresPreviousProfile()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -1382,6 +2013,356 @@ public sealed class GatewayAdminEndpointTests
             if (Directory.Exists(storagePath))
                 Directory.Delete(storagePath, recursive: true);
         }
+    }
+
+    [Fact]
+    public void HarnessEvolutionProposal_RoundTrips_WithSourceGeneratedJson()
+    {
+        var proposal = new LearningProposal
+        {
+            Id = "lp_harness_roundtrip",
+            Kind = LearningProposalKind.HarnessChange,
+            Status = LearningProposalStatus.Pending,
+            ActorId = "operator:harness",
+            Title = "Harness change proposal",
+            Summary = "Memory retrieval could be improved.",
+            HarnessEvolution = new HarnessEvolutionProposal
+            {
+                Component = HarnessEvolutionComponents.Memory,
+                FailureMode = "Memory retrieval missed repeated project notes.",
+                ProposedChange = "Review memory retrieval ranking for project-scoped notes.",
+                PredictedImprovement = "Improve retrieval precision for governed harness context.",
+                InvariantsToPreserve = ["Do not include secrets", "Keep durable changes review-first"],
+                FalsificationTests = ["harness regression: memory"],
+                RollbackPlan = "Keep the existing retrieval policy.",
+                SourceRuntimeEventIds = ["evt_1"],
+                RelatedEvidenceBundleIds = ["ev_1"],
+                RiskLevel = LearningProposalRiskLevels.Medium,
+                Confidence = 0.7f,
+                ProposalFingerprint = "fp_1",
+                RegressionCategories = ["memory"]
+            },
+            RiskLevel = LearningProposalRiskLevels.Medium,
+            Confidence = 0.7f
+        };
+
+        var json = JsonSerializer.Serialize(proposal, CoreJsonContext.Default.LearningProposal);
+        var restored = JsonSerializer.Deserialize(json, CoreJsonContext.Default.LearningProposal);
+
+        Assert.NotNull(restored);
+        Assert.Equal(LearningProposalKind.HarnessChange, restored.Kind);
+        Assert.Equal(HarnessEvolutionComponents.Memory, restored.HarnessEvolution?.Component);
+        Assert.Equal("Review memory retrieval ranking for project-scoped notes.", restored.HarnessEvolution?.ProposedChange);
+        Assert.Equal(["memory"], restored.HarnessEvolution?.RegressionCategories);
+    }
+
+    [Fact]
+    public async Task LearningService_HarnessChangeProposal_AssignsRiskValidatesAndSuppressesDuplicates()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var store = new FileFeatureStore(storagePath);
+            var service = new LearningService(
+                new LearningConfig { HarnessEvolutionEnabled = true },
+                store,
+                store,
+                store,
+                new StaticSessionSearchStore([]),
+                NullLogger<LearningService>.Instance);
+
+            var first = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+            {
+                ActorId = "operator:harness",
+                Component = HarnessEvolutionComponents.Memory,
+                FailureMode = "Memory misses repeated project notes.",
+                ProposedChange = "Tune project-scoped memory retrieval ranking.",
+                PredictedImprovement = "Improve retrieval precision for governed context.",
+                FalsificationTests = ["harness regression: memory"],
+                SourceRuntimeEventIds = ["evt_1"]
+            }, CancellationToken.None);
+            var second = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+            {
+                ActorId = "operator:harness",
+                Component = HarnessEvolutionComponents.Memory,
+                FailureMode = "Memory misses repeated project notes.",
+                ProposedChange = "Tune project-scoped memory retrieval ranking.",
+                PredictedImprovement = "Improve retrieval precision for governed context.",
+                FalsificationTests = ["harness regression: memory"],
+                SourceRuntimeEventIds = ["evt_2"],
+                SourceSessionIds = ["sess_1", "sess_2"],
+                RiskLevel = LearningProposalRiskLevels.High,
+                RequiresRegression = false,
+                RegressionCategories = ["harness"]
+            }, CancellationToken.None);
+            var third = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+            {
+                ActorId = "operator:harness",
+                Component = HarnessEvolutionComponents.Memory,
+                FailureMode = "Memory misses repeated project notes.",
+                ProposedChange = "Tune project-scoped memory retrieval ranking.",
+                PredictedImprovement = "Improve retrieval precision for governed context.",
+                FalsificationTests = ["harness regression: memory"],
+                SourceRuntimeEventIds = ["evt_2"],
+                SourceSessionIds = ["sess_1", "sess_2"],
+                RiskLevel = LearningProposalRiskLevels.High,
+                RequiresRegression = false,
+                RegressionCategories = ["harness"]
+            }, CancellationToken.None);
+            var toolPolicy = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+            {
+                Component = HarnessEvolutionComponents.Tools,
+                FailureMode = "Tool failures recur for write actions.",
+                ProposedChange = "Review write-tool governance policy.",
+                PredictedImprovement = "Reduce repeated failed governed tool attempts.",
+                FalsificationTests = ["harness regression: tools"],
+                RollbackPlan = "Keep existing tool policy.",
+                RegressionCategories = ["tools"]
+            }, CancellationToken.None);
+            var pulse = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+            {
+                Component = HarnessEvolutionComponents.Pulse,
+                FailureMode = "Pulse skips recur.",
+                ProposedChange = "Review pulse scheduling thresholds.",
+                PredictedImprovement = "Reduce repeated pulse skip warnings.",
+                FalsificationTests = ["pulse schedule check"],
+                RollbackPlan = "Keep existing pulse thresholds."
+            }, CancellationToken.None);
+            var unknown = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+            {
+                Component = HarnessEvolutionComponents.Unknown,
+                FailureMode = "Unknown harness signal recurs.",
+                ProposedChange = "Review unknown harness signal classification.",
+                PredictedImprovement = "Improve operator triage of unknown harness signals.",
+                FalsificationTests = ["harness regression: harness"],
+                RollbackPlan = "Keep existing classification.",
+                RegressionCategories = ["harness"]
+            }, CancellationToken.None);
+
+            Assert.Equal(first.Id, second.Id);
+            Assert.Equal(second.Id, third.Id);
+            Assert.Equal(LearningProposalRiskLevels.High, second.RiskLevel);
+            Assert.Equal(3, second.RepeatedCount);
+            Assert.Equal(3, third.RepeatedCount);
+            Assert.Contains("evt_1", second.HarnessEvolution!.SourceRuntimeEventIds);
+            Assert.Contains("evt_2", second.HarnessEvolution.SourceRuntimeEventIds);
+            Assert.Contains("sess_1", second.HarnessEvolution.SourceSessionIds);
+            Assert.True(second.HarnessEvolution.RequiresRegression);
+            Assert.Contains("harness", second.HarnessEvolution.RegressionCategories);
+            Assert.Contains(second.ValidationWarnings, static warning => warning.Contains("rollback plan", StringComparison.OrdinalIgnoreCase));
+            Assert.Equal(LearningProposalRiskLevels.High, toolPolicy.RiskLevel);
+            Assert.Equal(LearningProposalRiskLevels.Low, pulse.RiskLevel);
+            Assert.Equal(LearningProposalRiskLevels.High, unknown.RiskLevel);
+
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+                {
+                    Component = HarnessEvolutionComponents.Security,
+                    FailureMode = "Security policy needs review.",
+                    ProposedChange = "Allow public bind without hardening.",
+                    PredictedImprovement = "Make access easier.",
+                    FalsificationTests = ["harness regression: security"],
+                    RollbackPlan = "Restore current security policy.",
+                    IsAutoApplicable = true,
+                    RegressionCategories = ["security"]
+                }, CancellationToken.None).AsTask());
+
+            var proposals = await store.ListProposalsAsync(null, LearningProposalKind.HarnessChange, CancellationToken.None);
+            Assert.Equal(4, proposals.Count);
+        }
+        finally
+        {
+            if (Directory.Exists(storagePath))
+                Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LearningService_HarnessChangeDetection_IsExplicitAndThresholded()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var store = new FileFeatureStore(storagePath);
+            var service = new LearningService(
+                new LearningConfig { HarnessEvolutionEnabled = true, HarnessEvolutionProposalThreshold = 3 },
+                store,
+                store,
+                store,
+                new StaticSessionSearchStore([]),
+                NullLogger<LearningService>.Instance);
+            var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
+            for (var i = 0; i < 3; i++)
+            {
+                runtimeEvents.Append(new RuntimeEventEntry
+                {
+                    Id = $"evt_tool_{i}",
+                    TimestampUtc = DateTimeOffset.UtcNow.AddMinutes(-i),
+                    SessionId = $"sess_{i}",
+                    Component = "tools",
+                    Action = "failed",
+                    Severity = "warning",
+                    Summary = "Tool write failed under supervised policy."
+                });
+            }
+            runtimeEvents.Append(new RuntimeEventEntry
+            {
+                Id = "evt_single",
+                TimestampUtc = DateTimeOffset.UtcNow,
+                Component = "memory",
+                Action = "miss",
+                Severity = "warning",
+                Summary = "Single memory miss."
+            });
+
+            var response = await service.DetectHarnessChangeProposalsAsync(
+                runtimeEvents,
+                new HarnessEvolutionDetectionRequest { Threshold = 3 },
+                CancellationToken.None);
+
+            var proposal = Assert.Single(response.Proposals);
+            Assert.Equal(2, response.GroupsEvaluated);
+            Assert.Equal(1, response.GroupsMeetingThreshold);
+            Assert.Equal(HarnessEvolutionComponents.Tools, proposal.HarnessEvolution?.Component);
+            Assert.Equal(3, proposal.HarnessEvolution?.SourceRuntimeEventIds.Count);
+        }
+        finally
+        {
+            if (Directory.Exists(storagePath))
+                Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LearningService_HarnessEvolutionDisabled_RejectsCreationAndDetection()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var store = new FileFeatureStore(storagePath);
+            var service = new LearningService(
+                new LearningConfig { HarnessEvolutionEnabled = false },
+                store,
+                store,
+                store,
+                new StaticSessionSearchStore([]),
+                NullLogger<LearningService>.Instance);
+            var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+                {
+                    Component = HarnessEvolutionComponents.Memory,
+                    FailureMode = "Memory misses repeated project notes.",
+                    ProposedChange = "Tune project-scoped memory retrieval ranking."
+                }, CancellationToken.None).AsTask());
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await service.DetectHarnessChangeProposalsAsync(runtimeEvents, null, CancellationToken.None).AsTask());
+        }
+        finally
+        {
+            if (Directory.Exists(storagePath))
+                Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LearningProposalHarnessChange_AdminCreateFilterApproveRejectAndGovernanceLink()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config => config.Learning.HarnessEvolutionEnabled = true);
+        var (cookie, csrfToken) = await LoginAsync(harness.Client, harness.AuthToken);
+        var createJson = JsonSerializer.Serialize(new HarnessEvolutionProposalCreateRequest
+        {
+            Component = HarnessEvolutionComponents.Approvals,
+            FailureMode = "Operators repeatedly deny the same low-value tool action.",
+            ProposedChange = "Review approval policy guidance for repeated denied tool actions.",
+            PredictedImprovement = "Improve governance triage while keeping approval decisions review-first.",
+            InvariantsToPreserve = ["Do not bypass approval"],
+            FalsificationTests = ["harness regression: approvals"],
+            RollbackPlan = "Keep the existing approval policy.",
+            RelatedEvidenceBundleIds = ["ev_admin"],
+            RegressionCategories = ["approvals"]
+        }, CoreJsonContext.Default.HarnessEvolutionProposalCreateRequest);
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/harness-change")
+        {
+            Content = JsonContent(createJson)
+        };
+        createRequest.Headers.Add("Cookie", cookie);
+        createRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var createResponse = await harness.Client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        using var createPayload = await ReadJsonAsync(createResponse);
+        var proposalId = createPayload.RootElement.GetProperty("id").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(proposalId));
+        Assert.Equal(LearningProposalKind.HarnessChange, createPayload.RootElement.GetProperty("kind").GetString());
+        Assert.Equal(LearningProposalRiskLevels.High, createPayload.RootElement.GetProperty("riskLevel").GetString());
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/learning/proposals?kind=harness_change&component=approvals&risk=high");
+        listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var listResponse = await harness.Client.SendAsync(listRequest);
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listPayload = await ReadJsonAsync(listResponse);
+        var item = Assert.Single(listPayload.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(proposalId, item.GetProperty("id").GetString());
+
+        using var approveRequest = new HttpRequestMessage(HttpMethod.Post, $"/admin/learning/proposals/{proposalId}/approve")
+        {
+            Content = JsonContent("{}")
+        };
+        approveRequest.Headers.Add("Cookie", cookie);
+        approveRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var approveResponse = await harness.Client.SendAsync(approveRequest);
+        Assert.Equal(HttpStatusCode.OK, approveResponse.StatusCode);
+        using var approvePayload = await ReadJsonAsync(approveResponse);
+        Assert.Equal(LearningProposalStatus.Approved, approvePayload.RootElement.GetProperty("status").GetString());
+        Assert.Equal("approved; manual application required", approvePayload.RootElement.GetProperty("reviewNotes").GetString());
+        Assert.NotEmpty(approvePayload.RootElement.GetProperty("harnessEvolution").GetProperty("relatedGovernanceLedgerIds").EnumerateArray());
+
+        var automations = await new FileFeatureStore(harness.StoragePath).ListAutomationsAsync(CancellationToken.None);
+        Assert.Empty(automations);
+
+        var ledger = await CreateGovernanceLedgerService(harness).ListAsync(new GovernanceLedgerListQuery
+        {
+            Decision = GovernanceDecisions.Approved,
+            Limit = 10
+        }, CancellationToken.None);
+        Assert.Contains(ledger, entry => entry.LearningProposalId == proposalId && entry.Source == GovernanceLedgerSources.LearningProposal);
+
+        var rejectJson = JsonSerializer.Serialize(new HarnessEvolutionProposalCreateRequest
+        {
+            Component = HarnessEvolutionComponents.Pulse,
+            FailureMode = "Pulse skip warnings repeat.",
+            ProposedChange = "Review pulse skip threshold.",
+            PredictedImprovement = "Reduce repeated skip warnings.",
+            FalsificationTests = ["pulse threshold check"],
+            RollbackPlan = "Keep current pulse threshold."
+        }, CoreJsonContext.Default.HarnessEvolutionProposalCreateRequest);
+        using var rejectCreateRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/harness-change")
+        {
+            Content = JsonContent(rejectJson)
+        };
+        rejectCreateRequest.Headers.Add("Cookie", cookie);
+        rejectCreateRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var rejectCreateResponse = await harness.Client.SendAsync(rejectCreateRequest);
+        Assert.Equal(HttpStatusCode.OK, rejectCreateResponse.StatusCode);
+        using var rejectCreatePayload = await ReadJsonAsync(rejectCreateResponse);
+        var rejectProposalId = rejectCreatePayload.RootElement.GetProperty("id").GetString();
+
+        using var rejectRequest = new HttpRequestMessage(HttpMethod.Post, $"/admin/learning/proposals/{rejectProposalId}/reject")
+        {
+            Content = JsonContent("""{"reason":"not useful"}""")
+        };
+        rejectRequest.Headers.Add("Cookie", cookie);
+        rejectRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var rejectResponse = await harness.Client.SendAsync(rejectRequest);
+        Assert.Equal(HttpStatusCode.OK, rejectResponse.StatusCode);
+        using var rejectPayload = await ReadJsonAsync(rejectResponse);
+        Assert.Equal(LearningProposalStatus.Rejected, rejectPayload.RootElement.GetProperty("status").GetString());
+        Assert.NotEmpty(rejectPayload.RootElement.GetProperty("harnessEvolution").GetProperty("relatedGovernanceLedgerIds").EnumerateArray());
     }
 
     [Fact]
@@ -3290,6 +4271,12 @@ public sealed class GatewayAdminEndpointTests
             .Single(item => item.EventType == "decision");
         Assert.Equal("timeout", decision.DecisionSource);
         Assert.False(decision.Approved);
+
+        var governance = await CreateGovernanceLedgerService(harness)
+            .ListAsync(new GovernanceLedgerListQuery { SessionId = approval.SessionId, Decision = GovernanceDecisions.Expired }, CancellationToken.None);
+        var expired = Assert.Single(governance);
+        Assert.Equal(GovernanceDecisionStatuses.Expired, expired.Status);
+        Assert.Equal(approval.ApprovalId, expired.ApprovalId);
     }
 
     [Fact]
@@ -3399,6 +4386,37 @@ public sealed class GatewayAdminEndpointTests
         var historyPayload = await ReadJsonAsync(historyResponse);
         Assert.Equal(1, historyPayload.RootElement.GetProperty("items").GetArrayLength());
         Assert.Equal("created", historyPayload.RootElement.GetProperty("items")[0].GetProperty("eventType").GetString());
+    }
+
+    [Fact]
+    public async Task ToolsApprove_RecordsGovernanceLedgerEntry()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var approval = harness.Runtime.ToolApprovalService.Create(
+            "sess-governance-approve",
+            "telegram",
+            "sender1",
+            "shell",
+            """{"cmd":"echo sk-testsecret123"}""",
+            TimeSpan.FromMinutes(5),
+            action: "execute",
+            isMutation: true,
+            summary: "Run a shell command.");
+        harness.Runtime.ApprovalAuditStore.RecordCreated(approval);
+
+        using var approvalResponse = await SubmitApprovalDecisionAsync(harness.Client, harness.AuthToken, approval, approved: true);
+        Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+
+        using var ledgerRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/governance/ledger?sessionId=sess-governance-approve&decision=approved");
+        ledgerRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var ledgerResponse = await harness.Client.SendAsync(ledgerRequest);
+        Assert.Equal(HttpStatusCode.OK, ledgerResponse.StatusCode);
+        using var ledgerPayload = await ReadJsonAsync(ledgerResponse);
+        var items = ledgerPayload.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Single(items);
+        Assert.Equal(approval.ApprovalId, items[0].GetProperty("approvalId").GetString());
+        Assert.Equal(GovernanceRiskLevels.High, items[0].GetProperty("riskLevel").GetString());
+        Assert.DoesNotContain("sk-testsecret123", items[0].GetProperty("redactedArguments").GetString());
     }
 
     [Fact]
@@ -5268,6 +6286,7 @@ public sealed class GatewayAdminEndpointTests
             "/admin/observability/summary",
             "/admin/observability/series",
             "/admin/audit/export",
+            "/admin/trajectory/export",
             "/admin/providers",
             "/admin/providers/policies",
             "/admin/providers/{providerId}/circuit/reset",
@@ -5313,6 +6332,21 @@ public sealed class GatewayAdminEndpointTests
             "/admin/automations/{id}/quarantine/clear",
             "/admin/learning/proposals",
             "/admin/learning/proposals/{id}",
+            "/admin/harness/contracts",
+            "/admin/harness/contracts/{id}",
+            "/admin/harness/contracts/{id}/status",
+            "/admin/harness/evidence",
+            "/admin/harness/evidence/{id}",
+            "/admin/harness/evidence/{id}/items",
+            "/admin/harness/evidence/{id}/checks",
+            "/admin/harness/evidence/{id}/reviews",
+            "/admin/harness/pev/runs",
+            "/admin/harness/pev/runs/{id}",
+            "/admin/harness/pev/runs/{id}/verify",
+            "/admin/harness/pev/runs/{id}/cancel",
+            "/admin/governance/ledger",
+            "/admin/governance/ledger/{id}",
+            "/admin/governance/ledger/{id}/revoke",
             "/admin/channels/auth",
             "/admin/channels/{channelId}/auth",
             "/admin/channels/{channelId}/auth/stream",
@@ -5459,6 +6493,13 @@ public sealed class GatewayAdminEndpointTests
             Assert.Single(response.Headers.GetValues("Set-Cookie")),
             payload.RootElement.GetProperty("csrfToken").GetString()!);
     }
+
+    private static GovernanceLedgerService CreateGovernanceLedgerService(GatewayTestHarness harness)
+        => new(
+            new FileGovernanceLedgerStore(harness.StoragePath),
+            harness.Runtime.Operations.RuntimeEvents,
+            new RedactionPipeline([new BaselineSecretRedactor()]),
+            NullLogger<GovernanceLedgerService>.Instance);
 
     private const string ShellApprovalArgumentsJson = """{"command":"pwd"}""";
 
@@ -6063,6 +7104,70 @@ public sealed class GatewayAdminEndpointTests
         {
             _secret = null;
         }
+    }
+
+    private sealed class AdminFakeStructuredMemoryProvider : IStructuredMemoryProvider
+    {
+        public int LastSearchLimit { get; private set; }
+        public int LastRecentLimit { get; private set; }
+
+        public Task<StructuredMemoryStatusResponse> GetStatusAsync(CancellationToken ct)
+            => Task.FromResult(new StructuredMemoryStatusResponse
+            {
+                Enabled = true,
+                Mode = "mcp",
+                ResolvedRepositoryRoot = "/tmp/fractal-admin",
+                McpCommand = "fractalmem-mcp",
+                AutoContextMode = "manual",
+                Available = true,
+                Status = "available"
+            });
+
+        public Task<StructuredMemorySearchResult> SearchAsync(string query, int limit, string? scope, CancellationToken ct)
+        {
+            LastSearchLimit = limit;
+            return Task.FromResult(new StructuredMemorySearchResult
+            {
+                Success = true,
+                Query = query,
+                Scope = scope,
+                Items =
+                [
+                    new StructuredMemorySourceRef
+                    {
+                        Path = "projects/admin",
+                        Title = "Admin node"
+                    }
+                ]
+            });
+        }
+
+        public Task<StructuredMemoryOpenResult> OpenAsync(string path, int depth, string view, CancellationToken ct)
+            => Task.FromResult(new StructuredMemoryOpenResult { Success = true, Path = path, Depth = depth, View = view, Content = "admin node" });
+
+        public Task<StructuredMemoryRecentResult> RecentAsync(int days, int limit, string? scope, CancellationToken ct)
+        {
+            LastRecentLimit = limit;
+            return Task.FromResult(new StructuredMemoryRecentResult
+            {
+                Success = true,
+                Days = days,
+                Scope = scope,
+                Items = [new StructuredMemorySourceRef { Path = "projects/admin" }]
+            });
+        }
+
+        public Task<StructuredMemoryExportResult> ExportAsync(string path, string mode, CancellationToken ct)
+            => Task.FromResult(new StructuredMemoryExportResult { Success = true, Path = path, Mode = mode, Content = "admin export" });
+
+        public Task<StructuredMemoryHandoffResult> CreateHandoffAsync(string path, CancellationToken ct)
+            => Task.FromResult(new StructuredMemoryHandoffResult { Success = true, Path = path, HandoffFilePath = $"{path}/handoff.md" });
+
+        public Task<StructuredMemoryValidationResult> ValidateAsync(CancellationToken ct)
+            => Task.FromResult(new StructuredMemoryValidationResult { Success = true, Summary = "ok" });
+
+        public Task<StructuredMemoryValidationResult> RefreshIndexAsync(CancellationToken ct)
+            => Task.FromResult(new StructuredMemoryValidationResult { Success = true, Summary = "refreshed" });
     }
 
     private sealed class FailingSaveMemoryStore(IMemoryStore inner) : IMemoryStore, ISessionAdminStore, ISessionSearchStore, IAsyncDisposable, IDisposable
