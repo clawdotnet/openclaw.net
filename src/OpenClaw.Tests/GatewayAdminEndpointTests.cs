@@ -1793,6 +1793,356 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public void HarnessEvolutionProposal_RoundTrips_WithSourceGeneratedJson()
+    {
+        var proposal = new LearningProposal
+        {
+            Id = "lp_harness_roundtrip",
+            Kind = LearningProposalKind.HarnessChange,
+            Status = LearningProposalStatus.Pending,
+            ActorId = "operator:harness",
+            Title = "Harness change proposal",
+            Summary = "Memory retrieval could be improved.",
+            HarnessEvolution = new HarnessEvolutionProposal
+            {
+                Component = HarnessEvolutionComponents.Memory,
+                FailureMode = "Memory retrieval missed repeated project notes.",
+                ProposedChange = "Review memory retrieval ranking for project-scoped notes.",
+                PredictedImprovement = "Improve retrieval precision for governed harness context.",
+                InvariantsToPreserve = ["Do not include secrets", "Keep durable changes review-first"],
+                FalsificationTests = ["harness regression: memory"],
+                RollbackPlan = "Keep the existing retrieval policy.",
+                SourceRuntimeEventIds = ["evt_1"],
+                RelatedEvidenceBundleIds = ["ev_1"],
+                RiskLevel = LearningProposalRiskLevels.Medium,
+                Confidence = 0.7f,
+                ProposalFingerprint = "fp_1",
+                RegressionCategories = ["memory"]
+            },
+            RiskLevel = LearningProposalRiskLevels.Medium,
+            Confidence = 0.7f
+        };
+
+        var json = JsonSerializer.Serialize(proposal, CoreJsonContext.Default.LearningProposal);
+        var restored = JsonSerializer.Deserialize(json, CoreJsonContext.Default.LearningProposal);
+
+        Assert.NotNull(restored);
+        Assert.Equal(LearningProposalKind.HarnessChange, restored.Kind);
+        Assert.Equal(HarnessEvolutionComponents.Memory, restored.HarnessEvolution?.Component);
+        Assert.Equal("Review memory retrieval ranking for project-scoped notes.", restored.HarnessEvolution?.ProposedChange);
+        Assert.Equal(["memory"], restored.HarnessEvolution?.RegressionCategories);
+    }
+
+    [Fact]
+    public async Task LearningService_HarnessChangeProposal_AssignsRiskValidatesAndSuppressesDuplicates()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var store = new FileFeatureStore(storagePath);
+            var service = new LearningService(
+                new LearningConfig { HarnessEvolutionEnabled = true },
+                store,
+                store,
+                store,
+                new StaticSessionSearchStore([]),
+                NullLogger<LearningService>.Instance);
+
+            var first = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+            {
+                ActorId = "operator:harness",
+                Component = HarnessEvolutionComponents.Memory,
+                FailureMode = "Memory misses repeated project notes.",
+                ProposedChange = "Tune project-scoped memory retrieval ranking.",
+                PredictedImprovement = "Improve retrieval precision for governed context.",
+                FalsificationTests = ["harness regression: memory"],
+                SourceRuntimeEventIds = ["evt_1"]
+            }, CancellationToken.None);
+            var second = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+            {
+                ActorId = "operator:harness",
+                Component = HarnessEvolutionComponents.Memory,
+                FailureMode = "Memory misses repeated project notes.",
+                ProposedChange = "Tune project-scoped memory retrieval ranking.",
+                PredictedImprovement = "Improve retrieval precision for governed context.",
+                FalsificationTests = ["harness regression: memory"],
+                SourceRuntimeEventIds = ["evt_2"],
+                SourceSessionIds = ["sess_1", "sess_2"],
+                RiskLevel = LearningProposalRiskLevels.High,
+                RequiresRegression = false,
+                RegressionCategories = ["harness"]
+            }, CancellationToken.None);
+            var third = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+            {
+                ActorId = "operator:harness",
+                Component = HarnessEvolutionComponents.Memory,
+                FailureMode = "Memory misses repeated project notes.",
+                ProposedChange = "Tune project-scoped memory retrieval ranking.",
+                PredictedImprovement = "Improve retrieval precision for governed context.",
+                FalsificationTests = ["harness regression: memory"],
+                SourceRuntimeEventIds = ["evt_2"],
+                SourceSessionIds = ["sess_1", "sess_2"],
+                RiskLevel = LearningProposalRiskLevels.High,
+                RequiresRegression = false,
+                RegressionCategories = ["harness"]
+            }, CancellationToken.None);
+            var toolPolicy = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+            {
+                Component = HarnessEvolutionComponents.Tools,
+                FailureMode = "Tool failures recur for write actions.",
+                ProposedChange = "Review write-tool governance policy.",
+                PredictedImprovement = "Reduce repeated failed governed tool attempts.",
+                FalsificationTests = ["harness regression: tools"],
+                RollbackPlan = "Keep existing tool policy.",
+                RegressionCategories = ["tools"]
+            }, CancellationToken.None);
+            var pulse = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+            {
+                Component = HarnessEvolutionComponents.Pulse,
+                FailureMode = "Pulse skips recur.",
+                ProposedChange = "Review pulse scheduling thresholds.",
+                PredictedImprovement = "Reduce repeated pulse skip warnings.",
+                FalsificationTests = ["pulse schedule check"],
+                RollbackPlan = "Keep existing pulse thresholds."
+            }, CancellationToken.None);
+            var unknown = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+            {
+                Component = HarnessEvolutionComponents.Unknown,
+                FailureMode = "Unknown harness signal recurs.",
+                ProposedChange = "Review unknown harness signal classification.",
+                PredictedImprovement = "Improve operator triage of unknown harness signals.",
+                FalsificationTests = ["harness regression: harness"],
+                RollbackPlan = "Keep existing classification.",
+                RegressionCategories = ["harness"]
+            }, CancellationToken.None);
+
+            Assert.Equal(first.Id, second.Id);
+            Assert.Equal(second.Id, third.Id);
+            Assert.Equal(LearningProposalRiskLevels.High, second.RiskLevel);
+            Assert.Equal(3, second.RepeatedCount);
+            Assert.Equal(3, third.RepeatedCount);
+            Assert.Contains("evt_1", second.HarnessEvolution!.SourceRuntimeEventIds);
+            Assert.Contains("evt_2", second.HarnessEvolution.SourceRuntimeEventIds);
+            Assert.Contains("sess_1", second.HarnessEvolution.SourceSessionIds);
+            Assert.True(second.HarnessEvolution.RequiresRegression);
+            Assert.Contains("harness", second.HarnessEvolution.RegressionCategories);
+            Assert.Contains(second.ValidationWarnings, static warning => warning.Contains("rollback plan", StringComparison.OrdinalIgnoreCase));
+            Assert.Equal(LearningProposalRiskLevels.High, toolPolicy.RiskLevel);
+            Assert.Equal(LearningProposalRiskLevels.Low, pulse.RiskLevel);
+            Assert.Equal(LearningProposalRiskLevels.High, unknown.RiskLevel);
+
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+                {
+                    Component = HarnessEvolutionComponents.Security,
+                    FailureMode = "Security policy needs review.",
+                    ProposedChange = "Allow public bind without hardening.",
+                    PredictedImprovement = "Make access easier.",
+                    FalsificationTests = ["harness regression: security"],
+                    RollbackPlan = "Restore current security policy.",
+                    IsAutoApplicable = true,
+                    RegressionCategories = ["security"]
+                }, CancellationToken.None).AsTask());
+
+            var proposals = await store.ListProposalsAsync(null, LearningProposalKind.HarnessChange, CancellationToken.None);
+            Assert.Equal(4, proposals.Count);
+        }
+        finally
+        {
+            if (Directory.Exists(storagePath))
+                Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LearningService_HarnessChangeDetection_IsExplicitAndThresholded()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var store = new FileFeatureStore(storagePath);
+            var service = new LearningService(
+                new LearningConfig { HarnessEvolutionEnabled = true, HarnessEvolutionProposalThreshold = 3 },
+                store,
+                store,
+                store,
+                new StaticSessionSearchStore([]),
+                NullLogger<LearningService>.Instance);
+            var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
+            for (var i = 0; i < 3; i++)
+            {
+                runtimeEvents.Append(new RuntimeEventEntry
+                {
+                    Id = $"evt_tool_{i}",
+                    TimestampUtc = DateTimeOffset.UtcNow.AddMinutes(-i),
+                    SessionId = $"sess_{i}",
+                    Component = "tools",
+                    Action = "failed",
+                    Severity = "warning",
+                    Summary = "Tool write failed under supervised policy."
+                });
+            }
+            runtimeEvents.Append(new RuntimeEventEntry
+            {
+                Id = "evt_single",
+                TimestampUtc = DateTimeOffset.UtcNow,
+                Component = "memory",
+                Action = "miss",
+                Severity = "warning",
+                Summary = "Single memory miss."
+            });
+
+            var response = await service.DetectHarnessChangeProposalsAsync(
+                runtimeEvents,
+                new HarnessEvolutionDetectionRequest { Threshold = 3 },
+                CancellationToken.None);
+
+            var proposal = Assert.Single(response.Proposals);
+            Assert.Equal(2, response.GroupsEvaluated);
+            Assert.Equal(1, response.GroupsMeetingThreshold);
+            Assert.Equal(HarnessEvolutionComponents.Tools, proposal.HarnessEvolution?.Component);
+            Assert.Equal(3, proposal.HarnessEvolution?.SourceRuntimeEventIds.Count);
+        }
+        finally
+        {
+            if (Directory.Exists(storagePath))
+                Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LearningService_HarnessEvolutionDisabled_RejectsCreationAndDetection()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var store = new FileFeatureStore(storagePath);
+            var service = new LearningService(
+                new LearningConfig { HarnessEvolutionEnabled = false },
+                store,
+                store,
+                store,
+                new StaticSessionSearchStore([]),
+                NullLogger<LearningService>.Instance);
+            var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+                {
+                    Component = HarnessEvolutionComponents.Memory,
+                    FailureMode = "Memory misses repeated project notes.",
+                    ProposedChange = "Tune project-scoped memory retrieval ranking."
+                }, CancellationToken.None).AsTask());
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await service.DetectHarnessChangeProposalsAsync(runtimeEvents, null, CancellationToken.None).AsTask());
+        }
+        finally
+        {
+            if (Directory.Exists(storagePath))
+                Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LearningProposalHarnessChange_AdminCreateFilterApproveRejectAndGovernanceLink()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config => config.Learning.HarnessEvolutionEnabled = true);
+        var (cookie, csrfToken) = await LoginAsync(harness.Client, harness.AuthToken);
+        var createJson = JsonSerializer.Serialize(new HarnessEvolutionProposalCreateRequest
+        {
+            Component = HarnessEvolutionComponents.Approvals,
+            FailureMode = "Operators repeatedly deny the same low-value tool action.",
+            ProposedChange = "Review approval policy guidance for repeated denied tool actions.",
+            PredictedImprovement = "Improve governance triage while keeping approval decisions review-first.",
+            InvariantsToPreserve = ["Do not bypass approval"],
+            FalsificationTests = ["harness regression: approvals"],
+            RollbackPlan = "Keep the existing approval policy.",
+            RelatedEvidenceBundleIds = ["ev_admin"],
+            RegressionCategories = ["approvals"]
+        }, CoreJsonContext.Default.HarnessEvolutionProposalCreateRequest);
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/harness-change")
+        {
+            Content = JsonContent(createJson)
+        };
+        createRequest.Headers.Add("Cookie", cookie);
+        createRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var createResponse = await harness.Client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        using var createPayload = await ReadJsonAsync(createResponse);
+        var proposalId = createPayload.RootElement.GetProperty("id").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(proposalId));
+        Assert.Equal(LearningProposalKind.HarnessChange, createPayload.RootElement.GetProperty("kind").GetString());
+        Assert.Equal(LearningProposalRiskLevels.High, createPayload.RootElement.GetProperty("riskLevel").GetString());
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/learning/proposals?kind=harness_change&component=approvals&risk=high");
+        listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var listResponse = await harness.Client.SendAsync(listRequest);
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listPayload = await ReadJsonAsync(listResponse);
+        var item = Assert.Single(listPayload.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(proposalId, item.GetProperty("id").GetString());
+
+        using var approveRequest = new HttpRequestMessage(HttpMethod.Post, $"/admin/learning/proposals/{proposalId}/approve")
+        {
+            Content = JsonContent("{}")
+        };
+        approveRequest.Headers.Add("Cookie", cookie);
+        approveRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var approveResponse = await harness.Client.SendAsync(approveRequest);
+        Assert.Equal(HttpStatusCode.OK, approveResponse.StatusCode);
+        using var approvePayload = await ReadJsonAsync(approveResponse);
+        Assert.Equal(LearningProposalStatus.Approved, approvePayload.RootElement.GetProperty("status").GetString());
+        Assert.Equal("approved; manual application required", approvePayload.RootElement.GetProperty("reviewNotes").GetString());
+        Assert.NotEmpty(approvePayload.RootElement.GetProperty("harnessEvolution").GetProperty("relatedGovernanceLedgerIds").EnumerateArray());
+
+        var automations = await new FileFeatureStore(harness.StoragePath).ListAutomationsAsync(CancellationToken.None);
+        Assert.Empty(automations);
+
+        var ledger = await CreateGovernanceLedgerService(harness).ListAsync(new GovernanceLedgerListQuery
+        {
+            Decision = GovernanceDecisions.Approved,
+            Limit = 10
+        }, CancellationToken.None);
+        Assert.Contains(ledger, entry => entry.LearningProposalId == proposalId && entry.Source == GovernanceLedgerSources.LearningProposal);
+
+        var rejectJson = JsonSerializer.Serialize(new HarnessEvolutionProposalCreateRequest
+        {
+            Component = HarnessEvolutionComponents.Pulse,
+            FailureMode = "Pulse skip warnings repeat.",
+            ProposedChange = "Review pulse skip threshold.",
+            PredictedImprovement = "Reduce repeated skip warnings.",
+            FalsificationTests = ["pulse threshold check"],
+            RollbackPlan = "Keep current pulse threshold."
+        }, CoreJsonContext.Default.HarnessEvolutionProposalCreateRequest);
+        using var rejectCreateRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/harness-change")
+        {
+            Content = JsonContent(rejectJson)
+        };
+        rejectCreateRequest.Headers.Add("Cookie", cookie);
+        rejectCreateRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var rejectCreateResponse = await harness.Client.SendAsync(rejectCreateRequest);
+        Assert.Equal(HttpStatusCode.OK, rejectCreateResponse.StatusCode);
+        using var rejectCreatePayload = await ReadJsonAsync(rejectCreateResponse);
+        var rejectProposalId = rejectCreatePayload.RootElement.GetProperty("id").GetString();
+
+        using var rejectRequest = new HttpRequestMessage(HttpMethod.Post, $"/admin/learning/proposals/{rejectProposalId}/reject")
+        {
+            Content = JsonContent("""{"reason":"not useful"}""")
+        };
+        rejectRequest.Headers.Add("Cookie", cookie);
+        rejectRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var rejectResponse = await harness.Client.SendAsync(rejectRequest);
+        Assert.Equal(HttpStatusCode.OK, rejectResponse.StatusCode);
+        using var rejectPayload = await ReadJsonAsync(rejectResponse);
+        Assert.Equal(LearningProposalStatus.Rejected, rejectPayload.RootElement.GetProperty("status").GetString());
+        Assert.NotEmpty(rejectPayload.RootElement.GetProperty("harnessEvolution").GetProperty("relatedGovernanceLedgerIds").EnumerateArray());
+    }
+
+    [Fact]
     public async Task LearningProposalApproveRollback_SkillDraft_ManagesOnlyLearningSkill()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);

@@ -1287,6 +1287,7 @@
                         <div class="muted">Review profile, automation, and skill proposals generated from repeated successful sessions.</div>
                     </div>
                     <div class="actions">
+                        <button id="learning-detect-harness-button" class="secondary">Detect Harness Changes</button>
                         <button id="learning-refresh-button" class="secondary">Reload</button>
                     </div>
                 </div>
@@ -1303,6 +1304,32 @@
                         <option value="profile_update">Profile updates</option>
                         <option value="automation_suggestion">Automation suggestions</option>
                         <option value="skill_draft">Skill drafts</option>
+                        <option value="harness_change">Harness changes</option>
+                    </select>
+                    <select id="learning-component-input">
+                        <option value="">All components</option>
+                        <option value="memory">Memory</option>
+                        <option value="retrieval">Retrieval</option>
+                        <option value="tools">Tools</option>
+                        <option value="approvals">Approvals</option>
+                        <option value="verification">Verification</option>
+                        <option value="routing">Routing</option>
+                        <option value="prompt">Prompt</option>
+                        <option value="model_profile">Model profile</option>
+                        <option value="pulse">Pulse</option>
+                        <option value="security">Security</option>
+                        <option value="governance">Governance</option>
+                        <option value="context_budget">Context budget</option>
+                        <option value="channel">Channel</option>
+                        <option value="sandbox">Sandbox</option>
+                        <option value="unknown">Unknown</option>
+                    </select>
+                    <select id="learning-risk-input">
+                        <option value="">All risks</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
                     </select>
                 </div>
                 <div id="learning-list-output" class="muted">Loading…</div>
@@ -2285,6 +2312,8 @@
         const learningDetailOutput = document.getElementById('learning-detail-output');
         const learningStatusInput = document.getElementById('learning-status-input');
         const learningKindInput = document.getElementById('learning-kind-input');
+        const learningComponentInput = document.getElementById('learning-component-input');
+        const learningRiskInput = document.getElementById('learning-risk-input');
         const learningReasonInput = document.getElementById('learning-reason-input');
         const harnessListOutput = document.getElementById('harness-list-output');
         const harnessDetailOutput = document.getElementById('harness-detail-output');
@@ -2520,6 +2549,7 @@
                 'learning-approve-button',
                 'learning-reject-button',
                 'learning-rollback-button',
+                'learning-detect-harness-button',
                 'memory-save-button',
                 'memory-delete-button',
                 'memory-import-button',
@@ -4469,6 +4499,8 @@
             const params = new URLSearchParams();
             if (learningStatusInput.value) params.set('status', learningStatusInput.value);
             if (learningKindInput.value) params.set('kind', learningKindInput.value);
+            if (learningComponentInput.value) params.set('component', learningComponentInput.value);
+            if (learningRiskInput.value) params.set('risk', learningRiskInput.value);
             const { resp, data } = await api(`/admin/learning/proposals?${params.toString()}`);
             if (!resp.ok) {
                 learningListOutput.textContent = `Learning request failed (${resp.status})`;
@@ -4485,6 +4517,7 @@
                 <div class="card" style="margin-bottom:0.75rem;">
                     <strong>${escapeHtml(item.title || item.id)}</strong>
                     <div class="muted">${escapeHtml(item.kind)} · ${escapeHtml(item.status)} · risk ${escapeHtml(item.riskLevel || 'medium')} · confidence ${escapeHtml(item.confidence ?? 0)}</div>
+                    ${renderHarnessEvolutionListSummary(item)}
                     <div class="muted">${escapeHtml(item.summary || '')}</div>
                     <div class="muted">Sources: ${escapeHtml((item.sourceSessionIds || []).slice(0, 3).join(', ') || 'none')} · Updated: ${escapeHtml(formatDateTime(item.updatedAtUtc || item.createdAtUtc))}</div>
                     ${renderLearningWarnings(item.validationWarnings)}
@@ -4504,6 +4537,30 @@
             const items = values || [];
             if (!items.length) return '';
             return `<div class="muted"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(items.join(', '))}</div>`;
+        }
+
+        function renderHarnessEvolutionListSummary(proposal) {
+            const harness = proposal?.harnessEvolution;
+            if (!harness) return '';
+            return `<div class="muted">Component: ${escapeHtml(harness.component || 'unknown')} · Apply: ${escapeHtml(harness.applyMode || 'manual_only')} · Regression: ${escapeHtml((harness.regressionCategories || []).join(', ') || 'none')}</div>`;
+        }
+
+        function renderHarnessEvolutionDetail(proposal) {
+            const harness = proposal?.harnessEvolution;
+            if (!harness) return '';
+            return `<h3>Harness Evolution</h3>
+                <div class="muted">Component: ${escapeHtml(harness.component || 'unknown')} · Apply mode: ${escapeHtml(harness.applyMode || 'manual_only')} · Auto-applicable: ${escapeHtml(String(Boolean(harness.isAutoApplicable)))}</div>
+                <div class="muted">Failure mode: ${escapeHtml(harness.failureMode || 'not recorded')}</div>
+                <div class="muted">Proposed change: ${escapeHtml(harness.proposedChange || 'not recorded')}</div>
+                <div class="muted">Predicted improvement: ${escapeHtml(harness.predictedImprovement || 'not recorded')}</div>
+                <div class="muted">Rollback plan: ${escapeHtml(harness.rollbackPlan || 'not recorded')}</div>
+                ${renderLearningList('Invariants', harness.invariantsToPreserve)}
+                ${renderLearningList('Falsification tests', harness.falsificationTests)}
+                ${renderLearningList('Regression categories', harness.regressionCategories)}
+                ${renderLearningList('Evidence bundles', harness.relatedEvidenceBundleIds)}
+                ${renderLearningList('Harness contracts', harness.relatedHarnessContractIds)}
+                ${renderLearningList('Governance ledger', harness.relatedGovernanceLedgerIds)}
+                ${renderLearningList('Runtime events', harness.sourceRuntimeEventIds)}`;
         }
 
         function renderLearningDetail(detail) {
@@ -4542,10 +4599,11 @@
             const automationSummary = proposal.kind === 'automation_suggestion' && proposal.automationDraft
                 ? `<h3>Automation Review</h3>
                    <div class="muted">Schedule: ${escapeHtml(proposal.automationDraft.schedule || 'not set')}</div>
-                   <div class="muted">Delivery: ${escapeHtml(proposal.automationDraft.deliveryChannelId || 'none')} ${escapeHtml(proposal.automationDraft.deliveryRecipientId || '')}</div>
-                   <div class="muted">Enabled: ${escapeHtml(String(proposal.automationDraft.enabled))} · Draft: ${escapeHtml(String(proposal.automationDraft.isDraft))}</div>
-                   <div class="muted">Tags: ${escapeHtml((proposal.automationDraft.tags || []).join(', ') || 'none')}</div>`
+	                   <div class="muted">Delivery: ${escapeHtml(proposal.automationDraft.deliveryChannelId || 'none')} ${escapeHtml(proposal.automationDraft.deliveryRecipientId || '')}</div>
+	                   <div class="muted">Enabled: ${escapeHtml(String(proposal.automationDraft.enabled))} · Draft: ${escapeHtml(String(proposal.automationDraft.isDraft))}</div>
+	                   <div class="muted">Tags: ${escapeHtml((proposal.automationDraft.tags || []).join(', ') || 'none')}</div>`
                 : '';
+            const harnessEvolution = renderHarnessEvolutionDetail(proposal);
 
             learningDetailOutput.innerHTML = `
                 <div class="stack">
@@ -4560,6 +4618,7 @@
                     ${renderLearningWarnings(proposal.validationWarnings)}
                     ${proposal.validationErrors?.length ? `<h3>Validation Errors</h3>${renderLearningWarnings(proposal.validationErrors)}` : ''}
                     ${provenance}
+                    ${harnessEvolution}
                     ${skillDraft}
                     ${automationSummary}
                     <pre>${escapeHtml(JSON.stringify(proposal, null, 2))}</pre>
@@ -4606,6 +4665,22 @@
             if (action === 'approve' || action === 'rollback') {
                 await loadAutomations();
             }
+        }
+
+        async function detectHarnessEvolutionProposals() {
+            if (!requireRole('operator', 'Harness proposal detection')) return;
+            const { resp, data } = await mutate('/admin/learning/proposals/harness-change/detect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            showFlash(resp.ok ? `Detected ${data.proposals?.length || 0} harness proposal(s).` : `Harness detection failed (${resp.status}).`, resp.ok ? 'ok' : 'error');
+            if (!resp.ok) {
+                renderJson(learningDetailOutput, data || `Harness detection failed (${resp.status})`);
+                return;
+            }
+            learningKindInput.value = 'harness_change';
+            await loadLearningProposals();
         }
 
         async function loadHarnessContracts() {
@@ -5663,10 +5738,11 @@
         document.getElementById('automation-dry-run-button').addEventListener('click', async () => runAutomation(true));
         document.getElementById('automation-delete-button').addEventListener('click', deleteAutomation);
         document.getElementById('learning-refresh-button').addEventListener('click', loadLearningProposals);
+        document.getElementById('learning-detect-harness-button').addEventListener('click', detectHarnessEvolutionProposals);
         document.getElementById('learning-approve-button').addEventListener('click', async () => reviewLearningProposal('approve'));
         document.getElementById('learning-reject-button').addEventListener('click', async () => reviewLearningProposal('reject'));
         document.getElementById('learning-rollback-button').addEventListener('click', async () => reviewLearningProposal('rollback'));
-        [learningStatusInput, learningKindInput].forEach(input => {
+        [learningStatusInput, learningKindInput, learningComponentInput, learningRiskInput].forEach(input => {
             input.addEventListener('change', loadLearningProposals);
         });
         document.getElementById('harness-refresh-button').addEventListener('click', loadHarnessContracts);

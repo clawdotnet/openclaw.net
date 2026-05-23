@@ -39,6 +39,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [PLAN_EXECUTE_VERIFY.md](PLAN_EXECUTE_VERIFY.md) | Optional governed Plan-Execute-Verify mode for high-risk tool execution. |
 | [GOVERNANCE_LEDGER.md](GOVERNANCE_LEDGER.md) | Passive approval and oversight decision history as durable harness state. |
 | [HARNESS_REGRESSION.md](HARNESS_REGRESSION.md) | Offline-first CLI regression checks for harness safety, onboarding, memory, provider-shape, MCP, OpenAI-compatible, and serialization guarantees. |
+| [HARNESS_EVOLUTION.md](HARNESS_EVOLUTION.md) | Review-first proposals for harness changes to policies, routing, memory retrieval, verification, pulse behavior, and tool governance. |
 | [governance/sidecar-pattern.md](governance/sidecar-pattern.md) | Optional central tool-governance middleware, sidecar flow, decisions, and audit fields. |
 | [governance/microsoft-agent-governance.md](governance/microsoft-agent-governance.md) | Microsoft Agent Governance sidecar integration notes and deployment cautions. |
 | [deployment/TAILSCALE.md](deployment/TAILSCALE.md) | Optional Tailscale Serve private runtime access guidance. |

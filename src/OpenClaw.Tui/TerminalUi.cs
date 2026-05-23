@@ -373,13 +373,26 @@ public static class TerminalUi
 
         var detail = await client.GetLearningProposalDetailAsync(proposalId, ct);
         var current = detail?.Proposal ?? proposal;
-        var reviewText = new StringBuilder()
+        var reviewTextBuilder = new StringBuilder()
             .AppendLine(current.Summary)
             .AppendLine($"Risk: {current.RiskLevel}")
             .AppendLine($"Validation: {current.ValidationStatus}")
             .AppendLine($"Repeated count: {current.RepeatedCount}")
             .AppendLine($"Sources: {string.Join(", ", current.SourceSessionIds)}")
-            .AppendLine($"Warnings: {(current.ValidationWarnings.Count == 0 ? "none" : string.Join("; ", current.ValidationWarnings))}")
+            .AppendLine($"Warnings: {(current.ValidationWarnings.Count == 0 ? "none" : string.Join("; ", current.ValidationWarnings))}");
+        if (current.HarnessEvolution is { } harness)
+        {
+            reviewTextBuilder
+                .AppendLine()
+                .AppendLine($"Component: {harness.Component}")
+                .AppendLine($"Failure mode: {harness.FailureMode}")
+                .AppendLine($"Proposed change: {harness.ProposedChange}")
+                .AppendLine($"Apply mode: {harness.ApplyMode}")
+                .AppendLine($"Regression: {string.Join(", ", harness.RegressionCategories)}")
+                .AppendLine($"Rollback plan: {harness.RollbackPlan ?? "none"}");
+        }
+
+        var reviewText = reviewTextBuilder
             .AppendLine()
             .AppendLine(current.DraftContent ?? current.DraftPreview ?? current.AutomationDraft?.Prompt ?? current.ProfileUpdate?.Summary ?? string.Empty)
             .ToString();

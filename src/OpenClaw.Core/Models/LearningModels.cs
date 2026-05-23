@@ -7,6 +7,9 @@ public sealed class LearningConfig
     public int SkillProposalThreshold { get; set; } = 2;
     public int AutomationProposalThreshold { get; set; } = 3;
     public int MaxDraftChars { get; set; } = 4_000;
+    public bool HarnessEvolutionEnabled { get; set; }
+    public int HarnessEvolutionProposalThreshold { get; set; } = 3;
+    public int HarnessEvolutionLookbackHours { get; set; } = 24;
 }
 
 public static class LearningProposalKind
@@ -14,6 +17,7 @@ public static class LearningProposalKind
     public const string SkillDraft = "skill_draft";
     public const string ProfileUpdate = "profile_update";
     public const string AutomationSuggestion = "automation_suggestion";
+    public const string HarnessChange = "harness_change";
 }
 
 public static class LearningProposalStatus
@@ -29,6 +33,36 @@ public static class LearningProposalRiskLevels
     public const string Low = "low";
     public const string Medium = "medium";
     public const string High = "high";
+    public const string Critical = "critical";
+}
+
+public static class HarnessEvolutionComponents
+{
+    public const string Memory = "memory";
+    public const string Retrieval = "retrieval";
+    public const string Tools = "tools";
+    public const string Approvals = "approvals";
+    public const string Verification = "verification";
+    public const string Routing = "routing";
+    public const string Prompt = "prompt";
+    public const string ModelProfile = "model_profile";
+    public const string Pulse = "pulse";
+    public const string Security = "security";
+    public const string Governance = "governance";
+    public const string ContextBudget = "context_budget";
+    public const string Channel = "channel";
+    public const string Sandbox = "sandbox";
+    public const string Unknown = "unknown";
+}
+
+public static class HarnessEvolutionApplyModes
+{
+    public const string ManualOnly = "manual_only";
+    public const string ConfigPatch = "config_patch";
+    public const string PolicyPatch = "policy_patch";
+    public const string SkillUpdate = "skill_update";
+    public const string MemoryUpdate = "memory_update";
+    public const string Unsupported = "unsupported";
 }
 
 public static class LearningProposalValidationStatuses
@@ -60,6 +94,76 @@ public sealed class ManagedLearningSkillMetadata
     public string? SkillName { get; init; }
 }
 
+public sealed class HarnessEvolutionProposal
+{
+    public string Component { get; init; } = HarnessEvolutionComponents.Unknown;
+    public string? ChangeType { get; init; }
+    public string FailureMode { get; init; } = "";
+    public string ProposedChange { get; init; } = "";
+    public string? PredictedImprovement { get; init; }
+    public IReadOnlyList<string> InvariantsToPreserve { get; init; } = [];
+    public IReadOnlyList<string> FalsificationTests { get; init; } = [];
+    public string? EvaluationPlan { get; init; }
+    public string? CanaryPlan { get; init; }
+    public string? RollbackPlan { get; init; }
+    public IReadOnlyList<string> RelatedHarnessContractIds { get; init; } = [];
+    public IReadOnlyList<string> RelatedEvidenceBundleIds { get; init; } = [];
+    public IReadOnlyList<string> RelatedGovernanceLedgerIds { get; init; } = [];
+    public IReadOnlyList<string> RelatedRegressionReportIds { get; init; } = [];
+    public IReadOnlyList<string> SourceRuntimeEventIds { get; init; } = [];
+    public IReadOnlyList<string> SourceSessionIds { get; init; } = [];
+    public string RiskLevel { get; init; } = LearningProposalRiskLevels.Medium;
+    public float Confidence { get; init; }
+    public string? ProposalFingerprint { get; init; }
+    public string ApplyMode { get; init; } = HarnessEvolutionApplyModes.ManualOnly;
+    public bool IsAutoApplicable { get; init; }
+    public bool RequiresRegression { get; init; }
+    public IReadOnlyList<string> RegressionCategories { get; init; } = [];
+}
+
+public sealed class HarnessEvolutionProposalCreateRequest
+{
+    public string? ActorId { get; init; }
+    public string? Title { get; init; }
+    public string? Summary { get; init; }
+    public string? Component { get; init; }
+    public string? ChangeType { get; init; }
+    public string? FailureMode { get; init; }
+    public string? ProposedChange { get; init; }
+    public string? PredictedImprovement { get; init; }
+    public IReadOnlyList<string> InvariantsToPreserve { get; init; } = [];
+    public IReadOnlyList<string> FalsificationTests { get; init; } = [];
+    public string? EvaluationPlan { get; init; }
+    public string? CanaryPlan { get; init; }
+    public string? RollbackPlan { get; init; }
+    public IReadOnlyList<string> RelatedHarnessContractIds { get; init; } = [];
+    public IReadOnlyList<string> RelatedEvidenceBundleIds { get; init; } = [];
+    public IReadOnlyList<string> RelatedGovernanceLedgerIds { get; init; } = [];
+    public IReadOnlyList<string> RelatedRegressionReportIds { get; init; } = [];
+    public IReadOnlyList<string> SourceRuntimeEventIds { get; init; } = [];
+    public IReadOnlyList<string> SourceSessionIds { get; init; } = [];
+    public string? RiskLevel { get; init; }
+    public float? Confidence { get; init; }
+    public string? ApplyMode { get; init; }
+    public bool IsAutoApplicable { get; init; }
+    public bool? RequiresRegression { get; init; }
+    public IReadOnlyList<string> RegressionCategories { get; init; } = [];
+}
+
+public sealed class HarnessEvolutionDetectionRequest
+{
+    public int? LookbackHours { get; init; }
+    public int? Threshold { get; init; }
+    public int? Limit { get; init; }
+}
+
+public sealed class HarnessEvolutionDetectionResponse
+{
+    public IReadOnlyList<LearningProposal> Proposals { get; init; } = [];
+    public int GroupsEvaluated { get; init; }
+    public int GroupsMeetingThreshold { get; init; }
+}
+
 public sealed class LearningProposal
 {
     public required string Id { get; init; }
@@ -78,6 +182,7 @@ public sealed class LearningProposal
     public string? AppliedAutomationId { get; init; }
     public string? ManagedSkillPath { get; init; }
     public ManagedLearningSkillMetadata? ManagedSkillMetadata { get; init; }
+    public HarnessEvolutionProposal? HarnessEvolution { get; init; }
     public IReadOnlyList<string> SourceSessionIds { get; init; } = [];
     public IReadOnlyList<string> SourceTurnIds { get; init; } = [];
     public IReadOnlyList<string> ToolNames { get; init; } = [];

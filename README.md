@@ -43,6 +43,7 @@ Start here:
 - **Optional Plan-Execute-Verify Mode** for governed high-risk tool execution with contracts, evidence, and verification
 - **Passive Governance Ledger** for durable approval and oversight decisions without auto-approving future actions
 - **Harness Regression Suite** via `openclaw harness test` for offline checks before trusting harness/runtime changes
+- **Harness Evolution Proposals** for review-first suggestions to improve harness policies, routing, memory retrieval, verification, pulse behavior, and tool governance
 - **First-class optional Microsoft Agent Framework adapter** for `Runtime.Orchestrator=maf` without a special build
 - **Durable workflow delegation** through supported workflow backends such as `maf-durable-http`
 - **CLI and Companion** setup flows for source checkouts and desktop bundles
