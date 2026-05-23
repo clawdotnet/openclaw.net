@@ -171,16 +171,17 @@ internal static partial class RuntimeInitializationExtensions
 
         if (config.Memory.Fractal.Enabled)
         {
-            tools.Add(new FractalMemorySearchTool(services.StructuredMemoryProvider));
-            tools.Add(new FractalMemoryOpenTool(services.StructuredMemoryProvider, config.Memory.Fractal));
-            tools.Add(new FractalMemoryRecentTool(services.StructuredMemoryProvider));
-            tools.Add(new FractalMemoryExportTool(services.StructuredMemoryProvider, config.Memory.Fractal));
-            tools.Add(new FractalMemoryValidateTool(services.StructuredMemoryProvider));
+            var structuredMemoryProvider = services.StructuredMemoryProviderFactory();
+            tools.Add(new FractalMemorySearchTool(structuredMemoryProvider));
+            tools.Add(new FractalMemoryOpenTool(structuredMemoryProvider, config.Memory.Fractal));
+            tools.Add(new FractalMemoryRecentTool(structuredMemoryProvider));
+            tools.Add(new FractalMemoryExportTool(structuredMemoryProvider, config.Memory.Fractal));
+            tools.Add(new FractalMemoryValidateTool(structuredMemoryProvider));
 
             if (config.Memory.Fractal.AllowWrites)
             {
-                tools.Add(new FractalMemoryHandoffCreateTool(services.StructuredMemoryProvider, config.Memory.Fractal));
-                tools.Add(new FractalMemoryIndexRefreshTool(services.StructuredMemoryProvider, config.Memory.Fractal));
+                tools.Add(new FractalMemoryHandoffCreateTool(structuredMemoryProvider, config.Memory.Fractal));
+                tools.Add(new FractalMemoryIndexRefreshTool(structuredMemoryProvider, config.Memory.Fractal));
             }
         }
 

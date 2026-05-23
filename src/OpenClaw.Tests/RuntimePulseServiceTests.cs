@@ -123,4 +123,22 @@ public sealed class RuntimePulseServiceTests
 
         Assert.Collection(due, task => Assert.Equal("proposal-review", task.Name));
     }
+
+    [Fact]
+    public void TruncatePulsePrompt_ReservesBudgetForFractalContext()
+    {
+        var config = RuntimePulseService.Normalize(new PulseConfig { Prompt = "Pulse prompt." });
+        var heartbeat = new string('h', 12_000);
+        var fractalContext = new string('f', 3_000);
+        var dueTasks = new[]
+        {
+            new PulseTaskDefinition { Name = "runtime-health", Prompt = "Check warnings." }
+        };
+
+        var prompt = RuntimePulseService.BuildPrompt(config, heartbeat, dueTasks, manualText: null, fractalContext);
+        var truncated = RuntimePulseService.TruncatePulsePrompt(prompt, config, fractalContext);
+
+        Assert.Contains("Due heartbeat tasks:", truncated, StringComparison.Ordinal);
+        Assert.Contains("runtime-health: Check warnings.", truncated, StringComparison.Ordinal);
+    }
 }

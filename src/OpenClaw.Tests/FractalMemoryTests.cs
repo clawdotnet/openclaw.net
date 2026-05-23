@@ -114,6 +114,33 @@ public sealed class FractalMemoryTests
     }
 
     [Fact]
+    public async Task ContextBudgetPlanner_RejectsInvalidModeAndHandlesLargeTokenBudgets()
+    {
+        var config = new GatewayConfig();
+        config.Memory.Fractal.Enabled = true;
+        config.Memory.Fractal.AutoContextMode = "auto";
+        config.Memory.Fractal.MaxContextChars = int.MaxValue;
+        config.Memory.Fractal.MaxContextTokens = int.MaxValue;
+        var planner = new ContextBudgetPlanner(config, new FakeStructuredMemoryProvider());
+
+        var invalid = await planner.BuildContextAsync(new StructuredMemoryContextRequest
+        {
+            Query = "anything",
+            Mode = "surprise"
+        }, CancellationToken.None);
+        Assert.False(invalid.Success);
+        Assert.Contains("Unsupported Fractal Memory context mode", invalid.Error, StringComparison.Ordinal);
+
+        var valid = await planner.BuildContextAsync(new StructuredMemoryContextRequest
+        {
+            Query = "anything",
+            Mode = "auto",
+            MaxTokens = int.MaxValue
+        }, CancellationToken.None);
+        Assert.True(valid.Success);
+    }
+
+    [Fact]
     public async Task FractalTools_ExposeReadToolsAndApprovalMetadataForWrites()
     {
         var config = new FractalMemoryConfig();
@@ -132,6 +159,30 @@ public sealed class FractalMemoryTests
         Assert.True(descriptor.RequiresApproval);
         Assert.False(descriptor.ReadOnly);
         Assert.Equal("medium", descriptor.RiskLevel);
+    }
+
+    [Fact]
+    public async Task FractalTools_ClampNumericArgumentsAndIgnoreMalformedScalarTypes()
+    {
+        var provider = new FakeStructuredMemoryProvider();
+        var config = new FractalMemoryConfig();
+
+        var search = new FractalMemorySearchTool(provider);
+        var malformed = await search.ExecuteAsync("""{"query":123}""", CancellationToken.None);
+        var malformedResult = JsonSerializer.Deserialize(malformed, CoreJsonContext.Default.MutationResponse);
+        Assert.False(malformedResult?.Success);
+
+        _ = await search.ExecuteAsync("""{"query":"handoff","limit":999}""", CancellationToken.None);
+        Assert.Equal(50, provider.LastSearchLimit);
+
+        var open = new FractalMemoryOpenTool(provider, config);
+        _ = await open.ExecuteAsync("""{"path":"projects/demo","depth":999}""", CancellationToken.None);
+        Assert.Equal(3, provider.LastOpenDepth);
+
+        var recent = new FractalMemoryRecentTool(provider);
+        _ = await recent.ExecuteAsync("""{"days":0,"limit":999}""", CancellationToken.None);
+        Assert.Equal(1, provider.LastRecentDays);
+        Assert.Equal(100, provider.LastRecentLimit);
     }
 
     [Fact]
@@ -191,6 +242,38 @@ public sealed class FractalMemoryTests
     }
 
     [Fact]
+    public async Task AgentRuntime_DefaultConfigDoesNotInjectFractalContext()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        IList<ChatMessage>? captured = null;
+        chatClient.GetResponseAsync(
+                Arg.Do<IList<ChatMessage>>(messages => captured = messages),
+                Arg.Any<ChatOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ChatResponse(new[] { new ChatMessage(ChatRole.Assistant, "ok") })));
+
+        var config = new GatewayConfig();
+        var planner = new ContextBudgetPlanner(config, new FakeStructuredMemoryProvider());
+        var memory = Substitute.For<IMemoryStore>();
+
+        var agent = new AgentRuntime(
+            chatClient,
+            tools: [],
+            memory,
+            new LlmProviderConfig { Provider = "openai", ApiKey = "test", Model = "gpt-4" },
+            maxHistoryTurns: 5,
+            gatewayConfig: config,
+            contextBudgetPlanner: planner);
+
+        var session = new Session { Id = "s1", ChannelId = "test", SenderId = "u1" };
+        _ = await agent.RunAsync(session, "what changed in project memory?", CancellationToken.None);
+
+        Assert.NotNull(captured);
+        Assert.DoesNotContain(captured!, message =>
+            (message.Text ?? "").Contains("<fractal_memory_context>", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task AgentRuntime_FractalContextDoesNotReorderMemoryRecall()
     {
         var chatClient = Substitute.For<IChatClient>();
@@ -240,6 +323,10 @@ public sealed class FractalMemoryTests
     {
         public int SearchCalls { get; private set; }
         public int ExportCalls { get; private set; }
+        public int LastSearchLimit { get; private set; }
+        public int LastOpenDepth { get; private set; }
+        public int LastRecentDays { get; private set; }
+        public int LastRecentLimit { get; private set; }
         public string? LastExportMode { get; private set; }
         public string ExportContent { get; set; } = "Current state: use compact structured project memory.";
 
@@ -256,6 +343,7 @@ public sealed class FractalMemoryTests
         public Task<StructuredMemorySearchResult> SearchAsync(string query, int limit, string? scope, CancellationToken ct)
         {
             SearchCalls++;
+            LastSearchLimit = limit;
             return Task.FromResult(new StructuredMemorySearchResult
             {
                 Success = true,
@@ -273,7 +361,9 @@ public sealed class FractalMemoryTests
         }
 
         public Task<StructuredMemoryOpenResult> OpenAsync(string path, int depth, string view, CancellationToken ct)
-            => Task.FromResult(new StructuredMemoryOpenResult
+        {
+            LastOpenDepth = depth;
+            return Task.FromResult(new StructuredMemoryOpenResult
             {
                 Success = true,
                 Path = path,
@@ -281,15 +371,20 @@ public sealed class FractalMemoryTests
                 View = view,
                 Content = ExportContent
             });
+        }
 
         public Task<StructuredMemoryRecentResult> RecentAsync(int days, int limit, string? scope, CancellationToken ct)
-            => Task.FromResult(new StructuredMemoryRecentResult
+        {
+            LastRecentDays = days;
+            LastRecentLimit = limit;
+            return Task.FromResult(new StructuredMemoryRecentResult
             {
                 Success = true,
                 Days = days,
                 Scope = scope,
                 Items = [new StructuredMemorySourceRef { Path = "projects/demo" }]
             });
+        }
 
         public Task<StructuredMemoryExportResult> ExportAsync(string path, string mode, CancellationToken ct)
         {

@@ -26,6 +26,10 @@ public sealed class ContextBudgetPlanner
 
         var autoMode = NormalizeAutoContextMode(fractal.AutoContextMode);
         var requestedMode = NormalizeAutoContextMode(request.Mode);
+        if (requestedMode is not ("off" or "manual" or "pulse" or "auto"))
+            return Fail($"Unsupported Fractal Memory context mode '{request.Mode}'.");
+        if (requestedMode == "off")
+            return Fail("Fractal Memory context request mode is off.");
         if (autoMode == "off" && requestedMode is not "manual")
             return Fail("Fractal Memory automatic context is disabled.");
         if (autoMode == "manual" && requestedMode is not "manual")
@@ -132,10 +136,15 @@ public sealed class ContextBudgetPlanner
 
     private static int ResolveMaxChars(StructuredMemoryContextRequest request, FractalMemoryConfig config)
     {
-        var maxChars = Math.Max(1, request.MaxChars ?? config.MaxContextChars);
-        var maxTokenChars = Math.Max(1, request.MaxTokens ?? config.MaxContextTokens) * TokenCharEstimate;
-        var configTokenChars = Math.Max(1, config.MaxContextTokens) * TokenCharEstimate;
-        return Math.Min(maxChars, Math.Min(maxTokenChars, Math.Min(config.MaxContextChars, configTokenChars)));
+        static long SafeTokenChars(int tokens)
+            => Math.Max(1L, tokens) * TokenCharEstimate;
+
+        var maxChars = Math.Max(1L, request.MaxChars ?? config.MaxContextChars);
+        var maxTokenChars = SafeTokenChars(request.MaxTokens ?? config.MaxContextTokens);
+        var configMaxChars = Math.Max(1L, config.MaxContextChars);
+        var configTokenChars = SafeTokenChars(config.MaxContextTokens);
+        var result = Math.Min(maxChars, Math.Min(maxTokenChars, Math.Min(configMaxChars, configTokenChars)));
+        return (int)Math.Clamp(result, 1L, int.MaxValue);
     }
 
     private static string NormalizeExportMode(string? mode)

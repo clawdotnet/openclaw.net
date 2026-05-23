@@ -173,8 +173,7 @@ internal sealed class RuntimePulseService : BackgroundService
 
             var fractalContext = await TryBuildFractalPulseContextAsync(config, heartbeat.Content, dueTasks, pendingText, sessionId, ct);
             var prompt = BuildPrompt(config, heartbeat.Content, dueTasks, pendingText, fractalContext?.Context);
-            if (prompt.Length > MaxHeartbeatChars + config.Prompt.Length + 2_000)
-                prompt = prompt[..(MaxHeartbeatChars + config.Prompt.Length + 2_000)];
+            prompt = TruncatePulsePrompt(prompt, config, fractalContext?.Context);
 
             if (fractalContext is { Success: true })
             {
@@ -353,7 +352,7 @@ internal sealed class RuntimePulseService : BackgroundService
         }
     }
 
-    private static string BuildPrompt(PulseConfig config, string heartbeat, IReadOnlyList<PulseTaskDefinition> dueTasks, string? manualText, string? fractalContext = null)
+    internal static string BuildPrompt(PulseConfig config, string heartbeat, IReadOnlyList<PulseTaskDefinition> dueTasks, string? manualText, string? fractalContext = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine(config.Prompt);
@@ -394,6 +393,13 @@ internal sealed class RuntimePulseService : BackgroundService
         }
 
         return sb.ToString();
+    }
+
+    internal static string TruncatePulsePrompt(string prompt, PulseConfig config, string? fractalContext)
+    {
+        var fractalBudget = string.IsNullOrWhiteSpace(fractalContext) ? 0L : fractalContext.Trim().Length;
+        var limit = Math.Clamp((long)MaxHeartbeatChars + config.Prompt.Length + 2_000 + fractalBudget, 1L, int.MaxValue);
+        return prompt.Length > limit ? prompt[..(int)limit] : prompt;
     }
 
     private static string BuildFractalPulseQuery(

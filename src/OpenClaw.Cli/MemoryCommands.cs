@@ -40,7 +40,8 @@ internal static class MemoryCommands
             }
             case "search":
             {
-                var query = RequiredPosition(parsed, 2, "query");
+                if (!TryGetPosition(parsed, 2, "query", out var query))
+                    return 2;
                 var response = await client.SearchFractalMemoryAsync(
                     query,
                     GetIntOption(parsed, "--limit", 10),
@@ -51,7 +52,8 @@ internal static class MemoryCommands
             }
             case "open":
             {
-                var path = RequiredPosition(parsed, 2, "path");
+                if (!TryGetPosition(parsed, 2, "path", out var path))
+                    return 2;
                 var response = await client.OpenFractalMemoryAsync(
                     path,
                     GetNullableIntOption(parsed, "--depth"),
@@ -62,7 +64,8 @@ internal static class MemoryCommands
             }
             case "export":
             {
-                var path = RequiredPosition(parsed, 2, "path");
+                if (!TryGetPosition(parsed, 2, "path", out var path))
+                    return 2;
                 var response = await client.ExportFractalMemoryAsync(path, parsed.GetOption("--mode"), ct);
                 Write(response, CoreJsonContext.Default.StructuredMemoryExportResult, json, TextExport);
                 return response.Success ? 0 : 1;
@@ -89,9 +92,11 @@ internal static class MemoryCommands
                 Write(response, CoreJsonContext.Default.StructuredMemoryValidationResult, json, TextValidation);
                 return response.Success && !response.HasErrors ? 0 : 1;
             }
-            case "handoff" when parsed.Positionals.Count > 3 && string.Equals(parsed.Positionals[2], "create", StringComparison.OrdinalIgnoreCase):
+            case "handoff" when parsed.Positionals.Count > 2 && string.Equals(parsed.Positionals[2], "create", StringComparison.OrdinalIgnoreCase):
             {
-                var response = await client.CreateFractalMemoryHandoffAsync(parsed.Positionals[3], ct);
+                if (!TryGetPosition(parsed, 3, "path", out var path))
+                    return 2;
+                var response = await client.CreateFractalMemoryHandoffAsync(path, ct);
                 Write(response, CoreJsonContext.Default.StructuredMemoryHandoffResult, json, TextHandoff);
                 return response.Success ? 0 : 1;
             }
@@ -108,10 +113,19 @@ internal static class MemoryCommands
         return new OpenClawHttpClient(baseUrl, token);
     }
 
-    private static string RequiredPosition(CliArgs parsed, int index, string name)
-        => parsed.Positionals.Count > index && !string.IsNullOrWhiteSpace(parsed.Positionals[index])
-            ? parsed.Positionals[index]
-            : throw new ArgumentException($"{name} is required.");
+    private static bool TryGetPosition(CliArgs parsed, int index, string name, out string value)
+    {
+        if (parsed.Positionals.Count > index && !string.IsNullOrWhiteSpace(parsed.Positionals[index]))
+        {
+            value = parsed.Positionals[index];
+            return true;
+        }
+
+        value = "";
+        Console.Error.WriteLine($"{name} is required.");
+        PrintHelp();
+        return false;
+    }
 
     private static int GetIntOption(CliArgs parsed, string name, int fallback)
         => int.TryParse(parsed.GetOption(name), out var value) ? value : fallback;

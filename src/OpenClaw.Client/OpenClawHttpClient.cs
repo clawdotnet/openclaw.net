@@ -648,6 +648,9 @@ public sealed class OpenClawHttpClient : IDisposable
 
     public async Task<StructuredMemoryHandoffResult> CreateFractalMemoryHandoffAsync(string path, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("Path is required.", nameof(path));
+
         using var req = new HttpRequestMessage(HttpMethod.Post, _adminMemoryFractalHandoffUri)
         {
             Content = BuildJsonContent(new StructuredMemoryPathRequest { Path = path }, CoreJsonContext.Default.StructuredMemoryPathRequest)

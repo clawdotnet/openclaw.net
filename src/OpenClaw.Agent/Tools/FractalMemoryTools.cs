@@ -30,7 +30,7 @@ public sealed class FractalMemorySearchTool(IStructuredMemoryProvider provider) 
         var query = GetString(root, "query");
         if (string.IsNullOrWhiteSpace(query))
             return Error("query is required.");
-        var result = await provider.SearchAsync(query, GetInt(root, "limit", 10), GetString(root, "scope"), ct);
+        var result = await provider.SearchAsync(query, GetInt(root, "limit", 10, 1, 50), GetString(root, "scope"), ct);
         return JsonSerializer.Serialize(result, CoreJsonContext.Default.StructuredMemorySearchResult);
     }
 }
@@ -60,7 +60,7 @@ public sealed class FractalMemoryOpenTool(IStructuredMemoryProvider provider, Fr
             return Error("path is required.");
         var result = await provider.OpenAsync(
             path,
-            GetInt(root, "depth", config.DefaultDepth),
+            GetInt(root, "depth", config.DefaultDepth, 0, 3),
             GetString(root, "view") ?? config.DefaultView,
             ct);
         return JsonSerializer.Serialize(result, CoreJsonContext.Default.StructuredMemoryOpenResult);
@@ -87,8 +87,8 @@ public sealed class FractalMemoryRecentTool(IStructuredMemoryProvider provider) 
         using var doc = Parse(argumentsJson);
         var root = doc.RootElement;
         var result = await provider.RecentAsync(
-            GetInt(root, "days", 30),
-            GetInt(root, "limit", 10),
+            GetInt(root, "days", 30, 1, 3650),
+            GetInt(root, "limit", 10, 1, 100),
             GetString(root, "scope"),
             ct);
         return JsonSerializer.Serialize(result, CoreJsonContext.Default.StructuredMemoryRecentResult);
@@ -187,14 +187,14 @@ internal static class FractalMemoryToolHelpers
         => JsonDocument.Parse(string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
 
     public static string? GetString(JsonElement root, string propertyName)
-        => root.TryGetProperty(propertyName, out var value) && value.ValueKind != JsonValueKind.Null
+        => root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
 
-    public static int GetInt(JsonElement root, string propertyName, int fallback)
+    public static int GetInt(JsonElement root, string propertyName, int fallback, int min, int max)
         => root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var parsed)
-            ? parsed
-            : fallback;
+            ? Math.Clamp(parsed, min, max)
+            : Math.Clamp(fallback, min, max);
 
     public static string Error(string message)
         => JsonSerializer.Serialize(

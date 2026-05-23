@@ -4212,6 +4212,7 @@
             const { resp, data } = await api('/admin/memory/fractal/status');
             if (!resp.ok) {
                 fractalMemoryStatusOutput.textContent = `Fractal Memory status failed (${resp.status})`;
+                fractalMemoryRecentOutput.textContent = '';
                 return;
             }
 
@@ -4223,6 +4224,11 @@
                 ${(data.warnings || []).map(warning => `<div class="muted">warning: ${escapeHtml(warning)}</div>`).join('')}
                 ${data.error ? `<div class="muted">error: ${escapeHtml(data.error)}</div>` : ''}
             `;
+
+            if (!data.enabled || data.error) {
+                fractalMemoryRecentOutput.textContent = '';
+                return;
+            }
 
             await loadFractalMemoryRecent();
         }
