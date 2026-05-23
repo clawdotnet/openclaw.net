@@ -71,7 +71,10 @@ internal sealed class SharedHarnessStateService
 
         var now = DateTimeOffset.UtcNow;
         var existingParticipants = CleanList(existing.Participants);
-        var normalizedParticipant = NormalizeParticipant(participant, existingParticipants.Count, now);
+        var participantIndex = string.IsNullOrWhiteSpace(participant.Id)
+            ? FirstUnusedGeneratedIndex(existingParticipants.Select(static item => item.Id), "participant")
+            : existingParticipants.Count;
+        var normalizedParticipant = NormalizeParticipant(participant, participantIndex, now);
         var participants = existingParticipants
             .Where(item => !string.Equals(item.Id, normalizedParticipant.Id, StringComparison.Ordinal))
             .Append(normalizedParticipant)
@@ -93,7 +96,10 @@ internal sealed class SharedHarnessStateService
 
         var now = DateTimeOffset.UtcNow;
         var existingActions = CleanList(existing.Actions);
-        var normalizedAction = NormalizeAction(action, existingActions.Count, now);
+        var actionIndex = string.IsNullOrWhiteSpace(action.Id)
+            ? FirstUnusedGeneratedIndex(existingActions.Select(static item => item.Id), "action")
+            : existingActions.Count;
+        var normalizedAction = NormalizeAction(action, actionIndex, now);
         var actions = existingActions
             .Where(item => !string.Equals(item.Id, normalizedAction.Id, StringComparison.Ordinal))
             .Append(normalizedAction)
@@ -456,10 +462,22 @@ internal sealed class SharedHarnessStateService
         };
 
     private static IReadOnlyList<HarnessParticipant> NormalizeParticipants(IReadOnlyList<HarnessParticipant>? participants, DateTimeOffset now)
-        => participants?
-            .Where(static item => item is not null)
-            .Select((item, index) => NormalizeParticipant(item, index, now))
-            .ToArray() ?? [];
+    {
+        var items = CleanList(participants);
+        var usedIds = ToIdSet(items.Select(static item => item.Id));
+        var normalized = new List<HarnessParticipant>(items.Count);
+        foreach (var item in items)
+        {
+            var index = string.IsNullOrWhiteSpace(item.Id)
+                ? FirstUnusedGeneratedIndex(usedIds, "participant")
+                : normalized.Count;
+            var participant = NormalizeParticipant(item, index, now);
+            usedIds.Add(participant.Id);
+            normalized.Add(participant);
+        }
+
+        return normalized;
+    }
 
     private static HarnessParticipant NormalizeParticipant(HarnessParticipant participant, int index, DateTimeOffset now)
     {
@@ -482,10 +500,22 @@ internal sealed class SharedHarnessStateService
     }
 
     private static IReadOnlyList<HarnessStateAction> NormalizeActions(IReadOnlyList<HarnessStateAction>? actions, DateTimeOffset now)
-        => actions?
-            .Where(static item => item is not null)
-            .Select((item, index) => NormalizeAction(item, index, now))
-            .ToArray() ?? [];
+    {
+        var items = CleanList(actions);
+        var usedIds = ToIdSet(items.Select(static item => item.Id));
+        var normalized = new List<HarnessStateAction>(items.Count);
+        foreach (var item in items)
+        {
+            var index = string.IsNullOrWhiteSpace(item.Id)
+                ? FirstUnusedGeneratedIndex(usedIds, "action")
+                : normalized.Count;
+            var action = NormalizeAction(item, index, now);
+            usedIds.Add(action.Id);
+            normalized.Add(action);
+        }
+
+        return normalized;
+    }
 
     private static HarnessStateAction NormalizeAction(HarnessStateAction action, int index, DateTimeOffset now)
     {
@@ -541,6 +571,26 @@ internal sealed class SharedHarnessStateService
             : items
                 .Where(static item => !string.IsNullOrWhiteSpace(item.Key))
                 .ToDictionary(static item => item.Key.Trim(), static item => item.Value ?? "", StringComparer.Ordinal);
+
+    private static HashSet<string> ToIdSet(IEnumerable<string?> ids)
+        => ids
+            .Where(static id => !string.IsNullOrWhiteSpace(id))
+            .Select(static id => id!.Trim())
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static int FirstUnusedGeneratedIndex(IEnumerable<string?> existingIds, string prefix)
+        => FirstUnusedGeneratedIndex(ToIdSet(existingIds), prefix);
+
+    private static int FirstUnusedGeneratedIndex(ISet<string> existingIds, string prefix)
+    {
+        for (var suffix = 1; suffix < int.MaxValue; suffix++)
+        {
+            if (!existingIds.Contains($"{prefix}_{suffix}"))
+                return suffix - 1;
+        }
+
+        throw new InvalidOperationException($"No generated {prefix} id is available.");
+    }
 
     private void AppendEvent(SharedHarnessState state, string action, string severity, string summary)
     {

@@ -125,6 +125,28 @@ public sealed class SharedHarnessStateTests
     }
 
     [Fact]
+    public async Task Service_BlankParticipantAndActionIds_UseFirstUnusedGeneratedId()
+    {
+        var service = CreateService(out _);
+        var created = await service.CreateAsync(new SharedHarnessState
+        {
+            Id = "shs_sparse_ids",
+            Participants = [new HarnessParticipant { Id = "participant_1" }],
+            Actions = [new HarnessStateAction { Id = "action_1" }]
+        }, CancellationToken.None);
+
+        var withParticipant = await service.AddParticipantAsync(created.Id, new HarnessParticipant(), CancellationToken.None);
+        var withAction = await service.AddActionAsync(created.Id, new HarnessStateAction(), CancellationToken.None);
+
+        Assert.NotNull(withParticipant);
+        Assert.Contains(withParticipant!.Participants, participant => participant.Id == "participant_1");
+        Assert.Contains(withParticipant.Participants, participant => participant.Id == "participant_2");
+        Assert.NotNull(withAction);
+        Assert.Contains(withAction!.Actions, action => action.Id == "action_1");
+        Assert.Contains(withAction.Actions, action => action.Id == "action_2");
+    }
+
+    [Fact]
     public void ConflictDetection_DetectsWriteWriteConflict()
     {
         var service = CreateService(out _);
