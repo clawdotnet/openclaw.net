@@ -169,6 +169,22 @@ internal static partial class RuntimeInitializationExtensions
                 services.ExternalCliAudit,
                 services.ExternalCliEvents));
 
+        if (config.Memory.Fractal.Enabled)
+        {
+            var structuredMemoryProvider = services.StructuredMemoryProviderFactory();
+            tools.Add(new FractalMemorySearchTool(structuredMemoryProvider));
+            tools.Add(new FractalMemoryOpenTool(structuredMemoryProvider, config.Memory.Fractal));
+            tools.Add(new FractalMemoryRecentTool(structuredMemoryProvider));
+            tools.Add(new FractalMemoryExportTool(structuredMemoryProvider, config.Memory.Fractal));
+            tools.Add(new FractalMemoryValidateTool(structuredMemoryProvider));
+
+            if (config.Memory.Fractal.AllowWrites)
+            {
+                tools.Add(new FractalMemoryHandoffCreateTool(structuredMemoryProvider, config.Memory.Fractal));
+                tools.Add(new FractalMemoryIndexRefreshTool(structuredMemoryProvider, config.Memory.Fractal));
+            }
+        }
+
         if (config.Payments.Enabled && config.Payments.ToolEnabled)
             tools.Add(PaymentPluginRegistration.CreateTool(services.PaymentRuntime, config.Payments.Provider, config.Payments.Environment));
 

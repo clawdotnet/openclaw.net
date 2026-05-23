@@ -1547,6 +1547,21 @@
                 </div>
                 <pre id="memory-export-output">No bundle exported yet.</pre>
             </div>
+            <div class="card">
+                <div class="section-title">
+                    <div>
+                        <h2>Fractal Memory</h2>
+                        <div class="muted">Optional structured project memory over MCP.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="fractal-memory-refresh-button" class="secondary">Reload</button>
+                        <button id="fractal-memory-validate-button" class="secondary">Validate</button>
+                    </div>
+                </div>
+                <div id="fractal-memory-status-output" class="muted">Loading…</div>
+                <h3 style="margin-top:1rem;">Recent Nodes</h3>
+                <pre id="fractal-memory-recent-output">No recent Fractal Memory data loaded.</pre>
+            </div>
         </section>
 
         <section class="grid">
@@ -2351,6 +2366,8 @@
         const memoryNoteDetailOutput = document.getElementById('memory-note-detail-output');
         const memoryImportInput = document.getElementById('memory-import-input');
         const memoryExportOutput = document.getElementById('memory-export-output');
+        const fractalMemoryStatusOutput = document.getElementById('fractal-memory-status-output');
+        const fractalMemoryRecentOutput = document.getElementById('fractal-memory-recent-output');
         const heartbeatInputs = {
             enabled: document.getElementById('heartbeat-enabled-input'),
             cronExpression: document.getElementById('heartbeat-cron-input'),
@@ -4191,6 +4208,62 @@
             }
         }
 
+        async function loadFractalMemoryStatus() {
+            const { resp, data } = await api('/admin/memory/fractal/status');
+            if (!resp.ok) {
+                fractalMemoryStatusOutput.textContent = `Fractal Memory status failed (${resp.status})`;
+                fractalMemoryRecentOutput.textContent = `Fractal Memory recent unavailable: status failed (${resp.status}).`;
+                return;
+            }
+
+            fractalMemoryStatusOutput.innerHTML = `
+                <div><strong>${escapeHtml(data.status || 'unknown')}</strong>${data.enabled ? '' : ' · disabled'}</div>
+                <div class="muted">mode=${escapeHtml(data.mode || 'mcp')} auto=${escapeHtml(data.autoContextMode || 'off')} writes=${data.writeToolsAvailable ? 'enabled' : 'disabled'}</div>
+                <div class="muted">repo=${escapeHtml(data.resolvedRepositoryRoot || data.repositoryRoot || '')}</div>
+                <div class="muted">mcp=${escapeHtml(data.mcpCommand || '')}</div>
+                ${(data.warnings || []).map(warning => `<div class="muted">warning: ${escapeHtml(warning)}</div>`).join('')}
+                ${data.error ? `<div class="muted">error: ${escapeHtml(data.error)}</div>` : ''}
+            `;
+
+            if (!data.enabled || data.error) {
+                fractalMemoryRecentOutput.textContent = !data.enabled
+                    ? 'Fractal Memory is disabled.'
+                    : `Fractal Memory unavailable: ${data.error}`;
+                return;
+            }
+
+            await loadFractalMemoryRecent();
+        }
+
+        async function loadFractalMemoryRecent() {
+            const { resp, data } = await api('/admin/memory/fractal/recent?days=30&limit=5');
+            if (!resp.ok) {
+                fractalMemoryRecentOutput.textContent = `Fractal Memory recent failed (${resp.status})`;
+                return;
+            }
+            if (!data.success) {
+                fractalMemoryRecentOutput.textContent = data.error || 'Fractal Memory recent data is unavailable.';
+                return;
+            }
+            if (!data.items?.length) {
+                fractalMemoryRecentOutput.textContent = 'No recent Fractal Memory nodes reported.';
+                return;
+            }
+            fractalMemoryRecentOutput.textContent = data.items
+                .map(item => `- ${item.path}${item.title ? ` · ${item.title}` : ''}`)
+                .join('\n');
+        }
+
+        async function validateFractalMemory() {
+            const { resp, data } = await mutate('/admin/memory/fractal/validate', { method: 'POST' });
+            if (!resp.ok) {
+                showFlash(`Fractal Memory validation failed (${resp.status}).`, 'error');
+                return;
+            }
+            renderJson(fractalMemoryRecentOutput, data);
+            showFlash(data.success && !data.hasErrors ? 'Fractal Memory validation passed.' : 'Fractal Memory validation reported issues.', data.success && !data.hasErrors ? 'ok' : 'warn');
+        }
+
         function renderOperatorDashboard(operator) {
             if (!operator) {
                 dashboardCards.innerHTML = '';
@@ -5557,6 +5630,8 @@
                 memoryNotesOutput.textContent = 'Login required.';
                 memoryNoteDetailOutput.textContent = 'Login required.';
                 memoryExportOutput.textContent = 'Login required.';
+                fractalMemoryStatusOutput.textContent = 'Login required.';
+                fractalMemoryRecentOutput.textContent = 'Login required.';
                 approvalsOutput.textContent = 'Login required.';
                 approvalsHistoryOutput.textContent = 'Login required.';
                 sessionsOutput.textContent = 'Login required.';
@@ -5620,6 +5695,7 @@
                 loadDoctor(),
                 loadRetention(),
                 loadMemoryNotes(),
+                loadFractalMemoryStatus(),
                 loadApprovals(),
                 loadApprovalHistory(),
                 loadProviders(),
@@ -5788,6 +5864,8 @@
         document.getElementById('memory-delete-button').addEventListener('click', deleteMemoryNote);
         document.getElementById('memory-export-button').addEventListener('click', exportMemoryBundle);
         document.getElementById('memory-import-button').addEventListener('click', importMemoryBundle);
+        document.getElementById('fractal-memory-refresh-button').addEventListener('click', loadFractalMemoryStatus);
+        document.getElementById('fractal-memory-validate-button').addEventListener('click', validateFractalMemory);
         document.getElementById('whatsapp-reload-button').addEventListener('click', async () => {
             await loadWhatsAppSetup();
             showFlash('WhatsApp setup reloaded.', 'ok');

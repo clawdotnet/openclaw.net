@@ -43,6 +43,7 @@ internal static partial class AdminEndpoints
         var memoryStore = app.Services.GetRequiredService<IMemoryStore>();
         var memorySearch = memoryStore as IMemoryNoteSearch;
         var memoryCatalog = memoryStore as IMemoryNoteCatalog;
+        var structuredMemoryProvider = app.Services.GetService<IStructuredMemoryProvider>();
         var fallbackFeatureStore = FeatureFallbackServices.CreateFallbackFeatureStore(startup);
         var profileStore = app.Services.GetService<IUserProfileStore>() ?? fallbackFeatureStore;
         var proposalStore = app.Services.GetService<ILearningProposalStore>() ?? fallbackFeatureStore;
@@ -113,6 +114,7 @@ internal static partial class AdminEndpoints
             MemoryStore = memoryStore,
             MemorySearch = memorySearch,
             MemoryCatalog = memoryCatalog,
+            StructuredMemoryProvider = structuredMemoryProvider,
             ProfileStore = profileStore,
             ProposalStore = proposalStore,
             AutomationService = automationService,

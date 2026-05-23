@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
+using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Sessions;
@@ -23,6 +24,7 @@ internal sealed class RuntimePulseService : BackgroundService
     private readonly RuntimeEventStore _events;
     private readonly RuntimeMetrics _metrics;
     private readonly ILogger<RuntimePulseService> _logger;
+    private readonly ContextBudgetPlanner? _contextBudgetPlanner;
     private readonly SemaphoreSlim _runGate = new(1, 1);
     private readonly Lock _stateGate = new();
     private readonly string _heartbeatPath;
@@ -34,7 +36,8 @@ internal sealed class RuntimePulseService : BackgroundService
         GatewayRuntimeHolder runtimeHolder,
         RuntimeEventStore events,
         RuntimeMetrics metrics,
-        ILogger<RuntimePulseService> logger)
+        ILogger<RuntimePulseService> logger,
+        ContextBudgetPlanner? contextBudgetPlanner = null)
     {
         _config = config;
         _startup = startup;
@@ -42,6 +45,7 @@ internal sealed class RuntimePulseService : BackgroundService
         _events = events;
         _metrics = metrics;
         _logger = logger;
+        _contextBudgetPlanner = contextBudgetPlanner;
 
         var workspace = string.IsNullOrWhiteSpace(startup.WorkspacePath)
             ? Directory.GetCurrentDirectory()
@@ -163,13 +167,22 @@ internal sealed class RuntimePulseService : BackgroundService
 
             var pendingText = string.IsNullOrWhiteSpace(manualText) ? state.PendingManualText : manualText;
             var consumedPendingText = string.IsNullOrWhiteSpace(manualText) ? state.PendingManualText : null;
-            var prompt = BuildPrompt(config, heartbeat.Content, dueTasks, pendingText);
-            if (prompt.Length > MaxHeartbeatChars + config.Prompt.Length + 2_000)
-                prompt = prompt[..(MaxHeartbeatChars + config.Prompt.Length + 2_000)];
-
             var sessionId = ResolveSessionId(config);
             if (string.IsNullOrWhiteSpace(sessionId))
                 return RecordSkip(PulseSkipReasons.NoSession, "Runtime Pulse has no usable session id.");
+
+            var fractalContext = await TryBuildFractalPulseContextAsync(config, heartbeat.Content, dueTasks, pendingText, sessionId, ct);
+            var prompt = BuildPrompt(config, heartbeat.Content, dueTasks, pendingText, fractalContext?.Context);
+            prompt = TruncatePulsePrompt(prompt, config, fractalContext?.Context);
+
+            if (fractalContext is { Success: true })
+            {
+                AppendEvent(
+                    "fractal_memory_context_attached",
+                    $"Attached compact Fractal Memory context source={fractalContext.SourcePath ?? "unknown"} truncated={fractalContext.Truncated}.",
+                    sessionId: sessionId,
+                    severity: "info");
+            }
 
             AppendEvent(PulseEventActions.RunStarted, "Runtime Pulse run started.", sessionId: sessionId, severity: "info");
             _metrics.IncrementPulseRuns();
@@ -285,7 +298,61 @@ internal sealed class RuntimePulseService : BackgroundService
         }
     }
 
-    private static string BuildPrompt(PulseConfig config, string heartbeat, IReadOnlyList<PulseTaskDefinition> dueTasks, string? manualText)
+    private async Task<StructuredMemoryContextResult?> TryBuildFractalPulseContextAsync(
+        PulseConfig config,
+        string heartbeat,
+        IReadOnlyList<PulseTaskDefinition> dueTasks,
+        string? manualText,
+        string sessionId,
+        CancellationToken ct)
+    {
+        var fractal = _config.Memory.Fractal;
+        if (_contextBudgetPlanner is null ||
+            !fractal.Enabled ||
+            !string.Equals(fractal.AutoContextMode, "pulse", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(fractal.AutoContextMode, "auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var query = BuildFractalPulseQuery(config, heartbeat, dueTasks, manualText);
+        if (string.IsNullOrWhiteSpace(query))
+            return null;
+
+        try
+        {
+            var result = await _contextBudgetPlanner.BuildContextAsync(new StructuredMemoryContextRequest
+            {
+                Query = query,
+                Mode = "pulse",
+                SessionId = sessionId,
+                MaxChars = fractal.MaxContextChars,
+                MaxTokens = fractal.MaxContextTokens
+            }, ct);
+            return result.Success ? result : null;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Fractal Memory Runtime Pulse context attachment failed; continuing without structured memory context.");
+            return null;
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Fractal Memory Runtime Pulse context attachment failed; continuing without structured memory context.");
+            return null;
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Fractal Memory Runtime Pulse context attachment failed; continuing without structured memory context.");
+            return null;
+        }
+    }
+
+    internal static string BuildPrompt(PulseConfig config, string heartbeat, IReadOnlyList<PulseTaskDefinition> dueTasks, string? manualText, string? fractalContext = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine(config.Prompt);
@@ -301,6 +368,13 @@ internal sealed class RuntimePulseService : BackgroundService
             sb.AppendLine();
             sb.AppendLine("Manual wake text:");
             sb.AppendLine(manualText.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(fractalContext))
+        {
+            sb.AppendLine();
+            sb.AppendLine("Fractal Memory compact context:");
+            sb.AppendLine(fractalContext.Trim());
         }
 
         if (!string.IsNullOrWhiteSpace(heartbeat))
@@ -319,6 +393,31 @@ internal sealed class RuntimePulseService : BackgroundService
         }
 
         return sb.ToString();
+    }
+
+    internal static string TruncatePulsePrompt(string prompt, PulseConfig config, string? fractalContext)
+    {
+        var fractalBudget = string.IsNullOrWhiteSpace(fractalContext) ? 0L : fractalContext.Trim().Length;
+        var limit = Math.Clamp((long)MaxHeartbeatChars + config.Prompt.Length + 2_000 + fractalBudget, 1L, int.MaxValue);
+        return prompt.Length > limit ? prompt[..(int)limit] : prompt;
+    }
+
+    private static string BuildFractalPulseQuery(
+        PulseConfig config,
+        string heartbeat,
+        IReadOnlyList<PulseTaskDefinition> dueTasks,
+        string? manualText)
+    {
+        var sb = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(manualText))
+            sb.AppendLine(manualText.Trim());
+        foreach (var task in dueTasks)
+            sb.AppendLine(task.Prompt);
+        if (!string.IsNullOrWhiteSpace(heartbeat))
+            sb.AppendLine(Truncate(heartbeat, 2_000));
+        if (sb.Length == 0)
+            sb.AppendLine(config.Prompt);
+        return sb.ToString().Trim();
     }
 
     private static void ClearConsumedPendingText(PulseState state, string? consumedPendingText)

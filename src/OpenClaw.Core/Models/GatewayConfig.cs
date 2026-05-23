@@ -176,6 +176,7 @@ public sealed class MemoryConfig
 
     public MemorySqliteConfig Sqlite { get; set; } = new();
     public MemoryMempalaceConfig Mempalace { get; set; } = new();
+    public FractalMemoryConfig Fractal { get; set; } = new();
     public MemoryRecallConfig Recall { get; set; } = new();
     public MemoryRetentionConfig Retention { get; set; } = new();
 
@@ -231,6 +232,26 @@ public sealed class MemoryMempalaceConfig
     public string SessionDbPath { get; set; } = "./memory/mempalace/openclaw-sessions.db";
     public string KnowledgeGraphDbPath { get; set; } = "./memory/mempalace/kg.db";
     public int MaxSearchCandidates { get; set; } = 200;
+}
+
+public sealed class FractalMemoryConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string Mode { get; set; } = "mcp";
+    public string RepositoryRoot { get; set; } = "";
+    public string McpCommand { get; set; } = "fractalmem-mcp";
+    public int DefaultDepth { get; set; } = 1;
+    public string DefaultView { get; set; } = "index";
+    public string DefaultExportMode { get; set; } = "compact";
+    public int MaxContextChars { get; set; } = 24_000;
+    public int MaxContextTokens { get; set; } = 6_000;
+    public string AutoContextMode { get; set; } = "off";
+    public bool AllowWrites { get; set; } = false;
+    public bool RequireApprovalForWrites { get; set; } = true;
+    public bool AutoRefreshIndexes { get; set; } = false;
+    public bool IncludeTimeline { get; set; } = false;
+    public bool IncludeDecisions { get; set; } = true;
+    public bool IncludeArtifacts { get; set; } = false;
 }
 
 /// <summary>

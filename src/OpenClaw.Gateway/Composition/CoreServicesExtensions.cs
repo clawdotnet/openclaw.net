@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using OpenClaw.Channels;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Execution;
+using OpenClaw.Agent.Memory;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.ExternalCli;
@@ -96,6 +97,12 @@ internal static class CoreServicesExtensions
             sp.GetRequiredService<IRedactionPipeline>(),
             ResolveStartupCancellationToken(sp),
             ResolveBlockedPluginIds(sp)));
+        services.AddSingleton<IStructuredMemoryProvider>(sp =>
+            new FractalMemoryMcpProvider(
+                config,
+                startup.WorkspacePath,
+                sp.GetRequiredService<ILogger<FractalMemoryMcpProvider>>()));
+        services.AddSingleton<ContextBudgetPlanner>();
         services.AddSingleton<ISessionAdminStore>(sp =>
         {
             var memory = sp.GetRequiredService<IMemoryStore>();

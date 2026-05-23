@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Agent.Execution;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Security;
@@ -69,6 +70,8 @@ public sealed class AgentRuntime : IAgentRuntime
     private readonly IRedactionPipeline _redaction;
     private readonly ISentinelSubstitutionService _sentinelSubstitution;
     private readonly string? _memoryRecallPrefix;
+    private readonly ContextBudgetPlanner? _contextBudgetPlanner;
+    private readonly FractalMemoryConfig? _fractalMemory;
     private readonly object _skillGate = new();
     private string[] _loadedSkillNames = [];
     private int _skillPromptLength;
@@ -113,7 +116,8 @@ public sealed class AgentRuntime : IAgentRuntime
         IRedactionPipeline? redaction = null,
         ISentinelSubstitutionService? sentinelSubstitution = null,
         IToolGovernanceService? toolGovernance = null,
-        IPlanExecuteVerifyOrchestrator? planExecuteVerify = null)
+        IPlanExecuteVerifyOrchestrator? planExecuteVerify = null,
+        ContextBudgetPlanner? contextBudgetPlanner = null)
     {
         _chatClient = chatClient;
         _tools = tools;
@@ -170,6 +174,8 @@ public sealed class AgentRuntime : IAgentRuntime
         _recall = recall;
         _profileStore = profileStore;
         _profilesConfig = profilesConfig;
+        _contextBudgetPlanner = contextBudgetPlanner;
+        _fractalMemory = gatewayConfig?.Memory.Fractal;
         _isContractTokenBudgetExceeded = isContractTokenBudgetExceeded;
         _isContractRuntimeBudgetExceeded = isContractRuntimeBudgetExceeded;
         _recordContractTurnUsage = recordContractTurnUsage;
@@ -279,7 +285,8 @@ public sealed class AgentRuntime : IAgentRuntime
         else
         {
             // Order matters: memory recall first, then profile recall (inserted near conversation start).
-            await TryInjectRecallAsync(messages, userMessage, ct);
+            var memoryRecallInjected = await TryInjectRecallAsync(messages, userMessage, ct);
+            await TryInjectStructuredMemoryContextAsync(messages, session, userMessage, memoryRecallInjected, ct);
             await TryInjectProfileRecallAsync(messages, session, ct);
         }
 
@@ -514,7 +521,8 @@ public sealed class AgentRuntime : IAgentRuntime
         else
         {
             // Order matters: memory recall first, then profile recall (inserted near conversation start).
-            await TryInjectRecallAsync(messages, userMessage, ct);
+            var memoryRecallInjected = await TryInjectRecallAsync(messages, userMessage, ct);
+            await TryInjectStructuredMemoryContextAsync(messages, session, userMessage, memoryRecallInjected, ct);
             await TryInjectProfileRecallAsync(messages, session, ct);
         }
         var chatOptions = new ChatOptions
@@ -757,16 +765,16 @@ public sealed class AgentRuntime : IAgentRuntime
             failureMessage: invocation.FailureMessage,
             nextStep: invocation.NextStep);
 
-    private async ValueTask TryInjectRecallAsync(List<ChatMessage> messages, string userMessage, CancellationToken ct)
+    private async ValueTask<bool> TryInjectRecallAsync(List<ChatMessage> messages, string userMessage, CancellationToken ct)
     {
         if (_recall is null || !_recall.Enabled)
-            return;
+            return false;
 
         if (string.IsNullOrWhiteSpace(userMessage))
-            return;
+            return false;
 
         if (_memory is not IMemoryNoteSearch search)
-            return;
+            return false;
 
         try
         {
@@ -779,7 +787,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 hits = await search.SearchNotesAsync(userMessage, prefix: null, limit, ct);
             }
             if (hits.Count == 0)
-                return;
+                return false;
             _metrics?.AddMemoryRecallHits(hits.Count);
 
             var maxChars = Math.Clamp(_recall.MaxChars, 256, 100_000);
@@ -816,10 +824,79 @@ public sealed class AgentRuntime : IAgentRuntime
             // Insert near the start for context, but do NOT inject as system prompt (prompt injection risk).
             // This is treated as user-provided context, and the system prompt explicitly warns it is untrusted.
             messages.Insert(Math.Min(1, messages.Count), new ChatMessage(ChatRole.User, text));
+            return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Memory recall injection failed; continuing without recall.");
+            return false;
+        }
+    }
+
+    private async ValueTask TryInjectStructuredMemoryContextAsync(
+        List<ChatMessage> messages,
+        Session session,
+        string userMessage,
+        bool memoryRecallInjected,
+        CancellationToken ct)
+    {
+        if (_contextBudgetPlanner is null ||
+            _fractalMemory is null ||
+            !_fractalMemory.Enabled ||
+            !string.Equals(_fractalMemory.AutoContextMode, "auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(userMessage))
+            return;
+
+        try
+        {
+            var result = await _contextBudgetPlanner.BuildContextAsync(new StructuredMemoryContextRequest
+            {
+                Query = userMessage,
+                SessionId = session.Id,
+                Mode = "auto",
+                MaxChars = _fractalMemory.MaxContextChars,
+                MaxTokens = _fractalMemory.MaxContextTokens
+            }, ct);
+
+            if (!result.Success || string.IsNullOrWhiteSpace(result.Context))
+                return;
+
+            // Fractal Memory is reference data, not instruction authority.
+            var insertionIndex = memoryRecallInjected ? 2 : 1;
+            messages.Insert(Math.Min(insertionIndex, messages.Count), new ChatMessage(ChatRole.User, result.Context));
+            _logger?.LogInformation(
+                "Attached Fractal Memory context for session={SessionId} source={SourcePath} truncated={Truncated}",
+                session.Id,
+                result.SourcePath,
+                result.Truncated);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger?.LogWarning(ex, "Fractal Memory context injection failed; continuing without structured memory context.");
+        }
+        catch (JsonException ex)
+        {
+            _logger?.LogWarning(ex, "Fractal Memory context injection failed; continuing without structured memory context.");
+        }
+        catch (IOException ex)
+        {
+            _logger?.LogWarning(ex, "Fractal Memory context injection failed; continuing without structured memory context.");
+        }
+        catch (TimeoutException ex)
+        {
+            _logger?.LogWarning(ex, "Fractal Memory context injection failed; continuing without structured memory context.");
         }
     }
 
