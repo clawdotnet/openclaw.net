@@ -294,7 +294,7 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
         await _clientGate.WaitAsync(ct);
         try
         {
-            var existingClient = _client;
+            var existingClient = System.Threading.Volatile.Read(ref _client);
             if (existingClient is not null)
                 return existingClient;
 
@@ -313,8 +313,9 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
                 Name = "fractal-memory"
             });
 
-            _client = await McpClient.CreateAsync(transport, cancellationToken: timeoutCts.Token);
-            return _client;
+            var client = await McpClient.CreateAsync(transport, cancellationToken: timeoutCts.Token);
+            System.Threading.Volatile.Write(ref _client, client);
+            return client;
         }
         catch (Win32Exception ex)
         {
