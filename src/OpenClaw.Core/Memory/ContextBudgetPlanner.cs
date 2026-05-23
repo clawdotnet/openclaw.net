@@ -84,7 +84,7 @@ public sealed class ContextBudgetPlanner
         var query = string.IsNullOrWhiteSpace(request.Query) ? request.SessionId ?? "" : request.Query.Trim();
         if (!string.IsNullOrWhiteSpace(query))
         {
-            var search = await _provider.SearchAsync(query, limit: 3, request.Scope, ct);
+            var search = await _provider.SearchAsync(query, limit: 3, scope: request.Scope, ct: ct);
             var hit = search.Success
                 ? search.Items.FirstOrDefault(item => !string.IsNullOrWhiteSpace(item.Path))
                 : null;
@@ -92,7 +92,7 @@ public sealed class ContextBudgetPlanner
                 return hit.Path;
         }
 
-        var recent = await _provider.RecentAsync(days: 14, limit: 1, request.Scope, ct);
+        var recent = await _provider.RecentAsync(days: 14, limit: 1, scope: request.Scope, ct: ct);
         return recent.Success
             ? recent.Items.FirstOrDefault(item => !string.IsNullOrWhiteSpace(item.Path))?.Path
             : null;

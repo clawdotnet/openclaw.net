@@ -54,30 +54,42 @@ internal static partial class AdminEndpoints
             return Results.Json(response, CoreJsonContext.Default.StructuredMemoryStatusResponse);
         });
 
-        app.MapGet("/admin/memory/fractal/search", async (HttpContext ctx, string query, int limit = 10, string? scope = null) =>
+        app.MapGet("/admin/memory/fractal/search", async (HttpContext ctx, string? query, int limit = 10, string? scope = null) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.memory");
             if (authResult.Failure is not null)
                 return authResult.Failure;
 
-            if (structuredMemoryProvider is null)
-                return Results.Json(new StructuredMemorySearchResult { Success = false, Query = query ?? "", Scope = scope, Error = "Structured memory provider is not registered in this runtime." }, CoreJsonContext.Default.StructuredMemorySearchResult);
+            var normalizedQuery = NormalizeOptionalValue(query);
+            var normalizedScope = NormalizeOptionalValue(scope);
+            var normalizedLimit = Math.Clamp(limit, 1, 50);
+            if (string.IsNullOrWhiteSpace(normalizedQuery))
+                return Results.Json(new StructuredMemorySearchResult { Success = false, Query = "", Scope = normalizedScope, Error = "query is required." }, CoreJsonContext.Default.StructuredMemorySearchResult, statusCode: StatusCodes.Status400BadRequest);
 
-            var result = await structuredMemoryProvider.SearchAsync(query, limit, scope, ctx.RequestAborted);
+            if (structuredMemoryProvider is null)
+                return Results.Json(new StructuredMemorySearchResult { Success = false, Query = normalizedQuery, Scope = normalizedScope, Error = "Structured memory provider is not registered in this runtime." }, CoreJsonContext.Default.StructuredMemorySearchResult);
+
+            var result = await structuredMemoryProvider.SearchAsync(normalizedQuery, normalizedLimit, normalizedScope, ctx.RequestAborted);
             return Results.Json(result, CoreJsonContext.Default.StructuredMemorySearchResult);
         });
 
-        app.MapGet("/admin/memory/fractal/open", async (HttpContext ctx, string path, int? depth = null, string? view = null) =>
+        app.MapGet("/admin/memory/fractal/open", async (HttpContext ctx, string? path, int? depth = null, string? view = null) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.memory");
             if (authResult.Failure is not null)
                 return authResult.Failure;
 
-            if (structuredMemoryProvider is null)
-                return Results.Json(new StructuredMemoryOpenResult { Success = false, Path = path ?? "", Error = "Structured memory provider is not registered in this runtime." }, CoreJsonContext.Default.StructuredMemoryOpenResult);
+            var normalizedPath = NormalizeOptionalValue(path);
+            if (string.IsNullOrWhiteSpace(normalizedPath))
+                return Results.Json(new StructuredMemoryOpenResult { Success = false, Path = "", Error = "path is required." }, CoreJsonContext.Default.StructuredMemoryOpenResult, statusCode: StatusCodes.Status400BadRequest);
 
             var fractal = startup.Config.Memory.Fractal;
-            var result = await structuredMemoryProvider.OpenAsync(path, depth ?? fractal.DefaultDepth, view ?? fractal.DefaultView, ctx.RequestAborted);
+            var normalizedDepth = Math.Clamp(depth ?? fractal.DefaultDepth, 0, 3);
+            var normalizedView = NormalizeFractalMemoryView(view, fractal.DefaultView);
+            if (structuredMemoryProvider is null)
+                return Results.Json(new StructuredMemoryOpenResult { Success = false, Path = normalizedPath, Depth = normalizedDepth, View = normalizedView, Error = "Structured memory provider is not registered in this runtime." }, CoreJsonContext.Default.StructuredMemoryOpenResult);
+
+            var result = await structuredMemoryProvider.OpenAsync(normalizedPath, normalizedDepth, normalizedView, ctx.RequestAborted);
             return Results.Json(result, CoreJsonContext.Default.StructuredMemoryOpenResult);
         });
 
@@ -100,10 +112,13 @@ internal static partial class AdminEndpoints
             if (authResult.Failure is not null)
                 return authResult.Failure;
 
+            var normalizedDays = Math.Clamp(days, 1, 3650);
+            var normalizedLimit = Math.Clamp(limit, 1, 100);
+            var normalizedScope = NormalizeOptionalValue(scope);
             if (structuredMemoryProvider is null)
-                return Results.Json(new StructuredMemoryRecentResult { Success = false, Days = days, Scope = scope, Error = "Structured memory provider is not registered in this runtime." }, CoreJsonContext.Default.StructuredMemoryRecentResult);
+                return Results.Json(new StructuredMemoryRecentResult { Success = false, Days = normalizedDays, Scope = normalizedScope, Error = "Structured memory provider is not registered in this runtime." }, CoreJsonContext.Default.StructuredMemoryRecentResult);
 
-            var result = await structuredMemoryProvider.RecentAsync(days, limit, scope, ctx.RequestAborted);
+            var result = await structuredMemoryProvider.RecentAsync(normalizedDays, normalizedLimit, normalizedScope, ctx.RequestAborted);
             return Results.Json(result, CoreJsonContext.Default.StructuredMemoryRecentResult);
         });
 
@@ -826,5 +841,15 @@ internal static partial class AdminEndpoints
             Available = false,
             Status = config.Memory.Fractal.Enabled ? "unavailable" : "disabled",
             Error = error
+        };
+
+    private static string NormalizeFractalMemoryView(string? value, string? fallback)
+        => (NormalizeOptionalValue(value) ?? NormalizeOptionalValue(fallback) ?? "index").ToLowerInvariant() switch
+        {
+            "state" => "state",
+            "timeline" => "timeline",
+            "decisions" => "decisions",
+            "children" => "children",
+            _ => "index"
         };
 }

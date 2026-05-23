@@ -1633,6 +1633,7 @@ public sealed class GatewayAdminEndpointTests
     [Fact]
     public async Task FractalMemory_AdminEndpoints_RequireAuthAndUseStructuredProvider()
     {
+        var structuredProvider = new AdminFakeStructuredMemoryProvider();
         await using var harness = await CreateHarnessAsync(
             nonLoopbackBind: true,
             configure: config =>
@@ -1642,7 +1643,7 @@ public sealed class GatewayAdminEndpointTests
                 config.Memory.Fractal.AllowWrites = false;
             },
             configureServices: (services, _) =>
-                services.AddSingleton<IStructuredMemoryProvider>(new AdminFakeStructuredMemoryProvider()));
+                services.AddSingleton<IStructuredMemoryProvider>(structuredProvider));
 
         var anonymous = await harness.Client.GetAsync("/admin/memory/fractal/status");
         Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
@@ -1655,13 +1656,39 @@ public sealed class GatewayAdminEndpointTests
         Assert.True(statusPayload.RootElement.GetProperty("enabled").GetBoolean());
         Assert.True(statusPayload.RootElement.GetProperty("available").GetBoolean());
 
-        using var searchRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/fractal/search?query=context&limit=2");
+        using var emptySearchRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/fractal/search?query=%20%20");
+        emptySearchRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var emptySearchResponse = await harness.Client.SendAsync(emptySearchRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, emptySearchResponse.StatusCode);
+
+        using var searchRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/fractal/search?query=%20context%20&limit=999&scope=%20project%20");
         searchRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
         var searchResponse = await harness.Client.SendAsync(searchRequest);
         Assert.Equal(HttpStatusCode.OK, searchResponse.StatusCode);
         using var searchPayload = await ReadJsonAsync(searchResponse);
         Assert.True(searchPayload.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal("context", searchPayload.RootElement.GetProperty("query").GetString());
+        Assert.Equal("project", searchPayload.RootElement.GetProperty("scope").GetString());
+        Assert.Equal(50, structuredProvider.LastSearchLimit);
         Assert.Equal("projects/admin", Assert.Single(searchPayload.RootElement.GetProperty("items").EnumerateArray()).GetProperty("path").GetString());
+
+        using var openRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/fractal/open?path=%20projects/admin%20&depth=99&view=bad-view");
+        openRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var openResponse = await harness.Client.SendAsync(openRequest);
+        Assert.Equal(HttpStatusCode.OK, openResponse.StatusCode);
+        using var openPayload = await ReadJsonAsync(openResponse);
+        Assert.Equal("projects/admin", openPayload.RootElement.GetProperty("path").GetString());
+        Assert.Equal(3, openPayload.RootElement.GetProperty("depth").GetInt32());
+        Assert.Equal("index", openPayload.RootElement.GetProperty("view").GetString());
+
+        using var recentRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/fractal/recent?days=0&limit=999&scope=%20workspace%20");
+        recentRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var recentResponse = await harness.Client.SendAsync(recentRequest);
+        Assert.Equal(HttpStatusCode.OK, recentResponse.StatusCode);
+        using var recentPayload = await ReadJsonAsync(recentResponse);
+        Assert.Equal(1, recentPayload.RootElement.GetProperty("days").GetInt32());
+        Assert.Equal("workspace", recentPayload.RootElement.GetProperty("scope").GetString());
+        Assert.Equal(100, structuredProvider.LastRecentLimit);
 
         var (cookie, csrfToken) = await LoginAsync(harness.Client, harness.AuthToken);
         using var handoffRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/memory/fractal/handoff")
@@ -6764,6 +6791,9 @@ public sealed class GatewayAdminEndpointTests
 
     private sealed class AdminFakeStructuredMemoryProvider : IStructuredMemoryProvider
     {
+        public int LastSearchLimit { get; private set; }
+        public int LastRecentLimit { get; private set; }
+
         public Task<StructuredMemoryStatusResponse> GetStatusAsync(CancellationToken ct)
             => Task.FromResult(new StructuredMemoryStatusResponse
             {
@@ -6777,7 +6807,9 @@ public sealed class GatewayAdminEndpointTests
             });
 
         public Task<StructuredMemorySearchResult> SearchAsync(string query, int limit, string? scope, CancellationToken ct)
-            => Task.FromResult(new StructuredMemorySearchResult
+        {
+            LastSearchLimit = limit;
+            return Task.FromResult(new StructuredMemorySearchResult
             {
                 Success = true,
                 Query = query,
@@ -6791,18 +6823,22 @@ public sealed class GatewayAdminEndpointTests
                     }
                 ]
             });
+        }
 
         public Task<StructuredMemoryOpenResult> OpenAsync(string path, int depth, string view, CancellationToken ct)
             => Task.FromResult(new StructuredMemoryOpenResult { Success = true, Path = path, Depth = depth, View = view, Content = "admin node" });
 
         public Task<StructuredMemoryRecentResult> RecentAsync(int days, int limit, string? scope, CancellationToken ct)
-            => Task.FromResult(new StructuredMemoryRecentResult
+        {
+            LastRecentLimit = limit;
+            return Task.FromResult(new StructuredMemoryRecentResult
             {
                 Success = true,
                 Days = days,
                 Scope = scope,
                 Items = [new StructuredMemorySourceRef { Path = "projects/admin" }]
             });
+        }
 
         public Task<StructuredMemoryExportResult> ExportAsync(string path, string mode, CancellationToken ct)
             => Task.FromResult(new StructuredMemoryExportResult { Success = true, Path = path, Mode = mode, Content = "admin export" });

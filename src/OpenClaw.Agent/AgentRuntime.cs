@@ -285,8 +285,8 @@ public sealed class AgentRuntime : IAgentRuntime
         else
         {
             // Order matters: memory recall first, then profile recall (inserted near conversation start).
-            await TryInjectRecallAsync(messages, userMessage, ct);
-            await TryInjectStructuredMemoryContextAsync(messages, session, userMessage, ct);
+            var memoryRecallInjected = await TryInjectRecallAsync(messages, userMessage, ct);
+            await TryInjectStructuredMemoryContextAsync(messages, session, userMessage, memoryRecallInjected, ct);
             await TryInjectProfileRecallAsync(messages, session, ct);
         }
 
@@ -521,8 +521,8 @@ public sealed class AgentRuntime : IAgentRuntime
         else
         {
             // Order matters: memory recall first, then profile recall (inserted near conversation start).
-            await TryInjectRecallAsync(messages, userMessage, ct);
-            await TryInjectStructuredMemoryContextAsync(messages, session, userMessage, ct);
+            var memoryRecallInjected = await TryInjectRecallAsync(messages, userMessage, ct);
+            await TryInjectStructuredMemoryContextAsync(messages, session, userMessage, memoryRecallInjected, ct);
             await TryInjectProfileRecallAsync(messages, session, ct);
         }
         var chatOptions = new ChatOptions
@@ -765,16 +765,16 @@ public sealed class AgentRuntime : IAgentRuntime
             failureMessage: invocation.FailureMessage,
             nextStep: invocation.NextStep);
 
-    private async ValueTask TryInjectRecallAsync(List<ChatMessage> messages, string userMessage, CancellationToken ct)
+    private async ValueTask<bool> TryInjectRecallAsync(List<ChatMessage> messages, string userMessage, CancellationToken ct)
     {
         if (_recall is null || !_recall.Enabled)
-            return;
+            return false;
 
         if (string.IsNullOrWhiteSpace(userMessage))
-            return;
+            return false;
 
         if (_memory is not IMemoryNoteSearch search)
-            return;
+            return false;
 
         try
         {
@@ -787,7 +787,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 hits = await search.SearchNotesAsync(userMessage, prefix: null, limit, ct);
             }
             if (hits.Count == 0)
-                return;
+                return false;
             _metrics?.AddMemoryRecallHits(hits.Count);
 
             var maxChars = Math.Clamp(_recall.MaxChars, 256, 100_000);
@@ -824,10 +824,12 @@ public sealed class AgentRuntime : IAgentRuntime
             // Insert near the start for context, but do NOT inject as system prompt (prompt injection risk).
             // This is treated as user-provided context, and the system prompt explicitly warns it is untrusted.
             messages.Insert(Math.Min(1, messages.Count), new ChatMessage(ChatRole.User, text));
+            return true;
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Memory recall injection failed; continuing without recall.");
+            return false;
         }
     }
 
@@ -835,6 +837,7 @@ public sealed class AgentRuntime : IAgentRuntime
         List<ChatMessage> messages,
         Session session,
         string userMessage,
+        bool memoryRecallInjected,
         CancellationToken ct)
     {
         if (_contextBudgetPlanner is null ||
@@ -863,7 +866,8 @@ public sealed class AgentRuntime : IAgentRuntime
                 return;
 
             // Fractal Memory is reference data, not instruction authority.
-            messages.Insert(Math.Min(1, messages.Count), new ChatMessage(ChatRole.User, result.Context));
+            var insertionIndex = memoryRecallInjected ? 2 : 1;
+            messages.Insert(Math.Min(insertionIndex, messages.Count), new ChatMessage(ChatRole.User, result.Context));
             _logger?.LogInformation(
                 "Attached Fractal Memory context for session={SessionId} source={SourcePath} truncated={Truncated}",
                 session.Id,
@@ -874,7 +878,19 @@ public sealed class AgentRuntime : IAgentRuntime
         {
             throw;
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            _logger?.LogWarning(ex, "Fractal Memory context injection failed; continuing without structured memory context.");
+        }
+        catch (JsonException ex)
+        {
+            _logger?.LogWarning(ex, "Fractal Memory context injection failed; continuing without structured memory context.");
+        }
+        catch (IOException ex)
+        {
+            _logger?.LogWarning(ex, "Fractal Memory context injection failed; continuing without structured memory context.");
+        }
+        catch (TimeoutException ex)
         {
             _logger?.LogWarning(ex, "Fractal Memory context injection failed; continuing without structured memory context.");
         }

@@ -190,6 +190,52 @@ public sealed class FractalMemoryTests
             (message.Text ?? "").Contains("untrusted_reference_data", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task AgentRuntime_FractalContextDoesNotReorderMemoryRecall()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        IList<ChatMessage>? captured = null;
+        chatClient.GetResponseAsync(
+                Arg.Do<IList<ChatMessage>>(messages => captured = messages),
+                Arg.Any<ChatOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ChatResponse(new[] { new ChatMessage(ChatRole.Assistant, "ok") })));
+
+        var config = new GatewayConfig();
+        config.Memory.Fractal.Enabled = true;
+        config.Memory.Fractal.AutoContextMode = "auto";
+        var planner = new ContextBudgetPlanner(config, new FakeStructuredMemoryProvider());
+        var memory = Substitute.For<IMemoryStore, IMemoryNoteSearch>();
+        var search = (IMemoryNoteSearch)memory;
+        search.SearchNotesAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IReadOnlyList<MemoryNoteHit>>(
+            [
+                new MemoryNoteHit { Key = "note:1", Content = "remember this", UpdatedAt = DateTimeOffset.UtcNow, Score = 1 }
+            ]));
+
+        var agent = new AgentRuntime(
+            chatClient,
+            tools: [],
+            memory,
+            new LlmProviderConfig { Provider = "openai", ApiKey = "test", Model = "gpt-4" },
+            maxHistoryTurns: 5,
+            recall: new MemoryRecallConfig { Enabled = true, MaxNotes = 5, MaxChars = 4000 },
+            gatewayConfig: config,
+            contextBudgetPlanner: planner);
+
+        var session = new Session { Id = "s1", ChannelId = "test", SenderId = "u1" };
+        _ = await agent.RunAsync(session, "what should I remember?", CancellationToken.None);
+
+        Assert.NotNull(captured);
+        var recallIndex = captured!.Select((message, index) => (message, index))
+            .First(item => (item.message.Text ?? "").Contains("[Relevant memory]", StringComparison.Ordinal))
+            .index;
+        var fractalIndex = captured!.Select((message, index) => (message, index))
+            .First(item => (item.message.Text ?? "").Contains("<fractal_memory_context>", StringComparison.Ordinal))
+            .index;
+        Assert.True(recallIndex < fractalIndex);
+    }
+
     private sealed class FakeStructuredMemoryProvider : IStructuredMemoryProvider
     {
         public int SearchCalls { get; private set; }

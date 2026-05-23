@@ -167,14 +167,14 @@ internal sealed class RuntimePulseService : BackgroundService
 
             var pendingText = string.IsNullOrWhiteSpace(manualText) ? state.PendingManualText : manualText;
             var consumedPendingText = string.IsNullOrWhiteSpace(manualText) ? state.PendingManualText : null;
-            var fractalContext = await TryBuildFractalPulseContextAsync(config, heartbeat.Content, dueTasks, pendingText, ct);
-            var prompt = BuildPrompt(config, heartbeat.Content, dueTasks, pendingText, fractalContext?.Context);
-            if (prompt.Length > MaxHeartbeatChars + config.Prompt.Length + 2_000)
-                prompt = prompt[..(MaxHeartbeatChars + config.Prompt.Length + 2_000)];
-
             var sessionId = ResolveSessionId(config);
             if (string.IsNullOrWhiteSpace(sessionId))
                 return RecordSkip(PulseSkipReasons.NoSession, "Runtime Pulse has no usable session id.");
+
+            var fractalContext = await TryBuildFractalPulseContextAsync(config, heartbeat.Content, dueTasks, pendingText, sessionId, ct);
+            var prompt = BuildPrompt(config, heartbeat.Content, dueTasks, pendingText, fractalContext?.Context);
+            if (prompt.Length > MaxHeartbeatChars + config.Prompt.Length + 2_000)
+                prompt = prompt[..(MaxHeartbeatChars + config.Prompt.Length + 2_000)];
 
             if (fractalContext is { Success: true })
             {
@@ -304,6 +304,7 @@ internal sealed class RuntimePulseService : BackgroundService
         string heartbeat,
         IReadOnlyList<PulseTaskDefinition> dueTasks,
         string? manualText,
+        string sessionId,
         CancellationToken ct)
     {
         var fractal = _config.Memory.Fractal;
@@ -325,7 +326,7 @@ internal sealed class RuntimePulseService : BackgroundService
             {
                 Query = query,
                 Mode = "pulse",
-                SessionId = ResolveSessionId(config),
+                SessionId = sessionId,
                 MaxChars = fractal.MaxContextChars,
                 MaxTokens = fractal.MaxContextTokens
             }, ct);
@@ -335,7 +336,17 @@ internal sealed class RuntimePulseService : BackgroundService
         {
             throw;
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Fractal Memory Runtime Pulse context attachment failed; continuing without structured memory context.");
+            return null;
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Fractal Memory Runtime Pulse context attachment failed; continuing without structured memory context.");
+            return null;
+        }
+        catch (JsonException ex)
         {
             _logger.LogWarning(ex, "Fractal Memory Runtime Pulse context attachment failed; continuing without structured memory context.");
             return null;

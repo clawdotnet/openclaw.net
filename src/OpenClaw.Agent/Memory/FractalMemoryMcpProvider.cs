@@ -242,7 +242,32 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
         {
             return ToolCallOutcome.Fail($"Timed out calling Fractal Memory MCP tool '{toolName}'.");
         }
-        catch (Exception ex)
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogDebug(ex, "Fractal Memory MCP tool {ToolName} failed", toolName);
+            return ToolCallOutcome.Fail(FriendlyError(ex));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogDebug(ex, "Fractal Memory MCP tool {ToolName} failed", toolName);
+            return ToolCallOutcome.Fail(FriendlyError(ex));
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogDebug(ex, "Fractal Memory MCP tool {ToolName} failed", toolName);
+            return ToolCallOutcome.Fail(FriendlyError(ex));
+        }
+        catch (IOException ex)
+        {
+            _logger.LogDebug(ex, "Fractal Memory MCP tool {ToolName} failed", toolName);
+            return ToolCallOutcome.Fail(FriendlyError(ex));
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.LogDebug(ex, "Fractal Memory MCP tool {ToolName} failed", toolName);
+            return ToolCallOutcome.Fail(FriendlyError(ex));
+        }
+        catch (Win32Exception ex)
         {
             _logger.LogDebug(ex, "Fractal Memory MCP tool {ToolName} failed", toolName);
             return ToolCallOutcome.Fail(FriendlyError(ex));
@@ -271,8 +296,9 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
         await _clientGate.WaitAsync(ct);
         try
         {
-            if (_client is not null)
-                return _client;
+            var existingClient = _client;
+            if (existingClient is not null)
+                return existingClient;
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));

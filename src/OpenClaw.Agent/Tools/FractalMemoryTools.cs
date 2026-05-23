@@ -215,6 +215,8 @@ internal static class FractalMemoryToolHelpers
         }
         catch (JsonException)
         {
+            // Malformed arguments fall back to an unscoped write descriptor.
+            path = "";
         }
 
         return new ToolActionDescriptor
