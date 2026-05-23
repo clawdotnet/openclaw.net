@@ -278,8 +278,6 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(FractalMemoryMcpProvider));
-        if (_client is not null)
-            return _client;
 
         var fractal = _config.Memory.Fractal;
         if (!fractal.Enabled)

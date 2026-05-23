@@ -826,6 +826,10 @@ public sealed class AgentRuntime : IAgentRuntime
             messages.Insert(Math.Min(1, messages.Count), new ChatMessage(ChatRole.User, text));
             return true;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Memory recall injection failed; continuing without recall.");
