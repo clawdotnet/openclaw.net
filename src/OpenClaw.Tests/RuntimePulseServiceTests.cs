@@ -129,16 +129,21 @@ public sealed class RuntimePulseServiceTests
     {
         var config = RuntimePulseService.Normalize(new PulseConfig { Prompt = "Pulse prompt." });
         var heartbeat = new string('h', 12_000);
-        var fractalContext = new string('f', 3_000);
-        var dueTasks = new[]
-        {
-            new PulseTaskDefinition { Name = "runtime-health", Prompt = "Check warnings." }
-        };
+        var fractalContext = "<fractal_memory_context>\nSource: test\n" + new string('f', 3_000) + "\n</fractal_memory_context>";
+        var dueTasks = Enumerable.Range(0, 80)
+            .Select(i => new PulseTaskDefinition
+            {
+                Name = i == 0 ? "runtime-health" : $"overflow-{i}",
+                Prompt = i == 0 ? "Check warnings." : new string('x', 100)
+            })
+            .ToArray();
 
         var prompt = RuntimePulseService.BuildPrompt(config, heartbeat, dueTasks, manualText: null, fractalContext);
         var truncated = RuntimePulseService.TruncatePulsePrompt(prompt, config, fractalContext);
 
         Assert.Contains("Due heartbeat tasks:", truncated, StringComparison.Ordinal);
         Assert.Contains("runtime-health: Check warnings.", truncated, StringComparison.Ordinal);
+        Assert.Contains("<fractal_memory_context>", truncated, StringComparison.Ordinal);
+        Assert.True(prompt.Length > truncated.Length);
     }
 }

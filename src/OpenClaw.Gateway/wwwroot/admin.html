@@ -4212,7 +4212,7 @@
             const { resp, data } = await api('/admin/memory/fractal/status');
             if (!resp.ok) {
                 fractalMemoryStatusOutput.textContent = `Fractal Memory status failed (${resp.status})`;
-                fractalMemoryRecentOutput.textContent = '';
+                fractalMemoryRecentOutput.textContent = `Fractal Memory recent unavailable: status failed (${resp.status}).`;
                 return;
             }
 
@@ -4226,7 +4226,9 @@
             `;
 
             if (!data.enabled || data.error) {
-                fractalMemoryRecentOutput.textContent = '';
+                fractalMemoryRecentOutput.textContent = !data.enabled
+                    ? 'Fractal Memory is disabled.'
+                    : `Fractal Memory unavailable: ${data.error}`;
                 return;
             }
 
