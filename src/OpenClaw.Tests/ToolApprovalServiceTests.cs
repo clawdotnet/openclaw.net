@@ -92,13 +92,31 @@ public sealed class ToolApprovalServiceTests
 
         var waitTask = service.WaitForDecisionOutcomeAsync(request.ApprovalId, TimeSpan.FromSeconds(2), CancellationToken.None);
 
-        // Approve after a short delay
         await Task.Delay(50);
         service.TrySetDecision(request.ApprovalId, approved: true,
             requesterChannelId: "telegram", requesterSenderId: "user-1");
 
         var outcome = await waitTask;
         Assert.Equal(ToolApprovalWaitResult.Approved, outcome.Result);
+    }
+
+    [Fact]
+    public async Task WaitForDecisionOutcomeAsync_DecisionRecordedBeforeWait_ReturnsDecision()
+    {
+        var service = new ToolApprovalService();
+        var request = service.Create("sess-1", "telegram", "user-1", "shell", "{}", TimeSpan.FromSeconds(2));
+
+        var decision = service.TrySetDecision(
+            request.ApprovalId,
+            approved: true,
+            requesterChannelId: "telegram",
+            requesterSenderId: "user-1");
+        var outcome = await service.WaitForDecisionOutcomeAsync(request.ApprovalId, TimeSpan.FromSeconds(2), CancellationToken.None);
+
+        Assert.Equal(ToolApprovalDecisionResult.Recorded, decision);
+        Assert.Equal(ToolApprovalWaitResult.Approved, outcome.Result);
+        Assert.Equal(request.ApprovalId, outcome.Request?.ApprovalId);
+        Assert.Empty(service.ListPending("telegram", "user-1"));
     }
 
     [Fact]

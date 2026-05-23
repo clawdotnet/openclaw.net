@@ -946,12 +946,14 @@ internal static partial class AdminEndpoints
     private static string TrimToMaxLength(string value, int maxLength)
         => value.Length <= maxLength ? value : value[..maxLength];
 
-    private static string GetManagedSkillRoot()
-        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills");
+    private static string GetManagedSkillRoot(GatewayConfig config)
+        => string.IsNullOrWhiteSpace(config.Skills.Load.ManagedRoot)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills")
+            : config.Skills.Load.ManagedRoot;
 
-    private static async Task<IReadOnlyList<ManagedSkillBundleItem>> ListManagedSkillBundleItemsAsync(CancellationToken ct)
+    private static async Task<IReadOnlyList<ManagedSkillBundleItem>> ListManagedSkillBundleItemsAsync(GatewayConfig config, CancellationToken ct)
     {
-        var root = GetManagedSkillRoot();
+        var root = GetManagedSkillRoot(config);
         if (!Directory.Exists(root))
             return [];
 
@@ -982,10 +984,10 @@ internal static partial class AdminEndpoints
             .ToArray();
     }
 
-    private static async Task SaveManagedSkillBundleItemAsync(ManagedSkillBundleItem item, CancellationToken ct)
+    private static async Task SaveManagedSkillBundleItemAsync(GatewayConfig config, ManagedSkillBundleItem item, CancellationToken ct)
     {
         var slug = SlugifySkillName(item.Slug, item.Name);
-        var root = Path.Combine(GetManagedSkillRoot(), slug);
+        var root = Path.Combine(GetManagedSkillRoot(config), slug);
         Directory.CreateDirectory(root);
         await File.WriteAllTextAsync(Path.Combine(root, "SKILL.md"), item.Content, ct);
     }

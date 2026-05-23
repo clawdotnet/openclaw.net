@@ -43,7 +43,8 @@ internal static class FeatureFallbackServices
                        new RuntimeEventStore(startup.Config.Memory.StoragePath, NullLogger<RuntimeEventStore>.Instance),
                        services.GetService<ProviderUsageTracker>() ?? new ProviderUsageTracker(),
                        NullLogger<ContractGovernanceService>.Instance),
-                   NullLogger<AutomationRunCoordinator>.Instance));
+                   NullLogger<AutomationRunCoordinator>.Instance),
+               proposalStore: services.GetService<ILearningProposalStore>() ?? fallbackFeatureStore);
 
     public static LearningService ResolveLearningService(
         GatewayStartupContext startup,

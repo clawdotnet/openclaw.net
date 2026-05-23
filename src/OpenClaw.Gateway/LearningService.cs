@@ -441,6 +441,14 @@ internal sealed class LearningService
                     SkillName = proposal.SkillName ?? proposal.Title
                 }
                 : proposal.ManagedSkillMetadata,
+            feedbackEvents: AppendAutomationFeedbackEvent(
+                proposal,
+                BuildFeedbackEvent(
+                    LearningProposalFeedbackActions.AcceptedWithoutEdits,
+                    [],
+                    proposal.AutomationQuality?.Score,
+                    proposal.AutomationQuality?.Score,
+                    "User accepted the proposal without edits.")),
             statusUpdatedAtUtc: approvedAtUtc,
             reviewedAtUtc: approvedAtUtc,
             reviewNotes: string.Equals(proposal.Kind, LearningProposalKind.HarnessChange, StringComparison.OrdinalIgnoreCase)
@@ -465,6 +473,14 @@ internal sealed class LearningService
         var rejected = CopyProposal(
             proposal,
             status: LearningProposalStatus.Rejected,
+            feedbackEvents: AppendAutomationFeedbackEvent(
+                proposal,
+                BuildFeedbackEvent(
+                    LearningProposalFeedbackActions.Rejected,
+                    [],
+                    proposal.AutomationQuality?.Score,
+                    null,
+                    string.IsNullOrWhiteSpace(reason) ? "User rejected the proposal." : reason.Trim())),
             statusUpdatedAtUtc: DateTimeOffset.UtcNow,
             reviewedAtUtc: DateTimeOffset.UtcNow,
             reviewNotes: string.IsNullOrWhiteSpace(reason) ? "rejected" : reason.Trim());
@@ -639,39 +655,42 @@ internal sealed class LearningService
         if (HasRecentlyApprovedDuplicate(allAutomationProposals, fingerprint, actorId, lastUser.Content, skillName: null))
             return;
 
-        var automation = new AutomationDefinition
-        {
-            Id = $"suggested:{Guid.NewGuid():N}"[..20],
-            Name = lastUser.Content.Length > 60 ? lastUser.Content[..60] : lastUser.Content,
-            Enabled = false,
-            Schedule = "@daily",
-            Prompt = lastUser.Content,
-            DeliveryChannelId = "cron",
-            Tags = ["suggested", "learning"],
-            IsDraft = true,
-            Source = "learning",
-            CreatedByLearningProposalId = null,
-            TemplateKey = "custom"
-        };
+        var proposalId = $"lp_{Guid.NewGuid():N}"[..20];
+        var intent = new AutomationSuggestionIntentExtractor().Extract(lastUser.Content, search.Items);
+        var candidate = new AutomationSuggestionRefiner().Refine(lastUser.Content, intent);
+        var existingAutomations = await _automationStore.ListAutomationsAsync(ct);
+        var quality = new AutomationSuggestionQualityGate().Evaluate(
+            candidate,
+            intent,
+            existingAutomations,
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "cron" });
+        var preview = new AutomationSuggestionPreviewBuilder().Build(lastUser.Content, candidate, intent, quality);
+        var createsDraft = quality.Decision is AutomationSuggestionQualityDecisions.ReadyDraft or AutomationSuggestionQualityDecisions.NeedsReviewDraft;
+        var automation = createsDraft ? BuildManagedAutomationDraft(candidate, proposalId) : null;
 
         var automationProposal = new LearningProposal
         {
-            Id = $"lp_{Guid.NewGuid():N}"[..20],
+            Id = proposalId,
             Kind = LearningProposalKind.AutomationSuggestion,
             Status = LearningProposalStatus.Pending,
             ActorId = actorId,
-            Title = lastUser.Content,
-            Summary = "Repeated prompt detected; suggested as a disabled automation draft.",
+            Title = automation?.Name ?? (lastUser.Content.Length > 60 ? lastUser.Content[..60] : lastUser.Content),
+            Summary = createsDraft
+                ? "Repeated prompt detected; refined as a disabled automation draft for review."
+                : "Repeated prompt detected; kept as a learning-only automation suggestion because quality gates blocked draft creation.",
             AutomationDraft = automation,
+            AutomationIntent = intent,
+            AutomationQuality = quality,
+            AutomationSuggestionPreview = preview,
             SourceSessionIds = search.Items.Select(static item => item.SessionId).Append(session.Id).Distinct(StringComparer.Ordinal).ToArray(),
             SourceTurnIds = [BuildTurnId(session, lastUser)],
             RepeatedCount = search.Items.Count,
             ProposalFingerprint = fingerprint,
-            RiskLevel = LearningProposalRiskLevels.Medium,
+            RiskLevel = quality.BlockingIssues.Count > 0 ? LearningProposalRiskLevels.Medium : LearningProposalRiskLevels.Low,
             Confidence = Math.Min(0.9f, 0.3f + (search.Items.Count * 0.1f)),
             CreatedReason = $"Observed {search.Items.Count} similar requests from the same actor.",
-            ValidationStatus = LearningProposalValidationStatuses.Warning,
-            ValidationWarnings = ["Automation suggestions are created as disabled drafts and require operator review before use."]
+            ValidationStatus = quality.BlockingIssues.Count > 0 ? LearningProposalValidationStatuses.Warning : LearningProposalValidationStatuses.Valid,
+            ValidationWarnings = quality.BlockingIssues.Concat(quality.Warnings).ToArray()
         };
 
         await _proposalStore.SaveProposalAsync(automationProposal, ct);
@@ -1688,6 +1707,7 @@ Use it when repeated requests resemble the sessions that produced this draft.
         string? validationStatus = null,
         IReadOnlyList<string>? validationWarnings = null,
         IReadOnlyList<string>? validationErrors = null,
+        IReadOnlyList<LearningProposalFeedbackEvent>? feedbackEvents = null,
         bool? rolledBack = null,
         DateTimeOffset? rolledBackAtUtc = null,
         string? rollbackReason = null)
@@ -1706,6 +1726,9 @@ Use it when repeated requests resemble the sessions that produced this draft.
             ProfileUpdate = proposal.ProfileUpdate,
             AppliedProfileBefore = appliedProfileBefore ?? proposal.AppliedProfileBefore,
             AutomationDraft = automationDraft ?? proposal.AutomationDraft,
+            AutomationIntent = CopyAutomationIntent(proposal.AutomationIntent),
+            AutomationQuality = CopyAutomationQuality(proposal.AutomationQuality),
+            AutomationSuggestionPreview = CopyAutomationSuggestionPreview(proposal.AutomationSuggestionPreview),
             AppliedAutomationId = appliedAutomationId ?? proposal.AppliedAutomationId,
             ManagedSkillPath = managedSkillPath ?? proposal.ManagedSkillPath,
             ManagedSkillMetadata = managedSkillMetadata ?? proposal.ManagedSkillMetadata,
@@ -1715,6 +1738,7 @@ Use it when repeated requests resemble the sessions that produced this draft.
             ToolNames = proposal.ToolNames,
             ToolSequence = proposal.ToolSequence,
             ToolObservations = proposal.ToolObservations,
+            FeedbackEvents = feedbackEvents?.Select(CopyFeedbackEvent).ToArray() ?? proposal.FeedbackEvents.Select(CopyFeedbackEvent).ToArray(),
             RepeatedCount = repeatedCount ?? proposal.RepeatedCount,
             ProposalFingerprint = proposal.ProposalFingerprint,
             RiskLevel = riskLevel ?? proposal.RiskLevel,
@@ -1730,6 +1754,61 @@ Use it when repeated requests resemble the sessions that produced this draft.
             RolledBack = rolledBack ?? proposal.RolledBack,
             RolledBackAtUtc = rolledBackAtUtc ?? proposal.RolledBackAtUtc,
             RollbackReason = rollbackReason ?? proposal.RollbackReason
+        };
+
+    private static IReadOnlyList<LearningProposalFeedbackEvent>? AppendAutomationFeedbackEvent(LearningProposal proposal, LearningProposalFeedbackEvent feedbackEvent)
+        => string.Equals(proposal.Kind, LearningProposalKind.AutomationSuggestion, StringComparison.OrdinalIgnoreCase)
+            ? proposal.FeedbackEvents.Append(feedbackEvent).ToArray()
+            : null;
+
+    private static LearningProposalFeedbackEvent BuildFeedbackEvent(
+        string action,
+        IReadOnlyList<string> changedFields,
+        int? beforeQualityScore,
+        int? afterQualityScore,
+        string summary)
+        => new()
+        {
+            Action = action,
+            ChangedFields = changedFields,
+            BeforeQualityScore = beforeQualityScore,
+            AfterQualityScore = afterQualityScore,
+            Summary = summary,
+            CreatedAtUtc = DateTimeOffset.UtcNow
+        };
+
+    private static AutomationSuggestionIntent? CopyAutomationIntent(AutomationSuggestionIntent? intent)
+        => intent is null
+            ? null
+            : intent with
+            {
+                TriggerEvidence = intent.TriggerEvidence.ToArray(),
+                Ambiguities = intent.Ambiguities.ToArray()
+            };
+
+    private static AutomationSuggestionQualityResult? CopyAutomationQuality(AutomationSuggestionQualityResult? quality)
+        => quality is null
+            ? null
+            : quality with
+            {
+                Dimensions = quality.Dimensions.Select(static dimension => dimension with { }).ToArray(),
+                BlockingIssues = quality.BlockingIssues.ToArray(),
+                Warnings = quality.Warnings.ToArray()
+            };
+
+    private static LearningAutomationSuggestionPreview? CopyAutomationSuggestionPreview(LearningAutomationSuggestionPreview? preview)
+        => preview is null
+            ? null
+            : preview with
+            {
+                Warnings = preview.Warnings.ToArray(),
+                ExpectedOutputSections = preview.ExpectedOutputSections.ToArray()
+            };
+
+    private static LearningProposalFeedbackEvent CopyFeedbackEvent(LearningProposalFeedbackEvent feedbackEvent)
+        => feedbackEvent with
+        {
+            ChangedFields = feedbackEvent.ChangedFields.ToArray()
         };
 
     private static string Slugify(string value)

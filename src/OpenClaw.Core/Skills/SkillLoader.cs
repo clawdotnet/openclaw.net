@@ -46,9 +46,9 @@ public static class SkillLoader
         // 3. Managed/local skills
         if (config.Load.IncludeManaged)
         {
-            var managedDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".openclaw", "skills");
+            var managedDir = string.IsNullOrWhiteSpace(config.Load.ManagedRoot)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills")
+                : config.Load.ManagedRoot;
             if (Directory.Exists(managedDir))
                 ScanDirectory(managedDir, SkillSource.Managed, allSkills, logger);
         }

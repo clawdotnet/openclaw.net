@@ -2143,6 +2143,396 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task LearningService_AutomationSuggestion_ConversationReviewCreatesRefinedDisabledDraft()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var store = new FileFeatureStore(storagePath);
+            var searchStore = new StaticSessionSearchStore(
+            [
+                new SessionSearchHit { SessionId = "sess-search-review-1", ChannelId = "web", SenderId = "operator", Role = "user", Snippet = "比较当前的会话内容，做一个整体的评估", Score = 0.9f },
+                new SessionSearchHit { SessionId = "sess-search-review-2", ChannelId = "web", SenderId = "operator", Role = "user", Snippet = "比较当前的会话内容，做一个整体的评估", Score = 0.8f }
+            ]);
+            var service = new LearningService(
+                new LearningConfig { SkillProposalThreshold = 99, AutomationProposalThreshold = 2 },
+                store,
+                store,
+                store,
+                searchStore,
+                NullLogger<LearningService>.Instance);
+
+            await service.ObserveSessionAsync(BuildUserSession("sess-auto-review", "比较当前的会话内容，做一个整体的评估"), CancellationToken.None);
+
+            var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.AutomationSuggestion, CancellationToken.None);
+            var proposal = Assert.Single(proposals);
+            Assert.NotNull(proposal.AutomationDraft);
+            Assert.False(proposal.AutomationDraft.Enabled);
+            Assert.True(proposal.AutomationDraft.IsDraft);
+            Assert.Equal("learning", proposal.AutomationDraft.Source);
+            Assert.Equal(proposal.Id, proposal.AutomationDraft.CreatedByLearningProposalId);
+            Assert.Contains("过去 24 小时", proposal.AutomationDraft.Prompt, StringComparison.Ordinal);
+            Assert.Equal(AutomationSuggestionQualityDecisions.ReadyDraft, proposal.AutomationQuality!.Decision);
+            Assert.Contains("过去 24 小时", proposal.AutomationSuggestionPreview!.RefinedPrompt, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(storagePath))
+                Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AutomationSuggestionRefinerAndPreviewBuilder_ConversationReview_AddStableDraftAndExplanation()
+    {
+        var originalPrompt = "比较当前的会话内容，做一个整体的评估";
+        var intent = new AutomationSuggestionIntent
+        {
+            Intent = "daily_conversation_review",
+            TargetObject = "recent_conversations",
+            ExpectedOutcome = "actionable_followup_list",
+            CadenceHint = "daily",
+            TriggerEvidence = [originalPrompt],
+            Ambiguities = ["当前会话在定时任务中没有稳定含义"]
+        };
+        var refiner = new AutomationSuggestionRefiner();
+        var candidate = refiner.Refine(originalPrompt, intent);
+        var quality = new AutomationSuggestionQualityGate().Evaluate(
+            candidate,
+            intent,
+            [],
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "cron" });
+        var preview = new AutomationSuggestionPreviewBuilder().Build(originalPrompt, candidate, intent, quality);
+
+        Assert.Equal("每日回顾会话中的待办和风险", candidate.Name);
+        Assert.False(candidate.Enabled);
+        Assert.True(candidate.IsDraft);
+        Assert.Contains("过去 24 小时", candidate.Prompt, StringComparison.Ordinal);
+        Assert.Contains("只输出", candidate.Prompt, StringComparison.Ordinal);
+        Assert.Equal(AutomationSuggestionQualityDecisions.ReadyDraft, quality.Decision);
+        Assert.Equal(originalPrompt, preview.OriginalPrompt);
+        Assert.Equal(candidate.Prompt, preview.RefinedPrompt);
+        Assert.Contains("unfinishedItems", preview.ExpectedOutputSections);
+        Assert.Contains(preview.Warnings, static warning => warning.Contains("过去 24 小时", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AutomationSuggestionQualityGate_VaguePrompt_StaysLearningOnlyWithBlockingIssues()
+    {
+        var gate = new AutomationSuggestionQualityGate();
+        var result = gate.Evaluate(
+            new AutomationDefinition
+            {
+                Id = "suggested:vague",
+                Name = "比较当前的会话内容，做一个整体的评估",
+                Enabled = false,
+                Schedule = "@daily",
+                Prompt = "比较当前的会话内容，做一个整体的评估",
+                DeliveryChannelId = "cron",
+                IsDraft = true,
+                Source = "learning"
+            },
+            new AutomationSuggestionIntent
+            {
+                Intent = "daily_conversation_review",
+                TargetObject = "recent_conversations",
+                ExpectedOutcome = "actionable_followup_list",
+                CadenceHint = "daily"
+            },
+            [],
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "cron" });
+
+        Assert.Equal(AutomationSuggestionQualityDecisions.LearningOnly, result.Decision);
+        Assert.Contains(result.BlockingIssues, static issue => issue.Contains("名称和提示词", StringComparison.Ordinal));
+        Assert.Contains(result.BlockingIssues, static issue => issue.Contains("稳定输入范围", StringComparison.Ordinal));
+        Assert.Contains(result.BlockingIssues, static issue => issue.Contains("预期输出", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AutomationSuggestionQualityGate_RefinedConversationReview_IsReadyDraft()
+    {
+        var gate = new AutomationSuggestionQualityGate();
+        var result = gate.Evaluate(
+            new AutomationDefinition
+            {
+                Id = "suggested:refined",
+                Name = "每日回顾会话中的待办和风险",
+                Enabled = false,
+                Schedule = "@daily",
+                Prompt = "每天回顾过去 24 小时内的会话内容。只输出：1) 未完成事项；2) 用户明确要求记住的偏好；3) 需要跟进的风险；4) 建议的下一步动作。如果没有值得跟进的内容，输出今天没有需要跟进的事项。",
+                DeliveryChannelId = "cron",
+                IsDraft = true,
+                Source = "learning"
+            },
+            new AutomationSuggestionIntent
+            {
+                Intent = "daily_conversation_review",
+                TargetObject = "recent_conversations",
+                ExpectedOutcome = "actionable_followup_list",
+                CadenceHint = "daily"
+            },
+            [],
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "cron" });
+
+        Assert.Equal(AutomationSuggestionQualityDecisions.ReadyDraft, result.Decision);
+        Assert.True(result.Score >= 85);
+        Assert.Empty(result.BlockingIssues);
+    }
+
+    [Fact]
+    public void AutomationSuggestionIntentExtractor_ConversationReviewPrompt_KeepsAmbiguitiesAndEvidence()
+    {
+        var extractor = new AutomationSuggestionIntentExtractor();
+        var intent = extractor.Extract(
+            "比较当前的会话内容，做一个整体的评估",
+            [
+                new SessionSearchHit
+                {
+                    SessionId = "sess-search-1",
+                    ChannelId = "web",
+                    SenderId = "operator",
+                    Role = "user",
+                    Snippet = "比较当前的会话内容，做一个整体的评估",
+                    Score = 0.9f
+                }
+            ]);
+
+        Assert.Equal("daily_conversation_review", intent.Intent);
+        Assert.Equal("recent_conversations", intent.TargetObject);
+        Assert.Equal("actionable_followup_list", intent.ExpectedOutcome);
+        Assert.Equal("daily", intent.CadenceHint);
+        Assert.Contains("比较当前的会话内容，做一个整体的评估", intent.TriggerEvidence);
+        Assert.Contains(intent.Ambiguities, static ambiguity => ambiguity.Contains("输入范围", StringComparison.Ordinal));
+        Assert.Contains(intent.Ambiguities, static ambiguity => ambiguity.Contains("比较基准", StringComparison.Ordinal));
+        Assert.Contains(intent.Ambiguities, static ambiguity => ambiguity.Contains("输出格式", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task LearningProposal_AutomationQualityMetadata_RoundTripsThroughFileStore()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var store = new FileFeatureStore(storagePath);
+            var proposal = new LearningProposal
+            {
+                Id = "lp_quality_roundtrip",
+                Kind = LearningProposalKind.AutomationSuggestion,
+                Status = LearningProposalStatus.Pending,
+                Title = "每日回顾会话中的待办和风险",
+                Summary = "质量门禁通过的自动化建议。",
+                AutomationIntent = new AutomationSuggestionIntent
+                {
+                    Intent = "daily_conversation_review",
+                    TargetObject = "recent_conversations",
+                    ExpectedOutcome = "actionable_followup_list",
+                    CadenceHint = "daily",
+                    TriggerEvidence = ["用户多次要求回顾会话"],
+                    Ambiguities = ["原始提示中的当前会话没有稳定范围"]
+                },
+                AutomationQuality = new AutomationSuggestionQualityResult
+                {
+                    Score = 88,
+                    Decision = AutomationSuggestionQualityDecisions.ReadyDraft,
+                    Dimensions =
+                    [
+                        new AutomationSuggestionQualityDimension
+                        {
+                            Name = "input_scope",
+                            Score = 90,
+                            Reason = "提示词限定过去 24 小时。"
+                        }
+                    ],
+                    Warnings = ["原始提示已被精炼。"]
+                },
+                AutomationSuggestionPreview = new LearningAutomationSuggestionPreview
+                {
+                    WhySuggested = "用户多次要求会话回顾。",
+                    OriginalPrompt = "比较当前的会话内容，做一个整体的评估",
+                    RefinedPrompt = "每天回顾过去 24 小时内的会话内容。",
+                    QualityScore = 88,
+                    QualityDecision = AutomationSuggestionQualityDecisions.ReadyDraft,
+                    Warnings = ["当前会话已替换为过去 24 小时。"],
+                    ExpectedOutputSections = ["unfinishedItems", "risks", "nextActions"]
+                },
+                FeedbackEvents =
+                [
+                    new LearningProposalFeedbackEvent
+                    {
+                        Action = LearningProposalFeedbackActions.AcceptedWithoutEdits,
+                        ChangedFields = [],
+                        BeforeQualityScore = 88,
+                        AfterQualityScore = 88,
+                        Summary = "用户直接接受提案。",
+                        CreatedAtUtc = DateTimeOffset.Parse("2026-05-23T00:00:00Z")
+                    }
+                ]
+            };
+
+            await store.SaveProposalAsync(proposal, CancellationToken.None);
+
+            var loaded = await store.GetProposalAsync("lp_quality_roundtrip", CancellationToken.None);
+            Assert.NotNull(loaded);
+            Assert.Equal("daily_conversation_review", loaded.AutomationIntent!.Intent);
+            Assert.Equal(88, loaded.AutomationQuality!.Score);
+            Assert.Equal(AutomationSuggestionQualityDecisions.ReadyDraft, loaded.AutomationQuality.Decision);
+            Assert.Equal("每天回顾过去 24 小时内的会话内容。", loaded.AutomationSuggestionPreview!.RefinedPrompt);
+            Assert.Single(loaded.FeedbackEvents);
+            Assert.Equal(LearningProposalFeedbackActions.AcceptedWithoutEdits, loaded.FeedbackEvents[0].Action);
+        }
+        finally
+        {
+            if (Directory.Exists(storagePath))
+                Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task GatewayAutomationService_SaveLearnedAutomationEdit_RecordsFeedbackEvent()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var store = new FileFeatureStore(storagePath);
+            await store.SaveProposalAsync(new LearningProposal
+            {
+                Id = "lp_edit_feedback",
+                Kind = LearningProposalKind.AutomationSuggestion,
+                Status = LearningProposalStatus.Approved,
+                Title = "每日回顾会话中的待办和风险",
+                Summary = "Feedback test.",
+                AutomationQuality = new AutomationSuggestionQualityResult
+                {
+                    Score = 88,
+                    Decision = AutomationSuggestionQualityDecisions.ReadyDraft
+                },
+                AppliedAutomationId = "suggested:editfeed"
+            }, CancellationToken.None);
+            await store.SaveAutomationAsync(new AutomationDefinition
+            {
+                Id = "suggested:editfeed",
+                Name = "每日回顾会话中的待办和风险",
+                Enabled = false,
+                Schedule = "@daily",
+                Prompt = "每天回顾过去 24 小时内的会话内容。只输出：1) 未完成事项。",
+                DeliveryChannelId = "cron",
+                IsDraft = true,
+                Source = "learning",
+                CreatedByLearningProposalId = "lp_edit_feedback"
+            }, CancellationToken.None);
+            var service = new GatewayAutomationService(
+                new GatewayConfig(),
+                store,
+                null!,
+                null!,
+                proposalStore: store);
+
+            await service.SaveAsync(new AutomationDefinition
+            {
+                Id = "suggested:editfeed",
+                Name = "每日回顾会话中的待办和风险",
+                Enabled = false,
+                Schedule = "@daily",
+                Prompt = "每天回顾过去 24 小时内的会话内容。只输出：1) 未完成事项；2) 风险。",
+                DeliveryChannelId = "cron",
+                IsDraft = true,
+                Source = "learning",
+                CreatedByLearningProposalId = "lp_edit_feedback"
+            }, CancellationToken.None);
+
+            var proposal = await store.GetProposalAsync("lp_edit_feedback", CancellationToken.None);
+            Assert.NotNull(proposal);
+            var feedbackEvent = Assert.Single(proposal.FeedbackEvents);
+            Assert.Equal(LearningProposalFeedbackActions.EditedAfterApproval, feedbackEvent.Action);
+            Assert.Equal(["prompt"], feedbackEvent.ChangedFields);
+            Assert.Equal(88, feedbackEvent.BeforeQualityScore);
+        }
+        finally
+        {
+            if (Directory.Exists(storagePath))
+                Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LearningService_AutomationSuggestionReview_RecordsFeedbackEvents()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-learning-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var store = new FileFeatureStore(storagePath);
+            var approveService = new LearningService(
+                new LearningConfig(),
+                store,
+                store,
+                store,
+                new StaticSessionSearchStore([]),
+                NullLogger<LearningService>.Instance);
+            await store.SaveProposalAsync(new LearningProposal
+            {
+                Id = "lp_feedback_accept",
+                Kind = LearningProposalKind.AutomationSuggestion,
+                Status = LearningProposalStatus.Pending,
+                Title = "每日回顾会话中的待办和风险",
+                Summary = "Feedback test.",
+                AutomationDraft = new AutomationDefinition
+                {
+                    Id = "suggested:feedback",
+                    Name = "每日回顾会话中的待办和风险",
+                    Enabled = false,
+                    Schedule = "@daily",
+                    Prompt = "每天回顾过去 24 小时内的会话内容。只输出：1) 未完成事项。",
+                    DeliveryChannelId = "cron",
+                    IsDraft = true,
+                    Source = "learning"
+                },
+                AutomationQuality = new AutomationSuggestionQualityResult
+                {
+                    Score = 88,
+                    Decision = AutomationSuggestionQualityDecisions.ReadyDraft
+                }
+            }, CancellationToken.None);
+            await store.SaveProposalAsync(new LearningProposal
+            {
+                Id = "lp_feedback_reject",
+                Kind = LearningProposalKind.AutomationSuggestion,
+                Status = LearningProposalStatus.Pending,
+                Title = "低质量自动化建议",
+                Summary = "Feedback test.",
+                AutomationQuality = new AutomationSuggestionQualityResult
+                {
+                    Score = 48,
+                    Decision = AutomationSuggestionQualityDecisions.LearningOnly
+                }
+            }, CancellationToken.None);
+
+            var approved = await approveService.ApproveAsync("lp_feedback_accept", Substitute.For<IAgentRuntime>(), CancellationToken.None);
+            var rejected = await approveService.RejectAsync("lp_feedback_reject", "not useful", CancellationToken.None);
+
+            Assert.NotNull(approved);
+            var acceptedEvent = Assert.Single(approved.FeedbackEvents);
+            Assert.Equal(LearningProposalFeedbackActions.AcceptedWithoutEdits, acceptedEvent.Action);
+            Assert.Equal(88, acceptedEvent.BeforeQualityScore);
+            Assert.Equal(88, acceptedEvent.AfterQualityScore);
+            Assert.NotNull(rejected);
+            var rejectedEvent = Assert.Single(rejected.FeedbackEvents);
+            Assert.Equal(LearningProposalFeedbackActions.Rejected, rejectedEvent.Action);
+            Assert.Equal(48, rejectedEvent.BeforeQualityScore);
+            Assert.Null(rejectedEvent.AfterQualityScore);
+            Assert.Equal("not useful", rejectedEvent.Summary);
+        }
+        finally
+        {
+            if (Directory.Exists(storagePath))
+                Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task LearningProposalApproveRollback_SkillDraft_ManagesOnlyLearningSkill()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);

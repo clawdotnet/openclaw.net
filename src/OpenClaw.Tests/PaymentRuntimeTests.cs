@@ -225,18 +225,25 @@ public sealed class PaymentRuntimeTests
     public async Task LinkCliProcessRunner_UsesArgumentListWithoutShellExpansion()
     {
         var runner = new LinkCliProcessRunner();
+        var (root, executable) = CreateEchoExecutable();
+        try
+        {
+            var result = await runner.RunAsync(
+                executable,
+                ["hello;echo injected"],
+                workingDirectory: null,
+                environment: new Dictionary<string, string>(),
+                TimeSpan.FromSeconds(5),
+                CancellationToken.None);
 
-        var result = await runner.RunAsync(
-            "/bin/echo",
-            ["hello;echo injected"],
-            workingDirectory: null,
-            environment: new Dictionary<string, string>(),
-            TimeSpan.FromSeconds(5),
-            CancellationToken.None);
-
-        Assert.Equal(0, result.ExitCode);
-        Assert.Contains("hello;echo injected", result.Stdout, StringComparison.Ordinal);
-        Assert.DoesNotContain("injected\ninjected", result.Stdout, StringComparison.Ordinal);
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains("hello;echo injected", result.Stdout, StringComparison.Ordinal);
+            Assert.DoesNotContain("injected\ninjected", result.Stdout, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]
@@ -334,6 +341,24 @@ public sealed class PaymentRuntimeTests
 
         public ValueTask<ApprovalResult> RequestApprovalAsync(ApprovalRequest request, CancellationToken ct)
             => ValueTask.FromResult(new ApprovalResult { Approved = _approved, Source = "test" });
+    }
+
+    private static (string Root, string Executable) CreateEchoExecutable()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "openclaw-payment-runner-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var executable = Path.Combine(root, OperatingSystem.IsWindows() ? "echo-args.cmd" : "echo-args");
+        if (OperatingSystem.IsWindows())
+        {
+            File.WriteAllText(executable, "@echo off\r\necho %*\r\n");
+        }
+        else
+        {
+            File.WriteAllText(executable, "#!/bin/sh\nprintf '%s\\n' \"$1\"\n");
+            File.SetUnixFileMode(executable, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        return (root, executable);
     }
 
     private sealed class StaticLinkRunner : ILinkCliCommandRunner

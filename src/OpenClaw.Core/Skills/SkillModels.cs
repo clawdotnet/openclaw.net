@@ -34,6 +34,9 @@ public sealed class SkillLoadConfig
     /// <summary>Load managed/local skills from ~/.openclaw/skills.</summary>
     public bool IncludeManaged { get; set; } = true;
 
+    /// <summary>Override the managed/local skills directory. Defaults to ~/.openclaw/skills.</summary>
+    public string? ManagedRoot { get; set; }
+
     /// <summary>Load workspace skills from $OPENCLAW_WORKSPACE/skills.</summary>
     public bool IncludeWorkspace { get; set; } = true;
 

@@ -214,14 +214,9 @@ public class VideoFrameExtractionServiceTests
 @echo off
 set last=
 for %%a in (%*) do set last=%%~a
-echo %last% | findstr /c:"frame-%%03d.jpg" >nul
-if %errorlevel%==0 (
-  for %%d in ("%last%") do set outdir=%%~dpd
-  echo first>"%outdir%frame-001.jpg"
-  echo second>"%outdir%frame-002.jpg"
-  exit /b 0
-)
-echo audio>"%last%"
+for %%d in ("%last%") do set outdir=%%~dpd
+<nul set /p dummy=first>"%outdir%frame-001.jpg"
+<nul set /p dummy=second>"%outdir%frame-002.jpg"
 exit /b 0
 """);
         }

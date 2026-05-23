@@ -483,7 +483,7 @@ internal static partial class AdminEndpoints
                 Automations = automations,
                 ProviderPolicies = includePolicies ? operations.ProviderPolicies.List() : [],
                 ManagedSkills = includeManagedSkills
-                    ? await ListManagedSkillBundleItemsAsync(ctx.RequestAborted)
+                    ? await ListManagedSkillBundleItemsAsync(startup.Config, ctx.RequestAborted)
                     : []
             };
 
@@ -614,7 +614,7 @@ internal static partial class AdminEndpoints
             var shouldReloadSkills = false;
             foreach (var managedSkill in bundle.ManagedSkills)
             {
-                await SaveManagedSkillBundleItemAsync(managedSkill, ctx.RequestAborted);
+                await SaveManagedSkillBundleItemAsync(startup.Config, managedSkill, ctx.RequestAborted);
                 managedSkillsImported++;
                 shouldReloadSkills = true;
             }
