@@ -323,7 +323,10 @@ public sealed class SharedHarnessStateTests
     private static string CreateTempDir()
     {
         var folderName = Path.GetFileName($"openclaw-shared-state-test-{Guid.NewGuid():N}");
-        var tempDir = Path.Combine(Path.GetTempPath(), folderName);
+        if (string.IsNullOrWhiteSpace(folderName) || Path.IsPathRooted(folderName))
+            throw new InvalidOperationException("Generated shared harness state test directory name must be relative.");
+
+        var tempDir = Path.GetFullPath(Path.Join(Path.GetTempPath(), folderName));
         Directory.CreateDirectory(tempDir);
         return tempDir;
     }
