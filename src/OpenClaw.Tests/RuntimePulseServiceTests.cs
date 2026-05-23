@@ -144,6 +144,8 @@ public sealed class RuntimePulseServiceTests
         Assert.Contains("Due heartbeat tasks:", truncated, StringComparison.Ordinal);
         Assert.Contains("runtime-health: Check warnings.", truncated, StringComparison.Ordinal);
         Assert.Contains("<fractal_memory_context>", truncated, StringComparison.Ordinal);
+        Assert.Contains("Source: test", truncated, StringComparison.Ordinal);
+        Assert.Contains("</fractal_memory_context>", truncated, StringComparison.Ordinal);
         Assert.True(prompt.Length > truncated.Length);
     }
 }

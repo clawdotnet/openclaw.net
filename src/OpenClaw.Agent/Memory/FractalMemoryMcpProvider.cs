@@ -199,7 +199,8 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
 
     public void Dispose()
     {
-        DisposeAsync().AsTask().GetAwaiter().GetResult();
+        // Prefer DisposeAsync; synchronous disposal runs async cleanup off the current context.
+        Task.Run(async () => await DisposeAsync().ConfigureAwait(false)).GetAwaiter().GetResult();
         GC.SuppressFinalize(this);
     }
 
@@ -209,9 +210,10 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
             return;
 
         _disposed = true;
-        if (_client is IAsyncDisposable asyncDisposable)
+        var clientToDispose = System.Threading.Volatile.Read(ref _client);
+        if (clientToDispose is IAsyncDisposable asyncDisposable)
             await asyncDisposable.DisposeAsync();
-        else if (_client is IDisposable disposable)
+        else if (clientToDispose is IDisposable disposable)
             disposable.Dispose();
         _clientGate.Dispose();
         GC.SuppressFinalize(this);
