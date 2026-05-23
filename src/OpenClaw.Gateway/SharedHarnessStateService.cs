@@ -25,6 +25,13 @@ internal sealed class SharedHarnessStateService
     {
         ArgumentNullException.ThrowIfNull(state);
 
+        if (!string.IsNullOrWhiteSpace(state.Id))
+        {
+            var requestedId = state.Id.Trim();
+            if (await _store.GetAsync(requestedId, ct) is not null)
+                throw new ArgumentException($"Shared harness state '{requestedId}' already exists.", nameof(state));
+        }
+
         var normalized = Normalize(state, DateTimeOffset.UtcNow, isNew: true);
         await _store.SaveAsync(normalized, ct);
         AppendEvent(normalized, "shared_state_created", "info", $"Created shared harness state '{normalized.Id}'.");
@@ -63,8 +70,9 @@ internal sealed class SharedHarnessStateService
             return null;
 
         var now = DateTimeOffset.UtcNow;
-        var normalizedParticipant = NormalizeParticipant(participant, existing.Participants.Count, now);
-        var participants = existing.Participants
+        var existingParticipants = CleanList(existing.Participants);
+        var normalizedParticipant = NormalizeParticipant(participant, existingParticipants.Count, now);
+        var participants = existingParticipants
             .Where(item => !string.Equals(item.Id, normalizedParticipant.Id, StringComparison.Ordinal))
             .Append(normalizedParticipant)
             .ToArray();
@@ -84,8 +92,9 @@ internal sealed class SharedHarnessStateService
             return null;
 
         var now = DateTimeOffset.UtcNow;
-        var normalizedAction = NormalizeAction(action, existing.Actions.Count, now);
-        var actions = existing.Actions
+        var existingActions = CleanList(existing.Actions);
+        var normalizedAction = NormalizeAction(action, existingActions.Count, now);
+        var actions = existingActions
             .Where(item => !string.Equals(item.Id, normalizedAction.Id, StringComparison.Ordinal))
             .Append(normalizedAction)
             .ToArray();
@@ -109,13 +118,25 @@ internal sealed class SharedHarnessStateService
 
         var now = DateTimeOffset.UtcNow;
         var normalizedStatus = NormalizeStatus(status);
-        var actions = existing.Actions.Select(action =>
+        var found = false;
+        var actions = CleanList(existing.Actions).Select(action =>
             string.Equals(action.Id, actionId, StringComparison.Ordinal)
                 ? CopyAction(
                     action,
                     status: normalizedStatus,
                     completedAtUtc: IsTerminalStatus(normalizedStatus) ? now : action.CompletedAtUtc)
                 : action).ToArray();
+
+        for (var i = 0; i < actions.Length; i++)
+        {
+            if (!string.Equals(actions[i].Id, actionId, StringComparison.Ordinal))
+                continue;
+            found = true;
+            break;
+        }
+
+        if (!found)
+            throw new ArgumentException($"Action '{actionId}' was not found in shared harness state '{stateId}'.", nameof(actionId));
 
         var updated = Copy(existing, actions: actions, updatedAtUtc: now);
         await _store.SaveAsync(updated, ct);
@@ -153,7 +174,7 @@ internal sealed class SharedHarnessStateService
 
     private static void DetectResourceConflicts(SharedHarnessState state, List<HarnessConflict> conflicts)
     {
-        var actions = state.Actions.Where(static action => action is not null).ToArray();
+        var actions = CleanList(state.Actions).ToArray();
         for (var i = 0; i < actions.Length; i++)
         {
             for (var j = i + 1; j < actions.Length; j++)
@@ -207,9 +228,10 @@ internal sealed class SharedHarnessStateService
 
     private static void DetectAssumptionConflicts(SharedHarnessState state, List<HarnessConflict> conflicts)
     {
-        var assumptions = state.Assumptions
+        var actionsWithAssumptions = CleanList(state.Actions);
+        var assumptions = CleanList(state.Assumptions)
             .Select(item => (Owner: "state", Action: (HarnessStateAction?)null, Assumption: item))
-            .Concat(state.Actions.SelectMany(action => action.Assumptions.Select(item => (Owner: action.Id, Action: (HarnessStateAction?)action, Assumption: item))))
+            .Concat(actionsWithAssumptions.SelectMany(action => CleanList(action.Assumptions).Select(item => (Owner: action.Id, Action: (HarnessStateAction?)action, Assumption: item))))
             .Where(item => !string.IsNullOrWhiteSpace(item.Assumption.Key))
             .ToArray();
 
@@ -230,7 +252,7 @@ internal sealed class SharedHarnessStateService
                     .Distinct(StringComparer.Ordinal)
                     .ToArray();
                 var participants = actions
-                    .Select(actionId => state.Actions.FirstOrDefault(action => string.Equals(action.Id, actionId, StringComparison.Ordinal))?.ParticipantId)
+                    .Select(actionId => actionsWithAssumptions.FirstOrDefault(action => string.Equals(action.Id, actionId, StringComparison.Ordinal))?.ParticipantId)
                     .Where(static item => !string.IsNullOrWhiteSpace(item))
                     .Select(static item => item!)
                     .Distinct(StringComparer.Ordinal)
@@ -254,13 +276,12 @@ internal sealed class SharedHarnessStateService
 
     private static void DetectVerifierConflicts(SharedHarnessState state, List<HarnessConflict> conflicts)
     {
-        foreach (var action in state.Actions)
+        var stateVerifierObligations = CleanList(state.VerifierObligations);
+        foreach (var action in CleanList(state.Actions).Where(action => IsHighRisk(action.RiskLevel) && CleanList(action.WriteSet).Count > 0))
         {
-            if (!IsHighRisk(action.RiskLevel) || action.WriteSet.Count == 0)
-                continue;
-
-            var hasRequiredVerifier = action.VerifierObligations.Any(static item => item.Required)
-                || state.VerifierObligations.Any(static item => item.Required);
+            var writeSet = CleanList(action.WriteSet);
+            var hasRequiredVerifier = CleanList(action.VerifierObligations).Any(static item => item.Required)
+                || stateVerifierObligations.Any(static item => item.Required);
             if (hasRequiredVerifier)
                 continue;
 
@@ -271,7 +292,7 @@ internal sealed class SharedHarnessStateService
                 Summary = $"High-risk write action '{action.Id}' has no required verifier obligation.",
                 Actions = [action.Id],
                 Participants = string.IsNullOrWhiteSpace(action.ParticipantId) ? [] : [action.ParticipantId],
-                Resources = action.WriteSet,
+                Resources = writeSet,
                 Policy = HarnessConflictPolicies.Escalate,
                 Severity = HarnessContractRiskLevels.High,
                 Status = HarnessStateStatuses.Active,
@@ -310,16 +331,13 @@ internal sealed class SharedHarnessStateService
     }
 
     private static IEnumerable<HarnessResourceRef> MatchingResources(
-        IReadOnlyList<HarnessResourceRef> left,
-        IReadOnlyList<HarnessResourceRef> right)
+        IReadOnlyList<HarnessResourceRef>? left,
+        IReadOnlyList<HarnessResourceRef>? right)
     {
-        foreach (var leftResource in left)
+        foreach (var leftResource in CleanList(left))
         {
-            foreach (var rightResource in right)
-            {
-                if (ResourcesMatch(leftResource, rightResource))
-                    yield return PreferDescriptiveResource(leftResource, rightResource);
-            }
+            foreach (var rightResource in CleanList(right).Where(resource => ResourcesMatch(leftResource, resource)))
+                yield return PreferDescriptiveResource(leftResource, rightResource);
         }
     }
 
@@ -328,11 +346,13 @@ internal sealed class SharedHarnessStateService
         HarnessStateAction writer,
         IReadOnlyList<HarnessResourceRef> resources)
     {
-        if (reader.VersionDependencies.Count == 0 && writer.VersionDependencies.Count == 0)
+        var readerDependencies = CleanList(reader.VersionDependencies);
+        var writerDependencies = CleanList(writer.VersionDependencies);
+        if (readerDependencies.Count == 0 && writerDependencies.Count == 0)
             return false;
 
-        return reader.VersionDependencies.Any(dep => dep.Resource is null || resources.Any(resource => ResourcesMatch(dep.Resource, resource)))
-            || writer.VersionDependencies.Any(dep => dep.Resource is null || resources.Any(resource => ResourcesMatch(dep.Resource, resource)));
+        return readerDependencies.Any(dep => dep.Resource is null || resources.Any(resource => ResourcesMatch(dep.Resource, resource)))
+            || writerDependencies.Any(dep => dep.Resource is null || resources.Any(resource => ResourcesMatch(dep.Resource, resource)));
     }
 
     private static bool ResourcesMatch(HarnessResourceRef? left, HarnessResourceRef? right)
@@ -352,16 +372,11 @@ internal sealed class SharedHarnessStateService
         if (string.IsNullOrWhiteSpace(left.Path) || string.IsNullOrWhiteSpace(right.Path))
             return false;
 
-        if (!string.IsNullOrWhiteSpace(left.Kind) &&
-            !string.IsNullOrWhiteSpace(right.Kind) &&
-            !string.Equals(left.Kind, right.Kind, StringComparison.OrdinalIgnoreCase))
-            return false;
-
         var leftPath = NormalizeResourcePath(left.Path);
         var rightPath = NormalizeResourcePath(right.Path);
         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         if (string.Equals(leftPath, rightPath, comparison))
-            return true;
+            return KindsMatch(left, right) || IsDirectoryResource(left) || IsDirectoryResource(right);
 
         if (!IsDirectoryResource(left) && !IsDirectoryResource(right))
             return false;
@@ -374,6 +389,11 @@ internal sealed class SharedHarnessStateService
 
     private static bool IsDirectoryResource(HarnessResourceRef resource)
         => string.Equals(resource.Kind, HarnessContractResourceKinds.Directory, StringComparison.OrdinalIgnoreCase);
+
+    private static bool KindsMatch(HarnessResourceRef left, HarnessResourceRef right)
+        => string.IsNullOrWhiteSpace(left.Kind)
+            || string.IsNullOrWhiteSpace(right.Kind)
+            || string.Equals(left.Kind, right.Kind, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsPathPrefix(string prefix, string value, StringComparison comparison)
         => value.Length > prefix.Length

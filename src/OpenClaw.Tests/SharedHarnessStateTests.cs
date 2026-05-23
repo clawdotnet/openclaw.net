@@ -101,6 +101,30 @@ public sealed class SharedHarnessStateTests
     }
 
     [Fact]
+    public async Task Service_CreateAsync_RejectsDuplicateCallerSuppliedId()
+    {
+        var service = CreateService(out _);
+        await service.CreateAsync(new SharedHarnessState { Id = "shs_duplicate", SessionId = "session-a" }, CancellationToken.None);
+
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await service.CreateAsync(new SharedHarnessState { Id = "shs_duplicate", SessionId = "session-b" }, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Service_UpdateActionStatus_RejectsMissingAction()
+    {
+        var service = CreateService(out _);
+        var created = await service.CreateAsync(new SharedHarnessState
+        {
+            Id = "shs_missing_action",
+            Actions = [new HarnessStateAction { Id = "existing" }]
+        }, CancellationToken.None);
+
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await service.UpdateActionStatusAsync(created.Id, "missing", HarnessStateStatuses.Completed, CancellationToken.None));
+    }
+
+    [Fact]
     public void ConflictDetection_DetectsWriteWriteConflict()
     {
         var service = CreateService(out _);
@@ -167,6 +191,32 @@ public sealed class SharedHarnessStateTests
     }
 
     [Fact]
+    public void ConflictDetection_DetectsDirectoryFileConflict()
+    {
+        var service = CreateService(out _);
+        var conflicts = service.DetectConflicts(new SharedHarnessState
+        {
+            Id = "shs_directory_file",
+            Actions =
+            [
+                new HarnessStateAction
+                {
+                    Id = "directory-owner",
+                    WriteSet = [new HarnessResourceRef { Kind = HarnessContractResourceKinds.Directory, Path = "docs" }]
+                },
+                new HarnessStateAction
+                {
+                    Id = "file-writer",
+                    WriteSet = [new HarnessResourceRef { Kind = HarnessContractResourceKinds.File, Path = "docs/SHARED_HARNESS_STATE.md" }]
+                }
+            ]
+        });
+
+        var conflict = Assert.Single(conflicts);
+        Assert.Equal(HarnessConflictTypes.WriteWrite, conflict.Type);
+    }
+
+    [Fact]
     public void ConflictDetection_DetectsAssumptionConflict()
     {
         var service = CreateService(out _);
@@ -182,6 +232,35 @@ public sealed class SharedHarnessStateTests
 
         var conflict = Assert.Single(conflicts);
         Assert.Equal(HarnessConflictTypes.Assumption, conflict.Type);
+    }
+
+    [Fact]
+    public void ConflictDetection_IgnoresNullJsonEntries()
+    {
+        var service = CreateService(out _);
+        const string json = """
+        {
+          "id": "shs_null_entries",
+          "assumptions": [null, { "key": "branch", "value": "main" }],
+          "verifierObligations": [null],
+          "actions": [
+            null,
+            {
+              "id": "writer",
+              "riskLevel": "high",
+              "writeSet": [null, { "kind": "file", "path": "README.md" }],
+              "assumptions": [null, { "key": "branch", "value": "release" }],
+              "verifierObligations": [null]
+            }
+          ]
+        }
+        """;
+        var state = JsonSerializer.Deserialize(json, CoreJsonContext.Default.SharedHarnessState);
+
+        var conflicts = service.DetectConflicts(state!);
+
+        Assert.Contains(conflicts, conflict => conflict.Type == HarnessConflictTypes.Assumption);
+        Assert.Contains(conflicts, conflict => conflict.Type == HarnessConflictTypes.VerifierObligation);
     }
 
     [Fact]
@@ -243,7 +322,8 @@ public sealed class SharedHarnessStateTests
 
     private static string CreateTempDir()
     {
-        var tempDir = Path.Combine(Path.GetTempPath(), $"openclaw-shared-state-test-{Guid.NewGuid():N}");
+        var folderName = Path.GetFileName($"openclaw-shared-state-test-{Guid.NewGuid():N}");
+        var tempDir = Path.Combine(Path.GetTempPath(), folderName);
         Directory.CreateDirectory(tempDir);
         return tempDir;
     }

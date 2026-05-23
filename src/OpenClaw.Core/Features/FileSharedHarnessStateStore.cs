@@ -48,22 +48,22 @@ public sealed class FileSharedHarnessStateStore : ISharedHarnessStateStore
     {
         query ??= new SharedHarnessStateListQuery();
         var results = new List<SharedHarnessState>();
-        IEnumerable<FileInfo> files;
+        FileInfo[] files;
         try
         {
-            files = new DirectoryInfo(_statesPath).EnumerateFiles("*.json");
+            files = new DirectoryInfo(_statesPath).EnumerateFiles("*.json").ToArray();
         }
-        catch (DirectoryNotFoundException)
+        catch (DirectoryNotFoundException ex)
         {
-            return [];
+            throw new IOException($"Shared harness state directory '{_statesPath}' was not found.", ex);
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
-            return [];
+            throw new IOException($"Access denied while enumerating shared harness state directory '{_statesPath}'.", ex);
         }
-        catch (IOException)
+        catch (IOException ex)
         {
-            return [];
+            throw new IOException($"Failed to enumerate shared harness state directory '{_statesPath}'.", ex);
         }
 
         foreach (var file in files)
@@ -161,17 +161,17 @@ public sealed class FileSharedHarnessStateStore : ISharedHarnessStateStore
         {
             throw;
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            return default;
+            throw new InvalidOperationException($"Shared harness state file '{file.FullName}' contains invalid JSON.", ex);
         }
-        catch (IOException)
+        catch (IOException ex)
         {
-            return default;
+            throw new IOException($"Failed to read shared harness state file '{file.FullName}'.", ex);
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
-            return default;
+            throw new IOException($"Access denied while reading shared harness state file '{file.FullName}'.", ex);
         }
     }
 

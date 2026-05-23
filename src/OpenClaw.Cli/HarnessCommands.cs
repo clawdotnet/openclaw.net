@@ -129,25 +129,69 @@ internal static class HarnessCommands
             {
                 if (!TryGetPosition(parsed, 1, "id", error, output, out var id))
                     return 2;
-                var response = await client.GetSharedHarnessStateAsync(id, ct);
-                Write(output, response, CoreJsonContext.Default.SharedHarnessStateDetailResponse, json, TextStateDetail);
-                return response.State is null ? 1 : 0;
+                try
+                {
+                    var response = await client.GetSharedHarnessStateAsync(id, ct);
+                    Write(output, response, CoreJsonContext.Default.SharedHarnessStateDetailResponse, json, TextStateDetail);
+                    return response.State is null ? 1 : 0;
+                }
+                catch (HttpRequestException ex) when (IsNotFound(ex))
+                {
+                    Write(output, new SharedHarnessStateDetailResponse(), CoreJsonContext.Default.SharedHarnessStateDetailResponse, json, TextStateDetail);
+                    return 1;
+                }
+                catch (HttpRequestException ex)
+                {
+                    WriteHttpError(error, ex);
+                    return 1;
+                }
             }
             case "session":
             {
                 if (!TryGetPosition(parsed, 1, "session-id", error, output, out var sessionId))
                     return 2;
-                var response = await client.GetSharedHarnessStateForSessionAsync(sessionId, ct);
-                Write(output, response, CoreJsonContext.Default.SharedHarnessStateDetailResponse, json, TextStateDetail);
-                return response.State is null ? 1 : 0;
+                try
+                {
+                    var response = await client.GetSharedHarnessStateForSessionAsync(sessionId, ct);
+                    Write(output, response, CoreJsonContext.Default.SharedHarnessStateDetailResponse, json, TextStateDetail);
+                    return response.State is null ? 1 : 0;
+                }
+                catch (HttpRequestException ex) when (IsNotFound(ex))
+                {
+                    Write(output, new SharedHarnessStateDetailResponse(), CoreJsonContext.Default.SharedHarnessStateDetailResponse, json, TextStateDetail);
+                    return 1;
+                }
+                catch (HttpRequestException ex)
+                {
+                    WriteHttpError(error, ex);
+                    return 1;
+                }
             }
             case "conflicts":
             {
                 if (!TryGetPosition(parsed, 1, "id", error, output, out var id))
                     return 2;
-                var response = await client.DetectSharedHarnessStateConflictsAsync(id, ct);
-                Write(output, response, CoreJsonContext.Default.SharedHarnessStateMutationResponse, json, TextStateMutation);
-                return response.Success ? 0 : 1;
+                try
+                {
+                    var response = await client.DetectSharedHarnessStateConflictsAsync(id, ct);
+                    Write(output, response, CoreJsonContext.Default.SharedHarnessStateMutationResponse, json, TextStateMutation);
+                    return response.Success ? 0 : 1;
+                }
+                catch (HttpRequestException ex) when (IsNotFound(ex))
+                {
+                    Write(
+                        output,
+                        new SharedHarnessStateMutationResponse { Success = false, Error = "Shared harness state not found." },
+                        CoreJsonContext.Default.SharedHarnessStateMutationResponse,
+                        json,
+                        TextStateMutation);
+                    return 1;
+                }
+                catch (HttpRequestException ex)
+                {
+                    WriteHttpError(error, ex);
+                    return 1;
+                }
             }
             default:
                 error.WriteLine($"Unknown harness state subcommand: {parsed.Positionals[0]}");
@@ -165,6 +209,12 @@ internal static class HarnessCommands
 
     private static int GetIntOption(CliArgs parsed, string name, int fallback)
         => int.TryParse(parsed.GetOption(name), out var value) ? value : fallback;
+
+    private static bool IsNotFound(HttpRequestException ex)
+        => ex.Message.StartsWith("HTTP 404", StringComparison.Ordinal);
+
+    private static void WriteHttpError(TextWriter error, HttpRequestException ex)
+        => error.WriteLine(ex.Message);
 
     private static bool TryGetPosition(CliArgs parsed, int index, string name, TextWriter error, TextWriter output, out string value)
     {

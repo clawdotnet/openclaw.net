@@ -124,8 +124,8 @@ It detects:
 
 Conflict policy defaults are conservative:
 
-- medium or lower risk conflicts use `warn`
-- high or critical risk conflicts use `escalate`
+- medium- or lower-risk conflicts use `warn`
+- high- or critical-risk conflicts use `escalate`
 
 ## What This Does Not Do Yet
 
