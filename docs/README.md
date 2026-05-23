@@ -34,6 +34,12 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [MODEL_PROFILES.md](MODEL_PROFILES.md) | Provider-agnostic named model profiles, including Gemma-family setups. |
 | [PROMPT_CACHING.md](PROMPT_CACHING.md) | Provider-aware prompt caching hints, dialects, diagnostics. |
 | [PULSE.md](PULSE.md) | Runtime Pulse scheduled heartbeat turns, `HEARTBEAT.md`, alert suppression, and operator controls. |
+| [HARNESS_CONTRACTS.md](HARNESS_CONTRACTS.md) | Passive, inspectable Harness Contract records for future plan-execute-verify and evidence workflows. |
+| [EVIDENCE_BUNDLES.md](EVIDENCE_BUNDLES.md) | Passive evidence records for what happened, what was checked, remaining uncertainty, and operator trust. |
+| [PLAN_EXECUTE_VERIFY.md](PLAN_EXECUTE_VERIFY.md) | Optional governed Plan-Execute-Verify mode for high-risk tool execution. |
+| [GOVERNANCE_LEDGER.md](GOVERNANCE_LEDGER.md) | Passive approval and oversight decision history as durable harness state. |
+| [HARNESS_REGRESSION.md](HARNESS_REGRESSION.md) | Offline-first CLI regression checks for harness safety, onboarding, memory, provider-shape, MCP, OpenAI-compatible, and serialization guarantees. |
+| [HARNESS_EVOLUTION.md](HARNESS_EVOLUTION.md) | Review-first proposals for harness changes to policies, routing, memory retrieval, verification, pulse behavior, and tool governance. |
 | [governance/sidecar-pattern.md](governance/sidecar-pattern.md) | Optional central tool-governance middleware, sidecar flow, decisions, and audit fields. |
 | [governance/microsoft-agent-governance.md](governance/microsoft-agent-governance.md) | Microsoft Agent Governance sidecar integration notes and deployment cautions. |
 | [deployment/TAILSCALE.md](deployment/TAILSCALE.md) | Optional Tailscale Serve private runtime access guidance. |
@@ -44,6 +50,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | --- | --- |
 | [testing/agent-testing-harness.md](testing/agent-testing-harness.md) | Scenario-based agent tests, trace artifacts, explicit oracles, CLI usage, xUnit usage, and future runtime/gateway adapter seams. |
 | [testing/ai-assisted-testing-playbook.md](testing/ai-assisted-testing-playbook.md) | Disciplined AI-assisted testing workflow: scenario matrices, oracle requirements, boundary cases, human review, and trace-to-regression loops. |
+| [HARNESS_REGRESSION.md](HARNESS_REGRESSION.md) | `openclaw harness test` for offline regression checks before trusting harness/runtime changes. |
 | [MODEL_PROFILES.md#evaluation-harness](MODEL_PROFILES.md#evaluation-harness) | Existing gateway-backed model/profile evaluation surface exposed by `openclaw eval`. |
 
 ## Channels and Integrations

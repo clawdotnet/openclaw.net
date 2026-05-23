@@ -36,6 +36,8 @@ internal static class Program
                 "payment" => await PaymentCommands.RunAsync(rest),
                 "external" => await ExternalCliCommands.RunAsync(rest),
                 "test" => await TestingCommands.RunAsync(rest),
+                "harness" => await HarnessCommands.RunAsync(rest),
+                "regression" => await HarnessCommands.RunRegressionAliasAsync(rest, Console.Out, Console.Error),
                 "init" => InitCommand.Run(rest),
                 "migrate" => await MigrateAsync(rest),
                 "pulse" => await PulseAsync(rest),
@@ -104,6 +106,8 @@ internal static class Program
               openclaw payment <setup|funding list|virtual-card issue|execute|status> [options]
               openclaw external <list|status|commands|preview|execute> [options]
               openclaw test <init|run|report|gates> [options]
+              openclaw harness <test|regression> [options]
+              openclaw regression test [options]
               openclaw eval <run|compare> [options]
               openclaw accounts <list|add|remove|probe> [options]
               openclaw backends <list|probe|run|session send> [options]
@@ -167,6 +171,8 @@ internal static class Program
               openclaw external list
               openclaw test run
               openclaw test gates
+              openclaw harness test
+              openclaw harness test --category security --strict
               openclaw models list
               openclaw models presets
               openclaw models doctor

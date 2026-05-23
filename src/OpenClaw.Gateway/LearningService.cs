@@ -44,8 +44,250 @@ internal sealed class LearningService
     public ValueTask<IReadOnlyList<LearningProposal>> ListAsync(string? status, string? kind, CancellationToken ct)
         => _proposalStore.ListProposalsAsync(status, kind, ct);
 
+    public async ValueTask<IReadOnlyList<LearningProposal>> ListAsync(
+        string? status,
+        string? kind,
+        string? component,
+        string? risk,
+        CancellationToken ct)
+    {
+        var proposals = await _proposalStore.ListProposalsAsync(status, kind, ct);
+        if (!string.IsNullOrWhiteSpace(component))
+        {
+            var normalizedComponent = NormalizeToken(component);
+            proposals = proposals
+                .Where(item => string.Equals(item.HarnessEvolution?.Component, normalizedComponent, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+        }
+
+        if (!string.IsNullOrWhiteSpace(risk))
+        {
+            var normalizedRisk = NormalizeToken(risk);
+            proposals = proposals
+                .Where(item => string.Equals(item.RiskLevel, normalizedRisk, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+        }
+
+        return proposals;
+    }
+
     public ValueTask<LearningProposal?> GetAsync(string proposalId, CancellationToken ct)
         => _proposalStore.GetProposalAsync(proposalId, ct);
+
+    public async ValueTask<LearningProposal> CreateHarnessChangeProposalAsync(HarnessEvolutionProposalCreateRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        EnsureHarnessEvolutionEnabled();
+
+        var actorId = string.IsNullOrWhiteSpace(request.ActorId) ? "operator:harness" : request.ActorId.Trim();
+        var component = NormalizeToken(request.Component);
+        var changeType = NormalizeOptional(request.ChangeType);
+        var failureMode = NormalizeOptional(request.FailureMode) ?? "Harness behavior may need operator review.";
+        var proposedChange = NormalizeOptional(request.ProposedChange);
+        var riskLevel = NormalizeHarnessRisk(request.RiskLevel, component, proposedChange, changeType);
+        var applyMode = NormalizeApplyMode(request.ApplyMode);
+        var requiresRegression = IsHighOrCriticalRisk(riskLevel) || (request.RequiresRegression ?? false);
+        var confidence = Math.Clamp(request.Confidence ?? 0.45f, 0f, 1f);
+        var validation = ValidateHarnessEvolutionRequest(
+            component,
+            proposedChange,
+            request.PredictedImprovement,
+            request.RollbackPlan,
+            request.FalsificationTests,
+            request.RegressionCategories,
+            request.RelatedHarnessContractIds.Count +
+            request.RelatedEvidenceBundleIds.Count +
+            request.RelatedGovernanceLedgerIds.Count +
+            request.RelatedRegressionReportIds.Count +
+            request.SourceRuntimeEventIds.Count +
+            request.SourceSessionIds.Count,
+            riskLevel,
+            applyMode,
+            request.IsAutoApplicable,
+            requiresRegression);
+        if (validation.Errors.Count > 0)
+            throw new ArgumentException(string.Join(" ", validation.Errors));
+
+        var fingerprint = BuildProposalFingerprint(
+            LearningProposalKind.HarnessChange,
+            actorId,
+            component,
+            changeType,
+            failureMode,
+            proposedChange);
+
+        var harnessEvolution = new HarnessEvolutionProposal
+        {
+            Component = component,
+            ChangeType = changeType,
+            FailureMode = failureMode,
+            ProposedChange = proposedChange!,
+            PredictedImprovement = NormalizeOptional(request.PredictedImprovement),
+            InvariantsToPreserve = NormalizeStringList(request.InvariantsToPreserve),
+            FalsificationTests = NormalizeStringList(request.FalsificationTests),
+            EvaluationPlan = NormalizeOptional(request.EvaluationPlan),
+            CanaryPlan = NormalizeOptional(request.CanaryPlan),
+            RollbackPlan = NormalizeOptional(request.RollbackPlan),
+            RelatedHarnessContractIds = NormalizeStringList(request.RelatedHarnessContractIds),
+            RelatedEvidenceBundleIds = NormalizeStringList(request.RelatedEvidenceBundleIds),
+            RelatedGovernanceLedgerIds = NormalizeStringList(request.RelatedGovernanceLedgerIds),
+            RelatedRegressionReportIds = NormalizeStringList(request.RelatedRegressionReportIds),
+            SourceRuntimeEventIds = NormalizeStringList(request.SourceRuntimeEventIds),
+            SourceSessionIds = NormalizeStringList(request.SourceSessionIds),
+            RiskLevel = riskLevel,
+            Confidence = confidence,
+            ProposalFingerprint = fingerprint,
+            ApplyMode = applyMode,
+            IsAutoApplicable = request.IsAutoApplicable,
+            RequiresRegression = requiresRegression,
+            RegressionCategories = NormalizeStringList(request.RegressionCategories)
+        };
+
+        var allHarnessProposals = await _proposalStore.ListProposalsAsync(null, LearningProposalKind.HarnessChange, ct);
+        var pendingDuplicate = allHarnessProposals.FirstOrDefault(item =>
+            string.Equals(item.Status, LearningProposalStatus.Pending, StringComparison.OrdinalIgnoreCase) &&
+            IsDuplicateProposal(item, fingerprint, actorId, title: null, skillName: null));
+        if (pendingDuplicate is not null)
+        {
+            var merged = MergeHarnessEvolutionDuplicate(pendingDuplicate, harnessEvolution, validation.Warnings);
+            await _proposalStore.SaveProposalAsync(merged, ct);
+            return merged;
+        }
+
+        var recentReviewedDuplicate = allHarnessProposals.FirstOrDefault(item =>
+            (string.Equals(item.Status, LearningProposalStatus.Approved, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(item.Status, LearningProposalStatus.Rejected, StringComparison.OrdinalIgnoreCase)) &&
+            item.UpdatedAtUtc >= DateTimeOffset.UtcNow.AddDays(-30) &&
+            IsDuplicateProposal(item, fingerprint, actorId, title: null, skillName: null));
+        if (recentReviewedDuplicate is not null)
+            return recentReviewedDuplicate;
+
+        var now = DateTimeOffset.UtcNow;
+        var sourceSessionIds = NormalizeStringList(request.SourceSessionIds);
+        var sourceCount = Math.Max(1, Math.Max(harnessEvolution.SourceRuntimeEventIds.Count, sourceSessionIds.Count));
+        var proposal = new LearningProposal
+        {
+            Id = $"lp_{Guid.NewGuid():N}"[..20],
+            Kind = LearningProposalKind.HarnessChange,
+            Status = LearningProposalStatus.Pending,
+            ActorId = actorId,
+            Title = NormalizeOptional(request.Title) ?? BuildHarnessEvolutionTitle(component),
+            Summary = NormalizeOptional(request.Summary) ?? failureMode,
+            HarnessEvolution = harnessEvolution,
+            SourceSessionIds = sourceSessionIds,
+            RepeatedCount = sourceCount,
+            ProposalFingerprint = fingerprint,
+            RiskLevel = riskLevel,
+            Confidence = confidence,
+            CreatedReason = "Harness evolution proposal created for operator review.",
+            ValidationStatus = validation.Warnings.Count > 0
+                ? LearningProposalValidationStatuses.Warning
+                : LearningProposalValidationStatuses.Valid,
+            ValidationWarnings = validation.Warnings,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        };
+
+        await _proposalStore.SaveProposalAsync(proposal, ct);
+        return proposal;
+    }
+
+    public async ValueTask<HarnessEvolutionDetectionResponse> DetectHarnessChangeProposalsAsync(
+        RuntimeEventStore runtimeEvents,
+        HarnessEvolutionDetectionRequest? request,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(runtimeEvents);
+        EnsureHarnessEvolutionEnabled();
+
+        request ??= new HarnessEvolutionDetectionRequest();
+        var lookbackHours = Math.Clamp(request.LookbackHours ?? _config.HarnessEvolutionLookbackHours, 1, 24 * 30);
+        var threshold = Math.Clamp(request.Threshold ?? _config.HarnessEvolutionProposalThreshold, 2, 100);
+        var limit = Math.Clamp(request.Limit ?? 250, 10, 500);
+        var events = runtimeEvents.Query(new RuntimeEventQuery
+        {
+            FromUtc = DateTimeOffset.UtcNow.AddHours(-lookbackHours),
+            Limit = limit
+        });
+
+        var grouped = events
+            .Where(static item =>
+                string.Equals(item.Severity, "warning", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(item.Severity, "error", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(static item => new
+            {
+                Component = NormalizeRuntimeGroupValue(item.Component),
+                Action = NormalizeRuntimeGroupValue(item.Action),
+                Summary = NormalizeForFingerprint(item.Summary)
+            })
+            .ToArray();
+
+        var proposals = new List<LearningProposal>();
+        var groupsMeetingThreshold = 0;
+        foreach (var group in grouped.Where(group => group.Count() >= threshold))
+        {
+            ct.ThrowIfCancellationRequested();
+            groupsMeetingThreshold++;
+            var items = group.OrderByDescending(static item => item.TimestampUtc).ToArray();
+            var component = MapRuntimeComponentToHarnessComponent(group.Key.Component);
+            var action = group.Key.Action;
+            var proposal = await CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
+            {
+                ActorId = "operator:harness",
+                Title = $"Repeated {component} runtime signal",
+                Summary = $"Detected {items.Length} repeated {group.Key.Component}/{action} warning or error events.",
+                Component = component,
+                ChangeType = "runtime_signal_review",
+                FailureMode = $"Runtime component '{group.Key.Component}' action '{action}' repeatedly emitted warning or error events.",
+                ProposedChange = $"Review the '{group.Key.Component}' '{action}' harness behavior and adjust policy, validation, routing, or diagnostics if the repeated signal is actionable.",
+                PredictedImprovement = "Reduce repeated runtime warnings and improve harness reliability without changing behavior silently.",
+                InvariantsToPreserve =
+                [
+                    "No silent harness mutation",
+                    "Keep durable changes review-first",
+                    "Preserve existing runtime behavior unless an operator applies a reviewed change"
+                ],
+                FalsificationTests = [BuildRegressionCategoryHint(component)],
+                RollbackPlan = "Reject or ignore this proposal; no runtime state is mutated by the proposal itself.",
+                SourceRuntimeEventIds = items.Select(static item => item.Id).ToArray(),
+                SourceSessionIds = items.Select(static item => item.SessionId ?? "").Where(static item => !string.IsNullOrWhiteSpace(item)).Distinct(StringComparer.Ordinal).ToArray(),
+                Confidence = Math.Clamp(items.Length / (2f * threshold), 0.45f, 0.8f),
+                RequiresRegression = IsRegressionRecommendedForComponent(component),
+                RegressionCategories = [MapComponentToRegressionCategory(component)]
+            }, ct);
+            proposals.Add(proposal);
+        }
+
+        return new HarnessEvolutionDetectionResponse
+        {
+            Proposals = proposals,
+            GroupsEvaluated = grouped.Length,
+            GroupsMeetingThreshold = groupsMeetingThreshold
+        };
+    }
+
+    public async ValueTask<LearningProposal?> LinkHarnessGovernanceLedgerAsync(string proposalId, string governanceLedgerId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(proposalId) || string.IsNullOrWhiteSpace(governanceLedgerId))
+            return null;
+
+        var proposal = await _proposalStore.GetProposalAsync(proposalId, ct);
+        if (proposal is null)
+            return null;
+        if (proposal.HarnessEvolution is null)
+            throw new InvalidOperationException("Harness governance links can only be attached to harness change proposals.");
+
+        var updatedHarness = CopyHarnessEvolution(
+            proposal.HarnessEvolution,
+            relatedGovernanceLedgerIds: proposal.HarnessEvolution.RelatedGovernanceLedgerIds
+                .Concat([governanceLedgerId])
+                .Where(static item => !string.IsNullOrWhiteSpace(item))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray());
+        var updated = CopyProposal(proposal, harnessEvolution: updatedHarness, statusUpdatedAtUtc: DateTimeOffset.UtcNow);
+        await _proposalStore.SaveProposalAsync(updated, ct);
+        return updated;
+    }
 
     public async ValueTask<LearningProposalDetailResponse?> GetDetailAsync(string proposalId, CancellationToken ct)
     {
@@ -175,6 +417,8 @@ internal sealed class LearningService
                 await SaveManagedSkillAsync(proposal.SkillName ?? proposal.Title, proposal.DraftContent, proposal.Id, proposal.DraftContentHash, ct);
                 await runtime.ReloadSkillsAsync(ct);
                 break;
+            case LearningProposalKind.HarnessChange:
+                break;
         }
 
         var managedSkillPath = string.Equals(proposal.Kind, LearningProposalKind.SkillDraft, StringComparison.OrdinalIgnoreCase)
@@ -199,7 +443,9 @@ internal sealed class LearningService
                 : proposal.ManagedSkillMetadata,
             statusUpdatedAtUtc: approvedAtUtc,
             reviewedAtUtc: approvedAtUtc,
-            reviewNotes: "approved",
+            reviewNotes: string.Equals(proposal.Kind, LearningProposalKind.HarnessChange, StringComparison.OrdinalIgnoreCase)
+                ? "approved; manual application required"
+                : "approved",
             rolledBack: false,
             rolledBackAtUtc: null,
             rollbackReason: null);
@@ -980,6 +1226,314 @@ Use it when repeated requests resemble the sessions that produced this draft.
             repeatedCount: Math.Max(proposal.RepeatedCount, repeatedCount ?? proposal.RepeatedCount),
             statusUpdatedAtUtc: DateTimeOffset.UtcNow);
 
+    private static LearningProposal MergeHarnessEvolutionDuplicate(
+        LearningProposal proposal,
+        HarnessEvolutionProposal harnessEvolution,
+        IReadOnlyList<string> validationWarnings)
+    {
+        var existingRuntimeEventIds = proposal.HarnessEvolution?.SourceRuntimeEventIds ?? [];
+        var existingSessionIds = proposal.HarnessEvolution?.SourceSessionIds ?? proposal.SourceSessionIds;
+        var newRuntimeEventCount = harnessEvolution.SourceRuntimeEventIds.Except(existingRuntimeEventIds, StringComparer.Ordinal).Count();
+        var newSessionCount = harnessEvolution.SourceSessionIds.Except(existingSessionIds, StringComparer.Ordinal).Count();
+        var additionalSignals = Math.Max(newRuntimeEventCount, newSessionCount);
+        var mergedRisk = MaxRiskLevel(proposal.HarnessEvolution?.RiskLevel ?? proposal.RiskLevel, harnessEvolution.RiskLevel);
+        var mergedRequiresRegression = (proposal.HarnessEvolution?.RequiresRegression ?? false) || harnessEvolution.RequiresRegression;
+        var mergedRegressionCategories = (proposal.HarnessEvolution?.RegressionCategories ?? [])
+            .Concat(harnessEvolution.RegressionCategories)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var mergedHarness = proposal.HarnessEvolution is null
+            ? CopyHarnessEvolution(
+                harnessEvolution,
+                riskLevel: mergedRisk,
+                requiresRegression: mergedRequiresRegression,
+                regressionCategories: mergedRegressionCategories)
+            : CopyHarnessEvolution(
+                proposal.HarnessEvolution,
+                invariantsToPreserve: proposal.HarnessEvolution.InvariantsToPreserve.Concat(harnessEvolution.InvariantsToPreserve).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                falsificationTests: proposal.HarnessEvolution.FalsificationTests.Concat(harnessEvolution.FalsificationTests).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                relatedHarnessContractIds: proposal.HarnessEvolution.RelatedHarnessContractIds.Concat(harnessEvolution.RelatedHarnessContractIds).Distinct(StringComparer.Ordinal).ToArray(),
+                relatedEvidenceBundleIds: proposal.HarnessEvolution.RelatedEvidenceBundleIds.Concat(harnessEvolution.RelatedEvidenceBundleIds).Distinct(StringComparer.Ordinal).ToArray(),
+                relatedGovernanceLedgerIds: proposal.HarnessEvolution.RelatedGovernanceLedgerIds.Concat(harnessEvolution.RelatedGovernanceLedgerIds).Distinct(StringComparer.Ordinal).ToArray(),
+                relatedRegressionReportIds: proposal.HarnessEvolution.RelatedRegressionReportIds.Concat(harnessEvolution.RelatedRegressionReportIds).Distinct(StringComparer.Ordinal).ToArray(),
+                sourceRuntimeEventIds: proposal.HarnessEvolution.SourceRuntimeEventIds.Concat(harnessEvolution.SourceRuntimeEventIds).Distinct(StringComparer.Ordinal).ToArray(),
+                sourceSessionIds: proposal.HarnessEvolution.SourceSessionIds.Concat(harnessEvolution.SourceSessionIds).Distinct(StringComparer.Ordinal).ToArray(),
+                confidence: Math.Max(proposal.HarnessEvolution.Confidence, harnessEvolution.Confidence),
+                riskLevel: mergedRisk,
+                requiresRegression: mergedRequiresRegression,
+                regressionCategories: mergedRegressionCategories);
+
+        return CopyProposal(
+            proposal,
+            harnessEvolution: mergedHarness,
+            sourceSessionIds: proposal.SourceSessionIds.Concat(harnessEvolution.SourceSessionIds).Distinct(StringComparer.Ordinal).ToArray(),
+            riskLevel: mergedRisk,
+            confidence: Math.Max(proposal.Confidence, harnessEvolution.Confidence),
+            repeatedCount: additionalSignals == 0 ? proposal.RepeatedCount : proposal.RepeatedCount + additionalSignals,
+            statusUpdatedAtUtc: DateTimeOffset.UtcNow,
+            validationStatus: validationWarnings.Count > 0
+                ? LearningProposalValidationStatuses.Warning
+                : proposal.ValidationStatus,
+            validationWarnings: proposal.ValidationWarnings.Concat(validationWarnings).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+    }
+
+    private static HarnessEvolutionProposal CopyHarnessEvolution(
+        HarnessEvolutionProposal source,
+        IReadOnlyList<string>? invariantsToPreserve = null,
+        IReadOnlyList<string>? falsificationTests = null,
+        IReadOnlyList<string>? relatedHarnessContractIds = null,
+        IReadOnlyList<string>? relatedEvidenceBundleIds = null,
+        IReadOnlyList<string>? relatedGovernanceLedgerIds = null,
+        IReadOnlyList<string>? relatedRegressionReportIds = null,
+        IReadOnlyList<string>? sourceRuntimeEventIds = null,
+        IReadOnlyList<string>? sourceSessionIds = null,
+        float? confidence = null,
+        string? riskLevel = null,
+        bool? requiresRegression = null,
+        IReadOnlyList<string>? regressionCategories = null)
+        => new()
+        {
+            Component = source.Component,
+            ChangeType = source.ChangeType,
+            FailureMode = source.FailureMode,
+            ProposedChange = source.ProposedChange,
+            PredictedImprovement = source.PredictedImprovement,
+            InvariantsToPreserve = invariantsToPreserve ?? source.InvariantsToPreserve,
+            FalsificationTests = falsificationTests ?? source.FalsificationTests,
+            EvaluationPlan = source.EvaluationPlan,
+            CanaryPlan = source.CanaryPlan,
+            RollbackPlan = source.RollbackPlan,
+            RelatedHarnessContractIds = relatedHarnessContractIds ?? source.RelatedHarnessContractIds,
+            RelatedEvidenceBundleIds = relatedEvidenceBundleIds ?? source.RelatedEvidenceBundleIds,
+            RelatedGovernanceLedgerIds = relatedGovernanceLedgerIds ?? source.RelatedGovernanceLedgerIds,
+            RelatedRegressionReportIds = relatedRegressionReportIds ?? source.RelatedRegressionReportIds,
+            SourceRuntimeEventIds = sourceRuntimeEventIds ?? source.SourceRuntimeEventIds,
+            SourceSessionIds = sourceSessionIds ?? source.SourceSessionIds,
+            RiskLevel = riskLevel ?? source.RiskLevel,
+            Confidence = confidence ?? source.Confidence,
+            ProposalFingerprint = source.ProposalFingerprint,
+            ApplyMode = source.ApplyMode,
+            IsAutoApplicable = source.IsAutoApplicable,
+            RequiresRegression = requiresRegression ?? source.RequiresRegression,
+            RegressionCategories = regressionCategories ?? source.RegressionCategories
+        };
+
+    private static HarnessEvolutionValidationResult ValidateHarnessEvolutionRequest(
+        string component,
+        string? proposedChange,
+        string? predictedImprovement,
+        string? rollbackPlan,
+        IReadOnlyList<string> falsificationTests,
+        IReadOnlyList<string> regressionCategories,
+        int supportingEvidenceCount,
+        string riskLevel,
+        string applyMode,
+        bool isAutoApplicable,
+        bool requiresRegression)
+    {
+        var errors = new List<string>();
+        var warnings = new List<string>();
+        if (string.IsNullOrWhiteSpace(component))
+            errors.Add("Harness evolution component is required.");
+        if (string.IsNullOrWhiteSpace(proposedChange))
+            errors.Add("Harness evolution proposed change is required.");
+        if (!IsKnownHarnessComponent(component))
+            errors.Add($"Harness evolution component '{component}' is not supported.");
+        if (!IsKnownHarnessApplyMode(applyMode))
+            errors.Add($"Harness evolution apply mode '{applyMode}' is not supported.");
+        if (!string.Equals(applyMode, HarnessEvolutionApplyModes.ManualOnly, StringComparison.OrdinalIgnoreCase))
+            errors.Add($"Harness evolution apply mode '{applyMode}' is modeled but not supported in this version.");
+        if (isAutoApplicable)
+            errors.Add("Harness evolution proposals are not auto-applicable in this version.");
+        if (IsHighOrCriticalRisk(riskLevel) && isAutoApplicable)
+            errors.Add("High or critical risk harness evolution proposals cannot be auto-applied.");
+
+        if (string.IsNullOrWhiteSpace(rollbackPlan))
+            warnings.Add("Harness evolution proposal has no rollback plan.");
+        if (falsificationTests.Count == 0)
+            warnings.Add("Harness evolution proposal has no falsification tests.");
+        if (IsVagueImprovement(predictedImprovement))
+            warnings.Add("Harness evolution predicted improvement is vague.");
+        if (supportingEvidenceCount < 2)
+            warnings.Add("Harness evolution proposal has limited supporting evidence.");
+        if (IsHighOrCriticalRisk(riskLevel) && requiresRegression && regressionCategories.Count == 0)
+            warnings.Add("High or critical risk harness evolution proposal should select regression categories.");
+        if (string.Equals(component, HarnessEvolutionComponents.Approvals, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(component, HarnessEvolutionComponents.Security, StringComparison.OrdinalIgnoreCase))
+        {
+            warnings.Add("Harness evolution proposal affects approval or security policy; review manually before applying.");
+        }
+
+        return new HarnessEvolutionValidationResult(errors, warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+    }
+
+    private static string NormalizeHarnessRisk(string? requestedRiskLevel, string component, string? proposedChange, string? changeType)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedRiskLevel))
+        {
+            var normalized = NormalizeToken(requestedRiskLevel);
+            if (IsKnownLearningRisk(normalized))
+                return normalized;
+        }
+
+        if (string.Equals(component, HarnessEvolutionComponents.Security, StringComparison.OrdinalIgnoreCase) ||
+            ContainsAny(proposedChange ?? "", "public bind", "metadata target", "disable security", "allow private url"))
+            return LearningProposalRiskLevels.Critical;
+        if (string.Equals(component, HarnessEvolutionComponents.Approvals, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(component, HarnessEvolutionComponents.Tools, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(component, HarnessEvolutionComponents.Sandbox, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(component, HarnessEvolutionComponents.Governance, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(component, HarnessEvolutionComponents.Unknown, StringComparison.OrdinalIgnoreCase))
+            return LearningProposalRiskLevels.High;
+        if (string.Equals(component, HarnessEvolutionComponents.Pulse, StringComparison.OrdinalIgnoreCase))
+        {
+            return ContainsAny(proposedChange ?? "", "notify", "email", "channel", "public")
+                ? LearningProposalRiskLevels.Medium
+                : LearningProposalRiskLevels.Low;
+        }
+
+        return LearningProposalRiskLevels.Medium;
+    }
+
+    private static string NormalizeApplyMode(string? applyMode)
+        => string.IsNullOrWhiteSpace(applyMode)
+            ? HarnessEvolutionApplyModes.ManualOnly
+            : NormalizeToken(applyMode);
+
+    private static string NormalizeToken(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim().ToLowerInvariant();
+
+    private static string? NormalizeOptional(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static IReadOnlyList<string> NormalizeStringList(IEnumerable<string>? values)
+        => values?
+            .Select(static item => item?.Trim() ?? "")
+            .Where(static item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray() ?? [];
+
+    private static bool IsKnownLearningRisk(string riskLevel)
+        => string.Equals(riskLevel, LearningProposalRiskLevels.Low, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(riskLevel, LearningProposalRiskLevels.Medium, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(riskLevel, LearningProposalRiskLevels.High, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(riskLevel, LearningProposalRiskLevels.Critical, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsKnownHarnessComponent(string component)
+        => string.Equals(component, HarnessEvolutionComponents.Memory, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Retrieval, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Tools, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Approvals, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Verification, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Routing, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Prompt, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.ModelProfile, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Pulse, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Security, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Governance, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.ContextBudget, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Channel, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Sandbox, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Unknown, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsKnownHarnessApplyMode(string applyMode)
+        => string.Equals(applyMode, HarnessEvolutionApplyModes.ManualOnly, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(applyMode, HarnessEvolutionApplyModes.ConfigPatch, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(applyMode, HarnessEvolutionApplyModes.PolicyPatch, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(applyMode, HarnessEvolutionApplyModes.SkillUpdate, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(applyMode, HarnessEvolutionApplyModes.MemoryUpdate, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(applyMode, HarnessEvolutionApplyModes.Unsupported, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsHighOrCriticalRisk(string riskLevel)
+        => string.Equals(riskLevel, LearningProposalRiskLevels.High, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(riskLevel, LearningProposalRiskLevels.Critical, StringComparison.OrdinalIgnoreCase);
+
+    private static string MaxRiskLevel(string? left, string? right)
+        => RiskRank(left) >= RiskRank(right)
+            ? NormalizeKnownRiskOrDefault(left)
+            : NormalizeKnownRiskOrDefault(right);
+
+    private static int RiskRank(string? riskLevel)
+        => NormalizeKnownRiskOrDefault(riskLevel) switch
+        {
+            LearningProposalRiskLevels.Critical => 4,
+            LearningProposalRiskLevels.High => 3,
+            LearningProposalRiskLevels.Medium => 2,
+            LearningProposalRiskLevels.Low => 1,
+            _ => 0
+        };
+
+    private static string NormalizeKnownRiskOrDefault(string? riskLevel)
+    {
+        var normalized = NormalizeToken(riskLevel);
+        return IsKnownLearningRisk(normalized) ? normalized : LearningProposalRiskLevels.Medium;
+    }
+
+    private static bool IsVagueImprovement(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return true;
+        var normalized = NormalizeForFingerprint(value);
+        return normalized is "better" or "improve" or "improved behavior" or "improve behavior" || normalized.Length < 16;
+    }
+
+    private static string BuildHarnessEvolutionTitle(string component)
+        => $"Harness change proposal: {(string.IsNullOrWhiteSpace(component) ? HarnessEvolutionComponents.Unknown : component)}";
+
+    private static string NormalizeRuntimeGroupValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "unknown" : NormalizeToken(value);
+
+    private static string MapRuntimeComponentToHarnessComponent(string runtimeComponent)
+    {
+        if (ContainsAny(runtimeComponent, "memory", "profile"))
+            return HarnessEvolutionComponents.Memory;
+        if (ContainsAny(runtimeComponent, "approval"))
+            return HarnessEvolutionComponents.Approvals;
+        if (ContainsAny(runtimeComponent, "tool", "plugin"))
+            return HarnessEvolutionComponents.Tools;
+        if (ContainsAny(runtimeComponent, "provider", "model", "route"))
+            return HarnessEvolutionComponents.Routing;
+        if (ContainsAny(runtimeComponent, "pulse", "heartbeat"))
+            return HarnessEvolutionComponents.Pulse;
+        if (ContainsAny(runtimeComponent, "security", "url", "bind"))
+            return HarnessEvolutionComponents.Security;
+        if (ContainsAny(runtimeComponent, "governance", "ledger"))
+            return HarnessEvolutionComponents.Governance;
+        if (ContainsAny(runtimeComponent, "contract", "evidence", "harness", "pev"))
+            return HarnessEvolutionComponents.Verification;
+        return HarnessEvolutionComponents.Unknown;
+    }
+
+    private static bool IsRegressionRecommendedForComponent(string component)
+        => string.Equals(component, HarnessEvolutionComponents.Security, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Approvals, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Tools, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Memory, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(component, HarnessEvolutionComponents.Verification, StringComparison.OrdinalIgnoreCase);
+
+    private static string MapComponentToRegressionCategory(string component)
+        => component switch
+        {
+            HarnessEvolutionComponents.Memory => "memory",
+            HarnessEvolutionComponents.Tools => "tools",
+            HarnessEvolutionComponents.Approvals => "approvals",
+            HarnessEvolutionComponents.Security => "security",
+            HarnessEvolutionComponents.Verification => "harness",
+            HarnessEvolutionComponents.Routing => "providers",
+            _ => "harness"
+        };
+
+    private static string BuildRegressionCategoryHint(string component)
+        => $"harness regression: {MapComponentToRegressionCategory(component)}";
+
+    private void EnsureHarnessEvolutionEnabled()
+    {
+        if (!_config.HarnessEvolutionEnabled)
+            throw new InvalidOperationException("Harness evolution proposal generation is disabled. Set Learning.HarnessEvolutionEnabled=true to create or detect harness change proposals.");
+    }
+
     private static string BuildTurnId(Session session, ChatTurn turn)
     {
         var index = session.History.IndexOf(turn);
@@ -1122,8 +1676,10 @@ Use it when repeated requests resemble the sessions that produced this draft.
         string? appliedAutomationId = null,
         string? managedSkillPath = null,
         ManagedLearningSkillMetadata? managedSkillMetadata = null,
+        HarnessEvolutionProposal? harnessEvolution = null,
         IReadOnlyList<string>? sourceSessionIds = null,
         IReadOnlyList<string>? sourceTurnIds = null,
+        string? riskLevel = null,
         float? confidence = null,
         int? repeatedCount = null,
         DateTimeOffset? statusUpdatedAtUtc = null,
@@ -1153,6 +1709,7 @@ Use it when repeated requests resemble the sessions that produced this draft.
             AppliedAutomationId = appliedAutomationId ?? proposal.AppliedAutomationId,
             ManagedSkillPath = managedSkillPath ?? proposal.ManagedSkillPath,
             ManagedSkillMetadata = managedSkillMetadata ?? proposal.ManagedSkillMetadata,
+            HarnessEvolution = harnessEvolution ?? proposal.HarnessEvolution,
             SourceSessionIds = sourceSessionIds ?? proposal.SourceSessionIds,
             SourceTurnIds = sourceTurnIds ?? proposal.SourceTurnIds,
             ToolNames = proposal.ToolNames,
@@ -1160,7 +1717,7 @@ Use it when repeated requests resemble the sessions that produced this draft.
             ToolObservations = proposal.ToolObservations,
             RepeatedCount = repeatedCount ?? proposal.RepeatedCount,
             ProposalFingerprint = proposal.ProposalFingerprint,
-            RiskLevel = proposal.RiskLevel,
+            RiskLevel = riskLevel ?? proposal.RiskLevel,
             Confidence = confidence ?? proposal.Confidence,
             CreatedReason = proposal.CreatedReason,
             ValidationStatus = validationStatus ?? proposal.ValidationStatus,
@@ -1196,6 +1753,18 @@ Use it when repeated requests resemble the sessions that produced this draft.
     private sealed class SkillDraftValidationResult
     {
         public SkillDraftValidationResult(IReadOnlyList<string> errors, IReadOnlyList<string> warnings)
+        {
+            Errors = errors;
+            Warnings = warnings;
+        }
+
+        public IReadOnlyList<string> Errors { get; }
+        public IReadOnlyList<string> Warnings { get; }
+    }
+
+    private sealed class HarnessEvolutionValidationResult
+    {
+        public HarnessEvolutionValidationResult(IReadOnlyList<string> errors, IReadOnlyList<string> warnings)
         {
             Errors = errors;
             Warnings = warnings;

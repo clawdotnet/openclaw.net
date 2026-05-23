@@ -899,6 +899,7 @@
         <a href="#heartbeat-section">Heartbeat</a>
         <a href="#automation-section">Automations</a>
         <a href="#learning-section">Learning</a>
+        <a href="#harness-section">Harness</a>
         <a href="#memory-section">Memory</a>
         <a href="#integration-section">Integration</a>
         <a href="#ops-section">Ops</a>
@@ -1068,6 +1069,9 @@
                         <button id="audit-export-button">Download Bundle</button>
                     </div>
                 </div>
+                <div class="filters">
+                    <label><input id="audit-include-governance-input" type="checkbox"> Include governance ledger</label>
+                </div>
                 <pre id="audit-export-output">Ready.</pre>
             </div>
             <div class="card">
@@ -1083,6 +1087,8 @@
                 <div class="filters">
                     <input id="trajectory-session-input" type="text" placeholder="Session ID (optional)">
                     <label><input id="trajectory-anonymize-input" type="checkbox"> Anonymize</label>
+                    <label><input id="trajectory-include-evidence-input" type="checkbox"> Include evidence</label>
+                    <label><input id="trajectory-include-governance-input" type="checkbox"> Include governance</label>
                 </div>
                 <pre id="trajectory-export-output">Ready.</pre>
             </div>
@@ -1281,6 +1287,7 @@
                         <div class="muted">Review profile, automation, and skill proposals generated from repeated successful sessions.</div>
                     </div>
                     <div class="actions">
+                        <button id="learning-detect-harness-button" class="secondary">Detect Harness Changes</button>
                         <button id="learning-refresh-button" class="secondary">Reload</button>
                     </div>
                 </div>
@@ -1297,6 +1304,32 @@
                         <option value="profile_update">Profile updates</option>
                         <option value="automation_suggestion">Automation suggestions</option>
                         <option value="skill_draft">Skill drafts</option>
+                        <option value="harness_change">Harness changes</option>
+                    </select>
+                    <select id="learning-component-input">
+                        <option value="">All components</option>
+                        <option value="memory">Memory</option>
+                        <option value="retrieval">Retrieval</option>
+                        <option value="tools">Tools</option>
+                        <option value="approvals">Approvals</option>
+                        <option value="verification">Verification</option>
+                        <option value="routing">Routing</option>
+                        <option value="prompt">Prompt</option>
+                        <option value="model_profile">Model profile</option>
+                        <option value="pulse">Pulse</option>
+                        <option value="security">Security</option>
+                        <option value="governance">Governance</option>
+                        <option value="context_budget">Context budget</option>
+                        <option value="channel">Channel</option>
+                        <option value="sandbox">Sandbox</option>
+                        <option value="unknown">Unknown</option>
+                    </select>
+                    <select id="learning-risk-input">
+                        <option value="">All risks</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
                     </select>
                 </div>
                 <div id="learning-list-output" class="muted">Loading…</div>
@@ -1315,6 +1348,140 @@
                 </div>
                 <textarea id="learning-reason-input" rows="4" placeholder="Optional review note or rollback reason"></textarea>
                 <div id="learning-detail-output" class="muted" style="margin-top:0.75rem;">Select a proposal.</div>
+            </div>
+        </section>
+
+        <section id="harness-section" class="grid">
+            <div class="card">
+                <div class="section-title">
+                    <div>
+                        <h2>Harness Contracts</h2>
+                        <div class="muted">Inspect passive plan records for higher-risk or multi-step agent work.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="harness-refresh-button" class="secondary">Reload</button>
+                    </div>
+                </div>
+                <div class="filters">
+                    <select id="harness-status-input">
+                        <option value="">All statuses</option>
+                        <option value="draft">Draft</option>
+                        <option value="proposed">Proposed</option>
+                        <option value="approved">Approved</option>
+                        <option value="executing">Executing</option>
+                        <option value="verified">Verified</option>
+                        <option value="failed">Failed</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="rolled_back">Rolled back</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                    <select id="harness-risk-input">
+                        <option value="">All risk levels</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                    <input id="harness-tag-input" type="text" placeholder="Tag filter">
+                </div>
+                <div id="harness-list-output" class="muted">Loading…</div>
+            </div>
+            <div class="card">
+                <h2>Contract Detail</h2>
+                <div id="harness-detail-output" class="muted">Select a harness contract.</div>
+            </div>
+            <div class="card">
+                <div class="section-title">
+                    <div>
+                        <h2>Evidence Bundles</h2>
+                        <div class="muted">Inspect manual evidence records linked to sessions, contracts, proposals, and tool calls.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="evidence-refresh-button" class="secondary">Reload</button>
+                    </div>
+                </div>
+                <div class="filters">
+                    <input id="evidence-session-input" type="text" placeholder="Session ID">
+                    <input id="evidence-contract-input" type="text" placeholder="Contract ID">
+                    <select id="evidence-confidence-input">
+                        <option value="">All confidence</option>
+                        <option value="unknown">Unknown</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                    <input id="evidence-tag-input" type="text" placeholder="Tag filter">
+                </div>
+                <div id="evidence-list-output" class="muted">Loading…</div>
+            </div>
+            <div class="card">
+                <h2>Evidence Detail</h2>
+                <div id="evidence-detail-output" class="muted">Select an evidence bundle.</div>
+            </div>
+            <div class="card">
+                <div class="section-title">
+                    <div>
+                        <h2>Governance Ledger</h2>
+                        <div class="muted">Inspect durable approval and oversight decisions without changing approval behavior.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="governance-refresh-button" class="secondary">Reload</button>
+                    </div>
+                </div>
+                <div class="filters">
+                    <select id="governance-decision-input">
+                        <option value="">All decisions</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="escalated">Escalated</option>
+                        <option value="expired">Expired</option>
+                        <option value="unknown">Unknown</option>
+                    </select>
+                    <select id="governance-status-input">
+                        <option value="">All statuses</option>
+                        <option value="active">Active</option>
+                        <option value="expired">Expired</option>
+                        <option value="revoked">Revoked</option>
+                        <option value="superseded">Superseded</option>
+                    </select>
+                    <input id="governance-tool-input" type="text" placeholder="Tool">
+                    <select id="governance-risk-input">
+                        <option value="">All risk</option>
+                        <option value="unknown">Unknown</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                    <select id="governance-scope-input">
+                        <option value="">All scopes</option>
+                        <option value="once">Once</option>
+                        <option value="session">Session</option>
+                        <option value="actor">Actor</option>
+                        <option value="channel">Channel</option>
+                        <option value="project">Project</option>
+                        <option value="tool">Tool</option>
+                        <option value="global">Global</option>
+                        <option value="unknown">Unknown</option>
+                    </select>
+                    <input id="governance-session-input" type="text" placeholder="Session ID">
+                    <input id="governance-actor-input" type="text" placeholder="Actor ID">
+                    <input id="governance-tag-input" type="text" placeholder="Tag filter">
+                </div>
+                <div id="governance-list-output" class="muted">Loading…</div>
+            </div>
+            <div class="card">
+                <div class="section-title">
+                    <div>
+                        <h2>Governance Detail</h2>
+                        <div class="muted">Policy hints are informational only and do not auto-approve future actions.</div>
+                    </div>
+                    <div class="actions">
+                        <button id="governance-revoke-button" class="secondary">Revoke</button>
+                    </div>
+                </div>
+                <textarea id="governance-revoke-reason-input" rows="3" placeholder="Optional revocation reason"></textarea>
+                <div id="governance-detail-output" class="muted" style="margin-top:0.75rem;">Select a governance ledger entry.</div>
             </div>
         </section>
 
@@ -2066,8 +2233,11 @@
         const observabilitySummaryOutput = document.getElementById('observability-summary-output');
         const observabilitySeriesOutput = document.getElementById('observability-series-output');
         const auditExportOutput = document.getElementById('audit-export-output');
+        const auditIncludeGovernanceInput = document.getElementById('audit-include-governance-input');
         const trajectorySessionInput = document.getElementById('trajectory-session-input');
         const trajectoryAnonymizeInput = document.getElementById('trajectory-anonymize-input');
+        const trajectoryIncludeEvidenceInput = document.getElementById('trajectory-include-evidence-input');
+        const trajectoryIncludeGovernanceInput = document.getElementById('trajectory-include-governance-input');
         const trajectoryExportOutput = document.getElementById('trajectory-export-output');
         const migrationReportInput = document.getElementById('migration-report-input');
         const migrationReportOutput = document.getElementById('migration-report-output');
@@ -2142,7 +2312,33 @@
         const learningDetailOutput = document.getElementById('learning-detail-output');
         const learningStatusInput = document.getElementById('learning-status-input');
         const learningKindInput = document.getElementById('learning-kind-input');
+        const learningComponentInput = document.getElementById('learning-component-input');
+        const learningRiskInput = document.getElementById('learning-risk-input');
         const learningReasonInput = document.getElementById('learning-reason-input');
+        const harnessListOutput = document.getElementById('harness-list-output');
+        const harnessDetailOutput = document.getElementById('harness-detail-output');
+        const harnessStatusInput = document.getElementById('harness-status-input');
+        const harnessRiskInput = document.getElementById('harness-risk-input');
+        const harnessTagInput = document.getElementById('harness-tag-input');
+        const evidenceListOutput = document.getElementById('evidence-list-output');
+        const evidenceDetailOutput = document.getElementById('evidence-detail-output');
+        const evidenceSessionInput = document.getElementById('evidence-session-input');
+        const evidenceContractInput = document.getElementById('evidence-contract-input');
+        const evidenceConfidenceInput = document.getElementById('evidence-confidence-input');
+        const evidenceTagInput = document.getElementById('evidence-tag-input');
+        const governanceListOutput = document.getElementById('governance-list-output');
+        const governanceDetailOutput = document.getElementById('governance-detail-output');
+        const governanceRefreshButton = document.getElementById('governance-refresh-button');
+        const governanceRevokeButton = document.getElementById('governance-revoke-button');
+        const governanceDecisionInput = document.getElementById('governance-decision-input');
+        const governanceStatusInput = document.getElementById('governance-status-input');
+        const governanceToolInput = document.getElementById('governance-tool-input');
+        const governanceRiskInput = document.getElementById('governance-risk-input');
+        const governanceScopeInput = document.getElementById('governance-scope-input');
+        const governanceSessionInput = document.getElementById('governance-session-input');
+        const governanceActorInput = document.getElementById('governance-actor-input');
+        const governanceTagInput = document.getElementById('governance-tag-input');
+        const governanceRevokeReasonInput = document.getElementById('governance-revoke-reason-input');
         const memorySearchInput = document.getElementById('memory-search-input');
         const memoryPrefixInput = document.getElementById('memory-prefix-input');
         const memoryClassFilterInput = document.getElementById('memory-class-filter-input');
@@ -2266,6 +2462,18 @@
             selectedId: null,
             detail: null
         };
+        let harnessState = {
+            selectedId: null,
+            detail: null
+        };
+        let evidenceState = {
+            selectedId: null,
+            detail: null
+        };
+        let governanceState = {
+            selectedId: null,
+            detail: null
+        };
         let memoryState = {
             selectedKey: null
         };
@@ -2341,6 +2549,7 @@
                 'learning-approve-button',
                 'learning-reject-button',
                 'learning-rollback-button',
+                'learning-detect-harness-button',
                 'memory-save-button',
                 'memory-delete-button',
                 'memory-import-button',
@@ -2363,6 +2572,48 @@
                 const button = document.getElementById(id);
                 if (button) button.disabled = !hasRole('admin');
             });
+            applyGovernanceAccessState();
+        }
+
+        function canViewGovernanceLedger() {
+            return Boolean(currentAuth) && hasRole('viewer');
+        }
+
+        function canMutateGovernanceLedger() {
+            return Boolean(currentAuth) && hasRole('operator');
+        }
+
+        function resetGovernanceUi(message) {
+            governanceState = {
+                selectedId: null,
+                detail: null
+            };
+            governanceListOutput.textContent = message;
+            governanceDetailOutput.innerHTML = `<div class="muted">${escapeHtml(message)}</div>`;
+            governanceRevokeReasonInput.value = '';
+        }
+
+        function applyGovernanceAccessState() {
+            const canView = canViewGovernanceLedger();
+            const canMutate = canMutateGovernanceLedger();
+            [
+                governanceDecisionInput,
+                governanceStatusInput,
+                governanceToolInput,
+                governanceRiskInput,
+                governanceScopeInput,
+                governanceSessionInput,
+                governanceActorInput,
+                governanceTagInput
+            ].forEach(input => {
+                input.disabled = !canView;
+            });
+            governanceRevokeReasonInput.disabled = !canMutate;
+            governanceRefreshButton.disabled = !canView;
+            governanceRevokeButton.disabled = !canMutate || !governanceState.selectedId || governanceState.detail?.status === 'revoked';
+            if (!canView) {
+                resetGovernanceUi(currentAuth ? 'Access denied.' : 'Login required.');
+            }
         }
 
         function updateLoginModeUi() {
@@ -2442,6 +2693,7 @@
             csrfToken = null;
             currentAuth = null;
             sessionStatus.textContent = 'Logged out';
+            resetGovernanceUi('Login required.');
             applyRoleGates();
         }
 
@@ -3090,6 +3342,7 @@
 
         async function exportAuditBundle() {
             const params = buildDateRangeQuery();
+            if (auditIncludeGovernanceInput.checked) params.set('includeGovernance', 'true');
             const url = `/admin/audit/export${params.toString() ? `?${params.toString()}` : ''}`;
             const resp = await fetch(url, { credentials: 'same-origin' });
             if (!resp.ok) {
@@ -3116,6 +3369,8 @@
             const sessionId = trajectorySessionInput.value.trim();
             if (sessionId) params.set('sessionId', sessionId);
             if (trajectoryAnonymizeInput.checked) params.set('anonymize', 'true');
+            if (trajectoryIncludeEvidenceInput.checked) params.set('includeEvidence', 'true');
+            if (trajectoryIncludeGovernanceInput.checked) params.set('includeGovernance', 'true');
             const url = `/admin/trajectory/export${params.toString() ? `?${params.toString()}` : ''}`;
             const resp = await fetch(url, { credentials: 'same-origin' });
             if (!resp.ok) {
@@ -4244,6 +4499,8 @@
             const params = new URLSearchParams();
             if (learningStatusInput.value) params.set('status', learningStatusInput.value);
             if (learningKindInput.value) params.set('kind', learningKindInput.value);
+            if (learningComponentInput.value) params.set('component', learningComponentInput.value);
+            if (learningRiskInput.value) params.set('risk', learningRiskInput.value);
             const { resp, data } = await api(`/admin/learning/proposals?${params.toString()}`);
             if (!resp.ok) {
                 learningListOutput.textContent = `Learning request failed (${resp.status})`;
@@ -4260,6 +4517,7 @@
                 <div class="card" style="margin-bottom:0.75rem;">
                     <strong>${escapeHtml(item.title || item.id)}</strong>
                     <div class="muted">${escapeHtml(item.kind)} · ${escapeHtml(item.status)} · risk ${escapeHtml(item.riskLevel || 'medium')} · confidence ${escapeHtml(item.confidence ?? 0)}</div>
+                    ${renderHarnessEvolutionListSummary(item)}
                     <div class="muted">${escapeHtml(item.summary || '')}</div>
                     <div class="muted">Sources: ${escapeHtml((item.sourceSessionIds || []).slice(0, 3).join(', ') || 'none')} · Updated: ${escapeHtml(formatDateTime(item.updatedAtUtc || item.createdAtUtc))}</div>
                     ${renderLearningWarnings(item.validationWarnings)}
@@ -4279,6 +4537,30 @@
             const items = values || [];
             if (!items.length) return '';
             return `<div class="muted"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(items.join(', '))}</div>`;
+        }
+
+        function renderHarnessEvolutionListSummary(proposal) {
+            const harness = proposal?.harnessEvolution;
+            if (!harness) return '';
+            return `<div class="muted">Component: ${escapeHtml(harness.component || 'unknown')} · Apply: ${escapeHtml(harness.applyMode || 'manual_only')} · Regression: ${escapeHtml((harness.regressionCategories || []).join(', ') || 'none')}</div>`;
+        }
+
+        function renderHarnessEvolutionDetail(proposal) {
+            const harness = proposal?.harnessEvolution;
+            if (!harness) return '';
+            return `<h3>Harness Evolution</h3>
+                <div class="muted">Component: ${escapeHtml(harness.component || 'unknown')} · Apply mode: ${escapeHtml(harness.applyMode || 'manual_only')} · Auto-applicable: ${escapeHtml(String(Boolean(harness.isAutoApplicable)))}</div>
+                <div class="muted">Failure mode: ${escapeHtml(harness.failureMode || 'not recorded')}</div>
+                <div class="muted">Proposed change: ${escapeHtml(harness.proposedChange || 'not recorded')}</div>
+                <div class="muted">Predicted improvement: ${escapeHtml(harness.predictedImprovement || 'not recorded')}</div>
+                <div class="muted">Rollback plan: ${escapeHtml(harness.rollbackPlan || 'not recorded')}</div>
+                ${renderLearningList('Invariants', harness.invariantsToPreserve)}
+                ${renderLearningList('Falsification tests', harness.falsificationTests)}
+                ${renderLearningList('Regression categories', harness.regressionCategories)}
+                ${renderLearningList('Evidence bundles', harness.relatedEvidenceBundleIds)}
+                ${renderLearningList('Harness contracts', harness.relatedHarnessContractIds)}
+                ${renderLearningList('Governance ledger', harness.relatedGovernanceLedgerIds)}
+                ${renderLearningList('Runtime events', harness.sourceRuntimeEventIds)}`;
         }
 
         function renderLearningDetail(detail) {
@@ -4317,10 +4599,11 @@
             const automationSummary = proposal.kind === 'automation_suggestion' && proposal.automationDraft
                 ? `<h3>Automation Review</h3>
                    <div class="muted">Schedule: ${escapeHtml(proposal.automationDraft.schedule || 'not set')}</div>
-                   <div class="muted">Delivery: ${escapeHtml(proposal.automationDraft.deliveryChannelId || 'none')} ${escapeHtml(proposal.automationDraft.deliveryRecipientId || '')}</div>
-                   <div class="muted">Enabled: ${escapeHtml(String(proposal.automationDraft.enabled))} · Draft: ${escapeHtml(String(proposal.automationDraft.isDraft))}</div>
-                   <div class="muted">Tags: ${escapeHtml((proposal.automationDraft.tags || []).join(', ') || 'none')}</div>`
+	                   <div class="muted">Delivery: ${escapeHtml(proposal.automationDraft.deliveryChannelId || 'none')} ${escapeHtml(proposal.automationDraft.deliveryRecipientId || '')}</div>
+	                   <div class="muted">Enabled: ${escapeHtml(String(proposal.automationDraft.enabled))} · Draft: ${escapeHtml(String(proposal.automationDraft.isDraft))}</div>
+	                   <div class="muted">Tags: ${escapeHtml((proposal.automationDraft.tags || []).join(', ') || 'none')}</div>`
                 : '';
+            const harnessEvolution = renderHarnessEvolutionDetail(proposal);
 
             learningDetailOutput.innerHTML = `
                 <div class="stack">
@@ -4335,6 +4618,7 @@
                     ${renderLearningWarnings(proposal.validationWarnings)}
                     ${proposal.validationErrors?.length ? `<h3>Validation Errors</h3>${renderLearningWarnings(proposal.validationErrors)}` : ''}
                     ${provenance}
+                    ${harnessEvolution}
                     ${skillDraft}
                     ${automationSummary}
                     <pre>${escapeHtml(JSON.stringify(proposal, null, 2))}</pre>
@@ -4381,6 +4665,302 @@
             if (action === 'approve' || action === 'rollback') {
                 await loadAutomations();
             }
+        }
+
+        async function detectHarnessEvolutionProposals() {
+            if (!requireRole('operator', 'Harness proposal detection')) return;
+            const { resp, data } = await mutate('/admin/learning/proposals/harness-change/detect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            showFlash(resp.ok ? `Detected ${data.proposals?.length || 0} harness proposal(s).` : `Harness detection failed (${resp.status}).`, resp.ok ? 'ok' : 'error');
+            if (!resp.ok) {
+                renderJson(learningDetailOutput, data || `Harness detection failed (${resp.status})`);
+                return;
+            }
+            learningKindInput.value = 'harness_change';
+            await loadLearningProposals();
+        }
+
+        async function loadHarnessContracts() {
+            const params = new URLSearchParams();
+            if (harnessStatusInput.value) params.set('status', harnessStatusInput.value);
+            if (harnessRiskInput.value) params.set('riskLevel', harnessRiskInput.value);
+            if (harnessTagInput.value.trim()) params.set('tag', harnessTagInput.value.trim());
+            const { resp, data } = await api(`/admin/harness/contracts?${params.toString()}`);
+            if (!resp.ok) {
+                harnessListOutput.textContent = `Harness contracts request failed (${resp.status})`;
+                return;
+            }
+
+            const items = data.items || [];
+            if (!items.length) {
+                harnessListOutput.textContent = 'No harness contracts matched the current filters.';
+                return;
+            }
+
+            harnessListOutput.innerHTML = items.map(item => `
+                <div class="card" style="margin-bottom:0.75rem;">
+                    <strong>${escapeHtml(item.goal || item.id)}</strong>
+                    <div class="muted">${escapeHtml(item.status || 'draft')} · risk ${escapeHtml(item.riskLevel || 'medium')} · approval ${escapeHtml(item.approvalRequired || 'none')}</div>
+                    <div class="muted">${escapeHtml(item.userRequestSummary || '')}</div>
+                    <div class="muted">Session: ${escapeHtml(item.sourceSessionId || 'none')} · Updated: ${escapeHtml(formatDateTime(item.updatedAtUtc || item.createdAtUtc))}</div>
+                    <div class="actions" style="margin-top:0.75rem;">
+                        <button data-harness-inspect="${encodeURIComponent(item.id)}">Inspect</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderHarnessBlock(label, values) {
+            const items = values || [];
+            if (!items.length) return '';
+            return `<h3>${escapeHtml(label)}</h3><pre>${escapeHtml(JSON.stringify(items, null, 2))}</pre>`;
+        }
+
+        function renderHarnessDetail(contract) {
+            harnessState.detail = contract;
+            if (!contract) {
+                harnessDetailOutput.innerHTML = '<div class="muted">Select a harness contract.</div>';
+                return;
+            }
+
+            harnessDetailOutput.innerHTML = `
+                <div class="stack">
+                    <div>
+                        <strong>${escapeHtml(contract.goal || contract.id)}</strong>
+                        <div class="muted">${escapeHtml(contract.status || 'draft')} · risk ${escapeHtml(contract.riskLevel || 'medium')} · approval ${escapeHtml(contract.approvalRequired || 'none')}</div>
+                        <div class="muted">Actor: ${escapeHtml(contract.actorId || 'unknown')} · Session: ${escapeHtml(contract.sourceSessionId || 'none')}</div>
+                        <div class="muted">Created: ${escapeHtml(formatDateTime(contract.createdAtUtc))} · Updated: ${escapeHtml(formatDateTime(contract.updatedAtUtc))}</div>
+                        <div class="muted">Approval reason: ${escapeHtml(contract.approvalReason || 'none')}</div>
+                    </div>
+                    ${renderHarnessBlock('Planned Actions', contract.plannedActions)}
+                    ${renderHarnessBlock('Read Set', contract.readSet)}
+                    ${renderHarnessBlock('Write Set', contract.writeSet)}
+                    ${renderHarnessBlock('Tools Required', contract.toolsRequired)}
+                    ${renderHarnessBlock('Verification Plan', contract.verificationPlan)}
+                    ${renderHarnessBlock('Rollback Plan', contract.rollbackPlan)}
+                    ${renderHarnessBlock('Assumptions', contract.assumptions)}
+                    ${renderHarnessBlock('Constraints', contract.constraints)}
+                    ${renderHarnessBlock('Success Criteria', contract.successCriteria)}
+                    <pre>${escapeHtml(JSON.stringify(contract, null, 2))}</pre>
+                </div>
+            `;
+        }
+
+        async function loadHarnessContractDetail(id) {
+            if (!id) return;
+            harnessState.selectedId = id;
+            const { resp, data } = await api(`/admin/harness/contracts/${encodeURIComponent(id)}`);
+            if (!resp.ok) {
+                harnessDetailOutput.innerHTML = `<div class="muted">Harness contract detail failed (${resp.status})</div>`;
+                return;
+            }
+
+            renderHarnessDetail(data.contract);
+        }
+
+        async function loadEvidenceBundles() {
+            const params = new URLSearchParams();
+            if (evidenceSessionInput.value.trim()) params.set('sourceSessionId', evidenceSessionInput.value.trim());
+            if (evidenceContractInput.value.trim()) params.set('harnessContractId', evidenceContractInput.value.trim());
+            if (evidenceConfidenceInput.value) params.set('confidence', evidenceConfidenceInput.value);
+            if (evidenceTagInput.value.trim()) params.set('tag', evidenceTagInput.value.trim());
+            const query = params.toString();
+            const { resp, data } = await api(`/admin/harness/evidence${query ? `?${query}` : ''}`);
+            if (!resp.ok) {
+                evidenceListOutput.textContent = `Evidence bundles request failed (${resp.status})`;
+                return;
+            }
+
+            const items = data.items || [];
+            if (!items.length) {
+                evidenceListOutput.textContent = 'No evidence bundles matched the current filters.';
+                return;
+            }
+
+            evidenceListOutput.innerHTML = items.map(item => `
+                <div class="card" style="margin-bottom:0.75rem;">
+                    <strong>${escapeHtml(item.title || item.id)}</strong>
+                    <div class="muted">Confidence ${escapeHtml(item.confidence || 'unknown')} · Items ${(item.items || []).length} · Checks ${(item.checks || []).length}</div>
+                    <div class="muted">${escapeHtml(item.summary || '')}</div>
+                    <div class="muted">Session: ${escapeHtml(item.sourceSessionId || 'none')} · Contract: ${escapeHtml(item.harnessContractId || 'none')}</div>
+                    <div class="muted">Updated: ${escapeHtml(formatDateTime(item.updatedAtUtc || item.createdAtUtc))}</div>
+                    <div class="actions" style="margin-top:0.75rem;">
+                        <button data-evidence-inspect="${encodeURIComponent(item.id)}">Inspect</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderEvidenceBlock(label, values) {
+            const items = values || [];
+            if (!items.length) return '';
+            return `<h3>${escapeHtml(label)}</h3><pre>${escapeHtml(JSON.stringify(items, null, 2))}</pre>`;
+        }
+
+        function renderEvidenceDetail(bundle) {
+            evidenceState.detail = bundle;
+            if (!bundle) {
+                evidenceDetailOutput.innerHTML = '<div class="muted">Select an evidence bundle.</div>';
+                return;
+            }
+
+            evidenceDetailOutput.innerHTML = `
+                <div class="stack">
+                    <div>
+                        <strong>${escapeHtml(bundle.title || bundle.id)}</strong>
+                        <div class="muted">Confidence ${escapeHtml(bundle.confidence || 'unknown')} · Session ${escapeHtml(bundle.sourceSessionId || 'none')}</div>
+                        <div class="muted">Contract: ${escapeHtml(bundle.harnessContractId || 'none')} · Proposal: ${escapeHtml(bundle.learningProposalId || 'none')}</div>
+                        <div class="muted">Tool call: ${escapeHtml(bundle.toolCallId || 'none')} · Automation: ${escapeHtml(bundle.automationRunId || 'none')}</div>
+                        <div class="muted">Created: ${escapeHtml(formatDateTime(bundle.createdAtUtc))} · Updated: ${escapeHtml(formatDateTime(bundle.updatedAtUtc))}</div>
+                        <div class="muted">${escapeHtml(bundle.summary || '')}</div>
+                    </div>
+                    ${renderEvidenceBlock('Items', bundle.items)}
+                    ${renderEvidenceBlock('Checks', bundle.checks)}
+                    ${renderEvidenceBlock('Risks', bundle.risks)}
+                    ${renderEvidenceBlock('Assumptions', bundle.assumptions)}
+                    ${renderEvidenceBlock('Untested Areas', bundle.untestedAreas)}
+                    ${renderEvidenceBlock('Human Reviews', bundle.humanReviews)}
+                    <pre>${escapeHtml(JSON.stringify(bundle, null, 2))}</pre>
+                </div>
+            `;
+        }
+
+        async function loadEvidenceBundleDetail(id) {
+            if (!id) return;
+            evidenceState.selectedId = id;
+            const { resp, data } = await api(`/admin/harness/evidence/${encodeURIComponent(id)}`);
+            if (!resp.ok) {
+                evidenceDetailOutput.innerHTML = `<div class="muted">Evidence bundle detail failed (${resp.status})</div>`;
+                return;
+            }
+
+            renderEvidenceDetail(data.bundle);
+        }
+
+        async function loadGovernanceLedger() {
+            if (!canViewGovernanceLedger()) {
+                resetGovernanceUi(currentAuth ? 'Access denied.' : 'Login required.');
+                return;
+            }
+
+            const params = new URLSearchParams();
+            if (governanceDecisionInput.value) params.set('decision', governanceDecisionInput.value);
+            if (governanceStatusInput.value) params.set('status', governanceStatusInput.value);
+            if (governanceToolInput.value.trim()) params.set('toolName', governanceToolInput.value.trim());
+            if (governanceRiskInput.value) params.set('riskLevel', governanceRiskInput.value);
+            if (governanceScopeInput.value) params.set('scope', governanceScopeInput.value);
+            if (governanceSessionInput.value.trim()) params.set('sessionId', governanceSessionInput.value.trim());
+            if (governanceActorInput.value.trim()) params.set('actorId', governanceActorInput.value.trim());
+            if (governanceTagInput.value.trim()) params.set('tag', governanceTagInput.value.trim());
+            const query = params.toString();
+            const { resp, data } = await api(`/admin/governance/ledger${query ? `?${query}` : ''}`);
+            if (!resp.ok) {
+                governanceListOutput.textContent = `Governance ledger request failed (${resp.status})`;
+                return;
+            }
+
+            const items = data.items || [];
+            if (!items.length) {
+                governanceState.selectedId = null;
+                governanceState.detail = null;
+                governanceRevokeReasonInput.value = '';
+                governanceDetailOutput.innerHTML = '<div class="muted">Select a governance ledger entry.</div>';
+                applyGovernanceAccessState();
+                governanceListOutput.textContent = 'No governance ledger entries matched the current filters.';
+                return;
+            }
+
+            governanceListOutput.innerHTML = items.map(item => `
+                <div class="card" style="margin-bottom:0.75rem;">
+                    <strong>${escapeHtml(item.actionSummary || item.id)}</strong>
+                    <div class="muted">${escapeHtml(item.decision || 'unknown')} · ${escapeHtml(item.status || 'active')} · risk ${escapeHtml(item.riskLevel || 'unknown')} · scope ${escapeHtml(item.scope || 'unknown')}</div>
+                    <div class="muted">Tool: ${escapeHtml(item.toolName || 'none')} · Action: ${escapeHtml(item.actionType || 'none')}</div>
+                    <div class="muted">Session: ${escapeHtml(item.sessionId || 'none')} · Decided by: ${escapeHtml(item.decidedBy || 'unknown')}</div>
+                    <div class="muted">Updated: ${escapeHtml(formatDateTime(item.updatedAtUtc || item.createdAtUtc))}</div>
+                    <div class="actions" style="margin-top:0.75rem;">
+                        <button data-governance-inspect="${encodeURIComponent(item.id)}">Inspect</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderGovernanceBlock(label, value) {
+            if (!value) return '';
+            if (Array.isArray(value) && !value.length) return '';
+            return `<h3>${escapeHtml(label)}</h3><pre>${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
+        }
+
+        function renderGovernanceDetail(entry) {
+            governanceState.detail = entry;
+            if (!entry) {
+                governanceState.selectedId = null;
+                governanceDetailOutput.innerHTML = '<div class="muted">Select a governance ledger entry.</div>';
+                applyGovernanceAccessState();
+                return;
+            }
+
+            governanceDetailOutput.innerHTML = `
+                <div class="stack">
+                    <div>
+                        <strong>${escapeHtml(entry.actionSummary || entry.id)}</strong>
+                        <div class="muted">${escapeHtml(entry.decision || 'unknown')} · ${escapeHtml(entry.status || 'active')} · risk ${escapeHtml(entry.riskLevel || 'unknown')} · source ${escapeHtml(entry.source || 'unknown')}</div>
+                        <div class="muted">Tool: ${escapeHtml(entry.toolName || 'none')} · Action: ${escapeHtml(entry.actionType || 'none')}</div>
+                        <div class="muted">Scope: ${escapeHtml(entry.scope || 'unknown')} · Scope key: ${escapeHtml(entry.scopeKey || 'none')}</div>
+                        <div class="muted">Session: ${escapeHtml(entry.sessionId || 'none')} · Approval: ${escapeHtml(entry.approvalId || 'none')}</div>
+                        <div class="muted">Contract: ${escapeHtml(entry.harnessContractId || 'none')} · Evidence: ${escapeHtml(entry.evidenceBundleId || 'none')} · Proposal: ${escapeHtml(entry.learningProposalId || 'none')}</div>
+                        <div class="muted">Decided by: ${escapeHtml(entry.decidedBy || 'unknown')} · Reason: ${escapeHtml(entry.decisionReason || 'none')}</div>
+                        <div class="muted">Created: ${escapeHtml(formatDateTime(entry.createdAtUtc))} · Updated: ${escapeHtml(formatDateTime(entry.updatedAtUtc))}</div>
+                        <div class="muted">Revoked: ${escapeHtml(entry.revokedAtUtc ? formatDateTime(entry.revokedAtUtc) : 'no')} · ${escapeHtml(entry.revocationReason || '')}</div>
+                    </div>
+                    ${renderGovernanceBlock('Redacted Arguments', entry.redactedArguments)}
+                    ${renderGovernanceBlock('Policy Hint', entry.policyHint)}
+                    ${renderGovernanceBlock('Tags', entry.tags)}
+                    ${renderGovernanceBlock('Metadata', entry.metadata)}
+                    <pre>${escapeHtml(JSON.stringify(entry, null, 2))}</pre>
+                </div>
+            `;
+            applyGovernanceAccessState();
+        }
+
+        async function loadGovernanceLedgerDetail(id) {
+            if (!id || !canViewGovernanceLedger()) return;
+            governanceState.selectedId = id;
+            const { resp, data } = await api(`/admin/governance/ledger/${encodeURIComponent(id)}`);
+            if (!resp.ok) {
+                governanceDetailOutput.innerHTML = `<div class="muted">Governance ledger detail failed (${resp.status})</div>`;
+                return;
+            }
+
+            renderGovernanceDetail(data.entry);
+        }
+
+        async function revokeGovernanceLedgerEntry() {
+            if (!canMutateGovernanceLedger()) {
+                showFlash('Governance revoke requires operator access.', 'warn');
+                return;
+            }
+
+            if (!governanceState.selectedId) {
+                showFlash('Select a governance ledger entry first.', 'warn');
+                return;
+            }
+
+            const { resp, data } = await mutate(`/admin/governance/ledger/${encodeURIComponent(governanceState.selectedId)}/revoke`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: governanceRevokeReasonInput.value.trim() || null })
+            });
+            showFlash(resp.ok ? 'Governance ledger entry revoked.' : `Governance revoke failed (${resp.status}).`, resp.ok ? 'ok' : 'error');
+            if (!resp.ok) {
+                renderJson(governanceDetailOutput, data || `Governance revoke failed (${resp.status})`);
+                return;
+            }
+
+            renderGovernanceDetail(data.entry);
+            await loadGovernanceLedger();
         }
 
         async function loadDoctor() {
@@ -5024,6 +5604,7 @@
                 observabilitySeriesOutput.textContent = 'Login required.';
                 auditExportOutput.textContent = 'Login required.';
                 trajectoryExportOutput.textContent = 'Login required.';
+                resetGovernanceUi('Login required.');
                 migrationReportOutput.textContent = 'Load a local migration report after login.';
                 if (approvalsPollTimer) {
                     clearInterval(approvalsPollTimer);
@@ -5056,12 +5637,20 @@
                 loadAutomationTemplates(),
                 loadAutomations(),
                 loadLearningProposals(),
+                loadHarnessContracts(),
+                loadEvidenceBundles(),
                 loadSettings(),
                 loadWhatsAppSetup(),
                 loadPairing(),
                 loadAllowlists(),
                 loadObservability()
             ];
+
+            if (canViewGovernanceLedger()) {
+                tasks.push(loadGovernanceLedger());
+            } else {
+                resetGovernanceUi('Access denied.');
+            }
 
             if (hasRole('admin')) {
                 tasks.push(loadOperatorAccounts(), loadOrganizationPolicy());
@@ -5149,11 +5738,41 @@
         document.getElementById('automation-dry-run-button').addEventListener('click', async () => runAutomation(true));
         document.getElementById('automation-delete-button').addEventListener('click', deleteAutomation);
         document.getElementById('learning-refresh-button').addEventListener('click', loadLearningProposals);
+        document.getElementById('learning-detect-harness-button').addEventListener('click', detectHarnessEvolutionProposals);
         document.getElementById('learning-approve-button').addEventListener('click', async () => reviewLearningProposal('approve'));
         document.getElementById('learning-reject-button').addEventListener('click', async () => reviewLearningProposal('reject'));
         document.getElementById('learning-rollback-button').addEventListener('click', async () => reviewLearningProposal('rollback'));
-        [learningStatusInput, learningKindInput].forEach(input => {
+        [learningStatusInput, learningKindInput, learningComponentInput, learningRiskInput].forEach(input => {
             input.addEventListener('change', loadLearningProposals);
+        });
+        document.getElementById('harness-refresh-button').addEventListener('click', loadHarnessContracts);
+        [harnessStatusInput, harnessRiskInput].forEach(input => {
+            input.addEventListener('change', loadHarnessContracts);
+        });
+        harnessTagInput.addEventListener('keydown', async (event) => {
+            if (event.key !== 'Enter') return;
+            await loadHarnessContracts();
+        });
+        document.getElementById('evidence-refresh-button').addEventListener('click', loadEvidenceBundles);
+        [evidenceConfidenceInput].forEach(input => {
+            input.addEventListener('change', loadEvidenceBundles);
+        });
+        [evidenceSessionInput, evidenceContractInput, evidenceTagInput].forEach(input => {
+            input.addEventListener('keydown', async (event) => {
+                if (event.key !== 'Enter') return;
+                await loadEvidenceBundles();
+            });
+        });
+        governanceRefreshButton.addEventListener('click', loadGovernanceLedger);
+        governanceRevokeButton.addEventListener('click', revokeGovernanceLedgerEntry);
+        [governanceDecisionInput, governanceStatusInput, governanceRiskInput, governanceScopeInput].forEach(input => {
+            input.addEventListener('change', loadGovernanceLedger);
+        });
+        [governanceToolInput, governanceSessionInput, governanceActorInput, governanceTagInput].forEach(input => {
+            input.addEventListener('keydown', async (event) => {
+                if (event.key !== 'Enter') return;
+                await loadGovernanceLedger();
+            });
         });
         document.getElementById('memory-refresh-button').addEventListener('click', loadMemoryNotes);
         document.getElementById('memory-search-button').addEventListener('click', loadMemoryNotes);
@@ -5247,6 +5866,36 @@
             await loadApprovals();
             await loadApprovalHistory();
             showFlash(resp.ok ? `Approval ${approved ? 'granted' : 'denied'} for ${approvalId}.` : `Approval update failed (${resp.status}).`, resp.ok ? 'ok' : 'error');
+        });
+
+        harnessListOutput.addEventListener('click', async (event) => {
+            const button = event.target.closest('button[data-harness-inspect]');
+            if (!button) return;
+
+            const encodedId = button.getAttribute('data-harness-inspect');
+            if (!encodedId) return;
+
+            await loadHarnessContractDetail(decodeURIComponent(encodedId));
+        });
+
+        evidenceListOutput.addEventListener('click', async (event) => {
+            const button = event.target.closest('button[data-evidence-inspect]');
+            if (!button) return;
+
+            const encodedId = button.getAttribute('data-evidence-inspect');
+            if (!encodedId) return;
+
+            await loadEvidenceBundleDetail(decodeURIComponent(encodedId));
+        });
+
+        governanceListOutput.addEventListener('click', async (event) => {
+            const button = event.target.closest('button[data-governance-inspect]');
+            if (!button) return;
+
+            const encodedId = button.getAttribute('data-governance-inspect');
+            if (!encodedId) return;
+
+            await loadGovernanceLedgerDetail(decodeURIComponent(encodedId));
         });
 
         memoryNotesOutput.addEventListener('click', async (event) => {

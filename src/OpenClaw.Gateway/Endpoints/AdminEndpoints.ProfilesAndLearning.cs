@@ -182,10 +182,105 @@ internal static partial class AdminEndpoints
 
             var status = ctx.Request.Query.TryGetValue("status", out var statusValues) ? statusValues.ToString() : null;
             var kind = ctx.Request.Query.TryGetValue("kind", out var kindValues) ? kindValues.ToString() : null;
-            var items = await learningService.ListAsync(status, kind, ctx.RequestAborted);
+            var component = ctx.Request.Query.TryGetValue("component", out var componentValues) ? componentValues.ToString() : null;
+            var risk = ctx.Request.Query.TryGetValue("risk", out var riskValues) ? riskValues.ToString() : null;
+            var items = await learningService.ListAsync(status, kind, component, risk, ctx.RequestAborted);
             return Results.Json(
                 new LearningProposalListResponse { Items = items },
                 CoreJsonContext.Default.LearningProposalListResponse);
+        });
+
+        app.MapPost("/admin/learning/proposals/harness-change", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.learning.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.HarnessEvolutionProposalCreateRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+            if (requestPayload.Value is null)
+                return Results.BadRequest(new MutationResponse { Success = false, Error = "Harness change proposal payload is required." });
+
+            LearningProposal proposal;
+            try
+            {
+                proposal = await learningService.CreateHarnessChangeProposalAsync(requestPayload.Value, ctx.RequestAborted);
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+            {
+                return Results.BadRequest(new MutationResponse { Success = false, Error = ex.Message });
+            }
+
+            operations.RuntimeEvents.Append(new RuntimeEventEntry
+            {
+                Id = $"evt_{Guid.NewGuid():N}"[..20],
+                TimestampUtc = DateTimeOffset.UtcNow,
+                Component = "learning",
+                Action = "harness_change_created",
+                Severity = "info",
+                Summary = $"Harness evolution proposal '{proposal.Id}' created for review."
+            });
+            RecordOperatorAudit(
+                ctx,
+                operations,
+                auth,
+                "learning_harness_change_create",
+                proposal.Id,
+                $"Created harness evolution proposal '{proposal.Id}'.",
+                success: true,
+                before: null,
+                after: proposal);
+
+            return Results.Json(proposal, CoreJsonContext.Default.LearningProposal);
+        });
+
+        app.MapPost("/admin/learning/proposals/harness-change/detect", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.learning.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.HarnessEvolutionDetectionRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+
+            var request = requestPayload.Value ?? new HarnessEvolutionDetectionRequest();
+            HarnessEvolutionDetectionResponse response;
+            try
+            {
+                response = await learningService.DetectHarnessChangeProposalsAsync(
+                    operations.RuntimeEvents,
+                    request,
+                    ctx.RequestAborted);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new MutationResponse { Success = false, Error = ex.Message });
+            }
+            operations.RuntimeEvents.Append(new RuntimeEventEntry
+            {
+                Id = $"evt_{Guid.NewGuid():N}"[..20],
+                TimestampUtc = DateTimeOffset.UtcNow,
+                Component = "learning",
+                Action = "harness_change_detection",
+                Severity = "info",
+                Summary = $"Harness evolution detection evaluated {response.GroupsEvaluated} groups and returned {response.Proposals.Count} proposals."
+            });
+            RecordOperatorAudit(
+                ctx,
+                operations,
+                auth,
+                "learning_harness_change_detect",
+                "harness_change",
+                $"Detected {response.Proposals.Count} harness evolution proposals.",
+                success: true,
+                before: null,
+                after: response);
+
+            return Results.Json(response, CoreJsonContext.Default.HarnessEvolutionDetectionResponse);
         });
 
         app.MapGet("/admin/learning/proposals/{id}", async (HttpContext ctx, string id) =>
@@ -209,6 +304,19 @@ internal static partial class AdminEndpoints
             var auth = authResult.Authorization!;
 
             var before = await learningService.GetDetailAsync(id, ctx.RequestAborted);
+            if (before?.Proposal is { Kind: LearningProposalKind.HarnessChange, Status: LearningProposalStatus.Pending } pendingHarnessApproval)
+            {
+                var linked = await RecordHarnessEvolutionGovernanceDecisionAsync(
+                    ctx,
+                    services,
+                    auth,
+                    pendingHarnessApproval,
+                    GovernanceDecisions.Approved,
+                    "Harness evolution proposal approved for manual application.",
+                    ctx.RequestAborted);
+                if (linked is null)
+                    return Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
 
             var approved = await learningService.ApproveAsync(id, runtime.AgentRuntime, ctx.RequestAborted);
             if (approved is null)
@@ -257,6 +365,22 @@ internal static partial class AdminEndpoints
                 return requestPayload.Failure;
 
             var before = await learningService.GetDetailAsync(id, ctx.RequestAborted);
+            if (before?.Proposal is { Kind: LearningProposalKind.HarnessChange, Status: LearningProposalStatus.Pending } pendingHarnessRejection)
+            {
+                var linked = await RecordHarnessEvolutionGovernanceDecisionAsync(
+                    ctx,
+                    services,
+                    auth,
+                    pendingHarnessRejection,
+                    GovernanceDecisions.Rejected,
+                    string.IsNullOrWhiteSpace(requestPayload.Value?.Reason)
+                        ? "Harness evolution proposal rejected."
+                        : requestPayload.Value!.Reason!,
+                    ctx.RequestAborted);
+                if (linked is null)
+                    return Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+
             var rejected = await learningService.RejectAsync(id, requestPayload.Value?.Reason, ctx.RequestAborted);
             if (rejected is null)
                 return Results.NotFound(new MutationResponse { Success = false, Error = "Proposal not found." });
@@ -330,5 +454,47 @@ internal static partial class AdminEndpoints
             return Results.Json(rolledBack, CoreJsonContext.Default.LearningProposal);
         });
 
+    }
+
+    private static async ValueTask<LearningProposal?> RecordHarnessEvolutionGovernanceDecisionAsync(
+        HttpContext ctx,
+        AdminEndpointServices services,
+        EndpointHelpers.OperatorAuthorizationResult auth,
+        LearningProposal proposal,
+        string decision,
+        string reason,
+        CancellationToken ct)
+    {
+        if (proposal.HarnessEvolution is null)
+        {
+            throw new InvalidOperationException("Harness change proposals must include harness evolution metadata.");
+        }
+
+        var entry = await services.GovernanceLedger.CreateAsync(new GovernanceLedgerEntry
+        {
+            Decision = decision,
+            Source = GovernanceLedgerSources.LearningProposal,
+            ActionType = "harness_change_review",
+            ActionSummary = proposal.Title,
+            RiskLevel = proposal.RiskLevel,
+            Scope = GovernanceScopes.Global,
+            LearningProposalId = proposal.Id,
+            SessionId = proposal.SourceSessionIds.FirstOrDefault(),
+            ActorId = EndpointHelpers.GetOperatorActorId(ctx, auth),
+            DecidedBy = auth.DisplayName ?? auth.Username ?? auth.AccountId ?? auth.AuthMode,
+            DecisionReason = reason,
+            Tags = ["learning", "harness_change"],
+            Metadata = new GovernanceLedgerMetadata
+            {
+                CreatedBy = "admin.learning",
+                Properties = new Dictionary<string, string>
+                {
+                    ["component"] = proposal.HarnessEvolution.Component,
+                    ["applyMode"] = proposal.HarnessEvolution.ApplyMode
+                }
+            }
+        }, ct);
+
+        return await services.LearningService.LinkHarnessGovernanceLedgerAsync(proposal.Id, entry.Id, ct);
     }
 }

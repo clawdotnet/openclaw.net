@@ -140,7 +140,8 @@ internal static partial class OpenAiEndpoints
                     runtime,
                     session,
                     approvalChannelId: "openai-http",
-                    senderId: requesterKey);
+                    senderId: requesterKey,
+                    FeatureFallbackServices.ResolveGovernanceLedgerService(startup, app.Services));
 
                 if (ShouldHydrateRequestHistory(stableSessionId, session))
                 {

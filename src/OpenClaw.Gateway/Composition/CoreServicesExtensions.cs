@@ -187,6 +187,11 @@ internal static class CoreServicesExtensions
         services.AddSingleton<IAutomationRunDispatcher>(sp => sp.GetRequiredService<AutomationRunCoordinator>());
         services.AddSingleton<GatewayAutomationService>();
         services.AddSingleton<LearningService>();
+        services.AddSingleton<HarnessContractService>();
+        services.AddSingleton<EvidenceBundleService>();
+        services.AddSingleton<GovernanceLedgerService>();
+        services.AddSingleton<PlanExecuteVerifyService>();
+        services.AddSingleton<IPlanExecuteVerifyOrchestrator>(sp => sp.GetRequiredService<PlanExecuteVerifyService>());
         services.AddSingleton<AgentWorkflowRegistry>();
         services.AddSingleton<ICronJobSource, GatewayCronJobSource>();
         services.AddSingleton<ActorRateLimitService>(sp =>
@@ -235,6 +240,13 @@ internal static class CoreServicesExtensions
 
     private static void AddFeatureStores(IServiceCollection services, GatewayConfig config)
     {
+        services.AddSingleton<FileHarnessContractStore>(_ => new FileHarnessContractStore(config.Memory.StoragePath));
+        services.AddSingleton<IHarnessContractStore>(sp => sp.GetRequiredService<FileHarnessContractStore>());
+        services.AddSingleton<FileEvidenceBundleStore>(_ => new FileEvidenceBundleStore(config.Memory.StoragePath));
+        services.AddSingleton<IEvidenceBundleStore>(sp => sp.GetRequiredService<FileEvidenceBundleStore>());
+        services.AddSingleton<FileGovernanceLedgerStore>(_ => new FileGovernanceLedgerStore(config.Memory.StoragePath));
+        services.AddSingleton<IGovernanceLedgerStore>(sp => sp.GetRequiredService<FileGovernanceLedgerStore>());
+
         if (string.Equals(config.Memory.Provider, "sqlite", StringComparison.OrdinalIgnoreCase))
         {
             services.AddSingleton<SqliteFeatureStore>(_ => new SqliteFeatureStore(ResolveSqliteDbPath(config)));

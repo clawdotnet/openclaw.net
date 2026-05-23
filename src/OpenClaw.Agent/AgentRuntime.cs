@@ -112,7 +112,8 @@ public sealed class AgentRuntime : IAgentRuntime
         ToolAuditLog? toolAuditLog = null,
         IRedactionPipeline? redaction = null,
         ISentinelSubstitutionService? sentinelSubstitution = null,
-        IToolGovernanceService? toolGovernance = null)
+        IToolGovernanceService? toolGovernance = null,
+        IPlanExecuteVerifyOrchestrator? planExecuteVerify = null)
     {
         _chatClient = chatClient;
         _tools = tools;
@@ -162,6 +163,7 @@ public sealed class AgentRuntime : IAgentRuntime
             redaction: _redaction,
             sentinelSubstitution: _sentinelSubstitution,
             toolGovernance: toolGovernance,
+            planExecuteVerify: planExecuteVerify,
             auditLog: toolAuditLog);
         _sessionTokenBudget = sessionTokenBudget;
         _estimateTokenBudgetAdmission = gatewayConfig?.EnableEstimatedTokenAdmissionControl ?? false;
@@ -656,7 +658,8 @@ public sealed class AgentRuntime : IAgentRuntime
                                 isStreaming: true,
                                 approvalCallback,
                                 ct,
-                                onDelta: async chunk => await channel.Writer.WriteAsync(chunk, ct));
+                                onDelta: async chunk => await channel.Writer.WriteAsync(chunk, ct),
+                                toolCallCount: toolCalls.Count);
                             return (execution, execution.ToFunctionResultContent(call.CallId));
                         }
                         finally
@@ -710,7 +713,7 @@ public sealed class AgentRuntime : IAgentRuntime
                         yield return AgentStreamEvent.ToolStarted(call.Name, argsJson);
 
                         var (invocation, result) = await ExecuteSingleToolCallAsync(
-                            call, session, turnCtx, isStreaming: true, approvalCallback, ct, onDelta: null);
+                            call, session, turnCtx, isStreaming: true, approvalCallback, ct, onDelta: null, toolCallCount: toolCalls.Count);
                         invocations.Add(invocation);
                         toolResults.Add(result);
 
@@ -1135,7 +1138,7 @@ public sealed class AgentRuntime : IAgentRuntime
 
         foreach (var call in toolCalls)
         {
-            var (invocation, result) = await ExecuteSingleToolCallAsync(call, session, turnCtx, isStreaming, approvalCallback, ct, onDelta: null);
+            var (invocation, result) = await ExecuteSingleToolCallAsync(call, session, turnCtx, isStreaming, approvalCallback, ct, onDelta: null, toolCallCount: toolCalls.Count);
             invocations.Add(invocation);
             toolResults.Add(result);
         }
@@ -1157,7 +1160,7 @@ public sealed class AgentRuntime : IAgentRuntime
         {
             try
             {
-                return await ExecuteSingleToolCallAsync(call, session, turnCtx, isStreaming, approvalCallback, linkedCts.Token, onDelta: null);
+                return await ExecuteSingleToolCallAsync(call, session, turnCtx, isStreaming, approvalCallback, linkedCts.Token, onDelta: null, toolCallCount: toolCalls.Count);
             }
             catch (Exception)
             {
@@ -1199,7 +1202,8 @@ public sealed class AgentRuntime : IAgentRuntime
         bool isStreaming,
         ToolApprovalCallback? approvalCallback,
         CancellationToken ct,
-        Func<string, ValueTask>? onDelta)
+        Func<string, ValueTask>? onDelta,
+        int toolCallCount)
     {
         var result = await _toolExecutor.ExecuteAsync(
             call,
@@ -1208,7 +1212,8 @@ public sealed class AgentRuntime : IAgentRuntime
             isStreaming,
             approvalCallback,
             ct,
-            onDelta);
+            onDelta,
+            toolCallCount);
 
         return (result.Invocation, result.ToFunctionResultContent(call.CallId));
     }

@@ -68,7 +68,9 @@ A single place for the terms that show up across OpenClaw.NET docs. If a term in
 
 **Automation** — a saved task that runs on demand or on a cron schedule. Supports list, get, preview, create, update, pause, resume, run.
 
-**Learning proposal** — a pending change the runtime suggests after observing successful sessions. Kinds: `profile_update`, `automation_suggestion`, `skill_draft`. Operators approve, reject, or roll back. Nothing mutates behavior until approved.
+**Learning proposal** — a pending change the runtime suggests after observing successful sessions. Kinds include `profile_update`, `automation_suggestion`, `skill_draft`, and review-first `harness_change` proposals. Operators approve, reject, or roll back supported proposal types. Nothing mutates behavior until approved, and `harness_change` approvals are manual-only in the current implementation.
+
+**Harness Evolution Proposal** — a `harness_change` learning proposal for review-first improvements to harness behavior such as memory retrieval, routing, verification, tool governance, approvals, pulse behavior, context budgets, or security policy.
 
 ## Channels and Surfaces
 
