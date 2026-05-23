@@ -197,6 +197,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton<HarnessContractService>();
         services.AddSingleton<EvidenceBundleService>();
         services.AddSingleton<GovernanceLedgerService>();
+        services.AddSingleton<SharedHarnessStateService>();
         services.AddSingleton<PlanExecuteVerifyService>();
         services.AddSingleton<IPlanExecuteVerifyOrchestrator>(sp => sp.GetRequiredService<PlanExecuteVerifyService>());
         services.AddSingleton<AgentWorkflowRegistry>();
@@ -253,6 +254,8 @@ internal static class CoreServicesExtensions
         services.AddSingleton<IEvidenceBundleStore>(sp => sp.GetRequiredService<FileEvidenceBundleStore>());
         services.AddSingleton<FileGovernanceLedgerStore>(_ => new FileGovernanceLedgerStore(config.Memory.StoragePath));
         services.AddSingleton<IGovernanceLedgerStore>(sp => sp.GetRequiredService<FileGovernanceLedgerStore>());
+        services.AddSingleton<FileSharedHarnessStateStore>(_ => new FileSharedHarnessStateStore(config.Memory.StoragePath));
+        services.AddSingleton<ISharedHarnessStateStore>(sp => sp.GetRequiredService<FileSharedHarnessStateStore>());
 
         if (string.Equals(config.Memory.Provider, "sqlite", StringComparison.OrdinalIgnoreCase))
         {

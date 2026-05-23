@@ -277,6 +277,118 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task SharedHarnessState_AdminApi_RequiresAuthAndSupportsCreateListDetailAndConflicts()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+
+        var anonymousResponse = await harness.Client.GetAsync("/admin/harness/shared-state");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+
+        var viewerToken = CreateOperatorToken(harness, OperatorRoleNames.Viewer, "shared-state-viewer");
+        using var viewerListRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/shared-state");
+        viewerListRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken);
+        var viewerListResponse = await harness.Client.SendAsync(viewerListRequest);
+        Assert.Equal(HttpStatusCode.OK, viewerListResponse.StatusCode);
+
+        using var viewerCreateRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state")
+        {
+            Content = JsonContent("""{"goal":"viewer cannot create"}""")
+        };
+        viewerCreateRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewerToken);
+        var viewerCreateResponse = await harness.Client.SendAsync(viewerCreateRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, viewerCreateResponse.StatusCode);
+
+        var (cookie, csrfToken) = await LoginAsync(harness.Client, harness.AuthToken);
+        var stateJson = JsonSerializer.Serialize(new SharedHarnessState
+        {
+            Id = "shs_admin",
+            SessionId = "session-shared",
+            ParentSessionId = "session-parent",
+            HarnessContractId = "hctr_shared",
+            Goal = "Coordinate delegated test work",
+            Tags = ["shared"]
+        }, CoreJsonContext.Default.SharedHarnessState);
+
+        using var missingCsrfRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state")
+        {
+            Content = JsonContent(stateJson)
+        };
+        missingCsrfRequest.Headers.Add("Cookie", cookie);
+        var missingCsrfResponse = await harness.Client.SendAsync(missingCsrfRequest);
+        Assert.Equal(HttpStatusCode.Unauthorized, missingCsrfResponse.StatusCode);
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state")
+        {
+            Content = JsonContent(stateJson)
+        };
+        createRequest.Headers.Add("Cookie", cookie);
+        createRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var createResponse = await harness.Client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        using var createPayload = await ReadJsonAsync(createResponse);
+        Assert.True(createPayload.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal("shs_admin", createPayload.RootElement.GetProperty("state").GetProperty("id").GetString());
+
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/shared-state/shs_admin");
+        detailRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var detailResponse = await harness.Client.SendAsync(detailRequest);
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailPayload = await ReadJsonAsync(detailResponse);
+        Assert.Equal("session-shared", detailPayload.RootElement.GetProperty("state").GetProperty("sessionId").GetString());
+
+        using var bySessionRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/sessions/session-shared/harness-state");
+        bySessionRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var bySessionResponse = await harness.Client.SendAsync(bySessionRequest);
+        Assert.Equal(HttpStatusCode.OK, bySessionResponse.StatusCode);
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/harness/shared-state?sessionId=session-shared&tag=shared");
+        listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var listResponse = await harness.Client.SendAsync(listRequest);
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listPayload = await ReadJsonAsync(listResponse);
+        Assert.Single(listPayload.RootElement.GetProperty("items").EnumerateArray());
+
+        using var participantRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state/shs_admin/participants")
+        {
+            Content = JsonContent("""{"id":"coder","role":"coder","sessionId":"session-coder"}""")
+        };
+        participantRequest.Headers.Add("Cookie", cookie);
+        participantRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var participantResponse = await harness.Client.SendAsync(participantRequest);
+        Assert.Equal(HttpStatusCode.OK, participantResponse.StatusCode);
+
+        using var firstActionRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state/shs_admin/actions")
+        {
+            Content = JsonContent("""{"id":"write-a","participantId":"coder","title":"Write A","writeSet":[{"kind":"file","path":"README.md"}]}""")
+        };
+        firstActionRequest.Headers.Add("Cookie", cookie);
+        firstActionRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var firstActionResponse = await harness.Client.SendAsync(firstActionRequest);
+        Assert.Equal(HttpStatusCode.OK, firstActionResponse.StatusCode);
+
+        using var secondActionRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state/shs_admin/actions")
+        {
+            Content = JsonContent("""{"id":"write-b","participantId":"coder","title":"Write B","writeSet":[{"kind":"file","path":"README.md"}]}""")
+        };
+        secondActionRequest.Headers.Add("Cookie", cookie);
+        secondActionRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var secondActionResponse = await harness.Client.SendAsync(secondActionRequest);
+        Assert.Equal(HttpStatusCode.OK, secondActionResponse.StatusCode);
+
+        using var detectRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/harness/shared-state/shs_admin/detect-conflicts");
+        detectRequest.Headers.Add("Cookie", cookie);
+        detectRequest.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrfToken);
+        var detectResponse = await harness.Client.SendAsync(detectRequest);
+        Assert.Equal(HttpStatusCode.OK, detectResponse.StatusCode);
+        using var detectPayload = await ReadJsonAsync(detectResponse);
+        Assert.Single(detectPayload.RootElement.GetProperty("state").GetProperty("conflicts").EnumerateArray());
+
+        var events = harness.Runtime.Operations.RuntimeEvents.Query(new RuntimeEventQuery { Component = "harness", Limit = 20 });
+        Assert.Contains(events, item => item.Action == "shared_state_created" && item.CorrelationId == "shs_admin");
+        Assert.Contains(events, item => item.Action == "shared_state_conflicts_detected" && item.CorrelationId == "shs_admin");
+    }
+
+    [Fact]
     public async Task EvidenceBundles_AdminApi_RequiresAuthAndSupportsCreateListDetailAndAppend()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);

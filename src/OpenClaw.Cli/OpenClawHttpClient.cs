@@ -167,5 +167,17 @@ internal sealed class OpenClawHttpClient : IDisposable
     public Task<StructuredMemoryHandoffResult> CreateFractalMemoryHandoffAsync(string path, CancellationToken cancellationToken)
         => _inner.CreateFractalMemoryHandoffAsync(path, cancellationToken);
 
+    public Task<SharedHarnessStateListResponse> ListSharedHarnessStateAsync(SharedHarnessStateListQuery query, CancellationToken cancellationToken)
+        => _inner.ListSharedHarnessStateAsync(query, cancellationToken);
+
+    public Task<SharedHarnessStateDetailResponse> GetSharedHarnessStateAsync(string id, CancellationToken cancellationToken)
+        => _inner.GetSharedHarnessStateAsync(id, cancellationToken);
+
+    public Task<SharedHarnessStateDetailResponse> GetSharedHarnessStateForSessionAsync(string sessionId, CancellationToken cancellationToken)
+        => _inner.GetSharedHarnessStateForSessionAsync(sessionId, cancellationToken);
+
+    public Task<SharedHarnessStateMutationResponse> DetectSharedHarnessStateConflictsAsync(string id, CancellationToken cancellationToken)
+        => _inner.DetectSharedHarnessStateConflictsAsync(id, cancellationToken);
+
     public void Dispose() => _inner.Dispose();
 }

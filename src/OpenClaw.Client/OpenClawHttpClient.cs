@@ -52,6 +52,7 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _adminMemoryFractalValidateUri;
     private readonly Uri _adminMemoryFractalIndexRefreshUri;
     private readonly Uri _adminMemoryFractalHandoffUri;
+    private readonly Uri _adminHarnessSharedStateUri;
     private readonly Uri _adminAgentBundleExportUri;
     private readonly Uri _adminAgentBundleImportUri;
     private readonly Uri _adminHeartbeatUri;
@@ -137,6 +138,7 @@ public sealed class OpenClawHttpClient : IDisposable
         _adminMemoryFractalValidateUri = new Uri(baseUri, "/admin/memory/fractal/validate");
         _adminMemoryFractalIndexRefreshUri = new Uri(baseUri, "/admin/memory/fractal/index/refresh");
         _adminMemoryFractalHandoffUri = new Uri(baseUri, "/admin/memory/fractal/handoff");
+        _adminHarnessSharedStateUri = new Uri(baseUri, "/admin/harness/shared-state");
         _adminAgentBundleExportUri = new Uri(baseUri, "/admin/agent-bundle/export");
         _adminAgentBundleImportUri = new Uri(baseUri, "/admin/agent-bundle/import");
         _adminHeartbeatUri = new Uri(baseUri, "/admin/heartbeat");
@@ -657,6 +659,34 @@ public sealed class OpenClawHttpClient : IDisposable
         };
 
         return await SendAsync(req, CoreJsonContext.Default.StructuredMemoryHandoffResult, cancellationToken);
+    }
+
+    public Task<SharedHarnessStateListResponse> ListSharedHarnessStateAsync(SharedHarnessStateListQuery query, CancellationToken cancellationToken)
+        => GetAsync(BuildSharedHarnessStateListUri(query), CoreJsonContext.Default.SharedHarnessStateListResponse, cancellationToken);
+
+    public Task<SharedHarnessStateDetailResponse> GetSharedHarnessStateAsync(string id, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            throw new ArgumentException("Shared harness state id is required.", nameof(id));
+
+        return GetAsync(new Uri($"{_adminHarnessSharedStateUri.AbsoluteUri.TrimEnd('/')}/{Uri.EscapeDataString(id)}", UriKind.Absolute), CoreJsonContext.Default.SharedHarnessStateDetailResponse, cancellationToken);
+    }
+
+    public Task<SharedHarnessStateDetailResponse> GetSharedHarnessStateForSessionAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            throw new ArgumentException("Session id is required.", nameof(sessionId));
+
+        return GetAsync(new Uri(_baseUri, $"/admin/sessions/{Uri.EscapeDataString(sessionId)}/harness-state"), CoreJsonContext.Default.SharedHarnessStateDetailResponse, cancellationToken);
+    }
+
+    public async Task<SharedHarnessStateMutationResponse> DetectSharedHarnessStateConflictsAsync(string id, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            throw new ArgumentException("Shared harness state id is required.", nameof(id));
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, new Uri($"{_adminHarnessSharedStateUri.AbsoluteUri.TrimEnd('/')}/{Uri.EscapeDataString(id)}/detect-conflicts", UriKind.Absolute));
+        return await SendAsync(req, CoreJsonContext.Default.SharedHarnessStateMutationResponse, cancellationToken);
     }
 
     public Task<AgentBundleExportBundle> ExportAgentBundleAsync(
@@ -1713,6 +1743,32 @@ public sealed class OpenClawHttpClient : IDisposable
         if (!string.IsNullOrWhiteSpace(scope))
             pairs.Add($"scope={Uri.EscapeDataString(scope)}");
         return new Uri($"{_adminMemoryFractalRecentUri}?{string.Join("&", pairs)}", UriKind.Absolute);
+    }
+
+    private Uri BuildSharedHarnessStateListUri(SharedHarnessStateListQuery? query)
+    {
+        query ??= new SharedHarnessStateListQuery();
+        var pairs = new List<string>
+        {
+            $"limit={Math.Clamp(query.Limit, 1, 500)}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(query.SessionId))
+            pairs.Add($"sessionId={Uri.EscapeDataString(query.SessionId)}");
+        if (!string.IsNullOrWhiteSpace(query.ParentSessionId))
+            pairs.Add($"parentSessionId={Uri.EscapeDataString(query.ParentSessionId)}");
+        if (!string.IsNullOrWhiteSpace(query.HarnessContractId))
+            pairs.Add($"harnessContractId={Uri.EscapeDataString(query.HarnessContractId)}");
+        if (!string.IsNullOrWhiteSpace(query.Status))
+            pairs.Add($"status={Uri.EscapeDataString(query.Status)}");
+        if (!string.IsNullOrWhiteSpace(query.Tag))
+            pairs.Add($"tag={Uri.EscapeDataString(query.Tag)}");
+        if (query.CreatedFromUtc.HasValue)
+            pairs.Add($"createdFromUtc={Uri.EscapeDataString(query.CreatedFromUtc.Value.ToString("O"))}");
+        if (query.CreatedToUtc.HasValue)
+            pairs.Add($"createdToUtc={Uri.EscapeDataString(query.CreatedToUtc.Value.ToString("O"))}");
+
+        return new Uri($"{_adminHarnessSharedStateUri}?{string.Join("&", pairs)}", UriKind.Absolute);
     }
 
     private Uri BuildAgentBundleExportUri(

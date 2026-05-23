@@ -92,6 +92,17 @@ internal static class FeatureFallbackServices
                services.GetService<IRedactionPipeline>()
                ?? new RedactionPipeline([new BaselineSecretRedactor()]),
                NullLogger<GovernanceLedgerService>.Instance);
+
+    public static SharedHarnessStateService ResolveSharedHarnessStateService(
+        GatewayStartupContext startup,
+        IServiceProvider services)
+        => services.GetService<SharedHarnessStateService>()
+           ?? new SharedHarnessStateService(
+               services.GetService<ISharedHarnessStateStore>()
+               ?? new FileSharedHarnessStateStore(startup.Config.Memory.StoragePath),
+               services.GetService<RuntimeEventStore>()
+               ?? new RuntimeEventStore(startup.Config.Memory.StoragePath, NullLogger<RuntimeEventStore>.Instance),
+               NullLogger<SharedHarnessStateService>.Instance);
 }
 
 internal sealed class EmptySessionSearchStore : ISessionSearchStore

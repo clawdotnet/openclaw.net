@@ -57,6 +57,7 @@ internal static partial class AdminEndpoints
         public HarnessContractService HarnessContracts { get; init; } = null!;
         public EvidenceBundleService EvidenceBundles { get; init; } = null!;
         public GovernanceLedgerService GovernanceLedger { get; init; } = null!;
+        public SharedHarnessStateService SharedHarnessState { get; init; } = null!;
         public PlanExecuteVerifyService PlanExecuteVerify { get; init; } = null!;
         public IntegrationApiFacade Facade { get; init; } = null!;
         public ToolPresetResolver ToolPresetResolver { get; init; } = null!;

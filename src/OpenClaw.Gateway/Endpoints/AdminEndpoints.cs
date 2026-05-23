@@ -52,6 +52,7 @@ internal static partial class AdminEndpoints
         var harnessContracts = FeatureFallbackServices.ResolveHarnessContractService(startup, app.Services);
         var evidenceBundles = FeatureFallbackServices.ResolveEvidenceBundleService(startup, app.Services);
         var governanceLedger = FeatureFallbackServices.ResolveGovernanceLedgerService(startup, app.Services);
+        var sharedHarnessState = FeatureFallbackServices.ResolveSharedHarnessStateService(startup, app.Services);
         var planExecuteVerify = app.Services.GetService<PlanExecuteVerifyService>()
             ?? new PlanExecuteVerifyService(
                 startup.Config,
@@ -122,6 +123,7 @@ internal static partial class AdminEndpoints
             HarnessContracts = harnessContracts,
             EvidenceBundles = evidenceBundles,
             GovernanceLedger = governanceLedger,
+            SharedHarnessState = sharedHarnessState,
             PlanExecuteVerify = planExecuteVerify,
             Facade = facade,
             ToolPresetResolver = toolPresetResolver,
@@ -146,6 +148,7 @@ internal static partial class AdminEndpoints
         MapMemoryEndpoints(app, services);
         MapProfilesAndLearningEndpoints(app, services);
         MapHarnessContractEndpoints(app, services);
+        MapSharedHarnessStateEndpoints(app, services);
         MapPlanExecuteVerifyEndpoints(app, services);
         MapEvidenceBundleEndpoints(app, services);
         MapGovernanceLedgerEndpoints(app, services);
