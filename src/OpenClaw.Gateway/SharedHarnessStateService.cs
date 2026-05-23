@@ -465,6 +465,7 @@ internal sealed class SharedHarnessStateService
     {
         var items = CleanList(participants);
         var usedIds = ToIdSet(items.Select(static item => item.Id));
+        var normalizedIds = new HashSet<string>(StringComparer.Ordinal);
         var normalized = new List<HarnessParticipant>(items.Count);
         foreach (var item in items)
         {
@@ -472,6 +473,8 @@ internal sealed class SharedHarnessStateService
                 ? FirstUnusedGeneratedIndex(usedIds, "participant")
                 : normalized.Count;
             var participant = NormalizeParticipant(item, index, now);
+            if (!normalizedIds.Add(participant.Id))
+                throw new ArgumentException($"Duplicate participant id '{participant.Id}'.", nameof(participants));
             usedIds.Add(participant.Id);
             normalized.Add(participant);
         }
@@ -503,6 +506,7 @@ internal sealed class SharedHarnessStateService
     {
         var items = CleanList(actions);
         var usedIds = ToIdSet(items.Select(static item => item.Id));
+        var normalizedIds = new HashSet<string>(StringComparer.Ordinal);
         var normalized = new List<HarnessStateAction>(items.Count);
         foreach (var item in items)
         {
@@ -510,6 +514,8 @@ internal sealed class SharedHarnessStateService
                 ? FirstUnusedGeneratedIndex(usedIds, "action")
                 : normalized.Count;
             var action = NormalizeAction(item, index, now);
+            if (!normalizedIds.Add(action.Id))
+                throw new ArgumentException($"Duplicate action id '{action.Id}'.", nameof(actions));
             usedIds.Add(action.Id);
             normalized.Add(action);
         }

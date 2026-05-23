@@ -147,6 +147,34 @@ public sealed class SharedHarnessStateTests
     }
 
     [Fact]
+    public async Task Service_CreateAsync_RejectsDuplicateParticipantAndActionIds()
+    {
+        var service = CreateService(out _);
+
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await service.CreateAsync(new SharedHarnessState
+            {
+                Id = "shs_duplicate_participants",
+                Participants =
+                [
+                    new HarnessParticipant { Id = "participant" },
+                    new HarnessParticipant { Id = "participant" }
+                ]
+            }, CancellationToken.None));
+
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await service.CreateAsync(new SharedHarnessState
+            {
+                Id = "shs_duplicate_actions",
+                Actions =
+                [
+                    new HarnessStateAction { Id = "action" },
+                    new HarnessStateAction { Id = "action" }
+                ]
+            }, CancellationToken.None));
+    }
+
+    [Fact]
     public void ConflictDetection_DetectsWriteWriteConflict()
     {
         var service = CreateService(out _);
