@@ -131,19 +131,24 @@ public sealed class SharedHarnessStateTests
         var created = await service.CreateAsync(new SharedHarnessState
         {
             Id = "shs_sparse_ids",
-            Participants = [new HarnessParticipant { Id = "participant_1" }],
-            Actions = [new HarnessStateAction { Id = "action_1" }]
+            Participants = [new HarnessParticipant { Id = "participant_1" }, new HarnessParticipant()],
+            Actions = [new HarnessStateAction { Id = "action_1" }, new HarnessStateAction()]
         }, CancellationToken.None);
+
+        Assert.Contains(created.Participants, participant => participant.Id == "participant_1");
+        Assert.Contains(created.Participants, participant => participant.Id == "participant_2");
+        Assert.Contains(created.Actions, action => action.Id == "action_1");
+        Assert.Contains(created.Actions, action => action.Id == "action_2");
 
         var withParticipant = await service.AddParticipantAsync(created.Id, new HarnessParticipant(), CancellationToken.None);
         var withAction = await service.AddActionAsync(created.Id, new HarnessStateAction(), CancellationToken.None);
 
         Assert.NotNull(withParticipant);
         Assert.Contains(withParticipant!.Participants, participant => participant.Id == "participant_1");
-        Assert.Contains(withParticipant.Participants, participant => participant.Id == "participant_2");
+        Assert.Contains(withParticipant.Participants, participant => participant.Id == "participant_3");
         Assert.NotNull(withAction);
         Assert.Contains(withAction!.Actions, action => action.Id == "action_1");
-        Assert.Contains(withAction.Actions, action => action.Id == "action_2");
+        Assert.Contains(withAction.Actions, action => action.Id == "action_3");
     }
 
     [Fact]
