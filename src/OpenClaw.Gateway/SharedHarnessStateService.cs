@@ -73,7 +73,7 @@ internal sealed class SharedHarnessStateService
         var existingParticipants = CleanList(existing.Participants);
         var participantIndex = string.IsNullOrWhiteSpace(participant.Id)
             ? FirstUnusedGeneratedIndex(existingParticipants.Select(static item => item.Id), "participant")
-            : existingParticipants.Count;
+            : 0;
         var normalizedParticipant = NormalizeParticipant(participant, participantIndex, now);
         var participants = existingParticipants
             .Where(item => !string.Equals(item.Id, normalizedParticipant.Id, StringComparison.Ordinal))
@@ -98,7 +98,7 @@ internal sealed class SharedHarnessStateService
         var existingActions = CleanList(existing.Actions);
         var actionIndex = string.IsNullOrWhiteSpace(action.Id)
             ? FirstUnusedGeneratedIndex(existingActions.Select(static item => item.Id), "action")
-            : existingActions.Count;
+            : 0;
         var normalizedAction = NormalizeAction(action, actionIndex, now);
         var actions = existingActions
             .Where(item => !string.Equals(item.Id, normalizedAction.Id, StringComparison.Ordinal))
