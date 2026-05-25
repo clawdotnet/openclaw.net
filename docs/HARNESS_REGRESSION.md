@@ -17,7 +17,8 @@ It helps answer:
 - Are security defaults still safe?
 - Are approvals still enforced?
 - Does memory still round-trip?
-- Do harness models still serialize?
+- Do learning proposal and harness models still serialize?
+- Are automation suggestions still review-first and quality-gated?
 - Are provider configs valid?
 - Are MCP/OpenAI-compatible surfaces structurally intact?
 
@@ -76,6 +77,18 @@ Use `--category <name>` to run a focused subset:
 - `harness`
 - `deployment`
 - `docs`
+
+## Learning-Related Coverage
+
+Learning behavior is covered through the existing harness and unit-test layers rather than a separate `learning` category today. The most relevant checks are:
+
+- source-generated JSON round-trips for learning proposal models
+- file-store persistence for proposal metadata and feedback events
+- review-first approval and rejection behavior
+- automation-suggestion quality gates that keep vague repeated prompts as learning-only signals
+- harness evolution proposal validation, governance-ledger links, and manual-only approval semantics
+
+See [LEARNING.md](LEARNING.md) for the learning proposal model, the automation-suggestion quality pipeline, and the recommended checks to run before trusting learning changes.
 
 ## Exit Codes
 

@@ -46,10 +46,10 @@ public static class SkillLoader
         // 3. Managed/local skills
         if (config.Load.IncludeManaged)
         {
-            var managedDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".openclaw", "skills");
-            if (Directory.Exists(managedDir))
+            var managedDir = string.IsNullOrWhiteSpace(config.Load.ManagedRoot)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills")
+                : NormalizeManagedRootPath(config.Load.ManagedRoot, logger);
+            if (managedDir is not null && TryDirectoryExists(managedDir))
                 ScanDirectory(managedDir, SkillSource.Managed, allSkills, logger);
         }
 
@@ -107,6 +107,52 @@ public static class SkillLoader
 
         return eligible;
     }
+
+    private static string? NormalizeManagedRootPath(string managedRoot, ILogger logger)
+    {
+        try
+        {
+            var normalized = managedRoot.Trim();
+
+            if (normalized.StartsWith("~", StringComparison.Ordinal))
+            {
+                var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                if (!string.IsNullOrWhiteSpace(home))
+                {
+                    var suffix = normalized[1..].TrimStart('/', '\\');
+                    normalized = suffix.Length == 0 ? home : Path.Combine(home, suffix);
+                }
+            }
+
+            if (!Path.IsPathRooted(normalized))
+                normalized = Path.GetFullPath(normalized);
+
+            return normalized;
+        }
+        catch (Exception ex) when (IsPathException(ex))
+        {
+            logger.LogWarning(ex, "Skipping invalid managed skills root '{ManagedRoot}'.", managedRoot);
+            return null;
+        }
+    }
+
+    private static bool TryDirectoryExists(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        try
+        {
+            return Directory.Exists(path);
+        }
+        catch (Exception ex) when (IsPathException(ex))
+        {
+            return false;
+        }
+    }
+
+    private static bool IsPathException(Exception ex) =>
+        ex is ArgumentException or IOException or NotSupportedException or PathTooLongException or UnauthorizedAccessException;
 
     /// <summary>
     /// Scan a directory for subdirectories containing SKILL.md.

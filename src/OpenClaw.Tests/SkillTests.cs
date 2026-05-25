@@ -402,6 +402,111 @@ public class SkillLoaderTests
             Directory.Delete(managedRoot, true);
         }
     }
+
+    [Fact]
+    public void LoadAll_ManagedRoot_TildePrefix_IsExpandedToUserHome()
+    {
+        var suffix = Path.Combine(".openclaw", "skills", $"managed-tilde-{Guid.NewGuid():N}");
+        var managedRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), suffix);
+        Directory.CreateDirectory(managedRoot);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(managedRoot, "SKILL.md"), """
+                ---
+                name: managed-tilde-skill
+                description: Managed tilde skill
+                ---
+                Managed tilde instructions.
+                """);
+
+            var config = new SkillsConfig
+            {
+                Enabled = true,
+                Load = new SkillLoadConfig
+                {
+                    IncludeBundled = false,
+                    IncludeWorkspace = false,
+                    ManagedRoot = $"~/{suffix.Replace('\\', '/')}"
+                }
+            };
+            var logger = new TestLogger();
+
+            var skills = SkillLoader.LoadAll(config, null, logger);
+
+            var skill = Assert.Single(skills, s => s.Name == "managed-tilde-skill");
+            Assert.Equal(SkillSource.Managed, skill.Source);
+        }
+        finally
+        {
+            Directory.Delete(managedRoot, true);
+        }
+    }
+
+    [Fact]
+    public void LoadAll_ManagedRoot_RelativePath_IsResolvedFromCurrentDirectory()
+    {
+        var originalCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"skill-loader-relative-{Guid.NewGuid():N}");
+        var relativeManagedRoot = "managed-relative";
+        var absoluteManagedRoot = Path.Combine(tempDir, relativeManagedRoot);
+        Directory.CreateDirectory(absoluteManagedRoot);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(absoluteManagedRoot, "SKILL.md"), """
+                ---
+                name: managed-relative-skill
+                description: Managed relative skill
+                ---
+                Managed relative instructions.
+                """);
+
+            Directory.SetCurrentDirectory(tempDir);
+
+            var config = new SkillsConfig
+            {
+                Enabled = true,
+                Load = new SkillLoadConfig
+                {
+                    IncludeBundled = false,
+                    IncludeWorkspace = false,
+                    ManagedRoot = relativeManagedRoot
+                }
+            };
+            var logger = new TestLogger();
+
+            var skills = SkillLoader.LoadAll(config, null, logger);
+
+            var skill = Assert.Single(skills, s => s.Name == "managed-relative-skill");
+            Assert.Equal(SkillSource.Managed, skill.Source);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void LoadAll_ManagedRoot_InvalidPath_DoesNotThrow()
+    {
+        var config = new SkillsConfig
+        {
+            Enabled = true,
+            Load = new SkillLoadConfig
+            {
+                IncludeBundled = false,
+                IncludeWorkspace = false,
+                ManagedRoot = "invalid\0managed-root"
+            }
+        };
+        var logger = new TestLogger();
+
+        var skills = SkillLoader.LoadAll(config, null, logger);
+
+        Assert.Empty(skills);
+    }
 }
 
 public class SkillPromptBuilderTests

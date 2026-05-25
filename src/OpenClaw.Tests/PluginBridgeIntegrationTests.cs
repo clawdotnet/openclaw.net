@@ -86,8 +86,10 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
         Assert.True(tsMeasurement.Child.WorkingSetBytes > 1_000_000, "Expected TS bridge child process memory usage to be measurable.");
         Assert.InRange(jsMeasurement.Child.WorkingSetBytes, 1_000_000, 256L * 1024 * 1024);
         Assert.InRange(tsMeasurement.Child.WorkingSetBytes, 1_000_000, 256L * 1024 * 1024);
-        Assert.InRange(jsMeasurement.Host.WorkingSetBytes - baselineHost.WorkingSetBytes, -64L * 1024 * 1024, 128L * 1024 * 1024);
-        Assert.InRange(tsMeasurement.Host.WorkingSetBytes - baselineHost.WorkingSetBytes, -64L * 1024 * 1024, 128L * 1024 * 1024);
+        var jsHostDelta = jsMeasurement.Host.WorkingSetBytes - baselineHost.WorkingSetBytes;
+        var tsHostDelta = tsMeasurement.Host.WorkingSetBytes - baselineHost.WorkingSetBytes;
+        Assert.True(jsHostDelta <= 128L * 1024 * 1024, $"JS host working set grew too much: {ToMb(jsHostDelta):F1} MB");
+        Assert.True(tsHostDelta <= 128L * 1024 * 1024, $"TS host working set grew too much: {ToMb(tsHostDelta):F1} MB");
     }
 
     [Fact]

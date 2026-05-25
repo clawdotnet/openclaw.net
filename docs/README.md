@@ -35,6 +35,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [MODEL_PROFILES.md](MODEL_PROFILES.md) | Provider-agnostic named model profiles, including Gemma-family setups. |
 | [PROMPT_CACHING.md](PROMPT_CACHING.md) | Provider-aware prompt caching hints, dialects, diagnostics. |
 | [PULSE.md](PULSE.md) | Runtime Pulse scheduled heartbeat turns, `HEARTBEAT.md`, alert suppression, and operator controls. |
+| [LEARNING.md](LEARNING.md) | Review-first learning proposals, automation suggestion quality gates, feedback events, and harness regression relationships. |
 | [HARNESS_CONTRACTS.md](HARNESS_CONTRACTS.md) | Passive, inspectable Harness Contract records for future plan-execute-verify and evidence workflows. |
 | [EVIDENCE_BUNDLES.md](EVIDENCE_BUNDLES.md) | Passive evidence records for what happened, what was checked, remaining uncertainty, and operator trust. |
 | [PLAN_EXECUTE_VERIFY.md](PLAN_EXECUTE_VERIFY.md) | Optional governed Plan-Execute-Verify mode for high-risk tool execution. |

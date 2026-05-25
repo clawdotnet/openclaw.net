@@ -24,6 +24,7 @@ internal sealed class GatewayAutomationService
     private readonly ConcurrentDictionary<string, byte> _runningAutomations = new(StringComparer.OrdinalIgnoreCase);
     private readonly GatewayConfig _config;
     private readonly IAutomationStore _store;
+    private readonly ILearningProposalStore? _proposalStore;
     private readonly HeartbeatService _heartbeat;
     private readonly AutomationRunCoordinator _runCoordinator;
     private readonly ILogger<GatewayAutomationService>? _logger;
@@ -34,10 +35,12 @@ internal sealed class GatewayAutomationService
         IAutomationStore store,
         HeartbeatService heartbeat,
         AutomationRunCoordinator runCoordinator,
-        ILogger<GatewayAutomationService>? logger = null)
+        ILogger<GatewayAutomationService>? logger = null,
+        ILearningProposalStore? proposalStore = null)
     {
         _config = config;
         _store = store;
+        _proposalStore = proposalStore;
         _heartbeat = heartbeat;
         _runCoordinator = runCoordinator;
         _logger = logger;
@@ -105,9 +108,50 @@ internal sealed class GatewayAutomationService
             return MapHeartbeatConfig(_heartbeat.LoadConfig());
         }
 
+        var existing = await _store.GetAutomationAsync(normalized.Id, ct);
         await _store.SaveAutomationAsync(normalized, ct);
+        await RecordLearningEditFeedbackAsync(existing, normalized, ct);
         await RefreshCacheAsync(ct);
         return normalized;
+    }
+
+    private async ValueTask RecordLearningEditFeedbackAsync(AutomationDefinition? existing, AutomationDefinition normalized, CancellationToken ct)
+    {
+        if (_proposalStore is null || existing is null || string.IsNullOrWhiteSpace(normalized.CreatedByLearningProposalId))
+            return;
+
+        var changedFields = GetChangedFields(existing, normalized);
+        if (changedFields.Length == 0)
+            return;
+
+        var proposal = await _proposalStore.GetProposalAsync(normalized.CreatedByLearningProposalId, ct);
+        if (proposal is null)
+            return;
+
+        await new LearningFeedbackRecorder(_proposalStore).RecordAsync(
+            proposal.Id,
+            LearningProposalFeedbackActions.EditedAfterApproval,
+            changedFields,
+            proposal.AutomationQuality?.Score,
+            null,
+            "Automation fields changed after approval.",
+            ct);
+    }
+
+    private static string[] GetChangedFields(AutomationDefinition existing, AutomationDefinition normalized)
+    {
+        var fields = new List<string>();
+        if (!string.Equals(existing.Name, normalized.Name, StringComparison.Ordinal))
+            fields.Add("name");
+        if (!string.Equals(existing.Prompt, normalized.Prompt, StringComparison.Ordinal))
+            fields.Add("prompt");
+        if (!string.Equals(existing.Schedule, normalized.Schedule, StringComparison.OrdinalIgnoreCase))
+            fields.Add("schedule");
+        if (!string.Equals(existing.DeliveryChannelId, normalized.DeliveryChannelId, StringComparison.OrdinalIgnoreCase))
+            fields.Add("deliveryChannelId");
+        if (!string.Equals(existing.DeliveryRecipientId, normalized.DeliveryRecipientId, StringComparison.Ordinal))
+            fields.Add("deliveryRecipientId");
+        return fields.ToArray();
     }
 
     public async ValueTask DeleteAsync(string automationId, CancellationToken ct)
@@ -548,6 +592,7 @@ internal sealed class GatewayAutomationService
             IsDraft = automation.IsDraft,
             Source = string.IsNullOrWhiteSpace(automation.Source) ? "managed" : automation.Source.Trim(),
             TemplateKey = string.IsNullOrWhiteSpace(automation.TemplateKey) ? null : automation.TemplateKey.Trim(),
+            CreatedByLearningProposalId = string.IsNullOrWhiteSpace(automation.CreatedByLearningProposalId) ? null : automation.CreatedByLearningProposalId.Trim(),
             Verification = automation.Verification,
             RetryPolicy = automation.RetryPolicy ?? new AutomationRetryPolicy(),
             CreatedAtUtc = automation.CreatedAtUtc == default ? now : automation.CreatedAtUtc,

@@ -17,6 +17,7 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Guides | Fractal Memory | [FRACTAL_MEMORY.md](FRACTAL_MEMORY.md) |
 | Guides | Model Profiles | [MODEL_PROFILES.md](MODEL_PROFILES.md) |
 | Guides | Prompt Caching | [PROMPT_CACHING.md](PROMPT_CACHING.md) |
+| Guides | Learning Proposals | [LEARNING.md](LEARNING.md) |
 | Guides | Agent Testing Harness | [testing/agent-testing-harness.md](testing/agent-testing-harness.md) |
 | Guides | AI-Assisted Testing Playbook | [testing/ai-assisted-testing-playbook.md](testing/ai-assisted-testing-playbook.md) |
 | Guides | Harness Regression Suite | [HARNESS_REGRESSION.md](HARNESS_REGRESSION.md) |
@@ -72,6 +73,7 @@ Guides
   Fractal Memory
   Model Profiles
   Prompt Caching
+  Learning Proposals
   Agent Testing Harness
   AI-Assisted Testing Playbook
   Harness Regression Suite
