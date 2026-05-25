@@ -42,6 +42,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [HARNESS_REGRESSION.md](HARNESS_REGRESSION.md) | Offline-first CLI regression checks for harness safety, onboarding, memory, provider-shape, MCP, OpenAI-compatible, and serialization guarantees. |
 | [HARNESS_EVOLUTION.md](HARNESS_EVOLUTION.md) | Review-first proposals for harness changes to policies, routing, memory retrieval, verification, pulse behavior, and tool governance. |
 | [SHARED_HARNESS_STATE.md](SHARED_HARNESS_STATE.md) | Passive shared state for delegated and future multi-agent workflows, including participants, actions, read/write sets, assumptions, verifier obligations, and conflicts. |
+| [CODEBASE_HARNESS_MAP.md](CODEBASE_HARNESS_MAP.md) | Passive static repository maps for agent harness environments, including projects, modules, endpoints, tools, providers, channels, config surfaces, tests, and diagnostics. |
 | [governance/sidecar-pattern.md](governance/sidecar-pattern.md) | Optional central tool-governance middleware, sidecar flow, decisions, and audit fields. |
 | [governance/microsoft-agent-governance.md](governance/microsoft-agent-governance.md) | Microsoft Agent Governance sidecar integration notes and deployment cautions. |
 | [deployment/TAILSCALE.md](deployment/TAILSCALE.md) | Optional Tailscale Serve private runtime access guidance. |

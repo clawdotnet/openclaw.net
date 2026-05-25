@@ -11,6 +11,7 @@ using OpenClaw.Agent.Plugins;
 using OpenClaw.Channels;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.ExternalCli;
+using OpenClaw.Core.Features;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
@@ -53,6 +54,7 @@ internal static partial class AdminEndpoints
         var evidenceBundles = FeatureFallbackServices.ResolveEvidenceBundleService(startup, app.Services);
         var governanceLedger = FeatureFallbackServices.ResolveGovernanceLedgerService(startup, app.Services);
         var sharedHarnessState = FeatureFallbackServices.ResolveSharedHarnessStateService(startup, app.Services);
+        var codebaseMap = app.Services.GetService<CodebaseHarnessMapService>() ?? new CodebaseHarnessMapService();
         var planExecuteVerify = app.Services.GetService<PlanExecuteVerifyService>()
             ?? new PlanExecuteVerifyService(
                 startup.Config,
@@ -124,6 +126,7 @@ internal static partial class AdminEndpoints
             EvidenceBundles = evidenceBundles,
             GovernanceLedger = governanceLedger,
             SharedHarnessState = sharedHarnessState,
+            CodebaseMap = codebaseMap,
             PlanExecuteVerify = planExecuteVerify,
             Facade = facade,
             ToolPresetResolver = toolPresetResolver,
@@ -149,6 +152,7 @@ internal static partial class AdminEndpoints
         MapProfilesAndLearningEndpoints(app, services);
         MapHarnessContractEndpoints(app, services);
         MapSharedHarnessStateEndpoints(app, services);
+        MapCodebaseMapEndpoints(app, services);
         MapPlanExecuteVerifyEndpoints(app, services);
         MapEvidenceBundleEndpoints(app, services);
         MapGovernanceLedgerEndpoints(app, services);

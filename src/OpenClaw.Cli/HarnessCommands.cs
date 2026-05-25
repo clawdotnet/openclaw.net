@@ -1,4 +1,5 @@
 using System.Text.Json;
+using OpenClaw.Core.Features;
 using OpenClaw.Core.Models;
 using OpenClaw.Testing;
 
@@ -24,6 +25,8 @@ internal static class HarnessCommands
         var subcommand = args[0].Trim().ToLowerInvariant();
         if (subcommand is "state")
             return await RunStateAsync(args.Skip(1).ToArray(), output, error);
+        if (subcommand is "map")
+            return await RunMapAsync(args.Skip(1).ToArray(), output);
 
         if (subcommand is not ("test" or "regression"))
         {
@@ -94,6 +97,48 @@ internal static class HarnessCommands
             output.WriteLine($"Report written: {Path.GetFullPath(outputPath)}");
 
         return HarnessRegressionRunner.GetExitCode(report);
+    }
+
+    private static async Task<int> RunMapAsync(string[] args, TextWriter output)
+    {
+        var parsed = CliArgs.Parse(args);
+        if (parsed.ShowHelp)
+        {
+            PrintMapHelp(output);
+            return 0;
+        }
+
+        var options = new CodebaseMapOptions
+        {
+            IncludeHashes = parsed.HasFlag("--include-hashes"),
+            RecentDays = GetIntOption(parsed, "--recent-days", 30),
+            MaxFiles = GetIntOption(parsed, "--max-files", 5000),
+            Category = parsed.GetOption("--category") ?? CodebaseMapCategories.All
+        };
+        var root = parsed.GetOption("--root") ?? Directory.GetCurrentDirectory();
+        var map = await new CodebaseHarnessMapService().GenerateAsync(root, options, CancellationToken.None);
+        var json = parsed.HasFlag("--json");
+        var rendered = json
+            ? JsonSerializer.Serialize(map, CoreJsonContext.Default.CodebaseHarnessMap)
+            : ToMapText(map);
+
+        var outputPath = parsed.GetOption("--output");
+        if (!string.IsNullOrWhiteSpace(outputPath))
+        {
+            var fullPath = Path.GetFullPath(outputPath);
+            var directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
+            await File.WriteAllTextAsync(fullPath, rendered);
+        }
+
+        output.WriteLine(rendered);
+        if (!json && !string.IsNullOrWhiteSpace(outputPath))
+            output.WriteLine($"Map written: {Path.GetFullPath(outputPath)}");
+
+        return map.Diagnostics.Any(static diagnostic => diagnostic.Severity == CodebaseMapDiagnosticSeverity.Error)
+            ? 1
+            : 0;
     }
 
     private static async Task<int> RunStateAsync(string[] args, TextWriter output, TextWriter error)
@@ -286,6 +331,56 @@ internal static class HarnessCommands
             TextStateDetail(output, new SharedHarnessStateDetailResponse { State = response.State });
     }
 
+    private static string ToMapText(CodebaseHarnessMap map)
+    {
+        using var writer = new StringWriter();
+        writer.WriteLine("OpenClaw Codebase Harness Map");
+        writer.WriteLine($"Root: {map.RepositoryRoot}");
+        writer.WriteLine($"Generated: {map.GeneratedAtUtc:O}");
+        writer.WriteLine();
+        writer.WriteLine("Summary:");
+        writer.WriteLine($"- Solutions: {map.Summary.SolutionFilesCount}");
+        writer.WriteLine($"- Projects: {map.Summary.ProjectFilesCount}");
+        writer.WriteLine($"- Test projects: {map.Summary.TestProjectsCount}");
+        writer.WriteLine($"- Source files: {map.Summary.SourceFilesCount}");
+        writer.WriteLine($"- Endpoints: {map.Summary.EndpointCount}");
+        writer.WriteLine($"- Tool surfaces: {map.Summary.ToolSurfaceCount}");
+        writer.WriteLine($"- Channel surfaces: {map.Summary.ChannelSurfaceCount}");
+        writer.WriteLine($"- Provider surfaces: {map.Summary.ProviderSurfaceCount}");
+        writer.WriteLine($"- Config surfaces: {map.ConfigSurfaces.Count}");
+        writer.WriteLine($"- Recent changes: {map.Summary.RecentChangeCount}");
+        writer.WriteLine();
+        writer.WriteLine("Modules:");
+        foreach (var module in map.Modules.Take(24))
+            writer.WriteLine($"- {module.Name}: {module.Path} ({module.Kind})");
+        if (map.Modules.Count > 24)
+            writer.WriteLine($"- ... {map.Modules.Count - 24} more");
+
+        if (map.Endpoints.Count > 0)
+        {
+            writer.WriteLine();
+            writer.WriteLine("Endpoints:");
+            foreach (var endpoint in map.Endpoints.Take(24))
+                writer.WriteLine($"- {endpoint.Method} {endpoint.Path} ({endpoint.SourceFile})");
+            if (map.Endpoints.Count > 24)
+                writer.WriteLine($"- ... {map.Endpoints.Count - 24} more");
+        }
+
+        var warnings = map.Diagnostics.Where(static item =>
+            item.Severity is CodebaseMapDiagnosticSeverity.Warning or CodebaseMapDiagnosticSeverity.Error).ToArray();
+        if (warnings.Length > 0)
+        {
+            writer.WriteLine();
+            writer.WriteLine("Warnings:");
+            foreach (var warning in warnings.Take(24))
+                writer.WriteLine($"- {warning.Code}: {warning.Message}");
+            if (warnings.Length > 24)
+                writer.WriteLine($"- ... {warnings.Length - 24} more");
+        }
+
+        return writer.ToString();
+    }
+
     private static void PrintHelp(TextWriter output)
     {
         output.WriteLine("""
@@ -294,6 +389,7 @@ internal static class HarnessCommands
             Usage:
               openclaw harness test [--config <path>] [--category <name>] [--json] [--offline] [--strict] [--proposal <id>] [--output <path>]
               openclaw harness regression [--config <path>] [--category <name>] [--json] [--offline] [--strict] [--proposal <id>] [--output <path>]
+              openclaw harness map [--root <path>] [--json] [--output <path>] [--include-hashes] [--recent-days <n>] [--max-files <n>] [--category <name>]
               openclaw harness state <list|show|session|conflicts> [options]
 
             Categories:
@@ -321,6 +417,23 @@ internal static class HarnessCommands
             Common options:
               --url <url>
               --token <token>
+            """);
+    }
+
+    private static void PrintMapHelp(TextWriter output)
+    {
+        output.WriteLine("""
+            openclaw harness map
+
+            Usage:
+              openclaw harness map [--root <path>] [--json] [--output <path>] [--include-hashes] [--recent-days <n>] [--max-files <n>] [--category <name>]
+
+            Categories:
+              all, projects, endpoints, tools, providers, channels, config, tests
+
+            Notes:
+              - Runs local static scanning only.
+              - Does not build projects or execute repository code.
             """);
     }
 

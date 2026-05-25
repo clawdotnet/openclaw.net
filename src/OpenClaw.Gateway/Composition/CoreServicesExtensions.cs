@@ -198,6 +198,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton<EvidenceBundleService>();
         services.AddSingleton<GovernanceLedgerService>();
         services.AddSingleton<SharedHarnessStateService>();
+        services.AddSingleton<CodebaseHarnessMapService>();
         services.AddSingleton<PlanExecuteVerifyService>();
         services.AddSingleton<IPlanExecuteVerifyOrchestrator>(sp => sp.GetRequiredService<PlanExecuteVerifyService>());
         services.AddSingleton<AgentWorkflowRegistry>();

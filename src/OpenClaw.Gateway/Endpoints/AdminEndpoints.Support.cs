@@ -11,6 +11,7 @@ using OpenClaw.Agent.Plugins;
 using OpenClaw.Channels;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.ExternalCli;
+using OpenClaw.Core.Features;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
@@ -58,6 +59,7 @@ internal static partial class AdminEndpoints
         public EvidenceBundleService EvidenceBundles { get; init; } = null!;
         public GovernanceLedgerService GovernanceLedger { get; init; } = null!;
         public SharedHarnessStateService SharedHarnessState { get; init; } = null!;
+        public CodebaseHarnessMapService CodebaseMap { get; init; } = null!;
         public PlanExecuteVerifyService PlanExecuteVerify { get; init; } = null!;
         public IntegrationApiFacade Facade { get; init; } = null!;
         public ToolPresetResolver ToolPresetResolver { get; init; } = null!;

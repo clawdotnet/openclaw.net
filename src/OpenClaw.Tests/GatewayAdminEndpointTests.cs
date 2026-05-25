@@ -389,6 +389,56 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task CodebaseHarnessMap_AdminApi_RequiresAuthAndRejectsUnsafeRoot()
+    {
+        var workspace = CreateSafeTempDirectory("openclaw-codebase-map-workspace");
+        var outside = CreateSafeTempDirectory("openclaw-codebase-map-outside");
+        try
+        {
+            Directory.CreateDirectory(Path.Join(workspace, "src", "OpenClaw.Gateway"));
+            await File.WriteAllTextAsync(Path.Join(workspace, "OpenClaw.Net.slnx"), "<Solution></Solution>");
+            await File.WriteAllTextAsync(
+                Path.Join(workspace, "src", "OpenClaw.Gateway", "OpenClaw.Gateway.csproj"),
+                """
+                <Project Sdk="Microsoft.NET.Sdk.Web">
+                  <PropertyGroup>
+                    <TargetFramework>net10.0</TargetFramework>
+                  </PropertyGroup>
+                </Project>
+                """);
+            await File.WriteAllTextAsync(
+                Path.Join(workspace, "src", "OpenClaw.Gateway", "Program.cs"),
+                """var app = WebApplication.Create(); app.MapGet("/health", () => "ok");""");
+
+            await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, config =>
+            {
+                config.Tooling.WorkspaceRoot = workspace;
+            });
+
+            var anonymousResponse = await harness.Client.GetAsync("/admin/harness/codebase-map");
+            Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+
+            using var unsafeRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/harness/codebase-map?root={Uri.EscapeDataString(outside)}");
+            unsafeRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+            var unsafeResponse = await harness.Client.SendAsync(unsafeRequest);
+            Assert.Equal(HttpStatusCode.BadRequest, unsafeResponse.StatusCode);
+
+            using var safeRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/harness/codebase-map?root={Uri.EscapeDataString(workspace)}");
+            safeRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+            var safeResponse = await harness.Client.SendAsync(safeRequest);
+            Assert.Equal(HttpStatusCode.OK, safeResponse.StatusCode);
+            using var payload = await ReadJsonAsync(safeResponse);
+            Assert.Equal(workspace, payload.RootElement.GetProperty("repositoryRoot").GetString());
+            Assert.Equal(1, payload.RootElement.GetProperty("summary").GetProperty("projectFilesCount").GetInt32());
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task EvidenceBundles_AdminApi_RequiresAuthAndSupportsCreateListDetailAndAppend()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -6697,6 +6747,17 @@ public sealed class GatewayAdminEndpointTests
         var token = operatorAccounts.CreateToken(account.Id, new OperatorAccountTokenCreateRequest { Label = username });
         Assert.NotNull(token);
         return token!.Token;
+    }
+
+    private static string CreateSafeTempDirectory(string prefix)
+    {
+        var folderName = Path.GetFileName($"{prefix}-{Guid.NewGuid():N}");
+        if (string.IsNullOrWhiteSpace(folderName) || Path.IsPathRooted(folderName))
+            throw new InvalidOperationException("Generated admin test directory name must be relative.");
+
+        var path = Path.GetFullPath(Path.Join(Path.GetTempPath(), folderName));
+        Directory.CreateDirectory(path);
+        return path;
     }
 
     private static async Task<Session?> FindStableSessionAsync(GatewayTestHarness harness, string externalStableSessionId)

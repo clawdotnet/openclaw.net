@@ -108,7 +108,7 @@ internal static class Program
               openclaw external <list|status|commands|preview|execute> [options]
               openclaw memory fractal <status|search|open|export|recent|handoff create|validate|index refresh> [options]
               openclaw test <init|run|report|gates> [options]
-              openclaw harness <test|regression|state> [options]
+              openclaw harness <test|regression|map|state> [options]
               openclaw regression test [options]
               openclaw eval <run|compare> [options]
               openclaw accounts <list|add|remove|probe> [options]
@@ -177,6 +177,7 @@ internal static class Program
               openclaw test gates
               openclaw harness test
               openclaw harness test --category security --strict
+              openclaw harness map
               openclaw harness state list
               openclaw models list
               openclaw models presets
