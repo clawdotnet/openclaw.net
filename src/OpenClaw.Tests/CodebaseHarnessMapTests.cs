@@ -98,6 +98,14 @@ public sealed class CodebaseHarnessMapTests
             Assert.Contains("Summary:", textOutput.ToString(), StringComparison.Ordinal);
             Assert.Contains("GET /health", textOutput.ToString(), StringComparison.Ordinal);
 
+            using var projectsOutput = new StringWriter();
+            using var projectsError = new StringWriter();
+            var projectsExit = await HarnessCommands.RunAsync(["map", "--root", root, "--category", "projects"], projectsOutput, projectsError);
+
+            Assert.Equal(0, projectsExit);
+            Assert.Equal(string.Empty, projectsError.ToString());
+            Assert.Contains("- Endpoints: 0", projectsOutput.ToString(), StringComparison.Ordinal);
+
             using var jsonOutput = new StringWriter();
             using var jsonError = new StringWriter();
             var jsonExit = await HarnessCommands.RunAsync(["map", "--root", root, "--json"], jsonOutput, jsonError);

@@ -174,6 +174,7 @@ public sealed class CodebaseHarnessMapService
 
         return category switch
         {
+            CodebaseMapCategories.Projects => WithCategory(options, category, includeEndpoints: false, includeTools: false, includeProviders: false, includeChannels: false, includeConfig: false, includeTests: false),
             CodebaseMapCategories.Endpoints => WithCategory(options, category, includeEndpoints: true, includeTools: false, includeProviders: false, includeChannels: false, includeConfig: false, includeTests: false),
             CodebaseMapCategories.Tools => WithCategory(options, category, includeEndpoints: false, includeTools: true, includeProviders: false, includeChannels: false, includeConfig: false, includeTests: false),
             CodebaseMapCategories.Providers => WithCategory(options, category, includeEndpoints: false, includeTools: false, includeProviders: true, includeChannels: false, includeConfig: false, includeTests: false),

@@ -110,7 +110,7 @@ internal static class HarnessCommands
 
         var options = new CodebaseMapOptions
         {
-            IncludeHashes = parsed.HasFlag("--include-hashes"),
+            IncludeHashes = parsed.HasFlag("--include-hashes") || parsed.HasFlag("--hash"),
             RecentDays = GetIntOption(parsed, "--recent-days", 30),
             MaxFiles = GetIntOption(parsed, "--max-files", 5000),
             Category = parsed.GetOption("--category") ?? CodebaseMapCategories.All
@@ -389,7 +389,7 @@ internal static class HarnessCommands
             Usage:
               openclaw harness test [--config <path>] [--category <name>] [--json] [--offline] [--strict] [--proposal <id>] [--output <path>]
               openclaw harness regression [--config <path>] [--category <name>] [--json] [--offline] [--strict] [--proposal <id>] [--output <path>]
-              openclaw harness map [--root <path>] [--json] [--output <path>] [--include-hashes] [--recent-days <n>] [--max-files <n>] [--category <name>]
+              openclaw harness map [--root <path>] [--json] [--output <path>] [--include-hashes|--hash] [--recent-days <n>] [--max-files <n>] [--category <name>]
               openclaw harness state <list|show|session|conflicts> [options]
 
             Categories:
@@ -426,7 +426,7 @@ internal static class HarnessCommands
             openclaw harness map
 
             Usage:
-              openclaw harness map [--root <path>] [--json] [--output <path>] [--include-hashes] [--recent-days <n>] [--max-files <n>] [--category <name>]
+              openclaw harness map [--root <path>] [--json] [--output <path>] [--include-hashes|--hash] [--recent-days <n>] [--max-files <n>] [--category <name>]
 
             Categories:
               all, projects, endpoints, tools, providers, channels, config, tests
