@@ -310,7 +310,16 @@ public sealed class CodebaseHarnessMapService
         => name is ".git" or ".hg" or ".svn" or "bin" or "obj" or "node_modules" or ".idea" or ".vs" or ".vscode" or "TestResults" or "artifacts";
 
     private static bool IsReparsePoint(FileSystemInfo info)
-        => (info.Attributes & FileAttributes.ReparsePoint) != 0;
+    {
+        try
+        {
+            return (info.Attributes & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return true;
+        }
+    }
 
     private static IReadOnlyList<CodebaseProject> DetectProjects(string root, IReadOnlyList<ScannedFile> files, List<CodebaseMapDiagnostic> diagnostics)
     {

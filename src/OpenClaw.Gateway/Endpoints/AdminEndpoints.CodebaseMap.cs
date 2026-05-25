@@ -93,7 +93,10 @@ internal static partial class AdminEndpoints
             try
             {
                 var fullPath = Path.GetFullPath(candidate!);
-                return HasReparsePointInPath(fullPath, fullPath) ? null : fullPath;
+                if (HasReparsePointInPath(fullPath, fullPath))
+                    continue;
+
+                return fullPath;
             }
             catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
             {
@@ -152,11 +155,10 @@ internal static partial class AdminEndpoints
             return false;
 
         var current = fullRoot;
-        foreach (var segment in relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+        foreach (var segment in relative
+                     .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                     .Where(static segment => !string.IsNullOrWhiteSpace(segment) && segment != "."))
         {
-            if (string.IsNullOrWhiteSpace(segment) || segment == ".")
-                continue;
-
             current = Path.Join(current, segment);
             if (Directory.Exists(current) && IsDirectoryReparsePoint(current))
                 return true;
