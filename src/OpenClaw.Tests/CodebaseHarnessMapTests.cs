@@ -53,6 +53,36 @@ public sealed class CodebaseHarnessMapTests
     }
 
     [Fact]
+    public async Task MapService_SkipsSymlinkedDirectories()
+    {
+        var root = CreateFixtureRepo();
+        var outside = CreateTempDirectory();
+        try
+        {
+            WriteFile(Path.Join(outside, "Outside.cs"), "public sealed class OutsideTool { }");
+            var linkPath = Path.Join(root, "linked-outside");
+            try
+            {
+                Directory.CreateSymbolicLink(linkPath, outside);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+            {
+                return;
+            }
+
+            var map = await new CodebaseHarnessMapService().GenerateAsync(root);
+
+            Assert.DoesNotContain(map.Artifacts, artifact => artifact.Path.Contains("Outside.cs", StringComparison.Ordinal));
+            Assert.Contains(map.Diagnostics, diagnostic => diagnostic.Code == "directory_reparse_point_skipped");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task HarnessMapCommand_RendersTextAndJson()
     {
         var root = CreateFixtureRepo();

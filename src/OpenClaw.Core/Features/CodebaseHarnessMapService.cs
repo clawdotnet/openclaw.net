@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -52,16 +51,16 @@ public sealed class CodebaseHarnessMapService
 
         var files = EnumerateFiles(root, options, diagnostics, ct);
         var recentPaths = options.IncludeRecentChanges
-            ? await CollectRecentPathsAsync(root, files, options, diagnostics, ct)
+            ? CollectRecentPaths(files, options)
             : new HashSet<string>(StringComparer.Ordinal);
 
         var projects = DetectProjects(root, files, diagnostics);
         var modules = DetectModules(root, projects, files);
         var artifacts = DetectArtifacts(root, files, projects, modules, recentPaths, options, diagnostics);
         var endpoints = options.IncludeEndpoints ? DetectEndpoints(root, files, diagnostics, ct) : [];
-        var tools = options.IncludeToolSurfaces ? DetectToolSurfaces(root, files, ct) : [];
-        var providers = options.IncludeProviderSurfaces ? DetectProviderSurfaces(root, files, ct) : [];
-        var channels = options.IncludeChannelSurfaces ? DetectChannelSurfaces(root, files, ct) : [];
+        var tools = options.IncludeToolSurfaces ? DetectToolSurfaces(root, files, diagnostics, ct) : [];
+        var providers = options.IncludeProviderSurfaces ? DetectProviderSurfaces(root, files, diagnostics, ct) : [];
+        var channels = options.IncludeChannelSurfaces ? DetectChannelSurfaces(root, files, diagnostics, ct) : [];
         var configs = options.IncludeConfigSurfaces ? DetectConfigSurfaces(root, files, diagnostics, ct) : [];
         var tests = options.IncludeTests ? DetectTestSurfaces(projects, modules) : [];
 
@@ -282,8 +281,24 @@ public sealed class CodebaseHarnessMapService
 
             for (var i = directories.Length - 1; i >= 0; i--)
             {
-                if (!ShouldSkipDirectory(directories[i].Name))
-                    stack.Push((directories[i], depth + 1));
+                var child = directories[i];
+                if (ShouldSkipDirectory(child.Name))
+                    continue;
+
+                if (IsReparsePoint(child))
+                {
+                    diagnostics.Add(new CodebaseMapDiagnostic
+                    {
+                        Severity = CodebaseMapDiagnosticSeverity.Warning,
+                        Code = "directory_reparse_point_skipped",
+                        Message = $"Skipped symlink or reparse-point directory '{RelativePath(root, child.FullName)}'.",
+                        Path = RelativePath(root, child.FullName),
+                        Recommendation = "Codebase map scanning does not follow symlinked directories."
+                    });
+                    continue;
+                }
+
+                stack.Push((child, depth + 1));
             }
         }
 
@@ -292,6 +307,9 @@ public sealed class CodebaseHarnessMapService
 
     private static bool ShouldSkipDirectory(string name)
         => name is ".git" or ".hg" or ".svn" or "bin" or "obj" or "node_modules" or ".idea" or ".vs" or ".vscode" or "TestResults" or "artifacts";
+
+    private static bool IsReparsePoint(FileSystemInfo info)
+        => (info.Attributes & FileAttributes.ReparsePoint) != 0;
 
     private static IReadOnlyList<CodebaseProject> DetectProjects(string root, IReadOnlyList<ScannedFile> files, List<CodebaseMapDiagnostic> diagnostics)
     {
@@ -409,24 +427,23 @@ public sealed class CodebaseHarnessMapService
             });
         }
 
-        foreach (var folder in new[] { "docs", "samples", "skills" })
+        foreach (var folder in new[] { "docs", "samples", "skills" }.Where(folder =>
+                     Directory.Exists(Path.Join(root, folder)) ||
+                     files.Any(file => file.RelativePath.StartsWith($"{folder}/", StringComparison.OrdinalIgnoreCase))))
         {
-            if (Directory.Exists(Path.Join(root, folder)) || files.Any(file => file.RelativePath.StartsWith($"{folder}/", StringComparison.OrdinalIgnoreCase)))
+            modules.Add(new CodebaseModule
             {
-                modules.Add(new CodebaseModule
+                Id = UniqueId(StableId("module", folder), used),
+                Name = folder,
+                Path = folder,
+                Kind = folder switch
                 {
-                    Id = UniqueId(StableId("module", folder), used),
-                    Name = folder,
-                    Path = folder,
-                    Kind = folder switch
-                    {
-                        "docs" => CodebaseMapModuleKinds.Docs,
-                        "samples" => CodebaseMapModuleKinds.Samples,
-                        "skills" => CodebaseMapModuleKinds.Skills,
-                        _ => CodebaseMapModuleKinds.Unknown
-                    }
-                });
-            }
+                    "docs" => CodebaseMapModuleKinds.Docs,
+                    "samples" => CodebaseMapModuleKinds.Samples,
+                    "skills" => CodebaseMapModuleKinds.Skills,
+                    _ => CodebaseMapModuleKinds.Unknown
+                }
+            });
         }
 
         return modules.OrderBy(static item => item.Path, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -612,7 +629,7 @@ public sealed class CodebaseHarnessMapService
         return null;
     }
 
-    private static IReadOnlyList<CodebaseToolSurface> DetectToolSurfaces(string root, IReadOnlyList<ScannedFile> files, CancellationToken ct)
+    private static IReadOnlyList<CodebaseToolSurface> DetectToolSurfaces(string root, IReadOnlyList<ScannedFile> files, List<CodebaseMapDiagnostic> diagnostics, CancellationToken ct)
     {
         var surfaces = new List<CodebaseToolSurface>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -622,7 +639,7 @@ public sealed class CodebaseHarnessMapService
             if (!LooksToolRelated(file.RelativePath))
                 continue;
 
-            var text = TryReadText(file, []);
+            var text = TryReadText(file, diagnostics);
             if (text is null)
                 continue;
 
@@ -657,7 +674,7 @@ public sealed class CodebaseHarnessMapService
            path.Contains("/Tools/", StringComparison.OrdinalIgnoreCase) ||
            path.Contains("/Plugins/", StringComparison.OrdinalIgnoreCase);
 
-    private static IReadOnlyList<CodebaseProviderSurface> DetectProviderSurfaces(string root, IReadOnlyList<ScannedFile> files, CancellationToken ct)
+    private static IReadOnlyList<CodebaseProviderSurface> DetectProviderSurfaces(string root, IReadOnlyList<ScannedFile> files, List<CodebaseMapDiagnostic> diagnostics, CancellationToken ct)
     {
         var surfaces = new List<CodebaseProviderSurface>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -667,7 +684,7 @@ public sealed class CodebaseHarnessMapService
             if (!file.RelativePath.Contains("Provider", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            var text = TryReadText(file, []);
+            var text = TryReadText(file, diagnostics);
             if (text is null)
                 continue;
 
@@ -692,7 +709,7 @@ public sealed class CodebaseHarnessMapService
         return surfaces.OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
-    private static IReadOnlyList<CodebaseChannelSurface> DetectChannelSurfaces(string root, IReadOnlyList<ScannedFile> files, CancellationToken ct)
+    private static IReadOnlyList<CodebaseChannelSurface> DetectChannelSurfaces(string root, IReadOnlyList<ScannedFile> files, List<CodebaseMapDiagnostic> diagnostics, CancellationToken ct)
     {
         var surfaces = new List<CodebaseChannelSurface>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -703,7 +720,7 @@ public sealed class CodebaseHarnessMapService
                 !file.RelativePath.Contains("/Channels/", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            var text = TryReadText(file, []);
+            var text = TryReadText(file, diagnostics);
             if (text is null)
                 continue;
 
@@ -838,84 +855,15 @@ public sealed class CodebaseHarnessMapService
              name.Contains(module.Name, StringComparison.OrdinalIgnoreCase)))?.Id;
     }
 
-    private static async Task<HashSet<string>> CollectRecentPathsAsync(
-        string root,
+    private static HashSet<string> CollectRecentPaths(
         IReadOnlyList<ScannedFile> files,
-        CodebaseMapOptions options,
-        List<CodebaseMapDiagnostic> diagnostics,
-        CancellationToken ct)
+        CodebaseMapOptions options)
     {
-        var gitPaths = await TryCollectGitRecentPathsAsync(root, options.RecentDays, ct);
-        if (gitPaths is { Count: > 0 })
-            return gitPaths;
-
         var cutoff = DateTimeOffset.UtcNow.AddDays(-options.RecentDays);
         return files
             .Where(file => SafeLastModified(file.File) >= cutoff)
             .Select(static file => file.RelativePath)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static async Task<HashSet<string>?> TryCollectGitRecentPathsAsync(string root, int recentDays, CancellationToken ct)
-    {
-        if (!Directory.Exists(Path.Join(root, ".git")))
-            return null;
-
-        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        await AddGitOutputAsync(root, paths, ["log", $"--since={Math.Max(1, recentDays)} days ago", "--name-only", "--pretty=format:"], ct);
-        await AddGitOutputAsync(root, paths, ["status", "--short"], ct);
-        return paths;
-    }
-
-    private static async Task AddGitOutputAsync(string root, HashSet<string> paths, IReadOnlyList<string> args, CancellationToken ct)
-    {
-        try
-        {
-            using var process = new Process();
-            process.StartInfo = new ProcessStartInfo
-            {
-                FileName = "git",
-                WorkingDirectory = root,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false
-            };
-            foreach (var arg in args)
-                process.StartInfo.ArgumentList.Add(arg);
-
-            if (!process.Start())
-                return;
-
-            var outputTask = process.StandardOutput.ReadToEndAsync(ct);
-            var waitForExitTask = process.WaitForExitAsync(ct);
-            var completed = await Task.WhenAny(waitForExitTask, Task.Delay(TimeSpan.FromSeconds(2), ct));
-            if (!ReferenceEquals(completed, waitForExitTask))
-            {
-                try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-                return;
-            }
-
-            await waitForExitTask;
-            if (process.ExitCode != 0)
-                return;
-
-            var output = await outputTask;
-            foreach (var rawLine in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                var line = rawLine.Length > 3 && (rawLine[0] is 'M' or 'A' or 'D' or '?' or 'R' or 'C') && char.IsWhiteSpace(rawLine[2])
-                    ? rawLine[3..].Trim()
-                    : rawLine.Trim();
-                var arrowIndex = line.LastIndexOf(" -> ", StringComparison.Ordinal);
-                if (arrowIndex >= 0)
-                    line = line[(arrowIndex + 4)..];
-                if (!string.IsNullOrWhiteSpace(line))
-                    paths.Add(NormalizeSlashes(line));
-            }
-        }
-        catch
-        {
-            // Git is best-effort for the MVP. Filesystem timestamps are the fallback.
-        }
     }
 
     private static IEnumerable<string> ClassNames(string text)

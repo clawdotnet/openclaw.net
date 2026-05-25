@@ -63,7 +63,9 @@ The admin endpoint is workspace-root restricted. It rejects requested roots outs
 
 - The scanner does not execute repository code.
 - The admin endpoint restricts `root` to the configured workspace root.
+- The scanner does not follow symlinked or reparse-point directories.
 - Scanning is conservative and static.
+- Recent-change tags are based on filesystem modification time in this MVP.
 - Config values are not emitted.
 - Keys whose names include `key`, `token`, `secret`, `password`, or `credential` are marked sensitive.
 - Hashing is off by default and must be requested with `--include-hashes`.

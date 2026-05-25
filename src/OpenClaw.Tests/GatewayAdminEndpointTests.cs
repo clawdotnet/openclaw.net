@@ -423,6 +423,25 @@ public sealed class GatewayAdminEndpointTests
             var unsafeResponse = await harness.Client.SendAsync(unsafeRequest);
             Assert.Equal(HttpStatusCode.BadRequest, unsafeResponse.StatusCode);
 
+            var symlinkPath = Path.Join(workspace, "linked-outside");
+            var symlinkCreated = true;
+            try
+            {
+                Directory.CreateSymbolicLink(symlinkPath, outside);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+            {
+                symlinkCreated = false;
+            }
+
+            if (symlinkCreated)
+            {
+                using var symlinkRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/harness/codebase-map?root={Uri.EscapeDataString(symlinkPath)}");
+                symlinkRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+                var symlinkResponse = await harness.Client.SendAsync(symlinkRequest);
+                Assert.Equal(HttpStatusCode.BadRequest, symlinkResponse.StatusCode);
+            }
+
             using var safeRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/harness/codebase-map?root={Uri.EscapeDataString(workspace)}");
             safeRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
             var safeResponse = await harness.Client.SendAsync(safeRequest);

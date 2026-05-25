@@ -1,5 +1,6 @@
 using OpenClaw.Core.Features;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 using OpenClaw.Gateway.Bootstrap;
 
 namespace OpenClaw.Gateway.Endpoints;
@@ -58,6 +59,8 @@ internal static partial class AdminEndpoints
         var root = string.IsNullOrWhiteSpace(requestedRoot)
             ? allowedRoot
             : requestedRoot.Trim();
+        if (!Path.IsPathRooted(root))
+            root = Path.Join(allowedRoot, root);
 
         string fullRoot;
         try
@@ -71,6 +74,8 @@ internal static partial class AdminEndpoints
 
         if (!IsUnderRoot(fullRoot, allowedRoot))
             return ("", $"Codebase map root must be under the configured workspace root '{allowedRoot}'.");
+        if (HasReparsePointInPath(fullRoot, allowedRoot))
+            return ("", "Codebase map root must not include symlink or reparse-point directories.");
 
         return (fullRoot, null);
     }
@@ -80,18 +85,15 @@ internal static partial class AdminEndpoints
         var candidates = new[]
         {
             startup.WorkspacePath,
-            ResolveConfiguredWorkspaceRoot(startup.Config.Tooling.WorkspaceRoot),
-            Directory.GetCurrentDirectory()
+            ResolveConfiguredWorkspaceRoot(startup.Config.Tooling.WorkspaceRoot)
         };
 
-        foreach (var candidate in candidates)
+        foreach (var candidate in candidates.Where(static candidate => !string.IsNullOrWhiteSpace(candidate)))
         {
-            if (string.IsNullOrWhiteSpace(candidate))
-                continue;
-
             try
             {
-                return Path.GetFullPath(candidate);
+                var fullPath = Path.GetFullPath(candidate!);
+                return HasReparsePointInPath(fullPath, fullPath) ? null : fullPath;
             }
             catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
             {
@@ -110,19 +112,68 @@ internal static partial class AdminEndpoints
         if (value.StartsWith("env:", StringComparison.OrdinalIgnoreCase))
             return Environment.GetEnvironmentVariable(value["env:".Length..]);
 
-        return value;
+        return SecretResolver.Resolve(value) ?? value;
     }
 
     private static bool IsUnderRoot(string path, string root)
     {
-        var fullPath = Path.GetFullPath(path);
-        var fullRoot = Path.GetFullPath(root);
-        if (string.Equals(fullPath, fullRoot, StringComparison.Ordinal))
+        var fullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        if (string.Equals(fullPath, fullRoot, comparison))
             return true;
 
         var rootWithSeparator = fullRoot.EndsWith(Path.DirectorySeparatorChar)
             ? fullRoot
             : fullRoot + Path.DirectorySeparatorChar;
-        return fullPath.StartsWith(rootWithSeparator, StringComparison.Ordinal);
+        return fullPath.StartsWith(rootWithSeparator, comparison);
+    }
+
+    private static bool HasReparsePointInPath(string path, string root)
+    {
+        var fullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        if (!Directory.Exists(fullRoot))
+            return true;
+
+        var relative = Path.GetRelativePath(fullRoot, fullPath);
+        if (relative == ".." ||
+            relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
+            relative.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal) ||
+            Path.IsPathRooted(relative))
+            return true;
+
+        if (IsDirectoryReparsePoint(fullRoot))
+            return true;
+
+        if (string.IsNullOrWhiteSpace(relative) || relative == ".")
+            return false;
+
+        var current = fullRoot;
+        foreach (var segment in relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+        {
+            if (string.IsNullOrWhiteSpace(segment) || segment == ".")
+                continue;
+
+            current = Path.Join(current, segment);
+            if (Directory.Exists(current) && IsDirectoryReparsePoint(current))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsDirectoryReparsePoint(string path)
+    {
+        try
+        {
+            return (new DirectoryInfo(path).Attributes & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or ArgumentException or NotSupportedException)
+        {
+            return true;
+        }
     }
 }
