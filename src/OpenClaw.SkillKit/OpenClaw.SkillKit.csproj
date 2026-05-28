@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>OpenClaw.SkillKit</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenClaw.SkillKit.Abstractions\OpenClaw.SkillKit.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

@@ -22,6 +22,8 @@
     <Project Path="src/OpenClaw.Plugins.Mempalace/OpenClaw.Plugins.Mempalace.csproj" />
     <Project Path="src/OpenClaw.Dashboard/OpenClaw.Dashboard.csproj" />
     <Project Path="src/OpenClaw.MicrosoftAgentFrameworkAdapter/OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
+    <Project Path="src/OpenClaw.SkillKit.Abstractions/OpenClaw.SkillKit.Abstractions.csproj" />
+    <Project Path="src/OpenClaw.SkillKit/OpenClaw.SkillKit.csproj" />
     <Project Path="src/OpenClawNet.Sandbox.OpenSandbox/OpenClawNet.Sandbox.OpenSandbox.csproj" />
     <Project Path="src/OpenClaw.PluginKit/OpenClaw.PluginKit.csproj" />
     <Project Path="src/OpenClaw.SemanticKernelAdapter/OpenClaw.SemanticKernelAdapter.csproj" />

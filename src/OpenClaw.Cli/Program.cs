@@ -50,6 +50,7 @@ internal static class Program
                 "admin" => await AdminAsync(rest),
                 "compatibility" or "compat" => CompatibilityCommands.Run(rest),
                 "plugins" => await PluginCommands.RunAsync(rest),
+                "skill" => await SkillKitCommands.RunAsync(rest),
                 "skills" => await SkillCommands.RunAsync(rest),
                 "clawhub" => await ClawHubCommand.RunAsync(rest),
                 "version" or "--version" or "-v" => PrintVersion(),
@@ -116,6 +117,7 @@ internal static class Program
               openclaw admin <posture|incident export|trajectory export|approvals simulate> [options]
               openclaw compatibility <catalog> [options]
               openclaw plugins <install|remove|list|search> [options]
+              openclaw skill <new|critique|generate|validate|run|package|list> [options]
               openclaw skills <inspect|install|list> [options]
               openclaw clawhub [wrapper options] [--] <clawhub args...>
 
@@ -195,6 +197,9 @@ internal static class Program
               openclaw admin approvals simulate --tool shell --args "{\"command\":\"pwd\"}"
               openclaw admin incident export
               openclaw compatibility catalog --status compatible
+              openclaw skill new "Community Research Insight Extractor" --category research
+              openclaw skill validate community.research_insight
+              openclaw skill run community.research_insight --input transcript.md --dry-run
 
             Gateway direct-start fallback:
               dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart
@@ -209,6 +214,9 @@ internal static class Program
               openclaw plugins search <query>             Search npm for plugins
 
             Skill management:
+              openclaw skill new "Community Research Insight Extractor" --category research
+              openclaw skill validate community.research_insight
+              openclaw skill package community.research_insight
               openclaw skills inspect ./my-skill          Inspect a local skill package
               openclaw skills install ./my-skill --dry-run
               openclaw skills install ./my-skill --managed

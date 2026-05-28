@@ -1,0 +1,75 @@
+id: "community.research_insight"
+name: "Community Research Insight Extractor"
+version: "0.1.0"
+category: "research"
+description: "Extracts pain points, stakeholder needs, risks, and practical technology opportunities from community-engaged research discussions."
+aliases:
+  - "community-research-insight"
+intent:
+  outcome: "Produce a structured insight brief that helps researchers understand key issues and identify practical support opportunities without replacing community judgment."
+inputs:
+  required:
+    - "transcript_or_notes"
+  optional:
+    - "project_context"
+    - "target_audience"
+    - "prior_discussions"
+outputs:
+  required:
+    - "executive_summary"
+    - "key_pain_points"
+    - "stakeholder_needs"
+    - "opportunity_map"
+    - "risks_and_cautions"
+    - "follow_up_questions"
+  optional:
+tools:
+  allowed:
+    - "file.read"
+    - "file.search"
+    - "web.search"
+    - "memory.retrieve"
+  forbidden:
+    - "email.send"
+    - "external_submit"
+    - "data_delete"
+  approval_required:
+guardrails:
+  must_not:
+    - "Invent participant quotes."
+    - "Attribute views to named people unless present in the source."
+    - "Recommend replacing community engagement with automation."
+    - "Treat AI-generated themes as final truth without human review."
+human_approval:
+  required_for:
+    - "final_recommendations"
+    - "external_publication"
+    - "named_attribution"
+validation:
+  checks:
+    - "Every key claim is grounded in the transcript or provided context."
+    - "Recommendations are framed as support tools, not replacements for relationships."
+    - "Missing information is listed separately."
+    - "Risks are included alongside opportunities."
+workflow:
+  steps:
+    - id: "collect_inputs"
+      name: "Collect Required Inputs"
+      type: "input"
+      description: "Ensure all required inputs are present."
+    - id: "analyze_source"
+      name: "Analyze Source Material"
+      type: "reasoning"
+      description: "Extract grounded themes and evidence."
+    - id: "draft_output"
+      name: "Draft Output"
+      type: "generation"
+      description: "Produce the requested structured output."
+    - id: "validate_output"
+      name: "Validate Output"
+      type: "validation"
+      description: "Check output against validation rules."
+    - id: "request_human_review"
+      name: "Request Human Review"
+      type: "approval"
+      description: "Ask for human review before final use if required."

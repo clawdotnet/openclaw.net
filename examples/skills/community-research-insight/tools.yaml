@@ -1,0 +1,11 @@
+allowed:
+  - "file.read"
+  - "file.search"
+  - "web.search"
+  - "memory.retrieve"
+forbidden:
+  - "email.send"
+  - "external_submit"
+  - "data_delete"
+approval_required:
+  - "document.export"
