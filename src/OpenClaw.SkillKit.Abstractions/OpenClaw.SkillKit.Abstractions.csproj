@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>OpenClaw.SkillKit.Abstractions</RootNamespace>
+  </PropertyGroup>
+</Project>

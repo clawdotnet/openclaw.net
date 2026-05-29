@@ -47,6 +47,7 @@ Start here:
 - **Optional Fractal Memory MCP integration** for compact structured project memory and Runtime Pulse context without replacing OpenClaw memory/session stores
 - **Shared Harness State** for passive delegated-work coordination across participants, actions, read/write sets, assumptions, verifier obligations, evidence links, and conflicts
 - **Codebase Harness Map** via `openclaw harness map` for passive static repository maps of projects, modules, endpoints, tools, providers, channels, config, and tests
+- **OpenClaw SkillKit** via `openclaw skill` for local-first skill authoring, validation, critique, packaging, and dry-run execution planning
 - **First-class optional Microsoft Agent Framework adapter** for `Runtime.Orchestrator=maf` without a special build
 - **Durable workflow delegation** through supported workflow backends such as `maf-durable-http`
 - **CLI and Companion** setup flows for source checkouts and desktop bundles
@@ -129,6 +130,8 @@ openclaw models install gemma-4-e4b --accept-license --path ~/Downloads/gemma-4-
 openclaw models doctor
 openclaw maintenance scan --config ~/.openclaw/config/openclaw.settings.json
 openclaw maintenance fix --config ~/.openclaw/config/openclaw.settings.json --dry-run
+openclaw skill new "Community Research Insight Extractor" --category research
+openclaw skill validate community.research_insight
 openclaw skills inspect ./skills/my-skill
 openclaw compatibility catalog
 openclaw insights
