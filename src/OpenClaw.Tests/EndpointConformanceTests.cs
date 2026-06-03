@@ -74,7 +74,8 @@ public class EndpointConformanceTests
             response = JsonSerializer.Deserialize(json, CoreJsonContext.Default.IntegrationToolPresetsResponse));
 
         Assert.Null(exception);
-        var preset = Assert.Single(response!.Items);
+        Assert.NotNull(response);
+        var preset = Assert.Single(response.Items);
         Assert.Contains("session_search", preset.AllowedTools, StringComparer.OrdinalIgnoreCase);
         Assert.Contains("profile_read", preset.AllowedTools, StringComparer.OrdinalIgnoreCase);
         Assert.Contains("process", preset.ApprovalRequiredTools, StringComparer.OrdinalIgnoreCase);
