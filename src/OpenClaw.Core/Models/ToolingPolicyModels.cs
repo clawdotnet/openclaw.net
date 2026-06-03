@@ -67,8 +67,14 @@ internal sealed class ReadOnlyStringSetJsonConverter : JsonConverter<IReadOnlySe
         throw new JsonException("Unexpected end of JSON while reading the tool set.");
     }
 
-    public override void Write(Utf8JsonWriter writer, IReadOnlySet<string> value, JsonSerializerOptions options)
+    public override void Write(Utf8JsonWriter writer, IReadOnlySet<string>? value, JsonSerializerOptions options)
     {
+        if (value is null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
         writer.WriteStartArray();
         foreach (var item in value)
             writer.WriteStringValue(item);

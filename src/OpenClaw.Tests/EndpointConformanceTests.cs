@@ -1,4 +1,6 @@
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using OpenClaw.Core.Models;
 using Xunit;
 
@@ -79,5 +81,28 @@ public class EndpointConformanceTests
         Assert.Contains("automation", preset.ApprovalRequiredTools, StringComparer.OrdinalIgnoreCase);
         Assert.True(preset.AllowedTools.Contains("SESSION_SEARCH"));
         Assert.True(preset.ApprovalRequiredTools.Contains("PROCESS"));
+    }
+
+    [Fact]
+    public void ReadOnlyStringSetJsonConverter_WritesNullSet_AsNull()
+    {
+        var converter = CreateReadOnlyStringSetConverter();
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream);
+
+        var exception = Record.Exception(() => converter.Write(writer, null!, CoreJsonContext.Default.Options));
+        writer.Flush();
+
+        Assert.Null(exception);
+        Assert.Equal("null", Encoding.UTF8.GetString(stream.ToArray()));
+    }
+
+    private static JsonConverter<IReadOnlySet<string>> CreateReadOnlyStringSetConverter()
+    {
+        var converterType = typeof(ResolvedToolPreset).Assembly.GetType(
+            "OpenClaw.Core.Models.ReadOnlyStringSetJsonConverter",
+            throwOnError: true)!;
+        return Assert.IsAssignableFrom<JsonConverter<IReadOnlySet<string>>>(
+            Activator.CreateInstance(converterType, nonPublic: true));
     }
 }
