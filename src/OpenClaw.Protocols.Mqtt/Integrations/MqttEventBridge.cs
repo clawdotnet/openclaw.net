@@ -112,10 +112,7 @@ public sealed class MqttEventBridge : BackgroundService
         if (!GlobMatcher.IsAllowed(_config.Policy.AllowSubscribeTopicGlobs, _config.Policy.DenySubscribeTopicGlobs, topic))
             return;
 
-        var payloadBytes = PayloadToArray(e.ApplicationMessage.Payload);
-        if (payloadBytes.Length > _config.MaxPayloadBytes)
-            payloadBytes = payloadBytes[.._config.MaxPayloadBytes];
-
+        var payloadBytes = PayloadToArray(e.ApplicationMessage.Payload, Math.Max(0, _config.MaxPayloadBytes));
         var payload = Encoding.UTF8.GetString(payloadBytes);
         MqttMessageCache.Set(topic, payload);
 
@@ -175,14 +172,22 @@ public sealed class MqttEventBridge : BackgroundService
         return true;
     }
 
-    private static byte[] PayloadToArray(System.Buffers.ReadOnlySequence<byte> payload)
+    private static byte[] PayloadToArray(System.Buffers.ReadOnlySequence<byte> payload, int maxPayloadBytes)
     {
-        if (payload.IsSingleSegment)
-            return payload.FirstSpan.ToArray();
+        var payloadLength = Math.Min(payload.Length, maxPayloadBytes);
+        if (payloadLength <= 0)
+            return [];
 
-        var bytes = new byte[(int)payload.Length];
+        var boundedPayload = payloadLength == payload.Length
+            ? payload
+            : payload.Slice(0, payloadLength);
+
+        if (boundedPayload.IsSingleSegment)
+            return boundedPayload.FirstSpan.ToArray();
+
+        var bytes = new byte[(int)boundedPayload.Length];
         var offset = 0;
-        foreach (var segment in payload)
+        foreach (var segment in boundedPayload)
         {
             segment.Span.CopyTo(bytes.AsSpan(offset));
             offset += segment.Length;

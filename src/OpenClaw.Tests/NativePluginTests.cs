@@ -1,7 +1,12 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Models;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Agent.Tools;
+using OpenClaw.Gateway.Bootstrap;
+using OpenClaw.Gateway.Composition;
 using OpenClaw.Protocols.Mqtt.Tools;
 using Xunit;
 
@@ -70,6 +75,48 @@ public class NativePluginRegistryTests
 
         Assert.Contains(registry.Tools, t => t.Name == "mqtt");
         Assert.Contains(registry.Tools, t => t.Name == "mqtt_publish");
+    }
+
+    [Fact]
+    public void AddOpenClawToolServices_MqttEnabled_RegistersReadAndWriteTools()
+    {
+        var config = new GatewayConfig
+        {
+            Plugins = new PluginsConfig
+            {
+                Native = new NativePluginsConfig
+                {
+                    Mqtt = new MqttConfig
+                    {
+                        Enabled = true,
+                        Host = "127.0.0.1"
+                    }
+                }
+            }
+        };
+        var startup = new GatewayStartupContext
+        {
+            Config = config,
+            RuntimeState = new GatewayRuntimeState
+            {
+                RequestedMode = "jit",
+                EffectiveMode = GatewayRuntimeMode.Jit,
+                DynamicCodeSupported = true
+            },
+            IsNonLoopbackBind = false
+        };
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOpenClawToolServices(startup);
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<NativePluginRegistry>();
+
+        Assert.Contains(registry.Tools, t => t.Name == "mqtt");
+        Assert.Contains(registry.Tools, t => t.Name == "mqtt_publish");
+        Assert.True(registry.IsNativeTool("mqtt"));
+        Assert.True(registry.IsNativeTool("mqtt_publish"));
     }
 
     [Fact]

@@ -81,15 +81,19 @@
     </Content>
   </ItemGroup>
 
+  <Target Name="CleanDashboardFiles" AfterTargets="Build">
+    <RemoveDir Directories="$(OutputPath)wwwroot\dashboard" />
+  </Target>
+
   <!-- Publish Dashboard WASM so all assets (_framework/, _content/, css/) are materialized on disk.
        CI build/test loops can set OpenClawSkipDashboardBuild=true; publish still copies Dashboard assets below. -->
-  <Target Name="CopyDashboardFiles" AfterTargets="Build" Condition="'$(OpenClawSkipDashboardBuild)' != 'true'">
+  <Target Name="CopyDashboardFiles" AfterTargets="CleanDashboardFiles" Condition="'$(OpenClawSkipDashboardBuild)' != 'true'">
     <PropertyGroup>
       <_DashboardProject>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'OpenClaw.Dashboard', 'OpenClaw.Dashboard.csproj'))</_DashboardProject>
       <_DashboardPublishDir>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'OpenClaw.Dashboard', 'bin', 'publish'))</_DashboardPublishDir>
       <_DashboardPublishWwwroot>$(_DashboardPublishDir)\wwwroot</_DashboardPublishWwwroot>
     </PropertyGroup>
-    <RemoveDir Directories="$(_DashboardPublishDir);$(OutputPath)wwwroot\dashboard" />
+    <RemoveDir Directories="$(_DashboardPublishDir)" />
     <Exec Command="dotnet publish &quot;$(_DashboardProject)&quot; -c $(Configuration) -o &quot;$(_DashboardPublishDir)&quot; --nologo -v q" />
     <ItemGroup>
       <_DashboardPublishFiles Include="$(_DashboardPublishWwwroot)\**\*" />

@@ -96,12 +96,23 @@ public sealed class MqttTool : ITool
         {
             try
             {
-                var payloadBytes = e.ApplicationMessage is null
-                    ? Array.Empty<byte>()
-                    : PayloadToArray(e.ApplicationMessage.Payload);
+                if (e.ApplicationMessage is null)
+                {
+                    tcs.TrySetResult((topic, ""));
+                    return Task.CompletedTask;
+                }
+
+                var maxPayloadBytes = Math.Max(0, _config.MaxPayloadBytes);
+                if (!TryPayloadToArray(e.ApplicationMessage.Payload, maxPayloadBytes, out var payloadBytes))
+                {
+                    tcs.TrySetResult((
+                        e.ApplicationMessage.Topic ?? topic,
+                        $"Error: payload exceeds configured limit ({maxPayloadBytes} bytes)."));
+                    return Task.CompletedTask;
+                }
 
                 var text = Encoding.UTF8.GetString(payloadBytes);
-                tcs.TrySetResult((e.ApplicationMessage?.Topic ?? topic, text));
+                tcs.TrySetResult((e.ApplicationMessage.Topic ?? topic, text));
             }
             catch (Exception ex)
             {
@@ -132,6 +143,18 @@ public sealed class MqttTool : ITool
         {
             try { await client.DisconnectAsync(new MQTTnet.MqttClientDisconnectOptions(), cts.Token); } catch { /* ignore */ }
         }
+    }
+
+    private static bool TryPayloadToArray(System.Buffers.ReadOnlySequence<byte> payload, int maxPayloadBytes, out byte[] payloadBytes)
+    {
+        if (payload.Length > maxPayloadBytes)
+        {
+            payloadBytes = [];
+            return false;
+        }
+
+        payloadBytes = PayloadToArray(payload);
+        return true;
     }
 
     private static byte[] PayloadToArray(System.Buffers.ReadOnlySequence<byte> payload)
