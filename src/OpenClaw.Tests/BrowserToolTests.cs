@@ -6,14 +6,33 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
-using OpenClaw.Agent.Tools;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Protocols.Browser.Tools;
 
 namespace OpenClaw.Tests;
 
 [Collection(EnvironmentVariableCollection.Name)]
 public class BrowserToolTests
 {
+    [Fact]
+    public async Task BrowserTool_LocalExecutionPolicy_ReportsBrowserBackendFailure()
+    {
+        await using var browser = new BrowserTool(
+            new ToolingConfig { EnableBrowserTool = true },
+            localExecutionSupported: false);
+
+        var policy = Assert.IsAssignableFrom<IToolLocalExecutionPolicy>(browser);
+        Assert.False(policy.LocalExecutionSupported);
+        Assert.Equal(ToolFailureCodes.BrowserBackendMissing, policy.LocalExecutionUnavailableFailureCode);
+        Assert.Equal(
+            "Error: Browser tool requires a configured execution backend or sandbox in this runtime. Local Playwright execution is unavailable.",
+            policy.LocalExecutionUnavailableMessage);
+
+        var result = await browser.ExecuteAsync("""{"action":"get_text"}""", CancellationToken.None);
+        Assert.Equal(policy.LocalExecutionUnavailableMessage, result);
+    }
+
     [Fact]
     public async Task BrowserTool_CanNavigateAndGetText()
     {

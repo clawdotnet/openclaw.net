@@ -55,6 +55,7 @@ These are the directories most people need first:
 | `src/OpenClaw.Client` | Typed .NET client for the integration API and MCP facade. |
 | `src/OpenClaw.SemanticKernelAdapter` | Semantic Kernel integration layer. |
 | `src/OpenClaw.MicrosoftAgentFrameworkAdapter` | Supported optional Microsoft Agent Framework adapter. |
+| `src/OpenClaw.Protocols.Browser` | Optional Playwright-backed browser automation tool, composed by the gateway when browser tooling is enabled and available. |
 | `src/OpenClaw.Protocols.Mqtt` | Optional MQTT native tools and event bridge, composed by the gateway when MQTT is enabled. |
 | `src/OpenClaw.PluginKit` | Support code for plugin authoring and plugin integration. |
 | `src/OpenClaw.Tests` | Unit and integration-style tests for the runtime and services. |

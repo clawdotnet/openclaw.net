@@ -8,16 +8,16 @@ using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Security;
 
-namespace OpenClaw.Agent.Tools;
+namespace OpenClaw.Protocols.Browser.Tools;
 
 /// <summary>
 /// A native interactive headless browser tool leveraging Microsoft.Playwright.
 /// Allows agents to query dynamic SPAs, fill forms, and click elements.
 /// </summary>
-public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
+public sealed class BrowserTool : ITool, ISandboxCapableTool, IToolLocalExecutionPolicy, IAsyncDisposable
 {
     private const string SandboxProfileDir = "/tmp/openclaw-browser-profile";
-    internal const string LocalExecutionUnavailableMessage =
+    private const string BrowserLocalExecutionUnavailableMessage =
         "Error: Browser tool requires a configured execution backend or sandbox in this runtime. Local Playwright execution is unavailable.";
     private const string SandboxRunnerScript = """
         const { chromium } = require('playwright');
@@ -275,6 +275,10 @@ public sealed class BrowserTool : ITool, ISandboxCapableTool, IAsyncDisposable
     }
 
     public string Name => "browser";
+
+    public string LocalExecutionUnavailableFailureCode => ToolFailureCodes.BrowserBackendMissing;
+
+    public string LocalExecutionUnavailableMessage => BrowserLocalExecutionUnavailableMessage;
     
     public string Description => 
         "An interactive headless browser. Enables navigation to JS-heavy sites, " +

@@ -303,6 +303,29 @@ public sealed class OpenClawToolExecutorTests
         Assert.Contains("Configure the required execution backend or sandbox", result.NextStep ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_LocalExecutionPolicyFailure_UsesStructuredFailureCode()
+    {
+        var tool = new LocalExecutionDisabledTool();
+        var executor = CreateExecutor([tool]);
+
+        var result = await executor.ExecuteAsync(
+            tool.Name,
+            """{"action":"restricted"}""",
+            callId: null,
+            CreateSession(),
+            CreateTurnContext(),
+            isStreaming: false,
+            approvalCallback: null,
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
+        Assert.Equal(ToolFailureCodes.RuntimeCapabilityUnavailable, result.FailureCode);
+        Assert.Equal(ToolFailureCodes.RuntimeCapabilityUnavailable, result.Invocation.FailureCode);
+        Assert.Equal(tool.LocalExecutionUnavailableMessage, result.ResultText);
+        Assert.Contains("Configure the required execution backend or sandbox", result.NextStep ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static OpenClawToolExecutor CreateExecutor(
         IReadOnlyList<ITool> tools,
         IToolSandbox? toolSandbox = null,
@@ -392,6 +415,19 @@ public sealed class OpenClawToolExecutorTests
 
         public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
             => throw new InvalidOperationException(message);
+    }
+
+    private sealed class LocalExecutionDisabledTool : ITool, IToolLocalExecutionPolicy
+    {
+        public string Name => "policy_blocked";
+        public string Description => "Tool that cannot run locally.";
+        public string ParameterSchema => """{"type":"object","properties":{"action":{"type":"string"}}}""";
+        public bool LocalExecutionSupported => false;
+        public string LocalExecutionUnavailableFailureCode => ToolFailureCodes.RuntimeCapabilityUnavailable;
+        public string LocalExecutionUnavailableMessage => "Error: Local execution is unavailable for this policy tool.";
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+            => throw new InvalidOperationException("Local execution should not be invoked.");
     }
 
     private sealed class ListLogger : ILogger
