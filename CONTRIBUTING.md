@@ -72,7 +72,7 @@ Maintainers use the scoped review guidance in [docs/maintainers/review-checklist
 
 ## Adding a New Tool or LLM Provider
 
-Tools implement `ITool` in `src/OpenClaw.Agent/Tools/` when they are part of the default agent surface. Protocol-specific optional tools should live in an optional project, as MQTT does in `src/OpenClaw.Protocols.Mqtt`, and be composed through the gateway or another explicit extension seam. Providers plug in through `Microsoft.Extensions.AI` and the gateway composition pipeline — add through the active provider registration path, not a `Program.cs` factory. Both must be wired through the current composition seams (see [docs/architecture-startup-refactor.md](docs/architecture-startup-refactor.md)) and covered by tests in `src/OpenClaw.Tests/`.
+Tools implement `ITool` in `src/OpenClaw.Agent/Tools/` when they are part of the default agent surface. Protocol-specific optional tools should live in an optional project, as Browser does in `src/OpenClaw.Protocols.Browser` and MQTT does in `src/OpenClaw.Protocols.Mqtt`, and be composed through the gateway or another explicit extension seam. Providers plug in through `Microsoft.Extensions.AI` and the gateway composition pipeline — add through the active provider registration path, not a `Program.cs` factory. Both must be wired through the current composition seams (see [docs/architecture-startup-refactor.md](docs/architecture-startup-refactor.md)) and covered by tests in `src/OpenClaw.Tests/`.
 
 ## Reporting Bugs and Feature Requests
 

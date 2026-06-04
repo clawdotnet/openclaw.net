@@ -40,8 +40,8 @@ Optional surfaces should be explicit, documented, and isolated from the core pat
 
 Examples include:
 
-- browser tools
-- protocol-specific packages such as MQTT
+- browser automation through `OpenClaw.Protocols.Browser`
+- protocol-specific packages such as MQTT through `OpenClaw.Protocols.Mqtt`
 - plugin bridge
 - channel adapters
 - model providers

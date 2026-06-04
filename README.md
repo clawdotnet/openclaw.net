@@ -223,7 +223,7 @@ Capability lanes at a glance:
 | Lane | Examples |
 |-----|----------|
 | Core | Runtime loop, gateway, CLI, NativeAOT-friendly host path, OpenAI-compatible API |
-| Optional | MQTT protocol package, channels, Browser tool, model providers, workflow backends |
+| Optional | Browser and MQTT protocol packages, channels, model providers, workflow backends |
 | Experimental | Embedded local model sidecars and adapter-oriented package paths |
 | JIT-only | Dynamic plugin channels, commands, hooks, providers, and native dynamic .NET plugins |
 

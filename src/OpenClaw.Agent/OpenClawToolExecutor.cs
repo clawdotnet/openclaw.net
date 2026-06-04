@@ -4,7 +4,6 @@ using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Agent.Execution;
-using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Governance;
 using OpenClaw.Core.Models;
@@ -481,7 +480,7 @@ public sealed class OpenClawToolExecutor
             result = ex.Message;
             toolFailed = true;
             resultStatus = ToolResultStatuses.Blocked;
-            failureCode = ClassifyToolFailureCode(tool.Name, ex.Message);
+            failureCode = ex.FailureCode ?? ClassifyToolFailureCode(tool, ex.Message);
             failureMessage = ex.Message;
             nextStep = BuildFailureNextStep(tool.Name, failureCode);
             _metrics?.IncrementToolFailures();
@@ -489,7 +488,7 @@ public sealed class OpenClawToolExecutor
         }
         catch (Exception ex)
         {
-            failureCode = ClassifyToolFailureCode(tool.Name, ex.Message);
+            failureCode = ClassifyToolFailureCode(tool, ex.Message);
             failureMessage = ex.Message;
             toolFailed = true;
             if (failureCode is ToolFailureCodes.OperatorAuthRequired or ToolFailureCodes.BrowserBackendMissing or ToolFailureCodes.RuntimeCapabilityUnavailable)
@@ -835,7 +834,7 @@ public sealed class OpenClawToolExecutor
         if (!_executionRouter.TryResolveRoute(tool, out var route, out var template, out var legacySandboxRoute, out var sandboxMode))
         {
             if (IsLocalExecutionDisabled(tool))
-                throw new ToolSandboxException(BrowserTool.LocalExecutionUnavailableMessage);
+                throw CreateLocalExecutionUnavailableException(tool);
 
             return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
         }
@@ -853,7 +852,7 @@ public sealed class OpenClawToolExecutor
         }
 
         if (string.Equals(backendName, "local", StringComparison.OrdinalIgnoreCase) && IsLocalExecutionDisabled(tool))
-            throw new ToolSandboxException(BrowserTool.LocalExecutionUnavailableMessage);
+            throw CreateLocalExecutionUnavailableException(tool);
 
         if (string.Equals(backendName, "local", StringComparison.OrdinalIgnoreCase) && !legacySandboxRoute)
             return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
@@ -944,7 +943,22 @@ public sealed class OpenClawToolExecutor
     }
 
     private static bool IsLocalExecutionDisabled(ITool tool)
-        => tool is BrowserTool { LocalExecutionSupported: false };
+        => tool is IToolLocalExecutionPolicy { LocalExecutionSupported: false };
+
+    private static ToolSandboxException CreateLocalExecutionUnavailableException(ITool tool)
+        => new(
+            GetLocalExecutionUnavailableMessage(tool),
+            GetLocalExecutionUnavailableFailureCode(tool));
+
+    private static string GetLocalExecutionUnavailableMessage(ITool tool)
+        => tool is IToolLocalExecutionPolicy { LocalExecutionSupported: false } policy
+            ? policy.LocalExecutionUnavailableMessage
+            : $"Error: Tool '{tool.Name}' requires a configured execution backend or sandbox in this runtime. Local execution is unavailable.";
+
+    private static string GetLocalExecutionUnavailableFailureCode(ITool tool)
+        => tool is IToolLocalExecutionPolicy { LocalExecutionSupported: false } policy
+            ? policy.LocalExecutionUnavailableFailureCode
+            : ToolFailureCodes.RuntimeCapabilityUnavailable;
 
     private async Task<string> ExecuteToolWithTimeoutAsync(
         ITool tool,
@@ -996,11 +1010,18 @@ public sealed class OpenClawToolExecutor
            !string.Equals(decision, PlanExecuteVerifyDecisionKinds.Proceed, StringComparison.OrdinalIgnoreCase) &&
            !string.Equals(decision, PlanExecuteVerifyDecisionKinds.RequireApproval, StringComparison.OrdinalIgnoreCase);
 
-    private static string ClassifyToolFailureCode(string toolName, string message)
+    private static string ClassifyToolFailureCode(ITool tool, string message)
     {
         if (LooksLikeOperatorAuthFailure(message))
             return ToolFailureCodes.OperatorAuthRequired;
 
+        if (tool is IToolLocalExecutionPolicy { LocalExecutionSupported: false } policy &&
+            string.Equals(message, policy.LocalExecutionUnavailableMessage, StringComparison.Ordinal))
+        {
+            return policy.LocalExecutionUnavailableFailureCode;
+        }
+
+        var toolName = tool.Name;
         if (toolName.Equals("browser", StringComparison.OrdinalIgnoreCase))
         {
             return message.Contains("execution backend", StringComparison.OrdinalIgnoreCase) ||

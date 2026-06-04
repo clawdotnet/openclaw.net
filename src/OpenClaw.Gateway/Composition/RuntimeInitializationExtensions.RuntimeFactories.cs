@@ -17,6 +17,7 @@ using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Tools;
 using OpenClaw.Plugins.Payment;
+using OpenClaw.Protocols.Browser.Tools;
 using OpenClaw.Protocols.Mqtt.Integrations;
 
 namespace OpenClaw.Gateway.Composition;

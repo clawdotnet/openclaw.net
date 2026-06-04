@@ -2,6 +2,7 @@ using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Plugins;
+using OpenClaw.Protocols.Browser.Tools;
 using Xunit;
 
 namespace OpenClaw.Tests;

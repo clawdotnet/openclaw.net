@@ -3,6 +3,7 @@ using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Security;
+using OpenClaw.Protocols.Browser.Tools;
 using Xunit;
 
 namespace OpenClaw.Tests;
