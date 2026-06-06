@@ -4,497 +4,1163 @@
         xmlns:models="using:OpenClaw.Companion.Models"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+		xmlns:sys="clr-namespace:System;assembly=System.Runtime"
         mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="820"
         x:Class="OpenClaw.Companion.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
         Title="OpenClaw.NET Companion">
 
-    <Design.DataContext>
-        <vm:MainWindowViewModel/>
-    </Design.DataContext>
+	<Design.DataContext>
+		<vm:MainWindowViewModel/>
+	</Design.DataContext>
 
-    <Grid RowDefinitions="Auto,*" Margin="14" RowSpacing="12">
-        <Border Grid.Row="0" Classes="section-card">
-            <Grid RowDefinitions="Auto,Auto" RowSpacing="10">
-                <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
-                    <StackPanel Grid.Column="0" Spacing="2">
-                        <TextBlock Text="OpenClaw.NET Companion" Classes="page-title" />
-                        <TextBlock Text="Runtime Console" Classes="muted" />
-                    </StackPanel>
+	<Grid RowDefinitions="Auto,*" Margin="14" RowSpacing="12">
+		<Border Grid.Row="0" Classes="section-card">
+			<Grid RowDefinitions="Auto,Auto" RowSpacing="10">
+				<Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+					<StackPanel Grid.Column="0" Spacing="2">
+						<TextBlock Text="OpenClaw.NET Companion" Classes="page-title" />
+						<TextBlock Text="Runtime Console" Classes="muted" />
+					</StackPanel>
 
-                    <WrapPanel Grid.Column="1" VerticalAlignment="Center">
-                        <Border Classes="badge" Margin="0,0,6,4"><TextBlock Text="{Binding GatewayStatusBadge}" FontSize="12" /></Border>
-                        <Border Classes="badge" Margin="0,0,6,4"><TextBlock Text="{Binding OperatorIdentity}" FontSize="12" /></Border>
-                        <Border Classes="badge" Margin="0,0,6,4"><TextBlock Text="{Binding OperatorRole}" FontSize="12" /></Border>
-                        <Border Classes="badge" Margin="0,0,6,4"><TextBlock Text="{Binding OperatorAuthMode}" FontSize="12" /></Border>
-                        <Border Classes="badge" Margin="0,0,6,4"><TextBlock Text="{Binding LocalGatewayHealthBadge}" FontSize="12" /></Border>
-                        <Border Classes="badge" Margin="0,0,0,4"><TextBlock Text="{Binding PendingApprovalsBadge}" FontSize="12" /></Border>
-                    </WrapPanel>
+					<WrapPanel Grid.Column="1" VerticalAlignment="Center">
+						<Border Classes="badge" Margin="0,0,6,4">
+							<TextBlock Text="{Binding GatewayStatusBadge}" FontSize="12" />
+						</Border>
+						<Border Classes="badge" Margin="0,0,6,4">
+							<TextBlock Text="{Binding OperatorIdentity}" FontSize="12" />
+						</Border>
+						<Border Classes="badge" Margin="0,0,6,4">
+							<TextBlock Text="{Binding OperatorRole}" FontSize="12" />
+						</Border>
+						<Border Classes="badge" Margin="0,0,6,4">
+							<TextBlock Text="{Binding OperatorAuthMode}" FontSize="12" />
+						</Border>
+						<Border Classes="badge" Margin="0,0,6,4">
+							<TextBlock Text="{Binding LocalGatewayHealthBadge}" FontSize="12" />
+						</Border>
+						<Border Classes="badge" Margin="0,0,0,4">
+							<TextBlock Text="{Binding PendingApprovalsBadge}" FontSize="12" />
+						</Border>
+					</WrapPanel>
 
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <Button Content="Connect" Command="{Binding ConnectCommand}"
+					<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+						<Button Content="Connect" Command="{Binding ConnectCommand}"
                                 IsVisible="{Binding IsConnected, Converter={StaticResource InverseBool}}"
                                 IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" Classes="primary" />
-                        <Button Content="Disconnect" Command="{Binding DisconnectCommand}"
+						<Button Content="Disconnect" Command="{Binding DisconnectCommand}"
                                 IsVisible="{Binding IsConnected}"
                                 IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" />
-                        <Button Content="Start" Command="{Binding StartLocalGatewayCommand}"
+						<Button Content="Start" Command="{Binding StartLocalGatewayCommand}"
                                 IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
-                        <Button Content="Stop" Command="{Binding StopLocalGatewayCommand}"
+						<Button Content="Stop" Command="{Binding StopLocalGatewayCommand}"
                                 IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
-                    </StackPanel>
-                </Grid>
+					</StackPanel>
+				</Grid>
 
-                <Expander Grid.Row="1" Header="Connection settings" IsExpanded="{Binding ConnectionSettingsExpanded}">
-                    <Grid Margin="0,8,0,0" ColumnDefinitions="2*,*,*,Auto,Auto,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="6">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Gateway URL" FontWeight="SemiBold" />
-                        <TextBlock Grid.Row="0" Grid.Column="1" Text="Operator User" FontWeight="SemiBold" />
-                        <TextBlock Grid.Row="0" Grid.Column="2" Text="Operator Token" FontWeight="SemiBold" />
-                        <TextBlock Grid.Row="0" Grid.Column="3" Text="Remember" FontWeight="SemiBold" />
-                        <TextBlock Grid.Row="0" Grid.Column="4" Text="Plaintext" FontWeight="SemiBold" />
-                        <TextBlock Grid.Row="0" Grid.Column="5" Text="Debug" FontWeight="SemiBold" />
-                        <TextBox Grid.Row="1" Grid.Column="0" Text="{Binding ServerUrl}" Watermark="ws://127.0.0.1:18789/ws" />
-                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Username}" Watermark="viewer1 / operator1 / admin1" />
-                        <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding AuthToken}" PasswordChar="•" Watermark="Operator account token" />
-                        <CheckBox Grid.Row="1" Grid.Column="3" IsChecked="{Binding RememberToken}" />
-                        <CheckBox Grid.Row="1" Grid.Column="4" IsChecked="{Binding AllowPlaintextTokenFallback}" />
-                        <CheckBox Grid.Row="1" Grid.Column="5" IsChecked="{Binding DebugMode}" />
-                    </Grid>
-                </Expander>
-            </Grid>
-        </Border>
+				<Expander Grid.Row="1" Header="Connection settings" IsExpanded="{Binding ConnectionSettingsExpanded}">
+					<Grid Margin="0,8,0,0" ColumnDefinitions="2*,*,*,Auto,Auto,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="6">
+						<TextBlock Grid.Row="0" Grid.Column="0" Text="Gateway URL" FontWeight="SemiBold" />
+						<TextBlock Grid.Row="0" Grid.Column="1" Text="Operator User" FontWeight="SemiBold" />
+						<TextBlock Grid.Row="0" Grid.Column="2" Text="Operator Token" FontWeight="SemiBold" />
+						<TextBlock Grid.Row="0" Grid.Column="3" Text="Remember" FontWeight="SemiBold" />
+						<TextBlock Grid.Row="0" Grid.Column="4" Text="Plaintext" FontWeight="SemiBold" />
+						<TextBlock Grid.Row="0" Grid.Column="5" Text="Debug" FontWeight="SemiBold" />
+						<TextBox Grid.Row="1" Grid.Column="0" Text="{Binding ServerUrl}" Watermark="ws://127.0.0.1:18789/ws" />
+						<TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Username}" Watermark="viewer1 / operator1 / admin1" />
+						<TextBox Grid.Row="1" Grid.Column="2" Text="{Binding AuthToken}" PasswordChar="•" Watermark="Operator account token" />
+						<CheckBox Grid.Row="1" Grid.Column="3" IsChecked="{Binding RememberToken}" />
+						<CheckBox Grid.Row="1" Grid.Column="4" IsChecked="{Binding AllowPlaintextTokenFallback}" />
+						<CheckBox Grid.Row="1" Grid.Column="5" IsChecked="{Binding DebugMode}" />
+					</Grid>
+				</Expander>
+			</Grid>
+		</Border>
 
-        <TabControl Grid.Row="1" TabStripPlacement="Left" SelectedIndex="{Binding SelectedSectionIndex}">
-            <TabItem Header="Home">
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="12" Margin="12,0,0,0">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                            <StackPanel Spacing="2">
-                                <TextBlock Text="Runtime Dashboard" Classes="page-title" />
-                                <TextBlock Text="{Binding DashboardStatus}" Classes="muted" TextWrapping="Wrap" />
-                            </StackPanel>
-                            <Button Grid.Column="1" Content="Refresh" Command="{Binding LoadDashboardCommand}"
+		<TabControl Grid.Row="1" TabStripPlacement="Left" SelectedIndex="{Binding SelectedSectionIndex}">
+			<TabItem Header="Home">
+				<ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+					<StackPanel Spacing="12" Margin="12,0,0,0">
+						<Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+							<StackPanel Spacing="2">
+								<TextBlock Text="Runtime Dashboard" Classes="page-title" />
+								<TextBlock Text="{Binding DashboardStatus}" Classes="muted" TextWrapping="Wrap" />
+							</StackPanel>
+							<Button Grid.Column="1" Content="Refresh" Command="{Binding LoadDashboardCommand}"
                                     IsEnabled="{Binding IsDashboardBusy, Converter={StaticResource InverseBool}}" Classes="primary" />
-                        </Grid>
+						</Grid>
 
-                        <UniformGrid Columns="4">
-                            <Border Classes="metric-card" Margin="0,0,8,8"><StackPanel><TextBlock Text="{Binding DashboardActiveSessions}" FontSize="28" FontWeight="SemiBold" /><TextBlock Text="Active sessions" Classes="muted" /></StackPanel></Border>
-                            <Border Classes="metric-card" Margin="0,0,8,8"><StackPanel><TextBlock Text="{Binding DashboardPendingApprovals}" FontSize="28" FontWeight="SemiBold" /><TextBlock Text="Pending approvals" Classes="muted" /></StackPanel></Border>
-                            <Border Classes="metric-card" Margin="0,0,8,8"><StackPanel><TextBlock Text="{Binding DashboardProviders}" FontSize="28" FontWeight="SemiBold" /><TextBlock Text="Provider routes" Classes="muted" /></StackPanel></Border>
-                            <Border Classes="metric-card" Margin="0,0,0,8"><StackPanel><TextBlock Text="{Binding DashboardPlugins}" FontSize="28" FontWeight="SemiBold" /><TextBlock Text="Plugins" Classes="muted" /></StackPanel></Border>
-                        </UniformGrid>
+						<UniformGrid Columns="4">
+							<Border Classes="metric-card" Margin="0,0,8,8">
+								<StackPanel>
+									<TextBlock Text="{Binding DashboardActiveSessions}" FontSize="28" FontWeight="SemiBold" />
+									<TextBlock Text="Active sessions" Classes="muted" />
+								</StackPanel>
+							</Border>
+							<Border Classes="metric-card" Margin="0,0,8,8">
+								<StackPanel>
+									<TextBlock Text="{Binding DashboardPendingApprovals}" FontSize="28" FontWeight="SemiBold" />
+									<TextBlock Text="Pending approvals" Classes="muted" />
+								</StackPanel>
+							</Border>
+							<Border Classes="metric-card" Margin="0,0,8,8">
+								<StackPanel>
+									<TextBlock Text="{Binding DashboardProviders}" FontSize="28" FontWeight="SemiBold" />
+									<TextBlock Text="Provider routes" Classes="muted" />
+								</StackPanel>
+							</Border>
+							<Border Classes="metric-card" Margin="0,0,0,8">
+								<StackPanel>
+									<TextBlock Text="{Binding DashboardPlugins}" FontSize="28" FontWeight="SemiBold" />
+									<TextBlock Text="Plugins" Classes="muted" />
+								</StackPanel>
+							</Border>
+						</UniformGrid>
 
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                            <Border Grid.Column="0" Classes="section-card">
-                                <StackPanel Spacing="10">
-                                    <TextBlock Text="Runtime Summary" Classes="section-title" />
-                                    <TextBlock Text="{Binding DashboardLocalGatewayStatus}" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding Status, StringFormat=Connection: {0}}" />
-                                    <TextBlock Text="{Binding SetupProviderSummary, StringFormat=Provider: {0}}" />
-                                    <TextBlock Text="{Binding DeploymentStatus}" Classes="muted" TextWrapping="Wrap" MaxHeight="90" />
-                                </StackPanel>
-                            </Border>
-                            <Border Grid.Column="1" Classes="section-card">
-                                <StackPanel Spacing="10">
-                                    <TextBlock Text="Quick Actions" Classes="section-title" />
-                                    <WrapPanel>
-                                        <Button Content="Refresh Gateway" Command="{Binding RefreshLocalGatewayCommand}" Margin="0,0,8,8" />
-                                        <Button Content="Start Gateway" Command="{Binding StartLocalGatewayCommand}" Margin="0,0,8,8" />
-                                        <Button Content="Connect" Command="{Binding ConnectCommand}" Margin="0,0,8,8" />
-                                        <Button Content="Review Approvals" Command="{Binding NavigateToSectionCommand}" CommandParameter="approvals" Margin="0,0,8,8" />
-                                        <Button Content="Open Setup" Command="{Binding NavigateToSectionCommand}" CommandParameter="setup" Margin="0,0,8,8" />
-                                        <Button Content="Load Deployment" Command="{Binding LoadAdminStatusCommand}" Margin="0,0,8,8" />
-                                    </WrapPanel>
-                                    <TextBlock Text="{Binding WhatsAppActiveBackend, StringFormat=WhatsApp: {0}}" Classes="muted" />
-                                    <TextBlock Text="{Binding DashboardLastRefreshed, StringFormat=Last refreshed: {0}}" Classes="muted" />
-                                </StackPanel>
-                            </Border>
-                        </Grid>
+						<Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+							<Border Grid.Column="0" Classes="section-card">
+								<StackPanel Spacing="10">
+									<TextBlock Text="Runtime Summary" Classes="section-title" />
+									<TextBlock Text="{Binding DashboardLocalGatewayStatus}" TextWrapping="Wrap" />
+									<TextBlock Text="{Binding Status, StringFormat=Connection: {0}}" />
+									<TextBlock Text="{Binding SetupProviderSummary, StringFormat=Provider: {0}}" />
+									<TextBlock Text="{Binding DeploymentStatus}" Classes="muted" TextWrapping="Wrap" MaxHeight="90" />
+								</StackPanel>
+							</Border>
+							<Border Grid.Column="1" Classes="section-card">
+								<StackPanel Spacing="10">
+									<TextBlock Text="Quick Actions" Classes="section-title" />
+									<WrapPanel>
+										<Button Content="Refresh Gateway" Command="{Binding RefreshLocalGatewayCommand}" Margin="0,0,8,8" />
+										<Button Content="Start Gateway" Command="{Binding StartLocalGatewayCommand}" Margin="0,0,8,8" />
+										<Button Content="Connect" Command="{Binding ConnectCommand}" Margin="0,0,8,8" />
+										<Button Content="Review Approvals" Command="{Binding NavigateToSectionCommand}" CommandParameter="approvals" Margin="0,0,8,8" />
+										<Button Content="Open Setup" Command="{Binding NavigateToSectionCommand}" CommandParameter="setup" Margin="0,0,8,8" />
+										<Button Content="Load Deployment" Command="{Binding LoadAdminStatusCommand}" Margin="0,0,8,8" />
+									</WrapPanel>
+									<TextBlock Text="{Binding WhatsAppActiveBackend, StringFormat=WhatsApp: {0}}" Classes="muted" />
+									<TextBlock Text="{Binding DashboardLastRefreshed, StringFormat=Last refreshed: {0}}" Classes="muted" />
+								</StackPanel>
+							</Border>
+						</Grid>
 
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                            <Border Grid.Column="0" Classes="section-card">
-                                <StackPanel Spacing="8">
-                                    <TextBlock Text="Recent Approval Decisions" Classes="section-title" />
-                                    <TextBlock Text="No approval history loaded." Classes="muted" IsVisible="{Binding HasDashboardApprovalHistory, Converter={StaticResource InverseBool}}" />
-                                    <ItemsControl ItemsSource="{Binding DashboardApprovalHistory}" IsVisible="{Binding HasDashboardApprovalHistory}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate DataType="vm:ApprovalHistoryItem">
-                                                <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6" ColumnSpacing="8">
-                                                    <Border Grid.Column="0" Background="{Binding OutcomeColor}" CornerRadius="4" Padding="6,2"><TextBlock Text="{Binding OutcomeLabel}" Foreground="White" FontSize="11" /></Border>
-                                                    <TextBlock Grid.Column="1" Text="{Binding ToolName}" />
-                                                    <TextBlock Grid.Column="2" Text="{Binding TimestampUtc, StringFormat='{}{0:g}'}" Classes="muted" />
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-                            </Border>
-                            <Border Grid.Column="1" Classes="section-card">
-                                <StackPanel Spacing="8">
-                                    <TextBlock Text="Channels" Classes="section-title" />
-                                    <TextBlock Text="No channel readiness data loaded." Classes="muted" IsVisible="{Binding HasDashboardChannels, Converter={StaticResource InverseBool}}" />
-                                    <ItemsControl ItemsSource="{Binding DashboardChannels}" IsVisible="{Binding HasDashboardChannels}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate DataType="vm:ChannelReadinessRow">
-                                                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
-                                                    <StackPanel>
-                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
-                                                        <TextBlock Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap" />
-                                                    </StackPanel>
-                                                    <Border Grid.Column="1" Classes="badge"><TextBlock Text="{Binding Status}" FontSize="11" /></Border>
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-                            </Border>
-                        </Grid>
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
+						<Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+							<Border Grid.Column="0" Classes="section-card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Recent Approval Decisions" Classes="section-title" />
+									<TextBlock Text="No approval history loaded." Classes="muted" IsVisible="{Binding HasDashboardApprovalHistory, Converter={StaticResource InverseBool}}" />
+									<ItemsControl ItemsSource="{Binding DashboardApprovalHistory}" IsVisible="{Binding HasDashboardApprovalHistory}">
+										<ItemsControl.ItemTemplate>
+											<DataTemplate DataType="vm:ApprovalHistoryItem">
+												<Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6" ColumnSpacing="8">
+													<Border Grid.Column="0" Background="{Binding OutcomeColor}" CornerRadius="4" Padding="6,2">
+														<TextBlock Text="{Binding OutcomeLabel}" Foreground="White" FontSize="11" />
+													</Border>
+													<TextBlock Grid.Column="1" Text="{Binding ToolName}" />
+													<TextBlock Grid.Column="2" Text="{Binding TimestampUtc, StringFormat='{}{0:g}'}" Classes="muted" />
+												</Grid>
+											</DataTemplate>
+										</ItemsControl.ItemTemplate>
+									</ItemsControl>
+								</StackPanel>
+							</Border>
+							<Border Grid.Column="1" Classes="section-card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Channels" Classes="section-title" />
+									<TextBlock Text="No channel readiness data loaded." Classes="muted" IsVisible="{Binding HasDashboardChannels, Converter={StaticResource InverseBool}}" />
+									<ItemsControl ItemsSource="{Binding DashboardChannels}" IsVisible="{Binding HasDashboardChannels}">
+										<ItemsControl.ItemTemplate>
+											<DataTemplate DataType="vm:ChannelReadinessRow">
+												<Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+													<StackPanel>
+														<TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+														<TextBlock Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap" />
+													</StackPanel>
+													<Border Grid.Column="1" Classes="badge">
+														<TextBlock Text="{Binding Status}" FontSize="11" />
+													</Border>
+												</Grid>
+											</DataTemplate>
+										</ItemsControl.ItemTemplate>
+									</ItemsControl>
+								</StackPanel>
+							</Border>
+						</Grid>
+					</StackPanel>
+				</ScrollViewer>
+			</TabItem>
 
-            <TabItem Header="Setup">
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="12" Margin="12,0,0,0">
-                        <TextBlock Text="Setup" Classes="page-title" />
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                            <Border Grid.Column="0" Classes="section-card">
-                                <StackPanel Spacing="10">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Text="Local Gateway" Classes="section-title" />
-                                        <CheckBox Grid.Column="1" Content="Auto-start" IsChecked="{Binding AutoStartLocalGateway}" />
-                                    </Grid>
-                                    <TextBlock Text="{Binding LocalGatewayStatus}" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding LocalGatewayAvailability}" Classes="muted" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding LocalGatewayConfigPath, StringFormat=Config: {0}}" Classes="muted" TextWrapping="Wrap" />
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <Button Content="Refresh" Command="{Binding RefreshLocalGatewayCommand}" IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
-                                        <Button Content="Start" Command="{Binding StartLocalGatewayCommand}" IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
-                                        <Button Content="Stop" Command="{Binding StopLocalGatewayCommand}" IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
+			<TabItem Header="Setup">
+				<ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+					<StackPanel Spacing="12" Margin="12,0,0,0">
+						<TextBlock Text="Setup" Classes="page-title" />
+						<Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+							<Border Grid.Column="0" Classes="section-card">
+								<StackPanel Spacing="10">
+									<Grid ColumnDefinitions="*,Auto">
+										<TextBlock Text="Local Gateway" Classes="section-title" />
+										<CheckBox Grid.Column="1" Content="Auto-start" IsChecked="{Binding AutoStartLocalGateway}" />
+									</Grid>
+									<TextBlock Text="{Binding LocalGatewayStatus}" TextWrapping="Wrap" />
+									<TextBlock Text="{Binding LocalGatewayAvailability}" Classes="muted" TextWrapping="Wrap" />
+									<TextBlock Text="{Binding LocalGatewayConfigPath, StringFormat=Config: {0}}" Classes="muted" TextWrapping="Wrap" />
+									<StackPanel Orientation="Horizontal" Spacing="8">
+										<Button Content="Refresh" Command="{Binding RefreshLocalGatewayCommand}" IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
+										<Button Content="Start" Command="{Binding StartLocalGatewayCommand}" IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
+										<Button Content="Stop" Command="{Binding StopLocalGatewayCommand}" IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
+									</StackPanel>
+								</StackPanel>
+							</Border>
 
-                            <Border Grid.Column="1" Classes="section-card">
-                                <StackPanel Spacing="10">
-                                    <TextBlock Text="Embedded Local Model" Classes="section-title" />
-                                    <TextBlock Text="{Binding EmbeddedLocalModelDisabledReason}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding HasEmbeddedLocalModelDisabledReason}" />
-                                    <TextBox Text="{Binding SetupLocalModelPath}" Watermark="Local model path (.gguf / .litertlm)" />
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <Button Content="Status" Command="{Binding RefreshEmbeddedLocalModelStatusCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
-                                        <Button Content="Install" Command="{Binding InstallEmbeddedLocalModelCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
-                                        <Button Content="Verify" Command="{Binding VerifyEmbeddedLocalModelCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
-                                        <Button Content="Remove" Command="{Binding RemoveEmbeddedLocalModelCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" Classes="danger" />
-                                    </StackPanel>
-                                    <TextBlock Text="{Binding EmbeddedLocalModelStatus}" Classes="muted" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Border>
-                        </Grid>
+							<Border Grid.Column="1" Classes="section-card">
+								<StackPanel Spacing="10">
+									<TextBlock Text="Embedded Local Model" Classes="section-title" />
+									<TextBlock Text="{Binding EmbeddedLocalModelDisabledReason}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding HasEmbeddedLocalModelDisabledReason}" />
+									<TextBox Text="{Binding SetupLocalModelPath}" Watermark="Local model path (.gguf / .litertlm)" />
+									<StackPanel Orientation="Horizontal" Spacing="8">
+										<Button Content="Status" Command="{Binding RefreshEmbeddedLocalModelStatusCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
+										<Button Content="Install" Command="{Binding InstallEmbeddedLocalModelCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
+										<Button Content="Verify" Command="{Binding VerifyEmbeddedLocalModelCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
+										<Button Content="Remove" Command="{Binding RemoveEmbeddedLocalModelCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" Classes="danger" />
+									</StackPanel>
+									<TextBlock Text="{Binding EmbeddedLocalModelStatus}" Classes="muted" TextWrapping="Wrap" />
+								</StackPanel>
+							</Border>
+						</Grid>
 
-                        <Border Classes="section-card">
-                            <StackPanel Spacing="10">
-                                <TextBlock Text="First Run Setup" Classes="section-title" />
-                                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
-                                    <TextBox Grid.Column="0" Text="{Binding SetupProvider}" Watermark="openai / anthropic / gemini / ollama / embedded" />
-                                    <TextBox Grid.Column="1" Text="{Binding SetupModel}" Watermark="gpt-4o" />
-                                    <TextBox Grid.Column="2" Text="{Binding SetupModelPreset}" Watermark="ollama-general / embedded-gemma-small-q4" />
-                                </Grid>
-                                <Grid ColumnDefinitions="2*,*" ColumnSpacing="10">
-                                    <TextBox Grid.Column="0" Text="{Binding SetupWorkspacePath}" Watermark="Workspace path" />
-                                    <TextBox Grid.Column="1" Text="{Binding SetupApiKey}" PasswordChar="•" Watermark="Provider API key" />
-                                </Grid>
-                                <TextBlock Text="Provider API key is not needed for Ollama or Embedded. Secrets are stored through the configured token store when possible." Classes="muted" TextWrapping="Wrap" />
-                                <Button Content="Set Up and Start" Command="{Binding SetupAndStartLocalGatewayCommand}" IsEnabled="{Binding CanRunLocalGatewaySetup}" Classes="primary" HorizontalAlignment="Left" />
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
+						<Border Classes="section-card">
+							<StackPanel Spacing="10">
+								<TextBlock Text="First Run Setup" Classes="section-title" />
+								<Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+									<ComboBox Grid.Column="0" HorizontalAlignment="Stretch" SelectedItem="{Binding SetupProvider}">
+										<sys:String>openai</sys:String>
+										<sys:String>anthropic</sys:String>
+										<sys:String>gemini</sys:String>
+										<sys:String>ollama</sys:String>
+										<sys:String>embedded</sys:String>
+									</ComboBox>
+									<ComboBox Grid.Column="1"
+                                        HorizontalAlignment="Stretch"
+                                        IsEditable="True"
+                                        Text="{Binding SetupModel}">
 
-            <TabItem Header="Chat">
-                <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12" Margin="12,0,0,0">
-                    <StackPanel Grid.Row="0" Spacing="2">
-                        <TextBlock Text="Chat" Classes="page-title" />
-                        <TextBlock Text="Connected runtime messages, tool events, and errors." Classes="muted" />
-                    </StackPanel>
-                    <Border Grid.Row="1" Classes="section-card">
-                        <Grid>
-                            <Border Classes="empty-state" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasNoMessages}">
-                                <StackPanel Spacing="4">
-                                    <TextBlock Text="No messages yet." FontWeight="SemiBold" HorizontalAlignment="Center" />
-                                    <TextBlock Text="Connect to the gateway and send a runtime message." Classes="muted" HorizontalAlignment="Center" />
-                                </StackPanel>
-                            </Border>
-                            <ListBox ItemsSource="{Binding Messages}" Background="Transparent" BorderThickness="0" IsVisible="{Binding HasMessages}">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate DataType="models:ChatMessage">
-                                        <StackPanel Margin="0,0,0,10">
-                                            <Border IsVisible="{Binding IsUser}" Background="#1f6feb" CornerRadius="8" Padding="10" HorizontalAlignment="Right" MaxWidth="760">
-                                                <StackPanel><TextBlock Text="{Binding RoleLabel}" FontWeight="SemiBold" Foreground="White" /><TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="White" /></StackPanel>
-                                            </Border>
-                                            <Border IsVisible="{Binding IsAssistant}" Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}" CornerRadius="8" Padding="10" HorizontalAlignment="Left" MaxWidth="760">
-                                                <StackPanel><TextBlock Text="{Binding RoleLabel}" FontWeight="SemiBold" /><TextBlock Text="{Binding Text}" TextWrapping="Wrap" /><TextBlock Text="Streaming…" Classes="muted" IsVisible="{Binding IsStreamingPlaceholder}" /></StackPanel>
-                                            </Border>
-                                            <Border IsVisible="{Binding IsToolEvent}" Classes="badge" HorizontalAlignment="Left" MaxWidth="760">
-                                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="12" />
-                                            </Border>
-                                            <Border IsVisible="{Binding IsError}" Classes="error-banner" HorizontalAlignment="Left" MaxWidth="760">
-                                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
-                                            </Border>
-                                            <Border IsVisible="{Binding IsSystem}" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" CornerRadius="8" Padding="10" HorizontalAlignment="Left" MaxWidth="760">
-                                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
-                                            </Border>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </Grid>
-                    </Border>
-                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                        <TextBox Text="{Binding InputText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" Watermark="Type a message. Shift+Enter is not required; click Send when ready." />
-                        <Button Grid.Column="1" Content="Send" Command="{Binding SendCommand}" IsEnabled="{Binding IsConnected}" MinWidth="96" Classes="primary" />
-                    </Grid>
-                </Grid>
-            </TabItem>
+										<sys:String>gpt-4o</sys:String>
+										<sys:String>gpt-4o-mini</sys:String>
+										<sys:String>o1-preview</sys:String>
+										<sys:String>o1-mini</sys:String>
 
-            <TabItem Header="Canvas">
-                <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
-                    <StackPanel Grid.Row="0" Spacing="2">
-                        <TextBlock Text="Canvas" Classes="page-title" />
-                        <TextBlock Text="{Binding CanvasStatus}" Classes="muted" TextWrapping="Wrap" />
-                    </StackPanel>
-                    <Border Grid.Row="1" Classes="section-card">
-                        <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
-                            <StackPanel Grid.Column="0" Spacing="2">
-                                <TextBlock Text="{Binding ActiveCanvasSurface.Title, StringFormat=Surface: {0}}" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding CanvasHtmlStatus}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding HasCanvasHtmlStatus}" />
-                                <TextBlock Text="{Binding ActiveCanvasSurface.DataModelJson}" Classes="muted" TextWrapping="Wrap" MaxHeight="48" />
-                            </StackPanel>
-                            <ComboBox x:Name="CanvasSurfaceSelector" Grid.Column="1" MinWidth="190" ItemsSource="{Binding CanvasSurfaces}" SelectedItem="{Binding ActiveCanvasSurface}" IsVisible="{Binding HasCanvasSurfaces}">
-                                <ComboBox.ItemTemplate><DataTemplate DataType="vm:A2UiSurfaceItem"><TextBlock Text="{Binding Title}" /></DataTemplate></ComboBox.ItemTemplate>
-                            </ComboBox>
-                            <Button Grid.Column="2" Content="Clear" Command="{Binding ClearCanvasCommand}" />
-                            <Button Grid.Column="3" Content="Export snapshot" IsEnabled="False" />
-                        </Grid>
-                    </Border>
-                    <Border Grid.Row="2" Classes="section-card">
-                        <Grid>
-                            <Border Classes="empty-state" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasCanvasFrames, Converter={StaticResource InverseBool}}">
-                                <StackPanel Spacing="4"><TextBlock Text="Canvas is empty." FontWeight="SemiBold" HorizontalAlignment="Center" /><TextBlock Text="A2UI surfaces and canvas frames will appear here." Classes="muted" /></StackPanel>
-                            </Border>
-                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" IsVisible="{Binding HasCanvasFrames}">
-                                <ItemsControl x:Name="CanvasComponentHost" ItemsSource="{Binding ActiveCanvasSurface.Components}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate DataType="vm:A2UiFrameItem">
-                                            <Border Margin="0,0,0,10" Classes="section-card">
-                                                <StackPanel Spacing="8">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" IsVisible="{Binding HasTitle}" TextWrapping="Wrap" />
-                                                        <Border Grid.Column="1" Classes="badge"><TextBlock Text="{Binding Type}" FontSize="11" /></Border>
-                                                    </Grid>
-                                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" IsVisible="{Binding HasText}" />
-                                                    <TextBlock Text="{Binding Body}" TextWrapping="Wrap" IsVisible="{Binding HasBody}" />
-                                                    <Button Content="{Binding Label}" Command="{Binding ActivateCommand}" IsVisible="{Binding IsButton}" HorizontalAlignment="Left" Classes="primary" />
-                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding IsInput}">
-                                                        <TextBox Text="{Binding ValueText}" Watermark="{Binding Label}" />
-                                                        <Button Grid.Column="1" Content="Send" Command="{Binding CommitValueCommand}" />
-                                                    </Grid>
-                                                    <ItemsControl ItemsSource="{Binding Options}" IsVisible="{Binding HasOptions}">
-                                                        <ItemsControl.ItemTemplate><DataTemplate DataType="vm:A2UiOptionItem"><CheckBox Content="{Binding Label}" IsChecked="{Binding IsSelected}" /></DataTemplate></ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
-                                                    <StackPanel Spacing="5" IsVisible="{Binding HasTable}">
-                                                        <TextBlock Text="{Binding Columns, StringFormat=Columns: {0}}" Classes="muted" />
-                                                        <ItemsControl ItemsSource="{Binding Rows}">
-                                                            <ItemsControl.ItemTemplate><DataTemplate DataType="vm:A2UiTableRowItem"><TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap" Classes="muted" FontFamily="Consolas, Menlo, monospace" /></DataTemplate></ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
-                                                    </StackPanel>
-                                                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressValue}" IsVisible="{Binding IsProgress}" />
-                                                    <TextBlock Text="{Binding Url, StringFormat=Image: {0}}" TextWrapping="Wrap" IsVisible="{Binding IsImage}" />
-                                                    <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap" Classes="muted" FontFamily="Consolas, Menlo, monospace" IsVisible="{Binding HasDisplayText}" />
-                                                    <TextBlock Text="{Binding Type, StringFormat=Unsupported component: {0}}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding IsUnsupportedFallback}" />
-                                                </StackPanel>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </Grid>
-                    </Border>
-                </Grid>
-            </TabItem>
+										<sys:String>claude-3-5-sonnet</sys:String>
+										<sys:String>claude-3-5-haiku</sys:String>
+										<sys:String>claude-3-opus</sys:String>
 
-            <TabItem Header="Sessions">
-                <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto"><TextBlock Text="Sessions" Classes="page-title" /><Button Grid.Column="1" Content="Load" Command="{Binding LoadSessionsCommand}" IsEnabled="{Binding IsSessionsBusy, Converter={StaticResource InverseBool}}" Classes="primary" /></Grid>
-                    <Border Grid.Row="1" Classes="section-card">
-                        <Grid ColumnDefinitions="*,*,*,*,Auto,Auto" ColumnSpacing="8">
-                            <TextBox Grid.Column="0" Text="{Binding SessionsSearchText}" Watermark="Search text" />
-                            <TextBox Grid.Column="1" Text="{Binding SessionsChannelId}" Watermark="Channel ID" />
-                            <TextBox Grid.Column="2" Text="{Binding SessionsSenderId}" Watermark="Sender ID" />
-                            <TextBox Grid.Column="3" Text="{Binding SessionsState}" Watermark="State" />
-                            <CheckBox Grid.Column="4" Content="Starred" IsChecked="{Binding SessionsStarredOnly}" VerticalAlignment="Center" />
-                            <TextBox Grid.Column="5" Text="{Binding SessionsTag}" Watermark="Tag" MinWidth="120" />
-                        </Grid>
-                    </Border>
-                    <Grid Grid.Row="2" ColumnDefinitions="2*,3*" ColumnSpacing="12">
-                        <Border Grid.Column="0" Classes="section-card">
-                            <DockPanel>
-                                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8"><Button Content="Prev" Command="{Binding PreviousSessionsPageCommand}" /><Button Content="Next" Command="{Binding NextSessionsPageCommand}" /><TextBlock Text="{Binding SessionsStatus}" Classes="muted" VerticalAlignment="Center" /></StackPanel>
-                                <ListBox ItemsSource="{Binding SessionRows}" SelectedItem="{Binding SelectedSession}" Background="Transparent" BorderThickness="0">
-                                    <ListBox.ItemTemplate><DataTemplate DataType="vm:SessionRow"><StackPanel Margin="0,0,0,8"><TextBlock Text="{Binding SessionId}" FontWeight="SemiBold" /><TextBlock Text="{Binding ChannelId, StringFormat=Channel: {0}}" Classes="muted" /><TextBlock Text="{Binding LastActivity, StringFormat=Last: {0}}" Classes="muted" /><TextBlock Text="{Binding Snippet}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
-                                </ListBox>
-                            </DockPanel>
-                        </Border>
-                        <Border Grid.Column="1" Classes="section-card">
-                            <Grid RowDefinitions="Auto,*" RowSpacing="10">
-                                <TextBox Grid.Row="0" Text="{Binding SelectedSessionDetail}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" MinHeight="120" TextWrapping="Wrap" />
-                                <ListBox Grid.Row="1" ItemsSource="{Binding SessionTimelineRows}" Background="Transparent" BorderThickness="0">
-                                    <ListBox.ItemTemplate><DataTemplate DataType="vm:RuntimeEventRow"><Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,0,0,6"><TextBlock Text="{Binding Timestamp}" Classes="muted" /><Border Grid.Column="1" Classes="badge"><TextBlock Text="{Binding Action}" FontSize="11" /></Border><TextBlock Grid.Column="2" Text="{Binding Summary}" TextWrapping="Wrap" /></Grid></DataTemplate></ListBox.ItemTemplate>
-                                </ListBox>
-                            </Grid>
-                        </Border>
-                    </Grid>
-                </Grid>
-            </TabItem>
+										<sys:String>gemini-1.5-pro</sys:String>
+										<sys:String>gemini-1.5-flash</sys:String>
 
-            <TabItem x:Name="ApprovalsTab">
-                <TabItem.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock Text="Approvals" /><Border Classes="badge" IsVisible="{Binding HasPendingApprovals}"><TextBlock Text="{Binding PendingApprovalsCount}" FontSize="11" /></Border></StackPanel>
-                </TabItem.Header>
-                <Grid RowDefinitions="Auto,*,Auto,*" RowSpacing="10" Margin="12,0,0,0">
-                    <Border Grid.Row="0" Classes="section-card">
-                        <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="Approvals" Classes="page-title" /><TextBlock Text="{Binding ApprovalsStatus}" Classes="muted" TextWrapping="Wrap" /></StackPanel><Button Grid.Column="1" Content="Refresh" Command="{Binding RefreshApprovalsCommand}" IsEnabled="{Binding IsApprovalsBusy, Converter={StaticResource InverseBool}}" /></Grid>
-                    </Border>
-                    <Border Grid.Row="1" Classes="section-card">
-                        <Grid>
-                            <Border Classes="empty-state" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasPendingApprovals, Converter={StaticResource InverseBool}}"><TextBlock Text="No pending approvals." Classes="muted" /></Border>
-                            <ScrollViewer IsVisible="{Binding HasPendingApprovals}">
-                                <ItemsControl ItemsSource="{Binding PendingApprovals}">
-                                    <ItemsControl.ItemTemplate><DataTemplate DataType="vm:PendingApprovalItem">
-                                        <Border Classes="section-card" Margin="0,0,0,10">
-                                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
-                                                <WrapPanel Grid.Row="0" Grid.Column="0"><TextBlock Text="{Binding ToolName}" FontWeight="SemiBold" FontSize="15" Margin="0,0,8,0" /><Border Classes="badge" IsVisible="{Binding IsMutation}"><TextBlock Text="mutation" FontSize="11" /></Border><TextBlock Text="{Binding Action}" Classes="muted" Margin="8,0,0,0" /></WrapPanel>
-                                                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="6"><Button Content="Approve" Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).ApproveApprovalCommand}" CommandParameter="{Binding}" Classes="primary" /><Button Content="Deny" Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).DenyApprovalCommand}" CommandParameter="{Binding}" Classes="danger" /></StackPanel>
-                                                <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"><TextBlock Text="{Binding Origin}" Classes="muted" Margin="0,0,12,0" /><TextBlock Text="{Binding SessionId, StringFormat=session {0}}" Classes="muted" Margin="0,0,12,0" /><TextBlock Text="{Binding CreatedAt, StringFormat='queued {0:g}'}" Classes="muted" /></WrapPanel>
-                                                <TextBox Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Text="{Binding ArgumentsPreview, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MaxHeight="150" />
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate></ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </Grid>
-                    </Border>
-                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto"><TextBlock Text="Decision History" Classes="section-title" /><Button Grid.Column="1" Content="Load History" Command="{Binding LoadApprovalHistoryCommand}" IsEnabled="{Binding IsHistoryBusy, Converter={StaticResource InverseBool}}" /></Grid>
-                    <Border Grid.Row="3" Classes="section-card">
-                        <ScrollViewer><ItemsControl ItemsSource="{Binding ApprovalHistory}"><ItemsControl.ItemTemplate><DataTemplate DataType="vm:ApprovalHistoryItem"><Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,0,0,6"><Border Grid.Column="0" Background="{Binding OutcomeColor}" CornerRadius="4" Padding="6,2"><TextBlock Text="{Binding OutcomeLabel}" Foreground="White" FontSize="11" /></Border><StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"><TextBlock Text="{Binding ToolName}" FontWeight="SemiBold" /><TextBlock Text="{Binding Origin}" Classes="muted" /><TextBlock Text="{Binding Actor, StringFormat=by {0}}" Classes="muted" /></StackPanel><TextBlock Grid.Column="2" Text="{Binding TimestampUtc, StringFormat='{}{0:g}'}" Classes="muted" /></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
-                    </Border>
-                </Grid>
-            </TabItem>
+										<sys:String>llama3.1</sys:String>
+										<sys:String>llama3.2</sys:String>
+										<sys:String>phi3</sys:String>
+										<sys:String>qwen2.5</sys:String>
+										<sys:String>gemma2</sys:String>
+										<sys:String>mistral</sys:String>
+									</ComboBox>
+									<ComboBox Grid.Column="2" HorizontalAlignment="Stretch" SelectedItem="{Binding SetupModelPreset}">
+										<!-- Presets for Ollama (Local) -->
+										<sys:String>ollama-general</sys:String>
+										<sys:String>ollama-llama3-8b</sys:String>
+										<sys:String>ollama-phi3-mini</sys:String>
+										<sys:String>ollama-qwen2.5</sys:String>
 
-            <TabItem Header="Workflows">
-                <Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="12,0,0,0">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="Workflows" Classes="page-title" /><TextBlock Text="{Binding WorkflowsStatus}" Classes="muted" /></StackPanel><Button Grid.Column="1" Content="Load" Command="{Binding LoadWorkflowsCommand}" Classes="primary" /></Grid>
-                    <Grid Grid.Row="1" ColumnDefinitions="2*,3*" ColumnSpacing="12">
-                        <Border Grid.Column="0" Classes="section-card"><ListBox ItemsSource="{Binding WorkflowRows}" SelectedItem="{Binding SelectedWorkflow}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate DataType="vm:WorkflowRow"><StackPanel Margin="0,0,0,8"><TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" /><TextBlock Text="{Binding WorkflowName}" Classes="muted" /><TextBlock Text="{Binding Status}" Classes="muted" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></Border>
-                        <Border Grid.Column="1" Classes="section-card"><Grid RowDefinitions="Auto,Auto,*,*,Auto" RowSpacing="8"><Grid ColumnDefinitions="*,Auto"><TextBox Text="{Binding WorkflowInput}" Watermark="Workflow input" AcceptsReturn="True" MinHeight="58" TextWrapping="Wrap" /><Button Grid.Column="1" Content="Run" Command="{Binding RunSelectedWorkflowCommand}" Margin="8,0,0,0" /></Grid><Grid Grid.Row="1" ColumnDefinitions="*,Auto"><TextBox Text="{Binding WorkflowRunId}" Watermark="Run id" /><Button Grid.Column="1" Content="Load Run" Command="{Binding LoadWorkflowRunCommand}" Margin="8,0,0,0" /></Grid><TextBox Grid.Row="2" Text="{Binding WorkflowRunDetail}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" /><DockPanel Grid.Row="3"><TextBlock DockPanel.Dock="Top" Text="Run Events" Classes="section-title" /><ListBox ItemsSource="{Binding WorkflowEventRows}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate DataType="vm:WorkflowEventRow"><Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,0,0,6"><TextBlock Text="{Binding Timestamp}" Classes="muted" /><Border Grid.Column="1" Classes="badge"><TextBlock Text="{Binding Type}" FontSize="11" /></Border><TextBlock Grid.Column="2" Text="{Binding Summary}" TextWrapping="Wrap" /></Grid></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel><Grid Grid.Row="4" ColumnDefinitions="*,Auto"><ComboBox ItemsSource="{Binding WorkflowPendingInputs}" SelectedItem="{Binding SelectedWorkflowPendingInput}" MinWidth="180"><ComboBox.ItemTemplate><DataTemplate DataType="vm:WorkflowPendingInputRow"><TextBlock Text="{Binding PortId}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox><Button Grid.Column="1" Content="Send Response" Command="{Binding RespondWorkflowInputCommand}" Margin="8,0,0,0" /></Grid></Grid></Border>
-                    </Grid>
-                </Grid>
-            </TabItem>
+										<!-- Presets for Embedded (Local) -->
+										<sys:String>embedded-gemma-small-q4</sys:String>
+										<sys:String>embedded-phi3-mini-q4</sys:String>
 
-            <TabItem Header="Automations">
-                <Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="12,0,0,0">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="Automations" Classes="page-title" /><TextBlock Text="{Binding AutomationsStatus}" Classes="muted" /></StackPanel><Button Grid.Column="1" Content="Load" Command="{Binding LoadAutomationsCommand}" Classes="primary" /></Grid>
-                    <Grid Grid.Row="1" ColumnDefinitions="2*,3*" ColumnSpacing="12">
-                        <Border Grid.Column="0" Classes="section-card"><Grid RowDefinitions="*,Auto,*" RowSpacing="8"><DockPanel Grid.Row="0"><TextBlock DockPanel.Dock="Top" Text="Automations" Classes="section-title" /><ListBox ItemsSource="{Binding AutomationRows}" SelectedItem="{Binding SelectedAutomation}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate DataType="vm:AutomationRow"><StackPanel Margin="0,0,0,8"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Schedule}" Classes="muted" /><TextBlock Text="{Binding State}" Classes="muted" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel><TextBlock Grid.Row="1" Text="Templates" Classes="section-title" /><ListBox Grid.Row="2" ItemsSource="{Binding AutomationTemplateRows}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate DataType="vm:AutomationTemplateRow"><StackPanel Margin="0,0,0,8"><TextBlock Text="{Binding Label}" FontWeight="SemiBold" /><TextBlock Text="{Binding Category}" Classes="muted" /><TextBlock Text="{Binding Availability}" Classes="muted" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></Grid></Border>
-                        <Border Grid.Column="1" Classes="section-card"><Grid RowDefinitions="Auto,Auto,*" RowSpacing="8"><WrapPanel><Button Content="Dry Run" Command="{Binding RunSelectedAutomationDryRunCommand}" Margin="0,0,8,8" /><Button Content="Run Live" Command="{Binding RunSelectedAutomationLiveCommand}" Margin="0,0,8,8" /><Button Content="Replay Run" Command="{Binding ReplaySelectedAutomationRunCommand}" Margin="0,0,8,8" /><Button Content="Clear Quarantine" Command="{Binding ClearSelectedAutomationQuarantineCommand}" Margin="0,0,8,8" /><Button Content="Delete" Command="{Binding DeleteSelectedAutomationCommand}" Classes="danger" Margin="0,0,8,8" /></WrapPanel><TextBox Grid.Row="1" Text="{Binding AutomationDetail}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="130" /><ListBox Grid.Row="2" ItemsSource="{Binding AutomationRunRows}" SelectedItem="{Binding SelectedAutomationRun}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate DataType="vm:AutomationRunRow"><Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,6"><TextBlock Text="{Binding RunId}" FontWeight="SemiBold" /><TextBlock Grid.Column="1" Text="{Binding Lifecycle}" Classes="muted" Margin="8,0" /><TextBlock Grid.Column="2" Text="{Binding Started}" Classes="muted" /></Grid></DataTemplate></ListBox.ItemTemplate></ListBox></Grid></Border>
-                    </Grid>
-                </Grid>
-            </TabItem>
+										<!-- Presets for OpenAI -->
+										<sys:String>openai-gpt-4o</sys:String>
+										<sys:String>openai-gpt-4o-mini</sys:String>
 
-            <TabItem Header="Runtime Events">
-                <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="Runtime Events" Classes="page-title" /><TextBlock Text="{Binding RuntimeEventsStatus}" Classes="muted" /></StackPanel><Button Grid.Column="1" Content="Load" Command="{Binding LoadRuntimeEventsCommand}" Classes="primary" /></Grid>
-                    <Border Grid.Row="1" Classes="section-card"><Grid ColumnDefinitions="*,*,*,*,*,Auto" ColumnSpacing="8"><TextBox Text="{Binding RuntimeEventsSessionId}" Watermark="Session" /><TextBox Grid.Column="1" Text="{Binding RuntimeEventsChannelId}" Watermark="Channel" /><TextBox Grid.Column="2" Text="{Binding RuntimeEventsSenderId}" Watermark="Sender" /><TextBox Grid.Column="3" Text="{Binding RuntimeEventsComponent}" Watermark="Component" /><TextBox Grid.Column="4" Text="{Binding RuntimeEventsAction}" Watermark="Action" /><NumericUpDown Grid.Column="5" Value="{Binding RuntimeEventsLimit}" Minimum="1" Maximum="500" Width="90" /></Grid></Border>
-                    <Grid Grid.Row="2" ColumnDefinitions="3*,2*" ColumnSpacing="12"><Border Grid.Column="0" Classes="section-card"><ListBox ItemsSource="{Binding RuntimeEventRows}" SelectedItem="{Binding SelectedRuntimeEvent}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate DataType="vm:RuntimeEventRow"><Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,0,0,7"><TextBlock Text="{Binding Timestamp}" Classes="muted" /><Border Grid.Column="1" Classes="badge"><TextBlock Text="{Binding Component}" FontSize="11" /></Border><StackPanel Grid.Column="2"><TextBlock Text="{Binding Action}" FontWeight="SemiBold" /><TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" /></StackPanel></Grid></DataTemplate></ListBox.ItemTemplate></ListBox></Border><Border Grid.Column="1" Classes="section-card"><TextBox Text="{Binding SelectedRuntimeEventJson}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" /></Border></Grid>
-                </Grid>
-            </TabItem>
+										<!-- Presets for Anthropic -->
+										<sys:String>anthropic-claude-3.5-sonnet</sys:String>
+										<sys:String>anthropic-claude-3-haiku</sys:String>
 
-            <TabItem Header="Plugins &amp; Channels">
-                <Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="12,0,0,0">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="Plugins &amp; Channels" Classes="page-title" /><TextBlock Text="{Binding PluginsStatus}" Classes="muted" /></StackPanel><Button Grid.Column="1" Content="Load" Command="{Binding LoadPluginsCommand}" Classes="primary" /></Grid>
-                    <Grid Grid.Row="1" ColumnDefinitions="*,*" RowDefinitions="*,*" ColumnSpacing="12" RowSpacing="12">
-                        <Border Grid.Row="0" Grid.Column="0" Classes="section-card"><DockPanel><TextBlock DockPanel.Dock="Top" Text="Plugins" Classes="section-title" /><ListBox ItemsSource="{Binding PluginRows}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate DataType="vm:PluginRow"><StackPanel Margin="0,0,0,8"><TextBlock Text="{Binding PluginId}" FontWeight="SemiBold" /><TextBlock Text="{Binding Status}" Classes="muted" /><TextBlock Text="{Binding SurfaceCounts}" Classes="muted" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel></Border>
-                        <Border Grid.Row="0" Grid.Column="1" Classes="section-card"><DockPanel><TextBlock DockPanel.Dock="Top" Text="Compatibility Catalog" Classes="section-title" /><ListBox ItemsSource="{Binding CompatibilityRows}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate DataType="vm:CompatibilityRow"><StackPanel Margin="0,0,0,8"><TextBlock Text="{Binding Subject}" FontWeight="SemiBold" /><TextBlock Text="{Binding Status}" Classes="muted" /><TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel></Border>
-                        <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Classes="section-card"><DockPanel><TextBlock DockPanel.Dock="Top" Text="Channels" Classes="section-title" /><ItemsControl ItemsSource="{Binding PluginChannelRows}"><ItemsControl.ItemTemplate><DataTemplate DataType="vm:ChannelReadinessRow"><Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6"><StackPanel><TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" /><TextBlock Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap" /></StackPanel><Border Grid.Column="1" Classes="badge"><TextBlock Text="{Binding Status}" FontSize="11" /></Border></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></DockPanel></Border>
-                    </Grid>
-                </Grid>
-            </TabItem>
+										<!-- Presets for Gemini -->
+										<sys:String>gemini-1.5-pro</sys:String>
+										<sys:String>gemini-1.5-flash</sys:String>
+									</ComboBox>
+								</Grid>
+								<Grid ColumnDefinitions="2*,*" ColumnSpacing="10">
+									<TextBox Grid.Column="0" Text="{Binding SetupWorkspacePath}" Watermark="Workspace path" />
+									<TextBox Grid.Column="1" Text="{Binding SetupApiKey}" PasswordChar="•" Watermark="Provider API key" />
+								</Grid>
+								<TextBlock Text="Provider API key is not needed for Ollama or Embedded. Secrets are stored through the configured token store when possible." Classes="muted" TextWrapping="Wrap" />
+								<Button Content="Set Up and Start" Command="{Binding SetupAndStartLocalGatewayCommand}" IsEnabled="{Binding CanRunLocalGatewaySetup}" Classes="primary" HorizontalAlignment="Left" />
+							</StackPanel>
+						</Border>
+					</StackPanel>
+				</ScrollViewer>
+			</TabItem>
 
-            <TabItem Header="Memory &amp; Profiles">
-                <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="Memory &amp; Profiles" Classes="page-title" /><TextBlock Text="{Binding ProfilesStatus}" Classes="muted" /></StackPanel><Button Grid.Column="1" Content="Load" Command="{Binding LoadProfilesCommand}" Classes="primary" /></Grid>
-                    <Border Grid.Row="1" Classes="section-card"><Grid ColumnDefinitions="*,Auto"><TextBox Text="{Binding MemorySearchText}" Watermark="Search memory notes" /><Button Grid.Column="1" Content="Search" Command="{Binding SearchMemoryNotesCommand}" Margin="8,0,0,0" /></Grid></Border>
-                    <Grid Grid.Row="2" ColumnDefinitions="*,*,*,*" ColumnSpacing="12">
-                        <Border Grid.Column="0" Classes="section-card"><DockPanel><TextBlock DockPanel.Dock="Top" Text="Profiles" Classes="section-title" /><ListBox ItemsSource="{Binding ProfileRows}" SelectedItem="{Binding SelectedProfile}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate DataType="vm:ProfileRow"><StackPanel Margin="0,0,0,8"><TextBlock Text="{Binding ActorId}" FontWeight="SemiBold" /><TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel></Border>
-                        <Border Grid.Column="1" Classes="section-card"><DockPanel><TextBlock DockPanel.Dock="Top" Text="Memory Notes" Classes="section-title" /><ListBox ItemsSource="{Binding MemoryNoteRows}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate DataType="vm:MemoryNoteRow"><StackPanel Margin="0,0,0,8"><TextBlock Text="{Binding Key}" FontWeight="SemiBold" /><TextBlock Text="{Binding Preview}" Classes="muted" TextWrapping="Wrap" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel></Border>
-                        <Border Grid.Column="2" Classes="section-card"><DockPanel><TextBlock DockPanel.Dock="Top" Text="Learning Proposals" Classes="section-title" /><ListBox ItemsSource="{Binding LearningProposalRows}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate DataType="vm:LearningProposalRow"><StackPanel Margin="0,0,0,8"><TextBlock Text="{Binding Title}" FontWeight="SemiBold" /><TextBlock Text="{Binding Status}" Classes="muted" /><TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel></Border>
-                        <Border Grid.Column="3" Classes="section-card"><DockPanel><TextBlock DockPanel.Dock="Top" Text="Profile Detail" Classes="section-title" /><TextBox Text="{Binding SelectedProfileDetail}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" /></DockPanel></Border>
-                    </Grid>
-                </Grid>
-            </TabItem>
+			<TabItem Header="Chat">
+				<Grid RowDefinitions="Auto,*,Auto" RowSpacing="12" Margin="12,0,0,0">
+					<StackPanel Grid.Row="0" Spacing="2">
+						<TextBlock Text="Chat" Classes="page-title" />
+						<TextBlock Text="Connected runtime messages, tool events, and errors." Classes="muted" />
+					</StackPanel>
+					<Border Grid.Row="1" Classes="section-card">
+						<Grid>
+							<Border Classes="empty-state" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasNoMessages}">
+								<StackPanel Spacing="4">
+									<TextBlock Text="No messages yet." FontWeight="SemiBold" HorizontalAlignment="Center" />
+									<TextBlock Text="Connect to the gateway and send a runtime message." Classes="muted" HorizontalAlignment="Center" />
+								</StackPanel>
+							</Border>
+							<ListBox ItemsSource="{Binding Messages}" Background="Transparent" BorderThickness="0" IsVisible="{Binding HasMessages}">
+								<ListBox.ItemTemplate>
+									<DataTemplate DataType="models:ChatMessage">
+										<StackPanel Margin="0,0,0,10">
+											<Border IsVisible="{Binding IsUser}" Background="#1f6feb" CornerRadius="8" Padding="10" HorizontalAlignment="Right" MaxWidth="760">
+												<StackPanel>
+													<TextBlock Text="{Binding RoleLabel}" FontWeight="SemiBold" Foreground="White" />
+													<TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="White" />
+												</StackPanel>
+											</Border>
+											<Border IsVisible="{Binding IsAssistant}" Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}" CornerRadius="8" Padding="10" HorizontalAlignment="Left" MaxWidth="760">
+												<StackPanel>
+													<TextBlock Text="{Binding RoleLabel}" FontWeight="SemiBold" />
+													<TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+													<TextBlock Text="Streaming…" Classes="muted" IsVisible="{Binding IsStreamingPlaceholder}" />
+												</StackPanel>
+											</Border>
+											<Border IsVisible="{Binding IsToolEvent}" Classes="badge" HorizontalAlignment="Left" MaxWidth="760">
+												<TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="12" />
+											</Border>
+											<Border IsVisible="{Binding IsError}" Classes="error-banner" HorizontalAlignment="Left" MaxWidth="760">
+												<TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+											</Border>
+											<Border IsVisible="{Binding IsSystem}" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" CornerRadius="8" Padding="10" HorizontalAlignment="Left" MaxWidth="760">
+												<TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+											</Border>
+										</StackPanel>
+									</DataTemplate>
+								</ListBox.ItemTemplate>
+							</ListBox>
+						</Grid>
+					</Border>
+					<Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+						<TextBox Text="{Binding InputText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" Watermark="Type a message. Shift+Enter is not required; click Send when ready." />
+						<Button Grid.Column="1" Content="Send" Command="{Binding SendCommand}" IsEnabled="{Binding IsConnected}" MinWidth="96" Classes="primary" />
+					</Grid>
+				</Grid>
+			</TabItem>
 
-            <TabItem Header="Models &amp; Providers">
-                <Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="12,0,0,0">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="Models &amp; Providers" Classes="page-title" /><TextBlock Text="{Binding ProvidersStatus}" Classes="muted" /></StackPanel><Button Grid.Column="1" Content="Load" Command="{Binding LoadProvidersCommand}" Classes="primary" /></Grid>
-                    <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12">
-                        <Border Grid.Column="0" Classes="section-card"><DockPanel><TextBlock DockPanel.Dock="Top" Text="Provider Routes" Classes="section-title" /><ListBox ItemsSource="{Binding ProviderRouteRows}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate DataType="vm:ProviderRouteRow"><StackPanel Margin="0,0,0,8"><TextBlock Text="{Binding Provider}" FontWeight="SemiBold" /><TextBlock Text="{Binding Model}" Classes="muted" /><TextBlock Text="{Binding Usage}" Classes="muted" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel></Border>
-                        <Border Grid.Column="1" Classes="section-card"><DockPanel><TextBlock DockPanel.Dock="Top" Text="Tool Presets" Classes="section-title" /><ListBox ItemsSource="{Binding ToolPresetRows}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate DataType="vm:ToolPresetRow"><StackPanel Margin="0,0,0,8"><TextBlock Text="{Binding PresetId}" FontWeight="SemiBold" /><TextBlock Text="{Binding Approval}" Classes="muted" /><TextBlock Text="{Binding Description}" Classes="muted" TextWrapping="Wrap" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></DockPanel></Border>
-                    </Grid>
-                </Grid>
-            </TabItem>
+			<TabItem Header="Canvas">
+				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
+					<StackPanel Grid.Row="0" Spacing="2">
+						<TextBlock Text="Canvas" Classes="page-title" />
+						<TextBlock Text="{Binding CanvasStatus}" Classes="muted" TextWrapping="Wrap" />
+					</StackPanel>
+					<Border Grid.Row="1" Classes="section-card">
+						<Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
+							<StackPanel Grid.Column="0" Spacing="2">
+								<TextBlock Text="{Binding ActiveCanvasSurface.Title, StringFormat=Surface: {0}}" FontWeight="SemiBold" />
+								<TextBlock Text="{Binding CanvasHtmlStatus}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding HasCanvasHtmlStatus}" />
+								<TextBlock Text="{Binding ActiveCanvasSurface.DataModelJson}" Classes="muted" TextWrapping="Wrap" MaxHeight="48" />
+							</StackPanel>
+							<ComboBox x:Name="CanvasSurfaceSelector" Grid.Column="1" MinWidth="190" ItemsSource="{Binding CanvasSurfaces}" SelectedItem="{Binding ActiveCanvasSurface}" IsVisible="{Binding HasCanvasSurfaces}">
+								<ComboBox.ItemTemplate>
+									<DataTemplate DataType="vm:A2UiSurfaceItem">
+										<TextBlock Text="{Binding Title}" />
+									</DataTemplate>
+								</ComboBox.ItemTemplate>
+							</ComboBox>
+							<Button Grid.Column="2" Content="Clear" Command="{Binding ClearCanvasCommand}" />
+							<Button Grid.Column="3" Content="Export snapshot" IsEnabled="False" />
+						</Grid>
+					</Border>
+					<Border Grid.Row="2" Classes="section-card">
+						<Grid>
+							<Border Classes="empty-state" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasCanvasFrames, Converter={StaticResource InverseBool}}">
+								<StackPanel Spacing="4">
+									<TextBlock Text="Canvas is empty." FontWeight="SemiBold" HorizontalAlignment="Center" />
+									<TextBlock Text="A2UI surfaces and canvas frames will appear here." Classes="muted" />
+								</StackPanel>
+							</Border>
+							<ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" IsVisible="{Binding HasCanvasFrames}">
+								<ItemsControl x:Name="CanvasComponentHost" ItemsSource="{Binding ActiveCanvasSurface.Components}">
+									<ItemsControl.ItemTemplate>
+										<DataTemplate DataType="vm:A2UiFrameItem">
+											<Border Margin="0,0,0,10" Classes="section-card">
+												<StackPanel Spacing="8">
+													<Grid ColumnDefinitions="*,Auto">
+														<TextBlock Text="{Binding Title}" FontWeight="SemiBold" IsVisible="{Binding HasTitle}" TextWrapping="Wrap" />
+														<Border Grid.Column="1" Classes="badge">
+															<TextBlock Text="{Binding Type}" FontSize="11" />
+														</Border>
+													</Grid>
+													<TextBlock Text="{Binding Text}" TextWrapping="Wrap" IsVisible="{Binding HasText}" />
+													<TextBlock Text="{Binding Body}" TextWrapping="Wrap" IsVisible="{Binding HasBody}" />
+													<Button Content="{Binding Label}" Command="{Binding ActivateCommand}" IsVisible="{Binding IsButton}" HorizontalAlignment="Left" Classes="primary" />
+													<Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding IsInput}">
+														<TextBox Text="{Binding ValueText}" Watermark="{Binding Label}" />
+														<Button Grid.Column="1" Content="Send" Command="{Binding CommitValueCommand}" />
+													</Grid>
+													<ItemsControl ItemsSource="{Binding Options}" IsVisible="{Binding HasOptions}">
+														<ItemsControl.ItemTemplate>
+															<DataTemplate DataType="vm:A2UiOptionItem">
+																<CheckBox Content="{Binding Label}" IsChecked="{Binding IsSelected}" />
+															</DataTemplate>
+														</ItemsControl.ItemTemplate>
+													</ItemsControl>
+													<StackPanel Spacing="5" IsVisible="{Binding HasTable}">
+														<TextBlock Text="{Binding Columns, StringFormat=Columns: {0}}" Classes="muted" />
+														<ItemsControl ItemsSource="{Binding Rows}">
+															<ItemsControl.ItemTemplate>
+																<DataTemplate DataType="vm:A2UiTableRowItem">
+																	<TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap" Classes="muted" FontFamily="Consolas, Menlo, monospace" />
+																</DataTemplate>
+															</ItemsControl.ItemTemplate>
+														</ItemsControl>
+													</StackPanel>
+													<ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressValue}" IsVisible="{Binding IsProgress}" />
+													<TextBlock Text="{Binding Url, StringFormat=Image: {0}}" TextWrapping="Wrap" IsVisible="{Binding IsImage}" />
+													<TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap" Classes="muted" FontFamily="Consolas, Menlo, monospace" IsVisible="{Binding HasDisplayText}" />
+													<TextBlock Text="{Binding Type, StringFormat=Unsupported component: {0}}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding IsUnsupportedFallback}" />
+												</StackPanel>
+											</Border>
+										</DataTemplate>
+									</ItemsControl.ItemTemplate>
+								</ItemsControl>
+							</ScrollViewer>
+						</Grid>
+					</Border>
+				</Grid>
+			</TabItem>
 
-            <TabItem Header="Admin">
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="12" Margin="12,0,0,0">
-                        <TextBlock Text="Admin" Classes="page-title" />
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                            <Border Grid.Column="0" Classes="section-card"><StackPanel Spacing="10"><TextBlock Text="Operator Access" Classes="section-title" /><Grid ColumnDefinitions="*,*,*" ColumnSpacing="10"><TextBox Text="{Binding Username}" Watermark="Username" /><TextBox Grid.Column="1" Text="{Binding Password}" PasswordChar="•" Watermark="Password" /><TextBox Grid.Column="2" Text="{Binding OperatorTokenLabel}" Watermark="Token label" /></Grid><StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Issue Operator Token" Command="{Binding IssueOperatorTokenCommand}" /><Button Content="Reload Status" Command="{Binding LoadAdminStatusCommand}" /></StackPanel><TextBlock Text="{Binding AdminStatus}" TextWrapping="Wrap" /><TextBlock Text="{Binding OperatorIdentity, StringFormat=Identity: {0}}" /><TextBlock Text="{Binding OperatorRole, StringFormat=Role: {0}}" /><TextBlock Text="{Binding OperatorAuthMode, StringFormat=Auth mode: {0}}" /><TextBlock Text="{Binding IsBootstrapAdmin, StringFormat=Bootstrap admin: {0}}" /></StackPanel></Border>
-                            <Border Grid.Column="1" Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="Desktop Notifications" Classes="section-title" /><TextBlock Text="{Binding DesktopNotifierDescription, StringFormat=Platform: {0}}" Classes="muted" TextWrapping="Wrap" /><CheckBox Content="Notify on new approval" IsChecked="{Binding ApprovalDesktopNotificationsEnabled}" IsEnabled="{Binding DesktopNotifierAvailable}" /><CheckBox Content="Only when Companion is not focused" IsChecked="{Binding ApprovalDesktopNotificationsOnlyWhenUnfocused}" IsEnabled="{Binding DesktopNotifierAvailable}" /></StackPanel></Border>
-                        </Grid>
-                        <Border Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="Deployment Status" Classes="section-title" /><TextBox Text="{Binding DeploymentStatus}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="180" /></StackPanel></Border>
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
+			<TabItem Header="Sessions">
+				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
+					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+						<TextBlock Text="Sessions" Classes="page-title" />
+						<Button Grid.Column="1" Content="Load" Command="{Binding LoadSessionsCommand}" IsEnabled="{Binding IsSessionsBusy, Converter={StaticResource InverseBool}}" Classes="primary" />
+					</Grid>
+					<Border Grid.Row="1" Classes="section-card">
+						<Grid ColumnDefinitions="*,*,*,*,Auto,Auto" ColumnSpacing="8">
+							<TextBox Grid.Column="0" Text="{Binding SessionsSearchText}" Watermark="Search text" />
+							<TextBox Grid.Column="1" Text="{Binding SessionsChannelId}" Watermark="Channel ID" />
+							<TextBox Grid.Column="2" Text="{Binding SessionsSenderId}" Watermark="Sender ID" />
+							<TextBox Grid.Column="3" Text="{Binding SessionsState}" Watermark="State" />
+							<CheckBox Grid.Column="4" Content="Starred" IsChecked="{Binding SessionsStarredOnly}" VerticalAlignment="Center" />
+							<TextBox Grid.Column="5" Text="{Binding SessionsTag}" Watermark="Tag" MinWidth="120" />
+						</Grid>
+					</Border>
+					<Grid Grid.Row="2" ColumnDefinitions="2*,3*" ColumnSpacing="12">
+						<Border Grid.Column="0" Classes="section-card">
+							<DockPanel>
+								<StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8">
+									<Button Content="Prev" Command="{Binding PreviousSessionsPageCommand}" />
+									<Button Content="Next" Command="{Binding NextSessionsPageCommand}" />
+									<TextBlock Text="{Binding SessionsStatus}" Classes="muted" VerticalAlignment="Center" />
+								</StackPanel>
+								<ListBox ItemsSource="{Binding SessionRows}" SelectedItem="{Binding SelectedSession}" Background="Transparent" BorderThickness="0">
+									<ListBox.ItemTemplate>
+										<DataTemplate DataType="vm:SessionRow">
+											<StackPanel Margin="0,0,0,8">
+												<TextBlock Text="{Binding SessionId}" FontWeight="SemiBold" />
+												<TextBlock Text="{Binding ChannelId, StringFormat=Channel: {0}}" Classes="muted" />
+												<TextBlock Text="{Binding LastActivity, StringFormat=Last: {0}}" Classes="muted" />
+												<TextBlock Text="{Binding Snippet}" TextWrapping="Wrap" />
+											</StackPanel>
+										</DataTemplate>
+									</ListBox.ItemTemplate>
+								</ListBox>
+							</DockPanel>
+						</Border>
+						<Border Grid.Column="1" Classes="section-card">
+							<Grid RowDefinitions="Auto,*" RowSpacing="10">
+								<TextBox Grid.Row="0" Text="{Binding SelectedSessionDetail}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" MinHeight="120" TextWrapping="Wrap" />
+								<ListBox Grid.Row="1" ItemsSource="{Binding SessionTimelineRows}" Background="Transparent" BorderThickness="0">
+									<ListBox.ItemTemplate>
+										<DataTemplate DataType="vm:RuntimeEventRow">
+											<Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,0,0,6">
+												<TextBlock Text="{Binding Timestamp}" Classes="muted" />
+												<Border Grid.Column="1" Classes="badge">
+													<TextBlock Text="{Binding Action}" FontSize="11" />
+												</Border>
+												<TextBlock Grid.Column="2" Text="{Binding Summary}" TextWrapping="Wrap" />
+											</Grid>
+										</DataTemplate>
+									</ListBox.ItemTemplate>
+								</ListBox>
+							</Grid>
+						</Border>
+					</Grid>
+				</Grid>
+			</TabItem>
 
-            <TabItem Header="WhatsApp">
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="12" Margin="12,0,0,0">
-                        <Grid ColumnDefinitions="*,Auto,Auto,Auto"><StackPanel><TextBlock Text="WhatsApp" Classes="page-title" /><TextBlock Text="{Binding WhatsAppMessage}" Classes="muted" TextWrapping="Wrap" /></StackPanel><Button Grid.Column="1" Content="Reload" Command="{Binding LoadWhatsAppSetupCommand}" Margin="8,0,0,0" /><Button Grid.Column="2" Content="Save" Command="{Binding SaveWhatsAppSetupCommand}" Margin="8,0,0,0" /><Button Grid.Column="3" Content="Restart" Command="{Binding RestartWhatsAppCommand}" Margin="8,0,0,0" /></Grid>
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                            <Border Grid.Column="0" Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="Status" Classes="section-title" /><TextBlock Text="{Binding WhatsAppActiveBackend, StringFormat=Active backend: {0}}" /><TextBlock Text="{Binding WhatsAppDerivedWebhookUrl, StringFormat=Derived webhook URL: {0}}" TextWrapping="Wrap" /><TextBlock Text="{Binding WhatsAppRestartHint}" Classes="muted" TextWrapping="Wrap" /></StackPanel></Border>
-                            <Border Grid.Column="1" Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="Mode" Classes="section-title" /><CheckBox Content="Enabled" IsChecked="{Binding WhatsAppEnabled}" /><StackPanel Orientation="Horizontal" Spacing="8"><ComboBox ItemsSource="{Binding WhatsAppTypeOptions}" SelectedItem="{Binding WhatsAppType}" MinWidth="150" /><ComboBox ItemsSource="{Binding WhatsAppDmPolicyOptions}" SelectedItem="{Binding WhatsAppDmPolicy}" MinWidth="150" /></StackPanel></StackPanel></Border>
-                        </Grid>
-                        <Border Classes="section-card"><StackPanel Spacing="10"><TextBlock Text="Official Cloud API" Classes="section-title" /><Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10"><TextBox Text="{Binding WhatsAppWebhookPath}" Watermark="/whatsapp/inbound" /><TextBox Grid.Column="1" Text="{Binding WhatsAppWebhookPublicBaseUrl}" Watermark="https://example.com" /><TextBox Grid.Row="1" Text="{Binding WhatsAppWebhookVerifyToken}" PasswordChar="•" Watermark="Verify token" /><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding WhatsAppWebhookVerifyTokenRef}" Watermark="env:WHATSAPP_VERIFY_TOKEN" /><CheckBox Grid.Row="2" Content="Validate signature" IsChecked="{Binding WhatsAppValidateSignature}" /><TextBox Grid.Row="3" Text="{Binding WhatsAppWebhookAppSecret}" PasswordChar="•" Watermark="App secret" /><TextBox Grid.Row="3" Grid.Column="1" Text="{Binding WhatsAppWebhookAppSecretRef}" Watermark="env:WHATSAPP_APP_SECRET" /><TextBox Grid.Row="4" Text="{Binding WhatsAppCloudApiToken}" PasswordChar="•" Watermark="Cloud API token" /><TextBox Grid.Row="4" Grid.Column="1" Text="{Binding WhatsAppCloudApiTokenRef}" Watermark="env:WHATSAPP_CLOUD_API_TOKEN" /></Grid><Grid ColumnDefinitions="*,*" ColumnSpacing="10"><TextBox Text="{Binding WhatsAppPhoneNumberId}" Watermark="Phone number ID" /><TextBox Grid.Column="1" Text="{Binding WhatsAppBusinessAccountId}" Watermark="Business account ID" /></Grid></StackPanel></Border>
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12"><Border Grid.Column="0" Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="Plugin Bridge" Classes="section-title" /><CheckBox Content="Plugin detected" IsChecked="{Binding WhatsAppPluginDetected}" IsEnabled="False" /><TextBox Text="{Binding WhatsAppPluginId}" Watermark="Plugin ID" /><TextBlock Text="{Binding WhatsAppPluginWarning}" Classes="muted" TextWrapping="Wrap" /><TextBox Text="{Binding WhatsAppPluginConfigJson}" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="120" /><TextBox Text="{Binding WhatsAppFirstPartyWorkerConfigJson}" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="120" /></StackPanel></Border><Border Grid.Column="1" Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="Bridge Secrets" Classes="section-title" /><TextBox Text="{Binding WhatsAppBridgeUrl}" Watermark="Built-in bridge URL" /><TextBox Text="{Binding WhatsAppBridgeToken}" PasswordChar="•" Watermark="Built-in bridge token" /><TextBox Text="{Binding WhatsAppBridgeTokenRef}" Watermark="env:WHATSAPP_BRIDGE_TOKEN" /><CheckBox Content="Suppress bridge send exceptions" IsChecked="{Binding WhatsAppBridgeSuppressSendExceptions}" /></StackPanel></Border></Grid>
-                        <Grid ColumnDefinitions="3*,2*" ColumnSpacing="12"><Border Grid.Column="0" Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="Auth State" Classes="section-title" /><TextBox Text="{Binding WhatsAppAuthSummary}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="180" /></StackPanel></Border><Border Grid.Column="1" Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="QR" Classes="section-title" /><Image Source="{Binding WhatsAppQrImage}" Width="220" Height="220" Stretch="Uniform" HorizontalAlignment="Center" /><TextBox Text="{Binding WhatsAppQrData}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="110" /></StackPanel></Border></Grid>
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12"><Border Grid.Column="0" Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="Warnings" Classes="section-title" /><TextBox Text="{Binding WhatsAppWarnings}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="110" /></StackPanel></Border><Border Grid.Column="1" Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="Validation Errors" Classes="section-title" /><TextBox Text="{Binding WhatsAppValidationErrors}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="110" /></StackPanel></Border></Grid>
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
+			<TabItem x:Name="ApprovalsTab">
+				<TabItem.Header>
+					<StackPanel Orientation="Horizontal" Spacing="6">
+						<TextBlock Text="Approvals" />
+						<Border Classes="badge" IsVisible="{Binding HasPendingApprovals}">
+							<TextBlock Text="{Binding PendingApprovalsCount}" FontSize="11" />
+						</Border>
+					</StackPanel>
+				</TabItem.Header>
+				<Grid RowDefinitions="Auto,*,Auto,*" RowSpacing="10" Margin="12,0,0,0">
+					<Border Grid.Row="0" Classes="section-card">
+						<Grid ColumnDefinitions="*,Auto">
+							<StackPanel>
+								<TextBlock Text="Approvals" Classes="page-title" />
+								<TextBlock Text="{Binding ApprovalsStatus}" Classes="muted" TextWrapping="Wrap" />
+							</StackPanel>
+							<Button Grid.Column="1" Content="Refresh" Command="{Binding RefreshApprovalsCommand}" IsEnabled="{Binding IsApprovalsBusy, Converter={StaticResource InverseBool}}" />
+						</Grid>
+					</Border>
+					<Border Grid.Row="1" Classes="section-card">
+						<Grid>
+							<Border Classes="empty-state" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasPendingApprovals, Converter={StaticResource InverseBool}}">
+								<TextBlock Text="No pending approvals." Classes="muted" />
+							</Border>
+							<ScrollViewer IsVisible="{Binding HasPendingApprovals}">
+								<ItemsControl ItemsSource="{Binding PendingApprovals}">
+									<ItemsControl.ItemTemplate>
+										<DataTemplate DataType="vm:PendingApprovalItem">
+											<Border Classes="section-card" Margin="0,0,0,10">
+												<Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+													<WrapPanel Grid.Row="0" Grid.Column="0">
+														<TextBlock Text="{Binding ToolName}" FontWeight="SemiBold" FontSize="15" Margin="0,0,8,0" />
+														<Border Classes="badge" IsVisible="{Binding IsMutation}">
+															<TextBlock Text="mutation" FontSize="11" />
+														</Border>
+														<TextBlock Text="{Binding Action}" Classes="muted" Margin="8,0,0,0" />
+													</WrapPanel>
+													<StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+														<Button Content="Approve" Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).ApproveApprovalCommand}" CommandParameter="{Binding}" Classes="primary" />
+														<Button Content="Deny" Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).DenyApprovalCommand}" CommandParameter="{Binding}" Classes="danger" />
+													</StackPanel>
+													<WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2">
+														<TextBlock Text="{Binding Origin}" Classes="muted" Margin="0,0,12,0" />
+														<TextBlock Text="{Binding SessionId, StringFormat=session {0}}" Classes="muted" Margin="0,0,12,0" />
+														<TextBlock Text="{Binding CreatedAt, StringFormat='queued {0:g}'}" Classes="muted" />
+													</WrapPanel>
+													<TextBox Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Text="{Binding ArgumentsPreview, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MaxHeight="150" />
+												</Grid>
+											</Border>
+										</DataTemplate>
+									</ItemsControl.ItemTemplate>
+								</ItemsControl>
+							</ScrollViewer>
+						</Grid>
+					</Border>
+					<Grid Grid.Row="2" ColumnDefinitions="*,Auto">
+						<TextBlock Text="Decision History" Classes="section-title" />
+						<Button Grid.Column="1" Content="Load History" Command="{Binding LoadApprovalHistoryCommand}" IsEnabled="{Binding IsHistoryBusy, Converter={StaticResource InverseBool}}" />
+					</Grid>
+					<Border Grid.Row="3" Classes="section-card">
+						<ScrollViewer>
+							<ItemsControl ItemsSource="{Binding ApprovalHistory}">
+								<ItemsControl.ItemTemplate>
+									<DataTemplate DataType="vm:ApprovalHistoryItem">
+										<Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,0,0,6">
+											<Border Grid.Column="0" Background="{Binding OutcomeColor}" CornerRadius="4" Padding="6,2">
+												<TextBlock Text="{Binding OutcomeLabel}" Foreground="White" FontSize="11" />
+											</Border>
+											<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+												<TextBlock Text="{Binding ToolName}" FontWeight="SemiBold" />
+												<TextBlock Text="{Binding Origin}" Classes="muted" />
+												<TextBlock Text="{Binding Actor, StringFormat=by {0}}" Classes="muted" />
+											</StackPanel>
+											<TextBlock Grid.Column="2" Text="{Binding TimestampUtc, StringFormat='{}{0:g}'}" Classes="muted" />
+										</Grid>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+						</ScrollViewer>
+					</Border>
+				</Grid>
+			</TabItem>
 
-            <TabItem Header="Payment Lab">
-                <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="Payment Lab" Classes="page-title" /><TextBlock Text="{Binding PaymentsStatus}" Classes="muted" TextWrapping="Wrap" /></StackPanel><Button Grid.Column="1" Content="Load Setup" Command="{Binding LoadPaymentSetupCommand}" Classes="primary" /></Grid>
-                    <Border Grid.Row="1" Classes="error-banner"><TextBlock Text="Experimental and approval-gated. Confirmations are required before issuing cards or executing payments." TextWrapping="Wrap" /></Border>
-                    <Grid Grid.Row="2" ColumnDefinitions="*,*" RowDefinitions="Auto,*" ColumnSpacing="12" RowSpacing="12">
-                        <Border Grid.Row="0" Grid.Column="0" Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="Setup" Classes="section-title" /><Grid ColumnDefinitions="*,*"><TextBox Text="{Binding PaymentProvider}" Watermark="Provider" /><TextBox Grid.Column="1" Text="{Binding PaymentEnvironment}" Watermark="test/live" Margin="8,0,0,0" /></Grid><TextBox Text="{Binding PaymentSetupSummary}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="120" /></StackPanel></Border>
-                        <Border Grid.Row="0" Grid.Column="1" Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="Funding Sources" Classes="section-title" /><ListBox ItemsSource="{Binding FundingSourceRows}" Background="Transparent" BorderThickness="0" MaxHeight="160"><ListBox.ItemTemplate><DataTemplate DataType="vm:FundingSourceRow"><StackPanel Margin="0,0,0,6"><TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" /><TextBlock Text="{Binding Detail}" Classes="muted" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></StackPanel></Border>
-                        <Border Grid.Row="1" Grid.Column="0" Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="Virtual Card" Classes="section-title" /><TextBox Text="{Binding VirtualCardMerchantName}" Watermark="Merchant name" /><TextBox Text="{Binding VirtualCardMerchantUrl}" Watermark="Merchant URL" /><Grid ColumnDefinitions="*,*"><TextBox Text="{Binding VirtualCardAmountMinor}" Watermark="Amount minor" /><TextBox Grid.Column="1" Text="{Binding VirtualCardCurrency}" Watermark="Currency" Margin="8,0,0,0" /></Grid><TextBox Text="{Binding VirtualCardFundingSourceId}" Watermark="Funding source ID" /><Button Content="Issue Virtual Card" Command="{Binding IssueVirtualCardCommand}" Classes="danger" HorizontalAlignment="Left" /></StackPanel></Border>
-                        <Border Grid.Row="1" Grid.Column="1" Classes="section-card"><StackPanel Spacing="8"><TextBlock Text="Execute / Status" Classes="section-title" /><TextBox Text="{Binding MachinePaymentMerchantName}" Watermark="Merchant name" /><Grid ColumnDefinitions="*,*"><TextBox Text="{Binding MachinePaymentAmountMinor}" Watermark="Amount minor" /><TextBox Grid.Column="1" Text="{Binding MachinePaymentCurrency}" Watermark="Currency" Margin="8,0,0,0" /></Grid><TextBox Text="{Binding MachinePaymentFundingSourceId}" Watermark="Funding source ID" /><Button Content="Execute Payment" Command="{Binding ExecuteMachinePaymentCommand}" Classes="danger" HorizontalAlignment="Left" /><Grid ColumnDefinitions="*,Auto"><TextBox Text="{Binding PaymentStatusLookupId}" Watermark="Payment id" /><Button Grid.Column="1" Content="Lookup" Command="{Binding LookupPaymentStatusCommand}" Margin="8,0,0,0" /></Grid><TextBox Text="{Binding PaymentResultText}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="80" /></StackPanel></Border>
-                    </Grid>
-                </Grid>
-            </TabItem>
-        </TabControl>
-    </Grid>
+			<TabItem Header="Workflows">
+				<Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="12,0,0,0">
+					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+						<StackPanel>
+							<TextBlock Text="Workflows" Classes="page-title" />
+							<TextBlock Text="{Binding WorkflowsStatus}" Classes="muted" />
+						</StackPanel>
+						<Button Grid.Column="1" Content="Load" Command="{Binding LoadWorkflowsCommand}" Classes="primary" />
+					</Grid>
+					<Grid Grid.Row="1" ColumnDefinitions="2*,3*" ColumnSpacing="12">
+						<Border Grid.Column="0" Classes="section-card">
+							<ListBox ItemsSource="{Binding WorkflowRows}" SelectedItem="{Binding SelectedWorkflow}" Background="Transparent" BorderThickness="0">
+								<ListBox.ItemTemplate>
+									<DataTemplate DataType="vm:WorkflowRow">
+										<StackPanel Margin="0,0,0,8">
+											<TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+											<TextBlock Text="{Binding WorkflowName}" Classes="muted" />
+											<TextBlock Text="{Binding Status}" Classes="muted" />
+										</StackPanel>
+									</DataTemplate>
+								</ListBox.ItemTemplate>
+							</ListBox>
+						</Border>
+						<Border Grid.Column="1" Classes="section-card">
+							<Grid RowDefinitions="Auto,Auto,*,*,Auto" RowSpacing="8">
+								<Grid ColumnDefinitions="*,Auto">
+									<TextBox Text="{Binding WorkflowInput}" Watermark="Workflow input" AcceptsReturn="True" MinHeight="58" TextWrapping="Wrap" />
+									<Button Grid.Column="1" Content="Run" Command="{Binding RunSelectedWorkflowCommand}" Margin="8,0,0,0" />
+								</Grid>
+								<Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+									<TextBox Text="{Binding WorkflowRunId}" Watermark="Run id" />
+									<Button Grid.Column="1" Content="Load Run" Command="{Binding LoadWorkflowRunCommand}" Margin="8,0,0,0" />
+								</Grid>
+								<TextBox Grid.Row="2" Text="{Binding WorkflowRunDetail}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" />
+								<DockPanel Grid.Row="3">
+									<TextBlock DockPanel.Dock="Top" Text="Run Events" Classes="section-title" />
+									<ListBox ItemsSource="{Binding WorkflowEventRows}" Background="Transparent" BorderThickness="0">
+										<ListBox.ItemTemplate>
+											<DataTemplate DataType="vm:WorkflowEventRow">
+												<Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,0,0,6">
+													<TextBlock Text="{Binding Timestamp}" Classes="muted" />
+													<Border Grid.Column="1" Classes="badge">
+														<TextBlock Text="{Binding Type}" FontSize="11" />
+													</Border>
+													<TextBlock Grid.Column="2" Text="{Binding Summary}" TextWrapping="Wrap" />
+												</Grid>
+											</DataTemplate>
+										</ListBox.ItemTemplate>
+									</ListBox>
+								</DockPanel>
+								<Grid Grid.Row="4" ColumnDefinitions="*,Auto">
+									<ComboBox ItemsSource="{Binding WorkflowPendingInputs}" SelectedItem="{Binding SelectedWorkflowPendingInput}" MinWidth="180">
+										<ComboBox.ItemTemplate>
+											<DataTemplate DataType="vm:WorkflowPendingInputRow">
+												<TextBlock Text="{Binding PortId}" />
+											</DataTemplate>
+										</ComboBox.ItemTemplate>
+									</ComboBox>
+									<Button Grid.Column="1" Content="Send Response" Command="{Binding RespondWorkflowInputCommand}" Margin="8,0,0,0" />
+								</Grid>
+							</Grid>
+						</Border>
+					</Grid>
+				</Grid>
+			</TabItem>
+
+			<TabItem Header="Automations">
+				<Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="12,0,0,0">
+					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+						<StackPanel>
+							<TextBlock Text="Automations" Classes="page-title" />
+							<TextBlock Text="{Binding AutomationsStatus}" Classes="muted" />
+						</StackPanel>
+						<Button Grid.Column="1" Content="Load" Command="{Binding LoadAutomationsCommand}" Classes="primary" />
+					</Grid>
+					<Grid Grid.Row="1" ColumnDefinitions="2*,3*" ColumnSpacing="12">
+						<Border Grid.Column="0" Classes="section-card">
+							<Grid RowDefinitions="*,Auto,*" RowSpacing="8">
+								<DockPanel Grid.Row="0">
+									<TextBlock DockPanel.Dock="Top" Text="Automations" Classes="section-title" />
+									<ListBox ItemsSource="{Binding AutomationRows}" SelectedItem="{Binding SelectedAutomation}" Background="Transparent" BorderThickness="0">
+										<ListBox.ItemTemplate>
+											<DataTemplate DataType="vm:AutomationRow">
+												<StackPanel Margin="0,0,0,8">
+													<TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+													<TextBlock Text="{Binding Schedule}" Classes="muted" />
+													<TextBlock Text="{Binding State}" Classes="muted" />
+												</StackPanel>
+											</DataTemplate>
+										</ListBox.ItemTemplate>
+									</ListBox>
+								</DockPanel>
+								<TextBlock Grid.Row="1" Text="Templates" Classes="section-title" />
+								<ListBox Grid.Row="2" ItemsSource="{Binding AutomationTemplateRows}" Background="Transparent" BorderThickness="0">
+									<ListBox.ItemTemplate>
+										<DataTemplate DataType="vm:AutomationTemplateRow">
+											<StackPanel Margin="0,0,0,8">
+												<TextBlock Text="{Binding Label}" FontWeight="SemiBold" />
+												<TextBlock Text="{Binding Category}" Classes="muted" />
+												<TextBlock Text="{Binding Availability}" Classes="muted" />
+											</StackPanel>
+										</DataTemplate>
+									</ListBox.ItemTemplate>
+								</ListBox>
+							</Grid>
+						</Border>
+						<Border Grid.Column="1" Classes="section-card">
+							<Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
+								<WrapPanel>
+									<Button Content="Dry Run" Command="{Binding RunSelectedAutomationDryRunCommand}" Margin="0,0,8,8" />
+									<Button Content="Run Live" Command="{Binding RunSelectedAutomationLiveCommand}" Margin="0,0,8,8" />
+									<Button Content="Replay Run" Command="{Binding ReplaySelectedAutomationRunCommand}" Margin="0,0,8,8" />
+									<Button Content="Clear Quarantine" Command="{Binding ClearSelectedAutomationQuarantineCommand}" Margin="0,0,8,8" />
+									<Button Content="Delete" Command="{Binding DeleteSelectedAutomationCommand}" Classes="danger" Margin="0,0,8,8" />
+								</WrapPanel>
+								<TextBox Grid.Row="1" Text="{Binding AutomationDetail}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="130" />
+								<ListBox Grid.Row="2" ItemsSource="{Binding AutomationRunRows}" SelectedItem="{Binding SelectedAutomationRun}" Background="Transparent" BorderThickness="0">
+									<ListBox.ItemTemplate>
+										<DataTemplate DataType="vm:AutomationRunRow">
+											<Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,6">
+												<TextBlock Text="{Binding RunId}" FontWeight="SemiBold" />
+												<TextBlock Grid.Column="1" Text="{Binding Lifecycle}" Classes="muted" Margin="8,0" />
+												<TextBlock Grid.Column="2" Text="{Binding Started}" Classes="muted" />
+											</Grid>
+										</DataTemplate>
+									</ListBox.ItemTemplate>
+								</ListBox>
+							</Grid>
+						</Border>
+					</Grid>
+				</Grid>
+			</TabItem>
+
+			<TabItem Header="Runtime Events">
+				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
+					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+						<StackPanel>
+							<TextBlock Text="Runtime Events" Classes="page-title" />
+							<TextBlock Text="{Binding RuntimeEventsStatus}" Classes="muted" />
+						</StackPanel>
+						<Button Grid.Column="1" Content="Load" Command="{Binding LoadRuntimeEventsCommand}" Classes="primary" />
+					</Grid>
+					<Border Grid.Row="1" Classes="section-card">
+						<Grid ColumnDefinitions="*,*,*,*,*,Auto" ColumnSpacing="8">
+							<TextBox Text="{Binding RuntimeEventsSessionId}" Watermark="Session" />
+							<TextBox Grid.Column="1" Text="{Binding RuntimeEventsChannelId}" Watermark="Channel" />
+							<TextBox Grid.Column="2" Text="{Binding RuntimeEventsSenderId}" Watermark="Sender" />
+							<TextBox Grid.Column="3" Text="{Binding RuntimeEventsComponent}" Watermark="Component" />
+							<TextBox Grid.Column="4" Text="{Binding RuntimeEventsAction}" Watermark="Action" />
+							<NumericUpDown Grid.Column="5" Value="{Binding RuntimeEventsLimit}" Minimum="1" Maximum="500" Width="90" />
+						</Grid>
+					</Border>
+					<Grid Grid.Row="2" ColumnDefinitions="3*,2*" ColumnSpacing="12">
+						<Border Grid.Column="0" Classes="section-card">
+							<ListBox ItemsSource="{Binding RuntimeEventRows}" SelectedItem="{Binding SelectedRuntimeEvent}" Background="Transparent" BorderThickness="0">
+								<ListBox.ItemTemplate>
+									<DataTemplate DataType="vm:RuntimeEventRow">
+										<Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,0,0,7">
+											<TextBlock Text="{Binding Timestamp}" Classes="muted" />
+											<Border Grid.Column="1" Classes="badge">
+												<TextBlock Text="{Binding Component}" FontSize="11" />
+											</Border>
+											<StackPanel Grid.Column="2">
+												<TextBlock Text="{Binding Action}" FontWeight="SemiBold" />
+												<TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" />
+											</StackPanel>
+										</Grid>
+									</DataTemplate>
+								</ListBox.ItemTemplate>
+							</ListBox>
+						</Border>
+						<Border Grid.Column="1" Classes="section-card">
+							<TextBox Text="{Binding SelectedRuntimeEventJson}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" />
+						</Border>
+					</Grid>
+				</Grid>
+			</TabItem>
+
+			<TabItem Header="Plugins &amp; Channels">
+				<Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="12,0,0,0">
+					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+						<StackPanel>
+							<TextBlock Text="Plugins &amp; Channels" Classes="page-title" />
+							<TextBlock Text="{Binding PluginsStatus}" Classes="muted" />
+						</StackPanel>
+						<Button Grid.Column="1" Content="Load" Command="{Binding LoadPluginsCommand}" Classes="primary" />
+					</Grid>
+					<Grid Grid.Row="1" ColumnDefinitions="*,*" RowDefinitions="*,*" ColumnSpacing="12" RowSpacing="12">
+						<Border Grid.Row="0" Grid.Column="0" Classes="section-card">
+							<DockPanel>
+								<TextBlock DockPanel.Dock="Top" Text="Plugins" Classes="section-title" />
+								<ListBox ItemsSource="{Binding PluginRows}" Background="Transparent" BorderThickness="0">
+									<ListBox.ItemTemplate>
+										<DataTemplate DataType="vm:PluginRow">
+											<StackPanel Margin="0,0,0,8">
+												<TextBlock Text="{Binding PluginId}" FontWeight="SemiBold" />
+												<TextBlock Text="{Binding Status}" Classes="muted" />
+												<TextBlock Text="{Binding SurfaceCounts}" Classes="muted" />
+											</StackPanel>
+										</DataTemplate>
+									</ListBox.ItemTemplate>
+								</ListBox>
+							</DockPanel>
+						</Border>
+						<Border Grid.Row="0" Grid.Column="1" Classes="section-card">
+							<DockPanel>
+								<TextBlock DockPanel.Dock="Top" Text="Compatibility Catalog" Classes="section-title" />
+								<ListBox ItemsSource="{Binding CompatibilityRows}" Background="Transparent" BorderThickness="0">
+									<ListBox.ItemTemplate>
+										<DataTemplate DataType="vm:CompatibilityRow">
+											<StackPanel Margin="0,0,0,8">
+												<TextBlock Text="{Binding Subject}" FontWeight="SemiBold" />
+												<TextBlock Text="{Binding Status}" Classes="muted" />
+												<TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" />
+											</StackPanel>
+										</DataTemplate>
+									</ListBox.ItemTemplate>
+								</ListBox>
+							</DockPanel>
+						</Border>
+						<Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Classes="section-card">
+							<DockPanel>
+								<TextBlock DockPanel.Dock="Top" Text="Channels" Classes="section-title" />
+								<ItemsControl ItemsSource="{Binding PluginChannelRows}">
+									<ItemsControl.ItemTemplate>
+										<DataTemplate DataType="vm:ChannelReadinessRow">
+											<Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+												<StackPanel>
+													<TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+													<TextBlock Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap" />
+												</StackPanel>
+												<Border Grid.Column="1" Classes="badge">
+													<TextBlock Text="{Binding Status}" FontSize="11" />
+												</Border>
+											</Grid>
+										</DataTemplate>
+									</ItemsControl.ItemTemplate>
+								</ItemsControl>
+							</DockPanel>
+						</Border>
+					</Grid>
+				</Grid>
+			</TabItem>
+
+			<TabItem Header="Memory &amp; Profiles">
+				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
+					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+						<StackPanel>
+							<TextBlock Text="Memory &amp; Profiles" Classes="page-title" />
+							<TextBlock Text="{Binding ProfilesStatus}" Classes="muted" />
+						</StackPanel>
+						<Button Grid.Column="1" Content="Load" Command="{Binding LoadProfilesCommand}" Classes="primary" />
+					</Grid>
+					<Border Grid.Row="1" Classes="section-card">
+						<Grid ColumnDefinitions="*,Auto">
+							<TextBox Text="{Binding MemorySearchText}" Watermark="Search memory notes" />
+							<Button Grid.Column="1" Content="Search" Command="{Binding SearchMemoryNotesCommand}" Margin="8,0,0,0" />
+						</Grid>
+					</Border>
+					<Grid Grid.Row="2" ColumnDefinitions="*,*,*,*" ColumnSpacing="12">
+						<Border Grid.Column="0" Classes="section-card">
+							<DockPanel>
+								<TextBlock DockPanel.Dock="Top" Text="Profiles" Classes="section-title" />
+								<ListBox ItemsSource="{Binding ProfileRows}" SelectedItem="{Binding SelectedProfile}" Background="Transparent" BorderThickness="0">
+									<ListBox.ItemTemplate>
+										<DataTemplate DataType="vm:ProfileRow">
+											<StackPanel Margin="0,0,0,8">
+												<TextBlock Text="{Binding ActorId}" FontWeight="SemiBold" />
+												<TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" />
+											</StackPanel>
+										</DataTemplate>
+									</ListBox.ItemTemplate>
+								</ListBox>
+							</DockPanel>
+						</Border>
+						<Border Grid.Column="1" Classes="section-card">
+							<DockPanel>
+								<TextBlock DockPanel.Dock="Top" Text="Memory Notes" Classes="section-title" />
+								<ListBox ItemsSource="{Binding MemoryNoteRows}" Background="Transparent" BorderThickness="0">
+									<ListBox.ItemTemplate>
+										<DataTemplate DataType="vm:MemoryNoteRow">
+											<StackPanel Margin="0,0,0,8">
+												<TextBlock Text="{Binding Key}" FontWeight="SemiBold" />
+												<TextBlock Text="{Binding Preview}" Classes="muted" TextWrapping="Wrap" />
+											</StackPanel>
+										</DataTemplate>
+									</ListBox.ItemTemplate>
+								</ListBox>
+							</DockPanel>
+						</Border>
+						<Border Grid.Column="2" Classes="section-card">
+							<DockPanel>
+								<TextBlock DockPanel.Dock="Top" Text="Learning Proposals" Classes="section-title" />
+								<ListBox ItemsSource="{Binding LearningProposalRows}" Background="Transparent" BorderThickness="0">
+									<ListBox.ItemTemplate>
+										<DataTemplate DataType="vm:LearningProposalRow">
+											<StackPanel Margin="0,0,0,8">
+												<TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+												<TextBlock Text="{Binding Status}" Classes="muted" />
+												<TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" />
+											</StackPanel>
+										</DataTemplate>
+									</ListBox.ItemTemplate>
+								</ListBox>
+							</DockPanel>
+						</Border>
+						<Border Grid.Column="3" Classes="section-card">
+							<DockPanel>
+								<TextBlock DockPanel.Dock="Top" Text="Profile Detail" Classes="section-title" />
+								<TextBox Text="{Binding SelectedProfileDetail}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" />
+							</DockPanel>
+						</Border>
+					</Grid>
+				</Grid>
+			</TabItem>
+
+			<TabItem Header="Models &amp; Providers">
+				<Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="12,0,0,0">
+					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+						<StackPanel>
+							<TextBlock Text="Models &amp; Providers" Classes="page-title" />
+							<TextBlock Text="{Binding ProvidersStatus}" Classes="muted" />
+						</StackPanel>
+						<Button Grid.Column="1" Content="Load" Command="{Binding LoadProvidersCommand}" Classes="primary" />
+					</Grid>
+					<Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12">
+						<Border Grid.Column="0" Classes="section-card">
+							<DockPanel>
+								<TextBlock DockPanel.Dock="Top" Text="Provider Routes" Classes="section-title" />
+								<ListBox ItemsSource="{Binding ProviderRouteRows}" Background="Transparent" BorderThickness="0">
+									<ListBox.ItemTemplate>
+										<DataTemplate DataType="vm:ProviderRouteRow">
+											<StackPanel Margin="0,0,0,8">
+												<TextBlock Text="{Binding Provider}" FontWeight="SemiBold" />
+												<TextBlock Text="{Binding Model}" Classes="muted" />
+												<TextBlock Text="{Binding Usage}" Classes="muted" />
+											</StackPanel>
+										</DataTemplate>
+									</ListBox.ItemTemplate>
+								</ListBox>
+							</DockPanel>
+						</Border>
+						<Border Grid.Column="1" Classes="section-card">
+							<DockPanel>
+								<TextBlock DockPanel.Dock="Top" Text="Tool Presets" Classes="section-title" />
+								<ListBox ItemsSource="{Binding ToolPresetRows}" Background="Transparent" BorderThickness="0">
+									<ListBox.ItemTemplate>
+										<DataTemplate DataType="vm:ToolPresetRow">
+											<StackPanel Margin="0,0,0,8">
+												<TextBlock Text="{Binding PresetId}" FontWeight="SemiBold" />
+												<TextBlock Text="{Binding Approval}" Classes="muted" />
+												<TextBlock Text="{Binding Description}" Classes="muted" TextWrapping="Wrap" />
+											</StackPanel>
+										</DataTemplate>
+									</ListBox.ItemTemplate>
+								</ListBox>
+							</DockPanel>
+						</Border>
+					</Grid>
+				</Grid>
+			</TabItem>
+
+			<TabItem Header="Admin">
+				<ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+					<StackPanel Spacing="12" Margin="12,0,0,0">
+						<TextBlock Text="Admin" Classes="page-title" />
+						<Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+							<Border Grid.Column="0" Classes="section-card">
+								<StackPanel Spacing="10">
+									<TextBlock Text="Operator Access" Classes="section-title" />
+									<Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+										<TextBox Text="{Binding Username}" Watermark="Username" />
+										<TextBox Grid.Column="1" Text="{Binding Password}" PasswordChar="•" Watermark="Password" />
+										<TextBox Grid.Column="2" Text="{Binding OperatorTokenLabel}" Watermark="Token label" />
+									</Grid>
+									<StackPanel Orientation="Horizontal" Spacing="8">
+										<Button Content="Issue Operator Token" Command="{Binding IssueOperatorTokenCommand}" />
+										<Button Content="Reload Status" Command="{Binding LoadAdminStatusCommand}" />
+									</StackPanel>
+									<TextBlock Text="{Binding AdminStatus}" TextWrapping="Wrap" />
+									<TextBlock Text="{Binding OperatorIdentity, StringFormat=Identity: {0}}" />
+									<TextBlock Text="{Binding OperatorRole, StringFormat=Role: {0}}" />
+									<TextBlock Text="{Binding OperatorAuthMode, StringFormat=Auth mode: {0}}" />
+									<TextBlock Text="{Binding IsBootstrapAdmin, StringFormat=Bootstrap admin: {0}}" />
+								</StackPanel>
+							</Border>
+							<Border Grid.Column="1" Classes="section-card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Desktop Notifications" Classes="section-title" />
+									<TextBlock Text="{Binding DesktopNotifierDescription, StringFormat=Platform: {0}}" Classes="muted" TextWrapping="Wrap" />
+									<CheckBox Content="Notify on new approval" IsChecked="{Binding ApprovalDesktopNotificationsEnabled}" IsEnabled="{Binding DesktopNotifierAvailable}" />
+									<CheckBox Content="Only when Companion is not focused" IsChecked="{Binding ApprovalDesktopNotificationsOnlyWhenUnfocused}" IsEnabled="{Binding DesktopNotifierAvailable}" />
+								</StackPanel>
+							</Border>
+						</Grid>
+						<Border Classes="section-card">
+							<StackPanel Spacing="8">
+								<TextBlock Text="Deployment Status" Classes="section-title" />
+								<TextBox Text="{Binding DeploymentStatus}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="180" />
+							</StackPanel>
+						</Border>
+					</StackPanel>
+				</ScrollViewer>
+			</TabItem>
+
+			<TabItem Header="WhatsApp">
+				<ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+					<StackPanel Spacing="12" Margin="12,0,0,0">
+						<Grid ColumnDefinitions="*,Auto,Auto,Auto">
+							<StackPanel>
+								<TextBlock Text="WhatsApp" Classes="page-title" />
+								<TextBlock Text="{Binding WhatsAppMessage}" Classes="muted" TextWrapping="Wrap" />
+							</StackPanel>
+							<Button Grid.Column="1" Content="Reload" Command="{Binding LoadWhatsAppSetupCommand}" Margin="8,0,0,0" />
+							<Button Grid.Column="2" Content="Save" Command="{Binding SaveWhatsAppSetupCommand}" Margin="8,0,0,0" />
+							<Button Grid.Column="3" Content="Restart" Command="{Binding RestartWhatsAppCommand}" Margin="8,0,0,0" />
+						</Grid>
+						<Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+							<Border Grid.Column="0" Classes="section-card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Status" Classes="section-title" />
+									<TextBlock Text="{Binding WhatsAppActiveBackend, StringFormat=Active backend: {0}}" />
+									<TextBlock Text="{Binding WhatsAppDerivedWebhookUrl, StringFormat=Derived webhook URL: {0}}" TextWrapping="Wrap" />
+									<TextBlock Text="{Binding WhatsAppRestartHint}" Classes="muted" TextWrapping="Wrap" />
+								</StackPanel>
+							</Border>
+							<Border Grid.Column="1" Classes="section-card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Mode" Classes="section-title" />
+									<CheckBox Content="Enabled" IsChecked="{Binding WhatsAppEnabled}" />
+									<StackPanel Orientation="Horizontal" Spacing="8">
+										<ComboBox ItemsSource="{Binding WhatsAppTypeOptions}" SelectedItem="{Binding WhatsAppType}" MinWidth="150" />
+										<ComboBox ItemsSource="{Binding WhatsAppDmPolicyOptions}" SelectedItem="{Binding WhatsAppDmPolicy}" MinWidth="150" />
+									</StackPanel>
+								</StackPanel>
+							</Border>
+						</Grid>
+						<Border Classes="section-card">
+							<StackPanel Spacing="10">
+								<TextBlock Text="Official Cloud API" Classes="section-title" />
+								<Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10">
+									<TextBox Text="{Binding WhatsAppWebhookPath}" Watermark="/whatsapp/inbound" />
+									<TextBox Grid.Column="1" Text="{Binding WhatsAppWebhookPublicBaseUrl}" Watermark="https://example.com" />
+									<TextBox Grid.Row="1" Text="{Binding WhatsAppWebhookVerifyToken}" PasswordChar="•" Watermark="Verify token" />
+									<TextBox Grid.Row="1" Grid.Column="1" Text="{Binding WhatsAppWebhookVerifyTokenRef}" Watermark="env:WHATSAPP_VERIFY_TOKEN" />
+									<CheckBox Grid.Row="2" Content="Validate signature" IsChecked="{Binding WhatsAppValidateSignature}" />
+									<TextBox Grid.Row="3" Text="{Binding WhatsAppWebhookAppSecret}" PasswordChar="•" Watermark="App secret" />
+									<TextBox Grid.Row="3" Grid.Column="1" Text="{Binding WhatsAppWebhookAppSecretRef}" Watermark="env:WHATSAPP_APP_SECRET" />
+									<TextBox Grid.Row="4" Text="{Binding WhatsAppCloudApiToken}" PasswordChar="•" Watermark="Cloud API token" />
+									<TextBox Grid.Row="4" Grid.Column="1" Text="{Binding WhatsAppCloudApiTokenRef}" Watermark="env:WHATSAPP_CLOUD_API_TOKEN" />
+								</Grid>
+								<Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+									<TextBox Text="{Binding WhatsAppPhoneNumberId}" Watermark="Phone number ID" />
+									<TextBox Grid.Column="1" Text="{Binding WhatsAppBusinessAccountId}" Watermark="Business account ID" />
+								</Grid>
+							</StackPanel>
+						</Border>
+						<Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+							<Border Grid.Column="0" Classes="section-card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Plugin Bridge" Classes="section-title" />
+									<CheckBox Content="Plugin detected" IsChecked="{Binding WhatsAppPluginDetected}" IsEnabled="False" />
+									<TextBox Text="{Binding WhatsAppPluginId}" Watermark="Plugin ID" />
+									<TextBlock Text="{Binding WhatsAppPluginWarning}" Classes="muted" TextWrapping="Wrap" />
+									<TextBox Text="{Binding WhatsAppPluginConfigJson}" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="120" />
+									<TextBox Text="{Binding WhatsAppFirstPartyWorkerConfigJson}" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="120" />
+								</StackPanel>
+							</Border>
+							<Border Grid.Column="1" Classes="section-card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Bridge Secrets" Classes="section-title" />
+									<TextBox Text="{Binding WhatsAppBridgeUrl}" Watermark="Built-in bridge URL" />
+									<TextBox Text="{Binding WhatsAppBridgeToken}" PasswordChar="•" Watermark="Built-in bridge token" />
+									<TextBox Text="{Binding WhatsAppBridgeTokenRef}" Watermark="env:WHATSAPP_BRIDGE_TOKEN" />
+									<CheckBox Content="Suppress bridge send exceptions" IsChecked="{Binding WhatsAppBridgeSuppressSendExceptions}" />
+								</StackPanel>
+							</Border>
+						</Grid>
+						<Grid ColumnDefinitions="3*,2*" ColumnSpacing="12">
+							<Border Grid.Column="0" Classes="section-card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Auth State" Classes="section-title" />
+									<TextBox Text="{Binding WhatsAppAuthSummary}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="180" />
+								</StackPanel>
+							</Border>
+							<Border Grid.Column="1" Classes="section-card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="QR" Classes="section-title" />
+									<Image Source="{Binding WhatsAppQrImage}" Width="220" Height="220" Stretch="Uniform" HorizontalAlignment="Center" />
+									<TextBox Text="{Binding WhatsAppQrData}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="110" />
+								</StackPanel>
+							</Border>
+						</Grid>
+						<Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+							<Border Grid.Column="0" Classes="section-card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Warnings" Classes="section-title" />
+									<TextBox Text="{Binding WhatsAppWarnings}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="110" />
+								</StackPanel>
+							</Border>
+							<Border Grid.Column="1" Classes="section-card">
+								<StackPanel Spacing="8">
+									<TextBlock Text="Validation Errors" Classes="section-title" />
+									<TextBox Text="{Binding WhatsAppValidationErrors}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="110" />
+								</StackPanel>
+							</Border>
+						</Grid>
+					</StackPanel>
+				</ScrollViewer>
+			</TabItem>
+
+			<TabItem Header="Payment Lab">
+				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
+					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+						<StackPanel>
+							<TextBlock Text="Payment Lab" Classes="page-title" />
+							<TextBlock Text="{Binding PaymentsStatus}" Classes="muted" TextWrapping="Wrap" />
+						</StackPanel>
+						<Button Grid.Column="1" Content="Load Setup" Command="{Binding LoadPaymentSetupCommand}" Classes="primary" />
+					</Grid>
+					<Border Grid.Row="1" Classes="error-banner">
+						<TextBlock Text="Experimental and approval-gated. Confirmations are required before issuing cards or executing payments." TextWrapping="Wrap" />
+					</Border>
+					<Grid Grid.Row="2" ColumnDefinitions="*,*" RowDefinitions="Auto,*" ColumnSpacing="12" RowSpacing="12">
+						<Border Grid.Row="0" Grid.Column="0" Classes="section-card">
+							<StackPanel Spacing="8">
+								<TextBlock Text="Setup" Classes="section-title" />
+								<Grid ColumnDefinitions="*,*">
+									<TextBox Text="{Binding PaymentProvider}" Watermark="Provider" />
+									<TextBox Grid.Column="1" Text="{Binding PaymentEnvironment}" Watermark="test/live" Margin="8,0,0,0" />
+								</Grid>
+								<TextBox Text="{Binding PaymentSetupSummary}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="120" />
+							</StackPanel>
+						</Border>
+						<Border Grid.Row="0" Grid.Column="1" Classes="section-card">
+							<StackPanel Spacing="8">
+								<TextBlock Text="Funding Sources" Classes="section-title" />
+								<ListBox ItemsSource="{Binding FundingSourceRows}" Background="Transparent" BorderThickness="0" MaxHeight="160">
+									<ListBox.ItemTemplate>
+										<DataTemplate DataType="vm:FundingSourceRow">
+											<StackPanel Margin="0,0,0,6">
+												<TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+												<TextBlock Text="{Binding Detail}" Classes="muted" />
+											</StackPanel>
+										</DataTemplate>
+									</ListBox.ItemTemplate>
+								</ListBox>
+							</StackPanel>
+						</Border>
+						<Border Grid.Row="1" Grid.Column="0" Classes="section-card">
+							<StackPanel Spacing="8">
+								<TextBlock Text="Virtual Card" Classes="section-title" />
+								<TextBox Text="{Binding VirtualCardMerchantName}" Watermark="Merchant name" />
+								<TextBox Text="{Binding VirtualCardMerchantUrl}" Watermark="Merchant URL" />
+								<Grid ColumnDefinitions="*,*">
+									<TextBox Text="{Binding VirtualCardAmountMinor}" Watermark="Amount minor" />
+									<TextBox Grid.Column="1" Text="{Binding VirtualCardCurrency}" Watermark="Currency" Margin="8,0,0,0" />
+								</Grid>
+								<TextBox Text="{Binding VirtualCardFundingSourceId}" Watermark="Funding source ID" />
+								<Button Content="Issue Virtual Card" Command="{Binding IssueVirtualCardCommand}" Classes="danger" HorizontalAlignment="Left" />
+							</StackPanel>
+						</Border>
+						<Border Grid.Row="1" Grid.Column="1" Classes="section-card">
+							<StackPanel Spacing="8">
+								<TextBlock Text="Execute / Status" Classes="section-title" />
+								<TextBox Text="{Binding MachinePaymentMerchantName}" Watermark="Merchant name" />
+								<Grid ColumnDefinitions="*,*">
+									<TextBox Text="{Binding MachinePaymentAmountMinor}" Watermark="Amount minor" />
+									<TextBox Grid.Column="1" Text="{Binding MachinePaymentCurrency}" Watermark="Currency" Margin="8,0,0,0" />
+								</Grid>
+								<TextBox Text="{Binding MachinePaymentFundingSourceId}" Watermark="Funding source ID" />
+								<Button Content="Execute Payment" Command="{Binding ExecuteMachinePaymentCommand}" Classes="danger" HorizontalAlignment="Left" />
+								<Grid ColumnDefinitions="*,Auto">
+									<TextBox Text="{Binding PaymentStatusLookupId}" Watermark="Payment id" />
+									<Button Grid.Column="1" Content="Lookup" Command="{Binding LookupPaymentStatusCommand}" Margin="8,0,0,0" />
+								</Grid>
+								<TextBox Text="{Binding PaymentResultText}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="80" />
+							</StackPanel>
+						</Border>
+					</Grid>
+				</Grid>
+			</TabItem>
+		</TabControl>
+	</Grid>
 </Window>
