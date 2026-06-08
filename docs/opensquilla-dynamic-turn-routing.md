@@ -199,6 +199,79 @@ Both runtimes now share the same high-level semantics:
 
 For the MAF adapter there is one extra nuance: if a routing decision returns an empty `AllowedTools` array, the runtime does not overwrite an already-populated manual `Session.RouteAllowedTools` allowlist. This preserves existing MAF route-filter behavior when no explicit per-turn allowlist is supplied by the router.
 
+## Alignment With OpenSquilla `squilla-router.md` (2026-06)
+
+Alignment should be understood in two layers.
+
+### 1. Aligned: architecture and routing contract
+
+- both systems classify each turn and project the decision onto model/policy surfaces
+- OpenClaw `TurnRoutingDecision` already carries the key decision fields discussed in OpenSquilla docs: tier, model override, tool scope, reasoning level, response policy, and machine-readable reason
+- gateway composition remains config-first and optional: `NoopTurnRoutingPolicy` when disabled, ONNX-backed routing policy when enabled
+- both native and MAF orchestrator paths are wired into dynamic turn routing
+
+### 2. Not fully aligned: model bundle format and inference pipeline
+
+The current OpenSquilla `squilla_router` model directory (`src/opensquilla/squilla_router/models/v4.2_phase3_inference`) is not drop-in compatible with OpenClaw bundle loading today.
+
+Key reasons:
+
+- **asset naming mismatch**: OpenClaw bundle loading expects `manifest.json`, `classifier.onnx`, `embeddings.onnx`, `tokenizer.json`, `runtime-config.json`; OpenSquilla v4.2 uses assets such as `artifact_manifest.json`, `inference_manifest.json`, `bge_onnx/model.onnx`, `mlp/model.onnx`, and `lgbm_main.bin`
+- **tokenizer family mismatch**: OpenClaw tokenizer loader currently supports BPE-style Hugging Face tokenizers, while OpenSquilla v4.2 `bge_onnx/tokenizer.json` is WordPiece
+- **classifier shape mismatch**: OpenClaw currently assumes a single classifier ONNX input path; OpenSquilla v4.2 uses a multi-head fusion pipeline (LightGBM + MLP + postprocess)
+- **tier naming generation mismatch**: OpenSquilla canonical text tiers are now `c0..c3` (with legacy `t0..t3` aliases), while OpenClaw routing labels are `T0..T3`
+
+Summary: architecture-level alignment is strong; model-bundle-level interoperability still needs an adapter layer.
+
+## Plan To Use OpenSquilla Router Models In OpenClaw
+
+Use a two-stage approach: fast compatibility first, high-fidelity parity second.
+
+### Stage A: Export OpenClaw-compatible artifacts (recommended first)
+
+Goal: reuse OpenClaw runtime wiring by exporting OpenSquilla assets into OpenClaw-compatible bundle shape.
+
+1. Add an export step in OpenSquilla that emits:
+
+  `classifier.onnx`, `embeddings.onnx`, `tokenizer.json` (preferably BPE-compatible), `runtime-config.json`, and `manifest.json`.
+2. Explicitly map tier ids during export: `c0/c1/c2/c3 -> T0/T1/T2/T3`
+3. Point `OpenClaw:DynamicTurnRouting:BundlePath` to that exported directory and map `Policy.Tiers` to OpenClaw model profiles
+4. Validate offline first (fallback ratio, tier distribution, cost profile), then expand
+
+This is the fastest path with minimal runtime changes.
+
+### Stage A.1: Offline sample validation notes
+
+To preserve evidence for the “Stage A first, make it usable” milestone, keep both 10-sample snapshots for later comparison:
+
+- [balanced 10-sample report](../artifacts/testing/phase-a-offline-validation-10sample-report.json): 5 simple + 5 complex samples, gold / predicted are both `T0:5` and `T2:5`, fallback is 0
+- [T1-inclusive 10-sample report](../artifacts/testing/phase-a-offline-validation-10sample-report-t1.json): 3 `T0`, 3 `T1`, 2 `T2`, and 2 `T3` samples, gold / predicted match exactly, fallback is 0
+
+Note: both reports are based on the code-level heuristic routing rule. They are not measurements of actual ONNX fallback execution in this session, so fallback should be read as “not triggered,” not “ONNX fallback was verified.”
+
+### Stage B: High-fidelity native adapter (optional)
+
+Goal: preserve OpenSquilla v4.2 multi-head semantics as-is.
+
+1. Add a dedicated optional implementation boundary (for example `OpenClaw.Routing.OpenSquillaV4`)
+2. Parse OpenSquilla-native bundle assets (`inference_manifest.json`, `router.runtime.yaml`, `bge_onnx`, `mlp`, `lgbm_*`)
+3. Recreate v4.2 fusion/postprocess logic in that layer and map result to `TurnRoutingDecision`
+4. Keep `OpenClaw.Core` and `OpenClaw.Agent` interface-only; composition still decided by gateway
+
+This path is more expensive but yields higher behavioral parity.
+
+## Current Integration Risks
+
+- **Risk 1: WordPiece tokenizer incompatibility**. Directly using OpenSquilla v4.2 tokenizer can cause `classifier_unavailable` fallback to `T2`
+- **Risk 2: bundle path/name mismatch**. Assets can exist but still fail loading due to contract mismatch
+- **Risk 3: native/MAF semantic gap**. Native runtime currently consumes more routing fields than MAF runtime (for example direct fallback, reasoning level, response policy)
+
+Recommended order:
+
+1. implement Stage A and validate end-to-end
+2. add tokenizer-family compatibility (or force BPE at export)
+3. decide whether Stage B parity is necessary for your operating envelope
+
 ## CLI Surface
 
 OpenClaw remains config-first for dynamic routing (`OpenClaw:DynamicTurnRouting`).

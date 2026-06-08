@@ -124,6 +124,57 @@ public sealed class LocalOnnxEmbeddingGeneratorTests
         }
     }
 
+        [Fact]
+        public void HuggingFaceTokenizerLoader_WhenWordPieceTokenizerUsesBertTokenizer_LoadsBertTokenizer()
+        {
+                using var tokenizerJson = CreateTokenizerJson("""
+                        {
+                            "model": {
+                                "type": "WordPiece",
+                                "vocab": {
+                                    "[PAD]": 0,
+                                    "[UNK]": 1,
+                                    "[CLS]": 2,
+                                    "[SEP]": 3,
+                                    "[MASK]": 4,
+                                    "hello": 5,
+                                    "world": 6,
+                                    "##ld": 7
+                                },
+                                "unk_token": "[UNK]",
+                                "continuing_subword_prefix": "##",
+                                "max_input_chars_per_word": 100
+                            },
+                            "normalizer": {
+                                "type": "BertNormalizer",
+                                "clean_text": true,
+                                "handle_chinese_chars": true,
+                                "lowercase": true
+                            },
+                            "pre_tokenizer": {
+                                "type": "BertPreTokenizer"
+                            },
+                            "added_tokens": [
+                                { "id": 0, "content": "[PAD]", "special": true },
+                                { "id": 1, "content": "[UNK]", "special": true },
+                                { "id": 2, "content": "[CLS]", "special": true },
+                                { "id": 3, "content": "[SEP]", "special": true }
+                            ]
+                        }
+                        """);
+
+                var (tokenizer, workingDirectory) = LocalOnnxEmbeddingGenerator.HuggingFaceTokenizerLoader.Load(tokenizerJson.Path);
+                try
+                {
+                        Assert.IsType<BertTokenizer>(tokenizer);
+                        Assert.True(Directory.Exists(workingDirectory));
+                }
+                finally
+                {
+                        Directory.Delete(workingDirectory, recursive: true);
+                }
+        }
+
     private static BpeTokenizerAssets CreateBpeTokenizerAssets()
     {
                 var tokenizerJson = CreateTokenizerJson("""

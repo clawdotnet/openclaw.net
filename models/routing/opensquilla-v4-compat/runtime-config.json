@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "embeddingDimensions": 512,
+  "classifier": {
+    "numClasses": 4,
+    "classLabels": [
+      "T0",
+      "T1",
+      "T2",
+      "T3"
+    ]
+  },
+  "notes": {
+    "tokenizerFamily": "WordPiece",
+    "sourceModelDir": "E:\\GitHub\\opensquilla\\src\\opensquilla\\squilla_router\\models\\v4.2_phase3_inference",
+    "sourceRuntimeConfig": "E:\\GitHub\\opensquilla\\src\\opensquilla\\squilla_router\\models\\v4.2_phase3_inference\\inference_manifest.json",
+    "warning": "WordPiece tokenizer may require OpenClaw tokenizer loader extension"
+  },
+  "inspect": {
+    "classifier": {
+      "path": "models\\routing\\opensquilla-v4-compat\\classifier.onnx",
+      "ok": true,
+      "inputs": [
+        {
+          "name": "raw_bge",
+          "shape": [
+            "batch",
+            1536
+          ],
+          "type": "tensor(float)"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "logits",
+          "shape": [
+            "batch",
+            4
+          ],
+          "type": "tensor(float)"
+        }
+      ]
+    },
+    "embedding": {
+      "path": "models\\routing\\opensquilla-v4-compat\\embeddings.onnx",
+      "ok": true,
+      "inputs": [
+        {
+          "name": "input_ids",
+          "shape": [
+            "batch_size",
+            "sequence_length"
+          ],
+          "type": "tensor(int64)"
+        },
+        {
+          "name": "attention_mask",
+          "shape": [
+            "batch_size",
+            "sequence_length"
+          ],
+          "type": "tensor(int64)"
+        },
+        {
+          "name": "token_type_ids",
+          "shape": [
+            "batch_size",
+            "sequence_length"
+          ],
+          "type": "tensor(int64)"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "last_hidden_state",
+          "shape": [
+            "batch_size",
+            "sequence_length",
+            512
+          ],
+          "type": "tensor(float)"
+        }
+      ]
+    }
+  }
+}

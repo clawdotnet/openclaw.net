@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "bundleName": "opensquilla-v4-compat",
+  "classifierModelPath": "classifier.onnx",
+  "embeddingModelPath": "embeddings.onnx",
+  "tokenizerPath": "tokenizer.json",
+  "runtimeConfigPath": "runtime-config.json",
+  "tierMap": {
+    "c0": "T0",
+    "c1": "T1",
+    "c2": "T2",
+    "c3": "T3"
+  },
+  "checksums": {
+    "classifier.onnx": "e7358ac3f827e8f38a6384ba4f7c6f3227c18898ced95d145adb9272c72137d6",
+    "embeddings.onnx": "87847793fac866d65b19cee2e73a6b2a2446a1262ab0911b1dbf9b3e9399ef9d",
+    "tokenizer.json": "48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26",
+    "runtime-config.json": "b0274dcc10303d2569bd9206c33d7a3eeb9390962a152814d4fd45fa8fe00bf2"
+  }
+}

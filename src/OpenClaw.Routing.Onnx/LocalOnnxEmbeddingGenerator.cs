@@ -188,7 +188,7 @@ public sealed class LocalOnnxEmbeddingGenerator : ILocalEmbeddingGenerator, IDis
                 return modelType?.Trim().ToUpperInvariant() switch
                 {
                     "BPE" => LoadBpe(root, modelElement, tempDir),
-                    "WORDPIECE" => throw new NotSupportedException("Tokenizer model type 'WordPiece' is not supported yet by this loader. Please provide a Hugging Face BPE tokenizer.json."),
+                    "WORDPIECE" => LoadWordPiece(modelElement, tempDir),
                     _ => throw new NotSupportedException($"Tokenizer model type '{modelType}' is not supported yet.")
                 };
             }
@@ -245,6 +245,76 @@ public sealed class LocalOnnxEmbeddingGenerator : ILocalEmbeddingGenerator, IDis
             return (tokenizer, tempDir);
         }
 
+        private static (Tokenizer Tokenizer, string WorkingDirectory) LoadWordPiece(JsonElement modelElement, string tempDir)
+        {
+            var vocabPath = Path.Combine(tempDir, "vocab.txt");
+            if (!modelElement.TryGetProperty("vocab", out var vocabElement))
+                throw new InvalidOperationException("WordPiece tokenizer model is missing the required 'vocab' field.");
+
+            var unknownToken = modelElement.TryGetProperty("unk_token", out var unkTokenElement)
+                ? unkTokenElement.GetString()
+                : "[UNK]";
+
+            WriteWordPieceVocab(vocabElement, vocabPath, unknownToken ?? "[UNK]");
+
+            var tokenizer = BertTokenizer.Create(vocabPath);
+            return (tokenizer, tempDir);
+        }
+
+        private static void WriteWordPieceVocab(JsonElement vocabElement, string vocabPath, string unknownToken)
+        {
+            if (vocabElement.ValueKind != JsonValueKind.Object)
+                throw new InvalidOperationException("WordPiece tokenizer 'vocab' must be a JSON object mapping token to id.");
+
+            var pairs = new List<(string Token, int Id)>();
+            foreach (var property in vocabElement.EnumerateObject())
+            {
+                if (property.Value.ValueKind != JsonValueKind.Number || !property.Value.TryGetInt32(out var id) || id < 0)
+                    continue;
+
+                pairs.Add((property.Name, id));
+            }
+
+            if (pairs.Count == 0)
+                throw new InvalidOperationException("WordPiece tokenizer vocab does not contain any valid token-id entries.");
+
+            var maxId = pairs.Max(static pair => pair.Id);
+            var tokens = Enumerable.Repeat(unknownToken, maxId + 1).ToArray();
+            foreach (var (token, id) in pairs)
+            {
+                if (id >= 0 && id < tokens.Length)
+                    tokens[id] = token;
+            }
+
+            File.WriteAllLines(vocabPath, tokens);
+        }
+
+        private static Dictionary<string, int> ExtractSpecialTokens(JsonElement root)
+        {
+            var specialTokens = new Dictionary<string, int>(StringComparer.Ordinal);
+            if (!root.TryGetProperty("added_tokens", out var addedTokensElement) || addedTokensElement.ValueKind != JsonValueKind.Array)
+                return specialTokens;
+
+            foreach (var tokenElement in addedTokensElement.EnumerateArray())
+            {
+                if (!tokenElement.TryGetProperty("content", out var contentElement)
+                    || contentElement.ValueKind != JsonValueKind.String
+                    || !tokenElement.TryGetProperty("id", out var idElement)
+                    || idElement.ValueKind != JsonValueKind.Number
+                    || !idElement.TryGetInt32(out var id)
+                    || id < 0)
+                {
+                    continue;
+                }
+
+                var content = contentElement.GetString();
+                if (!string.IsNullOrWhiteSpace(content) && !specialTokens.ContainsKey(content))
+                    specialTokens[content] = id;
+            }
+
+            return specialTokens;
+        }
+
         private static PreTokenizer ResolvePreTokenizer(JsonElement root, out bool byteLevel)
         {
             if (!root.TryGetProperty("pre_tokenizer", out var preTokenizerElement))
@@ -268,6 +338,9 @@ public sealed class LocalOnnxEmbeddingGenerator : ILocalEmbeddingGenerator, IDis
                     byteLevel = true;
                     return RobertaPreTokenizer.Instance;
                 case "WHITESPACE" or "WHITESPACESPLIT":
+                    byteLevel = false;
+                    return PreTokenizer.CreateWhiteSpace(new Dictionary<string, int>());
+                case "BERTPRETOKENIZER":
                     byteLevel = false;
                     return PreTokenizer.CreateWhiteSpace(new Dictionary<string, int>());
                 case "SEQUENCE":
