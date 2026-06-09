@@ -47,7 +47,8 @@ public sealed class LocalOnnxEmbeddingGenerator : ILocalEmbeddingGenerator, IDis
             _runner.Dispose();
             if (_tokenizerWorkingDirectory is not null && Directory.Exists(_tokenizerWorkingDirectory))
             {
-                try { Directory.Delete(_tokenizerWorkingDirectory, recursive: true); } catch { /* best-effort */ }
+                try { Directory.Delete(_tokenizerWorkingDirectory, recursive: true); }
+                catch (Exception ex) when (IsExpectedCleanupException(ex)) { /* best-effort */ }
             }
             throw;
         }
@@ -79,7 +80,8 @@ public sealed class LocalOnnxEmbeddingGenerator : ILocalEmbeddingGenerator, IDis
             _runner.Dispose();
             if (_tokenizerWorkingDirectory is not null && Directory.Exists(_tokenizerWorkingDirectory))
             {
-                try { Directory.Delete(_tokenizerWorkingDirectory, recursive: true); } catch { /* best-effort */ }
+                try { Directory.Delete(_tokenizerWorkingDirectory, recursive: true); }
+                catch (Exception ex) when (IsExpectedCleanupException(ex)) { /* best-effort */ }
             }
             throw;
         }
@@ -147,7 +149,7 @@ public sealed class LocalOnnxEmbeddingGenerator : ILocalEmbeddingGenerator, IDis
         if (_tokenizerWorkingDirectory is not null && Directory.Exists(_tokenizerWorkingDirectory))
         {
             try { Directory.Delete(_tokenizerWorkingDirectory, recursive: true); }
-            catch (Exception) { /* best-effort; OS file locks or access restrictions may delay deletion */ }
+            catch (Exception ex) when (IsExpectedCleanupException(ex)) { /* best-effort; OS file locks or access restrictions may delay deletion */ }
         }
     }
 
@@ -166,6 +168,12 @@ public sealed class LocalOnnxEmbeddingGenerator : ILocalEmbeddingGenerator, IDis
 
         return null;
     }
+
+    private static bool IsExpectedCleanupException(Exception ex)
+        => ex is IOException
+            or UnauthorizedAccessException
+            or ArgumentException
+            or NotSupportedException;
 
     internal static class HuggingFaceTokenizerLoader
     {
@@ -195,7 +203,8 @@ public sealed class LocalOnnxEmbeddingGenerator : ILocalEmbeddingGenerator, IDis
             }
             catch
             {
-                try { Directory.Delete(tempDir, recursive: true); } catch { /* best-effort */ }
+                try { Directory.Delete(tempDir, recursive: true); }
+                catch (Exception ex) when (IsExpectedCleanupException(ex)) { /* best-effort */ }
                 throw;
             }
         }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
@@ -76,7 +77,7 @@ public sealed class OnnxTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
                 _embeddingGenerator = embeddingGenerator;
                 _tierClassifier = tierClassifier;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (IsRecoverableOnnxException(ex))
             {
                 logger.LogWarning(ex, "Failed to initialize ONNX routing components; dynamic routing will fall back to T2.");
                 _classifierAvailable = false;
@@ -148,12 +149,20 @@ public sealed class OnnxTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (IsRecoverableOnnxException(ex))
         {
             _logger.LogWarning(ex, "Dynamic turn routing failed during inference; falling back to T2.");
             return BuildFallbackDecision("classifier_runtime_error");
         }
     }
+
+    private static bool IsRecoverableOnnxException(Exception ex)
+        => ex is OnnxRuntimeException
+            or IOException
+            or JsonException
+            or InvalidOperationException
+            or NotSupportedException
+            or ArgumentException;
 
     private TurnRoutingDecision BuildFallbackDecision(string reason)
     {

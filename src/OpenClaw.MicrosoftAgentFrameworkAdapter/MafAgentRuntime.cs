@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -276,7 +277,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             LogTurnComplete(turnCtx);
             return ex.Message;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (IsRecoverableLlmException(ex))
         {
             _metrics.IncrementLlmErrors();
             _logger?.LogError(ex, "[{CorrelationId}] MAF orchestration failed", turnCtx.CorrelationId);
@@ -515,7 +516,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 throw;
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (IsRecoverableLlmException(ex))
         {
             _metrics.IncrementLlmErrors();
             _logger?.LogError(ex, "[{CorrelationId}] MAF streaming orchestration failed", turnCtx.CorrelationId);
@@ -603,7 +604,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (IsRecoverableTurnRoutingPolicyException(ex))
         {
             _logger?.LogWarning(ex, "Turn routing policy failed; falling back to T2/default routing.");
             decision = new TurnRoutingDecision
@@ -756,7 +757,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             var text = sb.ToString().TrimEnd();
             messages.Insert(Math.Min(1, messages.Count), new ChatMessage(ChatRole.User, text));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (IsRecoverableContextException(ex))
         {
             _logger?.LogWarning(ex, "MAF memory recall injection failed; continuing without recall.");
         }
@@ -837,12 +838,39 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 Content = $"[Previous conversation summary: {summary}]"
             });
         }
-        catch (Exception ex)
+        catch (Exception ex) when (IsRecoverableContextException(ex))
         {
             _logger?.LogWarning(ex, "MAF history compaction failed; falling back to simple trim.");
             TrimHistory(session);
         }
     }
+
+    private static bool IsRecoverableContextException(Exception ex)
+        => ex is IOException
+            or JsonException
+            or InvalidOperationException
+            or NotSupportedException
+            or TimeoutException
+            or UnauthorizedAccessException
+            or TaskCanceledException;
+
+    private static bool IsRecoverableLlmException(Exception ex)
+        => ex is HttpRequestException
+            or IOException
+            or InvalidOperationException
+            or KeyNotFoundException
+            or NotSupportedException
+            or TimeoutException
+            or TaskCanceledException;
+
+    private static bool IsRecoverableTurnRoutingPolicyException(Exception ex)
+        => ex is IOException
+            or JsonException
+            or InvalidOperationException
+            or NotSupportedException
+            or ArgumentException
+            or TimeoutException
+            or TaskCanceledException;
 
     private List<ChatMessage> BuildMessages(Session session)
     {

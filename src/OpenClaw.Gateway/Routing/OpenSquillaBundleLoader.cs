@@ -56,7 +56,7 @@ internal sealed class OpenSquillaBundleLoader : IOpenSquillaBundleLoader
                 RuntimeConfigPath = ResolveManifestPath(bundlePath, TryFindString(document.RootElement, "runtimeconfigpath", "runtimeconfig"))
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (IsExpectedBundleConfigException(ex))
         {
             throw new InvalidOperationException($"Failed to load OpenSquilla bundle manifest '{manifestPath}'.", ex);
         }
@@ -130,7 +130,7 @@ internal sealed class OpenSquillaBundleLoader : IOpenSquillaBundleLoader
             using var document = JsonDocument.Parse(stream);
             return TryFindEmbeddingDimensions(document.RootElement, out dimensions);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (IsExpectedBundleConfigException(ex))
         {
             throw new InvalidOperationException($"Failed to read routing embedding dimensions from '{jsonPath}'.", ex);
         }
@@ -180,4 +180,12 @@ internal sealed class OpenSquillaBundleLoader : IOpenSquillaBundleLoader
         value = 0;
         return element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out value) && value > 0;
     }
+
+    private static bool IsExpectedBundleConfigException(Exception ex)
+        => ex is IOException
+            or UnauthorizedAccessException
+            or JsonException
+            or InvalidOperationException
+            or ArgumentException
+            or NotSupportedException;
 }
