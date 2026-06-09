@@ -1,4 +1,5 @@
 using OpenClaw.Core.Models;
+using System.Linq;
 using System.Text.Json;
 
 namespace OpenClaw.Gateway.Routing;
@@ -148,10 +149,24 @@ internal sealed class OpenSquillaBundleLoader : IOpenSquillaBundleLoader
 
         if (element.ValueKind == JsonValueKind.Array)
         {
-            foreach (var item in element.EnumerateArray())
+            var matchedDimensions = 0;
+            var match = element.EnumerateArray()
+                .Where(item =>
+                {
+                    if (TryFindEmbeddingDimensions(item, out var candidateDimensions))
+                    {
+                        matchedDimensions = candidateDimensions;
+                        return true;
+                    }
+
+                    return false;
+                })
+                .FirstOrDefault();
+
+            if (match.ValueKind != JsonValueKind.Undefined)
             {
-                if (TryFindEmbeddingDimensions(item, out dimensions))
-                    return true;
+                dimensions = matchedDimensions;
+                return true;
             }
         }
 
