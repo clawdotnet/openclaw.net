@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -1088,11 +1089,9 @@ public sealed class AgentRuntime : IAgentRuntime
         var modelsToTry = new List<string> { currentModel };
         if (_config.FallbackModels is { Length: > 0 })
         {
-            foreach (var fallback in _config.FallbackModels)
-            {
-                if (!string.Equals(fallback, currentModel, StringComparison.OrdinalIgnoreCase))
-                    modelsToTry.Add(fallback);
-            }
+            modelsToTry.AddRange(
+                _config.FallbackModels.Where(fallback =>
+                    !string.Equals(fallback, currentModel, StringComparison.OrdinalIgnoreCase)));
         }
 
         Exception? lastException = null;
