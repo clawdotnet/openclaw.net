@@ -1,0 +1,69 @@
+{
+  "totalSamples": 15,
+  "macroF1": 0.7222222222222222,
+  "underRoutingRate": 0,
+  "overRoutingRate": 0.125,
+  "highRiskRecall": 1,
+  "labels": [
+    "T0",
+    "T1",
+    "T2",
+    "T3"
+  ],
+  "confusion": [
+    [
+      4,
+      0,
+      0,
+      0
+    ],
+    [
+      1,
+      2,
+      0,
+      1
+    ],
+    [
+      0,
+      0,
+      2,
+      2
+    ],
+    [
+      0,
+      0,
+      0,
+      3
+    ]
+  ],
+  "perTier": [
+    {
+      "tier": "T0",
+      "support": 4,
+      "precision": 0.8,
+      "recall": 1,
+      "f1": 0.888888888888889
+    },
+    {
+      "tier": "T1",
+      "support": 4,
+      "precision": 1,
+      "recall": 0.5,
+      "f1": 0.6666666666666666
+    },
+    {
+      "tier": "T2",
+      "support": 4,
+      "precision": 1,
+      "recall": 0.5,
+      "f1": 0.6666666666666666
+    },
+    {
+      "tier": "T3",
+      "support": 3,
+      "precision": 0.5,
+      "recall": 1,
+      "f1": 0.6666666666666666
+    }
+  ]
+}

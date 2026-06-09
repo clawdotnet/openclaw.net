@@ -1,0 +1,50 @@
+{
+  "totalSamples": 10,
+  "simpleSamples": 6,
+  "complexSamples": 4,
+  "goldDistribution": [
+    { "tier": "T0", "count": 3 },
+    { "tier": "T1", "count": 3 },
+    { "tier": "T2", "count": 2 },
+    { "tier": "T3", "count": 2 }
+  ],
+  "predictedDistribution": [
+    { "tier": "T0", "count": 3 },
+    { "tier": "T1", "count": 3 },
+    { "tier": "T2", "count": 2 },
+    { "tier": "T3", "count": 2 }
+  ],
+  "costDistribution": {
+    "unitCostByTier": {
+      "T0": 1,
+      "T1": 2,
+      "T2": 4,
+      "T3": 8
+    },
+    "predictedTierUnits": [
+      { "tier": "T0", "count": 3, "unitCost": 1, "estimatedUnits": 3 },
+      { "tier": "T1", "count": 3, "unitCost": 2, "estimatedUnits": 6 },
+      { "tier": "T2", "count": 2, "unitCost": 4, "estimatedUnits": 8 },
+      { "tier": "T3", "count": 2, "unitCost": 8, "estimatedUnits": 16 }
+    ],
+    "estimatedTotalUnits": 33,
+    "note": "Unit-cost proxy for offline routing comparison only; this is not provider billing data."
+  },
+  "fallback": {
+    "classifierUnavailable": 0,
+    "runtimeErrorFallbackToT2": 0,
+    "note": "This T1-inclusive 10-sample report uses the code-level heuristic routing rule from PromptFeatureExtractor/HeuristicQualityTierClassifier. It does not exercise ONNX fallback execution, so fallback remains 0 by construction."
+  },
+  "samples": [
+    { "text": "Summarize this issue in one sentence.", "goldTier": "T0", "predictedTier": "T0" },
+    { "text": "Translate this paragraph to English.", "goldTier": "T0", "predictedTier": "T0" },
+    { "text": "Rewrite this commit message to be clearer.", "goldTier": "T0", "predictedTier": "T0" },
+    { "text": "Read README and list core modules.", "goldTier": "T1", "predictedTier": "T1" },
+    { "text": "Compare two API designs and recommend one.", "goldTier": "T1", "predictedTier": "T1" },
+    { "text": "Draft a three-step migration plan for this package.", "goldTier": "T1", "predictedTier": "T1" },
+    { "text": "Assess deployment rollback risk before production release.", "goldTier": "T2", "predictedTier": "T2" },
+    { "text": "Review this data migration script for overwrite risk.", "goldTier": "T2", "predictedTier": "T2" },
+    { "text": "Create a full architecture redesign plan with milestones and risk matrix.", "goldTier": "T3", "predictedTier": "T3" },
+    { "text": "Draft a deeply structured proposal for policy-as-code adoption with rollout checkpoints.", "goldTier": "T3", "predictedTier": "T3" }
+  ]
+}

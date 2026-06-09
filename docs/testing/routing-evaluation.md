@@ -40,6 +40,20 @@ Optional parameters:
 
 The script writes both `report.json` and `report.md` under a timestamped subdirectory in `artifacts/testing/dynamic-routing/`.
 
+## Curated Artifacts
+
+Curated routing-quality snapshots are kept under `docs/testing/` for documentation and review workflows:
+
+- `docs/testing/turn-routing-quality.grid-report.json`
+- `docs/testing/turn-routing-quality.policy-suggestion.json`
+- `docs/testing/turn-routing-quality.report.json`
+- `docs/testing/turn-routing-quality.weight-sensitivity-report.json`
+- `docs/testing/phase-a-offline-validation-report.json`
+- `docs/testing/phase-a-offline-validation-10sample-report.json`
+- `docs/testing/phase-a-offline-validation-10sample-report-t1.json`
+- `docs/testing/phase-a-offline-validation-10sample.jsonl`
+- `docs/testing/phase-a-offline-validation-10sample-t1.jsonl`
+
 ## Gate
 
 The default gate checks that `classifierPlusRules` does not regress on the sample set:

@@ -1,0 +1,40 @@
+{
+  "DynamicTurnRouting": {
+    "Policy": {
+      "EnableStickyTier": true,
+      "EnableMarginUpgrade": true,
+      "EnableR1Rescue": true,
+      "EnableUnderRoutingSafety": true,
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.1,
+      "UnderRoutingSafetyThreshold": 0.45,
+      "DeepConversationTurnIndexThreshold": 2
+    }
+  },
+  "Diagnostics": {
+    "Score": 0.9174476517886229,
+    "MacroF1": 0.6539059851219562,
+    "UnderRoutingRate": 0.0625,
+    "OverRoutingRate": 0.0625,
+    "HighRiskRecall": 0.9047619047619048,
+    "scoreWeights": {
+      "UnderRoutingPenaltyWeight": 0.6,
+      "OverRoutingPenaltyWeight": 0.25,
+      "HighRiskRecallRewardWeight": 0.35
+    },
+    "stability": {
+      "UniqueTopParameterCount": 2,
+      "Top1ConsistencyRate": 0.6666666666666666,
+      "TopParameterDistribution": [
+        {
+          "ParameterKey": "margin=0.10|r1=0.10|safety=0.45|deepTurn=2",
+          "Count": 2
+        },
+        {
+          "ParameterKey": "margin=0.10|r1=0.10|safety=0.35|deepTurn=2",
+          "Count": 1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{"text":"Summarize this issue in one sentence.","goldTier":"T0","highRisk":false}
+{"text":"Translate this paragraph to English.","goldTier":"T0","highRisk":false}
+{"text":"Rewrite this commit message to be clearer.","goldTier":"T0","highRisk":false}
+{"text":"Read README and list core modules.","goldTier":"T1","highRisk":false}
+{"text":"Compare two API designs and recommend one.","goldTier":"T1","highRisk":false}
+{"text":"Draft a three-step migration plan for this package.","goldTier":"T1","highRisk":false}
+{"text":"Assess deployment rollback risk before production release.","goldTier":"T2","highRisk":true}
+{"text":"Review this data migration script for overwrite risk.","goldTier":"T2","highRisk":true}
+{"text":"Create a full architecture redesign plan with milestones and risk matrix.","goldTier":"T3","highRisk":false}
+{"text":"Draft a deeply structured proposal for policy-as-code adoption with rollout checkpoints.","goldTier":"T3","highRisk":true}

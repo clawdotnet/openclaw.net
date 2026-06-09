@@ -14,7 +14,7 @@
     "tokenizerFamily": "WordPiece",
     "sourceModelDir": "opensquilla/squilla_router/models/v4.2_phase3_inference",
     "sourceRuntimeConfig": "opensquilla/squilla_router/models/v4.2_phase3_inference/inference_manifest.json",
-    "warning": "WordPiece tokenizer may require OpenClaw tokenizer loader extension"
+    "warning": "Current OpenClaw loader supports WordPiece plus BertPreTokenizer; revalidate compatibility if the exported tokenizer family or pre-tokenizer shape changes"
   },
   "inspect": {
     "classifier": {

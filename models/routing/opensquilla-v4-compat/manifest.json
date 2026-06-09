@@ -15,6 +15,6 @@
     "classifier.onnx": "e7358ac3f827e8f38a6384ba4f7c6f3227c18898ced95d145adb9272c72137d6",
     "embeddings.onnx": "87847793fac866d65b19cee2e73a6b2a2446a1262ab0911b1dbf9b3e9399ef9d",
     "tokenizer.json": "48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26",
-    "runtime-config.json": "c18ebe2f3aace8033dc6daea8f9e554b5e175b1d6993500ecc83b4f952814584"
+    "runtime-config.json": "9667f0239cc7b4f74f6187ef49e6382521c867984c985fcda84c6062f014c020"
   }
 }

@@ -1,0 +1,247 @@
+{
+  "scoreWeights": {
+    "UnderRoutingPenaltyWeight": 0.6,
+    "OverRoutingPenaltyWeight": 0.25,
+    "HighRiskRecallRewardWeight": 0.35
+  },
+  "baseline": {
+    "score": 0.7946837390880582,
+    "macroF1": 0.5389545724213916,
+    "underRoutingRate": 0.0625,
+    "overRoutingRate": 0.09375,
+    "highRiskRecall": 0.9047619047619048
+  },
+  "best": {
+    "MarginUpgradeThreshold": 0.1,
+    "R1RescueThreshold": 0.1,
+    "UnderRoutingSafetyThreshold": 0.45,
+    "DeepConversationTurnIndexThreshold": 2,
+    "Score": 0.9174476517886229,
+    "MacroF1": 0.6539059851219562,
+    "UnderRoutingRate": 0.0625,
+    "OverRoutingRate": 0.0625,
+    "HighRiskRecall": 0.9047619047619048
+  },
+  "candidates": [
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.1,
+      "UnderRoutingSafetyThreshold": 0.45,
+      "DeepConversationTurnIndexThreshold": 2,
+      "Score": 0.9174476517886229,
+      "MacroF1": 0.6539059851219562,
+      "UnderRoutingRate": 0.0625,
+      "OverRoutingRate": 0.0625,
+      "HighRiskRecall": 0.9047619047619048
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.1,
+      "UnderRoutingSafetyThreshold": 0.45,
+      "DeepConversationTurnIndexThreshold": 4,
+      "Score": 0.9174476517886229,
+      "MacroF1": 0.6539059851219562,
+      "UnderRoutingRate": 0.0625,
+      "OverRoutingRate": 0.0625,
+      "HighRiskRecall": 0.9047619047619048
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.1,
+      "UnderRoutingSafetyThreshold": 0.45,
+      "DeepConversationTurnIndexThreshold": 6,
+      "Score": 0.9174476517886229,
+      "MacroF1": 0.6539059851219562,
+      "UnderRoutingRate": 0.0625,
+      "OverRoutingRate": 0.0625,
+      "HighRiskRecall": 0.9047619047619048
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.1,
+      "UnderRoutingSafetyThreshold": 0.55,
+      "DeepConversationTurnIndexThreshold": 2,
+      "Score": 0.9174476517886229,
+      "MacroF1": 0.6539059851219562,
+      "UnderRoutingRate": 0.0625,
+      "OverRoutingRate": 0.0625,
+      "HighRiskRecall": 0.9047619047619048
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.1,
+      "UnderRoutingSafetyThreshold": 0.55,
+      "DeepConversationTurnIndexThreshold": 4,
+      "Score": 0.9174476517886229,
+      "MacroF1": 0.6539059851219562,
+      "UnderRoutingRate": 0.0625,
+      "OverRoutingRate": 0.0625,
+      "HighRiskRecall": 0.9047619047619048
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.1,
+      "UnderRoutingSafetyThreshold": 0.55,
+      "DeepConversationTurnIndexThreshold": 6,
+      "Score": 0.9174476517886229,
+      "MacroF1": 0.6539059851219562,
+      "UnderRoutingRate": 0.0625,
+      "OverRoutingRate": 0.0625,
+      "HighRiskRecall": 0.9047619047619048
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.1,
+      "UnderRoutingSafetyThreshold": 0.35,
+      "DeepConversationTurnIndexThreshold": 2,
+      "Score": 0.9057640705023429,
+      "MacroF1": 0.6224307371690095,
+      "UnderRoutingRate": 0.03125,
+      "OverRoutingRate": 0.125,
+      "HighRiskRecall": 0.9523809523809523
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.1,
+      "UnderRoutingSafetyThreshold": 0.35,
+      "DeepConversationTurnIndexThreshold": 4,
+      "Score": 0.9057640705023429,
+      "MacroF1": 0.6224307371690095,
+      "UnderRoutingRate": 0.03125,
+      "OverRoutingRate": 0.125,
+      "HighRiskRecall": 0.9523809523809523
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.1,
+      "UnderRoutingSafetyThreshold": 0.35,
+      "DeepConversationTurnIndexThreshold": 6,
+      "Score": 0.9057640705023429,
+      "MacroF1": 0.6224307371690095,
+      "UnderRoutingRate": 0.03125,
+      "OverRoutingRate": 0.125,
+      "HighRiskRecall": 0.9523809523809523
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.2,
+      "UnderRoutingSafetyThreshold": 0.35,
+      "DeepConversationTurnIndexThreshold": 2,
+      "Score": 0.874871621989757,
+      "MacroF1": 0.5915382886564237,
+      "UnderRoutingRate": 0.03125,
+      "OverRoutingRate": 0.125,
+      "HighRiskRecall": 0.9523809523809523
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.2,
+      "UnderRoutingSafetyThreshold": 0.35,
+      "DeepConversationTurnIndexThreshold": 4,
+      "Score": 0.874871621989757,
+      "MacroF1": 0.5915382886564237,
+      "UnderRoutingRate": 0.03125,
+      "OverRoutingRate": 0.125,
+      "HighRiskRecall": 0.9523809523809523
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.2,
+      "UnderRoutingSafetyThreshold": 0.35,
+      "DeepConversationTurnIndexThreshold": 6,
+      "Score": 0.874871621989757,
+      "MacroF1": 0.5915382886564237,
+      "UnderRoutingRate": 0.03125,
+      "OverRoutingRate": 0.125,
+      "HighRiskRecall": 0.9523809523809523
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.2,
+      "UnderRoutingSafetyThreshold": 0.45,
+      "DeepConversationTurnIndexThreshold": 2,
+      "Score": 0.8713440372583744,
+      "MacroF1": 0.6078023705917077,
+      "UnderRoutingRate": 0.0625,
+      "OverRoutingRate": 0.0625,
+      "HighRiskRecall": 0.9047619047619048
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.2,
+      "UnderRoutingSafetyThreshold": 0.45,
+      "DeepConversationTurnIndexThreshold": 4,
+      "Score": 0.8713440372583744,
+      "MacroF1": 0.6078023705917077,
+      "UnderRoutingRate": 0.0625,
+      "OverRoutingRate": 0.0625,
+      "HighRiskRecall": 0.9047619047619048
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.2,
+      "UnderRoutingSafetyThreshold": 0.45,
+      "DeepConversationTurnIndexThreshold": 6,
+      "Score": 0.8713440372583744,
+      "MacroF1": 0.6078023705917077,
+      "UnderRoutingRate": 0.0625,
+      "OverRoutingRate": 0.0625,
+      "HighRiskRecall": 0.9047619047619048
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.2,
+      "UnderRoutingSafetyThreshold": 0.55,
+      "DeepConversationTurnIndexThreshold": 2,
+      "Score": 0.8713440372583744,
+      "MacroF1": 0.6078023705917077,
+      "UnderRoutingRate": 0.0625,
+      "OverRoutingRate": 0.0625,
+      "HighRiskRecall": 0.9047619047619048
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.2,
+      "UnderRoutingSafetyThreshold": 0.55,
+      "DeepConversationTurnIndexThreshold": 4,
+      "Score": 0.8713440372583744,
+      "MacroF1": 0.6078023705917077,
+      "UnderRoutingRate": 0.0625,
+      "OverRoutingRate": 0.0625,
+      "HighRiskRecall": 0.9047619047619048
+    },
+    {
+      "MarginUpgradeThreshold": 0.1,
+      "R1RescueThreshold": 0.2,
+      "UnderRoutingSafetyThreshold": 0.55,
+      "DeepConversationTurnIndexThreshold": 6,
+      "Score": 0.8713440372583744,
+      "MacroF1": 0.6078023705917077,
+      "UnderRoutingRate": 0.0625,
+      "OverRoutingRate": 0.0625,
+      "HighRiskRecall": 0.9047619047619048
+    },
+    {
+      "MarginUpgradeThreshold": 0.15,
+      "R1RescueThreshold": 0.1,
+      "UnderRoutingSafetyThreshold": 0.35,
+      "DeepConversationTurnIndexThreshold": 2,
+      "Score": 0.8594336546695893,
+      "MacroF1": 0.576100321336256,
+      "UnderRoutingRate": 0.03125,
+      "OverRoutingRate": 0.125,
+      "HighRiskRecall": 0.9523809523809523
+    },
+    {
+      "MarginUpgradeThreshold": 0.15,
+      "R1RescueThreshold": 0.1,
+      "UnderRoutingSafetyThreshold": 0.35,
+      "DeepConversationTurnIndexThreshold": 4,
+      "Score": 0.8594336546695893,
+      "MacroF1": 0.576100321336256,
+      "UnderRoutingRate": 0.03125,
+      "OverRoutingRate": 0.125,
+      "HighRiskRecall": 0.9523809523809523
+    }
+  ]
+}

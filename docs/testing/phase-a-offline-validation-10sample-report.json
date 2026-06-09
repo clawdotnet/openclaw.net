@@ -1,0 +1,50 @@
+{
+  "totalSamples": 10,
+  "simpleSamples": 5,
+  "complexSamples": 5,
+  "goldDistribution": [
+    { "tier": "T0", "count": 5 },
+    { "tier": "T1", "count": 0 },
+    { "tier": "T2", "count": 5 },
+    { "tier": "T3", "count": 0 }
+  ],
+  "predictedDistribution": [
+    { "tier": "T0", "count": 5 },
+    { "tier": "T1", "count": 0 },
+    { "tier": "T2", "count": 5 },
+    { "tier": "T3", "count": 0 }
+  ],
+  "costDistribution": {
+    "unitCostByTier": {
+      "T0": 1,
+      "T1": 2,
+      "T2": 4,
+      "T3": 8
+    },
+    "predictedTierUnits": [
+      { "tier": "T0", "count": 5, "unitCost": 1, "estimatedUnits": 5 },
+      { "tier": "T1", "count": 0, "unitCost": 2, "estimatedUnits": 0 },
+      { "tier": "T2", "count": 5, "unitCost": 4, "estimatedUnits": 20 },
+      { "tier": "T3", "count": 0, "unitCost": 8, "estimatedUnits": 0 }
+    ],
+    "estimatedTotalUnits": 25,
+    "note": "Unit-cost proxy for offline routing comparison only; this is not provider billing data."
+  },
+  "fallback": {
+    "classifierUnavailable": 0,
+    "runtimeErrorFallbackToT2": 0,
+    "note": "This balanced 10-sample report uses the code-level heuristic routing rule from PromptFeatureExtractor/HeuristicQualityTierClassifier. It does not exercise ONNX fallback execution, so fallback remains 0 by construction."
+  },
+  "samples": [
+    { "text": "Summarize this issue in one sentence.", "goldTier": "T0", "predictedTier": "T0" },
+    { "text": "Translate this paragraph to English.", "goldTier": "T0", "predictedTier": "T0" },
+    { "text": "Rewrite this commit message to be clearer.", "goldTier": "T0", "predictedTier": "T0" },
+    { "text": "Give me a two-line status update.", "goldTier": "T0", "predictedTier": "T0" },
+    { "text": "Extract three action items from this note.", "goldTier": "T0", "predictedTier": "T0" },
+    { "text": "Assess deployment rollback risk before production release.", "goldTier": "T2", "predictedTier": "T2" },
+    { "text": "Production API is timing out; help debug root cause quickly.", "goldTier": "T2", "predictedTier": "T2" },
+    { "text": "Investigate exception stack trace and identify likely failing layer.", "goldTier": "T2", "predictedTier": "T2" },
+    { "text": "Review this data migration script for overwrite risk.", "goldTier": "T2", "predictedTier": "T2" },
+    { "text": "Check this delete job for accidental broad match behavior.", "goldTier": "T2", "predictedTier": "T2" }
+  ]
+}

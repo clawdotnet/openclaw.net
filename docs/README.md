@@ -29,6 +29,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [EXTERNAL_CLI_CONNECTORS.md](EXTERNAL_CLI_CONNECTORS.md) | Governed external CLI connectors, optional presets, named command allowlists, approvals, redaction, and audit behavior. |
 | [plugins/payment.md](plugins/payment.md) | Native payment tool, virtual cards, machine payments, providers, and safe agent-facing actions. |
 | [cli/payment.md](cli/payment.md) | `openclaw payment ...` gateway-backed CLI commands and safe output contract. |
+| [cli/routing.md](cli/routing.md) | `openclaw routing ...` commands for onboarding, router modes, tier/provider mapping, and diagnostics. |
 | [mempalace-memory.md](mempalace-memory.md) | Optional ElBruno.MempalaceNet memory provider and temporal KG tool. |
 | [FRACTAL_MEMORY.md](FRACTAL_MEMORY.md) | Optional MCP-first Fractal Memory integration for compact structured project memory and Runtime Pulse context. |
 | [providers/microsoft-extensions-ai.md](providers/microsoft-extensions-ai.md) | Optional JIT bridge for arbitrary `Microsoft.Extensions.AI.IChatClient` providers. |

@@ -1,0 +1,10 @@
+{"text":"Summarize this issue in one sentence.","goldTier":"T0","highRisk":false}
+{"text":"Translate this paragraph to English.","goldTier":"T0","highRisk":false}
+{"text":"Rewrite this commit message to be clearer.","goldTier":"T0","highRisk":false}
+{"text":"Give me a two-line status update.","goldTier":"T0","highRisk":false}
+{"text":"Extract three action items from this note.","goldTier":"T0","highRisk":false}
+{"text":"Assess deployment rollback risk before production release.","goldTier":"T2","highRisk":true}
+{"text":"Production API is timing out; help debug root cause quickly.","goldTier":"T2","highRisk":true}
+{"text":"Investigate exception stack trace and identify likely failing layer.","goldTier":"T2","highRisk":true}
+{"text":"Review this data migration script for overwrite risk.","goldTier":"T2","highRisk":true}
+{"text":"Check this delete job for accidental broad match behavior.","goldTier":"T2","highRisk":true}

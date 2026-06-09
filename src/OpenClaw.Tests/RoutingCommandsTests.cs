@@ -122,4 +122,96 @@ public sealed class RoutingCommandsTests
                 File.Delete(path);
         }
     }
+
+    [Fact]
+    public async Task RoutingCommands_ConfigureRouter_Disabled_TurnsRoutingOff()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"openclaw-routing-{Guid.NewGuid():N}.json");
+        try
+        {
+            var config = new GatewayConfig
+            {
+                DynamicTurnRouting = new DynamicTurnRoutingConfig
+                {
+                    Enabled = true
+                }
+            };
+            await GatewayConfigFile.SaveAsync(config, path);
+
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+
+            var exit = await RoutingCommands.RunAsync(["configure", "router", "--router", "disabled", "--config", path], output, error);
+
+            Assert.Equal(0, exit);
+            var saved = GatewayConfigFile.Load(path);
+            Assert.False(saved.DynamicTurnRouting.Enabled);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task RoutingCommands_ConfigureRouter_OpenRouterMix_AddsPreferredTags()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"openclaw-routing-{Guid.NewGuid():N}.json");
+        try
+        {
+            var config = new GatewayConfig();
+            await GatewayConfigFile.SaveAsync(config, path);
+
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+
+            var exit = await RoutingCommands.RunAsync(["configure", "router", "--router", "openrouter-mix", "--config", path], output, error);
+
+            Assert.Equal(0, exit);
+            var saved = GatewayConfigFile.Load(path);
+            Assert.True(saved.DynamicTurnRouting.Enabled);
+            Assert.Contains("openrouter", saved.DynamicTurnRouting.Policy.Tiers.T0.PreferredTags, StringComparer.OrdinalIgnoreCase);
+            Assert.Contains("openrouter", saved.DynamicTurnRouting.Policy.Tiers.T1.PreferredTags, StringComparer.OrdinalIgnoreCase);
+            Assert.Contains("openrouter", saved.DynamicTurnRouting.Policy.Tiers.T2.PreferredTags, StringComparer.OrdinalIgnoreCase);
+            Assert.Contains("openrouter", saved.DynamicTurnRouting.Policy.Tiers.T3.PreferredTags, StringComparer.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task RoutingCommands_Onboard_DefaultsToRecommendedAndEnablesRouting()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"openclaw-routing-{Guid.NewGuid():N}.json");
+        try
+        {
+            var config = new GatewayConfig
+            {
+                DynamicTurnRouting = new DynamicTurnRoutingConfig
+                {
+                    Enabled = false
+                }
+            };
+            await GatewayConfigFile.SaveAsync(config, path);
+
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+
+            var exit = await RoutingCommands.RunAsync(["onboard", "--config", path], output, error);
+
+            Assert.Equal(0, exit);
+            var saved = GatewayConfigFile.Load(path);
+            Assert.True(saved.DynamicTurnRouting.Enabled);
+            Assert.Contains("router=recommended", output.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
 }

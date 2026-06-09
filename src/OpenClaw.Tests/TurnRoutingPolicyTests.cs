@@ -2,6 +2,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Agent.Routing;
 using OpenClaw.Core.Models;
+using OpenClaw.Gateway.Routing;
 using OpenClaw.Routing.Onnx;
 using Xunit;
 
@@ -60,6 +61,40 @@ public sealed class TurnRoutingPolicyTests
 
         var decision = await policy.ResolveAsync(BuildRequest("Read README and summarize the key modules."), CancellationToken.None);
 
+        Assert.True(
+            string.Equals(decision.Tier, "T0", StringComparison.Ordinal)
+            || string.Equals(decision.Tier, "T1", StringComparison.Ordinal)
+            || string.Equals(decision.Tier, "T2", StringComparison.Ordinal)
+            || string.Equals(decision.Tier, "T3", StringComparison.Ordinal),
+            $"Unexpected tier: {decision.Tier}");
+        Assert.NotEqual("classifier_unavailable", decision.Reason);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WithBundlePathAndNormalizer_UsesRepoCompatBundle()
+    {
+        var bundlePath = ResolveRepoBundlePath();
+        var config = new DynamicTurnRoutingConfig
+        {
+            Enabled = true,
+            BundlePath = bundlePath,
+            Policy = new DynamicTurnRoutingPolicyConfig
+            {
+                Tiers = BuildTierMap()
+            }
+        };
+
+        var resolved = DynamicTurnRoutingConfigNormalizer.Normalize(config, new OpenSquillaBundleLoader());
+        var policy = new OnnxTurnRoutingPolicy(resolved, NullLogger<OnnxTurnRoutingPolicy>.Instance);
+
+        var decision = await policy.ResolveAsync(BuildRequest("Read README and summarize the key modules."), CancellationToken.None);
+
+        Assert.Equal("bundle", resolved.Source);
+        Assert.Equal(Path.Combine(bundlePath, "classifier.onnx"), resolved.Assets.ClassifierModelPath);
+        Assert.Equal(Path.Combine(bundlePath, "embeddings.onnx"), resolved.Assets.EmbeddingModelPath);
+        Assert.Equal(Path.Combine(bundlePath, "tokenizer.json"), resolved.Assets.TokenizerPath);
+        Assert.Equal(Path.Combine(bundlePath, "runtime-config.json"), resolved.Assets.RuntimeConfigPath);
+        Assert.Equal(512, resolved.Assets.EmbeddingDimensions);
         Assert.True(
             string.Equals(decision.Tier, "T0", StringComparison.Ordinal)
             || string.Equals(decision.Tier, "T1", StringComparison.Ordinal)

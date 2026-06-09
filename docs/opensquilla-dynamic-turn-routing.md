@@ -178,11 +178,20 @@ The feature support today is best understood as:
 
 This is still an experimental routing capability, not a tuned production classifier. The runtime wiring is stable, but the prompt features and threshold defaults are intentionally conservative and are not claimed to match OpenSquilla-equivalent accuracy.
 
+Why this remains experimental today:
+
+- The current quality baseline is still below typical production classifier expectations. See [turn-routing-quality.grid-report.json](testing/turn-routing-quality.grid-report.json) (`best.MacroF1` is around `0.65` in the current grid output).
+- The small 10-sample offline snapshots are useful smoke evidence, but they are not enough for production-quality claims and do not by themselves validate ONNX fallback execution paths. See [phase-a-offline-validation-10sample-report.json](testing/phase-a-offline-validation-10sample-report.json) and [phase-a-offline-validation-10sample-report-t1.json](testing/phase-a-offline-validation-10sample-report-t1.json).
+- Tokenizer/model-family compatibility and bundle-shape interoperability still require explicit operator validation before rollout.
+
+For production promotion criteria, use the Stage B launch gate table in this document as the minimum bar.
+
 The remaining limitations are narrower now:
 
-- the tokenizer loader currently supports Hugging Face-style BPE `tokenizer.json` files, not every tokenizer family
-- the embedding model path assumes common transformer input names and either direct embedding outputs or sequence outputs that can be mean-pooled
-- prompt features and classifier thresholds are still intentionally simple and have not been tuned to claim OpenSquilla-equivalent quality
+- the tokenizer loader now supports Hugging Face-style `tokenizer.json` files for both BPE and WordPiece models, but it still does not cover every tokenizer family or every pre-tokenizer shape
+- the embedding path still assumes common transformer input names and embedding outputs that are either direct vectors (rank-1 / rank-2) or rank-3 hidden-state tensors that can be mean-pooled; arbitrary ONNX embedding graphs are not guaranteed to work unchanged
+- the classifier path still assumes a 4-tier output contract (`T0`..`T3`) and a feature-vector shape that matches the classifier model's training run
+- prompt features, post-processing rules, and threshold defaults remain intentionally conservative and are not yet tuned enough to claim OpenSquilla-equivalent quality
 
 ## Native And MAF Semantics
 
@@ -209,33 +218,76 @@ Alignment should be understood in two layers.
 
 ### 2. Not fully aligned: model bundle format and inference pipeline
 
-The current OpenSquilla `squilla_router` model directory (`src/opensquilla/squilla_router/models/v4.2_phase3_inference`) is not drop-in compatible with OpenClaw bundle loading today.
+The current OpenSquilla `squilla_router` model directory (`src/opensquilla/squilla_router/models/v4.2_phase3_inference`) is still not drop-in compatible with OpenClaw routing today, but the exact gap is narrower than earlier drafts suggested.
 
-Key reasons:
+Re-assessed reasons:
 
-- **asset naming mismatch**: OpenClaw bundle loading expects `manifest.json`, `classifier.onnx`, `embeddings.onnx`, `tokenizer.json`, `runtime-config.json`; OpenSquilla v4.2 uses assets such as `artifact_manifest.json`, `inference_manifest.json`, `bge_onnx/model.onnx`, `mlp/model.onnx`, and `lgbm_main.bin`
-- **tokenizer family mismatch**: OpenClaw tokenizer loader currently supports BPE-style Hugging Face tokenizers, while OpenSquilla v4.2 `bge_onnx/tokenizer.json` is WordPiece
-- **classifier shape mismatch**: OpenClaw currently assumes a single classifier ONNX input path; OpenSquilla v4.2 uses a multi-head fusion pipeline (LightGBM + MLP + postprocess)
-- **tier naming generation mismatch**: OpenSquilla canonical text tiers are now `c0..c3` (with legacy `t0..t3` aliases), while OpenClaw routing labels are `T0..T3`
+- **bundle contract mismatch is now partial, not absolute**: OpenClaw still prefers the compat shape (`manifest.json`, `classifier.onnx`, `embeddings.onnx`, `tokenizer.json`, `runtime-config.json`), but its bundle loader already resolves asset paths and embedding dimensions from nested manifest metadata when those keys exist. The remaining issue is that OpenSquilla v4.2 ships a different native directory layout (`artifact_manifest.json`, `inference_manifest.json`, `bge_onnx/model.onnx`, `mlp/model.onnx`, `lgbm_main.bin`) instead of an OpenClaw-ready compat bundle.
+- **tokenizer mismatch is no longer a WordPiece blocker by itself**: OpenClaw now supports Hugging Face-style `tokenizer.json` files for both BPE and WordPiece models. The remaining incompatibility is broader: not every tokenizer family or pre-tokenizer shape is supported, so OpenSquilla tokenizer assets still need target-bundle validation.
+- **classifier pipeline mismatch remains real**: OpenClaw's ONNX path still assumes one embedding model plus one 4-class ONNX classifier, while OpenSquilla v4.2 is a native multi-stage router with MLP, LightGBM, and post-process fusion. Native v4.2 inference therefore still cannot be consumed as-is through the current `OnnxTurnRoutingPolicy`.
+- **tier vocabulary mismatch is mostly naming, but still needs an adapter contract**: OpenSquilla talks about `c0..c3` (with legacy `t0..t3` aliases), while OpenClaw projects decisions into `T0..T3`. This is easy to map in a compat export, but it is still a translation step rather than true drop-in parity.
 
-Summary: architecture-level alignment is strong; model-bundle-level interoperability still needs an adapter layer.
+Summary: architecture-level alignment is strong, bundle loading is more flexible than before, but native OpenSquilla v4.2 model-package interoperability still requires either a compat export or a dedicated adapter layer.
 
 ## Plan To Use OpenSquilla Router Models In OpenClaw
 
-Use a two-stage approach: fast compatibility first, high-fidelity parity second.
+Based on the current repository state, this section is more accurately described as a two-track plan: first stabilize the compat bundle that already exists in-tree, then decide whether high-fidelity native parity is actually needed.
 
-### Stage A: Export OpenClaw-compatible artifacts (recommended first)
+### Stage A: Stabilize the existing compat bundle (reference implementation already exists)
 
-Goal: reuse OpenClaw runtime wiring by exporting OpenSquilla assets into OpenClaw-compatible bundle shape.
+Goal: avoid rewriting the main OpenClaw router and instead promote the already-existing compat asset shape from a reference artifact into a repeatable export, validation, and operator workflow.
 
-1. Add an export step in OpenSquilla that emits:
+The repository already contains a concrete reference bundle at `models/routing/opensquilla-v4-compat/`. It already includes:
 
-  `classifier.onnx`, `embeddings.onnx`, `tokenizer.json` (preferably BPE-compatible), `runtime-config.json`, and `manifest.json`.
-2. Explicitly map tier ids during export: `c0/c1/c2/c3 -> T0/T1/T2/T3`
-3. Point `OpenClaw:DynamicTurnRouting:BundlePath` to that exported directory and map `Policy.Tiers` to OpenClaw model profiles
+- `classifier.onnx`
+- `embeddings.onnx`
+- `tokenizer.json`
+- `runtime-config.json`
+- `manifest.json`
+
+And this reference bundle is not just a placeholder:
+
+- `manifest.json` already freezes the tier mapping `c0/c1/c2/c3 -> T0/T1/T2/T3`
+- `runtime-config.json` already declares the current reference embedding size as `512`
+- `tokenizer.json` is currently a `WordPiece` + `BertPreTokenizer` asset shape, which is a combination the current loader already supports and the test suite already covers
+
+So the practical Stage A path is now:
+
+1. Treat `models/routing/opensquilla-v4-compat` as the baseline reference artifact rather than redefining the compat shape from scratch
+2. Add a repeatable export step in OpenSquilla that regenerates this same bundle contract reliably
+3. Point `OpenClaw:DynamicTurnRouting:BundlePath` to that compat directory and map `Policy.Tiers` to OpenClaw model profiles
 4. Validate offline first (fallback ratio, tier distribution, cost profile), then expand
 
-This is the fastest path with minimal runtime changes.
+This is the shortest path now because the repository already answers the question of what the compat bundle should look like. The remaining work is export automation, validation, and operator hardening.
+
+### Stage A export contract (derived from the current reference bundle)
+
+The export contract below is no longer just a theoretical suggestion. It should be read as the reproducible shape of the checked-in `models/routing/opensquilla-v4-compat` reference bundle.
+
+Suggested export directory:
+
+```text
+<export-root>/
+  manifest.json
+  classifier.onnx
+  embeddings.onnx
+  tokenizer.json
+  runtime-config.json
+```
+
+Contract expectations:
+
+- `manifest.json`: at minimum include `classifierModelPath`, `embeddingModelPath`, `tokenizerPath`, and `runtimeConfigPath`
+- `runtime-config.json`: at minimum include embedding dimensions (`dimensions` or `embeddingDimensions`); the current reference bundle uses `512`
+- `classifier.onnx`: emit 4 classes corresponding to `T0/T1/T2/T3`
+- `tokenizer.json`: emit a tokenizer shape that has already been validated against the current OpenClaw loader and supported pre-tokenizer set; the current reference bundle uses `WordPiece` + `BertPreTokenizer`
+
+Suggested fixed tier mapping:
+
+- `c0 -> T0`
+- `c1 -> T1`
+- `c2 -> T2`
+- `c3 -> T3`
 
 ### Stage A file responsibilities in the compat bundle
 
@@ -298,8 +350,8 @@ Checksum consistency note:
 
 To preserve evidence for the “Stage A first, make it usable” milestone, keep both 10-sample snapshots for later comparison:
 
-- [balanced 10-sample report](../artifacts/testing/phase-a-offline-validation-10sample-report.json): 5 simple + 5 complex samples, gold / predicted are both `T0:5` and `T2:5`, fallback is 0
-- [T1-inclusive 10-sample report](../artifacts/testing/phase-a-offline-validation-10sample-report-t1.json): 3 `T0`, 3 `T1`, 2 `T2`, and 2 `T3` samples, gold / predicted match exactly, fallback is 0
+- [balanced 10-sample report](testing/phase-a-offline-validation-10sample-report.json): 5 simple + 5 complex samples, gold / predicted are both `T0:5` and `T2:5`, fallback is 0
+- [T1-inclusive 10-sample report](testing/phase-a-offline-validation-10sample-report-t1.json): 3 `T0`, 3 `T1`, 2 `T2`, and 2 `T3` samples, gold / predicted match exactly, fallback is 0
 
 Both reports now include a `costDistribution` section with unit-cost proxy totals (`T0=1`, `T1=2`, `T2=4`, `T3=8`) for offline comparison.
 
@@ -346,31 +398,54 @@ Stage B rollback runbook (short form):
 
 ## Current Integration Risks
 
-- **Risk 1: WordPiece tokenizer incompatibility**. Directly using OpenSquilla v4.2 tokenizer can cause `classifier_unavailable` fallback to `T2`
-- **Risk 2: bundle path/name mismatch**. Assets can exist but still fail loading due to contract mismatch
-- **Risk 3: native/MAF semantic gap**. Native runtime currently consumes more routing fields than MAF runtime (for example direct fallback, reasoning level, response policy)
+- **Risk 1: native OpenSquilla bundle shape still does not match the OpenClaw compat contract**. Assets can exist but still fail composition because the shipped v4.2 directory layout is not the same thing as an OpenClaw-ready bundle.
+- **Risk 2: tokenizer compatibility is asset-specific, not family-guaranteed**. WordPiece is no longer automatically incompatible, but tokenizer and pre-tokenizer variants still need validation against the current loader.
+- **Risk 3: classifier pipeline mismatch**. Even with a readable tokenizer and embeddings, OpenSquilla v4.2's multi-head fusion path does not map directly onto the current single-classifier ONNX runtime.
+- **Risk 4: native/MAF semantic gap**. Native runtime currently consumes more routing fields than MAF runtime (for example direct fallback, reasoning level, response policy).
 
 Recommended order:
 
-1. implement Stage A and validate end-to-end
-2. add tokenizer-family compatibility (or force BPE at export)
-3. decide whether Stage B parity is necessary for your operating envelope
+1. treat the existing `models/routing/opensquilla-v4-compat` bundle as the baseline and verify end-to-end load, routing, and fallback behavior
+2. turn that baseline into a repeatable OpenSquilla-side export flow, including checksum and metadata generation
+3. validate the exported tokenizer on the target bundle, whether it is BPE or WordPiece, before widening traffic
+4. decide whether Stage B parity is necessary for your operating envelope
+
+Common historical failure cases and troubleshooting:
+
+- Signal: long-running `classifier_unavailable`
+  - Check first whether the files referenced by `BundlePath` actually match the OpenClaw compat contract and are readable
+- Signal: repeated fallback to `T2` after inference exceptions
+  - Check whether embedding input names and output shape still match current `LocalOnnxEmbeddingGenerator` assumptions
+- Signal: tokenizer load failure
+  - Check whether the tokenizer exceeds the specific shapes the current loader already supports; the current reference bundle uses `WordPiece` + `BertPreTokenizer`, so a failure here is more likely to come from another tokenizer family or an uncovered pre-tokenizer combination
+- Signal: native/MAF behavior mismatch
+  - If this still appears, confirm whether you are depending on extra routing fields that are currently consumed only by native runtime
+
+Reference `runtime-config.json` sample:
+
+```json
+{
+  "schemaVersion": 1,
+  "embeddingDimensions": 512,
+  "classifier": {
+    "numClasses": 4,
+    "classLabels": ["T0", "T1", "T2", "T3"]
+  },
+  "notes": {
+    "tokenizerFamily": "WordPiece",
+    "sourceModelDir": "opensquilla/squilla_router/models/v4.2_phase3_inference",
+    "sourceRuntimeConfig": "opensquilla/squilla_router/models/v4.2_phase3_inference/inference_manifest.json"
+  }
+}
+```
 
 ## CLI Surface
 
-OpenClaw remains config-first for dynamic routing (`OpenClaw:DynamicTurnRouting`).
+Routing CLI details are documented in [cli/routing.md](cli/routing.md).
 
-For operator workflows, the CLI now exposes a routing command group:
+OpenClaw remains config-first for dynamic routing (`OpenClaw:DynamicTurnRouting`), and the routing CLI commands are a management facade over that same config-driven surface.
 
-- `openclaw routing onboard`
-- `openclaw routing configure router`
-- `openclaw routing configure providers`
-- `openclaw routing providers`
-- `openclaw routing status`
-- `openclaw routing diagnostics on`
-- `openclaw routing diagnostics off`
-
-These commands are a management facade over the same config-driven routing surface; they do not introduce a second routing engine.
+The preferred modern routing shape is `BundlePath` + `Policy.Tiers`.
 
 ## Operator Guidance
 
@@ -384,7 +459,7 @@ Use this feature when you want:
 Do not treat it yet as a finished OpenSquilla-equivalent local router if you need:
 
 - real learned tier classification in production
-- full local embedding plus classifier inference behavior
+- native OpenSquilla v4.2 multi-stage inference parity
 - tuned prompt feature extraction and probability thresholds
 
 If you need stronger claims, run the offline routing evaluation baseline first and compare the report against a known sample set before widening the operating envelope.

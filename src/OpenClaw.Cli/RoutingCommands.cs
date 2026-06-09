@@ -4,6 +4,11 @@ namespace OpenClaw.Cli;
 
 internal static class RoutingCommands
 {
+    private const string RouterOption = "--router";
+    private const string RouterModeRecommended = "recommended";
+    private const string RouterModeOpenRouterMix = "openrouter-mix";
+    private const string RouterModeDisabled = "disabled";
+
     public static async Task<int> RunAsync(string[] args)
         => await RunAsync(args, Console.Out, Console.Error);
 
@@ -37,13 +42,28 @@ internal static class RoutingCommands
 
     private const string ConfigOption = "--config";
 
-    private static Task<int> RunOnboardAsync(CliArgs parsed, TextWriter output, TextWriter error)
+    private static async Task<int> RunOnboardAsync(CliArgs parsed, TextWriter output, TextWriter error)
     {
-        _ = error;
-        var configPath = ResolveConfigPath(parsed);
-        output.WriteLine($"routing onboard is available. Current config path: {GatewayConfigFile.QuoteIfNeeded(configPath)}");
-        output.WriteLine("Use 'openclaw setup' for interactive onboarding in this release.");
-        return Task.FromResult(0);
+        if (!TryGetRouterMode(parsed.GetOption(RouterOption), defaultMode: RouterModeRecommended, out var mode, out var modeError))
+        {
+            error.WriteLine(modeError);
+            return 2;
+        }
+
+        try
+        {
+            var path = ResolveConfigPath(parsed);
+            var config = GatewayConfigFile.Load(path);
+            ApplyRouterMode(config.DynamicTurnRouting, mode!);
+            await GatewayConfigFile.SaveAsync(config, path);
+            output.WriteLine($"routing onboard completed with router={mode} ({GatewayConfigFile.QuoteIfNeeded(path)})");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            error.WriteLine(ex.Message);
+            return 1;
+        }
     }
 
     private static async Task<int> RunConfigureAsync(CliArgs parsed, TextWriter output, TextWriter error)
@@ -151,6 +171,15 @@ internal static class RoutingCommands
         {
             var path = ResolveConfigPath(parsed);
             var config = GatewayConfigFile.Load(path);
+            if (!TryGetRouterMode(parsed.GetOption(RouterOption), defaultMode: null, out var mode, out var modeError))
+            {
+                error.WriteLine(modeError);
+                return 2;
+            }
+
+            if (mode is not null)
+                ApplyRouterMode(config.DynamicTurnRouting, mode);
+
             var policy = config.DynamicTurnRouting.Policy;
 
             if (TryReadFloatOption(parsed, "--margin-upgrade-threshold", out var margin))
@@ -276,6 +305,48 @@ internal static class RoutingCommands
     private static string JoinOrNone(string[] values)
         => values.Length == 0 ? "none" : string.Join(',', values);
 
+    private static bool TryGetRouterMode(string? rawValue, string? defaultMode, out string? mode, out string? error)
+    {
+        mode = defaultMode;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(rawValue))
+            return true;
+
+        var normalized = rawValue.Trim().ToLowerInvariant();
+        if (normalized is RouterModeRecommended or RouterModeOpenRouterMix or RouterModeDisabled)
+        {
+            mode = normalized;
+            return true;
+        }
+
+        error = "--router must be one of recommended, openrouter-mix, disabled.";
+        return false;
+    }
+
+    private static void ApplyRouterMode(DynamicTurnRoutingConfig routing, string mode)
+    {
+        routing.Enabled = mode is not RouterModeDisabled;
+
+        if (mode is RouterModeOpenRouterMix)
+        {
+            ApplyOpenRouterTags(routing.Policy.Tiers.T0, "cost");
+            ApplyOpenRouterTags(routing.Policy.Tiers.T1, "fast");
+            ApplyOpenRouterTags(routing.Policy.Tiers.T2, "tools");
+            ApplyOpenRouterTags(routing.Policy.Tiers.T3, "reasoning");
+        }
+    }
+
+    private static void ApplyOpenRouterTags(DynamicTurnRoutingTierTarget tier, string routeTag)
+    {
+        var tags = new HashSet<string>(tier.PreferredTags, StringComparer.OrdinalIgnoreCase)
+        {
+            "openrouter",
+            routeTag
+        };
+        tier.PreferredTags = [.. tags.OrderBy(static item => item, StringComparer.OrdinalIgnoreCase)];
+    }
+
     private static void PrintHelp(TextWriter output)
     {
         output.WriteLine(
@@ -283,14 +354,19 @@ internal static class RoutingCommands
             openclaw routing
 
             Usage:
-              openclaw routing onboard
+                            openclaw routing onboard [--router recommended|openrouter-mix|disabled]
               openclaw routing configure <router|providers> [options]
+                            openclaw routing configure router [--router recommended|openrouter-mix|disabled] [--margin-upgrade-threshold <n>] [--r1-rescue-threshold <n>] [--under-routing-safety-threshold <n>] [--deep-turn-threshold <n>] [--config <path>]
+                            openclaw routing configure providers --tier <T0|T1|T2|T3> [--model-profile <id>] [--fallback-profile <id>] [--reasoning-level <level>] [--response-policy <policy>] [--image-model-profile <id>] [--allowed-tools <csv>] [--preferred-tags <csv>] [--prompt-mode <full|minimal|compact>] [--disable-tools <true|false>] [--config <path>]
               openclaw routing providers [--json]
               openclaw routing status [--json]
               openclaw routing diagnostics <on|off> [--config <path>]
 
             Notes:
               - Routing remains configuration-driven through OpenClaw:DynamicTurnRouting.
+                            - --router recommended enables dynamic routing with existing tier mappings.
+                            - --router openrouter-mix enables routing and appends openrouter-oriented preferred tags by tier.
+                            - --router disabled turns dynamic routing off.
               - This command group provides operator-oriented routing entry points.
             """);
     }
