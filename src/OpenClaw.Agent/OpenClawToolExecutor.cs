@@ -46,6 +46,7 @@ public sealed class OpenClawToolExecutor
     private readonly ISentinelSubstitutionService _sentinelSubstitution;
     private readonly IToolGovernanceService _toolGovernance;
     private readonly IPlanExecuteVerifyOrchestrator _planExecuteVerify;
+    private readonly Func<Session, string, string?, CancellationToken, Task<string>>? _metaInvokeExecutor;
 
     public OpenClawToolExecutor(
         IReadOnlyList<ITool> tools,
@@ -64,7 +65,8 @@ public sealed class OpenClawToolExecutor
         IRedactionPipeline? redaction = null,
         ISentinelSubstitutionService? sentinelSubstitution = null,
         IToolGovernanceService? toolGovernance = null,
-        IPlanExecuteVerifyOrchestrator? planExecuteVerify = null)
+        IPlanExecuteVerifyOrchestrator? planExecuteVerify = null,
+        Func<Session, string, string?, CancellationToken, Task<string>>? metaInvokeExecutor = null)
     {
         _toolsByName = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         _toolDeclarations = tools.Select(CreateDeclaration).Cast<AITool>().ToArray();
@@ -95,6 +97,7 @@ public sealed class OpenClawToolExecutor
         _sentinelSubstitution = sentinelSubstitution ?? new NoopSentinelSubstitutionService();
         _toolGovernance = toolGovernance ?? new NoopToolGovernanceService();
         _planExecuteVerify = planExecuteVerify ?? NoopPlanExecuteVerifyOrchestrator.Instance;
+        _metaInvokeExecutor = metaInvokeExecutor;
     }
 
     public IList<AITool> ToolDeclarations => _toolDeclarations;
@@ -474,6 +477,12 @@ public sealed class OpenClawToolExecutor
 
             if (onDelta is not null && tool is IStreamingTool streamingTool)
                 result = await ExecuteStreamingToolCollectAsync(streamingTool, executionArgsJson, onDelta, ct);
+            else if (_metaInvokeExecutor is not null &&
+                string.Equals(tool.Name, "meta_invoke", StringComparison.Ordinal) &&
+                TryGetMetaInvokeArguments(executionArgsJson, out var requestedSkill, out var requestedInput))
+            {
+                result = await _metaInvokeExecutor(session, requestedSkill!, requestedInput, ct);
+            }
             else
                 result = await ExecuteToolWithRoutingAsync(tool, executionArgsJson, session, turnCtx, ct);
         }
@@ -689,6 +698,45 @@ public sealed class OpenClawToolExecutor
         try
         {
             using var _ = JsonDocument.Parse(value);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetMetaInvokeArguments(string argsJson, out string? skill, out string? input)
+    {
+        skill = null;
+        input = null;
+
+        if (string.IsNullOrWhiteSpace(argsJson))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(argsJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return false;
+
+            if (!doc.RootElement.TryGetProperty("skill", out var skillElement) ||
+                skillElement.ValueKind != JsonValueKind.String)
+            {
+                return false;
+            }
+
+            var skillValue = skillElement.GetString();
+            if (string.IsNullOrWhiteSpace(skillValue))
+                return false;
+
+            skill = skillValue;
+            if (doc.RootElement.TryGetProperty("input", out var inputElement) &&
+                inputElement.ValueKind == JsonValueKind.String)
+            {
+                input = inputElement.GetString();
+            }
+
             return true;
         }
         catch (JsonException)

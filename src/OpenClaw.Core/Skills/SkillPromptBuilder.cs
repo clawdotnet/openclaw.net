@@ -171,12 +171,34 @@ public static class SkillPromptBuilder
         sb.Append("  <name>");
         sb.Append(XmlEscape(skill.Name));
         sb.AppendLine("</name>");
+        sb.Append("  <kind>");
+        sb.Append(XmlEscape(skill.Kind.ToString().ToLowerInvariant()));
+        sb.AppendLine("</kind>");
         sb.Append("  <description>");
         sb.Append(XmlEscape(skill.Description));
         sb.AppendLine("</description>");
         sb.Append("  <location>");
         sb.Append(XmlEscape(skill.Location));
         sb.AppendLine("</location>");
+
+        if (skill.MetaPriority is not null)
+        {
+            sb.Append("  <meta-priority>");
+            sb.Append(skill.MetaPriority.Value);
+            sb.AppendLine("</meta-priority>");
+        }
+
+        if (skill.Triggers.Count > 0)
+        {
+            sb.AppendLine("  <triggers>");
+            foreach (var trigger in skill.Triggers)
+            {
+                sb.Append("    <trigger>");
+                sb.Append(XmlEscape(trigger));
+                sb.AppendLine("</trigger>");
+            }
+            sb.AppendLine("  </triggers>");
+        }
 
         if (skill.Resources.Count > 0)
         {
@@ -213,6 +235,8 @@ public static class SkillPromptBuilder
             if (!skill.UserInvocable) flags.Add("no-slash");
             if (skill.Metadata.Always) flags.Add("always");
             if (skill.CommandDispatch is not null) flags.Add($"dispatch:{skill.CommandDispatch}");
+            if (skill.Kind == SkillKind.Meta) flags.Add("kind:meta");
+            if (skill.MetaPriority is not null) flags.Add($"meta-priority:{skill.MetaPriority.Value}");
 
             var flagStr = flags.Count > 0 ? $" [{string.Join(", ", flags)}]" : "";
             sb.AppendLine($"  - {skill.Name}: {skill.Description}{flagStr} ({skill.Source})");

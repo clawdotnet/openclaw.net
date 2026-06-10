@@ -133,7 +133,13 @@ internal static partial class RuntimeInitializationExtensions
         // Progressive disclosure: closure picks up runtimeForLoadSkill (set below) for hot reload.
         IAgentRuntime? runtimeForLoadSkill = null;
         Func<IReadOnlyList<SkillDefinition>> skillsProvider = () => runtimeForLoadSkill?.LoadedSkills ?? skills;
-        tools = [.. tools, new LoadSkillTool(skillsProvider), new ReadSkillResourceTool(skillsProvider, config.Skills.MaxResourceReadBytes)];
+        tools =
+        [
+            .. tools,
+            new LoadSkillTool(skillsProvider),
+            new ReadSkillResourceTool(skillsProvider, config.Skills.MaxResourceReadBytes),
+            new MetaInvokeTool(skillsProvider)
+        ];
 
         var hooks = CreateHooks(
             config,

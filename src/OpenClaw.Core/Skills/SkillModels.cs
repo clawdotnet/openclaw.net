@@ -106,6 +106,21 @@ public sealed class SkillDefinition
     /// <summary>Parsed metadata from the frontmatter.</summary>
     public SkillMetadata Metadata { get; init; } = new();
 
+    /// <summary>Skill execution kind. Defaults to standard skills.</summary>
+    public SkillKind Kind { get; init; } = SkillKind.Standard;
+
+    /// <summary>Optional natural-language triggers for intent matching.</summary>
+    public IReadOnlyList<string> Triggers { get; init; } = [];
+
+    /// <summary>Optional priority for meta-skill resolution.</summary>
+    public int? MetaPriority { get; init; }
+
+    /// <summary>Final text mode for meta-skill result shaping.</summary>
+    public string? FinalTextMode { get; init; }
+
+    /// <summary>Meta-skill composition definition (steps DAG).</summary>
+    public MetaSkillComposition? Composition { get; init; }
+
     /// <summary>Whether the skill is user-invocable as a slash command.</summary>
     public bool UserInvocable { get; init; } = true;
 
@@ -123,6 +138,48 @@ public sealed class SkillDefinition
     /// (Anthropic-style progressive disclosure, level 3).
     /// </summary>
     public IReadOnlyList<SkillResource> Resources { get; init; } = [];
+}
+
+/// <summary>
+/// Execution kind declared by skill frontmatter.
+/// </summary>
+public enum SkillKind : byte
+{
+    Standard,
+    Meta
+}
+
+/// <summary>
+/// Parsed composition section for meta skills.
+/// </summary>
+public sealed class MetaSkillComposition
+{
+    /// <summary>Ordered step definitions.</summary>
+    public IReadOnlyList<MetaSkillStepDefinition> Steps { get; init; } = [];
+}
+
+/// <summary>
+/// A single composition step.
+/// </summary>
+public sealed class MetaSkillStepDefinition
+{
+    /// <summary>Unique step identifier.</summary>
+    public required string Id { get; init; }
+
+    /// <summary>Step kind (agent, tool_call, llm_chat, etc.).</summary>
+    public required string Kind { get; init; }
+
+    /// <summary>Optional delegated skill name.</summary>
+    public string? Skill { get; init; }
+
+    /// <summary>Optional delegated tool name.</summary>
+    public string? Tool { get; init; }
+
+    /// <summary>Optional raw JSON payload from the step's 'with' field.</summary>
+    public string? WithJson { get; init; }
+
+    /// <summary>Optional upstream step dependencies.</summary>
+    public IReadOnlyList<string> DependsOn { get; init; } = [];
 }
 
 /// <summary>

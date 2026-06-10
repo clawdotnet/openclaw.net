@@ -238,6 +238,11 @@ public static class SkillLoader
         string? metadataJson = null;
         var userInvocable = true;
         var disableModelInvocation = false;
+        var kind = SkillKind.Standard;
+        List<string>? triggers = null;
+        int? metaPriority = null;
+        string? finalTextMode = null;
+        string? compositionJson = null;
         string? commandDispatch = null;
         string? commandTool = null;
         string? commandArgMode = null;
@@ -273,6 +278,27 @@ public static class SkillLoader
                 case "disable-model-invocation":
                     disableModelInvocation = value.Equals("true", StringComparison.OrdinalIgnoreCase);
                     break;
+                case "kind":
+                    if (!TryParseSkillKind(value, out kind))
+                        return null;
+                    break;
+                case "triggers":
+                    if (!TryParseStringList(value, out triggers))
+                        return null;
+                    break;
+                case "meta-priority":
+                case "meta_priority":
+                    if (!int.TryParse(value, out var parsedMetaPriority))
+                        return null;
+                    metaPriority = parsedMetaPriority;
+                    break;
+                case "final-text-mode":
+                case "final_text_mode":
+                    finalTextMode = value;
+                    break;
+                case "composition":
+                    compositionJson = value;
+                    break;
                 case "command-dispatch":
                     commandDispatch = value;
                     break;
@@ -297,6 +323,17 @@ public static class SkillLoader
         if (homepage is not null && metadata.Homepage is null)
             metadata.Homepage = homepage;
 
+        MetaSkillComposition? composition = null;
+        if (kind == SkillKind.Meta)
+        {
+            if (string.IsNullOrWhiteSpace(compositionJson))
+                return null;
+
+            composition = ParseComposition(compositionJson);
+            if (composition is null || composition.Steps.Count == 0)
+                return null;
+        }
+
         // Replace {baseDir} placeholder in instructions
         body = body.Replace("{baseDir}", skillDir);
 
@@ -313,6 +350,11 @@ public static class SkillLoader
             Location = skillDir,
             Source = source,
             Metadata = metadata,
+            Kind = kind,
+            Triggers = triggers ?? [],
+            MetaPriority = metaPriority,
+            FinalTextMode = finalTextMode,
+            Composition = composition,
             UserInvocable = userInvocable,
             DisableModelInvocation = disableModelInvocation,
             CommandDispatch = commandDispatch,
@@ -320,6 +362,143 @@ public static class SkillLoader
             CommandArgMode = commandArgMode,
             Resources = resources
         };
+    }
+
+    private static bool TryParseSkillKind(string rawValue, out SkillKind kind)
+    {
+        kind = SkillKind.Standard;
+
+        if (string.IsNullOrWhiteSpace(rawValue))
+            return false;
+
+        switch (rawValue.Trim().ToLowerInvariant())
+        {
+            case "standard":
+                return true;
+            case "meta":
+                kind = SkillKind.Meta;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static bool TryParseStringList(string rawValue, out List<string>? values)
+    {
+        values = null;
+
+        if (string.IsNullOrWhiteSpace(rawValue))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(rawValue);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return false;
+
+            values = [];
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.String)
+                    return false;
+
+                var value = item.GetString();
+                if (string.IsNullOrWhiteSpace(value))
+                    return false;
+
+                values.Add(value);
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    internal static MetaSkillComposition? ParseComposition(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return null;
+
+            if (!doc.RootElement.TryGetProperty("steps", out var stepsElement) ||
+                stepsElement.ValueKind != JsonValueKind.Array)
+                return null;
+
+            var steps = new List<MetaSkillStepDefinition>();
+            foreach (var stepElement in stepsElement.EnumerateArray())
+            {
+                if (stepElement.ValueKind != JsonValueKind.Object)
+                    return null;
+
+                if (!stepElement.TryGetProperty("id", out var idElement) ||
+                    idElement.ValueKind != JsonValueKind.String)
+                    return null;
+
+                string? kind = null;
+                if (stepElement.TryGetProperty("kind", out var kindElement) && kindElement.ValueKind == JsonValueKind.String)
+                    kind = kindElement.GetString();
+                else if (stepElement.TryGetProperty("type", out var typeElement) && typeElement.ValueKind == JsonValueKind.String)
+                    kind = typeElement.GetString();
+
+                if (string.IsNullOrWhiteSpace(kind))
+                    return null;
+
+                var dependsOn = new List<string>();
+                if (stepElement.TryGetProperty("depends_on", out var dependsOnElement))
+                {
+                    if (dependsOnElement.ValueKind != JsonValueKind.Array)
+                        return null;
+
+                    foreach (var dependsOnItem in dependsOnElement.EnumerateArray())
+                    {
+                        if (dependsOnItem.ValueKind != JsonValueKind.String)
+                            return null;
+
+                        var dep = dependsOnItem.GetString();
+                        if (string.IsNullOrWhiteSpace(dep))
+                            return null;
+
+                        dependsOn.Add(dep);
+                    }
+                }
+
+                var skill = stepElement.TryGetProperty("skill", out var skillElement) && skillElement.ValueKind == JsonValueKind.String
+                    ? skillElement.GetString()
+                    : null;
+                var tool = stepElement.TryGetProperty("tool", out var toolElement) && toolElement.ValueKind == JsonValueKind.String
+                    ? toolElement.GetString()
+                    : null;
+                string? withJson = null;
+                if (stepElement.TryGetProperty("with", out var withElement))
+                {
+                    withJson = withElement.GetRawText();
+                }
+
+                steps.Add(new MetaSkillStepDefinition
+                {
+                    Id = idElement.GetString()!,
+                    Kind = kind,
+                    Skill = skill,
+                    Tool = tool,
+                    WithJson = withJson,
+                    DependsOn = dependsOn
+                });
+            }
+
+            return new MetaSkillComposition { Steps = steps };
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>
