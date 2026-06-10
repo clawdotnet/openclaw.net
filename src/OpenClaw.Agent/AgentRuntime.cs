@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -377,7 +376,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 return ex.Message;
             }
 
-            catch (Exception ex) when (IsRecoverableLlmException(ex))
+            catch (Exception ex)
             {
                 _metrics?.IncrementLlmErrors();
                 _logger?.LogError(ex, "[{CorrelationId}] LLM call failed after all retries and fallbacks", turnCtx.CorrelationId);
@@ -897,7 +896,7 @@ public sealed class AgentRuntime : IAgentRuntime
         {
             throw;
         }
-        catch (Exception ex) when (IsRecoverableContextException(ex))
+        catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Memory recall injection failed; continuing without recall.");
             return false;
@@ -1006,11 +1005,7 @@ public sealed class AgentRuntime : IAgentRuntime
 
             messages.Insert(Math.Min(2, messages.Count), new ChatMessage(ChatRole.User, text));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (IsRecoverableContextException(ex))
+        catch (Exception ex)
         {
             _logger?.LogWarning(ex, "User profile recall injection failed; continuing without profile context.");
         }
@@ -1111,7 +1106,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 LogTurnComplete(turnCtx);
                 return result;
             }
-            catch (Exception ex) when (IsRecoverableLlmException(ex))
+            catch (Exception ex)
             {
                 _metrics?.IncrementLlmErrors();
                 _logger?.LogError(ex, "[{CorrelationId}] Streaming LLM call failed after all retries and fallbacks", turnCtx.CorrelationId);
@@ -1139,9 +1134,11 @@ public sealed class AgentRuntime : IAgentRuntime
         var modelsToTry = new List<string> { currentModel };
         if (_config.FallbackModels is { Length: > 0 })
         {
-            modelsToTry.AddRange(
-                _config.FallbackModels.Where(fallback =>
-                    !string.Equals(fallback, currentModel, StringComparison.OrdinalIgnoreCase)));
+            foreach (var fallback in _config.FallbackModels)
+            {
+                if (!string.Equals(fallback, currentModel, StringComparison.OrdinalIgnoreCase))
+                    modelsToTry.Add(fallback);
+            }
         }
 
         Exception? lastException = null;
@@ -1206,7 +1203,7 @@ public sealed class AgentRuntime : IAgentRuntime
             {
                 throw; // External cancellation, propagate immediately
             }
-            catch (Exception ex) when (IsRecoverableLlmException(ex))
+            catch (Exception ex)
             {
                 lastException = ex;
                 _providerUsage?.RecordError(_config.Provider, model);
@@ -1582,29 +1579,12 @@ public sealed class AgentRuntime : IAgentRuntime
                 TrimHistory(session);
             }
         }
-        catch (Exception ex) when (IsRecoverableContextException(ex))
+        catch (Exception ex)
         {
             _logger?.LogWarning(ex, "History compaction failed — falling back to simple trim");
             TrimHistory(session);
         }
     }
-
-    private static bool IsRecoverableContextException(Exception ex)
-        => ex is IOException
-            or JsonException
-            or InvalidOperationException
-            or NotSupportedException
-            or TimeoutException
-            or UnauthorizedAccessException
-            or TaskCanceledException;
-
-    private static bool IsRecoverableLlmException(Exception ex)
-        => ex is HttpRequestException
-            or IOException
-            or InvalidOperationException
-            or NotSupportedException
-            or TimeoutException
-            or TaskCanceledException;
 
     private List<ChatMessage> BuildMessages(Session session, bool exactLatestToolBatch = false)
     {
