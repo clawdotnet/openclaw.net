@@ -77,6 +77,34 @@ public class SkillLoaderTests
     }
 
     [Fact]
+    public void ParseSkillContent_WithMetadata_ParsesRiskAndCapabilities()
+    {
+        var content = """
+            ---
+            name: secure-meta-skill
+            description: Metadata governance sample
+            metadata: {"openclaw": {"risk": "high", "capabilities": ["tool:allowed_tool", "network-read"]}}
+            ---
+            Secure skill instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/secure-meta", SkillSource.Managed);
+
+        Assert.NotNull(skill);
+        Assert.Equal("high", skill!.Metadata.Risk);
+        Assert.Equal(["tool:allowed_tool", "network-read"], skill.Metadata.Capabilities);
+    }
+
+    [Fact]
+    public void ParseMetadata_OpenSquillaAlias_ParsesRiskAndCapabilities()
+    {
+        var metadata = SkillLoader.ParseMetadata("""{"opensquilla":{"risk":"medium","capabilities":["tool:search"]}}""");
+
+        Assert.Equal("medium", metadata.Risk);
+        Assert.Equal(["tool:search"], metadata.Capabilities);
+    }
+
+    [Fact]
     public void ParseSkillContent_UserInvocableFalse_SetsProperly()
     {
         var content = """
@@ -235,6 +263,303 @@ public class SkillLoaderTests
             """;
 
         var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-missing", SkillSource.Workspace);
+
+        Assert.Null(skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaClassifyWithoutOptions_ReturnsNull()
+    {
+        var content = """
+            ---
+            name: meta-invalid-classify
+            description: Invalid classify step
+            kind: meta
+            composition: {"steps":[{"id":"classify","kind":"llm_classify","with":{"route":{"ok":"next"}}},{"id":"next","kind":"agent","skill":"web-research","depends_on":["classify"]}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-invalid-classify", SkillSource.Workspace);
+
+        Assert.Null(skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaStepWithNonObject_ReturnsNull()
+    {
+        var content = """
+            ---
+            name: meta-with-non-object
+            description: Invalid step with payload
+            kind: meta
+            composition: {"steps":[{"id":"chat","kind":"llm_chat","with":"plain text"}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-with-non-object", SkillSource.Workspace);
+
+        Assert.Null(skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaStepWithObject_ParsesSuccessfully()
+    {
+        var content = """
+            ---
+            name: meta-with-object
+            description: Valid step with payload
+            kind: meta
+            composition: {"steps":[{"id":"chat","kind":"llm_chat","with":{"prompt":"hello"}}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-with-object", SkillSource.Workspace);
+
+        Assert.NotNull(skill);
+        Assert.Equal("{\"prompt\":\"hello\"}", skill!.Composition!.Steps[0].WithJson);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaSkillExecWithoutSkill_ReturnsNull()
+    {
+        var content = """
+            ---
+            name: meta-skill-exec-missing
+            description: Invalid skill_exec step
+            kind: meta
+            composition: {"steps":[{"id":"delegate","kind":"skill_exec"}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-skill-exec-missing", SkillSource.Workspace);
+
+        Assert.Null(skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaSkillExecWithSkill_ParsesSuccessfully()
+    {
+        var content = """
+            ---
+            name: meta-skill-exec-valid
+            description: Valid skill_exec step
+            kind: meta
+            composition: {"steps":[{"id":"delegate","kind":"skill_exec","skill":"web-research"}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-skill-exec-valid", SkillSource.Workspace);
+
+        Assert.NotNull(skill);
+        Assert.Equal("web-research", skill!.Composition!.Steps[0].Skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaToolCallWithSkill_ReturnsNull()
+    {
+        var content = """
+            ---
+            name: meta-tool-call-invalid
+            description: Invalid tool_call step
+            kind: meta
+            composition: {"steps":[{"id":"t1","kind":"tool_call","tool":"search","skill":"web-research"}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-tool-call-invalid", SkillSource.Workspace);
+
+        Assert.Null(skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaToolCallWithoutSkill_ParsesSuccessfully()
+    {
+        var content = """
+            ---
+            name: meta-tool-call-valid
+            description: Valid tool_call step
+            kind: meta
+            composition: {"steps":[{"id":"t1","kind":"tool_call","tool":"search"}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-tool-call-valid", SkillSource.Workspace);
+
+        Assert.NotNull(skill);
+        Assert.Equal("search", skill!.Composition!.Steps[0].Tool);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaSkillExecWithTool_ReturnsNull()
+    {
+        var content = """
+            ---
+            name: meta-skill-exec-with-tool
+            description: Invalid skill_exec step with tool
+            kind: meta
+            composition: {"steps":[{"id":"delegate","kind":"skill_exec","skill":"web-research","tool":"search"}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-skill-exec-with-tool", SkillSource.Workspace);
+
+        Assert.Null(skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaSkillExecWithoutTool_ParsesSuccessfully()
+    {
+        var content = """
+            ---
+            name: meta-skill-exec-without-tool
+            description: Valid skill_exec step without tool
+            kind: meta
+            composition: {"steps":[{"id":"delegate","kind":"skill_exec","skill":"web-research"}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-skill-exec-without-tool", SkillSource.Workspace);
+
+        Assert.NotNull(skill);
+        Assert.Equal("web-research", skill!.Composition!.Steps[0].Skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaClassifyRouteTargetMissing_ReturnsNull()
+    {
+        var content = """
+            ---
+            name: meta-classify-missing-target
+            description: Invalid classify route target
+            kind: meta
+            composition: {"steps":[{"id":"classify","kind":"llm_classify","with":{"options":["ok","fallback"],"route":{"ok":"next","fallback":"missing"}}},{"id":"next","kind":"agent","skill":"web-research","depends_on":["classify"]}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-classify-missing-target", SkillSource.Workspace);
+
+        Assert.Null(skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaClassifyRouteLabelNotInOptions_ReturnsNull()
+    {
+        var content = """
+            ---
+            name: meta-classify-invalid-label
+            description: Invalid classify route label
+            kind: meta
+            composition: {"steps":[{"id":"classify","kind":"llm_classify","with":{"options":["ok","fallback"],"route":{"ok":"next","other":"next"}}},{"id":"next","kind":"agent","skill":"web-research","depends_on":["classify"]}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-classify-invalid-label", SkillSource.Workspace);
+
+        Assert.Null(skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaClassifyRouteTargetsExist_ParsesSuccessfully()
+    {
+        var content = """
+            ---
+            name: meta-classify-valid-route
+            description: Valid classify route
+            kind: meta
+            composition: {"steps":[{"id":"classify","kind":"llm_classify","with":{"options":["ok","fallback"],"route":{"ok":"next","fallback":["next","audit"]}}},{"id":"next","kind":"agent","skill":"web-research","depends_on":["classify"]},{"id":"audit","kind":"llm_chat","depends_on":["classify"],"with":{"prompt":"audit"}}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-classify-valid-route", SkillSource.Workspace);
+
+        Assert.NotNull(skill);
+        Assert.Equal(3, skill!.Composition!.Steps.Count);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaCompositionWithDependencyCycle_ReturnsNull()
+    {
+        var content = """
+            ---
+            name: meta-cycle
+            description: Invalid cycle
+            kind: meta
+            composition: {"steps":[{"id":"a","kind":"agent","skill":"one","depends_on":["b"]},{"id":"b","kind":"agent","skill":"two","depends_on":["a"]}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-cycle", SkillSource.Workspace);
+
+        Assert.Null(skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaFinalTextModeStepTargetExists_ParsesSuccessfully()
+    {
+        var content = """
+            ---
+            name: meta-final-step
+            description: Valid final_text_mode step target
+            kind: meta
+            final_text_mode: step:decision
+            composition: {"steps":[{"id":"research","kind":"agent","skill":"web-research"},{"id":"decision","kind":"llm_chat","depends_on":["research"],"with":{"prompt":"{{outputs.research}}"}}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-final-step", SkillSource.Workspace);
+
+        Assert.NotNull(skill);
+        Assert.Equal("step:decision", skill!.FinalTextMode);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaFinalTextModeStepTargetMissing_ReturnsNull()
+    {
+        var content = """
+            ---
+            name: meta-final-step-missing
+            description: Invalid final_text_mode step target
+            kind: meta
+            final_text_mode: step:missing
+            composition: {"steps":[{"id":"research","kind":"agent","skill":"web-research"}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-final-step-missing", SkillSource.Workspace);
+
+        Assert.Null(skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaFinalTextModeUnsupportedValue_ReturnsNull()
+    {
+        var content = """
+            ---
+            name: meta-final-unsupported
+            description: Invalid final_text_mode
+            kind: meta
+            final_text_mode: latest
+            composition: {"steps":[{"id":"research","kind":"agent","skill":"web-research"}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-final-unsupported", SkillSource.Workspace);
 
         Assert.Null(skill);
     }

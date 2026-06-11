@@ -258,4 +258,10 @@ public sealed class SkillMetadata
 
     /// <summary>Alternative config key used by <c>skills.entries.*</c>.</summary>
     public string? SkillKey { get; set; }
+
+    /// <summary>Optional declared risk level (for example: low, medium, high).</summary>
+    public string? Risk { get; set; }
+
+    /// <summary>Optional capability allowlist used by governance and runtime guards.</summary>
+    public string[] Capabilities { get; set; } = [];
 }

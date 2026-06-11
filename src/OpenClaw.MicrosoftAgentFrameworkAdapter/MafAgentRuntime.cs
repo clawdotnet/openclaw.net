@@ -710,140 +710,366 @@ public sealed class MafAgentRuntime : IAgentRuntime
         if (steps is null || steps.Count == 0)
             return $"Error: Meta skill '{metaSkill.Name}' has no executable composition steps.";
 
+        if (!TryValidateMetaPlan(steps, out var validationError))
+            return BuildMetaExecutionOutput(metaSkill, finalText: null, stepResults: [], validationError);
+
+        var stepById = steps.ToDictionary(static step => step.Id, StringComparer.OrdinalIgnoreCase);
+        var dependentsByStep = BuildDependentsIndex(steps);
+        var pending = new HashSet<string>(stepById.Keys, StringComparer.OrdinalIgnoreCase);
+        var blocked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var outputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var stepResults = new List<MetaStepExecutionResult>(steps.Count);
+        var resumedFromCheckpoint = TryRestoreMetaExecutionCheckpoint(
+            session,
+            metaSkill.Name,
+            stepById.Keys,
+            pending,
+            blocked,
+            outputs,
+            stepResults,
+            out var waitingPrompt);
+        if (resumedFromCheckpoint)
+        {
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return BuildMetaExecutionOutput(
+                    metaSkill,
+                    finalText: null,
+                    stepResults,
+                    waitingPrompt ?? "Meta execution is waiting for user input to continue.");
+            }
+        }
         var turnCtx = new TurnContext
         {
             SessionId = session.Id,
             ChannelId = session.ChannelId
         };
 
-        foreach (var step in steps)
+        while (pending.Count > 0)
         {
-            if (step.DependsOn.Count > 0)
+            var progress = false;
+
+            foreach (var step in steps)
             {
+                if (!pending.Contains(step.Id))
+                    continue;
+
+                if (blocked.Contains(step.Id))
+                {
+                    pending.Remove(step.Id);
+                    progress = true;
+                    continue;
+                }
+
+                var blockedByDependency = false;
+                var waitingForDependency = false;
                 foreach (var dependency in step.DependsOn)
                 {
+                    if (blocked.Contains(dependency))
+                    {
+                        blockedByDependency = true;
+                        break;
+                    }
+
                     if (!outputs.ContainsKey(dependency))
                     {
+                        waitingForDependency = true;
+                        break;
+                    }
+                }
+
+                if (blockedByDependency)
+                {
+                    BlockStepAndDependents(step.Id, blocked, pending, dependentsByStep);
+                    progress = true;
+                    continue;
+                }
+
+                if (waitingForDependency)
+                    continue;
+
+                var stepArgs = DeserializeStepArgs(step.WithJson);
+                var stepInput = ResolveMetaTemplate(
+                    GetOptionalString(stepArgs, "input") ?? input ?? string.Empty,
+                    input,
+                    outputs);
+                var continueOnError = GetOptionalBoolean(stepArgs, "continue_on_error") ?? false;
+
+                switch (NormalizeMetaStepKind(step.Kind))
+                {
+                    case "tool_call":
+                    {
+                        var toolName = step.Tool;
+                        if (string.IsNullOrWhiteSpace(toolName))
+                        {
+                            return BuildMetaExecutionOutput(
+                                metaSkill,
+                                finalText: null,
+                                stepResults,
+                                $"Meta step '{step.Id}' is 'tool_call' but does not declare a tool.");
+                        }
+
+                            if (!IsToolAllowedByMetaCapabilities(metaSkill, toolName))
+                            {
+                                pending.Remove(step.Id);
+                                progress = true;
+                                stepResults.Add(new MetaStepExecutionResult(step.Id, step.Kind, ToolResultStatuses.Blocked, "metadata_capability_denied", 0, Continued: false));
+                                return BuildMetaExecutionOutput(
+                                metaSkill,
+                                finalText: null,
+                                stepResults,
+                                $"Meta step '{step.Id}' tool '{toolName}' is not permitted by metadata capabilities.");
+                            }
+
+                        var toolArgsJson = string.IsNullOrWhiteSpace(step.WithJson)
+                            ? "{}"
+                            : RewriteMetaTemplateJson(step.WithJson!, input, outputs);
+
+                        var stepSw = Stopwatch.StartNew();
+                        var toolResult = await _toolExecutor.ExecuteAsync(
+                            toolName,
+                            toolArgsJson,
+                            $"meta:{metaSkill.Name}:{step.Id}",
+                            session,
+                            turnCtx,
+                            isStreaming: false,
+                            approvalCallback: null,
+                            ct: ct,
+                            onDelta: null,
+                            toolCallCount: 1);
+                        stepSw.Stop();
+
+                        outputs[step.Id] = toolResult.ResultText;
+                        pending.Remove(step.Id);
+                        progress = true;
+
+                        var completed = string.Equals(toolResult.ResultStatus, ToolResultStatuses.Completed, StringComparison.Ordinal);
+                        stepResults.Add(new MetaStepExecutionResult(
+                            step.Id,
+                            step.Kind,
+                            toolResult.ResultStatus,
+                            toolResult.FailureCode,
+                            stepSw.Elapsed.TotalMilliseconds,
+                            Continued: !completed && continueOnError));
+
+                        if (!completed && !continueOnError)
+                        {
+                            return BuildMetaExecutionOutput(
+                                metaSkill,
+                                finalText: null,
+                                stepResults,
+                                $"Meta step '{step.Id}' failed with status '{toolResult.ResultStatus}'.");
+                        }
+
+                        break;
+                    }
+
+                    case "agent":
+                    case "skill_exec":
+                    {
+                        var delegatedSkill = !string.IsNullOrWhiteSpace(step.Skill)
+                            ? LoadedSkills.FirstOrDefault(skill =>
+                                !skill.DisableModelInvocation &&
+                                string.Equals(skill.Name, step.Skill, StringComparison.OrdinalIgnoreCase))
+                            : null;
+
+                        var delegatedInstructions = delegatedSkill is null
+                            ? string.Empty
+                            : SkillPromptBuilder.BuildSkillBody(delegatedSkill);
+
+                        var messages = new List<ChatMessage>
+                        {
+                            new(ChatRole.System,
+                                string.IsNullOrWhiteSpace(delegatedInstructions)
+                                    ? "You are executing a meta-skill delegated step. Return only the final useful result for this step."
+                                    : "You are executing a meta-skill delegated step. Follow the delegated skill instructions. Return only the final useful result for this step.\n\n" + delegatedInstructions),
+                            new(ChatRole.User, string.IsNullOrWhiteSpace(stepInput) ? input ?? string.Empty : stepInput)
+                        };
+
+                        var options = new ChatOptions
+                        {
+                            ModelId = session.ModelOverride ?? _config.Model,
+                            MaxOutputTokens = _config.MaxTokens,
+                            Temperature = _config.Temperature
+                        };
+
+                        var stepSw = Stopwatch.StartNew();
+                        var response = await _chatClient.GetResponseAsync(messages, options, ct);
+                        stepSw.Stop();
+
+                        outputs[step.Id] = response.Text ?? string.Empty;
+                        pending.Remove(step.Id);
+                        progress = true;
+                        stepResults.Add(new MetaStepExecutionResult(step.Id, step.Kind, ToolResultStatuses.Completed, null, stepSw.Elapsed.TotalMilliseconds, Continued: false));
+                        break;
+                    }
+
+                    case "llm_chat":
+                    {
+                        var llmSystemPrompt = GetOptionalString(stepArgs, "system_prompt")
+                            ?? "You are executing a meta-skill llm_chat step. Return only the final useful result for this step.";
+                        var options = new ChatOptions
+                        {
+                            ModelId = session.ModelOverride ?? _config.Model,
+                            MaxOutputTokens = GetOptionalInt32(stepArgs, "max_tokens") ?? _config.MaxTokens,
+                            Temperature = GetOptionalSingle(stepArgs, "temperature") ?? _config.Temperature
+                        };
+                        var messages = new List<ChatMessage>
+                        {
+                            new(ChatRole.System, llmSystemPrompt),
+                            new(ChatRole.User, stepInput)
+                        };
+
+                        var stepSw = Stopwatch.StartNew();
+                        var response = await _chatClient.GetResponseAsync(messages, options, ct);
+                        stepSw.Stop();
+
+                        outputs[step.Id] = response.Text ?? string.Empty;
+                        pending.Remove(step.Id);
+                        progress = true;
+                        stepResults.Add(new MetaStepExecutionResult(step.Id, step.Kind, ToolResultStatuses.Completed, null, stepSw.Elapsed.TotalMilliseconds, Continued: false));
+                        break;
+                    }
+
+                    case "llm_classify":
+                    {
+                        if (!TryGetStringArray(stepArgs, "options", out var optionsValues) || optionsValues.Count == 0)
+                        {
+                            return BuildMetaExecutionOutput(
+                                metaSkill,
+                                finalText: null,
+                                stepResults,
+                                $"Meta step '{step.Id}' is 'llm_classify' but does not declare non-empty options.");
+                        }
+
+                        var classifyPrompt = BuildClassificationPrompt(stepInput, optionsValues);
+                        var messages = new List<ChatMessage>
+                        {
+                            new(ChatRole.System, "You are a strict classifier. Return exactly one label from the provided options."),
+                            new(ChatRole.User, classifyPrompt)
+                        };
+                        var options = new ChatOptions
+                        {
+                            ModelId = session.ModelOverride ?? _config.Model,
+                            MaxOutputTokens = GetOptionalInt32(stepArgs, "max_tokens") ?? 32,
+                            Temperature = GetOptionalSingle(stepArgs, "temperature") ?? 0
+                        };
+
+                        var stepSw = Stopwatch.StartNew();
+                        var response = await _chatClient.GetResponseAsync(messages, options, ct);
+                        stepSw.Stop();
+
+                        var rawLabel = response.Text?.Trim() ?? string.Empty;
+                        if (!TryResolveClassificationLabel(rawLabel, optionsValues, out var selectedLabel))
+                        {
+                            pending.Remove(step.Id);
+                            progress = true;
+                            stepResults.Add(new MetaStepExecutionResult(step.Id, step.Kind, ToolResultStatuses.Failed, "invalid_classification", stepSw.Elapsed.TotalMilliseconds, Continued: continueOnError));
+
+                            if (!continueOnError)
+                            {
+                                return BuildMetaExecutionOutput(
+                                    metaSkill,
+                                    finalText: null,
+                                    stepResults,
+                                    $"Meta step '{step.Id}' returned classification '{rawLabel}' outside declared options.");
+                            }
+
+                            outputs[step.Id] = rawLabel;
+                            break;
+                        }
+
+                        outputs[step.Id] = selectedLabel!;
+                        pending.Remove(step.Id);
+                        progress = true;
+                        stepResults.Add(new MetaStepExecutionResult(step.Id, step.Kind, ToolResultStatuses.Completed, null, stepSw.Elapsed.TotalMilliseconds, Continued: false));
+
+                        if (TryGetRouteMap(stepArgs, out var routeMap))
+                        {
+                            ApplyClassificationRouting(
+                                selectedLabel!,
+                                routeMap,
+                                blocked,
+                                pending,
+                                dependentsByStep,
+                                stepById);
+                        }
+
+                        break;
+                    }
+
+                    case "user_input":
+                    {
+                        var userValue = GetOptionalString(stepArgs, "value")
+                            ?? GetOptionalString(stepArgs, "default")
+                            ?? GetOptionalString(stepArgs, "default_input")
+                            ?? stepInput;
+
+                        if (string.IsNullOrWhiteSpace(userValue))
+                        {
+                            var prompt = GetOptionalString(stepArgs, "prompt")
+                                ?? $"Please provide input for step '{step.Id}'.";
+                            SaveMetaExecutionCheckpoint(
+                                session,
+                                metaSkill.Name,
+                                step.Id,
+                                prompt,
+                                pending,
+                                blocked,
+                                outputs,
+                                stepResults);
+
+                            pending.Remove(step.Id);
+                            progress = true;
+                            stepResults.Add(new MetaStepExecutionResult(step.Id, step.Kind, ToolResultStatuses.Failed, "user_input_required", 0, Continued: continueOnError));
+
+                            if (!continueOnError)
+                            {
+                                return BuildMetaExecutionOutput(
+                                    metaSkill,
+                                    finalText: null,
+                                    stepResults,
+                                        $"Meta step '{step.Id}' requires user input but no value/default is available in the current execution context. Prompt: {prompt}");
+                            }
+
+                            outputs[step.Id] = string.Empty;
+                            break;
+                        }
+
+                        outputs[step.Id] = userValue;
+                        pending.Remove(step.Id);
+                        progress = true;
+                        stepResults.Add(new MetaStepExecutionResult(step.Id, step.Kind, ToolResultStatuses.Completed, null, 0, Continued: false));
+                        break;
+                    }
+
+                    default:
                         return BuildMetaExecutionOutput(
                             metaSkill,
                             finalText: null,
                             stepResults,
-                            $"Meta step '{step.Id}' depends on '{dependency}', but it has not completed.");
-                    }
+                            $"Meta step '{step.Id}' has unsupported kind '{step.Kind}'.");
                 }
             }
 
-            var stepArgs = DeserializeStepArgs(step.WithJson);
-            var stepInput = ResolveMetaTemplate(
-                GetOptionalString(stepArgs, "input") ?? input ?? string.Empty,
-                input,
-                outputs);
-
-            if (step.Kind.Equals("tool_call", StringComparison.OrdinalIgnoreCase))
-            {
-                var toolName = step.Tool;
-                if (string.IsNullOrWhiteSpace(toolName))
-                {
-                    return BuildMetaExecutionOutput(
-                        metaSkill,
-                        finalText: null,
-                        stepResults,
-                        $"Meta step '{step.Id}' is 'tool_call' but does not declare a tool.");
-                }
-                var continueOnError = GetOptionalBoolean(stepArgs, "continue_on_error") ?? false;
-
-                var toolArgsJson = step.WithJson;
-                if (string.IsNullOrWhiteSpace(toolArgsJson))
-                {
-                    toolArgsJson = "{}";
-                }
-                else
-                {
-                    toolArgsJson = RewriteMetaTemplateJson(toolArgsJson, input, outputs);
-                }
-
-                var stepSw = Stopwatch.StartNew();
-                var toolResult = await _toolExecutor.ExecuteAsync(
-                    toolName,
-                    toolArgsJson,
-                    $"meta:{metaSkill.Name}:{step.Id}",
-                    session,
-                    turnCtx,
-                    isStreaming: false,
-                    approvalCallback: null,
-                    ct: ct,
-                    onDelta: null,
-                    toolCallCount: 1);
-                stepSw.Stop();
-
-                outputs[step.Id] = toolResult.ResultText;
-                if (!string.Equals(toolResult.ResultStatus, ToolResultStatuses.Completed, StringComparison.Ordinal) && !continueOnError)
-                {
-                    stepResults.Add(new MetaStepExecutionResult(step.Id, step.Kind, toolResult.ResultStatus, toolResult.FailureCode, stepSw.Elapsed.TotalMilliseconds, Continued: false));
-                    return BuildMetaExecutionOutput(
-                        metaSkill,
-                        finalText: null,
-                        stepResults,
-                        $"Meta step '{step.Id}' failed with status '{toolResult.ResultStatus}'.");
-                }
-
-                stepResults.Add(new MetaStepExecutionResult(step.Id, step.Kind, toolResult.ResultStatus, toolResult.FailureCode, stepSw.Elapsed.TotalMilliseconds, Continued: !string.Equals(toolResult.ResultStatus, ToolResultStatuses.Completed, StringComparison.Ordinal) && continueOnError));
+            if (progress)
                 continue;
-            }
 
-            if (step.Kind.Equals("agent", StringComparison.OrdinalIgnoreCase))
-            {
-                var delegatedSkill = !string.IsNullOrWhiteSpace(step.Skill)
-                    ? LoadedSkills.FirstOrDefault(skill =>
-                        !skill.DisableModelInvocation &&
-                        string.Equals(skill.Name, step.Skill, StringComparison.OrdinalIgnoreCase))
-                    : null;
-
-                var delegatedInstructions = delegatedSkill is null
-                    ? string.Empty
-                    : SkillPromptBuilder.BuildSkillBody(delegatedSkill);
-
-                var messages = new List<ChatMessage>
-                {
-                    new(ChatRole.System,
-                        string.IsNullOrWhiteSpace(delegatedInstructions)
-                            ? "You are executing a meta-skill delegated step. Return only the final useful result for this step."
-                            : "You are executing a meta-skill delegated step. Follow the delegated skill instructions. Return only the final useful result for this step.\n\n" + delegatedInstructions),
-                    new(ChatRole.User, string.IsNullOrWhiteSpace(stepInput) ? input ?? string.Empty : stepInput)
-                };
-
-                var options = new ChatOptions
-                {
-                    ModelId = session.ModelOverride ?? _config.Model,
-                    MaxOutputTokens = _config.MaxTokens,
-                    Temperature = _config.Temperature
-                };
-
-                var stepSw = Stopwatch.StartNew();
-                var response = await _chatClient.GetResponseAsync(messages, options, ct);
-                stepSw.Stop();
-                outputs[step.Id] = response.Text ?? string.Empty;
-                stepResults.Add(new MetaStepExecutionResult(step.Id, step.Kind, ToolResultStatuses.Completed, null, stepSw.Elapsed.TotalMilliseconds, Continued: false));
-                continue;
-            }
+            var remaining = steps.Where(step => pending.Contains(step.Id) && !blocked.Contains(step.Id)).Select(step => step.Id).ToArray();
+            if (remaining.Length == 0)
+                break;
 
             return BuildMetaExecutionOutput(
                 metaSkill,
                 finalText: null,
                 stepResults,
-                $"Meta step '{step.Id}' has unsupported kind '{step.Kind}'.");
+                $"Meta execution graph stalled. Remaining unresolved steps: {string.Join(", ", remaining)}.");
         }
 
-        var finalText = outputs.Count == 0 ? string.Empty : outputs[steps[^1].Id];
-        if (!string.IsNullOrWhiteSpace(metaSkill.FinalTextMode) &&
-            metaSkill.FinalTextMode.StartsWith("step:", StringComparison.OrdinalIgnoreCase))
-        {
-            var finalStepId = metaSkill.FinalTextMode[5..].Trim();
-            if (!string.IsNullOrWhiteSpace(finalStepId) && outputs.TryGetValue(finalStepId, out var finalStepOutput))
-                finalText = finalStepOutput;
-        }
+        var executedStepIds = steps.Where(step => outputs.ContainsKey(step.Id)).Select(static step => step.Id).ToList();
+        var finalText = ResolveMetaFinalText(metaSkill, steps, outputs, executedStepIds);
+
+        ClearMetaExecutionCheckpoint(session, metaSkill.Name);
 
         return BuildMetaExecutionOutput(metaSkill, finalText, stepResults, error: null);
     }
@@ -858,6 +1084,139 @@ public sealed class MafAgentRuntime : IAgentRuntime
             return error is null ? finalText ?? string.Empty : $"Error: {error}";
 
         return BuildStructuredMetaExecutionJson(metaSkill.Name, finalText, stepResults, error);
+    }
+
+    private static string ResolveMetaFinalText(
+        SkillDefinition metaSkill,
+        IReadOnlyList<MetaSkillStepDefinition> steps,
+        IReadOnlyDictionary<string, string> outputs,
+        IReadOnlyList<string> executedStepIds)
+    {
+        _ = steps;
+        var mode = metaSkill.FinalTextMode?.Trim();
+        if (string.IsNullOrWhiteSpace(mode) || mode.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            if (executedStepIds.Count == 0)
+                return string.Empty;
+
+            return outputs[executedStepIds[^1]];
+        }
+
+        if (mode.Equals("raw", StringComparison.OrdinalIgnoreCase))
+        {
+            if (executedStepIds.Count == 0)
+                return string.Empty;
+
+            return outputs[executedStepIds[^1]];
+        }
+
+        if (mode.StartsWith("step:", StringComparison.OrdinalIgnoreCase))
+        {
+            var finalStepId = mode[5..].Trim();
+            if (!string.IsNullOrWhiteSpace(finalStepId) && outputs.TryGetValue(finalStepId, out var finalStepOutput))
+                return finalStepOutput;
+        }
+
+        if (executedStepIds.Count == 0)
+            return string.Empty;
+
+        return outputs[executedStepIds[^1]];
+    }
+
+    private static bool TryRestoreMetaExecutionCheckpoint(
+        Session session,
+        string skillName,
+        IEnumerable<string> stepIds,
+        HashSet<string> pending,
+        HashSet<string> blocked,
+        Dictionary<string, string> outputs,
+        List<MetaStepExecutionResult> stepResults,
+        out string? waitingPrompt)
+    {
+        waitingPrompt = null;
+        var checkpoint = session.MetaExecutionCheckpoint;
+        if (checkpoint is null || !string.Equals(checkpoint.SkillName, skillName, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var validStepIds = new HashSet<string>(stepIds, StringComparer.OrdinalIgnoreCase);
+        foreach (var pendingStep in checkpoint.PendingStepIds)
+        {
+            if (!validStepIds.Contains(pendingStep))
+            {
+                session.MetaExecutionCheckpoint = null;
+                return false;
+            }
+        }
+
+        pending.Clear();
+        foreach (var pendingStep in checkpoint.PendingStepIds)
+            pending.Add(pendingStep);
+
+        blocked.Clear();
+        foreach (var blockedStep in checkpoint.BlockedStepIds)
+            blocked.Add(blockedStep);
+
+        outputs.Clear();
+        foreach (var (key, value) in checkpoint.Outputs)
+            outputs[key] = value;
+
+        stepResults.Clear();
+        foreach (var result in checkpoint.StepResults)
+        {
+            stepResults.Add(new MetaStepExecutionResult(
+                result.Id,
+                result.Kind,
+                result.Status,
+                result.FailureCode,
+                result.DurationMs,
+                result.Continued));
+        }
+
+        checkpoint.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
+        waitingPrompt = checkpoint.Prompt;
+        return true;
+    }
+
+    private static void SaveMetaExecutionCheckpoint(
+        Session session,
+        string skillName,
+        string pendingStepId,
+        string prompt,
+        HashSet<string> pending,
+        HashSet<string> blocked,
+        Dictionary<string, string> outputs,
+        IReadOnlyList<MetaStepExecutionResult> stepResults)
+    {
+        session.MetaExecutionCheckpoint = new SessionMetaExecutionCheckpoint
+        {
+            SkillName = skillName,
+            PendingStepId = pendingStepId,
+            Prompt = prompt,
+            LastUpdatedAtUtc = DateTimeOffset.UtcNow,
+            PendingStepIds = pending.ToList(),
+            BlockedStepIds = blocked.ToList(),
+            Outputs = new Dictionary<string, string>(outputs, StringComparer.OrdinalIgnoreCase),
+            StepResults = stepResults.Select(static result => new SessionMetaStepResult
+            {
+                Id = result.Id,
+                Kind = result.Kind,
+                Status = result.Status,
+                FailureCode = result.FailureCode,
+                DurationMs = result.DurationMs,
+                Continued = result.Continued
+            }).ToList()
+        };
+    }
+
+    private static void ClearMetaExecutionCheckpoint(Session session, string skillName)
+    {
+        if (session.MetaExecutionCheckpoint is null)
+            return;
+
+        if (!string.Equals(session.MetaExecutionCheckpoint.SkillName, skillName, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        session.MetaExecutionCheckpoint = null;
     }
 
     private static string BuildStructuredMetaExecutionJson(
@@ -917,8 +1276,51 @@ public sealed class MafAgentRuntime : IAgentRuntime
             return "unsupported_step_kind";
         if (error.Contains("failed with status", StringComparison.OrdinalIgnoreCase))
             return "step_failed";
+        if (error.Contains("missing dependency", StringComparison.OrdinalIgnoreCase))
+            return "invalid_dag";
+        if (error.Contains("dependency cycle", StringComparison.OrdinalIgnoreCase))
+            return "invalid_dag";
+        if (error.Contains("execution graph stalled", StringComparison.OrdinalIgnoreCase))
+            return "invalid_dag";
+        if (error.Contains("requires user input", StringComparison.OrdinalIgnoreCase))
+            return "user_input_required";
+        if (error.Contains("classify", StringComparison.OrdinalIgnoreCase))
+            return "invalid_classification";
+        if (error.Contains("metadata capabilities", StringComparison.OrdinalIgnoreCase))
+            return "metadata_capability_denied";
 
         return "meta_step_error";
+    }
+
+    private static bool IsToolAllowedByMetaCapabilities(SkillDefinition metaSkill, string toolName)
+    {
+        var capabilities = metaSkill.Metadata.Capabilities;
+        if (capabilities.Length == 0)
+            return true;
+
+        var normalizedTool = toolName.Trim();
+        foreach (var rawCapability in capabilities)
+        {
+            if (string.IsNullOrWhiteSpace(rawCapability))
+                continue;
+
+            var capability = rawCapability.Trim();
+            if (capability.Equals("*", StringComparison.OrdinalIgnoreCase) ||
+                capability.Equals("all-tools", StringComparison.OrdinalIgnoreCase) ||
+                capability.Equals("tools:*", StringComparison.OrdinalIgnoreCase) ||
+                capability.Equals("tool:*", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (capability.Equals(normalizedTool, StringComparison.OrdinalIgnoreCase) ||
+                capability.Equals($"tool:{normalizedTool}", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private readonly record struct MetaStepExecutionResult(string Id, string Kind, string Status, string? FailureCode, double DurationMs, bool Continued);
@@ -966,6 +1368,290 @@ public sealed class MafAgentRuntime : IAgentRuntime
         }
 
         return null;
+    }
+
+    private static int? GetOptionalInt32(Dictionary<string, object?> args, string key)
+    {
+        if (!args.TryGetValue(key, out var value) || value is null)
+            return null;
+
+        if (value is int i)
+            return i;
+        if (value is long l && l is >= int.MinValue and <= int.MaxValue)
+            return (int)l;
+        if (value is JsonElement json)
+        {
+            if (json.ValueKind == JsonValueKind.Number && json.TryGetInt32(out var parsed))
+                return parsed;
+            if (json.ValueKind == JsonValueKind.String && int.TryParse(json.GetString(), out parsed))
+                return parsed;
+        }
+
+        return null;
+    }
+
+    private static float? GetOptionalSingle(Dictionary<string, object?> args, string key)
+    {
+        if (!args.TryGetValue(key, out var value) || value is null)
+            return null;
+
+        if (value is float f)
+            return f;
+        if (value is double d)
+            return (float)d;
+        if (value is decimal m)
+            return (float)m;
+        if (value is JsonElement json)
+        {
+            if (json.ValueKind == JsonValueKind.Number && json.TryGetDouble(out var parsed))
+                return (float)parsed;
+            if (json.ValueKind == JsonValueKind.String && float.TryParse(json.GetString(), out var parsedFloat))
+                return parsedFloat;
+        }
+
+        return null;
+    }
+
+    private static bool TryGetStringArray(Dictionary<string, object?> args, string key, out List<string> values)
+    {
+        values = [];
+        if (!args.TryGetValue(key, out var value) || value is null)
+            return false;
+
+        if (value is JsonElement json && json.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in json.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.String)
+                    return false;
+
+                var text = item.GetString();
+                if (string.IsNullOrWhiteSpace(text))
+                    return false;
+
+                values.Add(text.Trim());
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetRouteMap(Dictionary<string, object?> args, out Dictionary<string, List<string>> routeMap)
+    {
+        routeMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        if (!args.TryGetValue("route", out var routeValue) || routeValue is not JsonElement routeJson || routeJson.ValueKind != JsonValueKind.Object)
+            return false;
+
+        foreach (var property in routeJson.EnumerateObject())
+        {
+            if (property.Value.ValueKind == JsonValueKind.String)
+            {
+                var target = property.Value.GetString();
+                if (!string.IsNullOrWhiteSpace(target))
+                    routeMap[property.Name] = [target.Trim()];
+            }
+            else if (property.Value.ValueKind == JsonValueKind.Array)
+            {
+                var targets = new List<string>();
+                foreach (var item in property.Value.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.String)
+                        continue;
+
+                    var target = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(target))
+                        targets.Add(target.Trim());
+                }
+
+                if (targets.Count > 0)
+                    routeMap[property.Name] = targets;
+            }
+        }
+
+        return routeMap.Count > 0;
+    }
+
+    private static string BuildClassificationPrompt(string input, IReadOnlyList<string> options)
+    {
+        var optionsList = string.Join(", ", options);
+        return $"Classify the following text into exactly one label from [{optionsList}]. Return only the label.\n\nText:\n{input}";
+    }
+
+    private static bool TryResolveClassificationLabel(string raw, IReadOnlyList<string> options, out string? selected)
+    {
+        selected = null;
+        if (string.IsNullOrWhiteSpace(raw))
+            return false;
+
+        var candidate = raw.Trim().Trim('"', '\'', '`');
+        selected = options.FirstOrDefault(option => string.Equals(option, candidate, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(selected))
+            return true;
+
+        foreach (var option in options)
+        {
+            if (candidate.Contains(option, StringComparison.OrdinalIgnoreCase))
+            {
+                selected = option;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NormalizeMetaStepKind(string kind)
+        => kind.Trim().ToLowerInvariant();
+
+    private static Dictionary<string, List<string>> BuildDependentsIndex(IReadOnlyList<MetaSkillStepDefinition> steps)
+    {
+        var dependents = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var step in steps)
+            dependents.TryAdd(step.Id, []);
+
+        foreach (var step in steps)
+        {
+            foreach (var dependency in step.DependsOn)
+            {
+                if (!dependents.TryGetValue(dependency, out var children))
+                    continue;
+
+                children.Add(step.Id);
+            }
+        }
+
+        return dependents;
+    }
+
+    private static void BlockStepAndDependents(
+        string stepId,
+        HashSet<string> blocked,
+        HashSet<string> pending,
+        IReadOnlyDictionary<string, List<string>> dependentsByStep)
+    {
+        var stack = new Stack<string>();
+        stack.Push(stepId);
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (!blocked.Add(current))
+                continue;
+
+            pending.Remove(current);
+
+            if (!dependentsByStep.TryGetValue(current, out var dependents))
+                continue;
+
+            foreach (var dependent in dependents)
+                stack.Push(dependent);
+        }
+    }
+
+    private static void ApplyClassificationRouting(
+        string selectedLabel,
+        IReadOnlyDictionary<string, List<string>> routeMap,
+        HashSet<string> blocked,
+        HashSet<string> pending,
+        IReadOnlyDictionary<string, List<string>> dependentsByStep,
+        IReadOnlyDictionary<string, MetaSkillStepDefinition> stepById)
+    {
+        var selectedTargets = routeMap.TryGetValue(selectedLabel, out var matchedTargets)
+            ? matchedTargets
+            : [];
+
+        foreach (var (label, targets) in routeMap)
+        {
+            if (string.Equals(label, selectedLabel, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            foreach (var target in targets)
+            {
+                if (!stepById.ContainsKey(target))
+                    continue;
+
+                BlockStepAndDependents(target, blocked, pending, dependentsByStep);
+            }
+        }
+
+        foreach (var target in selectedTargets)
+            blocked.Remove(target);
+    }
+
+    private static bool TryValidateMetaPlan(IReadOnlyList<MetaSkillStepDefinition> steps, out string? error)
+    {
+        error = null;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var step in steps)
+        {
+            if (!seen.Add(step.Id))
+            {
+                error = $"Meta execution graph contains duplicate step id '{step.Id}'.";
+                return false;
+            }
+        }
+
+        foreach (var step in steps)
+        {
+            foreach (var dependency in step.DependsOn)
+            {
+                if (!seen.Contains(dependency))
+                {
+                    error = $"Meta execution graph references missing dependency '{dependency}' from step '{step.Id}'.";
+                    return false;
+                }
+
+                if (string.Equals(step.Id, dependency, StringComparison.OrdinalIgnoreCase))
+                {
+                    error = $"Meta execution graph contains self-dependency on step '{step.Id}'.";
+                    return false;
+                }
+            }
+        }
+
+        if (HasDependencyCycle(steps))
+        {
+            error = "Meta execution graph contains a dependency cycle.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool HasDependencyCycle(IReadOnlyList<MetaSkillStepDefinition> steps)
+    {
+        var state = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var stepById = steps.ToDictionary(static step => step.Id, StringComparer.OrdinalIgnoreCase);
+
+        bool Dfs(string stepId)
+        {
+            if (state.TryGetValue(stepId, out var currentState))
+                return currentState == 1;
+
+            state[stepId] = 1;
+            var step = stepById[stepId];
+            foreach (var dependency in step.DependsOn)
+            {
+                if (Dfs(dependency))
+                    return true;
+            }
+
+            state[stepId] = 2;
+            return false;
+        }
+
+        foreach (var step in steps)
+        {
+            if (state.TryGetValue(step.Id, out var currentState) && currentState == 2)
+                continue;
+
+            if (Dfs(step.Id))
+                return true;
+        }
+
+        return false;
     }
 
     private static string ResolveMetaTemplate(string template, string? rootInput, IReadOnlyDictionary<string, string> outputs)

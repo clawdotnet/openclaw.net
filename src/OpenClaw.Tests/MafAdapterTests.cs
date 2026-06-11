@@ -915,9 +915,138 @@ public sealed class MafAdapterTests
 
             using var doc = JsonDocument.Parse(result);
             Assert.Equal("meta-flow", doc.RootElement.GetProperty("skill").GetString());
-            Assert.Contains("depends on", doc.RootElement.GetProperty("error").GetString(), StringComparison.OrdinalIgnoreCase);
-            Assert.Equal("dependency_not_completed", doc.RootElement.GetProperty("error_code").GetString());
+            Assert.Contains("missing dependency", doc.RootElement.GetProperty("error").GetString(), StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("invalid_dag", doc.RootElement.GetProperty("error_code").GetString());
             Assert.Empty(doc.RootElement.GetProperty("steps").EnumerateArray());
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MafAgentRuntime_ExecuteMetaSkillAsync_StructuredMode_UserInputWithoutDefault_ReturnsStructuredError()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-meta-structured-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var runtime = CreateRuntime(
+                storagePath,
+                new TestLlmExecutionService(),
+                new MafOptions(),
+                skills:
+                [
+                    new SkillDefinition
+                    {
+                        Name = "meta-flow",
+                        Description = "meta flow",
+                        Instructions = "...",
+                        Location = "/skills/meta-flow",
+                        Kind = SkillKind.Meta,
+                        FinalTextMode = "structured",
+                        Composition = new MetaSkillComposition
+                        {
+                            Steps =
+                            [
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "ask",
+                                    Kind = "user_input",
+                                    WithJson = "{}"
+                                }
+                            ]
+                        }
+                    }
+                ]);
+            var session = CreateSession("maf-meta-structured-user-input");
+
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+
+            using var doc = JsonDocument.Parse(result);
+            Assert.Equal("meta-flow", doc.RootElement.GetProperty("skill").GetString());
+            Assert.Contains("requires user input", doc.RootElement.GetProperty("error").GetString(), StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("user_input_required", doc.RootElement.GetProperty("error_code").GetString());
+            var steps = doc.RootElement.GetProperty("steps").EnumerateArray().ToArray();
+            Assert.Single(steps);
+            Assert.Equal("ask", steps[0].GetProperty("id").GetString());
+            Assert.Equal("failed", steps[0].GetProperty("status").GetString());
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MafAgentRuntime_ExecuteMetaSkillAsync_UserInputPauseResume_ContinuesWithoutReRunningCompletedSteps()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-meta-structured-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var preTool = new CountingMafTool("pre_tool", "prefetched");
+            var postTool = new CountingMafTool("post_tool", "completed");
+
+            var runtime = CreateRuntime(
+                storagePath,
+                new TestLlmExecutionService(),
+                new MafOptions(),
+                tools: [preTool, postTool],
+                skills:
+                [
+                    new SkillDefinition
+                    {
+                        Name = "meta-flow",
+                        Description = "meta flow",
+                        Instructions = "...",
+                        Location = "/skills/meta-flow",
+                        Kind = SkillKind.Meta,
+                        FinalTextMode = "step:finish",
+                        Composition = new MetaSkillComposition
+                        {
+                            Steps =
+                            [
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "pre",
+                                    Kind = "tool_call",
+                                    Tool = "pre_tool"
+                                },
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "ask",
+                                    Kind = "user_input",
+                                    DependsOn = ["pre"],
+                                    WithJson = "{\"prompt\":\"Please confirm\"}"
+                                },
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "finish",
+                                    Kind = "tool_call",
+                                    Tool = "post_tool",
+                                    DependsOn = ["ask"]
+                                }
+                            ]
+                        }
+                    }
+                ]);
+            var session = CreateSession("maf-meta-structured-pause-resume");
+
+            var paused = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            Assert.Contains("requires user input", paused, StringComparison.OrdinalIgnoreCase);
+            Assert.NotNull(session.MetaExecutionCheckpoint);
+            Assert.Equal(1, preTool.CallCount);
+            Assert.Equal(0, postTool.CallCount);
+
+            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "approved", CancellationToken.None);
+            Assert.Equal("completed", resumed);
+            Assert.Null(session.MetaExecutionCheckpoint);
+            Assert.Equal(1, preTool.CallCount);
+            Assert.Equal(1, postTool.CallCount);
         }
         finally
         {
@@ -1020,6 +1149,66 @@ public sealed class MafAdapterTests
             Assert.Contains("does not declare a tool", doc.RootElement.GetProperty("error").GetString(), StringComparison.OrdinalIgnoreCase);
             Assert.Equal("invalid_tool_step", doc.RootElement.GetProperty("error_code").GetString());
             Assert.Empty(doc.RootElement.GetProperty("steps").EnumerateArray());
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MafAgentRuntime_ExecuteMetaSkillAsync_StructuredMode_CapabilityDenied_ReturnsStructuredError()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-meta-structured-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var runtime = CreateRuntime(
+                storagePath,
+                new TestLlmExecutionService(),
+                new MafOptions(),
+                tools: [new TestTool("blocked_tool")],
+                skills:
+                [
+                    new SkillDefinition
+                    {
+                        Name = "meta-flow",
+                        Description = "meta flow",
+                        Instructions = "...",
+                        Location = "/skills/meta-flow",
+                        Kind = SkillKind.Meta,
+                        FinalTextMode = "structured",
+                        Metadata = new SkillMetadata
+                        {
+                            Capabilities = ["tool:allowed_tool"],
+                            Risk = "high"
+                        },
+                        Composition = new MetaSkillComposition
+                        {
+                            Steps =
+                            [
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "first",
+                                    Kind = "tool_call",
+                                    Tool = "blocked_tool"
+                                }
+                            ]
+                        }
+                    }
+                ]);
+            var session = CreateSession("maf-meta-structured-capability-denied");
+
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+
+            using var doc = JsonDocument.Parse(result);
+            Assert.Contains("not permitted by metadata capabilities", doc.RootElement.GetProperty("error").GetString(), StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("metadata_capability_denied", doc.RootElement.GetProperty("error_code").GetString());
+            var steps = doc.RootElement.GetProperty("steps").EnumerateArray().ToArray();
+            Assert.Single(steps);
+            Assert.Equal("blocked", steps[0].GetProperty("status").GetString());
+            Assert.Equal("metadata_capability_denied", steps[0].GetProperty("failure_code").GetString());
         }
         finally
         {
@@ -1508,6 +1697,24 @@ public sealed class MafAdapterTests
             _ = argumentsJson;
             _ = ct;
             return ValueTask.FromResult("ok");
+        }
+    }
+
+    private sealed class CountingMafTool(string name, string result) : ITool
+    {
+        private int _callCount;
+
+        public int CallCount => Volatile.Read(ref _callCount);
+        public string Name => name;
+        public string Description => "Counting test tool.";
+        public string ParameterSchema => """{"type":"object"}""";
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        {
+            _ = argumentsJson;
+            _ = ct;
+            Interlocked.Increment(ref _callCount);
+            return ValueTask.FromResult(result);
         }
     }
 

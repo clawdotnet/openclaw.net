@@ -332,6 +332,9 @@ public static class SkillLoader
             composition = ParseComposition(compositionJson);
             if (composition is null || composition.Steps.Count == 0)
                 return null;
+
+            if (!ValidateFinalTextMode(finalTextMode, composition.Steps))
+                return null;
         }
 
         // Replace {baseDir} placeholder in instructions
@@ -479,6 +482,9 @@ public static class SkillLoader
                 string? withJson = null;
                 if (stepElement.TryGetProperty("with", out var withElement))
                 {
+                    if (withElement.ValueKind != JsonValueKind.Object)
+                        return null;
+
                     withJson = withElement.GetRawText();
                 }
 
@@ -493,12 +499,208 @@ public static class SkillLoader
                 });
             }
 
+            if (!ValidateComposition(steps))
+                return null;
+
             return new MetaSkillComposition { Steps = steps };
         }
         catch
         {
             return null;
         }
+    }
+
+    private static bool ValidateComposition(IReadOnlyList<MetaSkillStepDefinition> steps)
+    {
+        if (steps.Count == 0)
+            return false;
+
+        var supportedKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "agent",
+            "skill_exec",
+            "tool_call",
+            "llm_chat",
+            "llm_classify",
+            "user_input"
+        };
+
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var step in steps)
+        {
+            if (!ids.Add(step.Id))
+                return false;
+
+            if (!supportedKinds.Contains(step.Kind))
+                return false;
+
+            if (step.Kind.Equals("tool_call", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(step.Tool))
+                return false;
+
+            if (step.Kind.Equals("tool_call", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(step.Skill))
+                return false;
+
+            if (step.Kind.Equals("skill_exec", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(step.Skill))
+                return false;
+
+            if (step.Kind.Equals("skill_exec", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(step.Tool))
+                return false;
+        }
+
+        foreach (var step in steps)
+        {
+            if (step.Kind.Equals("llm_classify", StringComparison.OrdinalIgnoreCase) && !ValidateClassifyStep(step.WithJson, ids))
+                return false;
+
+            foreach (var dependency in step.DependsOn)
+            {
+                if (!ids.Contains(dependency))
+                    return false;
+
+                if (string.Equals(step.Id, dependency, StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+        }
+
+        return !HasDependencyCycle(steps);
+    }
+
+    private static bool ValidateClassifyStep(string? withJson, ISet<string> knownStepIds)
+    {
+        if (string.IsNullOrWhiteSpace(withJson))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(withJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return false;
+
+            if (!doc.RootElement.TryGetProperty("options", out var optionsElement) ||
+                optionsElement.ValueKind != JsonValueKind.Array)
+                return false;
+
+            var hasOption = false;
+            var options = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var option in optionsElement.EnumerateArray())
+            {
+                if (option.ValueKind != JsonValueKind.String)
+                    return false;
+
+                var optionValue = option.GetString();
+                if (string.IsNullOrWhiteSpace(optionValue))
+                    return false;
+
+                options.Add(optionValue);
+                hasOption = true;
+            }
+
+            if (!hasOption)
+                return false;
+
+            if (!doc.RootElement.TryGetProperty("route", out var routeElement))
+                return true;
+
+            if (routeElement.ValueKind != JsonValueKind.Object)
+                return false;
+
+            foreach (var routeProperty in routeElement.EnumerateObject())
+            {
+                if (string.IsNullOrWhiteSpace(routeProperty.Name))
+                    return false;
+
+                if (!options.Contains(routeProperty.Name))
+                    return false;
+
+                if (routeProperty.Value.ValueKind == JsonValueKind.String)
+                {
+                    var targetStep = routeProperty.Value.GetString();
+                    if (string.IsNullOrWhiteSpace(targetStep))
+                        return false;
+
+                    if (!knownStepIds.Contains(targetStep))
+                        return false;
+
+                    continue;
+                }
+
+                if (routeProperty.Value.ValueKind != JsonValueKind.Array)
+                    return false;
+
+                foreach (var target in routeProperty.Value.EnumerateArray())
+                {
+                    if (target.ValueKind != JsonValueKind.String)
+                        return false;
+
+                    var targetStep = target.GetString();
+                    if (string.IsNullOrWhiteSpace(targetStep))
+                        return false;
+
+                    if (!knownStepIds.Contains(targetStep))
+                        return false;
+                }
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool ValidateFinalTextMode(string? finalTextMode, IReadOnlyList<MetaSkillStepDefinition> steps)
+    {
+        if (string.IsNullOrWhiteSpace(finalTextMode))
+            return true;
+
+        var mode = finalTextMode.Trim();
+        if (mode.Equals("auto", StringComparison.OrdinalIgnoreCase) ||
+            mode.Equals("raw", StringComparison.OrdinalIgnoreCase) ||
+            mode.Equals("structured", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!mode.StartsWith("step:", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var stepId = mode[5..].Trim();
+        if (string.IsNullOrWhiteSpace(stepId))
+            return false;
+
+        return steps.Any(step => string.Equals(step.Id, stepId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool HasDependencyCycle(IReadOnlyList<MetaSkillStepDefinition> steps)
+    {
+        var state = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var stepById = steps.ToDictionary(static step => step.Id, StringComparer.OrdinalIgnoreCase);
+
+        bool Dfs(string stepId)
+        {
+            if (state.TryGetValue(stepId, out var currentState))
+                return currentState == 1;
+
+            state[stepId] = 1;
+            foreach (var dependency in stepById[stepId].DependsOn)
+            {
+                if (Dfs(dependency))
+                    return true;
+            }
+
+            state[stepId] = 2;
+            return false;
+        }
+
+        foreach (var step in steps)
+        {
+            if (state.TryGetValue(step.Id, out var currentState) && currentState == 2)
+                continue;
+
+            if (Dfs(step.Id))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -575,8 +777,12 @@ public static class SkillLoader
         {
             using var doc = JsonDocument.Parse(json);
 
-            if (!doc.RootElement.TryGetProperty("openclaw", out var oc))
+            JsonElement oc;
+            if (!doc.RootElement.TryGetProperty("openclaw", out oc) &&
+                !doc.RootElement.TryGetProperty("opensquilla", out oc))
+            {
                 return new SkillMetadata();
+            }
 
             var meta = new SkillMetadata();
 
@@ -590,6 +796,10 @@ public static class SkillLoader
                 meta.PrimaryEnv = pe.GetString();
             if (oc.TryGetProperty("skillKey", out var sk))
                 meta.SkillKey = sk.GetString();
+            if (oc.TryGetProperty("risk", out var risk) && risk.ValueKind == JsonValueKind.String)
+                meta.Risk = risk.GetString();
+            if (oc.TryGetProperty("capabilities", out var capabilities))
+                meta.Capabilities = ReadStringArray(capabilities);
 
             if (oc.TryGetProperty("os", out var os))
                 meta.Os = ReadStringArray(os);

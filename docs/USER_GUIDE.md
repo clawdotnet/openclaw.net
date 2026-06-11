@@ -319,6 +319,26 @@ Skill locations (precedence order):
 
 Meta skills can set `final_text_mode: structured` to return a machine-readable envelope instead of plain text.
 
+Supported `final_text_mode` values for `kind: meta` skills:
+
+- `auto`: use the latest executed step output.
+- `raw`: same behavior as `auto` for current runtime compatibility.
+- `step:<step-id>`: use a specific step output as final text. The referenced `<step-id>` must exist in `composition.steps`.
+- `structured`: return the structured envelope shown below.
+
+Invalid `final_text_mode` values now fail fast during skill parsing (the skill is rejected and not loaded).
+
+For `llm_classify` steps, parser governance also validates:
+
+- every `route` label must appear in declared `options`
+- every `route` target step ID must exist in the same `composition.steps`
+
+General composition rule: when a step declares `with`, it must be a JSON object (non-object payloads are rejected during parsing).
+
+Step-kind field consistency rule: `skill_exec` steps must declare a non-empty `skill` value.
+Step-kind field consistency rule: `tool_call` steps must declare `tool` and must not declare `skill`.
+Step-kind field consistency rule: `skill_exec` steps must not declare `tool`.
+
 Current response shape:
 
 ```json
@@ -345,13 +365,17 @@ Notes:
 - `error` and `error_code` are present only when the meta run fails.
 - `steps` is present in structured mode even when early validation fails (it may be empty).
 - `failure_code` is step-level and only appears for failed steps.
+- For `user_input` steps without available value/default, runtime saves a session checkpoint (`MetaExecutionCheckpoint`) and returns `user_input_required`. The next invocation with user input resumes from the checkpoint without re-running completed steps.
 
 Current normalized top-level `error_code` values:
 
-- `dependency_not_completed`: a step dependency in `depends_on` was missing.
 - `invalid_tool_step`: a `tool_call` step did not declare `tool`.
 - `unsupported_step_kind`: step `kind` is not supported by the current runtime.
 - `step_failed`: a step failed and execution did not continue.
+- `invalid_dag`: duplicate step IDs, missing dependencies, self-dependencies, cycles, or stalled graph progression.
+- `invalid_classification`: an `llm_classify` result was outside declared `options`.
+- `user_input_required`: a `user_input` step could not resolve a value/default in the current execution context.
+- `metadata_capability_denied`: a meta `tool_call` step requested a tool that is not in metadata capabilities allowlist.
 - `meta_step_error`: fallback for other meta-step failures.
 
 When `final_text_mode` is not `structured`, meta execution returns plain text and prepends `Error:` on failure.

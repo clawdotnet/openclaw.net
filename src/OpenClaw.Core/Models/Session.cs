@@ -123,6 +123,9 @@ public sealed class Session
     /// <summary>Last durable execution checkpoint written by the agent runtime.</summary>
     public SessionExecutionCheckpoint? ExecutionCheckpoint { get; set; }
 
+    /// <summary>Optional in-progress meta execution checkpoint used for user_input pause/resume.</summary>
+    public SessionMetaExecutionCheckpoint? MetaExecutionCheckpoint { get; set; }
+
     public void AddTokenUsage(long inputTokens, long outputTokens)
     {
         if (inputTokens != 0)
@@ -227,6 +230,29 @@ public sealed class SessionCheckpointToolCall
     public int ResultBytes { get; init; }
 }
 
+public sealed class SessionMetaExecutionCheckpoint
+{
+    public required string SkillName { get; init; }
+    public required string PendingStepId { get; init; }
+    public string? Prompt { get; init; }
+    public DateTimeOffset CreatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset LastUpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public List<string> PendingStepIds { get; init; } = [];
+    public List<string> BlockedStepIds { get; init; } = [];
+    public Dictionary<string, string> Outputs { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<SessionMetaStepResult> StepResults { get; init; } = [];
+}
+
+public sealed class SessionMetaStepResult
+{
+    public required string Id { get; init; }
+    public required string Kind { get; init; }
+    public required string Status { get; init; }
+    public string? FailureCode { get; init; }
+    public double DurationMs { get; init; }
+    public bool Continued { get; init; }
+}
+
 public sealed class SessionDelegationMetadata
 {
     public string? ParentSessionId { get; set; }
@@ -284,6 +310,9 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(SessionExecutionCheckpoint))]
 [JsonSerializable(typeof(SessionCheckpointToolCall))]
 [JsonSerializable(typeof(List<SessionCheckpointToolCall>))]
+[JsonSerializable(typeof(SessionMetaExecutionCheckpoint))]
+[JsonSerializable(typeof(SessionMetaStepResult))]
+[JsonSerializable(typeof(List<SessionMetaStepResult>))]
 [JsonSerializable(typeof(SessionDelegationMetadata))]
 [JsonSerializable(typeof(SessionDelegationToolUsage))]
 [JsonSerializable(typeof(List<SessionDelegationToolUsage>))]
