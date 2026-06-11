@@ -170,9 +170,14 @@ public static class SkillLoader
             {
                 try
                 {
-                    var skill = ParseSkillFile(rootSkillFile, rootDir, source);
-                    if (skill is not null)
+                    if (TryParseSkillFile(rootSkillFile, rootDir, source, out var skill, out var errorCode) && skill is not null)
+                    {
                         results[skill.Name] = skill;
+                    }
+                    else
+                    {
+                        logger.LogWarning("Failed to parse skill at {Path} (error_code={ErrorCode})", rootSkillFile, errorCode ?? "parse_failed");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -188,11 +193,14 @@ public static class SkillLoader
 
                 try
                 {
-                    var skill = ParseSkillFile(skillFile, skillDir, source);
-                    if (skill is not null)
+                    if (TryParseSkillFile(skillFile, skillDir, source, out var skill, out var errorCode) && skill is not null)
                     {
                         // Higher precedence sources overwrite lower ones
                         results[skill.Name] = skill;
+                    }
+                    else
+                    {
+                        logger.LogWarning("Failed to parse skill at {Path} (error_code={ErrorCode})", skillFile, errorCode ?? "parse_failed");
                     }
                 }
                 catch (Exception ex)
@@ -214,6 +222,17 @@ public static class SkillLoader
     {
         var content = File.ReadAllText(filePath);
         return ParseSkillContent(content, skillDir, source);
+    }
+
+    internal static bool TryParseSkillFile(
+        string filePath,
+        string skillDir,
+        SkillSource source,
+        out SkillDefinition? skill,
+        out string? errorCode)
+    {
+        var content = File.ReadAllText(filePath);
+        return TryParseSkillContent(content, skillDir, source, out skill, out errorCode);
     }
 
     /// <summary>
@@ -367,6 +386,90 @@ public static class SkillLoader
         };
     }
 
+    internal static bool TryParseSkillContent(
+        string content,
+        string skillDir,
+        SkillSource source,
+        out SkillDefinition? skill,
+        out string? errorCode)
+    {
+        skill = ParseSkillContent(content, skillDir, source);
+        if (skill is not null)
+        {
+            errorCode = null;
+            return true;
+        }
+
+        errorCode = DiagnoseSkillParseFailure(content);
+        return false;
+    }
+
+    private static string DiagnoseSkillParseFailure(string content)
+    {
+        if (!content.StartsWith("---", StringComparison.Ordinal))
+            return "invalid_frontmatter";
+
+        var endIndex = content.IndexOf("\n---", 3, StringComparison.Ordinal);
+        if (endIndex < 0)
+            return "invalid_frontmatter";
+
+        var frontmatter = content[3..endIndex].Trim();
+        string? name = null;
+        var kind = SkillKind.Standard;
+        string? compositionJson = null;
+        string? finalTextMode = null;
+
+        foreach (var rawLine in frontmatter.Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (string.IsNullOrEmpty(line))
+                continue;
+
+            var colonIdx = line.IndexOf(':');
+            if (colonIdx < 0)
+                continue;
+
+            var key = line[..colonIdx].Trim().ToLowerInvariant();
+            var value = line[(colonIdx + 1)..].Trim();
+
+            switch (key)
+            {
+                case "name":
+                    name = value;
+                    break;
+                case "kind":
+                    if (!TryParseSkillKind(value, out kind))
+                        return "invalid_kind";
+                    break;
+                case "composition":
+                    compositionJson = value;
+                    break;
+                case "final-text-mode":
+                case "final_text_mode":
+                    finalTextMode = value;
+                    break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+            return "missing_name";
+
+        if (kind != SkillKind.Meta)
+            return "parse_failed";
+
+        if (string.IsNullOrWhiteSpace(compositionJson))
+            return "missing_meta_composition";
+
+        var composition = ParseComposition(compositionJson, out var compositionErrorCode);
+        if (composition is null)
+            return compositionErrorCode ?? "invalid_meta_composition";
+
+        if (!ValidateFinalTextMode(finalTextMode, composition.Steps))
+            return "invalid_final_text_mode";
+
+        return "parse_failed";
+    }
+
     private static bool TryParseSkillKind(string rawValue, out SkillKind kind)
     {
         kind = SkillKind.Standard;
@@ -422,28 +525,50 @@ public static class SkillLoader
 
     internal static MetaSkillComposition? ParseComposition(string json)
     {
+        return ParseComposition(json, out _);
+    }
+
+    internal static MetaSkillComposition? ParseComposition(string json, out string? errorCode)
+    {
+        errorCode = null;
+
         if (string.IsNullOrWhiteSpace(json))
+        {
+            errorCode = "invalid_meta_composition";
             return null;
+        }
 
         try
         {
             using var doc = JsonDocument.Parse(json);
             if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                errorCode = "invalid_meta_composition";
                 return null;
+            }
 
             if (!doc.RootElement.TryGetProperty("steps", out var stepsElement) ||
                 stepsElement.ValueKind != JsonValueKind.Array)
+            {
+                errorCode = "invalid_meta_composition";
                 return null;
+            }
 
             var steps = new List<MetaSkillStepDefinition>();
             foreach (var stepElement in stepsElement.EnumerateArray())
             {
                 if (stepElement.ValueKind != JsonValueKind.Object)
+                {
+                    errorCode = "invalid_meta_composition";
                     return null;
+                }
 
                 if (!stepElement.TryGetProperty("id", out var idElement) ||
                     idElement.ValueKind != JsonValueKind.String)
+                {
+                    errorCode = "invalid_meta_composition";
                     return null;
+                }
 
                 string? kind = null;
                 if (stepElement.TryGetProperty("kind", out var kindElement) && kindElement.ValueKind == JsonValueKind.String)
@@ -452,22 +577,34 @@ public static class SkillLoader
                     kind = typeElement.GetString();
 
                 if (string.IsNullOrWhiteSpace(kind))
+                {
+                    errorCode = "invalid_meta_composition";
                     return null;
+                }
 
                 var dependsOn = new List<string>();
                 if (stepElement.TryGetProperty("depends_on", out var dependsOnElement))
                 {
                     if (dependsOnElement.ValueKind != JsonValueKind.Array)
+                    {
+                        errorCode = "invalid_meta_composition";
                         return null;
+                    }
 
                     foreach (var dependsOnItem in dependsOnElement.EnumerateArray())
                     {
                         if (dependsOnItem.ValueKind != JsonValueKind.String)
+                        {
+                            errorCode = "invalid_meta_composition";
                             return null;
+                        }
 
                         var dep = dependsOnItem.GetString();
                         if (string.IsNullOrWhiteSpace(dep))
+                        {
+                            errorCode = "invalid_meta_composition";
                             return null;
+                        }
 
                         dependsOn.Add(dep);
                     }
@@ -483,7 +620,10 @@ public static class SkillLoader
                 if (stepElement.TryGetProperty("with", out var withElement))
                 {
                     if (withElement.ValueKind != JsonValueKind.Object)
+                    {
+                        errorCode = "invalid_with_payload";
                         return null;
+                    }
 
                     withJson = withElement.GetRawText();
                 }
@@ -499,21 +639,30 @@ public static class SkillLoader
                 });
             }
 
-            if (!ValidateComposition(steps))
+            if (!ValidateComposition(steps, out errorCode))
                 return null;
 
             return new MetaSkillComposition { Steps = steps };
         }
         catch
         {
+            errorCode = "invalid_meta_composition";
             return null;
         }
     }
 
     private static bool ValidateComposition(IReadOnlyList<MetaSkillStepDefinition> steps)
+        => ValidateComposition(steps, out _);
+
+    private static bool ValidateComposition(IReadOnlyList<MetaSkillStepDefinition> steps, out string? errorCode)
     {
+        errorCode = null;
+
         if (steps.Count == 0)
+        {
+            errorCode = "invalid_meta_composition";
             return false;
+        }
 
         var supportedKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -529,40 +678,100 @@ public static class SkillLoader
         foreach (var step in steps)
         {
             if (!ids.Add(step.Id))
+            {
+                errorCode = "duplicate_step_id";
                 return false;
+            }
 
             if (!supportedKinds.Contains(step.Kind))
+            {
+                errorCode = "unsupported_step_kind";
                 return false;
+            }
 
             if (step.Kind.Equals("tool_call", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(step.Tool))
+            {
+                errorCode = "invalid_step_kind_fields";
                 return false;
+            }
 
             if (step.Kind.Equals("tool_call", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(step.Skill))
+            {
+                errorCode = "invalid_step_kind_fields";
                 return false;
+            }
 
             if (step.Kind.Equals("skill_exec", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(step.Skill))
+            {
+                errorCode = "invalid_step_kind_fields";
                 return false;
+            }
 
             if (step.Kind.Equals("skill_exec", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(step.Tool))
+            {
+                errorCode = "invalid_step_kind_fields";
                 return false;
+            }
+
+            if (step.Kind.Equals("agent", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(step.Tool))
+            {
+                errorCode = "invalid_step_kind_fields";
+                return false;
+            }
+
+            if (step.Kind.Equals("llm_chat", StringComparison.OrdinalIgnoreCase) &&
+                (!string.IsNullOrWhiteSpace(step.Skill) || !string.IsNullOrWhiteSpace(step.Tool)))
+            {
+                errorCode = "invalid_step_kind_fields";
+                return false;
+            }
+
+            if (step.Kind.Equals("llm_classify", StringComparison.OrdinalIgnoreCase) &&
+                (!string.IsNullOrWhiteSpace(step.Skill) || !string.IsNullOrWhiteSpace(step.Tool)))
+            {
+                errorCode = "invalid_step_kind_fields";
+                return false;
+            }
+
+            if (step.Kind.Equals("user_input", StringComparison.OrdinalIgnoreCase) &&
+                (!string.IsNullOrWhiteSpace(step.Skill) || !string.IsNullOrWhiteSpace(step.Tool)))
+            {
+                errorCode = "invalid_step_kind_fields";
+                return false;
+            }
         }
 
         foreach (var step in steps)
         {
             if (step.Kind.Equals("llm_classify", StringComparison.OrdinalIgnoreCase) && !ValidateClassifyStep(step.WithJson, ids))
+            {
+                errorCode = "invalid_classify_step";
                 return false;
+            }
 
             foreach (var dependency in step.DependsOn)
             {
                 if (!ids.Contains(dependency))
+                {
+                    errorCode = "invalid_dependency";
                     return false;
+                }
 
                 if (string.Equals(step.Id, dependency, StringComparison.OrdinalIgnoreCase))
+                {
+                    errorCode = "self_dependency";
                     return false;
+                }
             }
         }
 
-        return !HasDependencyCycle(steps);
+        if (HasDependencyCycle(steps))
+        {
+            errorCode = "dependency_cycle";
+            return false;
+        }
+
+        return true;
     }
 
     private static bool ValidateClassifyStep(string? withJson, ISet<string> knownStepIds)

@@ -338,6 +338,34 @@ General composition rule: when a step declares `with`, it must be a JSON object 
 Step-kind field consistency rule: `skill_exec` steps must declare a non-empty `skill` value.
 Step-kind field consistency rule: `tool_call` steps must declare `tool` and must not declare `skill`.
 Step-kind field consistency rule: `skill_exec` steps must not declare `tool`.
+Step-kind field consistency rule: `agent` steps must not declare `tool`.
+Step-kind field consistency rule: `llm_chat`, `llm_classify`, and `user_input` steps must not declare `skill` or `tool`.
+
+### Skill loading diagnostics (`error_code`)
+
+When a skill file fails to parse during scanning, OpenClaw logs a warning with a normalized parser diagnostic code:
+
+- `Failed to parse skill at <path> (error_code=<code>)`
+
+This applies to both root `SKILL.md` and `<skill>/SKILL.md` directory scans.
+
+Current parse-phase `error_code` values include:
+
+- `invalid_frontmatter`: frontmatter delimiters are missing or malformed.
+- `missing_name`: required `name` is missing in frontmatter.
+- `invalid_kind`: `kind` is not one of the supported values.
+- `missing_meta_composition`: `kind: meta` was declared without `composition`.
+- `invalid_meta_composition`: `composition` JSON is malformed or has invalid shape.
+- `invalid_with_payload`: a step declared `with` but it was not a JSON object.
+- `invalid_step_kind_fields`: step field constraints were violated for the declared `kind`.
+- `unsupported_step_kind`: composition references a step kind not supported by parser governance.
+- `duplicate_step_id`: composition contains duplicate step IDs.
+- `invalid_dependency`: `depends_on` references a missing step ID.
+- `self_dependency`: a step depends on itself.
+- `dependency_cycle`: composition dependency graph contains a cycle.
+- `invalid_classify_step`: `llm_classify` `options` / `route` governance failed.
+- `invalid_final_text_mode`: `final_text_mode` is invalid for current composition.
+- `parse_failed`: fallback when parsing failed but no more specific code applies.
 
 Current response shape:
 

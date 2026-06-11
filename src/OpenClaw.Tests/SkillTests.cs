@@ -251,6 +251,67 @@ public class SkillLoaderTests
     }
 
     [Fact]
+    public void TryParseSkillContent_MetaToolCallWithSkill_ReturnsDiagnosticCode()
+    {
+        var content = """
+            ---
+            name: meta-tool-call-invalid-diag
+            description: Invalid tool_call step
+            kind: meta
+            composition: {"steps":[{"id":"t1","kind":"tool_call","tool":"search","skill":"web-research"}]}
+            ---
+            Meta instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/meta-tool-call-invalid-diag", SkillSource.Workspace, out var skill, out var errorCode);
+
+        Assert.False(ok);
+        Assert.Null(skill);
+        Assert.Equal("invalid_step_kind_fields", errorCode);
+    }
+
+    [Fact]
+    public void TryParseSkillContent_MetaInvalidFinalTextMode_ReturnsDiagnosticCode()
+    {
+        var content = """
+            ---
+            name: meta-invalid-final-mode-diag
+            description: Invalid final text mode
+            kind: meta
+            final_text_mode: latest
+            composition: {"steps":[{"id":"s1","kind":"agent","skill":"web-research"}]}
+            ---
+            Meta instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/meta-invalid-final-mode-diag", SkillSource.Workspace, out var skill, out var errorCode);
+
+        Assert.False(ok);
+        Assert.Null(skill);
+        Assert.Equal("invalid_final_text_mode", errorCode);
+    }
+
+    [Fact]
+    public void TryParseSkillContent_MetaDependencyCycle_ReturnsDiagnosticCode()
+    {
+        var content = """
+            ---
+            name: meta-cycle-diag
+            description: Invalid cycle
+            kind: meta
+            composition: {"steps":[{"id":"a","kind":"agent","skill":"one","depends_on":["b"]},{"id":"b","kind":"agent","skill":"two","depends_on":["a"]}]}
+            ---
+            Meta instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/meta-cycle-diag", SkillSource.Workspace, out var skill, out var errorCode);
+
+        Assert.False(ok);
+        Assert.Null(skill);
+        Assert.Equal("dependency_cycle", errorCode);
+    }
+
+    [Fact]
     public void ParseSkillContent_MetaWithoutComposition_ReturnsNull()
     {
         var content = """
@@ -431,6 +492,60 @@ public class SkillLoaderTests
 
         Assert.NotNull(skill);
         Assert.Equal("web-research", skill!.Composition!.Steps[0].Skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaLlmChatWithTool_ReturnsNull()
+    {
+        var content = """
+            ---
+            name: meta-llm-chat-with-tool
+            description: Invalid llm_chat step with tool
+            kind: meta
+            composition: {"steps":[{"id":"chat","kind":"llm_chat","tool":"search","with":{"prompt":"hello"}}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-llm-chat-with-tool", SkillSource.Workspace);
+
+        Assert.Null(skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaUserInputWithSkill_ReturnsNull()
+    {
+        var content = """
+            ---
+            name: meta-user-input-with-skill
+            description: Invalid user_input step with skill
+            kind: meta
+            composition: {"steps":[{"id":"ask","kind":"user_input","skill":"web-research","with":{"prompt":"confirm"}}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-user-input-with-skill", SkillSource.Workspace);
+
+        Assert.Null(skill);
+    }
+
+    [Fact]
+    public void ParseSkillContent_MetaAgentWithTool_ReturnsNull()
+    {
+        var content = """
+            ---
+            name: meta-agent-with-tool
+            description: Invalid agent step with tool
+            kind: meta
+            composition: {"steps":[{"id":"delegate","kind":"agent","tool":"search","skill":"web-research"}]}
+            ---
+            Meta instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/meta-agent-with-tool", SkillSource.Workspace);
+
+        Assert.Null(skill);
     }
 
     [Fact]
@@ -936,6 +1051,93 @@ public class SkillLoaderTests
         var skills = SkillLoader.LoadAll(config, null, logger);
 
         Assert.Empty(skills);
+    }
+
+    [Fact]
+    public void LoadAll_InvalidSkill_LogsDiagnosticErrorCode()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"openclaw-test-skills-{Guid.NewGuid():N}");
+        var badSkillDir = Path.Combine(tempDir, "bad-meta");
+        Directory.CreateDirectory(badSkillDir);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(badSkillDir, "SKILL.md"), """
+                ---
+                name: bad-meta
+                description: invalid meta skill
+                kind: meta
+                composition: {"steps":[{"id":"t1","kind":"tool_call","tool":"search","skill":"web-research"}]}
+                ---
+                Invalid.
+                """);
+
+            var config = new SkillsConfig
+            {
+                Enabled = true,
+                Load = new SkillLoadConfig
+                {
+                    IncludeBundled = false,
+                    IncludeManaged = false,
+                    IncludeWorkspace = false,
+                    ExtraDirs = [tempDir]
+                }
+            };
+
+            var logger = new CapturingTestLogger();
+            var skills = SkillLoader.LoadAll(config, null, logger);
+
+            Assert.Empty(skills);
+            Assert.Contains(logger.WarningMessages, message =>
+                message.Contains("error_code=invalid_step_kind_fields", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void LoadAll_InvalidRootSkill_LogsDiagnosticErrorCode()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"openclaw-test-skills-root-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(tempDir, "SKILL.md"), """
+                ---
+                name: bad-root-meta
+                description: invalid root meta skill
+                kind: meta
+                composition: {"steps":[{"id":"t1","kind":"tool_call","tool":"search","skill":"web-research"}]}
+                ---
+                Invalid root skill.
+                """);
+
+            var config = new SkillsConfig
+            {
+                Enabled = true,
+                Load = new SkillLoadConfig
+                {
+                    IncludeBundled = false,
+                    IncludeManaged = false,
+                    IncludeWorkspace = false,
+                    ExtraDirs = [tempDir]
+                }
+            };
+
+            var logger = new CapturingTestLogger();
+            var skills = SkillLoader.LoadAll(config, null, logger);
+
+            Assert.Empty(skills);
+            Assert.Contains(logger.WarningMessages, message =>
+                message.Contains("error_code=invalid_step_kind_fields", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
     }
 
     [Fact]
@@ -2106,4 +2308,27 @@ file sealed class TestLogger : Microsoft.Extensions.Logging.ILogger
     public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel,
         Microsoft.Extensions.Logging.EventId eventId, TState state,
         Exception? exception, Func<TState, Exception?, string> formatter) { }
+}
+
+file sealed class CapturingTestLogger : Microsoft.Extensions.Logging.ILogger
+{
+    public List<string> WarningMessages { get; } = [];
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel)
+        => logLevel >= Microsoft.Extensions.Logging.LogLevel.Warning;
+
+    public void Log<TState>(
+        Microsoft.Extensions.Logging.LogLevel logLevel,
+        Microsoft.Extensions.Logging.EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter)
+    {
+        if (logLevel != Microsoft.Extensions.Logging.LogLevel.Warning)
+            return;
+
+        WarningMessages.Add(formatter(state, exception));
+    }
 }

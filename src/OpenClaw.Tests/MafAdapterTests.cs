@@ -1055,6 +1055,188 @@ public sealed class MafAdapterTests
     }
 
     [Fact]
+    public async Task MafAgentRuntime_ExecuteMetaSkillAsync_ToolStepFailure_StopsWhenContinueOnErrorIsFalse()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-meta-tool-failure-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var failingTool = new ThrowingMafTool("failing_tool", "boom");
+            var successTool = new CountingMafTool("success_tool", "ok");
+            var runtime = CreateRuntime(
+                storagePath,
+                new TestLlmExecutionService(),
+                new MafOptions(),
+                tools: [failingTool, successTool],
+                skills:
+                [
+                    new SkillDefinition
+                    {
+                        Name = "meta-flow",
+                        Description = "meta flow",
+                        Instructions = "...",
+                        Location = "/skills/meta-flow",
+                        Kind = SkillKind.Meta,
+                        Composition = new MetaSkillComposition
+                        {
+                            Steps =
+                            [
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "first",
+                                    Kind = "tool_call",
+                                    Tool = "failing_tool"
+                                },
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "second",
+                                    Kind = "tool_call",
+                                    Tool = "success_tool"
+                                }
+                            ]
+                        }
+                    }
+                ]);
+            var session = CreateSession("maf-meta-tool-failure-stop");
+
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+
+            Assert.Contains("Meta step 'first' failed", result, StringComparison.Ordinal);
+            Assert.Equal(0, successTool.CallCount);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MafAgentRuntime_ExecuteMetaSkillAsync_ToolStepFailure_ContinuesWhenContinueOnErrorIsTrue()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-meta-tool-failure-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var failingTool = new ThrowingMafTool("failing_tool", "boom");
+            var successTool = new CountingMafTool("success_tool", "ok");
+            var runtime = CreateRuntime(
+                storagePath,
+                new TestLlmExecutionService(),
+                new MafOptions(),
+                tools: [failingTool, successTool],
+                skills:
+                [
+                    new SkillDefinition
+                    {
+                        Name = "meta-flow",
+                        Description = "meta flow",
+                        Instructions = "...",
+                        Location = "/skills/meta-flow",
+                        Kind = SkillKind.Meta,
+                        Composition = new MetaSkillComposition
+                        {
+                            Steps =
+                            [
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "first",
+                                    Kind = "tool_call",
+                                    Tool = "failing_tool",
+                                    WithJson = "{\"continue_on_error\":true}"
+                                },
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "second",
+                                    Kind = "tool_call",
+                                    Tool = "success_tool"
+                                }
+                            ]
+                        }
+                    }
+                ]);
+            var session = CreateSession("maf-meta-tool-failure-continue");
+
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+
+            Assert.Equal("ok", result);
+            Assert.Equal(1, successTool.CallCount);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MafAgentRuntime_ExecuteMetaSkillAsync_ClassifyRoute_BlocksUnmatchedBranch()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-meta-classify-route-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var chosenTool = new CountingMafTool("chosen_tool", "chosen");
+            var skippedTool = new CountingMafTool("skipped_tool", "skipped");
+            var runtime = CreateRuntime(
+                storagePath,
+                new TestLlmExecutionService(),
+                new MafOptions(),
+                tools: [chosenTool, skippedTool],
+                skills:
+                [
+                    new SkillDefinition
+                    {
+                        Name = "meta-flow",
+                        Description = "meta flow",
+                        Instructions = "...",
+                        Location = "/skills/meta-flow",
+                        Kind = SkillKind.Meta,
+                        FinalTextMode = "step:chosen",
+                        Composition = new MetaSkillComposition
+                        {
+                            Steps =
+                            [
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "classify",
+                                    Kind = "llm_classify",
+                                    WithJson = "{\"options\":[\"ok\",\"other\"],\"route\":{\"ok\":\"chosen\",\"other\":\"skipped\"}}"
+                                },
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "chosen",
+                                    Kind = "tool_call",
+                                    Tool = "chosen_tool",
+                                    DependsOn = ["classify"]
+                                },
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "skipped",
+                                    Kind = "tool_call",
+                                    Tool = "skipped_tool",
+                                    DependsOn = ["classify"]
+                                }
+                            ]
+                        }
+                    }
+                ]);
+            var session = CreateSession("maf-meta-classify-route");
+
+            var result = await InvokeMafMetaSkillWithExecutionContextAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+
+            Assert.Equal("chosen", result);
+            Assert.Equal(1, chosenTool.CallCount);
+            Assert.Equal(0, skippedTool.CallCount);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task MafAgentRuntime_ExecuteMetaSkillAsync_StructuredMode_UnsupportedKind_ReturnsStructuredError()
     {
         var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-meta-structured-tests", Guid.NewGuid().ToString("N"));
@@ -1616,6 +1798,30 @@ public sealed class MafAdapterTests
         return await task!;
     }
 
+    private static async Task<string> InvokeMafMetaSkillWithExecutionContextAsync(
+        MafAgentRuntime runtime,
+        Session session,
+        string skillName,
+        string input,
+        CancellationToken ct)
+    {
+        using var scope = MafExecutionContextScope.Push(new MafExecutionContext
+        {
+            Session = session,
+            TurnContext = new TurnContext
+            {
+                SessionId = session.Id,
+                ChannelId = session.ChannelId
+            },
+            SystemPromptLength = 0,
+            SkillPromptLength = 0,
+            SessionTokenBudget = 0,
+            ToolInvocations = []
+        });
+
+        return await InvokeMafMetaSkillAsync(runtime, session, skillName, input, ct);
+    }
+
     private static void RemoveMafToolMapping(MafAgentRuntime runtime, string toolName)
     {
         var field = typeof(MafAgentRuntime).GetField("_mafToolsByName", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
@@ -1715,6 +1921,20 @@ public sealed class MafAdapterTests
             _ = ct;
             Interlocked.Increment(ref _callCount);
             return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class ThrowingMafTool(string name, string message) : ITool
+    {
+        public string Name => name;
+        public string Description => "Throwing test tool.";
+        public string ParameterSchema => """{"type":"object"}""";
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        {
+            _ = argumentsJson;
+            _ = ct;
+            throw new InvalidOperationException(message);
         }
     }
 
