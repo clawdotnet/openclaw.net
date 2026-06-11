@@ -1,6 +1,6 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
@@ -15,7 +15,7 @@ public sealed class TurnTokenUsageAuditLog : ITurnTokenUsageObserver, IDisposabl
     private const int DefaultAuditQueueCapacity = 4096;
     private readonly string? _filePath;
     private readonly ILogger<TurnTokenUsageAuditLog>? _logger;
-    private readonly Channel<string>? _lineChannel;
+    private readonly BlockingCollection<string>? _lineQueue;
     private readonly Task? _writerTask;
     private int _disposed;
 
@@ -36,14 +36,14 @@ public sealed class TurnTokenUsageAuditLog : ITurnTokenUsageObserver, IDisposabl
                 Directory.CreateDirectory(directory);
             _filePath = fullPath;
 
-            _lineChannel = Channel.CreateBounded<string>(new BoundedChannelOptions(Math.Max(1, auditQueueCapacity))
-            {
-                SingleReader = true,
-                SingleWriter = false,
-                AllowSynchronousContinuations = false,
-                FullMode = BoundedChannelFullMode.Wait
-            });
-            _writerTask = Task.Run(() => WriteLoopAsync(fullPath, _lineChannel.Reader));
+            _lineQueue = new BlockingCollection<string>(
+                new ConcurrentQueue<string>(),
+                Math.Max(1, auditQueueCapacity));
+            _writerTask = Task.Factory.StartNew(
+                () => WriteLoop(fullPath, _lineQueue),
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
         }
         catch (Exception ex)
         {
@@ -58,15 +58,15 @@ public sealed class TurnTokenUsageAuditLog : ITurnTokenUsageObserver, IDisposabl
             return;
 
         var filePath = _filePath;
-        var lineChannel = _lineChannel;
-        if (string.IsNullOrWhiteSpace(filePath) || lineChannel is null)
+        var lineQueue = _lineQueue;
+        if (string.IsNullOrWhiteSpace(filePath) || lineQueue is null)
             return;
 
         try
         {
             var json = JsonSerializer.Serialize(record, TurnTokenUsageJsonContext.Default.TurnTokenUsageRecord);
-            if (!lineChannel.Writer.TryWrite(json))
-                lineChannel.Writer.WriteAsync(json).AsTask().GetAwaiter().GetResult();
+            if (!lineQueue.TryAdd(json))
+                lineQueue.Add(json);
         }
         catch (Exception ex)
         {
@@ -79,40 +79,40 @@ public sealed class TurnTokenUsageAuditLog : ITurnTokenUsageObserver, IDisposabl
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        if (_lineChannel is null)
-            return;
-
-        _lineChannel.Writer.TryComplete();
-
-        if (_writerTask is null)
+        if (_lineQueue is null)
             return;
 
         try
         {
-            _writerTask.GetAwaiter().GetResult();
+            _lineQueue.CompleteAdding();
+            _writerTask?.GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Failed to flush turn token usage audit log during disposal");
         }
+        finally
+        {
+            _lineQueue.Dispose();
+        }
     }
 
-    private async Task WriteLoopAsync(string filePath, ChannelReader<string> reader)
+    private void WriteLoop(string filePath, BlockingCollection<string> queue)
     {
-        await using var stream = new FileStream(
+        using var stream = new FileStream(
             filePath,
             FileMode.Append,
             FileAccess.Write,
             FileShare.Read,
             bufferSize: 4096,
-            FileOptions.Asynchronous);
-        await using var writer = new StreamWriter(stream);
+            FileOptions.None);
+        using var writer = new StreamWriter(stream);
 
-        await foreach (var line in reader.ReadAllAsync())
+        foreach (var line in queue.GetConsumingEnumerable())
         {
             try
             {
-                await writer.WriteLineAsync(line);
+                writer.WriteLine(line);
             }
             catch (Exception ex)
             {
@@ -120,7 +120,7 @@ public sealed class TurnTokenUsageAuditLog : ITurnTokenUsageObserver, IDisposabl
             }
         }
 
-        await writer.FlushAsync();
+        writer.Flush();
     }
 }
 
