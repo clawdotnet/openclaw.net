@@ -1621,6 +1621,81 @@ public sealed class MafAdapterTests
     }
 
     [Fact]
+    public async Task MafAgentRuntime_ExecuteMetaSkillAsync_SkillExecStep_WithStdin_ExecutesSuccessfully()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-meta-skill-exec-stdin-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        var skillRoot = Path.Combine(storagePath, "worker-skill");
+        var scriptsDir = Path.Combine(skillRoot, "scripts");
+        Directory.CreateDirectory(scriptsDir);
+
+        var scriptPath = Path.Combine(scriptsDir, "echo-stdin.ps1");
+        await File.WriteAllTextAsync(scriptPath, "$inputText = [Console]::In.ReadToEnd()\nWrite-Output \"stdin:$inputText\"\n");
+
+        try
+        {
+            var runtime = CreateRuntime(
+                storagePath,
+                new TestLlmExecutionService(),
+                new MafOptions(),
+                skills:
+                [
+                    new SkillDefinition
+                    {
+                        Name = "worker-skill",
+                        Description = "worker",
+                        Instructions = "worker instructions",
+                        Location = skillRoot,
+                        Resources =
+                        [
+                            new SkillResource
+                            {
+                                Name = "echo-stdin.ps1",
+                                RelativePath = "scripts/echo-stdin.ps1",
+                                AbsolutePath = scriptPath,
+                                Kind = SkillResourceKind.Script
+                            }
+                        ]
+                    },
+                    new SkillDefinition
+                    {
+                        Name = "meta-flow",
+                        Description = "meta flow",
+                        Instructions = "...",
+                        Location = skillRoot,
+                        Kind = SkillKind.Meta,
+                        FinalTextMode = "step:exec",
+                        Composition = new MetaSkillComposition
+                        {
+                            Steps =
+                            [
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "exec",
+                                    Kind = "skill_exec",
+                                    Skill = "worker-skill",
+                                    SkillExecEntrypoint = "echo-stdin.ps1",
+                                    SkillExecStdin = "{{ input }}",
+                                    SkillExecParseMode = "text"
+                                }
+                            ]
+                        }
+                    }
+                ]);
+            var session = CreateSession("maf-meta-skill-exec-stdin");
+
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "incident-stdin", CancellationToken.None);
+
+            Assert.Equal("stdin:incident-stdin", result.Trim());
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task MafAgentRuntime_ExecuteMetaSkillAsync_ClarifyForm_NormalizesInputBeforePublishingOutput()
     {
         var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-meta-clarify-tests", Guid.NewGuid().ToString("N"));

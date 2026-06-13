@@ -132,6 +132,7 @@ public sealed class ToolExecutionRouter
                     BackendName = fallbackBackend!,
                     Command = request.Command,
                     Arguments = request.Arguments,
+                    StandardInput = request.StandardInput,
                     LeaseKey = request.LeaseKey,
                     WorkingDirectory = request.WorkingDirectory,
                     Environment = new Dictionary<string, string>(request.Environment, StringComparer.Ordinal),

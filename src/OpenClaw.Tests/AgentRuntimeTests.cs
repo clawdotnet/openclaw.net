@@ -2336,6 +2336,79 @@ public class AgentRuntimeTests
         }
     }
 
+    [Fact]
+    public async Task ExecuteMetaSkillAsync_SkillExecStep_WithStdin_ExecutesSuccessfully()
+    {
+        var skillRoot = Path.Combine(Path.GetTempPath(), "openclaw-meta-skill-exec-stdin", Guid.NewGuid().ToString("N"));
+        var scriptsDir = Path.Combine(skillRoot, "scripts");
+        Directory.CreateDirectory(scriptsDir);
+
+        var scriptPath = Path.Combine(scriptsDir, "echo-stdin.ps1");
+        await File.WriteAllTextAsync(scriptPath, "$inputText = [Console]::In.ReadToEnd()\nWrite-Output \"stdin:$inputText\"\n");
+
+        try
+        {
+            var agent = new AgentRuntime(
+                _chatClient,
+                _tools,
+                _memory,
+                _config,
+                maxHistoryTurns: 5,
+                skills:
+                [
+                    new SkillDefinition
+                    {
+                        Name = "worker-skill",
+                        Description = "worker",
+                        Instructions = "worker instructions",
+                        Location = skillRoot,
+                        Resources =
+                        [
+                            new SkillResource
+                            {
+                                Name = "echo-stdin.ps1",
+                                RelativePath = "scripts/echo-stdin.ps1",
+                                AbsolutePath = scriptPath,
+                                Kind = SkillResourceKind.Script
+                            }
+                        ]
+                    },
+                    new SkillDefinition
+                    {
+                        Name = "meta-flow",
+                        Description = "meta flow",
+                        Instructions = "...",
+                        Location = skillRoot,
+                        Kind = SkillKind.Meta,
+                        FinalTextMode = "step:exec",
+                        Composition = new MetaSkillComposition
+                        {
+                            Steps =
+                            [
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "exec",
+                                    Kind = "skill_exec",
+                                    Skill = "worker-skill",
+                                    SkillExecEntrypoint = "echo-stdin.ps1",
+                                    SkillExecStdin = "{{ input }}",
+                                    SkillExecParseMode = "text"
+                                }
+                            ]
+                        }
+                    }
+                ]);
+
+            var result = await InvokeMetaSkillAsync(agent, new Session { Id = "sess", SenderId = "u", ChannelId = "c" }, "meta-flow", "incident-stdin", CancellationToken.None);
+
+            Assert.Equal("stdin:incident-stdin", result.Trim());
+        }
+        finally
+        {
+            Directory.Delete(skillRoot, recursive: true);
+        }
+    }
+
     private static async Task<string> InvokeMetaSkillAsync(
         AgentRuntime runtime,
         Session session,

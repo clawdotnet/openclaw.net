@@ -1053,17 +1053,6 @@ public sealed class OpenClawToolExecutor
                 failureMessage: $"Entrypoint '{entrypoint}' failed skill root validation.");
         }
 
-        if (stdin is not null)
-        {
-            return CreateImmediateResult(
-                "skill_exec",
-                "{}",
-                "Meta step skill_exec stdin is not implemented for the current execution backend path.",
-                resultStatus: ToolResultStatuses.Failed,
-                failureCode: "skill_exec_stdin_not_supported",
-                failureMessage: "stdin is not yet supported for skill_exec.");
-        }
-
         var command = ResolveScriptCommand(script.AbsolutePath, out var commandArguments);
         var allArguments = commandArguments.Concat(arguments).ToArray();
         var resolvedWorkingDirectory = ResolveSkillWorkingDirectory(skill, workingDirectory);
@@ -1076,6 +1065,7 @@ public sealed class OpenClawToolExecutor
                 BackendName = _config.Execution.DefaultBackend,
                 Command = command,
                 Arguments = allArguments,
+                StandardInput = stdin,
                 WorkingDirectory = resolvedWorkingDirectory,
                 Environment = new Dictionary<string, string>(StringComparer.Ordinal),
                 RequireWorkspace = false,

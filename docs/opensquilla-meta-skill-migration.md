@@ -140,3 +140,38 @@ For deeper OpenSquilla parity, prioritize the still-missing surfaces by direct o
 2. **P1: `skill_exec` stdin and operator ergonomics.** Extend the new subprocess path to cover stdin-heavy workflows and the surrounding inspection/replay surfaces if migrated skills depend on them.
 3. **P2: True parallel step scheduling.** Preserve DAG correctness while allowing independent steps to run concurrently. This improves performance and better matches OpenSquilla behavior, but most flows can be migrated without it.
 4. **P2: Product-level catalog, creator, and proposal flow.** Add built-in MetaSkills, `meta-skill-creator`, proposal inspection, and auto-enable audit only if OpenClaw.NET needs product-level OpenSquilla parity rather than runtime portability alone.
+
+## P1 Acceptance Checklist (DoD)
+
+Use this checklist for P1 milestone sign-off, layered as capability, contract, and regression evidence.
+
+### A. P1-1: Meta run history replay and operations
+
+- [x] `meta-runs` inspection surface exists (summary, `--run`, `--verbose`, `--json`).
+- [x] `meta-runs replay` (preview-only) and `meta-runs reconstruct` (audit reconstruction, non-executing) are available.
+- [x] Derived evidence views exist for `meta-runs proposals` and `meta-runs proposals show`.
+- [x] Review-only actions exist for `proposals accept` / `proposals dismiss` (no tool/model/replay/resume execution).
+- [x] Same-action idempotency and opposite-action conflict rejection are enforced, with no partial JSON on JSON failure paths.
+- [x] List/detail outputs expose additive review state (`reviewStatus`, `reviewedAtUtc`, `review`).
+- [x] Help text covers the new commands (skills help and top-level CLI help).
+
+Verification commands (passing examples):
+
+- `dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter "FullyQualifiedName~SkillCommandsTests.RunAsync_MetaRuns_Proposals_Accept|FullyQualifiedName~SkillCommandsTests.RunAsync_MetaRuns_Proposals_Dismiss|FullyQualifiedName~SkillCommandsTests.RunAsync_MetaRuns_Proposals_Show_Json_IncludesReviewSection|FullyQualifiedName~SkillCommandsTests.RunAsync_MetaRuns_Proposals_Json_IncludesReviewStatus|FullyQualifiedName~CliProgramTests.Main_Help_ListsSkillsMetaRunsProposalReviewCommands"`
+- `dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter "FullyQualifiedName~SkillCommandsTests.RunAsync_MetaRuns_|FullyQualifiedName~CliProgramTests.Main_Help_ListsSkillsMetaRuns"`
+
+Remaining gap (P1-1 not fully closed):
+
+- [ ] Durable proposal lifecycle migration to the `LearningProposal` domain store (current implementation is review overlay).
+- [ ] Full proposal provenance and lifecycle semantics at the domain layer (avoid long-term overgrowth of the derived layer).
+
+### B. P1-2: skill_exec stdin and operator ergonomics
+
+- [ ] Support stdin-heavy `skill_exec` contracts and execution path (currently rejected).
+- [ ] Provide inspection/replay operational visibility around `skill_exec` runs.
+- [ ] Add machine-readable failure contracts and regression tests for stdin/replay branches.
+
+Suggested sign-off threshold:
+
+- P1-1 can be considered substantially complete.
+- Overall P1 should remain partial until P1-2 is complete.

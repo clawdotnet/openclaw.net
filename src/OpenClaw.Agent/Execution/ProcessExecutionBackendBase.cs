@@ -61,9 +61,11 @@ internal abstract class ProcessExecutionBackendBase : IExecutionBackend, IExecut
     protected static async Task<ExecutionResult> ExecuteProcessAsync(
         string backendName,
         ProcessStartInfo startInfo,
+        string? standardInput,
         int timeoutSeconds,
         CancellationToken cancellationToken)
     {
+        startInfo.RedirectStandardInput = !string.IsNullOrEmpty(standardInput);
         using var process = new Process { StartInfo = startInfo };
         var stdout = new StringBuilder();
         var stderr = new StringBuilder();
@@ -84,6 +86,13 @@ internal abstract class ProcessExecutionBackendBase : IExecutionBackend, IExecut
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
+        if (!string.IsNullOrEmpty(standardInput))
+        {
+            await process.StandardInput.WriteAsync(standardInput.AsMemory(), cancellationToken);
+            await process.StandardInput.FlushAsync();
+            process.StandardInput.Close();
+        }
+
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         if (timeoutSeconds > 0)
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
@@ -91,6 +100,7 @@ internal abstract class ProcessExecutionBackendBase : IExecutionBackend, IExecut
         try
         {
             await process.WaitForExitAsync(timeoutCts.Token);
+            process.WaitForExit();
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -114,6 +124,11 @@ internal abstract class ProcessExecutionBackendBase : IExecutionBackend, IExecut
                 DurationMs = sw.Elapsed.TotalMilliseconds
             };
         }
+        finally
+        {
+            TryCancelRead(process, isError: false);
+            TryCancelRead(process, isError: true);
+        }
 
         return new ExecutionResult
         {
@@ -136,6 +151,20 @@ internal abstract class ProcessExecutionBackendBase : IExecutionBackend, IExecut
         catch
         {
             return null;
+        }
+    }
+
+    private static void TryCancelRead(Process process, bool isError)
+    {
+        try
+        {
+            if (isError)
+                process.CancelErrorRead();
+            else
+                process.CancelOutputRead();
+        }
+        catch
+        {
         }
     }
 }

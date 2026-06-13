@@ -17,7 +17,7 @@ internal sealed class SshExecutionBackend : ProcessExecutionBackendBase
     public override string Name => _name;
 
     public override Task<ExecutionResult> ExecuteAsync(ExecutionRequest request, CancellationToken cancellationToken = default)
-        => ExecuteProcessAsync(Name, CreateProcessStartInfo(request), _profile.TimeoutSeconds, cancellationToken);
+        => ExecuteProcessAsync(Name, CreateProcessStartInfo(request), request.StandardInput, _profile.TimeoutSeconds, cancellationToken);
 
     protected override ProcessStartInfo CreateProcessStartInfo(ExecutionRequest request)
     {

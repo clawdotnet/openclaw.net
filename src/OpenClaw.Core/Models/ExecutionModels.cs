@@ -65,6 +65,7 @@ public sealed class ExecutionRequest
     public required string BackendName { get; init; }
     public required string Command { get; init; }
     public string[] Arguments { get; init; } = [];
+    public string? StandardInput { get; init; }
     public string? LeaseKey { get; init; }
     public string? WorkingDirectory { get; init; }
     public IDictionary<string, string> Environment { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);

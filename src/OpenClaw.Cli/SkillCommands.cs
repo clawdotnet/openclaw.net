@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Features;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Skills;
@@ -175,8 +176,7 @@ internal static class SkillCommands
         }
 
         var storagePath = GetOptionValue(args, "--storage");
-        var resolvedMemoryPath = ResolveMemoryPath(storagePath);
-        var reviewStore = new MetaRunProposalReviewStore(ResolveProposalReviewRootPath(resolvedMemoryPath));
+        var learningProposalStore = OpenLearningProposalStore(storagePath);
         var store = OpenMemoryStore(storagePath);
         try
         {
@@ -195,7 +195,7 @@ internal static class SkillCommands
                 return 1;
             }
 
-            var reviews = await reviewStore.LoadBySessionAsync(sessionId, CancellationToken.None);
+            var reviews = await LoadMetaRunLearningReviewsAsync(learningProposalStore, sessionId, CancellationToken.None);
             proposals = ApplyReviewSummary(proposals, reviews);
 
             var response = new MetaRunDerivedProposalListResponse
@@ -218,6 +218,16 @@ internal static class SkillCommands
         }
         finally
         {
+            switch (learningProposalStore)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync();
+                    break;
+                case IDisposable disposable:
+                    disposable.Dispose();
+                    break;
+            }
+
             switch (store)
             {
                 case IAsyncDisposable asyncDisposable:
@@ -248,8 +258,7 @@ internal static class SkillCommands
         }
 
         var storagePath = GetOptionValue(args, "--storage");
-        var resolvedMemoryPath = ResolveMemoryPath(storagePath);
-        var reviewStore = new MetaRunProposalReviewStore(ResolveProposalReviewRootPath(resolvedMemoryPath));
+        var learningProposalStore = OpenLearningProposalStore(storagePath);
         var store = OpenMemoryStore(storagePath);
         try
         {
@@ -269,7 +278,7 @@ internal static class SkillCommands
             }
 
             var run = session.MetaRunHistory.First(run => string.Equals(run.RunId, summary.RunId, StringComparison.Ordinal));
-            var review = await reviewStore.GetAsync(sessionId, summary.Id, CancellationToken.None);
+            var review = await GetMetaRunLearningReviewAsync(learningProposalStore, sessionId, summary.Id, CancellationToken.None);
             var detail = new MetaRunDerivedProposalDetailResponse
             {
                 SessionId = sessionId,
@@ -289,6 +298,16 @@ internal static class SkillCommands
         }
         finally
         {
+            switch (learningProposalStore)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync();
+                    break;
+                case IDisposable disposable:
+                    disposable.Dispose();
+                    break;
+            }
+
             switch (store)
             {
                 case IAsyncDisposable asyncDisposable:
@@ -329,8 +348,7 @@ internal static class SkillCommands
         }
 
         var storagePath = GetOptionValue(args, "--storage");
-        var resolvedMemoryPath = ResolveMemoryPath(storagePath);
-        var reviewStore = new MetaRunProposalReviewStore(ResolveProposalReviewRootPath(resolvedMemoryPath));
+        var learningProposalStore = OpenLearningProposalStore(storagePath);
         var store = OpenMemoryStore(storagePath);
         try
         {
@@ -349,30 +367,67 @@ internal static class SkillCommands
                 return 1;
             }
 
-            var existing = await reviewStore.GetAsync(sessionId, proposalId, CancellationToken.None);
+            var durableProposalId = BuildMetaRunReviewProposalId(sessionId, proposalId);
+            var existing = await learningProposalStore.GetProposalAsync(durableProposalId, CancellationToken.None);
             var alreadyReviewed = false;
             MetaRunProposalReviewRecord record;
-            if (existing is null)
+            if (existing is null || string.Equals(existing.Status, LearningProposalStatus.Pending, StringComparison.OrdinalIgnoreCase))
             {
+                var reviewedAtUtc = DateTimeOffset.UtcNow;
+                var lifecycleStatus = MapReviewStatusToLearningProposalStatus(targetStatus);
                 record = new MetaRunProposalReviewRecord
                 {
                     SessionId = sessionId,
                     ProposalId = proposalId,
                     ReviewStatus = targetStatus,
                     Reason = allowReason ? reason : null,
-                    ReviewedAtUtc = DateTimeOffset.UtcNow
+                    ReviewedAtUtc = reviewedAtUtc
                 };
 
-                await reviewStore.SaveAsync(record, CancellationToken.None);
+                var durableRecord = new LearningProposal
+                {
+                    Id = durableProposalId,
+                    Kind = LearningProposalKind.MetaRunReview,
+                    Status = lifecycleStatus,
+                    Title = proposal.Title,
+                    Summary = proposal.Summary,
+                    SkillName = proposal.SkillName,
+                    Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        [MetaRunReviewMetadata.SessionId] = sessionId,
+                        [MetaRunReviewMetadata.ProposalId] = proposalId,
+                        [MetaRunReviewMetadata.RunId] = proposal.RunId,
+                        [MetaRunReviewMetadata.ReviewStatus] = targetStatus,
+                        [MetaRunReviewMetadata.Source] = proposal.Source
+                    },
+                    SourceSessionIds = [sessionId],
+                    SourceTurnIds = [],
+                    ToolNames = [],
+                    ToolSequence = [],
+                    ToolObservations = [],
+                    FeedbackEvents = [],
+                    RiskLevel = LearningProposalRiskLevels.Low,
+                    Confidence = 1f,
+                    CreatedReason = "meta_run_review",
+                    CreatedAtUtc = existing?.CreatedAtUtc ?? reviewedAtUtc,
+                    UpdatedAtUtc = reviewedAtUtc,
+                    ReviewedAtUtc = reviewedAtUtc,
+                    ReviewNotes = allowReason ? reason : null
+                };
+
+                if (!string.IsNullOrWhiteSpace(reason))
+                    durableRecord.Metadata[MetaRunReviewMetadata.Reason] = reason!;
+
+                await learningProposalStore.SaveProposalAsync(durableRecord, CancellationToken.None);
             }
-            else if (string.Equals(existing.ReviewStatus, targetStatus, StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(MapLearningProposalStatusToReviewStatus(existing.Status), targetStatus, StringComparison.OrdinalIgnoreCase))
             {
                 alreadyReviewed = true;
-                record = existing;
+                record = ToMetaRunProposalReviewRecord(existing, sessionId, proposalId);
             }
             else
             {
-                Console.Error.WriteLine($"Proposal '{proposalId}' in session '{sessionId}' is already reviewed as {existing.ReviewStatus}.");
+                Console.Error.WriteLine($"Proposal '{proposalId}' in session '{sessionId}' is already reviewed as {MapLearningProposalStatusToReviewStatus(existing.Status)}.");
                 return 1;
             }
 
@@ -399,6 +454,16 @@ internal static class SkillCommands
         }
         finally
         {
+            switch (learningProposalStore)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync();
+                    break;
+                case IDisposable disposable:
+                    disposable.Dispose();
+                    break;
+            }
+
             switch (store)
             {
                 case IAsyncDisposable asyncDisposable:
@@ -870,6 +935,15 @@ internal static class SkillCommands
         return Path.Combine(directory, $"{baseName}.memory");
     }
 
+    private static ILearningProposalStore OpenLearningProposalStore(string? storagePath)
+    {
+        var resolved = ResolveMemoryPath(storagePath);
+        if (LooksLikeSqlitePath(resolved))
+            return new SqliteFeatureStore(resolved);
+
+        return new FileFeatureStore(resolved);
+    }
+
     private static bool LooksLikeSqlitePath(string path)
     {
         var extension = Path.GetExtension(path);
@@ -1185,6 +1259,85 @@ internal static class SkillCommands
             Error = detail.Error,
             FinalText = detail.FinalText
         };
+    }
+
+    private static async ValueTask<IReadOnlyDictionary<string, MetaRunProposalReviewRecord>> LoadMetaRunLearningReviewsAsync(
+        ILearningProposalStore store,
+        string sessionId,
+        CancellationToken ct)
+    {
+        var candidates = await store.ListProposalsAsync(status: null, kind: LearningProposalKind.MetaRunReview, ct);
+        return candidates
+            .Where(item => TryGetMetaRunReviewMetadata(item, MetaRunReviewMetadata.SessionId, out var value)
+                && string.Equals(value, sessionId, StringComparison.Ordinal))
+            .Where(item => TryGetMetaRunReviewMetadata(item, MetaRunReviewMetadata.ProposalId, out _))
+            .ToDictionary(
+                item => item.Metadata[MetaRunReviewMetadata.ProposalId],
+                item => ToMetaRunProposalReviewRecord(item, sessionId, item.Metadata[MetaRunReviewMetadata.ProposalId]),
+                StringComparer.Ordinal);
+    }
+
+    private static async ValueTask<MetaRunProposalReviewRecord?> GetMetaRunLearningReviewAsync(
+        ILearningProposalStore store,
+        string sessionId,
+        string proposalId,
+        CancellationToken ct)
+    {
+        var durableProposal = await store.GetProposalAsync(BuildMetaRunReviewProposalId(sessionId, proposalId), ct);
+        return durableProposal is null
+            ? null
+            : ToMetaRunProposalReviewRecord(durableProposal, sessionId, proposalId);
+    }
+
+    private static string BuildMetaRunReviewProposalId(string sessionId, string proposalId)
+        => $"meta-run-review:{sessionId}:{proposalId}";
+
+    private static bool TryGetMetaRunReviewMetadata(LearningProposal proposal, string key, out string value)
+    {
+        if (proposal.Metadata.TryGetValue(key, out var metadataValue) && !string.IsNullOrWhiteSpace(metadataValue))
+        {
+            value = metadataValue;
+            return true;
+        }
+
+        value = string.Empty;
+        return false;
+    }
+
+    private static MetaRunProposalReviewRecord ToMetaRunProposalReviewRecord(LearningProposal proposal, string sessionId, string proposalId)
+        => new()
+        {
+            SessionId = sessionId,
+            ProposalId = proposalId,
+            ReviewStatus = MapLearningProposalStatusToReviewStatus(proposal.Status),
+            ReviewedAtUtc = proposal.ReviewedAtUtc ?? proposal.UpdatedAtUtc,
+            Reason = proposal.ReviewNotes
+        };
+
+    private static string MapReviewStatusToLearningProposalStatus(string reviewStatus)
+        => reviewStatus switch
+        {
+            MetaRunProposalReviewStatuses.Accepted => LearningProposalStatus.Approved,
+            MetaRunProposalReviewStatuses.Dismissed => LearningProposalStatus.Rejected,
+            _ => LearningProposalStatus.Pending
+        };
+
+    private static string MapLearningProposalStatusToReviewStatus(string lifecycleStatus)
+        => lifecycleStatus switch
+        {
+            LearningProposalStatus.Approved => MetaRunProposalReviewStatuses.Accepted,
+            LearningProposalStatus.Rejected => MetaRunProposalReviewStatuses.Dismissed,
+            _ => MetaRunProposalReviewStatuses.Pending
+        };
+
+    private static class MetaRunReviewMetadata
+    {
+        public const string SessionId = "meta_run_review_session_id";
+        public const string ProposalId = "meta_run_review_proposal_id";
+        public const string RunId = "meta_run_review_run_id";
+        public const string ReviewStatus = "meta_run_review_status";
+        public const string Reason = "meta_run_review_reason";
+        public const string Source = "meta_run_review_source";
     }
 
     private static void WriteDerivedProposalListText(MetaRunDerivedProposalListResponse response)
