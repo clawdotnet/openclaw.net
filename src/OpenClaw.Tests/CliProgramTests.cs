@@ -50,6 +50,68 @@ public sealed class CliProgramTests
     }
 
     [Fact]
+    public async Task Main_Help_ListsSkillsMetaRunsReconstructCommand()
+    {
+        var previousOut = Console.Out;
+        using var output = new StringWriter();
+        try
+        {
+            Console.SetOut(output);
+
+            var exitCode = await OpenClaw.Cli.Program.Main(["--help"]);
+
+            Assert.Equal(0, exitCode);
+            Assert.Contains("openclaw skills meta-runs reconstruct <session-id> --run <run-id> [--storage <path>] [--json]", output.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Console.SetOut(previousOut);
+        }
+    }
+
+    [Fact]
+    public async Task Main_Help_ListsSkillsMetaRunsProposalsCommands()
+    {
+        var previousOut = Console.Out;
+        using var output = new StringWriter();
+        try
+        {
+            Console.SetOut(output);
+
+            var exitCode = await OpenClaw.Cli.Program.Main(["--help"]);
+
+            Assert.Equal(0, exitCode);
+            Assert.Contains("openclaw skills meta-runs proposals <session-id> [--run <run-id>] [--storage <path>] [--json]", output.ToString(), StringComparison.Ordinal);
+            Assert.Contains("openclaw skills meta-runs proposals show <session-id> --proposal <id> [--storage <path>] [--json]", output.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Console.SetOut(previousOut);
+        }
+    }
+
+    [Fact]
+    public async Task Main_Help_ListsSkillsMetaRunsProposalReviewCommands()
+    {
+        var previousOut = Console.Out;
+        using var output = new StringWriter();
+        try
+        {
+            Console.SetOut(output);
+
+            var exitCode = await OpenClaw.Cli.Program.Main(["--help"]);
+
+            Assert.Equal(0, exitCode);
+            Assert.Contains("openclaw skills meta-runs proposals accept <session-id> --proposal <id> [--storage <path>] [--json]", output.ToString(), StringComparison.Ordinal);
+            Assert.Contains("openclaw skills meta-runs proposals dismiss <session-id> --proposal <id> [--reason <text>] [--storage <path>] [--json]", output.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Console.SetOut(previousOut);
+        }
+    }
+
+    [Fact]
     public async Task Main_ModelsHelp_ListsInstallOptions()
     {
         var previousOut = Console.Out;
