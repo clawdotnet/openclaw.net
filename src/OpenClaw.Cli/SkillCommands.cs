@@ -64,6 +64,12 @@ internal static class SkillCommands
 
     private static async Task<int> ListMetaRunsAsync(string[] args)
     {
+        if (args.Length > 0 && string.Equals(args[0], "list", StringComparison.OrdinalIgnoreCase))
+            return await ListMetaRunsGlobalAsync(args.Skip(1).ToArray());
+        if (args.Length > 0 && string.Equals(args[0], "show", StringComparison.OrdinalIgnoreCase))
+            return await ShowMetaRunGlobalAsync(args.Skip(1).ToArray());
+        if (args.Length > 0 && string.Equals(args[0], "failures", StringComparison.OrdinalIgnoreCase))
+            return await ListMetaRunFailuresGlobalAsync(args.Skip(1).ToArray());
         if (args.Length > 0 && string.Equals(args[0], "replay", StringComparison.OrdinalIgnoreCase))
             return await PreviewMetaRunReplayAsync(args.Skip(1).ToArray());
         if (args.Length > 0 && string.Equals(args[0], "reconstruct", StringComparison.OrdinalIgnoreCase))
@@ -183,6 +189,207 @@ internal static class SkillCommands
                     break;
             }
         }
+    }
+
+    private static async Task<int> ListMetaRunsGlobalAsync(string[] args)
+    {
+        var asJson = args.Contains("--json");
+        var storagePath = GetOptionValue(args, "--storage");
+        var page = Math.Max(1, ParseIntOption(args, "--page") ?? 1);
+        var pageSize = Math.Clamp(ParseIntOption(args, "--page-size") ?? 50, 1, 200);
+
+        var store = OpenMemoryStore(storagePath);
+        try
+        {
+            var sessionIds = await LoadSessionIdsAsync(store, page, pageSize);
+            var items = new List<MetaRunGlobalItem>();
+
+            foreach (var sessionId in sessionIds)
+            {
+                var session = await store.GetSessionAsync(sessionId, CancellationToken.None);
+                if (session is null)
+                    continue;
+
+                foreach (var run in session.MetaRunHistory.OrderByDescending(static item => item.CompletedAtUtc))
+                {
+                    items.Add(new MetaRunGlobalItem(
+                        session.Id,
+                        run.RunId,
+                        run.SkillName,
+                        run.Status,
+                        run.StartedAtUtc,
+                        run.CompletedAtUtc,
+                        run.StepResults.Count,
+                        run.ErrorCode));
+                }
+            }
+
+            items = [.. items.OrderByDescending(static item => item.CompletedAtUtc)];
+
+            if (asJson)
+            {
+                WriteMetaRunsGlobalListJson(page, pageSize, items);
+                return 0;
+            }
+
+            Console.WriteLine($"Global meta runs: {items.Count}");
+            foreach (var item in items)
+                Console.WriteLine($"- {item.RunId} | session={item.SessionId} | status={item.Status} | steps={item.StepCount}");
+
+            return 0;
+        }
+        finally
+        {
+            switch (store)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync();
+                    break;
+                case IDisposable disposable:
+                    disposable.Dispose();
+                    break;
+            }
+        }
+    }
+
+    private static async Task<int> ShowMetaRunGlobalAsync(string[] args)
+    {
+        var asJson = args.Contains("--json");
+        var storagePath = GetOptionValue(args, "--storage");
+        var runId = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
+        if (string.IsNullOrWhiteSpace(runId))
+        {
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs show",
+                "missing_run_id",
+                "Usage: openclaw skills meta-runs show <run-id> [--storage <path>] [--json]");
+            return 2;
+        }
+
+        var store = OpenMemoryStore(storagePath);
+        try
+        {
+            var sessionIds = await LoadSessionIdsAsync(store, page: 1, pageSize: 500);
+            foreach (var sessionId in sessionIds)
+            {
+                var session = await store.GetSessionAsync(sessionId, CancellationToken.None);
+                if (session is null)
+                    continue;
+
+                var run = session.MetaRunHistory.FirstOrDefault(item => string.Equals(item.RunId, runId, StringComparison.Ordinal));
+                if (run is null)
+                    continue;
+
+                if (asJson)
+                {
+                    WriteMetaRunsGlobalShowJson(session.Id, run);
+                }
+                else
+                {
+                    Console.WriteLine($"Run: {run.RunId}");
+                    Console.WriteLine($"Session: {session.Id}");
+                    Console.WriteLine($"Skill: {run.SkillName}");
+                    Console.WriteLine($"Status: {run.Status}");
+                }
+
+                return 0;
+            }
+
+            WriteSkillsCommandError(asJson, "skills meta-runs show", "run_not_found", $"Run '{runId}' not found.");
+            return 1;
+        }
+        finally
+        {
+            switch (store)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync();
+                    break;
+                case IDisposable disposable:
+                    disposable.Dispose();
+                    break;
+            }
+        }
+    }
+
+    private static async Task<int> ListMetaRunFailuresGlobalAsync(string[] args)
+    {
+        var asJson = args.Contains("--json");
+        var storagePath = GetOptionValue(args, "--storage");
+
+        var store = OpenMemoryStore(storagePath);
+        try
+        {
+            var sessionIds = await LoadSessionIdsAsync(store, page: 1, pageSize: 500);
+            var failed = new List<MetaRunGlobalItem>();
+
+            foreach (var sessionId in sessionIds)
+            {
+                var session = await store.GetSessionAsync(sessionId, CancellationToken.None);
+                if (session is null)
+                    continue;
+
+                foreach (var run in session.MetaRunHistory.Where(static item => string.Equals(item.Status, "failed", StringComparison.OrdinalIgnoreCase)))
+                {
+                    failed.Add(new MetaRunGlobalItem(
+                        session.Id,
+                        run.RunId,
+                        run.SkillName,
+                        run.Status,
+                        run.StartedAtUtc,
+                        run.CompletedAtUtc,
+                        run.StepResults.Count,
+                        run.ErrorCode));
+                }
+            }
+
+            failed = [.. failed.OrderByDescending(static item => item.CompletedAtUtc)];
+
+            if (asJson)
+            {
+                WriteMetaRunsGlobalListJson(page: 1, pageSize: 500, failed);
+                return 0;
+            }
+
+            Console.WriteLine($"Failed meta runs: {failed.Count}");
+            foreach (var item in failed)
+                Console.WriteLine($"- {item.RunId} | session={item.SessionId} | status={item.Status} | error={item.ErrorCode ?? "none"}");
+
+            return 0;
+        }
+        finally
+        {
+            switch (store)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync();
+                    break;
+                case IDisposable disposable:
+                    disposable.Dispose();
+                    break;
+            }
+        }
+    }
+
+    private static async Task<List<string>> LoadSessionIdsAsync(IMemoryStore store, int page, int pageSize)
+    {
+        if (store is not ISessionAdminStore adminStore)
+            return [];
+
+        var ids = new List<string>();
+        var current = page;
+        while (true)
+        {
+            var result = await adminStore.ListSessionsAsync(current, pageSize, new SessionListQuery(), CancellationToken.None);
+            ids.AddRange(result.Items.Select(static item => item.Id));
+            if (!result.HasMore)
+                break;
+
+            current++;
+        }
+
+        return ids;
     }
 
     private static Task<int> HandleMetaRunProposalsAsync(string[] args)
@@ -449,6 +656,13 @@ internal static class SkillCommands
             if (proposal is null)
             {
                 WriteSkillsCommandError(asJson, $"skills meta-runs proposals {action}", "proposal_not_found", $"Proposal '{proposalId}' not found in session '{sessionId}'.");
+                return 1;
+            }
+
+            if (string.Equals(targetStatus, MetaRunProposalReviewStatuses.Accepted, StringComparison.Ordinal)
+                && !PassesProposalAcceptanceQualityGate(proposal, session, out var acceptanceGateReason))
+            {
+                WriteProposalAcceptanceQualityError(asJson, $"skills meta-runs proposals {action}", acceptanceGateReason);
                 return 1;
             }
 
@@ -842,6 +1056,13 @@ internal static class SkillCommands
             if (proposal is null)
             {
                 WriteSkillsCommandError(asJson, "skills meta-runs proposals change", "proposal_not_found", $"Proposal '{proposalId}' not found in session '{sessionId}'.");
+                return 1;
+            }
+
+            if (string.Equals(targetReviewStatus, MetaRunProposalReviewStatuses.Accepted, StringComparison.Ordinal)
+                && !PassesProposalAcceptanceQualityGate(proposal, session, out var acceptanceGateReason))
+            {
+                WriteProposalAcceptanceQualityError(asJson, "skills meta-runs proposals change", acceptanceGateReason);
                 return 1;
             }
 
@@ -1264,6 +1485,7 @@ internal static class SkillCommands
     private static int ListCatalog(string[] args)
     {
         var managed = args.Contains("--managed");
+        var stable = args.Contains("--stable");
         var workdir = GetOptionValue(args, "--workdir");
         var asJson = args.Contains("--json");
         var kind = GetOptionValue(args, "--kind");
@@ -1280,29 +1502,58 @@ internal static class SkillCommands
             return 2;
         }
 
-        var skillsDirectory = ResolveSkillsDirectory(managed, workdir);
-        if (!Directory.Exists(skillsDirectory))
+        SkillCommandInspection[] catalog;
+        if (stable)
         {
-            if (asJson)
+            var bundledDir = Path.Combine(AppContext.BaseDirectory, "skills");
+            if (!Directory.Exists(bundledDir))
             {
-                Console.WriteLine("{\"count\":0,\"skills\":[]}");
+                if (asJson)
+                {
+                    Console.WriteLine("{\"count\":0,\"skills\":[]}");
+                    return 0;
+                }
+
+                Console.WriteLine("Stable meta catalog (0):");
                 return 0;
             }
 
-            Console.WriteLine("No skills installed.");
-            return 0;
+            catalog = SkillInspector.InspectInstalledRoot(bundledDir, SkillSource.Bundled)
+                .Where(static inspection => inspection.Success && inspection.Definition is not null)
+                .Select(CreateInspection)
+                .Where(item => string.IsNullOrWhiteSpace(kind)
+                    || string.Equals(kind, "all", StringComparison.OrdinalIgnoreCase)
+                    || (string.Equals(kind, "meta", StringComparison.OrdinalIgnoreCase)
+                        && item.Definition.Kind == SkillKind.Meta))
+                .OrderBy(static item => item.Definition.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
         }
+        else
+        {
+            var skillsDirectory = ResolveSkillsDirectory(managed, workdir);
+            if (!Directory.Exists(skillsDirectory))
+            {
+                if (asJson)
+                {
+                    Console.WriteLine("{\"count\":0,\"skills\":[]}");
+                    return 0;
+                }
 
-        var source = managed ? SkillSource.Managed : SkillSource.Workspace;
-        var catalog = SkillInspector.InspectInstalledRoot(skillsDirectory, source)
-            .Where(static inspection => inspection.Success && inspection.Definition is not null)
-            .Select(CreateInspection)
-            .Where(item => string.IsNullOrWhiteSpace(kind)
-                || string.Equals(kind, "all", StringComparison.OrdinalIgnoreCase)
-                || (string.Equals(kind, "meta", StringComparison.OrdinalIgnoreCase)
-                    && item.Definition.Kind == SkillKind.Meta))
-            .OrderBy(static item => item.Definition.Name, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+                Console.WriteLine("No skills installed.");
+                return 0;
+            }
+
+            var source = managed ? SkillSource.Managed : SkillSource.Workspace;
+            catalog = SkillInspector.InspectInstalledRoot(skillsDirectory, source)
+                .Where(static inspection => inspection.Success && inspection.Definition is not null)
+                .Select(CreateInspection)
+                .Where(item => string.IsNullOrWhiteSpace(kind)
+                    || string.Equals(kind, "all", StringComparison.OrdinalIgnoreCase)
+                    || (string.Equals(kind, "meta", StringComparison.OrdinalIgnoreCase)
+                        && item.Definition.Kind == SkillKind.Meta))
+                .OrderBy(static item => item.Definition.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
 
         if (asJson)
         {
@@ -1332,7 +1583,8 @@ internal static class SkillCommands
             return 0;
         }
 
-        Console.WriteLine($"Skill catalog ({catalog.Length}):");
+        var header = stable ? "Stable meta catalog" : "Skill catalog";
+        Console.WriteLine($"{header} ({catalog.Length}):");
         foreach (var item in catalog)
         {
             Console.WriteLine($"  {item.Definition.Name} [{item.Definition.Kind.ToString().ToLowerInvariant()}] - {item.Definition.Description}");
@@ -1967,10 +2219,13 @@ internal static class SkillCommands
               openclaw skills inspect <path|tarball>
               openclaw skills install <path|tarball> [--dry-run] [--workdir <path> | --managed]
               openclaw skills list [--workdir <path> | --managed]
-              openclaw skills catalog [--workdir <path> | --managed] [--kind <all|meta>] [--json]
+              openclaw skills catalog [--workdir <path> | --managed] [--kind <all|meta>] [--stable] [--json]
               openclaw skills create <name> [--kind <standard|meta>] [--description <text>] [--proposal-draft] [--workdir <path> | --managed] [--json] [--force]
               openclaw skills proposals <session-id> [--run <run-id>] [--storage <path>] [--json]
               openclaw skills proposals show <session-id> --proposal <id> [--storage <path>] [--json]
+                            openclaw skills meta-runs list [--page <n>] [--page-size <n>] [--storage <path>] [--json]
+                            openclaw skills meta-runs show <run-id> [--storage <path>] [--json]
+                            openclaw skills meta-runs failures [--storage <path>] [--json]
                             openclaw skills meta-runs <session-id> [--storage <path>] [--limit <count>] [--run <run-id>] [--verbose] [--json]
                             openclaw skills meta-runs replay <session-id> --run <run-id> [--storage <path>] [--json]
                             openclaw skills meta-runs reconstruct <session-id> --run <run-id> [--storage <path>] [--json]
@@ -1993,30 +2248,97 @@ internal static class SkillCommands
                                 - `meta-runs proposals` returns derived read-only proposal summaries from persisted meta-run evidence.
                                 - `skills proposals` is a read-only shortcut to `skills meta-runs proposals` / `show`.
                                 - `skills catalog` lists installed skills for discovery and supports `--kind meta` filtering.
+                                - `skills catalog --stable --kind meta` limits discovery to bundled first-party meta skills.
                                 - `meta-runs proposals show` expands a single derived proposal without implying durable lifecycle state.
                                 - `meta-runs proposals accept|dismiss|rollback|change` records lifecycle decisions only; it does not execute tools, models, or replay.
             """);
     }
 
-        private static void WriteMetaRunsJson(string sessionId, int totalCount, IReadOnlyList<SessionMetaRunRecord> runs)
+    private static void WriteMetaRunsJson(string sessionId, int totalCount, IReadOnlyList<SessionMetaRunRecord> runs)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
         {
-                using var stream = new MemoryStream();
-                using (var writer = new Utf8JsonWriter(stream))
-                {
-                        writer.WriteStartObject();
-                        writer.WriteString("sessionId", sessionId);
-                        writer.WriteNumber("totalCount", totalCount);
-                        writer.WriteNumber("shownCount", runs.Count);
-                        writer.WritePropertyName("runs");
-                        writer.WriteStartArray();
-                        foreach (var run in runs)
-                                JsonSerializer.Serialize(writer, run, CoreJsonContext.Default.SessionMetaRunRecord);
-                        writer.WriteEndArray();
-                        writer.WriteEndObject();
-                }
-
-                Console.WriteLine(System.Text.Encoding.UTF8.GetString(stream.ToArray()));
+            writer.WriteStartObject();
+            writer.WriteString("sessionId", sessionId);
+            writer.WriteNumber("totalCount", totalCount);
+            writer.WriteNumber("shownCount", runs.Count);
+            writer.WritePropertyName("runs");
+            writer.WriteStartArray();
+            foreach (var run in runs)
+                JsonSerializer.Serialize(writer, run, CoreJsonContext.Default.SessionMetaRunRecord);
+            writer.WriteEndArray();
+            writer.WriteEndObject();
         }
+
+        Console.WriteLine(System.Text.Encoding.UTF8.GetString(stream.ToArray()));
+    }
+
+    private static void WriteMetaRunsGlobalListJson(int page, int pageSize, IReadOnlyList<MetaRunGlobalItem> items)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("page", page);
+            writer.WriteNumber("pageSize", pageSize);
+            writer.WriteNumber("count", items.Count);
+            writer.WritePropertyName("items");
+            writer.WriteStartArray();
+            foreach (var item in items)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("sessionId", item.SessionId);
+                writer.WriteString("runId", item.RunId);
+                writer.WriteString("skillName", item.SkillName);
+                writer.WriteString("status", item.Status);
+                writer.WriteString("startedAtUtc", item.StartedAtUtc);
+                writer.WriteString("completedAtUtc", item.CompletedAtUtc);
+                writer.WriteNumber("stepCount", item.StepCount);
+                if (!string.IsNullOrWhiteSpace(item.ErrorCode))
+                    writer.WriteString("errorCode", item.ErrorCode);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        Console.WriteLine(System.Text.Encoding.UTF8.GetString(stream.ToArray()));
+    }
+
+    private static void WriteMetaRunsGlobalShowJson(string sessionId, SessionMetaRunRecord run)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("sessionId", sessionId);
+            writer.WriteString("runId", run.RunId);
+            writer.WriteString("skillName", run.SkillName);
+            writer.WriteString("status", run.Status);
+            writer.WriteString("startedAtUtc", run.StartedAtUtc);
+            writer.WriteString("completedAtUtc", run.CompletedAtUtc);
+            writer.WriteNumber("stepCount", run.StepResults.Count);
+            if (!string.IsNullOrWhiteSpace(run.ErrorCode))
+                writer.WriteString("errorCode", run.ErrorCode);
+            if (!string.IsNullOrWhiteSpace(run.Error))
+                writer.WriteString("error", run.Error);
+            writer.WriteEndObject();
+        }
+
+        Console.WriteLine(System.Text.Encoding.UTF8.GetString(stream.ToArray()));
+    }
+
+    private sealed record MetaRunGlobalItem(
+        string SessionId,
+        string RunId,
+        string SkillName,
+        string Status,
+        DateTimeOffset StartedAtUtc,
+        DateTimeOffset CompletedAtUtc,
+        int StepCount,
+        string? ErrorCode);
 
     private static MetaRunDerivedProposalSummary[] BuildDerivedProposals(Session session, string? requestedRunId)
         => [..
@@ -2462,6 +2784,46 @@ internal static class SkillCommands
         reviewStatus = string.Empty;
         lifecycleStatus = string.Empty;
         return false;
+    }
+
+    private static bool PassesProposalAcceptanceQualityGate(
+        MetaRunDerivedProposalSummary proposal,
+        Session session,
+        out string reason)
+    {
+        var run = session.MetaRunHistory.FirstOrDefault(item => string.Equals(item.RunId, proposal.RunId, StringComparison.Ordinal));
+        if (run is null)
+        {
+            reason = "run_not_found";
+            return false;
+        }
+
+        if (!string.Equals(run.Status, "failed", StringComparison.OrdinalIgnoreCase))
+        {
+            reason = string.Empty;
+            return true;
+        }
+
+        var hasFailureEvidence = !string.IsNullOrWhiteSpace(run.ErrorCode)
+            || !string.IsNullOrWhiteSpace(run.Error)
+            || run.StepResults.Any(static step => !string.IsNullOrWhiteSpace(step.FailureCode));
+        if (!hasFailureEvidence)
+        {
+            reason = "failed_run_missing_evidence";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private static void WriteProposalAcceptanceQualityError(bool asJson, string command, string reason)
+    {
+        var message = "Proposal acceptance quality gate failed.";
+        if (!string.IsNullOrWhiteSpace(reason))
+            message = $"{message} Reason: {reason}.";
+
+        WriteSkillsCommandError(asJson, command, "proposal_accept_quality_gate_failed", message);
     }
 
     private static Dictionary<string, string> BuildMetaRunProposalMetadata(

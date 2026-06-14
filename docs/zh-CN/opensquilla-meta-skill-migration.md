@@ -5,7 +5,7 @@
 ## 当前结论（2026-06-14）
 
 - 元技能基础能力已可用：DAG 编排、`llm_classify`、`user_input` pause/resume、`final_text_mode`、结构化结果。
-- P1 中 `meta-runs` operator 基线已落地，但当前是 **session 维度入口**（`meta-runs <session-id> ...`）及其 replay/reconstruct/proposals 扩展，并非 OpenSquilla 文档中的全局 `meta runs list/show/steps/failures` 同构命令面。
+- P1 中 `meta-runs` operator 基线已完成并升级：在保留 **session 维度入口**（`meta-runs <session-id> ...`）兼容性的同时，新增了全局视图 `meta-runs list/show/failures`。
 - proposal lifecycle/provenance 已完成域层闭环（durable `LearningProposal` + snapshot/history additive 输出）。
 - `skill_exec` 已具备 stdin 执行、evidence 持久化与 replay/reconstruct machine-readable 契约。
 - P2-1 并行 step 调度已完成：当前并发语义为独立 ready `tool_call` steps 的波次并发（子集并行），且 Agent/MAF 双实现已回归通过。
@@ -27,18 +27,18 @@
 | DAG / depends_on / route / on_failure | 组合步骤、依赖、路由、失败替代都要可执行 | 已支持 | [SkillModels.cs](../../src/OpenClaw.Core/Skills/SkillModels.cs#L151)；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L2888)；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L3549) | 已完成 |
 | Step 类型覆盖 | `agent`、`llm_chat`、`llm_classify`、`user_input`、`tool_call`、`skill_exec` | 已支持 | OpenSquilla authoring 文档；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L2257)；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L2584)；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L2696)；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L3433) | 已完成 |
 | user_input / clarify 语义 | 文档里有 form/chat、fields、skip_if、timeout、cancel 等更完整语义 | form/chat、fields、timeout、cancel、默认值、类型校验与 `skip_if` 都已支持 | [SkillLoader.cs](../../src/OpenClaw.Core/Skills/SkillLoader.cs#L1477)；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L2696)；[MafAdapterTests.cs](../../src/OpenClaw.Tests/MafAdapterTests.cs#L1707) | 已完成 |
-| meta-runs / proposals 运维面 | 需要可运行检查、回放、重建、提案生命周期 | 已具备 session 维度的 inspect/replay-preview/reconstruct/proposals 生命周期能力；但与 OpenSquilla 文档里的全局 runs 视图（`list/show/steps/failures`）尚未完全同构 | OpenSquilla 用户文档；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L37)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L84)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L1974) | 部分完成 |
+| meta-runs / proposals 运维面 | 需要可运行检查、回放、重建、提案生命周期 | 已具备 session 维度 inspect/replay-preview/reconstruct/proposals 生命周期，并新增全局 `meta-runs list/show/failures` 运维入口（保持旧入口兼容） | OpenSquilla 用户文档；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L65)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L167)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L2182)；[SkillCommandsGlobalMetaRunsTests.cs](../../src/OpenClaw.Tests/SkillCommandsGlobalMetaRunsTests.cs#L10) | 已完成 |
 | 质量门禁（creator 草稿） | 作者流程至少要有结构/描述等基础质量检查，低质量草稿应被拦截 | `skills create --proposal-draft` 已执行阻断型门禁，低质量返回 `proposal_draft_quality_gate_failed` | OpenSquilla 用户/作者文档；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L1404)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L1714)；[SkillCommandsTests.cs](../../src/OpenClaw.Tests/SkillCommandsTests.cs#L703) | 已完成 |
-| 质量门禁（proposal 接受前） | 文档要求作者在接受前做结构验证、触发检查、运行测试、安全边界评估 | lifecycle 命令已有权限与状态机约束，但尚未形成“接受前统一质量门禁”闭环 | OpenSquilla 用户/作者文档；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L424)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L528) | 部分完成 |
-| bundled catalog / stable meta catalog | 文档描述了稳定的内置 meta catalog | OpenClaw 有通用技能加载，但没看到同等产品化的 meta catalog 叙述 | OpenSquilla 用户文档；[SkillLoader.cs](../../src/OpenClaw.Core/Skills/SkillLoader.cs#L1) | 部分完成 |
+| 质量门禁（proposal 接受前） | 文档要求作者在接受前做结构验证、触发检查、运行测试、安全边界评估 | `accept` 与 `change --to accept` 已接入统一门禁；低质量提案在 `--json` 下返回 `proposal_accept_quality_gate_failed`，并阻断生命周期变更 | OpenSquilla 用户/作者文档；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L658)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L1067)；[SkillCommandsMetaGovernanceTests.cs](../../src/OpenClaw.Tests/SkillCommandsMetaGovernanceTests.cs#L80) | 已完成 |
+| bundled catalog / stable meta catalog | 文档描述了稳定的内置 meta catalog | 已提供产品化入口：`openclaw skills catalog --stable --kind meta`（bundled first-party meta 集合，支持 text/json） | OpenSquilla 用户文档；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L1490)；[SkillCommandsMetaGovernanceTests.cs](../../src/OpenClaw.Tests/SkillCommandsMetaGovernanceTests.cs#L12) | 已完成 |
 | disable model-visible meta behavior | 文档允许全局关闭 meta 可见性，保留库存但拒绝显式调用 | OpenClaw 有对应配置和运行时拒绝 | [SkillModels.cs](../../src/OpenClaw.Core/Skills/SkillModels.cs#L1)；[MafAgentRuntime.cs](../../src/OpenClaw.MicrosoftAgentFrameworkAdapter/MafAgentRuntime.cs#L680)；[OpenClawToolExecutor.cs](../../src/OpenClaw.Agent/OpenClawToolExecutor.cs#L483) | 已完成 |
 | 运行证据 / 可审计性 | 文档强调可审计、可重放、可恢复 | 已有 history / evidence / checkpoint 方向，且测试覆盖到位 | [opensquilla-meta-skill-migration.md](opensquilla-meta-skill-migration.md#L1)；[AgentRuntimeTests.cs](../../src/OpenClaw.Tests/AgentRuntimeTests.cs#L1752)；[MafAdapterTests.cs](../../src/OpenClaw.Tests/MafAdapterTests.cs#L896) | 已完成 |
 
 ### 严格版迁移结论
 
 - **运行时主链路已完成迁移**：DAG、路由、失败替代、pause/resume、`skill_exec`、risk/capabilities 门禁与审计证据主路径均可用。
-- **运维/产品命令面为“部分同构”**：OpenClaw 当前以 session 维度 `meta-runs` 命令为中心，尚未完全对齐 OpenSquilla 文档中的全局 runs 视图与命令形态。
-- **剩余缺口集中在产品化与治理同构**：稳定内置 meta catalog、proposal 接受前统一质量门禁、以及文档与命令面的逐项等价说明仍需继续收口。
+- **运维/产品命令面已完成同构闭环**：在保留 session 维度 `meta-runs` 入口的前提下，已补齐全局 runs 视图命令（`list/show/failures`）与稳定 meta catalog 产品入口。
+- **治理同构主缺口已收口**：proposal 接受前统一质量门禁已接入 `accept/change --to accept`，并具备 machine-readable 失败契约。
 
 ### 最关键的 3 个收口
 
