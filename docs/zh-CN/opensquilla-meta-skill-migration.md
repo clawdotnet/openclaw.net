@@ -27,9 +27,9 @@
 | DAG / depends_on / route / on_failure | 组合步骤、依赖、路由、失败替代都要可执行 | 已支持 | [SkillModels.cs](../../src/OpenClaw.Core/Skills/SkillModels.cs#L151)；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L2888)；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L3549) | 已完成 |
 | Step 类型覆盖 | `agent`、`llm_chat`、`llm_classify`、`user_input`、`tool_call`、`skill_exec` | 已支持 | OpenSquilla authoring 文档；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L2257)；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L2584)；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L2696)；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L3433) | 已完成 |
 | user_input / clarify 语义 | 文档里有 form/chat、fields、skip_if、timeout、cancel 等更完整语义 | form/chat、fields、timeout、cancel、默认值、类型校验与 `skip_if` 都已支持 | [SkillLoader.cs](../../src/OpenClaw.Core/Skills/SkillLoader.cs#L1477)；[AgentRuntime.cs](../../src/OpenClaw.Agent/AgentRuntime.cs#L2696)；[MafAdapterTests.cs](../../src/OpenClaw.Tests/MafAdapterTests.cs#L1707) | 已完成 |
-| meta-runs / proposals 运维面 | 需要可运行检查、回放、重建、提案生命周期 | 已具备 session 维度 inspect/replay-preview/reconstruct/proposals 生命周期，并新增全局 `meta-runs list/show/failures` 运维入口（保持旧入口兼容） | OpenSquilla 用户文档；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L65)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L167)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L2182)；[SkillCommandsGlobalMetaRunsTests.cs](../../src/OpenClaw.Tests/SkillCommandsGlobalMetaRunsTests.cs#L10) | 已完成 |
+| meta-runs / proposals 运维面 | 需要可运行检查、回放、重建、提案生命周期 | 已具备 session 维度 inspect/replay-preview/reconstruct/proposals 生命周期，并新增全局 `meta-runs list/show/steps/failures` 运维入口；`failures` 已支持 `--since` 与 `--name` 过滤（保持旧入口兼容） | OpenSquilla 用户文档；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L65)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L258)；[SkillCommandsGlobalMetaRunsTests.cs](../../src/OpenClaw.Tests/SkillCommandsGlobalMetaRunsTests.cs#L10) | 已完成 |
 | 质量门禁（creator 草稿） | 作者流程至少要有结构/描述等基础质量检查，低质量草稿应被拦截 | `skills create --proposal-draft` 已执行阻断型门禁，低质量返回 `proposal_draft_quality_gate_failed` | OpenSquilla 用户/作者文档；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L1404)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L1714)；[SkillCommandsTests.cs](../../src/OpenClaw.Tests/SkillCommandsTests.cs#L703) | 已完成 |
-| 质量门禁（proposal 接受前） | 文档要求作者在接受前做结构验证、触发检查、运行测试、安全边界评估 | `accept` 与 `change --to accept` 已接入统一门禁；低质量提案在 `--json` 下返回 `proposal_accept_quality_gate_failed`，并阻断生命周期变更 | OpenSquilla 用户/作者文档；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L658)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L1067)；[SkillCommandsMetaGovernanceTests.cs](../../src/OpenClaw.Tests/SkillCommandsMetaGovernanceTests.cs#L80) | 已完成 |
+| 质量门禁（proposal 接受前） | 文档要求作者在接受前做结构验证、触发检查、运行测试、安全边界评估 | `accept` 与 `change --to accept` 现已统一使用结构化 validation profile `opensquilla-authoring-v1`，按 `structure`/`trigger`/`runtime`/`safety` 分组执行检查。低质量提案在 `--json` 下返回 `proposal_accept_quality_gate_failed`，并在 `gate` 对象中输出 `profileId`、`passed`、`failedChecks`；成功接受会持久化门禁快照元数据（`meta_run_proposal_accept_gate_profile`、`meta_run_proposal_accept_gate_passed`、`meta_run_proposal_accept_gate_failed_checks`、`meta_run_proposal_accept_gate_checked_at_utc`） | OpenSquilla 用户/作者文档；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L658)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L1067)；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L3030)；[SkillCommandsTests.cs](../../src/OpenClaw.Tests/SkillCommandsTests.cs#L3750)；[SkillCommandsMetaGovernanceTests.cs](../../src/OpenClaw.Tests/SkillCommandsMetaGovernanceTests.cs#L80) | 已完成 |
 | bundled catalog / stable meta catalog | 文档描述了稳定的内置 meta catalog | 已提供产品化入口：`openclaw skills catalog --stable --kind meta`（bundled first-party meta 集合，支持 text/json） | OpenSquilla 用户文档；[SkillCommands.cs](../../src/OpenClaw.Cli/SkillCommands.cs#L1490)；[SkillCommandsMetaGovernanceTests.cs](../../src/OpenClaw.Tests/SkillCommandsMetaGovernanceTests.cs#L12) | 已完成 |
 | disable model-visible meta behavior | 文档允许全局关闭 meta 可见性，保留库存但拒绝显式调用 | OpenClaw 有对应配置和运行时拒绝 | [SkillModels.cs](../../src/OpenClaw.Core/Skills/SkillModels.cs#L1)；[MafAgentRuntime.cs](../../src/OpenClaw.MicrosoftAgentFrameworkAdapter/MafAgentRuntime.cs#L680)；[OpenClawToolExecutor.cs](../../src/OpenClaw.Agent/OpenClawToolExecutor.cs#L483) | 已完成 |
 | 运行证据 / 可审计性 | 文档强调可审计、可重放、可恢复 | 已有 history / evidence / checkpoint 方向，且测试覆盖到位 | [opensquilla-meta-skill-migration.md](opensquilla-meta-skill-migration.md#L1)；[AgentRuntimeTests.cs](../../src/OpenClaw.Tests/AgentRuntimeTests.cs#L1752)；[MafAdapterTests.cs](../../src/OpenClaw.Tests/MafAdapterTests.cs#L896) | 已完成 |
@@ -37,8 +37,8 @@
 ### 严格版迁移结论
 
 - **运行时主链路已完成迁移**：DAG、路由、失败替代、pause/resume、`skill_exec`、risk/capabilities 门禁与审计证据主路径均可用。
-- **运维/产品命令面已完成同构闭环**：在保留 session 维度 `meta-runs` 入口的前提下，已补齐全局 runs 视图命令（`list/show/failures`）与稳定 meta catalog 产品入口。
-- **治理同构主缺口已收口**：proposal 接受前统一质量门禁已接入 `accept/change --to accept`，并具备 machine-readable 失败契约。
+- **运维/产品命令面已完成当前同构目标**：在保留 session 维度 `meta-runs` 入口的前提下，已补齐全局 runs 视图命令（`list/show/steps/failures`）与稳定 meta catalog 产品入口，并支持失败窗口过滤。
+- **治理门禁已完成 profile 对齐**：proposal 接受前统一质量门禁已在 `accept/change --to accept` 落地 `opensquilla-authoring-v1` 结构化 profile，覆盖 `structure/trigger/runtime/safety` 分组检查，且 machine-readable 失败契约已携带 gate profile 与失败检查列表。
 
 ### 最关键的 3 个收口
 
@@ -67,6 +67,12 @@
 ## 剩余迁移缺口（按优先级）
 
 ### P2（能力增强，不阻塞基础迁移）
+
+- proposal 接受门禁 profile 对齐项已完成，剩余工作转向覆盖率扩展
+
+  现状：`accept/change --to accept` 已使用 `opensquilla-authoring-v1` 结构化 profile 执行分组检查，并在 JSON 失败契约输出 gate profile 与 failed checks；成功路径会持久化门禁快照元数据。
+
+  剩余：继续扩展失败/越权/冲突组合链路的 E2E 覆盖密度，提升长期治理置信度。
 
 - creator 质量门禁深度基本补齐
 
