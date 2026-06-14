@@ -2245,6 +2245,77 @@ public sealed class MafAdapterTests
     }
 
     [Fact]
+    public async Task MafAgentRuntime_ExecuteMetaSkillAsync_IndependentToolSteps_RunConcurrently()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-meta-parallel-wave-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var tracker = new MafConcurrencyTracker();
+            var firstTool = new ConcurrentProbeMafTool("first_tool", "first", tracker, 120);
+            var secondTool = new ConcurrentProbeMafTool("second_tool", "second", tracker, 120);
+            var joinTool = new CountingMafTool("join_tool", "joined");
+            var runtime = CreateRuntime(
+                storagePath,
+                new TestLlmExecutionService(),
+                new MafOptions(),
+                tools: [firstTool, secondTool, joinTool],
+                skills:
+                [
+                    new SkillDefinition
+                    {
+                        Name = "meta-flow",
+                        Description = "meta flow",
+                        Instructions = "...",
+                        Location = "/skills/meta-flow",
+                        Kind = SkillKind.Meta,
+                        FinalTextMode = "step:join",
+                        Composition = new MetaSkillComposition
+                        {
+                            Steps =
+                            [
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "first",
+                                    Kind = "tool_call",
+                                    Tool = "first_tool",
+                                    WithJson = "{\"continue_on_error\":true}"
+                                },
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "second",
+                                    Kind = "tool_call",
+                                    Tool = "second_tool",
+                                    WithJson = "{\"continue_on_error\":true}"
+                                },
+                                new MetaSkillStepDefinition
+                                {
+                                    Id = "join",
+                                    Kind = "tool_call",
+                                    Tool = "join_tool",
+                                    DependsOn = ["first", "second"]
+                                }
+                            ]
+                        }
+                    }
+                ]);
+            var session = CreateSession("maf-meta-parallel-wave");
+
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+
+            Assert.Equal("joined", result);
+            Assert.Equal(1, firstTool.CallCount);
+            Assert.Equal(1, secondTool.CallCount);
+            Assert.True(tracker.MaxConcurrent >= 2, $"Expected MaxConcurrent >= 2, actual: {tracker.MaxConcurrent}");
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task MafAgentRuntime_ExecuteMetaSkillAsync_LlmChatContinueOnError_AppliesRouteCompletion()
     {
         var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-meta-continue-route-tests", Guid.NewGuid().ToString("N"));
@@ -3492,6 +3563,56 @@ public sealed class MafAdapterTests
             _ = ct;
             Interlocked.Increment(ref _callCount);
             return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class MafConcurrencyTracker
+    {
+        private int _current;
+        private int _max;
+
+        public int MaxConcurrent => Volatile.Read(ref _max);
+
+        public void Enter()
+        {
+            var current = Interlocked.Increment(ref _current);
+            while (true)
+            {
+                var snapshot = Volatile.Read(ref _max);
+                if (current <= snapshot)
+                    break;
+
+                if (Interlocked.CompareExchange(ref _max, current, snapshot) == snapshot)
+                    break;
+            }
+        }
+
+        public void Exit() => Interlocked.Decrement(ref _current);
+    }
+
+    private sealed class ConcurrentProbeMafTool(string name, string result, MafConcurrencyTracker tracker, int delayMs) : ITool
+    {
+        private int _callCount;
+
+        public int CallCount => Volatile.Read(ref _callCount);
+        public string Name => name;
+        public string Description => "Concurrent probe test tool.";
+        public string ParameterSchema => """{"type":"object"}""";
+
+        public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        {
+            _ = argumentsJson;
+            Interlocked.Increment(ref _callCount);
+            tracker.Enter();
+            try
+            {
+                await Task.Delay(delayMs, ct);
+                return result;
+            }
+            finally
+            {
+                tracker.Exit();
+            }
         }
     }
 

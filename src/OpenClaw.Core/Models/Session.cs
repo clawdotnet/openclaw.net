@@ -477,6 +477,8 @@ public sealed class MetaRunProposalSummary
 public sealed class MetaRunDerivedProposalListResponse
 {
     public required string SessionId { get; init; }
+    public string Entrypoint { get; init; } = MetaRunProposalEntrypoints.MetaRuns;
+    public bool ReadOnlyAlias { get; init; }
     public int Count { get; init; }
     public MetaRunDerivedProposalSummary[] Proposals { get; init; } = [];
 }
@@ -499,6 +501,8 @@ public sealed class MetaRunDerivedProposalSummary
 public sealed class MetaRunDerivedProposalDetailResponse
 {
     public required string SessionId { get; init; }
+    public string Entrypoint { get; init; } = MetaRunProposalEntrypoints.MetaRuns;
+    public bool ReadOnlyAlias { get; init; }
     public required MetaRunDerivedProposalDetail Proposal { get; init; }
 }
 
@@ -518,6 +522,7 @@ public sealed class MetaRunDerivedProposalDetail
     public MetaRunDerivedProposalEvidenceDetail? Evidence { get; init; }
     public MetaRunProposalProvenanceDetail? Provenance { get; init; }
     public MetaRunProposalLifecycleDetail? Lifecycle { get; init; }
+    public MetaRunProposalAuditDetail? Audit { get; init; }
     public MetaRunProposalProvenanceTransition[] ProvenanceHistory { get; init; } = [];
     public MetaRunProposalReviewDetail? Review { get; init; }
     public string? PendingStepId { get; init; }
@@ -582,6 +587,15 @@ public sealed class MetaRunProposalReviewMutationResponse
     public bool AlreadyReviewed { get; init; }
     public DateTimeOffset ReviewedAtUtc { get; init; }
     public string? Reason { get; init; }
+    public MetaRunProposalAuditDetail? Audit { get; init; }
+}
+
+public sealed class MetaRunProposalAuditDetail
+{
+    public string SchemaVersion { get; init; } = "v1";
+    public string? ActorId { get; init; }
+    public DateTimeOffset? ChangedAtUtc { get; init; }
+    public string? TransitionAction { get; init; }
 }
 
 public sealed class MetaRunProposalReviewDetail
@@ -669,6 +683,12 @@ public static class MetaRunProposalKinds
 {
     public const string PausedRunFollowup = "paused_run_followup";
     public const string FailedRunReview = "failed_run_review";
+}
+
+public static class MetaRunProposalEntrypoints
+{
+    public const string MetaRuns = "skills meta-runs proposals";
+    public const string ReadOnlyAlias = "skills proposals";
 }
 
 public sealed class SessionDelegationMetadata
@@ -766,6 +786,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(MetaRunDerivedProposalSummary[]))]
 [JsonSerializable(typeof(MetaRunDerivedProposalDetailResponse))]
 [JsonSerializable(typeof(MetaRunDerivedProposalDetail))]
+[JsonSerializable(typeof(MetaRunProposalAuditDetail))]
 [JsonSerializable(typeof(MetaRunProposalProvenanceDetail))]
 [JsonSerializable(typeof(MetaRunProposalLifecycleDetail))]
 [JsonSerializable(typeof(MetaRunProposalProvenanceTransition))]

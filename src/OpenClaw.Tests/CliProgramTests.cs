@@ -39,7 +39,8 @@ public sealed class CliProgramTests
             var exitCode = await OpenClaw.Cli.Program.Main(["--help"]);
 
             Assert.Equal(0, exitCode);
-            Assert.Contains("openclaw skills <inspect|install|list|meta-runs> [options]", output.ToString(), StringComparison.Ordinal);
+            Assert.Contains("openclaw skills <inspect|install|list|catalog|create|proposals|meta-runs> [options]", output.ToString(), StringComparison.Ordinal);
+            Assert.Contains("openclaw skills create <name> [--kind <standard|meta>] [--description <text>] [--proposal-draft] [--workdir <path> | --managed] [--json] [--force]", output.ToString(), StringComparison.Ordinal);
             Assert.Contains("openclaw skills meta-runs <session-id> [--storage <path>] [--limit <count>] [--run <run-id>] [--verbose] [--json]", output.ToString(), StringComparison.Ordinal);
             Assert.Contains("openclaw skills meta-runs replay <session-id> --run <run-id> [--storage <path>] [--json]", output.ToString(), StringComparison.Ordinal);
         }
@@ -89,6 +90,28 @@ public sealed class CliProgramTests
             Console.SetOut(previousOut);
         }
     }
+
+        [Fact]
+        public async Task Main_Help_ListsSkillsCatalogAndReadOnlyProposalEntryCommands()
+        {
+            var previousOut = Console.Out;
+            using var output = new StringWriter();
+            try
+            {
+                Console.SetOut(output);
+
+                var exitCode = await OpenClaw.Cli.Program.Main(["--help"]);
+
+                Assert.Equal(0, exitCode);
+                Assert.Contains("openclaw skills catalog [--workdir <path> | --managed] [--kind <all|meta>] [--json]", output.ToString(), StringComparison.Ordinal);
+                Assert.Contains("openclaw skills proposals <session-id> [--run <run-id>] [--storage <path>] [--json]", output.ToString(), StringComparison.Ordinal);
+                Assert.Contains("openclaw skills proposals show <session-id> --proposal <id> [--storage <path>] [--json]", output.ToString(), StringComparison.Ordinal);
+            }
+            finally
+            {
+                Console.SetOut(previousOut);
+            }
+        }
 
     [Fact]
     public async Task Main_Help_ListsSkillsMetaRunsProposalReviewCommands()

@@ -16,6 +16,7 @@ internal static class SkillCommands
 
     public static async Task<int> RunAsync(string[] args)
     {
+        var asJson = args.Contains("--json");
         if (args.Length == 0 || args[0] is "-h" or "--help")
         {
             PrintHelp();
@@ -30,9 +31,35 @@ internal static class SkillCommands
             "inspect" => await InspectAsync(rest),
             "install" => await InstallAsync(rest),
             "list" or "ls" => ListInstalled(rest),
+            "catalog" => ListCatalog(rest),
+            "create" => CreateSkillScaffold(rest),
+            "proposals" => await ListReadOnlyProposalsEntryAsync(rest),
             "meta-runs" => await ListMetaRunsAsync(rest),
-            _ => UnknownSubcommand(subcommand)
+            _ => UnknownSubcommand(subcommand, asJson)
         };
+    }
+
+    private static Task<int> ListReadOnlyProposalsEntryAsync(string[] args)
+    {
+        var asJson = args.Contains("--json");
+        if (args.Length > 0
+            && (string.Equals(args[0], "accept", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(args[0], "dismiss", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(args[0], "rollback", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(args[0], "change", StringComparison.OrdinalIgnoreCase)))
+        {
+            WriteSkillsCommandError(
+                asJson,
+                "skills proposals",
+                "read_only_alias_lifecycle_action",
+                "openclaw skills proposals is a read-only entry. Use `openclaw skills meta-runs proposals <accept|dismiss|rollback|change>` for lifecycle actions.");
+            return Task.FromResult(2);
+        }
+
+        if (args.Length > 0 && string.Equals(args[0], "show", StringComparison.OrdinalIgnoreCase))
+            return ShowMetaRunProposalAsync(args.Skip(1).ToArray(), MetaRunProposalEntrypoints.ReadOnlyAlias);
+
+        return ListMetaRunProposalsAsync(args, MetaRunProposalEntrypoints.ReadOnlyAlias);
     }
 
     private static async Task<int> ListMetaRunsAsync(string[] args)
@@ -50,7 +77,11 @@ internal static class SkillCommands
         var sessionId = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
         if (string.IsNullOrWhiteSpace(sessionId))
         {
-            Console.Error.WriteLine("Usage: openclaw skills meta-runs <session-id> [--storage <path>] [--limit <count>] [--run <run-id>] [--verbose] [--json]");
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs",
+                "missing_session_id",
+                "Usage: openclaw skills meta-runs <session-id> [--storage <path>] [--limit <count>] [--run <run-id>] [--verbose] [--json]");
             return 2;
         }
 
@@ -64,7 +95,7 @@ internal static class SkillCommands
             var session = await store.GetSessionAsync(sessionId, CancellationToken.None);
             if (session is null)
             {
-                Console.Error.WriteLine($"Session '{sessionId}' not found.");
+                WriteSkillsCommandError(asJson, "skills meta-runs", "session_not_found", $"Session '{sessionId}' not found.");
                 return 1;
             }
 
@@ -89,7 +120,7 @@ internal static class SkillCommands
 
             if (!string.IsNullOrWhiteSpace(requestedRunId) && runs.Length == 0)
             {
-                Console.Error.WriteLine($"Run '{requestedRunId}' not found in session '{sessionId}'.");
+                WriteSkillsCommandError(asJson, "skills meta-runs", "run_not_found", $"Run '{requestedRunId}' not found in session '{sessionId}'.");
                 return 1;
             }
 
@@ -165,19 +196,23 @@ internal static class SkillCommands
         if (args.Length > 0 && string.Equals(args[0], "change", StringComparison.OrdinalIgnoreCase))
             return ChangeMetaRunProposalAsync(args.Skip(1).ToArray());
         if (args.Length > 0 && string.Equals(args[0], "show", StringComparison.OrdinalIgnoreCase))
-            return ShowMetaRunProposalAsync(args.Skip(1).ToArray());
+            return ShowMetaRunProposalAsync(args.Skip(1).ToArray(), MetaRunProposalEntrypoints.MetaRuns);
 
-        return ListMetaRunProposalsAsync(args);
+        return ListMetaRunProposalsAsync(args, MetaRunProposalEntrypoints.MetaRuns);
     }
 
-    private static async Task<int> ListMetaRunProposalsAsync(string[] args)
+    private static async Task<int> ListMetaRunProposalsAsync(string[] args, string entrypoint)
     {
         var asJson = args.Contains("--json");
         var requestedRunId = GetOptionValue(args, "--run");
         var sessionId = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
         if (string.IsNullOrWhiteSpace(sessionId))
         {
-            Console.Error.WriteLine("Usage: openclaw skills meta-runs proposals <session-id> [--run <run-id>] [--storage <path>] [--json]");
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs proposals",
+                "missing_session_id",
+                "Usage: openclaw skills meta-runs proposals <session-id> [--run <run-id>] [--storage <path>] [--json]");
             return 2;
         }
 
@@ -189,7 +224,7 @@ internal static class SkillCommands
             var session = await store.GetSessionAsync(sessionId, CancellationToken.None);
             if (session is null)
             {
-                Console.Error.WriteLine($"Session '{sessionId}' not found.");
+                WriteSkillsCommandError(asJson, "skills meta-runs proposals", "session_not_found", $"Session '{sessionId}' not found.");
                 return 1;
             }
 
@@ -197,7 +232,7 @@ internal static class SkillCommands
             if (!string.IsNullOrWhiteSpace(requestedRunId)
                 && !session.MetaRunHistory.Any(run => string.Equals(run.RunId, requestedRunId, StringComparison.Ordinal)))
             {
-                Console.Error.WriteLine($"Run '{requestedRunId}' not found in session '{sessionId}'.");
+                WriteSkillsCommandError(asJson, "skills meta-runs proposals", "run_not_found", $"Run '{requestedRunId}' not found in session '{sessionId}'.");
                 return 1;
             }
 
@@ -207,6 +242,8 @@ internal static class SkillCommands
             var response = new MetaRunDerivedProposalListResponse
             {
                 SessionId = sessionId,
+                Entrypoint = entrypoint,
+                ReadOnlyAlias = string.Equals(entrypoint, MetaRunProposalEntrypoints.ReadOnlyAlias, StringComparison.Ordinal),
                 Count = proposals.Length,
                 Proposals = proposals
             };
@@ -246,20 +283,28 @@ internal static class SkillCommands
         }
     }
 
-    private static async Task<int> ShowMetaRunProposalAsync(string[] args)
+    private static async Task<int> ShowMetaRunProposalAsync(string[] args, string entrypoint)
     {
         var asJson = args.Contains("--json");
         var sessionId = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
         if (string.IsNullOrWhiteSpace(sessionId))
         {
-            Console.Error.WriteLine("Usage: openclaw skills meta-runs proposals show <session-id> --proposal <id> [--storage <path>] [--json]");
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs proposals show",
+                "missing_session_id",
+                "Usage: openclaw skills meta-runs proposals show <session-id> --proposal <id> [--storage <path>] [--json]");
             return 2;
         }
 
         var proposalId = GetOptionValue(args, "--proposal");
         if (string.IsNullOrWhiteSpace(proposalId))
         {
-            Console.Error.WriteLine("--proposal <id> is required for meta-runs proposals show.");
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs proposals show",
+                "missing_proposal_id",
+                "--proposal <id> is required for meta-runs proposals show.");
             return 2;
         }
 
@@ -271,7 +316,7 @@ internal static class SkillCommands
             var session = await store.GetSessionAsync(sessionId, CancellationToken.None);
             if (session is null)
             {
-                Console.Error.WriteLine($"Session '{sessionId}' not found.");
+                WriteSkillsCommandError(asJson, "skills meta-runs proposals show", "session_not_found", $"Session '{sessionId}' not found.");
                 return 1;
             }
 
@@ -279,7 +324,7 @@ internal static class SkillCommands
                 .FirstOrDefault(item => string.Equals(item.Id, proposalId, StringComparison.Ordinal));
             if (summary is null)
             {
-                Console.Error.WriteLine($"Proposal '{proposalId}' not found in session '{sessionId}'.");
+                WriteSkillsCommandError(asJson, "skills meta-runs proposals show", "proposal_not_found", $"Proposal '{proposalId}' not found in session '{sessionId}'.");
                 return 1;
             }
 
@@ -291,11 +336,14 @@ internal static class SkillCommands
             var detail = new MetaRunDerivedProposalDetailResponse
             {
                 SessionId = sessionId,
+                Entrypoint = entrypoint,
+                ReadOnlyAlias = string.Equals(entrypoint, MetaRunProposalEntrypoints.ReadOnlyAlias, StringComparison.Ordinal),
                 Proposal = ApplyReviewDetail(
                     BuildDerivedProposalDetail(summary, run, session.MetaExecutionCheckpoint),
                     review,
                     BuildMetaRunProposalProvenanceDetail(durableProposal),
                     BuildMetaRunProposalLifecycleDetail(durableProposal),
+                    BuildMetaRunProposalAuditDetail(durableProposal),
                     BuildMetaRunProposalProvenanceHistory(durableProposal))
             };
 
@@ -339,26 +387,49 @@ internal static class SkillCommands
         var asJson = args.Contains("--json");
         var sessionId = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
         var action = string.Equals(targetStatus, MetaRunProposalReviewStatuses.Accepted, StringComparison.Ordinal)
-            ? "accept"
-            : "dismiss";
+            ? MetaRunProposalActions.Accept
+            : MetaRunProposalActions.Dismiss;
         if (string.IsNullOrWhiteSpace(sessionId))
         {
-            Console.Error.WriteLine($"Usage: openclaw skills meta-runs proposals {action} <session-id> --proposal <id> [--storage <path>] [--json]");
+            WriteSkillsCommandError(
+                asJson,
+                $"skills meta-runs proposals {action}",
+                "missing_session_id",
+                $"Usage: openclaw skills meta-runs proposals {action} <session-id> --proposal <id> [--storage <path>] [--json]");
             return 2;
         }
 
         var proposalId = GetOptionValue(args, "--proposal");
         if (string.IsNullOrWhiteSpace(proposalId))
         {
-            Console.Error.WriteLine($"--proposal <id> is required for meta-runs proposals {action}.");
+            WriteSkillsCommandError(
+                asJson,
+                $"skills meta-runs proposals {action}",
+                "missing_proposal_id",
+                $"--proposal <id> is required for meta-runs proposals {action}.");
             return 2;
         }
 
         var reason = GetOptionValue(args, "--reason");
         if (!allowReason && !string.IsNullOrWhiteSpace(reason))
         {
-            Console.Error.WriteLine("--reason is only supported for meta-runs proposals dismiss.");
+            WriteSkillsCommandError(
+                asJson,
+                $"skills meta-runs proposals {action}",
+                "unsupported_reason",
+                "--reason is only supported for meta-runs proposals dismiss.");
             return 2;
+        }
+
+        var operatorId = Environment.GetEnvironmentVariable("OPENCLAW_OPERATOR_ID");
+        if (!MetaRunProposalPolicy.CanMutate(operatorId))
+        {
+            WriteSkillsCommandError(
+                asJson,
+                $"skills meta-runs proposals {action}",
+                "permission_denied",
+                "Proposal mutation requires OPENCLAW_OPERATOR_ID.");
+            return 1;
         }
 
         var storagePath = GetOptionValue(args, "--storage");
@@ -369,7 +440,7 @@ internal static class SkillCommands
             var session = await store.GetSessionAsync(sessionId, CancellationToken.None);
             if (session is null)
             {
-                Console.Error.WriteLine($"Session '{sessionId}' not found.");
+                WriteSkillsCommandError(asJson, $"skills meta-runs proposals {action}", "session_not_found", $"Session '{sessionId}' not found.");
                 return 1;
             }
 
@@ -377,7 +448,7 @@ internal static class SkillCommands
                 .FirstOrDefault(item => string.Equals(item.Id, proposalId, StringComparison.Ordinal));
             if (proposal is null)
             {
-                Console.Error.WriteLine($"Proposal '{proposalId}' not found in session '{sessionId}'.");
+                WriteSkillsCommandError(asJson, $"skills meta-runs proposals {action}", "proposal_not_found", $"Proposal '{proposalId}' not found in session '{sessionId}'.");
                 return 1;
             }
 
@@ -385,9 +456,20 @@ internal static class SkillCommands
             var existing = await learningProposalStore.GetProposalAsync(durableProposalId, CancellationToken.None);
             var alreadyReviewed = false;
             var lifecycleStatus = MapReviewStatusToLearningProposalStatus(targetStatus);
+            var currentLifecycleStatus = existing?.Status ?? LearningProposalStatus.Pending;
             MetaRunProposalReviewRecord record;
             if (existing is null || string.Equals(existing.Status, LearningProposalStatus.Pending, StringComparison.OrdinalIgnoreCase))
             {
+                if (!MetaRunProposalPolicy.IsAllowedActionTransition(action, currentLifecycleStatus, lifecycleStatus))
+                {
+                    WriteSkillsCommandError(
+                        asJson,
+                        $"skills meta-runs proposals {action}",
+                        "invalid_lifecycle_transition",
+                        $"Invalid lifecycle transition for proposal '{proposalId}' in session '{sessionId}': {currentLifecycleStatus} -> {lifecycleStatus}.");
+                    return 1;
+                }
+
                 var reviewedAtUtc = DateTimeOffset.UtcNow;
                 var runSnapshot = session.MetaRunHistory.First(run => string.Equals(run.RunId, proposal.RunId, StringComparison.Ordinal));
                 var checkpointSnapshot = string.Equals(runSnapshot.Status, "paused", StringComparison.OrdinalIgnoreCase)
@@ -417,11 +499,12 @@ internal static class SkillCommands
                 AppendMetaRunProposalTransitionMetadata(
                     durableRecord.Metadata,
                     string.Equals(targetStatus, MetaRunProposalReviewStatuses.Accepted, StringComparison.Ordinal)
-                        ? "accept"
-                        : "dismiss",
+                        ? MetaRunProposalActions.Accept
+                        : MetaRunProposalActions.Dismiss,
                     existing?.Status ?? LearningProposalStatus.Pending,
                     lifecycleStatus,
                     reviewedAtUtc,
+                    operatorId,
                     allowReason ? reason : null);
                 await learningProposalStore.SaveProposalAsync(durableRecord, CancellationToken.None);
 
@@ -442,9 +525,18 @@ internal static class SkillCommands
             }
             else
             {
-                Console.Error.WriteLine($"Proposal '{proposalId}' in session '{sessionId}' is already reviewed as {MapLearningProposalStatusToReviewStatus(existing.Status)}.");
+                WriteSkillsCommandError(asJson, $"skills meta-runs proposals {action}", "proposal_already_reviewed", $"Proposal '{proposalId}' in session '{sessionId}' is already reviewed as {MapLearningProposalStatusToReviewStatus(existing.Status)}.");
                 return 1;
             }
+
+            var responseAudit = alreadyReviewed
+                ? BuildMetaRunProposalAuditDetail(existing)
+                : new MetaRunProposalAuditDetail
+                {
+                    ActorId = operatorId,
+                    ChangedAtUtc = record.ReviewedAtUtc,
+                    TransitionAction = action
+                };
 
             var response = new MetaRunProposalReviewMutationResponse
             {
@@ -454,7 +546,8 @@ internal static class SkillCommands
                 LifecycleStatus = lifecycleStatus,
                 AlreadyReviewed = alreadyReviewed,
                 ReviewedAtUtc = record.ReviewedAtUtc,
-                Reason = record.Reason
+                Reason = record.Reason,
+                Audit = responseAudit
             };
 
             if (asJson)
@@ -498,15 +591,34 @@ internal static class SkillCommands
         var sessionId = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
         if (string.IsNullOrWhiteSpace(sessionId))
         {
-            Console.Error.WriteLine("Usage: openclaw skills meta-runs proposals rollback <session-id> --proposal <id> [--reason <text>] [--storage <path>] [--json]");
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs proposals rollback",
+                "missing_session_id",
+                "Usage: openclaw skills meta-runs proposals rollback <session-id> --proposal <id> [--reason <text>] [--storage <path>] [--json]");
             return 2;
         }
 
         var proposalId = GetOptionValue(args, "--proposal");
         if (string.IsNullOrWhiteSpace(proposalId))
         {
-            Console.Error.WriteLine("--proposal <id> is required for meta-runs proposals rollback.");
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs proposals rollback",
+                "missing_proposal_id",
+                "--proposal <id> is required for meta-runs proposals rollback.");
             return 2;
+        }
+
+        var operatorId = Environment.GetEnvironmentVariable("OPENCLAW_OPERATOR_ID");
+        if (!MetaRunProposalPolicy.CanMutate(operatorId))
+        {
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs proposals rollback",
+                "permission_denied",
+                "Proposal mutation requires OPENCLAW_OPERATOR_ID.");
+            return 1;
         }
 
         var reason = GetOptionValue(args, "--reason");
@@ -518,7 +630,7 @@ internal static class SkillCommands
             var session = await store.GetSessionAsync(sessionId, CancellationToken.None);
             if (session is null)
             {
-                Console.Error.WriteLine($"Session '{sessionId}' not found.");
+                WriteSkillsCommandError(asJson, "skills meta-runs proposals rollback", "session_not_found", $"Session '{sessionId}' not found.");
                 return 1;
             }
 
@@ -526,19 +638,20 @@ internal static class SkillCommands
                 .FirstOrDefault(item => string.Equals(item.Id, proposalId, StringComparison.Ordinal));
             if (proposal is null)
             {
-                Console.Error.WriteLine($"Proposal '{proposalId}' not found in session '{sessionId}'.");
+                WriteSkillsCommandError(asJson, "skills meta-runs proposals rollback", "proposal_not_found", $"Proposal '{proposalId}' not found in session '{sessionId}'.");
                 return 1;
             }
 
             var durableProposalId = BuildMetaRunProposalDurableId(sessionId, proposalId);
             var existing = await learningProposalStore.GetProposalAsync(durableProposalId, CancellationToken.None);
             var lifecycleStatus = LearningProposalStatus.RolledBack;
+            var currentLifecycleStatus = existing?.Status ?? LearningProposalStatus.Pending;
             var alreadyReviewed = false;
             MetaRunProposalReviewRecord record;
 
             if (existing is null || string.Equals(existing.Status, LearningProposalStatus.Pending, StringComparison.OrdinalIgnoreCase))
             {
-                Console.Error.WriteLine($"Invalid lifecycle transition for proposal '{proposalId}' in session '{sessionId}': pending -> {LearningProposalStatus.RolledBack}. Only approved or rejected proposals can be rolled back.");
+                WriteSkillsCommandError(asJson, "skills meta-runs proposals rollback", "invalid_lifecycle_transition", $"Invalid lifecycle transition for proposal '{proposalId}' in session '{sessionId}': pending -> {LearningProposalStatus.RolledBack}. Only approved or rejected proposals can be rolled back.");
                 return 1;
             }
 
@@ -551,6 +664,16 @@ internal static class SkillCommands
             else if (string.Equals(existing.Status, LearningProposalStatus.Approved, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(existing.Status, LearningProposalStatus.Rejected, StringComparison.OrdinalIgnoreCase))
             {
+                if (!MetaRunProposalPolicy.IsAllowedActionTransition(MetaRunProposalActions.Rollback, currentLifecycleStatus, lifecycleStatus))
+                {
+                    WriteSkillsCommandError(
+                        asJson,
+                        "skills meta-runs proposals rollback",
+                        "invalid_lifecycle_transition",
+                        $"Invalid lifecycle transition for proposal '{proposalId}' in session '{sessionId}': {currentLifecycleStatus} -> {lifecycleStatus}. Only approved or rejected proposals can be rolled back.");
+                    return 1;
+                }
+
                 var reviewedAtUtc = DateTimeOffset.UtcNow;
                 var rollbackReason = string.IsNullOrWhiteSpace(reason) ? DefaultMetaRunProposalRollbackReason : reason!;
                 var runSnapshot = session.MetaRunHistory.First(run => string.Equals(run.RunId, proposal.RunId, StringComparison.Ordinal));
@@ -579,10 +702,11 @@ internal static class SkillCommands
                 PopulateMetaRunProposalProvenanceMetadata(durableRecord.Metadata, runSnapshot, checkpointSnapshot, reviewedAtUtc);
                 AppendMetaRunProposalTransitionMetadata(
                     durableRecord.Metadata,
-                    "rollback",
+                    MetaRunProposalActions.Rollback,
                     existing.Status,
                     lifecycleStatus,
                     reviewedAtUtc,
+                    operatorId,
                     rollbackReason);
                 await learningProposalStore.SaveProposalAsync(durableRecord, CancellationToken.None);
 
@@ -597,9 +721,18 @@ internal static class SkillCommands
             }
             else
             {
-                Console.Error.WriteLine($"Invalid lifecycle transition for proposal '{proposalId}' in session '{sessionId}': {existing.Status} -> {LearningProposalStatus.RolledBack}. Only approved or rejected proposals can be rolled back.");
+                WriteSkillsCommandError(asJson, "skills meta-runs proposals rollback", "invalid_lifecycle_transition", $"Invalid lifecycle transition for proposal '{proposalId}' in session '{sessionId}': {existing.Status} -> {LearningProposalStatus.RolledBack}. Only approved or rejected proposals can be rolled back.");
                 return 1;
             }
+
+            var responseAudit = alreadyReviewed
+                ? BuildMetaRunProposalAuditDetail(existing)
+                : new MetaRunProposalAuditDetail
+                {
+                    ActorId = operatorId,
+                    ChangedAtUtc = record.ReviewedAtUtc,
+                    TransitionAction = MetaRunProposalActions.Rollback
+                };
 
             var response = new MetaRunProposalReviewMutationResponse
             {
@@ -609,7 +742,8 @@ internal static class SkillCommands
                 LifecycleStatus = lifecycleStatus,
                 AlreadyReviewed = alreadyReviewed,
                 ReviewedAtUtc = record.ReviewedAtUtc,
-                Reason = record.Reason
+                Reason = record.Reason,
+                Audit = responseAudit
             };
 
             if (asJson)
@@ -649,23 +783,45 @@ internal static class SkillCommands
         var sessionId = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
         if (string.IsNullOrWhiteSpace(sessionId))
         {
-            Console.Error.WriteLine("Usage: openclaw skills meta-runs proposals change <session-id> --proposal <id> --to <accept|dismiss> [--reason <text>] [--storage <path>] [--json]");
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs proposals change",
+                "missing_session_id",
+                "Usage: openclaw skills meta-runs proposals change <session-id> --proposal <id> --to <accept|dismiss> [--reason <text>] [--storage <path>] [--json]");
             return 2;
         }
 
         var proposalId = GetOptionValue(args, "--proposal");
         if (string.IsNullOrWhiteSpace(proposalId))
         {
-            Console.Error.WriteLine("--proposal <id> is required for meta-runs proposals change.");
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs proposals change",
+                "missing_proposal_id",
+                "--proposal <id> is required for meta-runs proposals change.");
             return 2;
         }
 
         var to = GetOptionValue(args, "--to");
         if (!TryMapMetaRunProposalChangeTarget(to, out var targetReviewStatus, out var targetLifecycleStatus))
         {
-            Console.Error.WriteLine("--to must be one of: accept, dismiss.");
-            Console.Error.WriteLine("Usage: openclaw skills meta-runs proposals change <session-id> --proposal <id> --to <accept|dismiss> [--reason <text>] [--storage <path>] [--json]");
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs proposals change",
+                "invalid_change_target",
+                "--to must be one of: accept, dismiss.");
             return 2;
+        }
+
+        var operatorId = Environment.GetEnvironmentVariable("OPENCLAW_OPERATOR_ID");
+        if (!MetaRunProposalPolicy.CanMutate(operatorId))
+        {
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs proposals change",
+                "permission_denied",
+                "Proposal mutation requires OPENCLAW_OPERATOR_ID.");
+            return 1;
         }
 
         var reason = GetOptionValue(args, "--reason");
@@ -677,7 +833,7 @@ internal static class SkillCommands
             var session = await store.GetSessionAsync(sessionId, CancellationToken.None);
             if (session is null)
             {
-                Console.Error.WriteLine($"Session '{sessionId}' not found.");
+                WriteSkillsCommandError(asJson, "skills meta-runs proposals change", "session_not_found", $"Session '{sessionId}' not found.");
                 return 1;
             }
 
@@ -685,7 +841,7 @@ internal static class SkillCommands
                 .FirstOrDefault(item => string.Equals(item.Id, proposalId, StringComparison.Ordinal));
             if (proposal is null)
             {
-                Console.Error.WriteLine($"Proposal '{proposalId}' not found in session '{sessionId}'.");
+                WriteSkillsCommandError(asJson, "skills meta-runs proposals change", "proposal_not_found", $"Proposal '{proposalId}' not found in session '{sessionId}'.");
                 return 1;
             }
 
@@ -693,21 +849,32 @@ internal static class SkillCommands
             var existing = await learningProposalStore.GetProposalAsync(durableProposalId, CancellationToken.None);
             var alreadyReviewed = false;
             var lifecycleStatus = targetLifecycleStatus;
+            var currentLifecycleStatus = existing?.Status ?? LearningProposalStatus.Pending;
             MetaRunProposalReviewRecord record;
 
             if (existing is null)
             {
-                Console.Error.WriteLine($"Invalid lifecycle transition for proposal '{proposalId}' in session '{sessionId}': pending -> {targetLifecycleStatus}. Change only supports {LearningProposalStatus.RolledBack} -> {targetLifecycleStatus}.");
+                WriteSkillsCommandError(asJson, "skills meta-runs proposals change", "invalid_lifecycle_transition", $"Invalid lifecycle transition for proposal '{proposalId}' in session '{sessionId}': pending -> {targetLifecycleStatus}. Change only supports {LearningProposalStatus.RolledBack} -> {targetLifecycleStatus}.");
                 return 1;
             }
 
             if (!string.Equals(existing.Status, LearningProposalStatus.RolledBack, StringComparison.OrdinalIgnoreCase))
             {
-                Console.Error.WriteLine($"Invalid lifecycle transition for proposal '{proposalId}' in session '{sessionId}': {existing.Status} -> {targetLifecycleStatus}. Change only supports {LearningProposalStatus.RolledBack} -> {targetLifecycleStatus}.");
+                WriteSkillsCommandError(asJson, "skills meta-runs proposals change", "invalid_lifecycle_transition", $"Invalid lifecycle transition for proposal '{proposalId}' in session '{sessionId}': {existing.Status} -> {targetLifecycleStatus}. Change only supports {LearningProposalStatus.RolledBack} -> {targetLifecycleStatus}.");
                 return 1;
             }
             else
             {
+                if (!MetaRunProposalPolicy.IsAllowedActionTransition(MetaRunProposalActions.Change, currentLifecycleStatus, targetLifecycleStatus))
+                {
+                    WriteSkillsCommandError(
+                        asJson,
+                        "skills meta-runs proposals change",
+                        "invalid_lifecycle_transition",
+                        $"Invalid lifecycle transition for proposal '{proposalId}' in session '{sessionId}': {currentLifecycleStatus} -> {targetLifecycleStatus}. Change only supports {LearningProposalStatus.RolledBack} -> {targetLifecycleStatus}.");
+                    return 1;
+                }
+
                 var reviewedAtUtc = DateTimeOffset.UtcNow;
                 var runSnapshot = session.MetaRunHistory.First(run => string.Equals(run.RunId, proposal.RunId, StringComparison.Ordinal));
                 var checkpointSnapshot = string.Equals(runSnapshot.Status, "paused", StringComparison.OrdinalIgnoreCase)
@@ -736,10 +903,11 @@ internal static class SkillCommands
                 PopulateMetaRunProposalProvenanceMetadata(durableRecord.Metadata, runSnapshot, checkpointSnapshot, reviewedAtUtc);
                 AppendMetaRunProposalTransitionMetadata(
                     durableRecord.Metadata,
-                    "change",
+                    MetaRunProposalActions.Change,
                     existing.Status,
                     targetLifecycleStatus,
                     reviewedAtUtc,
+                    operatorId,
                     reason);
                 await learningProposalStore.SaveProposalAsync(durableRecord, CancellationToken.None);
 
@@ -753,6 +921,15 @@ internal static class SkillCommands
                 };
             }
 
+            var responseAudit = alreadyReviewed
+                ? BuildMetaRunProposalAuditDetail(existing)
+                : new MetaRunProposalAuditDetail
+                {
+                    ActorId = operatorId,
+                    ChangedAtUtc = record.ReviewedAtUtc,
+                    TransitionAction = MetaRunProposalActions.Change
+                };
+
             var response = new MetaRunProposalReviewMutationResponse
             {
                 SessionId = sessionId,
@@ -761,7 +938,8 @@ internal static class SkillCommands
                 LifecycleStatus = lifecycleStatus,
                 AlreadyReviewed = alreadyReviewed,
                 ReviewedAtUtc = record.ReviewedAtUtc,
-                Reason = record.Reason
+                Reason = record.Reason,
+                Audit = responseAudit
             };
 
             if (asJson)
@@ -801,14 +979,22 @@ internal static class SkillCommands
         var sessionId = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
         if (string.IsNullOrWhiteSpace(sessionId))
         {
-            Console.Error.WriteLine("Usage: openclaw skills meta-runs reconstruct <session-id> --run <run-id> [--storage <path>] [--json]");
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs reconstruct",
+                "missing_session_id",
+                "Usage: openclaw skills meta-runs reconstruct <session-id> --run <run-id> [--storage <path>] [--json]");
             return 2;
         }
 
         var requestedRunId = GetOptionValue(args, "--run");
         if (string.IsNullOrWhiteSpace(requestedRunId))
         {
-            Console.Error.WriteLine("--run <run-id> is required for meta-runs reconstruct.");
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs reconstruct",
+                "missing_run_id",
+                "--run <run-id> is required for meta-runs reconstruct.");
             return 2;
         }
 
@@ -819,14 +1005,14 @@ internal static class SkillCommands
             var session = await store.GetSessionAsync(sessionId, CancellationToken.None);
             if (session is null)
             {
-                Console.Error.WriteLine($"Session '{sessionId}' not found.");
+                WriteSkillsCommandError(asJson, "skills meta-runs reconstruct", "session_not_found", $"Session '{sessionId}' not found.");
                 return 1;
             }
 
             var run = session.MetaRunHistory.FirstOrDefault(run => string.Equals(run.RunId, requestedRunId, StringComparison.Ordinal));
             if (run is null)
             {
-                Console.Error.WriteLine($"Run '{requestedRunId}' not found in session '{sessionId}'.");
+                WriteSkillsCommandError(asJson, "skills meta-runs reconstruct", "run_not_found", $"Run '{requestedRunId}' not found in session '{sessionId}'.");
                 return 1;
             }
 
@@ -862,14 +1048,22 @@ internal static class SkillCommands
         var sessionId = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
         if (string.IsNullOrWhiteSpace(sessionId))
         {
-            Console.Error.WriteLine("Usage: openclaw skills meta-runs replay <session-id> --run <run-id> [--storage <path>] [--json]");
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs replay",
+                "missing_session_id",
+                "Usage: openclaw skills meta-runs replay <session-id> --run <run-id> [--storage <path>] [--json]");
             return 2;
         }
 
         var requestedRunId = GetOptionValue(args, "--run");
         if (string.IsNullOrWhiteSpace(requestedRunId))
         {
-            Console.Error.WriteLine("--run <run-id> is required for meta-runs replay preview.");
+            WriteSkillsCommandError(
+                asJson,
+                "skills meta-runs replay",
+                "missing_run_id",
+                "--run <run-id> is required for meta-runs replay preview.");
             return 2;
         }
 
@@ -880,14 +1074,14 @@ internal static class SkillCommands
             var session = await store.GetSessionAsync(sessionId, CancellationToken.None);
             if (session is null)
             {
-                Console.Error.WriteLine($"Session '{sessionId}' not found.");
+                WriteSkillsCommandError(asJson, "skills meta-runs replay", "session_not_found", $"Session '{sessionId}' not found.");
                 return 1;
             }
 
             var run = session.MetaRunHistory.FirstOrDefault(run => string.Equals(run.RunId, requestedRunId, StringComparison.Ordinal));
             if (run is null)
             {
-                Console.Error.WriteLine($"Run '{requestedRunId}' not found in session '{sessionId}'.");
+                WriteSkillsCommandError(asJson, "skills meta-runs replay", "run_not_found", $"Run '{requestedRunId}' not found in session '{sessionId}'.");
                 return 1;
             }
 
@@ -950,22 +1144,32 @@ internal static class SkillCommands
 
     private static Task<int> InspectAsync(string[] args)
     {
+        var asJson = args.Contains("--json");
         var sourcePath = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
         if (string.IsNullOrWhiteSpace(sourcePath))
         {
-            Console.Error.WriteLine("Usage: openclaw skills inspect <path|tarball>");
+            WriteSkillsCommandError(
+                asJson,
+                "skills inspect",
+                "missing_source_path",
+                "Usage: openclaw skills inspect <path|tarball>");
             return Task.FromResult(2);
         }
 
-        return InspectSourceAsync(sourcePath, printInstallTarget: false);
+        return InspectSourceAsync(sourcePath, printInstallTarget: false, asJson);
     }
 
     private static async Task<int> InstallAsync(string[] args)
     {
+        var asJson = args.Contains("--json");
         var sourcePath = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
         if (string.IsNullOrWhiteSpace(sourcePath))
         {
-            Console.Error.WriteLine("Usage: openclaw skills install <path|tarball>");
+            WriteSkillsCommandError(
+                asJson,
+                "skills install",
+                "missing_source_path",
+                "Usage: openclaw skills install <path|tarball>");
             return 2;
         }
 
@@ -977,7 +1181,11 @@ internal static class SkillCommands
         var inspected = resolved.Inspection;
         if (!inspected.Success)
         {
-            Console.Error.WriteLine(inspected.ErrorMessage);
+            WriteSkillsCommandError(
+                asJson,
+                "skills install",
+                "inspect_failed",
+                inspected.ErrorMessage ?? $"Failed to inspect source path: {sourcePath}");
             return 1;
         }
 
@@ -1000,7 +1208,11 @@ internal static class SkillCommands
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
         {
-            Console.Error.WriteLine(ex.Message);
+            WriteSkillsCommandError(
+                asJson,
+                "skills install",
+                "install_failed",
+                ex.Message);
             return 1;
         }
         finally
@@ -1049,13 +1261,229 @@ internal static class SkillCommands
         return 0;
     }
 
-    private static async Task<int> InspectSourceAsync(string sourcePath, bool printInstallTarget)
+    private static int ListCatalog(string[] args)
+    {
+        var managed = args.Contains("--managed");
+        var workdir = GetOptionValue(args, "--workdir");
+        var asJson = args.Contains("--json");
+        var kind = GetOptionValue(args, "--kind");
+
+        if (!string.IsNullOrWhiteSpace(kind)
+            && !string.Equals(kind, "all", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(kind, "meta", StringComparison.OrdinalIgnoreCase))
+        {
+            WriteSkillsCommandError(
+                asJson,
+                "skills catalog",
+                "invalid_kind",
+                "--kind supports only 'all' or 'meta'.");
+            return 2;
+        }
+
+        var skillsDirectory = ResolveSkillsDirectory(managed, workdir);
+        if (!Directory.Exists(skillsDirectory))
+        {
+            if (asJson)
+            {
+                Console.WriteLine("{\"count\":0,\"skills\":[]}");
+                return 0;
+            }
+
+            Console.WriteLine("No skills installed.");
+            return 0;
+        }
+
+        var source = managed ? SkillSource.Managed : SkillSource.Workspace;
+        var catalog = SkillInspector.InspectInstalledRoot(skillsDirectory, source)
+            .Where(static inspection => inspection.Success && inspection.Definition is not null)
+            .Select(CreateInspection)
+            .Where(item => string.IsNullOrWhiteSpace(kind)
+                || string.Equals(kind, "all", StringComparison.OrdinalIgnoreCase)
+                || (string.Equals(kind, "meta", StringComparison.OrdinalIgnoreCase)
+                    && item.Definition.Kind == SkillKind.Meta))
+            .OrderBy(static item => item.Definition.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (asJson)
+        {
+            using var stream = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(stream))
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber("count", catalog.Length);
+                writer.WriteStartArray("skills");
+                foreach (var item in catalog)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("name", item.Definition.Name);
+                    writer.WriteString("kind", item.Definition.Kind.ToString().ToLowerInvariant());
+                    writer.WriteString("description", item.Definition.Description);
+                    writer.WriteString("trust", item.TrustLevel);
+                    writer.WriteString("source", item.SourceLabel);
+                    writer.WriteString("path", item.SkillRootPath);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+            }
+
+            Console.WriteLine(System.Text.Encoding.UTF8.GetString(stream.ToArray()));
+            return 0;
+        }
+
+        Console.WriteLine($"Skill catalog ({catalog.Length}):");
+        foreach (var item in catalog)
+        {
+            Console.WriteLine($"  {item.Definition.Name} [{item.Definition.Kind.ToString().ToLowerInvariant()}] - {item.Definition.Description}");
+            Console.WriteLine($"    Trust: {item.TrustLevel}");
+            Console.WriteLine($"    Source: {item.SourceLabel}");
+            Console.WriteLine($"    Path: {item.SkillRootPath}");
+        }
+
+        return 0;
+    }
+
+    private static int CreateSkillScaffold(string[] args)
+    {
+        var asJson = args.Contains("--json");
+        var force = args.Contains("--force");
+        var proposalDraftRequested = args.Contains("--proposal-draft");
+        var managed = args.Contains("--managed");
+        var workdir = GetOptionValue(args, "--workdir");
+        var name = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            WriteCreateError(asJson, "invalid_create_usage", "Usage: openclaw skills create <name> [--kind <standard|meta>] [--description <text>] [--proposal-draft] [--workdir <path> | --managed] [--json] [--force]");
+            return 2;
+        }
+
+        var kind = GetOptionValue(args, "--kind") ?? "standard";
+        if (!string.Equals(kind, "standard", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(kind, "meta", StringComparison.OrdinalIgnoreCase))
+        {
+            WriteCreateError(asJson, "invalid_kind", "--kind must be one of: standard, meta.");
+            return 2;
+        }
+
+        name = NormalizeSingleLineValue(name);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            WriteCreateError(asJson, "invalid_skill_name", "Skill name cannot be empty.");
+            return 2;
+        }
+
+        var slug = Slugify(name);
+        if (string.IsNullOrWhiteSpace(slug))
+        {
+            WriteCreateError(asJson, "invalid_skill_name", "Skill name does not contain any letters or digits.");
+            return 2;
+        }
+
+        var description = NormalizeSingleLineValue(GetOptionValue(args, "--description") ?? $"{name} workflow scaffold.");
+        var skillsDirectory = ResolveSkillsDirectory(managed, workdir);
+        var skillDirectory = Path.Combine(skillsDirectory, slug);
+        var exists = Directory.Exists(skillDirectory);
+        if (exists && !force)
+        {
+            WriteCreateError(asJson, "skill_already_exists", $"Skill scaffold already exists: {skillDirectory}. Use --force to overwrite SKILL.md.");
+            return 1;
+        }
+
+        Directory.CreateDirectory(skillDirectory);
+        var kindValue = string.Equals(kind, "meta", StringComparison.OrdinalIgnoreCase) ? "meta" : "standard";
+        if (proposalDraftRequested && !string.Equals(kindValue, "meta", StringComparison.OrdinalIgnoreCase))
+        {
+            WriteCreateError(asJson, "invalid_proposal_draft_kind", "--proposal-draft is only supported for --kind meta.");
+            return 2;
+        }
+
+        var skillMarkdown = BuildSkillScaffoldMarkdown(name, description, kindValue);
+        File.WriteAllText(Path.Combine(skillDirectory, "SKILL.md"), skillMarkdown);
+
+        var proposalDraftId = slug;
+        var proposalDraftKind = "meta_skill_creator_draft";
+        var proposalDraftStatus = "draft";
+        var proposalDraftTitle = $"Meta skill draft proposal: {name}";
+        var proposalDraftSummary = "Draft proposal prepared from scaffold metadata. Review and refine before lifecycle actions.";
+        var proposalDraftQuality = BuildProposalDraftQuality(name, description, kindValue);
+
+        if (asJson)
+        {
+            using var stream = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(stream))
+            {
+                writer.WriteStartObject();
+                writer.WriteString("name", name);
+                writer.WriteString("slug", slug);
+                writer.WriteString("kind", kindValue);
+                writer.WriteString("path", skillDirectory);
+                writer.WriteBoolean("created", true);
+                writer.WriteBoolean("overwrote", exists);
+                if (proposalDraftRequested)
+                {
+                    writer.WriteStartObject("proposalDraft");
+                    writer.WriteBoolean("available", true);
+                    writer.WriteString("id", proposalDraftId);
+                    writer.WriteString("kind", proposalDraftKind);
+                    writer.WriteString("status", proposalDraftStatus);
+                    writer.WriteString("title", proposalDraftTitle);
+                    writer.WriteString("summary", proposalDraftSummary);
+                    writer.WriteStartObject("quality");
+                    writer.WriteNumber("checksPassed", proposalDraftQuality.ChecksPassed);
+                    writer.WriteNumber("checksTotal", proposalDraftQuality.ChecksTotal);
+                    writer.WriteStartArray("checks");
+                    foreach (var check in proposalDraftQuality.Checks)
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString("id", check.Id);
+                        writer.WriteString("status", check.Status);
+                        writer.WriteString("message", check.Message);
+                        if (!string.IsNullOrWhiteSpace(check.Recommendation))
+                            writer.WriteString("recommendation", check.Recommendation);
+                        writer.WriteEndObject();
+                    }
+                    writer.WriteEndArray();
+                    writer.WriteStartArray("warnings");
+                    foreach (var warning in proposalDraftQuality.Warnings)
+                        writer.WriteStringValue(warning);
+                    writer.WriteEndArray();
+                    writer.WriteEndObject();
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndObject();
+            }
+
+            Console.WriteLine(System.Text.Encoding.UTF8.GetString(stream.ToArray()));
+            return 0;
+        }
+
+        Console.WriteLine($"Created skill scaffold: {name} [{kindValue}]");
+        Console.WriteLine($"Path: {skillDirectory}");
+        if (exists)
+            Console.WriteLine("Overwrote existing SKILL.md via --force.");
+        if (proposalDraftRequested)
+        {
+            Console.WriteLine($"Proposal draft: {proposalDraftStatus}");
+            Console.WriteLine($"Proposal kind: {proposalDraftKind}");
+            Console.WriteLine($"Proposal id: {proposalDraftId}");
+            Console.WriteLine($"Proposal quality: {proposalDraftQuality.ChecksPassed}/{proposalDraftQuality.ChecksTotal} checks passed");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> InspectSourceAsync(string sourcePath, bool printInstallTarget, bool asJson)
     {
         var resolved = await InspectResolvedSourceAsync(sourcePath, retainExtractedDirectory: false);
         var inspected = resolved.Inspection;
         if (!inspected.Success)
         {
-            Console.Error.WriteLine(inspected.ErrorMessage);
+            WriteSkillsCommandError(
+                asJson,
+                "skills inspect",
+                "inspect_failed",
+                inspected.ErrorMessage ?? $"Failed to inspect source path: {sourcePath}");
             return 1;
         }
 
@@ -1185,6 +1613,119 @@ internal static class SkillCommands
 
         return items.Count == 0 ? "none" : string.Join(" | ", items);
     }
+
+    private static string BuildSkillScaffoldMarkdown(string name, string description, string kind)
+    {
+        var lines = new List<string>
+        {
+            "---",
+            $"name: {name}",
+            $"description: {description}"
+        };
+
+        if (string.Equals(kind, "meta", StringComparison.OrdinalIgnoreCase))
+        {
+            lines.Add("kind: meta");
+            lines.Add("composition: {\"steps\":[{\"id\":\"draft\",\"kind\":\"llm_chat\",\"with\":{\"prompt\":\"Summarize the user intent and propose next steps.\"}}]}");
+        }
+
+        lines.Add("---");
+        lines.Add(string.Empty);
+        lines.Add("Describe what this skill should do and how it should be used.");
+
+        return string.Join(Environment.NewLine, lines) + Environment.NewLine;
+    }
+
+    private static ProposalDraftQuality BuildProposalDraftQuality(string name, string description, string kind)
+    {
+        var checks = new List<ProposalDraftQualityCheck>();
+        var warnings = new List<string>();
+
+        var hasName = !string.IsNullOrWhiteSpace(name);
+        checks.Add(new ProposalDraftQualityCheck(
+            "name_present",
+            hasName ? "pass" : "fail",
+            hasName ? "Skill name is present." : "Skill name is empty.",
+            hasName ? null : "Provide a non-empty skill name."));
+
+        var hasDescription = !string.IsNullOrWhiteSpace(description);
+        var descriptionStatus = hasDescription ? "pass" : "fail";
+        var descriptionMessage = hasDescription ? "Skill description is present." : "Skill description is empty.";
+        var descriptionRecommendation = hasDescription ? null : "Add a meaningful description that explains intent and outcomes.";
+        if (hasDescription && description.Length < 16)
+        {
+            descriptionStatus = "warn";
+            descriptionMessage = "Skill description is present but too short to guide proposal review.";
+            descriptionRecommendation = "Expand description to include expected behavior and boundaries.";
+            warnings.Add("description_too_short");
+        }
+
+        checks.Add(new ProposalDraftQualityCheck("description_present", descriptionStatus, descriptionMessage, descriptionRecommendation));
+
+        var metaSeeded = string.Equals(kind, "meta", StringComparison.OrdinalIgnoreCase);
+        checks.Add(new ProposalDraftQualityCheck(
+            "meta_composition_seeded",
+            metaSeeded ? "pass" : "fail",
+            metaSeeded ? "Meta composition scaffold is seeded." : "Meta composition scaffold is missing.",
+            metaSeeded ? null : "Use --kind meta to seed composition scaffolding."));
+
+        var checksPassed = checks.Count(static check => string.Equals(check.Status, "pass", StringComparison.Ordinal));
+        return new ProposalDraftQuality(checksPassed, checks.Count, checks, warnings);
+    }
+
+    private static string NormalizeSingleLineValue(string value) =>
+        value
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Trim();
+
+    private static void WriteCreateError(bool asJson, string errorCode, string message)
+    {
+        if (!asJson)
+        {
+            Console.Error.WriteLine(message);
+            return;
+        }
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("status", "error");
+            writer.WriteString("command", "skills create");
+            writer.WriteString("errorCode", errorCode);
+            writer.WriteString("message", message);
+            writer.WriteEndObject();
+        }
+
+        Console.Error.WriteLine(System.Text.Encoding.UTF8.GetString(stream.ToArray()));
+    }
+
+    private static void WriteSkillsCommandError(bool asJson, string command, string errorCode, string message)
+    {
+        if (!asJson)
+        {
+            Console.Error.WriteLine(message);
+            return;
+        }
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("status", "error");
+            writer.WriteString("command", command);
+            writer.WriteString("errorCode", errorCode);
+            writer.WriteString("message", message);
+            writer.WriteEndObject();
+        }
+
+        Console.Error.WriteLine(System.Text.Encoding.UTF8.GetString(stream.ToArray()));
+    }
+
+    private sealed record ProposalDraftQuality(int ChecksPassed, int ChecksTotal, IReadOnlyList<ProposalDraftQualityCheck> Checks, IReadOnlyList<string> Warnings);
+
+    private sealed record ProposalDraftQualityCheck(string Id, string Status, string Message, string? Recommendation = null);
 
     private static string ResolveSkillsDirectory(bool managed, string? workdir)
     {
@@ -1342,10 +1883,11 @@ internal static class SkillCommands
         return string.Join("-", new string(chars).Split('-', StringSplitOptions.RemoveEmptyEntries));
     }
 
-    private static int UnknownSubcommand(string subcommand)
+    private static int UnknownSubcommand(string subcommand, bool asJson)
     {
-        Console.Error.WriteLine($"Unknown skills subcommand: {subcommand}");
-        PrintHelp();
+        WriteSkillsCommandError(asJson, "skills", "unknown_subcommand", $"Unknown skills subcommand: {subcommand}");
+        if (!asJson)
+            PrintHelp();
         return 2;
     }
 
@@ -1358,6 +1900,10 @@ internal static class SkillCommands
               openclaw skills inspect <path|tarball>
               openclaw skills install <path|tarball> [--dry-run] [--workdir <path> | --managed]
               openclaw skills list [--workdir <path> | --managed]
+              openclaw skills catalog [--workdir <path> | --managed] [--kind <all|meta>] [--json]
+              openclaw skills create <name> [--kind <standard|meta>] [--description <text>] [--proposal-draft] [--workdir <path> | --managed] [--json] [--force]
+              openclaw skills proposals <session-id> [--run <run-id>] [--storage <path>] [--json]
+              openclaw skills proposals show <session-id> --proposal <id> [--storage <path>] [--json]
                             openclaw skills meta-runs <session-id> [--storage <path>] [--limit <count>] [--run <run-id>] [--verbose] [--json]
                             openclaw skills meta-runs replay <session-id> --run <run-id> [--storage <path>] [--json]
                             openclaw skills meta-runs reconstruct <session-id> --run <run-id> [--storage <path>] [--json]
@@ -1378,6 +1924,8 @@ internal static class SkillCommands
                             - `meta-runs replay` is currently preview-only and reports whether persisted run history is sufficient for replay.
                                 - `meta-runs reconstruct` builds an audit replay result from persisted run history and optional checkpoint state without re-executing tools or models.
                                 - `meta-runs proposals` returns derived read-only proposal summaries from persisted meta-run evidence.
+                                - `skills proposals` is a read-only shortcut to `skills meta-runs proposals` / `show`.
+                                - `skills catalog` lists installed skills for discovery and supports `--kind meta` filtering.
                                 - `meta-runs proposals show` expands a single derived proposal without implying durable lifecycle state.
                                 - `meta-runs proposals accept|dismiss|rollback|change` records lifecycle decisions only; it does not execute tools, models, or replay.
             """);
@@ -1551,6 +2099,7 @@ internal static class SkillCommands
         MetaRunProposalReviewRecord? review,
         MetaRunProposalProvenanceDetail? provenance,
         MetaRunProposalLifecycleDetail? lifecycle,
+        MetaRunProposalAuditDetail? audit,
         MetaRunProposalProvenanceTransition[]? provenanceHistory)
     {
         return new MetaRunDerivedProposalDetail
@@ -1568,6 +2117,7 @@ internal static class SkillCommands
             Evidence = detail.Evidence,
             Provenance = provenance,
             Lifecycle = lifecycle,
+            Audit = audit,
             ProvenanceHistory = provenanceHistory is null ? [] : [.. provenanceHistory],
             Review = review is null
                 ? null
@@ -1699,6 +2249,40 @@ internal static class SkillCommands
         };
     }
 
+    private static MetaRunProposalAuditDetail? BuildMetaRunProposalAuditDetail(LearningProposal? proposal)
+    {
+        if (proposal is null)
+            return null;
+
+        proposal.Metadata.TryGetValue(MetaRunProposalMetadata.AuditSchemaVersion, out var schemaVersionRaw);
+        var schemaVersion = string.IsNullOrWhiteSpace(schemaVersionRaw) ? "v1" : schemaVersionRaw;
+
+        proposal.Metadata.TryGetValue(MetaRunProposalMetadata.LastTransitionActorId, out var actorIdRaw);
+        var actorId = string.IsNullOrWhiteSpace(actorIdRaw) ? null : actorIdRaw;
+
+        proposal.Metadata.TryGetValue(MetaRunProposalMetadata.LastTransitionAction, out var transitionActionRaw);
+        var transitionAction = string.IsNullOrWhiteSpace(transitionActionRaw) ? null : transitionActionRaw;
+
+        proposal.Metadata.TryGetValue(MetaRunProposalMetadata.LastTransitionChangedAtUtc, out var changedAtRaw);
+        DateTimeOffset? changedAtUtc = null;
+        if (!string.IsNullOrWhiteSpace(changedAtRaw)
+            && DateTimeOffset.TryParse(changedAtRaw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
+        {
+            changedAtUtc = parsed;
+        }
+
+        if (actorId is null && transitionAction is null && changedAtUtc is null)
+            return null;
+
+        return new MetaRunProposalAuditDetail
+        {
+            SchemaVersion = schemaVersion,
+            ActorId = actorId,
+            ChangedAtUtc = changedAtUtc,
+            TransitionAction = transitionAction
+        };
+    }
+
     private static MetaRunProposalProvenanceTransition[] BuildMetaRunProposalProvenanceHistory(LearningProposal? proposal)
     {
         if (proposal is null
@@ -1744,6 +2328,7 @@ internal static class SkillCommands
         string fromStatus,
         string toStatus,
         DateTimeOffset changedAtUtc,
+        string? actorId,
         string? reason)
     {
         var nextIndex = 0;
@@ -1758,10 +2343,19 @@ internal static class SkillCommands
         metadata[BuildMetaRunProposalTransitionMetadataKey(nextIndex, MetaRunProposalMetadata.TransitionFieldFromStatus)] = fromStatus;
         metadata[BuildMetaRunProposalTransitionMetadataKey(nextIndex, MetaRunProposalMetadata.TransitionFieldToStatus)] = toStatus;
         metadata[BuildMetaRunProposalTransitionMetadataKey(nextIndex, MetaRunProposalMetadata.TransitionFieldChangedAtUtc)] = changedAtUtc.ToString("O", CultureInfo.InvariantCulture);
+        metadata[BuildMetaRunProposalTransitionMetadataKey(nextIndex, MetaRunProposalMetadata.TransitionFieldActorId)] = string.IsNullOrWhiteSpace(actorId)
+            ? string.Empty
+            : actorId!;
         metadata[BuildMetaRunProposalTransitionMetadataKey(nextIndex, MetaRunProposalMetadata.TransitionFieldReason)] = string.IsNullOrWhiteSpace(reason)
             ? string.Empty
             : reason!;
         metadata[MetaRunProposalMetadata.TransitionCount] = (nextIndex + 1).ToString(CultureInfo.InvariantCulture);
+        metadata[MetaRunProposalMetadata.AuditSchemaVersion] = "v1";
+        metadata[MetaRunProposalMetadata.LastTransitionAction] = action;
+        metadata[MetaRunProposalMetadata.LastTransitionChangedAtUtc] = changedAtUtc.ToString("O", CultureInfo.InvariantCulture);
+        metadata[MetaRunProposalMetadata.LastTransitionActorId] = string.IsNullOrWhiteSpace(actorId)
+            ? string.Empty
+            : actorId!;
     }
 
     private static string BuildMetaRunProposalTransitionMetadataKey(int index, string field)
@@ -1933,7 +2527,12 @@ internal static class SkillCommands
         public const string TransitionFieldFromStatus = "from_status";
         public const string TransitionFieldToStatus = "to_status";
         public const string TransitionFieldChangedAtUtc = "changed_at_utc";
+        public const string TransitionFieldActorId = "actor_id";
         public const string TransitionFieldReason = "reason";
+        public const string AuditSchemaVersion = "meta_run_proposal_audit_schema_version";
+        public const string LastTransitionAction = "meta_run_proposal_last_transition_action";
+        public const string LastTransitionChangedAtUtc = "meta_run_proposal_last_transition_changed_at_utc";
+        public const string LastTransitionActorId = "meta_run_proposal_last_transition_actor_id";
     }
 
     private static void WriteDerivedProposalListText(MetaRunDerivedProposalListResponse response)
@@ -2079,6 +2678,10 @@ internal static class SkillCommands
         Console.WriteLine(response.AlreadyReviewed ? "Already reviewed: yes" : "Already reviewed: no");
         if (!string.IsNullOrWhiteSpace(response.Reason))
             Console.WriteLine($"Reason: {response.Reason}");
+        if (!string.IsNullOrWhiteSpace(response.Audit?.ActorId))
+            Console.WriteLine($"Actor id: {response.Audit.ActorId}");
+        if (!string.IsNullOrWhiteSpace(response.Audit?.TransitionAction))
+            Console.WriteLine($"Transition action: {response.Audit.TransitionAction}");
     }
 
     private static MetaRunReplayPreviewResponse BuildReplayPreview(string sessionId, SessionMetaRunRecord run)

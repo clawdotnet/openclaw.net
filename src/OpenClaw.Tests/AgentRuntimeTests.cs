@@ -585,6 +585,69 @@ public class AgentRuntimeTests
     }
 
     [Fact]
+    public async Task ExecuteMetaSkillAsync_IndependentToolSteps_RunConcurrently()
+    {
+        var tracker = new ConcurrencyTracker();
+        var firstTool = new ConcurrentProbeTool("first_tool", "first", tracker, 120);
+        var secondTool = new ConcurrentProbeTool("second_tool", "second", tracker, 120);
+        var joinTool = new CountingTool("join_tool", "joined");
+
+        var agent = new AgentRuntime(
+            _chatClient,
+            [firstTool, secondTool, joinTool],
+            _memory,
+            _config,
+            maxHistoryTurns: 5,
+            skills:
+            [
+                new SkillDefinition
+                {
+                    Name = "meta-flow",
+                    Description = "meta flow",
+                    Instructions = "...",
+                    Location = "/skills/meta-flow",
+                    Kind = SkillKind.Meta,
+                    FinalTextMode = "step:join",
+                    Composition = new MetaSkillComposition
+                    {
+                        Steps =
+                        [
+                            new MetaSkillStepDefinition
+                            {
+                                Id = "first",
+                                Kind = "tool_call",
+                                Tool = "first_tool",
+                                WithJson = "{\"continue_on_error\":true}"
+                            },
+                            new MetaSkillStepDefinition
+                            {
+                                Id = "second",
+                                Kind = "tool_call",
+                                Tool = "second_tool",
+                                WithJson = "{\"continue_on_error\":true}"
+                            },
+                            new MetaSkillStepDefinition
+                            {
+                                Id = "join",
+                                Kind = "tool_call",
+                                Tool = "join_tool",
+                                DependsOn = ["first", "second"]
+                            }
+                        ]
+                    }
+                }
+            ]);
+
+        var session = new Session { Id = "meta-sess", SenderId = "user1", ChannelId = "test-channel" };
+        var result = await InvokeMetaSkillAsync(agent, session, "meta-flow", "hello", CancellationToken.None);
+
+        Assert.Equal("joined", result);
+        Assert.Equal(1, firstTool.CallCount);
+        Assert.Equal(1, secondTool.CallCount);
+        Assert.True(tracker.MaxConcurrent >= 2, $"Expected MaxConcurrent >= 2, actual: {tracker.MaxConcurrent}");
+    }
+
+    [Fact]
     public async Task ExecuteMetaSkillAsync_LlmChatContinueOnError_AppliesRouteCompletion()
     {
         var routedTool = new CountingTool("routed_tool", "routed");
@@ -2446,6 +2509,58 @@ public class AgentRuntimeTests
         {
             Interlocked.Increment(ref _callCount);
             return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class ConcurrencyTracker
+    {
+        private int _current;
+        private int _max;
+
+        public int MaxConcurrent => Volatile.Read(ref _max);
+
+        public int Enter()
+        {
+            var current = Interlocked.Increment(ref _current);
+            while (true)
+            {
+                var snapshot = Volatile.Read(ref _max);
+                if (current <= snapshot)
+                    break;
+
+                if (Interlocked.CompareExchange(ref _max, current, snapshot) == snapshot)
+                    break;
+            }
+
+            return current;
+        }
+
+        public void Exit() => Interlocked.Decrement(ref _current);
+    }
+
+    private sealed class ConcurrentProbeTool(string name, string result, ConcurrencyTracker tracker, int delayMs) : ITool
+    {
+        private int _callCount;
+
+        public int CallCount => Volatile.Read(ref _callCount);
+        public string Name { get; } = name;
+        public string Description => "Concurrent probe tool";
+        public string ParameterSchema => """{"type":"object"}""";
+
+        public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        {
+            _ = argumentsJson;
+            Interlocked.Increment(ref _callCount);
+            tracker.Enter();
+            try
+            {
+                await Task.Delay(delayMs, ct);
+                return result;
+            }
+            finally
+            {
+                tracker.Exit();
+            }
         }
     }
 

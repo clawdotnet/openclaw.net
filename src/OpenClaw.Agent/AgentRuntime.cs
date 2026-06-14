@@ -2061,6 +2061,28 @@ public sealed class AgentRuntime : IAgentRuntime
         {
             var progress = false;
 
+            if (await TryExecuteParallelToolWaveAsync(
+                    session,
+                    metaSkill,
+                    steps,
+                    stepById,
+                    dependentsByStep,
+                    pending,
+                    blocked,
+                    outputs,
+                    failureAliases,
+                    stepResults,
+                    input,
+                    turnCtx,
+                    templateRenderer,
+                    conditionEvaluator,
+                    toolArgumentResolver,
+                    routePlanner,
+                    ct))
+            {
+                continue;
+            }
+
             foreach (var step in steps)
             {
                 if (!pending.Contains(step.Id))
@@ -2812,6 +2834,151 @@ public sealed class AgentRuntime : IAgentRuntime
         return ReturnMetaExecutionOutput(session, metaSkill, finalText, stepResults, error: null, preserveCheckpoint: false);
     }
 
+    private async Task<bool> TryExecuteParallelToolWaveAsync(
+        Session session,
+        SkillDefinition metaSkill,
+        IReadOnlyList<MetaSkillStepDefinition> steps,
+        IReadOnlyDictionary<string, MetaSkillStepDefinition> stepById,
+        Dictionary<string, List<string>> dependentsByStep,
+        HashSet<string> pending,
+        HashSet<string> blocked,
+        Dictionary<string, string> outputs,
+        Dictionary<string, string> failureAliases,
+        List<MetaStepExecutionResult> stepResults,
+        string? input,
+        TurnContext turnCtx,
+        MetaTemplateRenderer templateRenderer,
+        MetaConditionEvaluator conditionEvaluator,
+        MetaToolArgumentResolver toolArgumentResolver,
+        MetaRoutePlanner routePlanner,
+        CancellationToken ct)
+    {
+        if (pending.Count < 2)
+            return false;
+
+        var candidates = new List<MetaParallelToolStepCandidate>();
+        foreach (var step in steps)
+        {
+            if (!pending.Contains(step.Id) || blocked.Contains(step.Id))
+                continue;
+
+            var blockedByDependency = false;
+            var waitingForDependency = false;
+            foreach (var dependency in step.DependsOn)
+            {
+                if (blocked.Contains(dependency))
+                {
+                    blockedByDependency = true;
+                    break;
+                }
+
+                if (!outputs.ContainsKey(dependency))
+                {
+                    waitingForDependency = true;
+                    break;
+                }
+            }
+
+            if (blockedByDependency || waitingForDependency)
+                continue;
+
+            if (!string.Equals(NormalizeMetaStepKind(step.Kind), "tool_call", StringComparison.Ordinal))
+                continue;
+
+            if (!string.IsNullOrWhiteSpace(step.OnFailure) || step.Routes.Count > 0)
+                continue;
+
+            var stepArgs = DeserializeStepArgs(step.WithJson);
+            var continueOnError = GetOptionalBoolean(stepArgs, "continue_on_error") ?? false;
+            if (!continueOnError)
+                continue;
+
+            var metaContext = new MetaExecutionContext(input, outputs);
+            if (!string.IsNullOrWhiteSpace(step.When) && !conditionEvaluator.Evaluate(step.When, metaContext))
+                continue;
+
+            var toolName = step.Tool;
+            if (string.IsNullOrWhiteSpace(toolName))
+                continue;
+
+            if (step.ToolAllowlist.Count > 0 && !step.ToolAllowlist.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+                continue;
+
+            if (!IsToolAllowedByMetaCapabilities(metaSkill, toolName))
+                continue;
+
+            try
+            {
+                _ = templateRenderer.Render(
+                    GetOptionalString(stepArgs, "input") ?? input ?? string.Empty,
+                    metaContext);
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+
+            string toolArgsJson;
+            try
+            {
+                toolArgsJson = toolArgumentResolver.Resolve(
+                    metaSkill.Composition?.ToolArgsJson,
+                    step.WithJson,
+                    step.ToolArgsJson,
+                    metaContext);
+            }
+            catch (InvalidOperationException)
+            {
+                continue;
+            }
+
+            candidates.Add(new MetaParallelToolStepCandidate(step, toolName, toolArgsJson));
+        }
+
+        if (candidates.Count < 2)
+            return false;
+
+        var executions = await Task.WhenAll(candidates.Select(async candidate =>
+        {
+            var stepSw = Stopwatch.StartNew();
+            var toolResult = await ExecuteMetaToolStepWithPolicyAsync(
+                metaSkill,
+                candidate.Step,
+                candidate.ToolName,
+                candidate.ToolArgsJson,
+                session,
+                turnCtx,
+                ct);
+            stepSw.Stop();
+            return new MetaParallelToolStepExecution(candidate.Step, toolResult, stepSw.Elapsed.TotalMilliseconds);
+        }));
+
+        foreach (var execution in executions)
+        {
+            var completed = string.Equals(execution.ToolResult.ResultStatus, ToolResultStatuses.Completed, StringComparison.Ordinal);
+            var resultStatus = execution.ToolResult.ResultStatus;
+            var failureCode = execution.ToolResult.FailureCode;
+            if (completed && !TryValidateMetaStepOutput(execution.Step, execution.ToolResult.ResultText, out failureCode))
+            {
+                completed = false;
+                resultStatus = ToolResultStatuses.Failed;
+            }
+
+            stepResults.Add(new MetaStepExecutionResult(
+                execution.Step.Id,
+                execution.Step.Kind,
+                resultStatus,
+                failureCode,
+                execution.DurationMs,
+                Continued: !completed));
+
+            CompleteMetaStepOutput(execution.Step, execution.ToolResult.ResultText, pending, outputs, failureAliases);
+            routePlanner.ApplyCompletionRouting(execution.Step, new MetaExecutionContext(input, outputs), stepById, blocked, pending, dependentsByStep);
+        }
+
+        return true;
+    }
+
     private static string ReturnMetaExecutionOutput(
         Session session,
         SkillDefinition metaSkill,
@@ -3459,6 +3626,10 @@ public sealed class AgentRuntime : IAgentRuntime
         public static MetaLlmStepExecutionResult Failed(string failureCode, string failureMessage)
             => new(null, failureCode, failureMessage);
     }
+
+    private readonly record struct MetaParallelToolStepCandidate(MetaSkillStepDefinition Step, string ToolName, string ToolArgsJson);
+
+    private readonly record struct MetaParallelToolStepExecution(MetaSkillStepDefinition Step, ToolExecutionResult ToolResult, double DurationMs);
 
     private static bool IsClarifyInputTimedOut(Session session, string skillName, MetaSkillStepDefinition step)
     {
