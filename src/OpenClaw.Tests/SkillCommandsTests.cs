@@ -3878,6 +3878,87 @@ public sealed class SkillCommandsTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_MetaRuns_Proposals_Show_Json_AfterAccept_IncludesWorkflowSection()
+    {
+        var root = CreateTempRoot();
+        var previousWorkspace = Environment.GetEnvironmentVariable("OPENCLAW_WORKSPACE");
+        var previousOut = Console.Out;
+        var previousError = Console.Error;
+
+        try
+        {
+            var workspace = Path.Combine(root, "workspace");
+            var memoryPath = Path.Combine(root, "memory");
+            Directory.CreateDirectory(workspace);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", workspace);
+
+            await using (var store = new FileMemoryStore(memoryPath))
+            {
+                await store.SaveSessionAsync(new Session
+                {
+                    Id = "sess-meta-proposals-show-workflow-json",
+                    ChannelId = "cli",
+                    SenderId = "tester",
+                    MetaRunHistory =
+                    {
+                        new SessionMetaRunRecord
+                        {
+                            RunId = "run-paused-001",
+                            SkillName = "meta-flow",
+                            Status = "paused"
+                        }
+                    },
+                    MetaExecutionCheckpoint = new SessionMetaExecutionCheckpoint
+                    {
+                        SkillName = "meta-flow",
+                        PendingStepId = "ask_user"
+                    }
+                }, CancellationToken.None);
+            }
+
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            Console.SetOut(output);
+            Console.SetError(error);
+
+            var acceptExitCode = await SkillCommands.RunAsync([
+                "meta-runs", "proposals", "accept", "sess-meta-proposals-show-workflow-json",
+                "--storage", memoryPath,
+                "--proposal", "meta-run:run-paused-001:paused",
+                "--json"]);
+
+            Assert.Equal(0, acceptExitCode);
+
+            output.GetStringBuilder().Clear();
+            error.GetStringBuilder().Clear();
+
+            var showExitCode = await SkillCommands.RunAsync([
+                "meta-runs", "proposals", "show", "sess-meta-proposals-show-workflow-json",
+                "--storage", memoryPath,
+                "--proposal", "meta-run:run-paused-001:paused",
+                "--json"]);
+
+            Assert.Equal(0, showExitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            using var document = JsonDocument.Parse(output.ToString());
+            var proposal = document.RootElement.GetProperty("proposal");
+            var workflow = proposal.GetProperty("workflow");
+            Assert.False(string.IsNullOrWhiteSpace(workflow.GetProperty("workflowId").GetString()));
+            Assert.False(string.IsNullOrWhiteSpace(workflow.GetProperty("stage").GetString()));
+            Assert.False(string.IsNullOrWhiteSpace(workflow.GetProperty("lastAction").GetString()));
+            Assert.True(workflow.GetProperty("transitionCount").GetInt32() >= 1);
+        }
+        finally
+        {
+            Console.SetOut(previousOut);
+            Console.SetError(previousError);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", previousWorkspace);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_MetaRuns_Proposals_Dismiss_Json_WithReason_PrintsAppliedReview()
     {
         var root = CreateTempRoot();
@@ -4117,6 +4198,95 @@ public sealed class SkillCommandsTests : IDisposable
                 DateTimeOffset.Parse(response.GetProperty("reviewedAtUtc").GetString()!, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind)
                     .ToString("O", System.Globalization.CultureInfo.InvariantCulture),
                 durable.Metadata["meta_run_proposal_accept_gate_checked_at_utc"]);
+        }
+        finally
+        {
+            Console.SetOut(previousOut);
+            Console.SetError(previousError);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", previousWorkspace);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_MetaRuns_Proposals_Change_Json_AfterRollback_IncludesWorkflowSection()
+    {
+        var root = CreateTempRoot();
+        var previousWorkspace = Environment.GetEnvironmentVariable("OPENCLAW_WORKSPACE");
+        var previousOut = Console.Out;
+        var previousError = Console.Error;
+
+        try
+        {
+            var workspace = Path.Combine(root, "workspace");
+            var memoryPath = Path.Combine(root, "memory");
+            Directory.CreateDirectory(workspace);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", workspace);
+
+            await using (var store = new FileMemoryStore(memoryPath))
+            {
+                await store.SaveSessionAsync(new Session
+                {
+                    Id = "sess-meta-proposals-change-workflow-json",
+                    ChannelId = "cli",
+                    SenderId = "tester",
+                    MetaRunHistory =
+                    {
+                        new SessionMetaRunRecord
+                        {
+                            RunId = "run-failed-001",
+                            SkillName = "meta-flow",
+                            Status = "failed",
+                            ErrorCode = "tool_failed"
+                        }
+                    }
+                }, CancellationToken.None);
+            }
+
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            Console.SetOut(output);
+            Console.SetError(error);
+
+            var dismissExitCode = await SkillCommands.RunAsync([
+                "meta-runs", "proposals", "dismiss", "sess-meta-proposals-change-workflow-json",
+                "--storage", memoryPath,
+                "--proposal", "meta-run:run-failed-001:failed",
+                "--reason", "operator reviewed",
+                "--json"]);
+
+            Assert.Equal(0, dismissExitCode);
+
+            output.GetStringBuilder().Clear();
+            error.GetStringBuilder().Clear();
+
+            var rollbackExitCode = await SkillCommands.RunAsync([
+                "meta-runs", "proposals", "rollback", "sess-meta-proposals-change-workflow-json",
+                "--storage", memoryPath,
+                "--proposal", "meta-run:run-failed-001:failed",
+                "--json"]);
+
+            Assert.Equal(0, rollbackExitCode);
+
+            output.GetStringBuilder().Clear();
+            error.GetStringBuilder().Clear();
+
+            var changeExitCode = await SkillCommands.RunAsync([
+                "meta-runs", "proposals", "change", "sess-meta-proposals-change-workflow-json",
+                "--storage", memoryPath,
+                "--proposal", "meta-run:run-failed-001:failed",
+                "--to", "accept",
+                "--json"]);
+
+            Assert.Equal(0, changeExitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            using var document = JsonDocument.Parse(output.ToString());
+            var workflow = document.RootElement.GetProperty("workflow");
+            Assert.False(string.IsNullOrWhiteSpace(workflow.GetProperty("workflowId").GetString()));
+            Assert.False(string.IsNullOrWhiteSpace(workflow.GetProperty("stage").GetString()));
+            Assert.False(string.IsNullOrWhiteSpace(workflow.GetProperty("lastAction").GetString()));
+            Assert.True(workflow.GetProperty("transitionCount").GetInt32() >= 1);
         }
         finally
         {
@@ -4711,6 +4881,193 @@ public sealed class SkillCommandsTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_Phase3_E2E_ChangeDenied_DoesNotAdvanceWorkflowTransitionCount()
+    {
+        var root = CreateTempRoot();
+        var previousWorkspace = Environment.GetEnvironmentVariable("OPENCLAW_WORKSPACE");
+        var previousOperator = Environment.GetEnvironmentVariable("OPENCLAW_OPERATOR_ID");
+        var previousOut = Console.Out;
+        var previousError = Console.Error;
+
+        try
+        {
+            var workspace = Path.Combine(root, "workspace");
+            var memoryPath = Path.Combine(root, "memory");
+            Directory.CreateDirectory(workspace);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", workspace);
+            Environment.SetEnvironmentVariable("OPENCLAW_OPERATOR_ID", "operator-phase3-change-denied");
+
+            await using (var store = new FileMemoryStore(memoryPath))
+            {
+                await store.SaveSessionAsync(new Session
+                {
+                    Id = "sess-phase3-e2e-change-denied",
+                    ChannelId = "cli",
+                    SenderId = "tester",
+                    MetaRunHistory =
+                    {
+                        new SessionMetaRunRecord
+                        {
+                            RunId = "run-paused-001",
+                            SkillName = "meta-flow",
+                            Status = "paused"
+                        }
+                    },
+                    MetaExecutionCheckpoint = new SessionMetaExecutionCheckpoint
+                    {
+                        SkillName = "meta-flow",
+                        PendingStepId = "ask_user"
+                    }
+                }, CancellationToken.None);
+            }
+
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            Console.SetOut(output);
+            Console.SetError(error);
+
+            var acceptExitCode = await SkillCommands.RunAsync([
+                "meta-runs", "proposals", "accept", "sess-phase3-e2e-change-denied",
+                "--storage", memoryPath,
+                "--proposal", "meta-run:run-paused-001:paused",
+                "--json"]);
+
+            Assert.Equal(0, acceptExitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            var featureStore = new FileFeatureStore(memoryPath);
+            const string workflowDurableId = "meta-run-workflow:sess-phase3-e2e-change-denied:meta-run:run-paused-001:paused";
+            var workflowBeforeDenied = await featureStore.GetProposalAsync(workflowDurableId, CancellationToken.None);
+
+            Assert.NotNull(workflowBeforeDenied);
+            var transitionCountBeforeDenied = workflowBeforeDenied!.Metadata["meta_run_workflow_transition_count"];
+
+            output.GetStringBuilder().Clear();
+            error.GetStringBuilder().Clear();
+            Environment.SetEnvironmentVariable("OPENCLAW_OPERATOR_ID", null);
+
+            var deniedExitCode = await SkillCommands.RunAsync([
+                "meta-runs", "proposals", "change", "sess-phase3-e2e-change-denied",
+                "--storage", memoryPath,
+                "--proposal", "meta-run:run-paused-001:paused",
+                "--to", "accept",
+                "--json"]);
+
+            Assert.Equal(1, deniedExitCode);
+            Assert.Equal(string.Empty, output.ToString());
+            using (var deniedDocument = JsonDocument.Parse(error.ToString()))
+            {
+                Assert.Equal("error", deniedDocument.RootElement.GetProperty("status").GetString());
+                Assert.Equal("skills meta-runs proposals change", deniedDocument.RootElement.GetProperty("command").GetString());
+                Assert.Equal("permission_denied", deniedDocument.RootElement.GetProperty("errorCode").GetString());
+            }
+
+            var workflowAfterDenied = await featureStore.GetProposalAsync(workflowDurableId, CancellationToken.None);
+            Assert.NotNull(workflowAfterDenied);
+            Assert.Equal(transitionCountBeforeDenied, workflowAfterDenied!.Metadata["meta_run_workflow_transition_count"]);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENCLAW_OPERATOR_ID", previousOperator);
+            Console.SetOut(previousOut);
+            Console.SetError(previousError);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", previousWorkspace);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_Phase3_E2E_ConflictAcceptAfterDismiss_DoesNotAdvanceWorkflowTransitionCount()
+    {
+        var root = CreateTempRoot();
+        var previousWorkspace = Environment.GetEnvironmentVariable("OPENCLAW_WORKSPACE");
+        var previousOperator = Environment.GetEnvironmentVariable("OPENCLAW_OPERATOR_ID");
+        var previousOut = Console.Out;
+        var previousError = Console.Error;
+
+        try
+        {
+            var workspace = Path.Combine(root, "workspace");
+            var memoryPath = Path.Combine(root, "memory");
+            Directory.CreateDirectory(workspace);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", workspace);
+            Environment.SetEnvironmentVariable("OPENCLAW_OPERATOR_ID", "operator-phase3-conflict-nondrift");
+
+            await using (var store = new FileMemoryStore(memoryPath))
+            {
+                await store.SaveSessionAsync(new Session
+                {
+                    Id = "sess-phase3-e2e-conflict-nondrift",
+                    ChannelId = "cli",
+                    SenderId = "tester",
+                    MetaRunHistory =
+                    {
+                        new SessionMetaRunRecord
+                        {
+                            RunId = "run-failed-001",
+                            SkillName = "meta-flow",
+                            Status = "failed",
+                            ErrorCode = "tool_failed"
+                        }
+                    }
+                }, CancellationToken.None);
+            }
+
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            Console.SetOut(output);
+            Console.SetError(error);
+
+            var dismissExitCode = await SkillCommands.RunAsync([
+                "meta-runs", "proposals", "dismiss", "sess-phase3-e2e-conflict-nondrift",
+                "--storage", memoryPath,
+                "--proposal", "meta-run:run-failed-001:failed",
+                "--reason", "first review",
+                "--json"]);
+
+            Assert.Equal(0, dismissExitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            var featureStore = new FileFeatureStore(memoryPath);
+            const string workflowDurableId = "meta-run-workflow:sess-phase3-e2e-conflict-nondrift:meta-run:run-failed-001:failed";
+            var workflowBeforeConflict = await featureStore.GetProposalAsync(workflowDurableId, CancellationToken.None);
+
+            Assert.NotNull(workflowBeforeConflict);
+            var transitionCountBeforeConflict = workflowBeforeConflict!.Metadata["meta_run_workflow_transition_count"];
+
+            output.GetStringBuilder().Clear();
+            error.GetStringBuilder().Clear();
+
+            var acceptExitCode = await SkillCommands.RunAsync([
+                "meta-runs", "proposals", "accept", "sess-phase3-e2e-conflict-nondrift",
+                "--storage", memoryPath,
+                "--proposal", "meta-run:run-failed-001:failed",
+                "--json"]);
+
+            Assert.Equal(1, acceptExitCode);
+            Assert.Equal(string.Empty, output.ToString());
+            using (var conflictDocument = JsonDocument.Parse(error.ToString()))
+            {
+                Assert.Equal("error", conflictDocument.RootElement.GetProperty("status").GetString());
+                Assert.Equal("skills meta-runs proposals accept", conflictDocument.RootElement.GetProperty("command").GetString());
+                Assert.Equal("proposal_already_reviewed", conflictDocument.RootElement.GetProperty("errorCode").GetString());
+            }
+
+            var workflowAfterConflict = await featureStore.GetProposalAsync(workflowDurableId, CancellationToken.None);
+            Assert.NotNull(workflowAfterConflict);
+            Assert.Equal(transitionCountBeforeConflict, workflowAfterConflict!.Metadata["meta_run_workflow_transition_count"]);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENCLAW_OPERATOR_ID", previousOperator);
+            Console.SetOut(previousOut);
+            Console.SetError(previousError);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", previousWorkspace);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_Phase3_E2E_AcceptThenDismissConflict_PreservesApprovedState()
     {
         var root = CreateTempRoot();
@@ -4823,6 +5180,105 @@ public sealed class SkillCommandsTests : IDisposable
             Assert.Equal("accept", provenanceHistory[0].GetProperty("action").GetString());
             Assert.Equal("pending", provenanceHistory[0].GetProperty("fromStatus").GetString());
             Assert.Equal("approved", provenanceHistory[0].GetProperty("toStatus").GetString());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENCLAW_OPERATOR_ID", previousOperator);
+            Console.SetOut(previousOut);
+            Console.SetError(previousError);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", previousWorkspace);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_Phase3_E2E_AcceptRollbackChange_PersistsWorkflowObjectHistory()
+    {
+        var root = CreateTempRoot();
+        var previousWorkspace = Environment.GetEnvironmentVariable("OPENCLAW_WORKSPACE");
+        var previousOperator = Environment.GetEnvironmentVariable("OPENCLAW_OPERATOR_ID");
+        var previousOut = Console.Out;
+        var previousError = Console.Error;
+
+        try
+        {
+            var workspace = Path.Combine(root, "workspace");
+            var memoryPath = Path.Combine(root, "memory");
+            Directory.CreateDirectory(workspace);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", workspace);
+            Environment.SetEnvironmentVariable("OPENCLAW_OPERATOR_ID", "operator-phase3-workflow-history");
+
+            await using (var store = new FileMemoryStore(memoryPath))
+            {
+                await store.SaveSessionAsync(new Session
+                {
+                    Id = "sess-phase3-e2e-workflow-history",
+                    ChannelId = "cli",
+                    SenderId = "tester",
+                    MetaRunHistory =
+                    {
+                        new SessionMetaRunRecord
+                        {
+                            RunId = "run-paused-001",
+                            SkillName = "meta-flow",
+                            Status = "paused"
+                        }
+                    },
+                    MetaExecutionCheckpoint = new SessionMetaExecutionCheckpoint
+                    {
+                        SkillName = "meta-flow",
+                        PendingStepId = "ask_user"
+                    }
+                }, CancellationToken.None);
+            }
+
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            Console.SetOut(output);
+            Console.SetError(error);
+
+            var acceptExitCode = await SkillCommands.RunAsync([
+                "meta-runs", "proposals", "accept", "sess-phase3-e2e-workflow-history",
+                "--storage", memoryPath,
+                "--proposal", "meta-run:run-paused-001:paused",
+                "--json"]);
+
+            Assert.Equal(0, acceptExitCode);
+
+            output.GetStringBuilder().Clear();
+            error.GetStringBuilder().Clear();
+
+            var rollbackExitCode = await SkillCommands.RunAsync([
+                "meta-runs", "proposals", "rollback", "sess-phase3-e2e-workflow-history",
+                "--storage", memoryPath,
+                "--proposal", "meta-run:run-paused-001:paused",
+                "--json"]);
+
+            Assert.Equal(0, rollbackExitCode);
+
+            output.GetStringBuilder().Clear();
+            error.GetStringBuilder().Clear();
+
+            var changeExitCode = await SkillCommands.RunAsync([
+                "meta-runs", "proposals", "change", "sess-phase3-e2e-workflow-history",
+                "--storage", memoryPath,
+                "--proposal", "meta-run:run-paused-001:paused",
+                "--to", "accept",
+                "--json"]);
+
+            Assert.Equal(0, changeExitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            var featureStore = new FileFeatureStore(memoryPath);
+            var workflow = await featureStore.GetProposalAsync(
+                "meta-run-workflow:sess-phase3-e2e-workflow-history:meta-run:run-paused-001:paused",
+                CancellationToken.None);
+
+            Assert.NotNull(workflow);
+            Assert.Equal(LearningProposalKind.MetaRunReviewWorkflow, workflow!.Kind);
+            Assert.Equal("3", workflow.Metadata["meta_run_workflow_transition_count"]);
+            Assert.Equal("change", workflow.Metadata["meta_run_workflow_last_action"]);
+            Assert.Equal("decision_recorded", workflow.Metadata["meta_run_workflow_stage"]);
         }
         finally
         {

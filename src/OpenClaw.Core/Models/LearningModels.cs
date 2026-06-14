@@ -20,6 +20,7 @@ public static class LearningProposalKind
     public const string HarnessChange = "harness_change";
     public const string MetaRunReview = "meta_run_review";
     public const string MetaRunProposal = "meta_run_proposal";
+    public const string MetaRunReviewWorkflow = "meta_run_review_workflow";
 }
 
 public static class LearningProposalStatus

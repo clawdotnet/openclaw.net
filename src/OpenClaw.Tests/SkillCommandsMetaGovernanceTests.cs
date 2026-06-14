@@ -370,6 +370,74 @@ public sealed class SkillCommandsMetaGovernanceTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_MetaRuns_Proposals_Accept_Json_IncludesWorkflowSection()
+    {
+        var root = CreateTempRoot();
+        var previousOut = Console.Out;
+        var previousError = Console.Error;
+        var previousWorkspace = Environment.GetEnvironmentVariable("OPENCLAW_WORKSPACE");
+
+        try
+        {
+            var workspace = Path.Combine(root, "workspace");
+            var memoryPath = Path.Combine(root, "memory");
+            Directory.CreateDirectory(workspace);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", workspace);
+
+            await using (var store = new FileMemoryStore(memoryPath))
+            {
+                await store.SaveSessionAsync(new Session
+                {
+                    Id = "sess-governance-accept-workflow",
+                    ChannelId = "cli",
+                    SenderId = "tester",
+                    MetaRunHistory =
+                    {
+                        new SessionMetaRunRecord
+                        {
+                            RunId = "run-paused-workflow",
+                            SkillName = "meta-flow",
+                            Status = "paused"
+                        }
+                    },
+                    MetaExecutionCheckpoint = new SessionMetaExecutionCheckpoint
+                    {
+                        SkillName = "meta-flow",
+                        PendingStepId = "ask_user"
+                    }
+                }, CancellationToken.None);
+            }
+
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            Console.SetOut(output);
+            Console.SetError(error);
+
+            var exitCode = await SkillCommands.RunAsync([
+                "meta-runs", "proposals", "accept", "sess-governance-accept-workflow",
+                "--storage", memoryPath,
+                "--proposal", "meta-run:run-paused-workflow:paused",
+                "--json"]);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            using var document = JsonDocument.Parse(output.ToString());
+            Assert.True(document.RootElement.TryGetProperty("workflow", out var workflow));
+            Assert.StartsWith("meta-run-workflow:", workflow.GetProperty("workflowId").GetString(), StringComparison.Ordinal);
+            Assert.Equal("decision_recorded", workflow.GetProperty("stage").GetString());
+            Assert.Equal("accept", workflow.GetProperty("lastAction").GetString());
+        }
+        finally
+        {
+            Console.SetOut(previousOut);
+            Console.SetError(previousError);
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", previousWorkspace);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_MetaRuns_Proposals_Accept_Json_StatusMismatch_FailsTriggerCheck()
     {
         var root = CreateTempRoot();

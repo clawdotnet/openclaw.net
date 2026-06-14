@@ -523,6 +523,7 @@ public sealed class MetaRunDerivedProposalDetail
     public MetaRunProposalProvenanceDetail? Provenance { get; init; }
     public MetaRunProposalLifecycleDetail? Lifecycle { get; init; }
     public MetaRunProposalAuditDetail? Audit { get; init; }
+    public MetaRunProposalWorkflowDetail? Workflow { get; init; }
     public MetaRunProposalProvenanceTransition[] ProvenanceHistory { get; init; } = [];
     public MetaRunProposalReviewDetail? Review { get; init; }
     public string? PendingStepId { get; init; }
@@ -588,6 +589,17 @@ public sealed class MetaRunProposalReviewMutationResponse
     public DateTimeOffset ReviewedAtUtc { get; init; }
     public string? Reason { get; init; }
     public MetaRunProposalAuditDetail? Audit { get; init; }
+    public MetaRunProposalWorkflowDetail? Workflow { get; init; }
+}
+
+public sealed class MetaRunProposalWorkflowDetail
+{
+    public required string WorkflowId { get; init; }
+    public required string Stage { get; init; }
+    public required string LastAction { get; init; }
+    public string? LastActorId { get; init; }
+    public DateTimeOffset? LastChangedAtUtc { get; init; }
+    public int TransitionCount { get; init; }
 }
 
 public sealed class MetaRunProposalAuditDetail
@@ -797,6 +809,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(MetaRunProposalReviewRecord[]))]
 [JsonSerializable(typeof(MetaRunProposalReviewMutationResponse))]
 [JsonSerializable(typeof(MetaRunProposalReviewDetail))]
+[JsonSerializable(typeof(MetaRunProposalWorkflowDetail))]
 [JsonSerializable(typeof(MetaRunDerivedProposalStepDetail))]
 [JsonSerializable(typeof(MetaRunDerivedProposalStepDetail[]))]
 [JsonSerializable(typeof(WsClientEnvelope))]

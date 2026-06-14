@@ -642,6 +642,7 @@ internal static class SkillCommands
 
             var run = session.MetaRunHistory.First(run => string.Equals(run.RunId, summary.RunId, StringComparison.Ordinal));
             var durableProposal = await GetMetaRunLearningProposalAsync(learningProposalStore, sessionId, summary.Id, CancellationToken.None);
+            var workflow = await GetMetaRunReviewWorkflowDetailAsync(learningProposalStore, sessionId, summary.Id, CancellationToken.None);
             var review = durableProposal is null
                 ? null
                 : ToMetaRunProposalReviewRecord(durableProposal, sessionId, summary.Id);
@@ -656,6 +657,7 @@ internal static class SkillCommands
                     BuildMetaRunProposalProvenanceDetail(durableProposal),
                     BuildMetaRunProposalLifecycleDetail(durableProposal),
                     BuildMetaRunProposalAuditDetail(durableProposal),
+                        workflow,
                     BuildMetaRunProposalProvenanceHistory(durableProposal))
             };
 
@@ -839,6 +841,15 @@ internal static class SkillCommands
                 if (acceptanceGate is not null)
                     PopulateMetaRunProposalAcceptanceGateMetadata(durableRecord.Metadata, acceptanceGate, reviewedAtUtc);
                 await learningProposalStore.SaveProposalAsync(durableRecord, CancellationToken.None);
+                await UpsertMetaRunReviewWorkflowAsync(
+                    learningProposalStore,
+                    sessionId,
+                    proposalId,
+                    action,
+                    reviewedAtUtc,
+                    operatorId,
+                    allowReason ? reason : null,
+                    CancellationToken.None);
 
                 record = new MetaRunProposalReviewRecord
                 {
@@ -869,6 +880,7 @@ internal static class SkillCommands
                     ChangedAtUtc = record.ReviewedAtUtc,
                     TransitionAction = action
                 };
+            var workflow = await GetMetaRunReviewWorkflowDetailAsync(learningProposalStore, sessionId, proposalId, CancellationToken.None);
 
             var response = new MetaRunProposalReviewMutationResponse
             {
@@ -879,7 +891,8 @@ internal static class SkillCommands
                 AlreadyReviewed = alreadyReviewed,
                 ReviewedAtUtc = record.ReviewedAtUtc,
                 Reason = record.Reason,
-                Audit = responseAudit
+                Audit = responseAudit,
+                Workflow = workflow
             };
 
             if (asJson)
@@ -1041,6 +1054,15 @@ internal static class SkillCommands
                     operatorId,
                     rollbackReason);
                 await learningProposalStore.SaveProposalAsync(durableRecord, CancellationToken.None);
+                await UpsertMetaRunReviewWorkflowAsync(
+                    learningProposalStore,
+                    sessionId,
+                    proposalId,
+                    MetaRunReviewWorkflowActions.Rollback,
+                    reviewedAtUtc,
+                    operatorId,
+                    rollbackReason,
+                    CancellationToken.None);
 
                 record = new MetaRunProposalReviewRecord
                 {
@@ -1065,6 +1087,7 @@ internal static class SkillCommands
                     ChangedAtUtc = record.ReviewedAtUtc,
                     TransitionAction = MetaRunProposalActions.Rollback
                 };
+            var workflow = await GetMetaRunReviewWorkflowDetailAsync(learningProposalStore, sessionId, proposalId, CancellationToken.None);
 
             var response = new MetaRunProposalReviewMutationResponse
             {
@@ -1075,7 +1098,8 @@ internal static class SkillCommands
                 AlreadyReviewed = alreadyReviewed,
                 ReviewedAtUtc = record.ReviewedAtUtc,
                 Reason = record.Reason,
-                Audit = responseAudit
+                Audit = responseAudit,
+                Workflow = workflow
             };
 
             if (asJson)
@@ -1255,6 +1279,15 @@ internal static class SkillCommands
                 if (acceptanceGate is not null)
                     PopulateMetaRunProposalAcceptanceGateMetadata(durableRecord.Metadata, acceptanceGate, reviewedAtUtc);
                 await learningProposalStore.SaveProposalAsync(durableRecord, CancellationToken.None);
+                await UpsertMetaRunReviewWorkflowAsync(
+                    learningProposalStore,
+                    sessionId,
+                    proposalId,
+                    MetaRunReviewWorkflowActions.Change,
+                    reviewedAtUtc,
+                    operatorId,
+                    reason,
+                    CancellationToken.None);
 
                 record = new MetaRunProposalReviewRecord
                 {
@@ -1274,6 +1307,7 @@ internal static class SkillCommands
                     ChangedAtUtc = record.ReviewedAtUtc,
                     TransitionAction = MetaRunProposalActions.Change
                 };
+            var workflow = await GetMetaRunReviewWorkflowDetailAsync(learningProposalStore, sessionId, proposalId, CancellationToken.None);
 
             var response = new MetaRunProposalReviewMutationResponse
             {
@@ -1284,7 +1318,8 @@ internal static class SkillCommands
                 AlreadyReviewed = alreadyReviewed,
                 ReviewedAtUtc = record.ReviewedAtUtc,
                 Reason = record.Reason,
-                Audit = responseAudit
+                Audit = responseAudit,
+                Workflow = workflow
             };
 
             if (asJson)
@@ -2716,6 +2751,7 @@ internal static class SkillCommands
         MetaRunProposalProvenanceDetail? provenance,
         MetaRunProposalLifecycleDetail? lifecycle,
         MetaRunProposalAuditDetail? audit,
+        MetaRunProposalWorkflowDetail? workflow,
         MetaRunProposalProvenanceTransition[]? provenanceHistory)
     {
         return new MetaRunDerivedProposalDetail
@@ -2734,6 +2770,7 @@ internal static class SkillCommands
             Provenance = provenance,
             Lifecycle = lifecycle,
             Audit = audit,
+            Workflow = workflow,
             ProvenanceHistory = provenanceHistory is null ? [] : [.. provenanceHistory],
             Review = review is null
                 ? null
@@ -2788,6 +2825,56 @@ internal static class SkillCommands
         string proposalId,
         CancellationToken ct)
         => await store.GetProposalAsync(BuildMetaRunProposalDurableId(sessionId, proposalId), ct);
+
+    private static async ValueTask<MetaRunProposalWorkflowDetail?> GetMetaRunReviewWorkflowDetailAsync(
+        ILearningProposalStore store,
+        string sessionId,
+        string proposalId,
+        CancellationToken ct)
+    {
+        var durableWorkflow = await store.GetProposalAsync(BuildMetaRunWorkflowDurableId(sessionId, proposalId), ct);
+        if (durableWorkflow is null)
+            return null;
+
+        if (!durableWorkflow.Metadata.TryGetValue(MetaRunWorkflowMetadata.WorkflowId, out var workflowId)
+            || string.IsNullOrWhiteSpace(workflowId)
+            || !durableWorkflow.Metadata.TryGetValue(MetaRunWorkflowMetadata.Stage, out var stage)
+            || string.IsNullOrWhiteSpace(stage)
+            || !durableWorkflow.Metadata.TryGetValue(MetaRunWorkflowMetadata.LastAction, out var lastAction)
+            || string.IsNullOrWhiteSpace(lastAction))
+        {
+            return null;
+        }
+
+        durableWorkflow.Metadata.TryGetValue(MetaRunWorkflowMetadata.LastActorId, out var lastActorIdRaw);
+        var lastActorId = string.IsNullOrWhiteSpace(lastActorIdRaw) ? null : lastActorIdRaw;
+
+        durableWorkflow.Metadata.TryGetValue(MetaRunWorkflowMetadata.LastChangedAtUtc, out var lastChangedAtRaw);
+        DateTimeOffset? lastChangedAtUtc = null;
+        if (!string.IsNullOrWhiteSpace(lastChangedAtRaw)
+            && DateTimeOffset.TryParse(lastChangedAtRaw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsedLastChangedAt))
+        {
+            lastChangedAtUtc = parsedLastChangedAt;
+        }
+
+        var transitionCount = 0;
+        if (durableWorkflow.Metadata.TryGetValue(MetaRunWorkflowMetadata.TransitionCount, out var countRaw)
+            && int.TryParse(countRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCount)
+            && parsedCount > 0)
+        {
+            transitionCount = parsedCount;
+        }
+
+        return new MetaRunProposalWorkflowDetail
+        {
+            WorkflowId = workflowId,
+            Stage = stage,
+            LastAction = lastAction,
+            LastActorId = lastActorId,
+            LastChangedAtUtc = lastChangedAtUtc,
+            TransitionCount = transitionCount
+        };
+    }
 
     private static void PopulateMetaRunProposalProvenanceMetadata(
         IDictionary<string, string> metadata,
@@ -2979,6 +3066,123 @@ internal static class SkillCommands
 
     private static string BuildMetaRunProposalDurableId(string sessionId, string proposalId)
         => $"meta-run-proposal:{sessionId}:{proposalId}";
+
+    private static string BuildMetaRunWorkflowDurableId(string sessionId, string proposalId)
+        => $"meta-run-workflow:{sessionId}:{proposalId}";
+
+    private static async ValueTask UpsertMetaRunReviewWorkflowAsync(
+        ILearningProposalStore store,
+        string sessionId,
+        string proposalId,
+        string action,
+        DateTimeOffset changedAtUtc,
+        string? actorId,
+        string? reason,
+        CancellationToken ct)
+    {
+        var durableId = BuildMetaRunWorkflowDurableId(sessionId, proposalId);
+        var existing = await store.GetProposalAsync(durableId, ct);
+        var metadata = existing is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(existing.Metadata, StringComparer.Ordinal);
+
+        var stage = string.Equals(action, MetaRunReviewWorkflowActions.Rollback, StringComparison.Ordinal)
+            ? MetaRunReviewWorkflowStages.RolledBack
+            : MetaRunReviewWorkflowStages.DecisionRecorded;
+
+        metadata[MetaRunWorkflowMetadata.SessionId] = sessionId;
+        metadata[MetaRunWorkflowMetadata.ProposalId] = proposalId;
+        metadata[MetaRunWorkflowMetadata.WorkflowId] = durableId;
+        metadata[MetaRunWorkflowMetadata.Stage] = stage;
+        metadata[MetaRunWorkflowMetadata.LastAction] = action;
+        metadata[MetaRunWorkflowMetadata.LastActorId] = string.IsNullOrWhiteSpace(actorId) ? string.Empty : actorId!;
+        metadata[MetaRunWorkflowMetadata.LastChangedAtUtc] = changedAtUtc.ToString("O", CultureInfo.InvariantCulture);
+
+        AppendMetaRunWorkflowTransitionMetadata(metadata, action, stage, changedAtUtc, actorId, reason);
+
+        var durableWorkflow = new LearningProposal
+        {
+            Id = durableId,
+            Kind = LearningProposalKind.MetaRunReviewWorkflow,
+            Status = existing?.Status ?? LearningProposalStatus.Pending,
+            ActorId = existing?.ActorId ?? actorId,
+            Title = string.IsNullOrWhiteSpace(existing?.Title)
+                ? $"Meta-run review workflow {proposalId}"
+                : existing.Title,
+            Summary = string.IsNullOrWhiteSpace(existing?.Summary)
+                ? $"Workflow state transitions for meta-run proposal {proposalId}."
+                : existing.Summary,
+            SkillName = existing?.SkillName,
+            DraftContent = existing?.DraftContent,
+            DraftContentHash = existing?.DraftContentHash,
+            DraftPreview = existing?.DraftPreview,
+            ProfileUpdate = existing?.ProfileUpdate,
+            AppliedProfileBefore = existing?.AppliedProfileBefore,
+            AutomationDraft = existing?.AutomationDraft,
+            AutomationIntent = existing?.AutomationIntent,
+            AutomationQuality = existing?.AutomationQuality,
+            AutomationSuggestionPreview = existing?.AutomationSuggestionPreview,
+            AppliedAutomationId = existing?.AppliedAutomationId,
+            ManagedSkillPath = existing?.ManagedSkillPath,
+            ManagedSkillMetadata = existing?.ManagedSkillMetadata,
+            Metadata = metadata,
+            HarnessEvolution = existing?.HarnessEvolution,
+            SourceSessionIds = existing?.SourceSessionIds ?? [sessionId],
+            SourceTurnIds = existing?.SourceTurnIds ?? [],
+            ToolNames = existing?.ToolNames ?? [],
+            ToolSequence = existing?.ToolSequence ?? [],
+            ToolObservations = existing?.ToolObservations ?? [],
+            FeedbackEvents = existing?.FeedbackEvents ?? [],
+            RepeatedCount = existing?.RepeatedCount ?? 0,
+            ProposalFingerprint = existing?.ProposalFingerprint,
+            RiskLevel = string.IsNullOrWhiteSpace(existing?.RiskLevel) ? LearningProposalRiskLevels.Low : existing.RiskLevel,
+            Confidence = existing?.Confidence ?? 1f,
+            CreatedReason = existing?.CreatedReason ?? "meta_run_review_workflow_lifecycle",
+            ValidationStatus = existing?.ValidationStatus ?? LearningProposalValidationStatuses.NotRun,
+            ValidationWarnings = existing?.ValidationWarnings ?? [],
+            ValidationErrors = existing?.ValidationErrors ?? [],
+            CreatedAtUtc = existing?.CreatedAtUtc ?? changedAtUtc,
+            UpdatedAtUtc = changedAtUtc,
+            ReviewedAtUtc = existing?.ReviewedAtUtc,
+            ReviewNotes = existing?.ReviewNotes,
+            RolledBack = existing?.RolledBack ?? false,
+            RolledBackAtUtc = existing?.RolledBackAtUtc,
+            RollbackReason = existing?.RollbackReason
+        };
+
+        await store.SaveProposalAsync(durableWorkflow, ct);
+    }
+
+    private static void AppendMetaRunWorkflowTransitionMetadata(
+        IDictionary<string, string> metadata,
+        string action,
+        string stage,
+        DateTimeOffset changedAtUtc,
+        string? actorId,
+        string? reason)
+    {
+        var nextIndex = 0;
+        if (metadata.TryGetValue(MetaRunWorkflowMetadata.TransitionCount, out var countRaw)
+            && int.TryParse(countRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var currentCount)
+            && currentCount > 0)
+        {
+            nextIndex = currentCount;
+        }
+
+        metadata[BuildMetaRunWorkflowTransitionMetadataKey(nextIndex, MetaRunWorkflowMetadata.TransitionFieldAction)] = action;
+        metadata[BuildMetaRunWorkflowTransitionMetadataKey(nextIndex, MetaRunWorkflowMetadata.TransitionFieldStage)] = stage;
+        metadata[BuildMetaRunWorkflowTransitionMetadataKey(nextIndex, MetaRunWorkflowMetadata.TransitionFieldChangedAtUtc)] = changedAtUtc.ToString("O", CultureInfo.InvariantCulture);
+        metadata[BuildMetaRunWorkflowTransitionMetadataKey(nextIndex, MetaRunWorkflowMetadata.TransitionFieldActorId)] = string.IsNullOrWhiteSpace(actorId)
+            ? string.Empty
+            : actorId!;
+        metadata[BuildMetaRunWorkflowTransitionMetadataKey(nextIndex, MetaRunWorkflowMetadata.TransitionFieldReason)] = string.IsNullOrWhiteSpace(reason)
+            ? string.Empty
+            : reason!;
+        metadata[MetaRunWorkflowMetadata.TransitionCount] = (nextIndex + 1).ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string BuildMetaRunWorkflowTransitionMetadataKey(int index, string field)
+        => $"{MetaRunWorkflowMetadata.TransitionEntryPrefix}_{index:D4}_{field}";
 
     private static void PopulateMetaRunProposalAcceptanceGateMetadata(
         IDictionary<string, string> metadata,
@@ -3202,6 +3406,24 @@ internal static class SkillCommands
         public const string AcceptGatePassed = "meta_run_proposal_accept_gate_passed";
         public const string AcceptGateFailedChecks = "meta_run_proposal_accept_gate_failed_checks";
         public const string AcceptGateCheckedAtUtc = "meta_run_proposal_accept_gate_checked_at_utc";
+    }
+
+    private static class MetaRunWorkflowMetadata
+    {
+        public const string SessionId = "meta_run_workflow_session_id";
+        public const string ProposalId = "meta_run_workflow_proposal_id";
+        public const string WorkflowId = "meta_run_workflow_id";
+        public const string Stage = "meta_run_workflow_stage";
+        public const string LastAction = "meta_run_workflow_last_action";
+        public const string LastActorId = "meta_run_workflow_last_actor_id";
+        public const string LastChangedAtUtc = "meta_run_workflow_last_changed_at_utc";
+        public const string TransitionCount = "meta_run_workflow_transition_count";
+        public const string TransitionEntryPrefix = "meta_run_workflow_transition";
+        public const string TransitionFieldAction = "action";
+        public const string TransitionFieldStage = "stage";
+        public const string TransitionFieldChangedAtUtc = "changed_at_utc";
+        public const string TransitionFieldActorId = "actor_id";
+        public const string TransitionFieldReason = "reason";
     }
 
     private static void WriteDerivedProposalListText(MetaRunDerivedProposalListResponse response)
