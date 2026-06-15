@@ -12,8 +12,9 @@ A MetaSkill is a `SKILL.md` file with:
 - one or more natural-language `triggers`
 - a `composition:` block that defines a directed acyclic graph of steps
 
-At runtime, OpenClaw.NET's `AgentRuntime.ExecuteMetaSkillAsync` executes the
-declared composition step by step — enforcing dependency order, template
+At runtime, OpenClaw.NET's `AgentRuntime.ExecuteMetaSkillAsync` (or
+`MafAgentRuntime.ExecuteMetaSkillAsync` when using the Microsoft Agent Framework
+adapter) executes the declared composition step by step — enforcing dependency order, template
 rendering, meta policy gating, tool allowlists, pause/resume checkpoints, and
 failure branch activation. The user's natural-language intent triggers the
 workflow via the Gateway's skill matching layer.

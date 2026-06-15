@@ -11,7 +11,8 @@
 - 一个或多个自然语言 `triggers`
 - 一个 `composition:` 块，定义有向无环步骤图
 
-运行时，OpenClaw.NET 的 `AgentRuntime.ExecuteMetaSkillAsync` 逐步执行声明的
+运行时，OpenClaw.NET 的 `AgentRuntime.ExecuteMetaSkillAsync`（使用 Microsoft Agent
+Framework 适配器时为 `MafAgentRuntime.ExecuteMetaSkillAsync`）逐步执行声明的
 composition——强制执行依赖顺序、模板渲染、meta 策略门禁、工具白名单、
 暂停/恢复检查点和失败分支激活。用户的自然语言意图通过 Gateway 的 Skill
 匹配层触发工作流。

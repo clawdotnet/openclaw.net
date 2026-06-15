@@ -32,7 +32,9 @@ OpenClaw.NET Gateway 内置了精选的 MetaSkill 模板：
 ### DAG 执行
 
 步骤通过 `depends_on` 声明形成有向无环图。独立步骤并行执行（波次调度）。
-运行时强制执行依赖顺序、波次调度和环路检测。
+DAG 引擎在 `AgentRuntime`（原生）和 `MafAgentRuntime`（Microsoft Agent Framework
+适配器）之间共享——二者执行 MetaSkill 的行为一致。运行时强制执行依赖顺序、
+波次调度和环路检测。所有等价测试在两个运行时上均通过。
 
 ```yaml
 composition:

@@ -36,8 +36,10 @@ install` or placed in plugin skill directories.
 ### DAG Execution
 
 Steps declare `depends_on` to form a directed acyclic graph. Independent steps
-run in parallel. The runtime enforces dependency order, wave-based scheduling,
-and cycle detection.
+run in parallel (wave-based scheduling). The DAG engine is shared between
+`AgentRuntime` (native) and `MafAgentRuntime` (Microsoft Agent Framework adapter)
+— both execute MetaSkills identically. The runtime enforces dependency order,
+cycle detection, and routing. All parity tests pass on both runtimes.
 
 ```yaml
 composition:
