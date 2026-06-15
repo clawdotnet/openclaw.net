@@ -276,4 +276,120 @@ public sealed class MetaCoreServicesTests
         Assert.DoesNotContain("default_branch", pending);
         Assert.Contains("default_branch", blocked);
     }
+
+    // ── Jinja2 sandbox: three lines of defense ──
+
+    [Fact]
+    public void MetaTemplateRenderer_Sandbox_BlocksClassicEscapes()
+    {
+        // Line 1: __class__, __bases__, __subclasses__, and .GetType() must not resolve.
+        var renderer = new MetaTemplateRenderer();
+        var context = new MetaExecutionContext(
+            input: "safe",
+            outputs: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["key"] = "value"
+            });
+
+        // Classic Python-style escapes — these should render as undefined or empty
+        var dunderClass = renderer.Render("{{ input.__class__ }}", context);
+        Assert.DoesNotContain("String", dunderClass, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("System.", dunderClass, StringComparison.OrdinalIgnoreCase);
+
+        var dunderBases = renderer.Render("{{ input.__bases__ }}", context);
+        Assert.DoesNotContain("Object", dunderBases, StringComparison.OrdinalIgnoreCase);
+
+        var dunderSubclasses = renderer.Render("{{ ''.__subclasses__ }}", context);
+        Assert.DoesNotContain("System.", dunderSubclasses, StringComparison.OrdinalIgnoreCase);
+
+        var dunderMro = renderer.Render("{{ input.__mro__ }}", context);
+        Assert.DoesNotContain("System.", dunderMro, StringComparison.OrdinalIgnoreCase);
+
+        // .NET-specific reflection escapes
+        var getType = renderer.Render("{{ input.GetType }}", context);
+        Assert.DoesNotContain("String", getType, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("System.", getType, StringComparison.OrdinalIgnoreCase);
+
+        var getTypeMethod = renderer.Render("{{ input.GetType() }}", context);
+        Assert.DoesNotContain("System.", getTypeMethod, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MetaTemplateRenderer_Sandbox_FilterAllowlist_OnlyRegisteredFiltersWork()
+    {
+        // Line 2: Only xml_escape, slugify, truncate, tojson are allowed.
+        // HardenFilterAllowlist unregisters all Jinja2.NET built-in filters.
+        var renderer = new MetaTemplateRenderer();
+        var context = new MetaExecutionContext(input: "Hello World");
+
+        // Registered filters must work
+        var escaped = renderer.Render("{{ input|xml_escape }}", context);
+        Assert.DoesNotContain("<", escaped, StringComparison.Ordinal);
+
+        var slug = renderer.Render("{{ input|slugify }}", context);
+        Assert.Contains("hello-world", slug, StringComparison.Ordinal);
+
+        var truncated = renderer.Render("{{ input|truncate(5) }}", context);
+        Assert.True(truncated.Length <= 5 + 3);
+
+        var jsoned = renderer.Render("{{ input|tojson }}", context);
+        Assert.Contains("\"Hello World\"", jsoned, StringComparison.Ordinal);
+
+        // Built-in filters (upper, lower, capitalize, etc.) must be blocked.
+        // Blocked filters pass through the original value unchanged.
+        var upperAttempt = renderer.Render("{{ input|upper }}", context);
+        Assert.Equal("Hello World", upperAttempt); // NOT uppercased
+
+        var lowerAttempt = renderer.Render("{{ input|lower }}", context);
+        Assert.Equal("Hello World", lowerAttempt); // NOT lowercased
+
+        var capitalizeAttempt = renderer.Render("{{ input|capitalize }}", context);
+        Assert.Equal("Hello World", capitalizeAttempt); // NOT capitalized
+
+        var replaceAttempt = renderer.Render("{{ input|replace }}", context);
+        Assert.Equal("Hello World", replaceAttempt); // NOT replaced
+    }
+
+    [Fact]
+    public void MetaTemplateRenderer_Sandbox_GlobalsCleared_NoBuiltinsAccessible()
+    {
+        // Line 3: range() and dict() are blocked AND caught — no crash.
+        var renderer = new MetaTemplateRenderer();
+        var context = new MetaExecutionContext(input: "safe");
+
+        // range() blocked: renders safe error string, no exception
+        var rangeResult = renderer.Render("{{ range(10) }}", context);
+        Assert.Contains("template render error", rangeResult, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("range", rangeResult, StringComparison.OrdinalIgnoreCase);
+
+        // dict() blocked: safe error, no exception
+        var dictResult = renderer.Render("{{ dict() }}", context);
+        Assert.Contains("template render error", dictResult, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("dict", dictResult, StringComparison.OrdinalIgnoreCase);
+
+        // Undefined variable renders as empty (Jinja2.NET default)
+        var undefinedResult = renderer.Render("{{ nonexistent_var }}", context);
+        Assert.Equal(string.Empty, undefinedResult);
+    }
+
+    [Fact]
+    public void MetaTemplateRenderer_Sandbox_ContextIsolation_NoCrossContextLeak()
+    {
+        // Verify that one render call does not leak state into another.
+        var renderer = new MetaTemplateRenderer();
+
+        var ctx1 = new MetaExecutionContext(
+            input: "alpha",
+            outputs: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["k"] = "v1" });
+
+        var ctx2 = new MetaExecutionContext(
+            input: "beta",
+            outputs: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["k"] = "v2" });
+
+        var r1 = renderer.Render("{{ input }}:{{ outputs.k }}", ctx1);
+        var r2 = renderer.Render("{{ input }}:{{ outputs.k }}", ctx2);
+
+        Assert.Equal("alpha:v1", r1);
+        Assert.Equal("beta:v2", r2);
+    }
 }
