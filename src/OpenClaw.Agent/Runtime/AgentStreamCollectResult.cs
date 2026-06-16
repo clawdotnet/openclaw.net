@@ -13,6 +13,7 @@ internal sealed class AgentStreamCollectResult
     public int CacheWriteTokens { get; set; }
     public string? ProviderId { get; set; }
     public string? ModelId { get; set; }
+    public bool IsUsageEstimated { get; set; }
     public TimeSpan Elapsed { get; set; }
     public string? Error { get; set; }
 }

@@ -26,6 +26,7 @@ public sealed class AgentRuntimeFactoryContext
     public required IReadOnlyList<IToolHook> Hooks { get; init; }
     public required bool RequireToolApproval { get; init; }
     public required IReadOnlyList<string> ApprovalRequiredTools { get; init; }
+    public ITurnTokenUsageObserver? TurnTokenUsageObserver { get; init; }
     public IToolSandbox? ToolSandbox { get; init; }
     public IToolGovernanceService? ToolGovernance { get; init; }
     public IPlanExecuteVerifyOrchestrator? PlanExecuteVerify { get; init; }

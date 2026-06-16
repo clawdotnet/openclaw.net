@@ -36,7 +36,7 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Reference | Compatibility | [COMPATIBILITY.md](COMPATIBILITY.md) |
 | Reference | Capability Matrix | [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md) |
 | Reference | Architecture Boundaries | [ARCHITECTURE_BOUNDARIES.md](ARCHITECTURE_BOUNDARIES.md) |
-| Reference | Sessions | [SESSIONS.md](SESSIONS.md) |
+| Reference | Sessions and Token Accounting | [SESSIONS.md](SESSIONS.md) |
 | Reference | Canvas and A2UI | [CANVAS_A2UI.md](CANVAS_A2UI.md) |
 | Reference | Glossary | [GLOSSARY.md](GLOSSARY.md) |
 | Integrations | Semantic Kernel | [SEMANTIC_KERNEL.md](SEMANTIC_KERNEL.md) |
@@ -110,7 +110,7 @@ Reference
   Compatibility
   Capability Matrix
   Architecture Boundaries
-  Sessions
+  Sessions and Token Accounting
   Canvas and A2UI
   Glossary
 

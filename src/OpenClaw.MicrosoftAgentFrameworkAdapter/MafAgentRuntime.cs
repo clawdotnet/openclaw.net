@@ -44,6 +44,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
     private readonly long _sessionTokenBudget;
     private readonly MemoryRecallConfig? _recall;
     private readonly bool _requireToolApproval;
+    private readonly ITurnTokenUsageObserver? _turnTokenUsageObserver;
     private readonly Action<Session, string, string, long, long>? _recordContractTurnUsage;
     private readonly Func<Session, bool>? _isContractTokenBudgetExceeded;
     private readonly Func<Session, bool>? _isContractRuntimeBudgetExceeded;
@@ -104,6 +105,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         _sessionTokenBudget = context.Config.SessionTokenBudget;
         _recall = context.Config.Memory.Recall;
         _requireToolApproval = context.RequireToolApproval;
+        _turnTokenUsageObserver = context.TurnTokenUsageObserver;
         _recordContractTurnUsage = context.RecordContractTurnUsage;
         _isContractTokenBudgetExceeded = context.IsContractTokenBudgetExceeded;
         _isContractRuntimeBudgetExceeded = context.IsContractRuntimeBudgetExceeded;
@@ -230,6 +232,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 SkillPromptLength = _skillPromptLength,
                 SessionTokenBudget = _sessionTokenBudget,
                 ToolInvocations = toolInvocations,
+                TurnTokenUsageObserver = _turnTokenUsageObserver,
                 RecordContractTurnUsage = _recordContractTurnUsage,
                 ApprovalCallback = approvalCallback
             });
@@ -281,7 +284,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             LogTurnComplete(turnCtx);
             return ex.Message;
         }
-        catch (Exception ex) when (IsRecoverableLlmException(ex))
+        catch (Exception ex)
         {
             _metrics.IncrementLlmErrors();
             _logger?.LogError(ex, "[{CorrelationId}] MAF orchestration failed", turnCtx.CorrelationId);
@@ -350,7 +353,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         var turnRoutingScopeDisposed = false;
 
         Task? producer = null;
-        using var producerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        CancellationTokenSource? producerCts = null;
 
         try
         {
@@ -374,6 +377,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             var messages = BuildMessages(session);
             await TryInjectRecallAsync(messages, userMessage, ct);
 
+            producerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             producer = ProduceStreamingRunAsync(
                 session,
                 messages,
@@ -394,17 +398,17 @@ public sealed class MafAgentRuntime : IAgentRuntime
         {
             if (producer is not null && !producer.IsCompleted)
             {
-                producerCts.Cancel();
+                producerCts?.Cancel();
                 try
                 {
                     await producer;
                 }
-                catch (OperationCanceledException ex) when (producerCts.IsCancellationRequested)
+                catch (OperationCanceledException) when (producerCts?.IsCancellationRequested == true)
                 {
-                    _logger?.LogDebug(ex, "Streaming producer canceled during iterator shutdown.");
                 }
             }
 
+            producerCts?.Dispose();
             DisposeTurnRoutingScope();
         }
 
@@ -453,6 +457,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 SkillPromptLength = _skillPromptLength,
                 SessionTokenBudget = _sessionTokenBudget,
                 ToolInvocations = toolInvocations,
+                TurnTokenUsageObserver = _turnTokenUsageObserver,
                 RecordContractTurnUsage = _recordContractTurnUsage,
                 ApprovalCallback = approvalCallback,
                 StreamEventWriter = WriteStreamEventAsync
@@ -520,7 +525,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 throw;
             }
         }
-        catch (Exception ex) when (IsRecoverableLlmException(ex))
+        catch (Exception ex)
         {
             _metrics.IncrementLlmErrors();
             _logger?.LogError(ex, "[{CorrelationId}] MAF streaming orchestration failed", turnCtx.CorrelationId);
@@ -593,30 +598,13 @@ public sealed class MafAgentRuntime : IAgentRuntime
         var baseOptions = CreateChatOptions(session, responseSchema);
         baseOptions.Tools = _toolExecutor.GetToolDeclarations(session);
 
-        TurnRoutingDecision decision;
-        try
+        var decision = await _turnRoutingPolicy.ResolveAsync(new TurnRoutingRequest
         {
-            decision = await _turnRoutingPolicy.ResolveAsync(new TurnRoutingRequest
-            {
-                Session = session,
-                Messages = BuildMessages(session),
-                UserMessage = userMessage,
-                BaseOptions = baseOptions
-            }, ct);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (IsRecoverableTurnRoutingPolicyException(ex))
-        {
-            _logger?.LogWarning(ex, "Turn routing policy failed; falling back to T2/default routing.");
-            decision = new TurnRoutingDecision
-            {
-                Tier = "T2",
-                Reason = "routing_policy_error"
-            };
-        }
+            Session = session,
+            Messages = BuildMessages(session),
+            UserMessage = userMessage,
+            BaseOptions = baseOptions
+        }, ct);
 
         var metaRoutingSuffix = BuildMetaRoutingSuffix(userMessage);
 
@@ -2986,7 +2974,11 @@ public sealed class MafAgentRuntime : IAgentRuntime
             var text = sb.ToString().TrimEnd();
             messages.Insert(Math.Min(1, messages.Count), new ChatMessage(ChatRole.User, text));
         }
-        catch (Exception ex) when (IsRecoverableContextException(ex))
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             _logger?.LogWarning(ex, "MAF memory recall injection failed; continuing without recall.");
         }
@@ -3067,39 +3059,16 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 Content = $"[Previous conversation summary: {summary}]"
             });
         }
-        catch (Exception ex) when (IsRecoverableContextException(ex))
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             _logger?.LogWarning(ex, "MAF history compaction failed; falling back to simple trim.");
             TrimHistory(session);
         }
     }
-
-    private static bool IsRecoverableContextException(Exception ex)
-        => ex is IOException
-            or JsonException
-            or InvalidOperationException
-            or NotSupportedException
-            or TimeoutException
-            or UnauthorizedAccessException
-            or TaskCanceledException;
-
-    private static bool IsRecoverableLlmException(Exception ex)
-        => ex is HttpRequestException
-            or IOException
-            or InvalidOperationException
-            or KeyNotFoundException
-            or NotSupportedException
-            or TimeoutException
-            or TaskCanceledException;
-
-    private static bool IsRecoverableTurnRoutingPolicyException(Exception ex)
-        => ex is IOException
-            or JsonException
-            or InvalidOperationException
-            or NotSupportedException
-            or ArgumentException
-            or TimeoutException
-            or TaskCanceledException;
 
     private List<ChatMessage> BuildMessages(Session session)
     {
@@ -3170,6 +3139,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         LlmExecutionResult execution,
         TimeSpan elapsed)
     {
+        var isEstimated = execution.Response.Usage is null;
         var inputTokens = execution.Response.Usage?.InputTokenCount
             ?? LlmExecutionEstimateBuilder.EstimateInputTokens(messages);
         var outputTokens = execution.Response.Usage?.OutputTokenCount
@@ -3186,16 +3156,39 @@ public sealed class MafAgentRuntime : IAgentRuntime
         _metrics.AddPromptCacheWrites(cacheUsage.CacheWriteTokens);
         _providerUsage.AddTokens(execution.ProviderId, execution.ModelId, inputTokens, outputTokens);
         _providerUsage.AddCacheTokens(execution.ProviderId, execution.ModelId, cacheUsage.CacheReadTokens, cacheUsage.CacheWriteTokens);
+
+        var record = new TurnTokenUsageRecord
+        {
+            SessionId = session.Id,
+            ChannelId = session.ChannelId,
+            ProviderId = execution.ProviderId,
+            ModelId = execution.ModelId,
+            InputTokens = inputTokens,
+            OutputTokens = outputTokens,
+            CacheReadTokens = cacheUsage.CacheReadTokens,
+            CacheWriteTokens = cacheUsage.CacheWriteTokens,
+            EstimatedInputTokensByComponent = isEstimated
+                ? LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, inputTokens, 0)
+                : new InputTokenComponentEstimate(),
+            IsEstimated = isEstimated
+        };
+
+        if (_turnTokenUsageObserver is not null)
+        {
+            _turnTokenUsageObserver.RecordTurn(record);
+            return;
+        }
+
         _providerUsage.RecordTurn(
-            session.Id,
-            session.ChannelId,
-            execution.ProviderId,
-            execution.ModelId,
-            inputTokens,
-            outputTokens,
-            cacheUsage.CacheReadTokens,
-            cacheUsage.CacheWriteTokens,
-            LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, inputTokens, 0));
+            record.SessionId,
+            record.ChannelId,
+            record.ProviderId,
+            record.ModelId,
+            record.InputTokens,
+            record.OutputTokens,
+            record.CacheReadTokens,
+            record.CacheWriteTokens,
+            record.EstimatedInputTokensByComponent);
     }
 
     private static string ExtractResponseText(AgentResponse response)

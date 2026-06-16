@@ -28,7 +28,7 @@ The default key for a session is `channelId:senderId`, so "a given user on a giv
 The manager's public surface that matters for the lifecycle:
 
 | Method | Purpose | File ref |
-|---|---|---|
+| --- | --- | --- |
 | `GetOrCreateAsync(channelId, senderId, ct)` | Default admission path. Key = `channelId:senderId`. | [line 45](../src/OpenClaw.Core/Sessions/SessionManager.cs#L45) |
 | `GetOrCreateByIdAsync(sessionId, channelId, senderId, ct)` | Admission with an explicit ID. Used by `sessions_spawn`, cron, webhooks. | [line 55](../src/OpenClaw.Core/Sessions/SessionManager.cs#L55) |
 | `TryGetActiveById(sessionId)` | Non-allocating active-cache lookup. Used by `sessions_yield` polling. | [line 273](../src/OpenClaw.Core/Sessions/SessionManager.cs#L273) |
@@ -104,8 +104,93 @@ All three are grouped under the `group:sessions` tool preset in [src/OpenClaw.Ga
 - **Spawn vs yield** is the async/sync axis: spawn returns immediately; yield polls for a reply with a bounded timeout.
 - **Use `sessions list` / `sessions history`** when you want to introspect state without sending a message.
 
+## Per-turn Token Accounting
+
+OpenClaw tracks token usage at multiple levels during each turn. The same model output can update turn-local diagnostics, session totals, runtime counters, provider aggregates, and (when enabled) contract-governance cost tracking.
+
+### How one turn is accounted
+
+1. **Turn context is established.** `AgentRuntime` creates a `TurnContext` for correlation and per-turn observability before model/tool execution begins.
+2. **Usage is ingested at turn accounting boundaries.** `AgentTurnAccounting` records usage for non-streaming and streaming paths, normalizing input/output/cache components when available.
+3. **Fallback estimation is applied when needed.** If a provider does not return usage on a streaming response, runtime estimation can backfill token counts for accounting continuity.
+4. **The same turn is written to multiple sinks.**
+   - `Session` counters (`TotalInputTokens`, `TotalOutputTokens`, cache counters)
+   - `RuntimeMetrics` global process counters
+   - `ProviderUsageTracker` provider/model totals and recent-turn entries
+   - Contract governance turn-cost tracking when contract mode is active
+5. **Operator/user surfaces read from those sinks.** `/status`, `/usage`, metrics/admin endpoints, and OpenAI-compatible usage fields are all projections over these counters.
+
+### Where to observe token usage
+
+- **Turn level:** `TurnContext` summaries and per-turn logging.
+- **Session cumulative:** `/status`, `/usage`, and session-bound summaries.
+- **Runtime/provider counters:** `/metrics`, `/metrics/providers`, and provider snapshots.
+- **Operator investigation views:** `/admin/providers` and `/admin/sessions/{id}/timeline`.
+- **Compatibility responses:** OpenAI-compatible `usage` payloads returned by chat/responses endpoints.
+
+### Per-session Task Token Ledger (Persistent)
+
+OpenClaw now records each turn's token usage as an append-only audit stream, so "every session task's token consumption" can be traced beyond the in-memory recent-turn window.
+
+- **Write model:** append-only JSONL, one line per turn.
+- **Default file path:** `<Memory.StoragePath>/audit/turn-token-usage.jsonl`.
+- **Record shape:** `TurnTokenUsageRecord` (`SessionId`, `ChannelId`, `ProviderId`, `ModelId`, input/output/cache tokens, `EstimatedInputTokensByComponent`, `IsEstimated`, `TimestampUtc`).
+- **Execution path:** turn accounting emits `ITurnTokenUsageObserver` records; default gateway wiring uses a composite observer that writes to both `ProviderUsageTracker` (bounded recent-turn investigative view) and `TurnTokenUsageAuditLog` (persistent append-only ledger).
+
+Operational notes:
+
+- This ledger is the durable source for per-turn/session-task audits.
+- Dashboard provider timeline remains a bounded recent-turn view for troubleshooting.
+- `IsEstimated=true` indicates provider usage was missing and accounting relied on estimation.
+
+### Viewing token usage in Dashboard
+
+The visual entry point is the **Sessions** page in Dashboard (implemented in [src/OpenClaw.Dashboard/Pages/Sessions.razor](../src/OpenClaw.Dashboard/Pages/Sessions.razor)):
+
+1. Open Sessions. The left session list shows a `Σ` total token badge per session (`input + output`).
+2. Select a session. The right detail panel shows token summary cards:
+   - `Input tokens`
+   - `Output tokens`
+   - `Cache read tokens`
+   - `Cache write tokens`
+   - `Total tokens`
+3. In the same detail view, check **Provider token timeline** (backed by `/admin/sessions/{id}/timeline`) for per-turn rows:
+   - timestamp
+   - provider/model
+   - input/output/cache/total tokens
+
+Semantics notes:
+
+- Summary cards are cumulative session counters (`Session.Total*Tokens`).
+- Timeline rows come from a bounded recent-turn provider window, intended for investigation rather than long-term audit.
+- If upstream usage is missing on some paths, some token values may be estimated.
+
+### Current Semantics (Important)
+
+- OpenAI-compatible `usage` fields are currently emitted from session cumulative counters, not per-request deltas.
+- When upstream/provider usage is missing in some paths, token values may be estimated rather than provider-billed exact values.
+- Provider recent-turn usage is a bounded in-memory window, not a long-term audit ledger.
+- Per-turn persistent token audit is available via JSONL ledger (`turn-token-usage.jsonl`).
+- `/status` and `/usage` reflect cumulative session counters, not just the most recent turn.
+
+### Implementation anchors
+
+- Turn accounting entry points: [src/OpenClaw.Agent/Runtime/AgentTurnAccounting.cs](../src/OpenClaw.Agent/Runtime/AgentTurnAccounting.cs)
+- Session token/cache counters: [src/OpenClaw.Core/Models/Session.cs](../src/OpenClaw.Core/Models/Session.cs)
+- Turn context observability: [src/OpenClaw.Core/Observability/TurnContext.cs](../src/OpenClaw.Core/Observability/TurnContext.cs)
+- Provider aggregates and recent turns: [src/OpenClaw.Core/Observability/ProviderUsageTracker.cs](../src/OpenClaw.Core/Observability/ProviderUsageTracker.cs)
+- Turn token observer contract: [src/OpenClaw.Core/Abstractions/ITurnTokenUsageObserver.cs](../src/OpenClaw.Core/Abstractions/ITurnTokenUsageObserver.cs)
+- Turn token record model: [src/OpenClaw.Core/Models/TurnTokenUsageRecord.cs](../src/OpenClaw.Core/Models/TurnTokenUsageRecord.cs)
+- Persistent turn token ledger: [src/OpenClaw.Core/Observability/TurnTokenUsageAuditLog.cs](../src/OpenClaw.Core/Observability/TurnTokenUsageAuditLog.cs)
+- Runtime totals: [src/OpenClaw.Core/Observability/RuntimeMetrics.cs](../src/OpenClaw.Core/Observability/RuntimeMetrics.cs)
+- Session command projections: [src/OpenClaw.Core/Pipeline/ChatCommandProcessor.cs](../src/OpenClaw.Core/Pipeline/ChatCommandProcessor.cs)
+- Metrics/admin endpoints: [src/OpenClaw.Gateway/Endpoints/DiagnosticsEndpoints.cs](../src/OpenClaw.Gateway/Endpoints/DiagnosticsEndpoints.cs), [src/OpenClaw.Gateway/Endpoints/AdminEndpoints.Runtime.cs](../src/OpenClaw.Gateway/Endpoints/AdminEndpoints.Runtime.cs), [src/OpenClaw.Gateway/Endpoints/AdminEndpoints.Sessions.cs](../src/OpenClaw.Gateway/Endpoints/AdminEndpoints.Sessions.cs)
+- Gateway observer wiring: [src/OpenClaw.Gateway/Composition/CoreServicesExtensions.cs](../src/OpenClaw.Gateway/Composition/CoreServicesExtensions.cs), [src/OpenClaw.Gateway/Composition/RuntimeInitializationExtensions.RuntimeFactories.cs](../src/OpenClaw.Gateway/Composition/RuntimeInitializationExtensions.RuntimeFactories.cs)
+- OpenAI-compatible usage serialization: [src/OpenClaw.Gateway/Endpoints/OpenAiEndpoints.ChatCompletions.cs](../src/OpenClaw.Gateway/Endpoints/OpenAiEndpoints.ChatCompletions.cs), [src/OpenClaw.Gateway/Endpoints/OpenAiEndpoints.Responses.cs](../src/OpenClaw.Gateway/Endpoints/OpenAiEndpoints.Responses.cs)
+
 ## Related
 
 - [TOOLS_GUIDE.md](TOOLS_GUIDE.md) — the broader native tool catalog and how presets compose.
 - [USER_GUIDE.md](USER_GUIDE.md) — operator-facing view of channels, providers, and sessions.
 - [GLOSSARY.md](GLOSSARY.md) — definitions of *gateway*, *runtime*, *channel*, *profile*, etc.
+- [PROMPT_CACHING.md](PROMPT_CACHING.md) — cache-read/cache-write usage semantics and provider-aware cache behavior.

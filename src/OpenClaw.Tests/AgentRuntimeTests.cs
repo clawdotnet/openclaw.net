@@ -132,6 +132,82 @@ public class AgentRuntimeTests
     }
 
     [Fact]
+    public async Task RunAsync_DisableToolsRoutingDecision_ExposesNoToolsToLlm()
+    {
+        ChatOptions? capturedOptions = null;
+        _chatClient.GetResponseAsync(
+            Arg.Any<IList<ChatMessage>>(),
+            Arg.Do<ChatOptions>(options => capturedOptions = options),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ChatResponse(new[] { new ChatMessage(ChatRole.Assistant, "ok") })));
+
+        var routing = Substitute.For<ITurnRoutingPolicy>();
+        routing.ResolveAsync(Arg.Any<TurnRoutingRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new TurnRoutingDecision
+            {
+                Tier = "T0",
+                DisableTools = true,
+                Reason = "disable_tools"
+            });
+
+        var agent = new AgentRuntime(
+            _chatClient,
+            [new CountingTool("read_file", "file result"), new CountingTool("shell", "shell result")],
+            _memory,
+            _config,
+            maxHistoryTurns: 5,
+            turnRoutingPolicy: routing);
+        var session = new Session { Id = "sess-disable-tools", SenderId = "user1", ChannelId = "test-channel" };
+
+        await agent.RunAsync(session, "answer directly", CancellationToken.None);
+
+        Assert.NotNull(capturedOptions);
+        Assert.Empty(capturedOptions!.Tools!);
+        Assert.False(session.RouteToolsDisabled);
+    }
+
+    [Fact]
+    public async Task RunAsync_AllowedToolsRoutingDecision_ClearsPriorDisableToolsStateForActiveCall()
+    {
+        ChatOptions? capturedOptions = null;
+        _chatClient.GetResponseAsync(
+            Arg.Any<IList<ChatMessage>>(),
+            Arg.Do<ChatOptions>(options => capturedOptions = options),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ChatResponse(new[] { new ChatMessage(ChatRole.Assistant, "ok") })));
+
+        var routing = Substitute.For<ITurnRoutingPolicy>();
+        routing.ResolveAsync(Arg.Any<TurnRoutingRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new TurnRoutingDecision
+            {
+                Tier = "T1",
+                AllowedTools = ["read_file"],
+                Reason = "allow_tools"
+            });
+
+        var agent = new AgentRuntime(
+            _chatClient,
+            [new CountingTool("read_file", "file result"), new CountingTool("shell", "shell result")],
+            _memory,
+            _config,
+            maxHistoryTurns: 5,
+            turnRoutingPolicy: routing);
+        var session = new Session
+        {
+            Id = "sess-allow-tools-after-disable",
+            SenderId = "user1",
+            ChannelId = "test-channel",
+            RouteToolsDisabled = true
+        };
+
+        await agent.RunAsync(session, "read a file", CancellationToken.None);
+
+        Assert.NotNull(capturedOptions);
+        Assert.Equal(["read_file"], capturedOptions!.Tools!.Select(tool => tool.Name).ToArray());
+        Assert.True(session.RouteToolsDisabled);
+    }
+
+    [Fact]
     public async Task RunAsync_DefaultRoutingDecision_DoesNotClearManualAllowedToolsForActiveCall()
     {
         ChatOptions? capturedOptions = null;
@@ -298,6 +374,21 @@ public class AgentRuntimeTests
         var result = await _agent.RunAsync(session, "Hello", CancellationToken.None);
 
         Assert.Equal("Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly.", result);
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotTreatRouteExecutionInvalidOperationAsProviderOutage()
+    {
+        _chatClient.GetResponseAsync(
+            Arg.Any<IList<ChatMessage>>(),
+            Arg.Any<ChatOptions>(),
+            Arg.Any<CancellationToken>())
+            .Returns<Task<ChatResponse>>(_ => throw new InvalidOperationException("route execution failed before dispatch"));
+
+        var session = new Session { Id = "sess1", SenderId = "user1", ChannelId = "test-channel" };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => _agent.RunAsync(session, "Hello", CancellationToken.None));
+        Assert.Contains("route execution failed", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

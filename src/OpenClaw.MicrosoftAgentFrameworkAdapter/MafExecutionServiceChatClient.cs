@@ -4,6 +4,8 @@ using System.Text;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Agent;
+using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 
 namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
@@ -163,19 +165,39 @@ internal sealed class MafExecutionServiceChatClient : IChatClient
         _metrics.AddPromptCacheWrites(cacheUsage.CacheWriteTokens);
         _providerUsage.AddTokens(providerId, modelId, resolvedInputTokens, resolvedOutputTokens);
         _providerUsage.AddCacheTokens(providerId, modelId, cacheUsage.CacheReadTokens, cacheUsage.CacheWriteTokens);
-        _providerUsage.RecordTurn(
-            executionContext.Session.Id,
-            executionContext.Session.ChannelId,
-            providerId,
-            modelId,
-            resolvedInputTokens,
-            resolvedOutputTokens,
-            cacheUsage.CacheReadTokens,
-            cacheUsage.CacheWriteTokens,
-            LlmExecutionEstimateBuilder.BuildInputTokenEstimate(
+        var record = new OpenClaw.Core.Models.TurnTokenUsageRecord
+        {
+            SessionId = executionContext.Session.Id,
+            ChannelId = executionContext.Session.ChannelId,
+            ProviderId = providerId,
+            ModelId = modelId,
+            InputTokens = resolvedInputTokens,
+            OutputTokens = resolvedOutputTokens,
+            CacheReadTokens = cacheUsage.CacheReadTokens,
+            CacheWriteTokens = cacheUsage.CacheWriteTokens,
+            EstimatedInputTokensByComponent = LlmExecutionEstimateBuilder.BuildInputTokenEstimate(
                 messages,
                 resolvedInputTokens,
-                executionContext.SkillPromptLength));
+                executionContext.SkillPromptLength),
+            IsEstimated = inputTokens is null || outputTokens is null
+        };
+
+        if (executionContext.TurnTokenUsageObserver is not null)
+        {
+            executionContext.TurnTokenUsageObserver.RecordTurn(record);
+            return;
+        }
+
+        _providerUsage.RecordTurn(
+            record.SessionId,
+            record.ChannelId,
+            record.ProviderId,
+            record.ModelId,
+            record.InputTokens,
+            record.OutputTokens,
+            record.CacheReadTokens,
+            record.CacheWriteTokens,
+            record.EstimatedInputTokensByComponent);
 
         _logger?.LogDebug(
             "[{CorrelationId}] MAF chat client completed provider={ProviderId} model={ModelId} input={InputTokens} output={OutputTokens}",

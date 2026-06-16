@@ -5,6 +5,10 @@ public record SessionInfo(
     string? ChannelId,
     string? SenderId,
     DateTime? LastActive,
+    long TotalInputTokens,
+    long TotalOutputTokens,
+    long TotalCacheReadTokens,
+    long TotalCacheWriteTokens,
     Dictionary<string, object>? Metadata
 );
 
@@ -13,6 +17,10 @@ public record SessionDetail(
     string? ChannelId,
     string? SenderId,
     DateTime? LastActive,
+    long TotalInputTokens,
+    long TotalOutputTokens,
+    long TotalCacheReadTokens,
+    long TotalCacheWriteTokens,
     Dictionary<string, object>? Metadata,
     List<SessionMessage>? Messages
 );

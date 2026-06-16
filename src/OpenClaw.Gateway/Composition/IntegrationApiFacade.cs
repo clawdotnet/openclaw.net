@@ -129,6 +129,8 @@ internal sealed class IntegrationApiFacade
                 HistoryTurns = session.History.Count,
                 TotalInputTokens = session.TotalInputTokens,
                 TotalOutputTokens = session.TotalOutputTokens,
+                TotalCacheReadTokens = session.TotalCacheReadTokens,
+                TotalCacheWriteTokens = session.TotalCacheWriteTokens,
                 IsActive = true
             })
             .ToArray();
@@ -282,6 +284,8 @@ internal sealed class IntegrationApiFacade
                 HistoryTurns = session.History.Count,
                 TotalInputTokens = session.TotalInputTokens,
                 TotalOutputTokens = session.TotalOutputTokens,
+                TotalCacheReadTokens = session.TotalCacheReadTokens,
+                TotalCacheWriteTokens = session.TotalCacheWriteTokens,
                 IsActive = true
             })
             .ToArray();

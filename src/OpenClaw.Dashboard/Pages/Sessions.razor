@@ -109,6 +109,7 @@
                                         @(s.SenderId ?? "—")
                                     </span>
                                     <span class="sx-meta-time">@RelativeTime(s.LastActive)</span>
+                                    <span class="sx-token-chip">Σ @FormatTokenCount(s.TotalInputTokens + s.TotalOutputTokens)</span>
                                 </div>
                             </button>
                         }
@@ -147,6 +148,29 @@
                         </div>
                     </div>
 
+                    <div class="sx-token-grid">
+                        <div class="sx-token-card">
+                            <span>@L["sessions.inputTokens"]</span>
+                            <strong>@FormatTokenCount(_selectedDetail.TotalInputTokens)</strong>
+                        </div>
+                        <div class="sx-token-card">
+                            <span>@L["sessions.outputTokens"]</span>
+                            <strong>@FormatTokenCount(_selectedDetail.TotalOutputTokens)</strong>
+                        </div>
+                        <div class="sx-token-card">
+                            <span>@L["sessions.cacheReadTokens"]</span>
+                            <strong>@FormatTokenCount(_selectedDetail.TotalCacheReadTokens)</strong>
+                        </div>
+                        <div class="sx-token-card">
+                            <span>@L["sessions.cacheWriteTokens"]</span>
+                            <strong>@FormatTokenCount(_selectedDetail.TotalCacheWriteTokens)</strong>
+                        </div>
+                        <div class="sx-token-card is-total">
+                            <span>@L["sessions.totalTokens"]</span>
+                            <strong>@FormatTokenCount(_selectedDetail.TotalInputTokens + _selectedDetail.TotalOutputTokens)</strong>
+                        </div>
+                    </div>
+
                     <MudDivider Class="my-3" />
 
                     <section class="sx-section">
@@ -179,6 +203,66 @@
                                         <div class="sx-msg__bubble">@msg.Content</div>
                                     </div>
                                 }
+                            </div>
+                        }
+                    </section>
+
+                    <MudDivider Class="my-3" />
+
+                    <section class="sx-section">
+                        <div class="sx-section-head">
+                            <MudText Typo="Typo.subtitle2" Class="sx-section-label">
+                                @L["sessions.providerTimeline"]
+                            </MudText>
+                            <span class="sx-count-pill">@_providerTurns.Count</span>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(_timelineLoadError))
+                        {
+                            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">
+                                @_timelineLoadError
+                            </MudAlert>
+                        }
+
+                        @if (_providerTurns.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Style="opacity:.6" Class="pa-4 text-center">
+                                @L["common.noData"]
+                            </MudText>
+                        }
+                        else
+                        {
+                            <div class="sx-table-wrap">
+                                <table class="sx-table">
+                                    <thead>
+                                        <tr>
+                                            <th>@L["sessions.timestamp"]</th>
+                                            <th>@L["sessions.providerModel"]</th>
+                                            <th>@L["sessions.inputTokens"]</th>
+                                            <th>@L["sessions.outputTokens"]</th>
+                                            <th>@L["sessions.cacheReadTokens"]</th>
+                                            <th>@L["sessions.cacheWriteTokens"]</th>
+                                            <th>@L["sessions.totalTokens"]</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var turn in _providerTurns)
+                                        {
+                                            <tr>
+                                                <td>@turn.TimestampUtc.ToLocalTime().ToString("MM-dd HH:mm:ss")</td>
+                                                <td>
+                                                    <span class="sx-table-provider">@turn.ProviderId</span>
+                                                    <code class="sx-mono">@turn.ModelId</code>
+                                                </td>
+                                                <td>@FormatTokenCount(turn.InputTokens)</td>
+                                                <td>@FormatTokenCount(turn.OutputTokens)</td>
+                                                <td>@FormatTokenCount(turn.CacheReadTokens)</td>
+                                                <td>@FormatTokenCount(turn.CacheWriteTokens)</td>
+                                                <td>@FormatTokenCount(turn.InputTokens + turn.OutputTokens)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
                             </div>
                         }
                     </section>
@@ -337,6 +421,14 @@
     }
     .sx-meta-icon { display:inline-flex; align-items:center; gap:4px; }
     .sx-meta-time { font-family:'JetBrains Mono','Consolas',monospace; }
+    .sx-token-chip {
+        font-family:'JetBrains Mono','Consolas',monospace;
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: rgba(16,185,129,.14);
+        color: var(--mud-palette-success);
+    }
     .sx-channel-tag {
         font-size: 10px; padding: 2px 8px; border-radius: 999px;
         background: rgba(14,165,233,.14); color: var(--mud-palette-secondary);
@@ -362,6 +454,36 @@
         font-size: 10px; letter-spacing:.12em; text-transform:uppercase; opacity:.55;
     }
     .sx-detail-meta strong { font-size: 13px; font-weight:600; }
+
+    .sx-token-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 8px;
+        margin-top: 12px;
+    }
+    .sx-token-card {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 10px 12px;
+        border: 1px solid var(--mud-palette-lines-default);
+        border-radius: 8px;
+        background: rgba(148,163,184,.08);
+    }
+    .sx-token-card span {
+        font-size: 10px;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        opacity: .65;
+    }
+    .sx-token-card strong {
+        font-family:'JetBrains Mono','Consolas',monospace;
+        font-size: 16px;
+    }
+    .sx-token-card.is-total {
+        background: linear-gradient(135deg, rgba(139,92,246,.16), rgba(14,165,233,.1));
+        border-color: var(--mud-palette-primary);
+    }
 
     .sx-section-head {
         display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;
@@ -424,6 +546,35 @@
         font-size: 12px !important;
     }
 
+    .sx-table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--mud-palette-lines-default);
+        border-radius: 8px;
+    }
+    .sx-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 720px;
+    }
+    .sx-table th,
+    .sx-table td {
+        font-size: 12px;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--mud-palette-lines-default);
+        text-align: left;
+        white-space: nowrap;
+    }
+    .sx-table thead th {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        opacity: .7;
+    }
+    .sx-table-provider {
+        font-weight: 600;
+        margin-right: 8px;
+    }
+
     .sx-branches { display:flex; flex-direction:column; gap: 6px; }
     .sx-branch {
         display:flex; align-items:center; justify-content:space-between;
@@ -436,6 +587,9 @@
 @code {
     private List<SessionInfo>? _sessions;
     private SessionDetail? _selectedDetail;
+    private List<ProviderTurnView> _providerTurns = [];
+    private string? _currentDetailSessionId;
+    private string? _timelineLoadError;
     private string _search = string.Empty;
     private string _channelFilter = string.Empty;
     private string _senderFilter = string.Empty;
@@ -577,13 +731,18 @@
 
     private async Task SelectSession(SessionInfo session)
     {
+        var selectedSessionId = session.SessionId;
+        _currentDetailSessionId = selectedSessionId;
         _loadingDetail = true;
         _selectedDetail = null;
+        _providerTurns = [];
+        _timelineLoadError = null;
         StateHasChanged();
 
         try
         {
-            using var resp = await Api.GetRawAsync($"/admin/sessions/{session.SessionId}");
+            using var resp = await Api.GetRawAsync($"/admin/sessions/{selectedSessionId}");
+            SessionDetail? resolvedDetail;
             if (resp.IsSuccessStatusCode)
             {
                 using var stream = await resp.Content.ReadAsStreamAsync();
@@ -596,35 +755,71 @@
                     && root.TryGetProperty("session", out var sessionEl)
                     && sessionEl.ValueKind == System.Text.Json.JsonValueKind.Object)
                 {
-                    _selectedDetail = BuildSessionDetailFromAdmin(session, root, sessionEl);
+                    resolvedDetail = BuildSessionDetailFromAdmin(session, root, sessionEl);
                 }
                 else
                 {
                     // Fallback: try direct deserialization for backends still returning the legacy shape.
                     var legacy = System.Text.Json.JsonSerializer.Deserialize<SessionDetail>(
                         root.GetRawText(), Api.JsonOptions);
-                    _selectedDetail = legacy ?? new SessionDetail(
+                    resolvedDetail = legacy ?? new SessionDetail(
                         session.SessionId, session.ChannelId, session.SenderId,
-                        session.LastActive, session.Metadata, new List<SessionMessage>());
+                        session.LastActive,
+                        session.TotalInputTokens,
+                        session.TotalOutputTokens,
+                        session.TotalCacheReadTokens,
+                        session.TotalCacheWriteTokens,
+                        session.Metadata,
+                        new List<SessionMessage>());
                 }
             }
             else
             {
-                _selectedDetail = new SessionDetail(
+                resolvedDetail = new SessionDetail(
                     session.SessionId, session.ChannelId, session.SenderId,
-                    session.LastActive, session.Metadata, new List<SessionMessage>());
+                    session.LastActive,
+                    session.TotalInputTokens,
+                    session.TotalOutputTokens,
+                    session.TotalCacheReadTokens,
+                    session.TotalCacheWriteTokens,
+                    session.Metadata,
+                    new List<SessionMessage>());
+            }
+
+            if (!string.Equals(_currentDetailSessionId, selectedSessionId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _selectedDetail = resolvedDetail;
+
+            if (_selectedDetail is not null)
+            {
+                await LoadSessionTimeline(_selectedDetail.SessionId);
             }
         }
         catch
         {
+            if (!string.Equals(_currentDetailSessionId, selectedSessionId, StringComparison.Ordinal))
+                return;
+
             _selectedDetail = new SessionDetail(
                 session.SessionId, session.ChannelId, session.SenderId,
-                session.LastActive, session.Metadata, new List<SessionMessage>());
+                session.LastActive,
+                session.TotalInputTokens,
+                session.TotalOutputTokens,
+                session.TotalCacheReadTokens,
+                session.TotalCacheWriteTokens,
+                session.Metadata,
+                new List<SessionMessage>());
         }
         finally
         {
-            _loadingDetail = false;
-            StateHasChanged();
+            if (string.Equals(_currentDetailSessionId, selectedSessionId, StringComparison.Ordinal))
+            {
+                _loadingDetail = false;
+                StateHasChanged();
+            }
         }
     }
 
@@ -695,6 +890,10 @@
                 _selectedDetail.ChannelId,
                 _selectedDetail.SenderId,
                 _selectedDetail.LastActive,
+                _selectedDetail.TotalInputTokens,
+                _selectedDetail.TotalOutputTokens,
+                _selectedDetail.TotalCacheReadTokens,
+                _selectedDetail.TotalCacheWriteTokens,
                 _selectedDetail.Metadata));
         }
         else
@@ -860,8 +1059,21 @@
             var channelId = ReadJsonString(el, "channelId");
             var senderId = ReadJsonString(el, "senderId");
             var lastActive = ReadJsonDateTime(el, "lastActiveAt") ?? ReadJsonDateTime(el, "lastActive");
+            var totalInputTokens = ReadJsonInt64(el, "totalInputTokens");
+            var totalOutputTokens = ReadJsonInt64(el, "totalOutputTokens");
+            var totalCacheReadTokens = ReadJsonInt64(el, "totalCacheReadTokens");
+            var totalCacheWriteTokens = ReadJsonInt64(el, "totalCacheWriteTokens");
 
-            dest.Add(new SessionInfo(id, channelId, senderId, lastActive, null));
+            dest.Add(new SessionInfo(
+                id,
+                channelId,
+                senderId,
+                lastActive,
+                totalInputTokens,
+                totalOutputTokens,
+                totalCacheReadTokens,
+                totalCacheWriteTokens,
+                null));
         }
     }
 
@@ -875,6 +1087,21 @@
         if (!el.TryGetProperty(name, out var v) || v.ValueKind != System.Text.Json.JsonValueKind.String)
             return null;
         return v.TryGetDateTime(out var dt) ? dt : null;
+    }
+
+    private static long ReadJsonInt64(System.Text.Json.JsonElement el, string name)
+    {
+        if (!el.TryGetProperty(name, out var v))
+            return 0;
+
+        if (v.ValueKind == System.Text.Json.JsonValueKind.Number && v.TryGetInt64(out var direct))
+            return direct;
+
+        if (v.ValueKind == System.Text.Json.JsonValueKind.String
+            && long.TryParse(v.GetString(), out var parsed))
+            return parsed;
+
+        return 0;
     }
 
     /// <summary>
@@ -891,6 +1118,10 @@
         var channelId = ReadJsonString(sessionEl, "channelId") ?? fallback.ChannelId;
         var senderId = ReadJsonString(sessionEl, "senderId") ?? fallback.SenderId;
         var lastActive = ReadJsonDateTime(sessionEl, "lastActiveAt") ?? fallback.LastActive;
+        var totalInputTokens = ReadJsonInt64(sessionEl, "totalInputTokens");
+        var totalOutputTokens = ReadJsonInt64(sessionEl, "totalOutputTokens");
+        var totalCacheReadTokens = ReadJsonInt64(sessionEl, "totalCacheReadTokens");
+        var totalCacheWriteTokens = ReadJsonInt64(sessionEl, "totalCacheWriteTokens");
 
         var messages = new List<SessionMessage>();
         if (sessionEl.TryGetProperty("history", out var history)
@@ -932,7 +1163,112 @@
             }
         }
 
-        return new SessionDetail(id, channelId, senderId, lastActive,
+        return new SessionDetail(
+            id,
+            channelId,
+            senderId,
+            lastActive,
+            totalInputTokens,
+            totalOutputTokens,
+            totalCacheReadTokens,
+            totalCacheWriteTokens,
             metadata.Count == 0 ? null : metadata, messages);
     }
+
+    private async Task LoadSessionTimeline(string sessionId)
+    {
+        if (!string.Equals(_currentDetailSessionId, sessionId, StringComparison.Ordinal))
+            return;
+
+        _providerTurns = [];
+        _timelineLoadError = null;
+
+        try
+        {
+            using var resp = await Api.GetRawAsync($"/admin/sessions/{sessionId}/timeline?limit=50");
+            if (!resp.IsSuccessStatusCode)
+            {
+                if (string.Equals(_currentDetailSessionId, sessionId, StringComparison.Ordinal))
+                {
+                    _timelineLoadError = $"{L["common.error"]}: {resp.StatusCode}";
+                    _providerTurns = [];
+                    StateHasChanged();
+                }
+                return;
+            }
+
+            using var stream = await resp.Content.ReadAsStreamAsync();
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(stream);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("sessionId", out var timelineSessionId)
+                && timelineSessionId.ValueKind == System.Text.Json.JsonValueKind.String
+                && !string.Equals(timelineSessionId.GetString(), sessionId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object
+                || !root.TryGetProperty("providerTurns", out var providerTurns)
+                || providerTurns.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                if (string.Equals(_currentDetailSessionId, sessionId, StringComparison.Ordinal))
+                {
+                    _providerTurns = [];
+                    StateHasChanged();
+                }
+                return;
+            }
+
+            var parsed = new List<ProviderTurnView>(providerTurns.GetArrayLength());
+            foreach (var turn in providerTurns.EnumerateArray())
+            {
+                if (turn.ValueKind != System.Text.Json.JsonValueKind.Object)
+                    continue;
+
+                parsed.Add(new ProviderTurnView(
+                    ReadJsonDateTimeOffset(turn, "timestampUtc") ?? DateTimeOffset.UtcNow,
+                    ReadJsonString(turn, "providerId") ?? "unknown",
+                    ReadJsonString(turn, "modelId") ?? "default",
+                    ReadJsonInt64(turn, "inputTokens"),
+                    ReadJsonInt64(turn, "outputTokens"),
+                    ReadJsonInt64(turn, "cacheReadTokens"),
+                    ReadJsonInt64(turn, "cacheWriteTokens")));
+            }
+
+            if (string.Equals(_currentDetailSessionId, sessionId, StringComparison.Ordinal))
+            {
+                _providerTurns = parsed;
+                _timelineLoadError = null;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (string.Equals(_currentDetailSessionId, sessionId, StringComparison.Ordinal))
+            {
+                _timelineLoadError = ex.Message;
+                _providerTurns = [];
+                StateHasChanged();
+            }
+        }
+    }
+
+    private static DateTimeOffset? ReadJsonDateTimeOffset(System.Text.Json.JsonElement el, string name)
+    {
+        if (!el.TryGetProperty(name, out var v) || v.ValueKind != System.Text.Json.JsonValueKind.String)
+            return null;
+        return v.TryGetDateTimeOffset(out var dto) ? dto : null;
+    }
+
+    private static string FormatTokenCount(long value) => value.ToString("N0");
+
+    private sealed record ProviderTurnView(
+        DateTimeOffset TimestampUtc,
+        string ProviderId,
+        string ModelId,
+        long InputTokens,
+        long OutputTokens,
+        long CacheReadTokens,
+        long CacheWriteTokens);
 }

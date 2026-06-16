@@ -320,6 +320,7 @@ internal static partial class RuntimeInitializationExtensions
             Hooks = hooks,
             RequireToolApproval = requireToolApproval,
             ApprovalRequiredTools = approvalRequiredTools,
+            TurnTokenUsageObserver = services.GetService<ITurnTokenUsageObserver>(),
             ToolSandbox = toolSandbox,
             ToolGovernance = services.GetRequiredService<IToolGovernanceService>(),
             PlanExecuteVerify = services.GetService<IPlanExecuteVerifyOrchestrator>(),

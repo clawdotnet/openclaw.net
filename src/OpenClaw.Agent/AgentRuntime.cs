@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -56,6 +55,7 @@ public sealed class AgentRuntime : IAgentRuntime
     private readonly CircuitBreaker _circuitBreaker;
     private readonly RuntimeMetrics? _metrics;
     private readonly ProviderUsageTracker? _providerUsage;
+    private readonly ITurnTokenUsageObserver? _turnTokenUsageObserver;
     private readonly ILlmExecutionService? _llmExecutionService;
     private readonly long _sessionTokenBudget;
     private readonly bool _estimateTokenBudgetAdmission;
@@ -96,6 +96,7 @@ public sealed class AgentRuntime : IAgentRuntime
         int toolTimeoutSeconds = 30,
         RuntimeMetrics? metrics = null,
         ProviderUsageTracker? providerUsage = null,
+        ITurnTokenUsageObserver? turnTokenUsageObserver = null,
         ILlmExecutionService? llmExecutionService = null,
         bool parallelToolExecution = true,
         bool enableCompaction = false,
@@ -147,6 +148,7 @@ public sealed class AgentRuntime : IAgentRuntime
         _hooks = hooks ?? [];
         _metrics = metrics;
         _providerUsage = providerUsage;
+        _turnTokenUsageObserver = turnTokenUsageObserver;
         _llmExecutionService = llmExecutionService;
         _skillsConfig = skillsConfig;
         _metaSkillsEnabled = skillsConfig?.MetaSkill.Enabled ?? true;
@@ -378,7 +380,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 return ex.Message;
             }
 
-            catch (Exception ex) when (IsRecoverableLlmException(ex))
+            catch (Exception ex) when (IsExpectedLlmFailure(ex))
             {
                 _metrics?.IncrementLlmErrors();
                 _logger?.LogError(ex, "[{CorrelationId}] LLM call failed after all retries and fallbacks", turnCtx.CorrelationId);
@@ -407,21 +409,23 @@ public sealed class AgentRuntime : IAgentRuntime
             _metrics?.AddPromptCacheWrites(cacheUsage.CacheWriteTokens);
             _providerUsage?.AddTokens(executionResult.ProviderId, executionResult.ModelId, inputTokens, outputTokens);
             _providerUsage?.AddCacheTokens(executionResult.ProviderId, executionResult.ModelId, cacheUsage.CacheReadTokens, cacheUsage.CacheWriteTokens);
-            _providerUsage?.RecordTurn(
-                session.Id,
-                session.ChannelId,
+
+            // Track token usage on the session
+            session.AddTokenUsage(inputTokens, outputTokens);
+            session.AddCacheUsage(cacheUsage.CacheReadTokens, cacheUsage.CacheWriteTokens);
+            _recordContractTurnUsage?.Invoke(session, executionResult.ProviderId, executionResult.ModelId, inputTokens, outputTokens);
+            RecordTurnUsage(
+                session,
                 executionResult.ProviderId,
                 executionResult.ModelId,
                 inputTokens,
                 outputTokens,
                 cacheUsage.CacheReadTokens,
                 cacheUsage.CacheWriteTokens,
-                LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, inputTokens, _skillPromptLength));
-
-            // Track token usage on the session
-            session.AddTokenUsage(inputTokens, outputTokens);
-            session.AddCacheUsage(cacheUsage.CacheReadTokens, cacheUsage.CacheWriteTokens);
-            _recordContractTurnUsage?.Invoke(session, executionResult.ProviderId, executionResult.ModelId, inputTokens, outputTokens);
+                response.Usage is null
+                    ? LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, inputTokens, _skillPromptLength)
+                    : new InputTokenComponentEstimate(),
+                isEstimated: response.Usage is null);
 
             if (TryRejectContractBudget(session, out contractBudgetMessage))
             {
@@ -620,16 +624,19 @@ public sealed class AgentRuntime : IAgentRuntime
                 _recordContractTurnUsage?.Invoke(session, streamResult.ProviderId, streamResult.ModelId, streamResult.InputTokens, streamResult.OutputTokens);
             if (!string.IsNullOrWhiteSpace(streamResult.ProviderId) && !string.IsNullOrWhiteSpace(streamResult.ModelId))
             {
-                _providerUsage?.RecordTurn(
-                    session.Id,
-                    session.ChannelId,
+                    var isUsageEstimated = streamResult.IsUsageEstimated;
+                RecordTurnUsage(
+                    session,
                     streamResult.ProviderId,
                     streamResult.ModelId,
                     streamResult.InputTokens,
                     streamResult.OutputTokens,
                     streamResult.CacheReadTokens,
                     streamResult.CacheWriteTokens,
-                    LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, streamResult.InputTokens, _skillPromptLength));
+                        isUsageEstimated
+                            ? LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, streamResult.InputTokens, _skillPromptLength)
+                            : new InputTokenComponentEstimate(),
+                        isEstimated: isUsageEstimated);
             }
 
             if (TryRejectContractBudget(session, out contractBudgetMessage))
@@ -779,6 +786,49 @@ public sealed class AgentRuntime : IAgentRuntime
         LogTurnComplete(turnCtx);
     }
 
+    private void RecordTurnUsage(
+        Session session,
+        string providerId,
+        string modelId,
+        long inputTokens,
+        long outputTokens,
+        long cacheReadTokens,
+        long cacheWriteTokens,
+        InputTokenComponentEstimate estimatedInputTokensByComponent,
+        bool isEstimated)
+    {
+        var record = new TurnTokenUsageRecord
+        {
+            SessionId = session.Id,
+            ChannelId = session.ChannelId,
+            ProviderId = providerId,
+            ModelId = modelId,
+            InputTokens = inputTokens,
+            OutputTokens = outputTokens,
+            CacheReadTokens = cacheReadTokens,
+            CacheWriteTokens = cacheWriteTokens,
+            EstimatedInputTokensByComponent = estimatedInputTokensByComponent,
+            IsEstimated = isEstimated
+        };
+
+        if (_turnTokenUsageObserver is not null)
+        {
+            _turnTokenUsageObserver.RecordTurn(record);
+            return;
+        }
+
+        _providerUsage?.RecordTurn(
+            record.SessionId,
+            record.ChannelId,
+            record.ProviderId,
+            record.ModelId,
+            record.InputTokens,
+            record.OutputTokens,
+            record.CacheReadTokens,
+            record.CacheWriteTokens,
+            record.EstimatedInputTokensByComponent);
+    }
+
     private static AgentStreamEvent CreateToolCompletedEvent(ToolInvocation invocation) =>
         AgentStreamEvent.ToolCompleted(
             invocation.ToolName,
@@ -855,7 +905,7 @@ public sealed class AgentRuntime : IAgentRuntime
         {
             throw;
         }
-        catch (Exception ex) when (IsRecoverableContextException(ex))
+        catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Memory recall injection failed; continuing without recall.");
             return false;
@@ -964,11 +1014,11 @@ public sealed class AgentRuntime : IAgentRuntime
 
             messages.Insert(Math.Min(2, messages.Count), new ChatMessage(ChatRole.User, text));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
             throw;
         }
-        catch (Exception ex) when (IsRecoverableContextException(ex))
+        catch (Exception ex)
         {
             _logger?.LogWarning(ex, "User profile recall injection failed; continuing without profile context.");
         }
@@ -999,6 +1049,7 @@ public sealed class AgentRuntime : IAgentRuntime
         public int CacheWriteTokens { get; set; }
         public string? ProviderId { get; set; }
         public string? ModelId { get; set; }
+        public bool IsUsageEstimated { get; set; }
         public string? Error { get; set; }
     }
 
@@ -1069,7 +1120,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 LogTurnComplete(turnCtx);
                 return result;
             }
-            catch (Exception ex) when (IsRecoverableLlmException(ex))
+            catch (Exception ex) when (IsExpectedLlmFailure(ex))
             {
                 _metrics?.IncrementLlmErrors();
                 _logger?.LogError(ex, "[{CorrelationId}] Streaming LLM call failed after all retries and fallbacks", turnCtx.CorrelationId);
@@ -1080,9 +1131,15 @@ public sealed class AgentRuntime : IAgentRuntime
 
             llmSw.Stop();
             if (result.InputTokens == 0)
+            {
                 result.InputTokens = LlmExecutionEstimateBuilder.EstimateInputTokens(messages);
+                result.IsUsageEstimated = true;
+            }
             if (result.OutputTokens == 0)
+            {
                 result.OutputTokens = LlmExecutionEstimateBuilder.EstimateTokenCount(result.FullText.Length);
+                result.IsUsageEstimated = true;
+            }
 
             turnCtx.RecordLlmCall(llmSw.Elapsed, result.InputTokens, result.OutputTokens);
             _metrics?.IncrementLlmCalls();
@@ -1097,9 +1154,11 @@ public sealed class AgentRuntime : IAgentRuntime
         var modelsToTry = new List<string> { currentModel };
         if (_config.FallbackModels is { Length: > 0 })
         {
-            modelsToTry.AddRange(
-                _config.FallbackModels.Where(fallback =>
-                    !string.Equals(fallback, currentModel, StringComparison.OrdinalIgnoreCase)));
+            foreach (var fallback in _config.FallbackModels)
+            {
+                if (!string.Equals(fallback, currentModel, StringComparison.OrdinalIgnoreCase))
+                    modelsToTry.Add(fallback);
+            }
         }
 
         Exception? lastException = null;
@@ -1164,7 +1223,7 @@ public sealed class AgentRuntime : IAgentRuntime
             {
                 throw; // External cancellation, propagate immediately
             }
-            catch (Exception ex) when (IsRecoverableLlmException(ex))
+            catch (Exception ex) when (IsExpectedLlmFailure(ex))
             {
                 lastException = ex;
                 _providerUsage?.RecordError(_config.Provider, model);
@@ -1174,6 +1233,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 result.ToolCalls.Clear();
                 result.InputTokens = 0;
                 result.OutputTokens = 0;
+                result.IsUsageEstimated = false;
             }
         }
 
@@ -1190,9 +1250,15 @@ public sealed class AgentRuntime : IAgentRuntime
 
         // Use actual provider-reported usage when available; fall back to estimation
         if (result.InputTokens == 0)
+        {
             result.InputTokens = LlmExecutionEstimateBuilder.EstimateInputTokens(messages);
+            result.IsUsageEstimated = true;
+        }
         if (result.OutputTokens == 0)
+        {
             result.OutputTokens = LlmExecutionEstimateBuilder.EstimateTokenCount(result.FullText.Length);
+            result.IsUsageEstimated = true;
+        }
 
         turnCtx.RecordLlmCall(llmSw.Elapsed, result.InputTokens, result.OutputTokens);
         _metrics?.IncrementLlmCalls();
@@ -1446,6 +1512,29 @@ public sealed class AgentRuntime : IAgentRuntime
         return ex is System.IO.IOException or System.Net.Sockets.SocketException;
     }
 
+    private static bool IsExpectedLlmFailure(Exception ex)
+        => ex is HttpRequestException
+            or TimeoutException
+            or OperationCanceledException
+            or System.IO.IOException
+            or System.Net.Sockets.SocketException
+            || ex is InvalidOperationException invalidOperation && IsExpectedLlmInvalidOperation(invalidOperation);
+
+    private static bool IsExpectedLlmInvalidOperation(InvalidOperationException ex)
+    {
+        if (ex.InnerException is not null && IsExpectedLlmFailure(ex.InnerException))
+            return true;
+
+        var message = ex.Message;
+        return message.Contains("LLM", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("provider", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("model", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("credential", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("API key", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("endpoint", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("token budget", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Compacts session history by summarizing older turns via the LLM.
     /// Keeps the most recent turns verbatim and replaces older ones with a summary.
@@ -1540,29 +1629,16 @@ public sealed class AgentRuntime : IAgentRuntime
                 TrimHistory(session);
             }
         }
-        catch (Exception ex) when (IsRecoverableContextException(ex))
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             _logger?.LogWarning(ex, "History compaction failed — falling back to simple trim");
             TrimHistory(session);
         }
     }
-
-    private static bool IsRecoverableContextException(Exception ex)
-        => ex is IOException
-            or JsonException
-            or InvalidOperationException
-            or NotSupportedException
-            or TimeoutException
-            or UnauthorizedAccessException
-            or TaskCanceledException;
-
-    private static bool IsRecoverableLlmException(Exception ex)
-        => ex is HttpRequestException
-            or IOException
-            or InvalidOperationException
-            or NotSupportedException
-            or TimeoutException
-            or TaskCanceledException;
 
     private List<ChatMessage> BuildMessages(Session session, bool exactLatestToolBatch = false)
     {
@@ -1926,6 +2002,7 @@ public sealed class AgentRuntime : IAgentRuntime
         }
         else if (decision.AllowedTools.Length > 0)
         {
+            session.RouteToolsDisabled = false;
             session.RouteAllowedTools = decision.AllowedTools;
         }
         session.RouteModelTier = decision.Tier;

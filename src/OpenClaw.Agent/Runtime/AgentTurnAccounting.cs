@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 
@@ -12,6 +13,7 @@ internal sealed class AgentTurnAccounting
     private readonly LlmProviderConfig _config;
     private readonly long _sessionTokenBudget;
     private readonly bool _estimateTokenBudgetAdmission;
+    private readonly ITurnTokenUsageObserver? _turnTokenUsageObserver;
     private readonly Func<CircuitState> _circuitState;
     private readonly Func<Session, bool>? _isContractTokenBudgetExceeded;
     private readonly Func<Session, bool>? _isContractRuntimeBudgetExceeded;
@@ -25,6 +27,7 @@ internal sealed class AgentTurnAccounting
         LlmProviderConfig config,
         long sessionTokenBudget,
         bool estimateTokenBudgetAdmission,
+        ITurnTokenUsageObserver? turnTokenUsageObserver,
         Func<CircuitState> circuitState,
         Func<Session, bool>? isContractTokenBudgetExceeded,
         Func<Session, bool>? isContractRuntimeBudgetExceeded,
@@ -37,6 +40,7 @@ internal sealed class AgentTurnAccounting
         _config = config;
         _sessionTokenBudget = sessionTokenBudget;
         _estimateTokenBudgetAdmission = estimateTokenBudgetAdmission;
+        _turnTokenUsageObserver = turnTokenUsageObserver;
         _circuitState = circuitState;
         _isContractTokenBudgetExceeded = isContractTokenBudgetExceeded;
         _isContractRuntimeBudgetExceeded = isContractRuntimeBudgetExceeded;
@@ -124,20 +128,23 @@ internal sealed class AgentTurnAccounting
         _metrics?.AddPromptCacheWrites(cacheUsage.CacheWriteTokens);
         _providerUsage?.AddTokens(executionResult.ProviderId, executionResult.ModelId, inputTokens, outputTokens);
         _providerUsage?.AddCacheTokens(executionResult.ProviderId, executionResult.ModelId, cacheUsage.CacheReadTokens, cacheUsage.CacheWriteTokens);
-        _providerUsage?.RecordTurn(
-            session.Id,
-            session.ChannelId,
+
+        session.AddTokenUsage(inputTokens, outputTokens);
+        session.AddCacheUsage(cacheUsage.CacheReadTokens, cacheUsage.CacheWriteTokens);
+        _recordContractTurnUsage?.Invoke(session, executionResult.ProviderId, executionResult.ModelId, inputTokens, outputTokens);
+        var isUsageEstimated = executionResult.Response.Usage is null;
+        RecordTurnUsage(
+            session,
             executionResult.ProviderId,
             executionResult.ModelId,
             inputTokens,
             outputTokens,
             cacheUsage.CacheReadTokens,
             cacheUsage.CacheWriteTokens,
-            LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, inputTokens, skillPromptLength));
-
-        session.AddTokenUsage(inputTokens, outputTokens);
-        session.AddCacheUsage(cacheUsage.CacheReadTokens, cacheUsage.CacheWriteTokens);
-        _recordContractTurnUsage?.Invoke(session, executionResult.ProviderId, executionResult.ModelId, inputTokens, outputTokens);
+            isUsageEstimated
+                ? LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, inputTokens, skillPromptLength)
+                : new InputTokenComponentEstimate(),
+            isEstimated: isUsageEstimated);
     }
 
     public void RecordStreamingTurnUsage(
@@ -165,16 +172,19 @@ internal sealed class AgentTurnAccounting
         session.AddTokenUsage(streamResult.InputTokens, streamResult.OutputTokens);
         session.AddCacheUsage(streamResult.CacheReadTokens, streamResult.CacheWriteTokens);
         _recordContractTurnUsage?.Invoke(session, providerId, modelId, streamResult.InputTokens, streamResult.OutputTokens);
-        _providerUsage?.RecordTurn(
-            session.Id,
-            session.ChannelId,
+        var isUsageEstimated = streamResult.IsUsageEstimated;
+        RecordTurnUsage(
+            session,
             providerId,
             modelId,
             streamResult.InputTokens,
             streamResult.OutputTokens,
             streamResult.CacheReadTokens,
             streamResult.CacheWriteTokens,
-            LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, streamResult.InputTokens, skillPromptLength));
+            isUsageEstimated
+                ? LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, streamResult.InputTokens, skillPromptLength)
+                : new InputTokenComponentEstimate(),
+            isEstimated: isUsageEstimated);
     }
 
     public void RecordCompactionUsage(
@@ -200,16 +210,62 @@ internal sealed class AgentTurnAccounting
         _metrics?.AddPromptCacheWrites(cacheUsage.CacheWriteTokens);
         _providerUsage?.AddTokens(executionResult.ProviderId, executionResult.ModelId, inputTokens, outputTokens);
         _providerUsage?.AddCacheTokens(executionResult.ProviderId, executionResult.ModelId, cacheUsage.CacheReadTokens, cacheUsage.CacheWriteTokens);
-        _providerUsage?.RecordTurn(
-            session.Id,
-            session.ChannelId,
+        var isUsageEstimated = executionResult.Response.Usage is null;
+        RecordTurnUsage(
+            session,
             executionResult.ProviderId,
             executionResult.ModelId,
             inputTokens,
             outputTokens,
             cacheUsage.CacheReadTokens,
             cacheUsage.CacheWriteTokens,
-            LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, inputTokens, skillPromptLength));
+            isUsageEstimated
+                ? LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, inputTokens, skillPromptLength)
+                : new InputTokenComponentEstimate(),
+            isEstimated: isUsageEstimated);
+    }
+
+    private void RecordTurnUsage(
+        Session session,
+        string providerId,
+        string modelId,
+        long inputTokens,
+        long outputTokens,
+        long cacheReadTokens,
+        long cacheWriteTokens,
+        InputTokenComponentEstimate estimatedInputTokensByComponent,
+        bool isEstimated)
+    {
+        var record = new TurnTokenUsageRecord
+        {
+            SessionId = session.Id,
+            ChannelId = session.ChannelId,
+            ProviderId = providerId,
+            ModelId = modelId,
+            InputTokens = inputTokens,
+            OutputTokens = outputTokens,
+            CacheReadTokens = cacheReadTokens,
+            CacheWriteTokens = cacheWriteTokens,
+            EstimatedInputTokensByComponent = estimatedInputTokensByComponent,
+            IsEstimated = isEstimated
+        };
+
+        if (_turnTokenUsageObserver is not null)
+        {
+            _turnTokenUsageObserver.RecordTurn(record);
+            return;
+        }
+
+        _providerUsage?.RecordTurn(
+            record.SessionId,
+            record.ChannelId,
+            record.ProviderId,
+            record.ModelId,
+            record.InputTokens,
+            record.OutputTokens,
+            record.CacheReadTokens,
+            record.CacheWriteTokens,
+            record.EstimatedInputTokensByComponent);
     }
 
     public void IncrementMemoryCompactions() => _metrics?.IncrementMemoryCompactions();

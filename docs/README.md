@@ -35,7 +35,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [mempalace-memory.md](mempalace-memory.md) | Optional ElBruno.MempalaceNet memory provider and temporal KG tool. |
 | [FRACTAL_MEMORY.md](FRACTAL_MEMORY.md) | Optional MCP-first Fractal Memory integration for compact structured project memory and Runtime Pulse context. |
 | [providers/microsoft-extensions-ai.md](providers/microsoft-extensions-ai.md) | Optional JIT bridge for arbitrary `Microsoft.Extensions.AI.IChatClient` providers. |
-| [SESSIONS.md](SESSIONS.md) | Session lifecycle, the `SessionManager`, and the `sessions_spawn` / `sessions_yield` / `sessions` tools. |
+| [SESSIONS.md](SESSIONS.md) | Session lifecycle, the `SessionManager`, `sessions_spawn` / `sessions_yield` / `sessions` tools, and per-turn token accounting semantics (turn/session/runtime/provider views). |
 | [CANVAS_A2UI.md](CANVAS_A2UI.md) | Supported Canvas and A2UI behavior for agent-rendered visual workspaces. |
 | [integrations/microsoft-agent-framework.md](integrations/microsoft-agent-framework.md) | Supported optional Microsoft Agent Framework runtime adapter, runtime selection, A2A setup, and migration from old experimental config. |
 | [workflow-backends.md](workflow-backends.md) | Durable workflow delegation, `maf-durable-http`, integration API and MCP tools, status model, and sample host. |

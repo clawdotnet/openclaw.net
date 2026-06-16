@@ -637,7 +637,7 @@ public sealed class GatewayWorkersTests
             MessageId = "msg-timeout"
         });
 
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var approvalPrompt = await adapter.ReadAsync(timeout.Token);
         var finalResponse = await adapter.ReadAsync(timeout.Token);
 

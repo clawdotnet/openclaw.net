@@ -447,6 +447,7 @@ public sealed class AgentRuntimeComponentTests
 
         Assert.Null(result.Error);
         Assert.Equal("fallback ok", result.FullText);
+        Assert.True(result.IsUsageEstimated);
         Assert.Equal(["primary-model", "fallback-model"], chatClient.StreamedModels);
     }
 
@@ -541,6 +542,51 @@ public sealed class AgentRuntimeComponentTests
         var turn = Assert.Single(providerUsage.RecentTurns(session.Id));
         Assert.Equal(3, turn.CacheReadTokens);
         Assert.Equal(2, turn.CacheWriteTokens);
+    }
+
+    [Fact]
+    public void TurnAccounting_RecordStreamingTurnUsage_PropagatesEstimatedFlag()
+    {
+        var observer = new RecordingTurnTokenUsageObserver();
+        var config = new LlmProviderConfig
+        {
+            Provider = "openai",
+            ApiKey = "test",
+            Model = "primary-model"
+        };
+        var accounting = new AgentTurnAccounting(
+            metrics: null,
+            providerUsage: null,
+            config,
+            sessionTokenBudget: 0,
+            estimateTokenBudgetAdmission: false,
+            turnTokenUsageObserver: observer,
+            circuitState: () => CircuitState.Closed,
+            isContractTokenBudgetExceeded: null,
+            isContractRuntimeBudgetExceeded: null,
+            recordContractTurnUsage: null,
+            appendContractSnapshot: null,
+            logger: null);
+        var session = new Session { Id = "sess-stream-estimated", ChannelId = "websocket", SenderId = "user" };
+
+        accounting.RecordStreamingTurnUsage(
+            session,
+            new TurnContext { SessionId = session.Id, ChannelId = session.ChannelId },
+            [new ChatMessage(ChatRole.User, "hello")],
+            new AgentStreamCollectResult
+            {
+                ProviderId = "openai",
+                ModelId = "primary-model",
+                InputTokens = 12,
+                OutputTokens = 4,
+                IsUsageEstimated = true,
+                Elapsed = TimeSpan.FromMilliseconds(5)
+            },
+            skillPromptLength: 0);
+
+        var record = Assert.Single(observer.Records);
+        Assert.True(record.IsEstimated);
+        Assert.Equal(12, record.InputTokens);
     }
 
     [Theory]
@@ -664,12 +710,21 @@ public sealed class AgentRuntimeComponentTests
             config,
             sessionTokenBudget,
             estimateTokenBudgetAdmission,
+            turnTokenUsageObserver: null,
             circuitState: () => CircuitState.Closed,
             isContractTokenBudgetExceeded: null,
             isContractRuntimeBudgetExceeded: null,
             recordContractTurnUsage: null,
             appendContractSnapshot: null,
             logger: null);
+
+    private sealed class RecordingTurnTokenUsageObserver : ITurnTokenUsageObserver
+    {
+        public List<TurnTokenUsageRecord> Records { get; } = [];
+
+        public void RecordTurn(TurnTokenUsageRecord record)
+            => Records.Add(record);
+    }
 
     private sealed class NeverCalledChatClient : IChatClient
     {

@@ -50,6 +50,7 @@ Tool: echo(hello): ok
 | 快速启动本地网关 | [QUICKSTART.md](../QUICKSTART.md) |
 | 理解仓库结构 | [GETTING_STARTED.md](../GETTING_STARTED.md) |
 | 理解 OpenSquilla 风格动态 turn 路由 | [opensquilla-dynamic-turn-routing.md](opensquilla-dynamic-turn-routing.md) |
+| 理解会话生命周期与每轮 Token 统计 | [SESSIONS.md](SESSIONS.md) |
 | 查看能力矩阵 | [CAPABILITY_MATRIX.md](../CAPABILITY_MATRIX.md) |
 | 查看兼容性说明 | [COMPATIBILITY.md](../COMPATIBILITY.md) |
 | 参与贡献 | [CONTRIBUTING.md](../../CONTRIBUTING.md) |

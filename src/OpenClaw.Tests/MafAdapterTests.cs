@@ -838,6 +838,44 @@ public sealed class MafAdapterTests
     }
 
     [Fact]
+    public async Task MafAgentRuntime_AllowedToolsRoutingDecision_ClearsPriorDisableToolsStateForActiveCall()
+    {
+        var routing = Substitute.For<ITurnRoutingPolicy>();
+        routing.ResolveAsync(Arg.Any<TurnRoutingRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new TurnRoutingDecision
+            {
+                Tier = "T1",
+                AllowedTools = ["echo_tool"],
+                Reason = "allow_tools"
+            });
+
+        var executionService = new CapturingLlmExecutionService();
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-allow-tools-after-disable-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var runtime = CreateRuntime(
+                storagePath,
+                executionService,
+                new MafOptions(),
+                routingPolicy: routing,
+                tools: [new TestTool("echo_tool"), new TestTool("shell")]);
+            var session = CreateSession("maf-allow-tools-after-disable");
+            session.RouteToolsDisabled = true;
+
+            await runtime.RunAsync(session, "read safely", CancellationToken.None);
+
+            Assert.Equal(["echo_tool"], executionService.LastToolNames);
+            Assert.True(session.RouteToolsDisabled);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task MafAgentRuntime_DefaultRoutingDecision_DoesNotClearManualRouteStateForActiveCall()
     {
         var routing = Substitute.For<ITurnRoutingPolicy>();

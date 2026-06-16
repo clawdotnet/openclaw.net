@@ -80,6 +80,8 @@ internal static partial class AdminEndpoints
                     HistoryTurns = session.History.Count,
                     TotalInputTokens = session.TotalInputTokens,
                     TotalOutputTokens = session.TotalOutputTokens,
+                    TotalCacheReadTokens = session.TotalCacheReadTokens,
+                    TotalCacheWriteTokens = session.TotalCacheWriteTokens,
                     IsActive = true
                 })
                 .ToArray();

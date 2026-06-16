@@ -14,6 +14,8 @@ public sealed class SessionSummary
     public int HistoryTurns { get; init; }
     public long TotalInputTokens { get; init; }
     public long TotalOutputTokens { get; init; }
+    public long TotalCacheReadTokens { get; init; }
+    public long TotalCacheWriteTokens { get; init; }
     public bool IsActive { get; init; }
 }
 
