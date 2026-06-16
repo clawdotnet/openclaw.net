@@ -54,12 +54,6 @@ public sealed class MetaTemplateRenderer
             // of letting the exception crash the meta-skill execution path.
             return $"(template render error: {ex.Message})";
         }
-        catch (TemplateParsingException)
-        {
-            // Malformed Jinja2 syntax (e.g. unclosed braces) is caught here
-            // and surfaced as a safe string rather than an unhandled crash.
-            return "{% raw %}template parse error{% endraw %}";
-        }
     }
 
     private static void RegisterFilters(Template compiled)

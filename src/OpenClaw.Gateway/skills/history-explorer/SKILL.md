@@ -84,4 +84,3 @@ requested analytics keys. When unavailable or unparseable, returns a single
   persistence layer directly
 - `window_days` filtering is best-effort on the `timestamp` field
 - Session snapshots may be truncated by the agent for token budget reasons
-

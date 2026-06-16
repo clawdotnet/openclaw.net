@@ -198,34 +198,24 @@ public sealed class MetaConditionEvaluator
             if (depth > 0 || inCurly > 0)
                 continue;
 
-            // Check for " and " / " or " at word boundaries.
-            if (i + 4 < expression.Length
-                && expression[i] == ' '
-                && expression[i + 1] == 'a'
-                && expression[i + 2] == 'n'
-                && expression[i + 3] == 'd'
-                && expression[i + 4] == ' ')
+            // Check for "and" / "or" at word boundaries.
+            if (TryMatchLogicalOperator(expression, i, "and", out var nextIndex))
             {
                 var expr = expression[lastSplit..i].Trim();
                 if (expr.Length > 0)
                     parts.Add((expr, "and"));
-                i += 4;
-                lastSplit = i + 1; // skip past the trailing space
+                i = nextIndex - 1;
+                lastSplit = nextIndex;
                 continue;
             }
 
-            // Check for " or " at word boundaries.
-            if (i + 3 < expression.Length
-                && expression[i] == ' '
-                && expression[i + 1] == 'o'
-                && expression[i + 2] == 'r'
-                && expression[i + 3] == ' ')
+            if (TryMatchLogicalOperator(expression, i, "or", out nextIndex))
             {
                 var expr = expression[lastSplit..i].Trim();
                 if (expr.Length > 0)
                     parts.Add((expr, "or"));
-                i += 3;
-                lastSplit = i + 1; // skip past the trailing space
+                i = nextIndex - 1;
+                lastSplit = nextIndex;
                 continue;
             }
         }
@@ -236,6 +226,32 @@ public sealed class MetaConditionEvaluator
             parts.Add((tail, string.Empty));
 
         return parts;
+    }
+
+    private static bool TryMatchLogicalOperator(string expression, int index, string operatorText, out int nextIndex)
+    {
+        nextIndex = index;
+
+        if (index < 0 || index + operatorText.Length > expression.Length)
+            return false;
+
+        if (!expression.AsSpan(index, operatorText.Length).Equals(operatorText, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var beforeOk = index == 0 || char.IsWhiteSpace(expression[index - 1]) || expression[index - 1] == '(';
+        if (!beforeOk)
+            return false;
+
+        var afterIndex = index + operatorText.Length;
+        var afterOk = afterIndex == expression.Length || char.IsWhiteSpace(expression[afterIndex]) || expression[afterIndex] == ')';
+        if (!afterOk)
+            return false;
+
+        nextIndex = afterIndex;
+        while (nextIndex < expression.Length && char.IsWhiteSpace(expression[nextIndex]))
+            nextIndex++;
+
+        return true;
     }
 
     internal static bool IsTruthy(string? value)

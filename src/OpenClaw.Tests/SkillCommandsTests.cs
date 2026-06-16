@@ -2157,7 +2157,7 @@ public sealed class SkillCommandsTests : IDisposable
     public async Task RunAsync_MetaRuns_Reconstruct_Json_PrintsHistoryOnlyCompletedRun()
     {
         var root = CreateTempRoot();
-    
+
         var previousWorkspace = Environment.GetEnvironmentVariable("OPENCLAW_WORKSPACE");
         var previousOut = Console.Out;
         var previousError = Console.Error;
@@ -2343,7 +2343,7 @@ public sealed class SkillCommandsTests : IDisposable
                     MetaRunHistory =
                     {
                         new SessionMetaRunRecord
-    
+
                         {
                             RunId = "run-reconstruct-paused-001",
                             SkillName = "meta-flow",

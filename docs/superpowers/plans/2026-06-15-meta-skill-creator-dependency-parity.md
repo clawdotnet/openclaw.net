@@ -1,10 +1,10 @@
-# Meta Skill Creator Dependency Parity Implementation Plan
+# Meta Skill Creator Dependency Parity Completed Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status:** Historical completed plan. PR #152 delivered this dependency-parity work, including creator tools, built-in registration, the history-explorer child skill, and AgentRuntime/MAF parity tests. The checked boxes below reflect completed implementation slices, not remaining work.
 
 **Goal:** Make src/OpenClaw.Gateway/skills/meta-skill-creator/SKILL.md executable in OpenClaw by migrating missing dependencies from OpenSquilla (or equivalent ports) and validating PREVIEW_ONLY + FULL_GATED paths.
 
-**Architecture:** Keep the migrated meta skill definition as source of truth and close runtime gaps by adding first-party creator tools as OpenClaw ITool implementations, wiring them into Gateway built-in tools, and migrating history-explorer as a bundled skill_exec child skill under Gateway skills. Use TDD slices in AgentRuntime and MafAgentRuntime to prove end-to-end tool/skill resolution, then update dependency docs to reflect closure.
+**Architecture:** Kept the migrated meta skill definition as source of truth and closed runtime gaps by adding first-party creator tools as OpenClaw ITool implementations, wiring them into Gateway built-in tools, and migrating history-explorer as a bundled skill_exec child skill under Gateway skills. AgentRuntime and MafAgentRuntime parity tests prove end-to-end tool/skill resolution, and dependency docs now reflect closure.
 
 **Tech Stack:** .NET 10, C#, OpenClaw ITool abstraction, SkillLoader bundled skills, xUnit, System.Text.Json, existing AgentRuntime/MAF meta execution paths
 
@@ -12,38 +12,38 @@
 
 ## Scope Check
 
-This is one subsystem: enabling meta-skill-creator runtime dependencies. No split is required.
+This was one subsystem: enabling meta-skill-creator runtime dependencies. No split was required.
 
 ## File Structure
 
-- Create: src/OpenClaw.Agent/Tools/MetaSkillCreatorTools.cs  
+- Create: src/OpenClaw.Agent/Tools/MetaSkillCreatorTools.cs
   Responsibility: implement emit_text, meta_skill_fill_slots, meta_skill_assemble, meta_skill_lint_run, meta_skill_smoke_run, meta_skill_runtime_e2e_run, meta_skill_persist_proposal.
 
-- Create: src/OpenClaw.Agent/Tools/MetaSkillCreatorModels.cs  
+- Create: src/OpenClaw.Agent/Tools/MetaSkillCreatorModels.cs
   Responsibility: strongly typed request/response DTOs for slot filling, lint/smoke summaries, runtime_e2e result, and persisted proposal envelope.
 
-- Create: src/OpenClaw.Agent/Tools/MetaSkillCreatorTemplateCatalog.cs  
+- Create: src/OpenClaw.Agent/Tools/MetaSkillCreatorTemplateCatalog.cs
   Responsibility: map pattern_id to template payload and render SKILL.md output deterministically.
 
-- Modify: src/OpenClaw.Gateway/Composition/RuntimeInitializationExtensions.RuntimeFactories.cs  
+- Modify: src/OpenClaw.Gateway/Composition/RuntimeInitializationExtensions.RuntimeFactories.cs
   Responsibility: register new creator tools in CreateBuiltInTools so meta tool_call steps can resolve.
 
-- Create: src/OpenClaw.Gateway/skills/history-explorer/SKILL.md  
+- Create: src/OpenClaw.Gateway/skills/history-explorer/SKILL.md
   Responsibility: migrate bundled history-explorer skill definition (entrypoint parse json timeout semantics).
 
-- Create: src/OpenClaw.Gateway/skills/history-explorer/scripts/explore.py  
+- Create: src/OpenClaw.Gateway/skills/history-explorer/scripts/explore.py
   Responsibility: migrate/port explore script used by history-explorer skill_exec step.
 
-- Modify: src/OpenClaw.Gateway/skills/meta-skill-creator/DEPENDENCY_GAPS.md  
+- Modify: src/OpenClaw.Gateway/skills/meta-skill-creator/DEPENDENCY_GAPS.md
   Responsibility: mark dependency closure status and list any intentionally deferred gaps.
 
-- Create: src/OpenClaw.Tests/MetaSkillCreatorToolsTests.cs  
+- Create: src/OpenClaw.Tests/MetaSkillCreatorToolsTests.cs
   Responsibility: unit tests for each migrated tool contract and JSON schema behavior.
 
-- Modify: src/OpenClaw.Tests/AgentRuntimeTests.cs  
+- Modify: src/OpenClaw.Tests/AgentRuntimeTests.cs
   Responsibility: add meta-skill-creator route execution tests (PREVIEW_ONLY and FULL_GATED minimal path).
 
-- Modify: src/OpenClaw.Tests/MafAdapterTests.cs  
+- Modify: src/OpenClaw.Tests/MafAdapterTests.cs
   Responsibility: add parity tests for MAF runtime execution of same scenarios.
 
 ---
@@ -54,7 +54,7 @@ This is one subsystem: enabling meta-skill-creator runtime dependencies. No spli
 - Create: src/OpenClaw.Tests/MetaSkillCreatorToolsTests.cs
 - Test: src/OpenClaw.Tests/MetaSkillCreatorToolsTests.cs
 
-- [ ] **Step 1: Write failing test for emit_text contract**
+- [x] **Step 1: Write failing test for emit_text contract**
 
 ```csharp
 [Fact]
@@ -66,7 +66,7 @@ public async Task EmitTextTool_ReturnsProvidedText()
 }
 ```
 
-- [ ] **Step 2: Write failing tests for assemble/fill_slots/lint/smoke/persist JSON contracts**
+- [x] **Step 2: Write failing tests for assemble/fill_slots/lint/smoke/persist JSON contracts**
 
 ```csharp
 [Fact]
@@ -80,12 +80,12 @@ public async Task MetaSkillAssembleTool_UnknownPattern_ReturnsErrorJson()
 }
 ```
 
-- [ ] **Step 3: Run failing slice**
+- [x] **Step 3: Run failing slice**
 
-Run: dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter FullyQualifiedName~MetaSkillCreatorToolsTests  
+Run: dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter FullyQualifiedName~MetaSkillCreatorToolsTests
 Expected: FAIL with missing types/tools.
 
-- [ ] **Step 4: Commit red tests**
+- [x] **Step 4: Commit red tests**
 
 ```bash
 git add src/OpenClaw.Tests/MetaSkillCreatorToolsTests.cs
@@ -100,7 +100,7 @@ git commit -m "test: add red tests for meta-skill-creator tool contracts"
 - Create: src/OpenClaw.Agent/Tools/MetaSkillCreatorTools.cs
 - Test: src/OpenClaw.Tests/MetaSkillCreatorToolsTests.cs
 
-- [ ] **Step 1: Add model DTOs used by tool implementations**
+- [x] **Step 1: Add model DTOs used by tool implementations**
 
 ```csharp
 internal sealed record CreatorToolError(string Status, string ErrorCode, string Message);
@@ -109,7 +109,7 @@ internal sealed record CreatorSmokeResult(string Status, bool Passed, bool Degra
 internal sealed record CreatorPersistResult(string Status, string ProposalId, string Path);
 ```
 
-- [ ] **Step 2: Port template catalog and assembler from OpenSquilla proposer patterns**
+- [x] **Step 2: Port template catalog and assembler from OpenSquilla proposer patterns**
 
 ```csharp
 internal static class MetaSkillCreatorTemplateCatalog
@@ -128,7 +128,7 @@ internal static class MetaSkillCreatorTemplateCatalog
 }
 ```
 
-- [ ] **Step 3: Implement emit_text, fill_slots, assemble, lint, smoke, runtime_e2e, persist tools as ITool classes**
+- [x] **Step 3: Implement emit_text, fill_slots, assemble, lint, smoke, runtime_e2e, persist tools as ITool classes**
 
 ```csharp
 public sealed class EmitTextTool : ITool
@@ -146,12 +146,12 @@ public sealed class EmitTextTool : ITool
 }
 ```
 
-- [ ] **Step 4: Run tests to green the tool contract slice**
+- [x] **Step 4: Run tests to green the tool contract slice**
 
-Run: dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter FullyQualifiedName~MetaSkillCreatorToolsTests  
+Run: dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter FullyQualifiedName~MetaSkillCreatorToolsTests
 Expected: PASS.
 
-- [ ] **Step 5: Commit tool implementation**
+- [x] **Step 5: Commit tool implementation**
 
 ```bash
 git add src/OpenClaw.Agent/Tools/MetaSkillCreatorModels.cs src/OpenClaw.Agent/Tools/MetaSkillCreatorTemplateCatalog.cs src/OpenClaw.Agent/Tools/MetaSkillCreatorTools.cs src/OpenClaw.Tests/MetaSkillCreatorToolsTests.cs
@@ -164,7 +164,7 @@ git commit -m "feat: port meta-skill-creator tools into OpenClaw runtime"
 - Modify: src/OpenClaw.Gateway/Composition/RuntimeInitializationExtensions.RuntimeFactories.cs
 - Test: src/OpenClaw.Tests/AgentRuntimeTests.cs
 
-- [ ] **Step 1: Write failing runtime test for missing tool resolution**
+- [x] **Step 1: Write failing runtime test for missing tool resolution**
 
 ```csharp
 [Fact]
@@ -178,7 +178,7 @@ public async Task ExecuteMetaSkillAsync_MetaSkillCreatorPreview_PathResolvesCrea
 }
 ```
 
-- [ ] **Step 2: Register creator tools in CreateBuiltInTools list**
+- [x] **Step 2: Register creator tools in CreateBuiltInTools list**
 
 ```csharp
 tools.Add(new EmitTextTool());
@@ -190,12 +190,12 @@ tools.Add(new MetaSkillRuntimeE2ERunTool());
 tools.Add(new MetaSkillPersistProposalTool());
 ```
 
-- [ ] **Step 3: Run focused runtime slice**
+- [x] **Step 3: Run focused runtime slice**
 
-Run: dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter FullyQualifiedName~ExecuteMetaSkillAsync_MetaSkillCreatorPreview_PathResolvesCreatorTools  
+Run: dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter FullyQualifiedName~ExecuteMetaSkillAsync_MetaSkillCreatorPreview_PathResolvesCreatorTools
 Expected: PASS.
 
-- [ ] **Step 4: Commit registration change**
+- [x] **Step 4: Commit registration change**
 
 ```bash
 git add src/OpenClaw.Gateway/Composition/RuntimeInitializationExtensions.RuntimeFactories.cs src/OpenClaw.Tests/AgentRuntimeTests.cs
@@ -209,7 +209,7 @@ git commit -m "feat: register meta-skill-creator built-in toolchain"
 - Create: src/OpenClaw.Gateway/skills/history-explorer/scripts/explore.py
 - Test: src/OpenClaw.Tests/SkillTests.cs
 
-- [ ] **Step 1: Write failing skill-load test for history-explorer presence**
+- [x] **Step 1: Write failing skill-load test for history-explorer presence**
 
 ```csharp
 [Fact]
@@ -222,7 +222,7 @@ public void LoadAll_BundledHistoryExplorer_IsDiscovered()
 }
 ```
 
-- [ ] **Step 2: Add migrated SKILL.md and explore.py from OpenSquilla with OpenClaw path adjustments**
+- [x] **Step 2: Add migrated SKILL.md and explore.py from OpenSquilla with OpenClaw path adjustments**
 
 ```yaml
 entrypoint:
@@ -234,12 +234,12 @@ entrypoint:
   timeout: 30
 ```
 
-- [ ] **Step 3: Run skill loader tests**
+- [x] **Step 3: Run skill loader tests**
 
-Run: dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter FullyQualifiedName~LoadAll_BundledHistoryExplorer_IsDiscovered  
+Run: dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter FullyQualifiedName~LoadAll_BundledHistoryExplorer_IsDiscovered
 Expected: PASS.
 
-- [ ] **Step 4: Commit migrated child skill**
+- [x] **Step 4: Commit migrated child skill**
 
 ```bash
 git add src/OpenClaw.Gateway/skills/history-explorer/SKILL.md src/OpenClaw.Gateway/skills/history-explorer/scripts/explore.py src/OpenClaw.Tests/SkillTests.cs
@@ -253,7 +253,7 @@ git commit -m "feat: migrate history-explorer bundled skill for meta-skill-creat
 - Modify: src/OpenClaw.Tests/MafAdapterTests.cs
 - Modify: src/OpenClaw.Gateway/skills/meta-skill-creator/DEPENDENCY_GAPS.md
 
-- [ ] **Step 1: Add AgentRuntime PREVIEW_ONLY flow test**
+- [x] **Step 1: Add AgentRuntime PREVIEW_ONLY flow test**
 
 ```csharp
 [Fact]
@@ -267,7 +267,7 @@ public async Task ExecuteMetaSkillAsync_MetaSkillCreator_PreviewOnly_Completes()
 }
 ```
 
-- [ ] **Step 2: Add MAF PREVIEW_ONLY parity test**
+- [x] **Step 2: Add MAF PREVIEW_ONLY parity test**
 
 ```csharp
 [Fact]
@@ -280,7 +280,7 @@ public async Task MafAgentRuntime_ExecuteMetaSkillAsync_MetaSkillCreator_Preview
 }
 ```
 
-- [ ] **Step 3: Add FULL_GATED minimal test with deterministic stubs for lint/smoke/runtime_e2e/persist**
+- [x] **Step 3: Add FULL_GATED minimal test with deterministic stubs for lint/smoke/runtime_e2e/persist**
 
 ```csharp
 [Fact]
@@ -294,12 +294,12 @@ public async Task ExecuteMetaSkillAsync_MetaSkillCreator_FullGated_ProducesPersi
 }
 ```
 
-- [ ] **Step 4: Run parity slices**
+- [x] **Step 4: Run parity slices**
 
-Run: dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter FullyQualifiedName~MetaSkillCreator  
+Run: dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter FullyQualifiedName~MetaSkillCreator
 Expected: PASS for Agent + MAF tests.
 
-- [ ] **Step 5: Update dependency gap doc to closure state**
+- [x] **Step 5: Update dependency gap doc to closure state**
 
 ```md
 ## Migration Status
@@ -309,7 +309,7 @@ Expected: PASS for Agent + MAF tests.
 - Current operating mode: executable in PREVIEW_ONLY and FULL_GATED test slices
 ```
 
-- [ ] **Step 6: Commit parity and docs**
+- [x] **Step 6: Commit parity and docs**
 
 ```bash
 git add src/OpenClaw.Tests/AgentRuntimeTests.cs src/OpenClaw.Tests/MafAdapterTests.cs src/OpenClaw.Gateway/skills/meta-skill-creator/DEPENDENCY_GAPS.md
@@ -322,10 +322,8 @@ git commit -m "test: validate meta-skill-creator dependency parity across runtim
 - Placeholder scan: no TBD/TODO placeholders; each task has explicit files, code snippets, test commands, and commit steps.
 - Type consistency: tool names are consistent with SKILL.md references (emit_text, meta_skill_fill_slots, meta_skill_assemble, meta_skill_lint_run, meta_skill_smoke_run, meta_skill_runtime_e2e_run, meta_skill_persist_proposal).
 
-**Plan complete and saved to docs/superpowers/plans/2026-06-15-meta-skill-creator-dependency-parity.md. Two execution options:**
+## Completion Notes
 
-**1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration
-
-**2. Inline Execution** - Execute tasks in this session using executing-plans, batch execution with checkpoints
-
-**Which approach?**
+- Implementation status: complete in PR #152.
+- Dependency closure: creator tools, built-in registration, history-explorer, and AgentRuntime/MAF parity tests are delivered.
+- Validation status: covered by the PR's MetaSkillCreator, AgentRuntime, MafAdapter, SkillLoader, full standard, and sandbox-enabled test runs.

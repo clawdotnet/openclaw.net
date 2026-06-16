@@ -296,6 +296,23 @@ public sealed class MetaCoreServicesTests
     }
 
     [Fact]
+    public void MetaConditionEvaluator_LogicalOperatorsAreCaseInsensitive()
+    {
+        var context = new MetaExecutionContext(
+            input: "hello",
+            outputs: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["classify"] = "bug",
+                ["priority"] = "high"
+            });
+
+        var evaluator = new MetaConditionEvaluator(new MetaTemplateRenderer());
+
+        Assert.True(evaluator.Evaluate("outputs.classify == 'bug' AND outputs.priority == 'high'", context));
+        Assert.True(evaluator.Evaluate("outputs.classify == 'doc' OR outputs.priority == 'high'", context));
+    }
+
+    [Fact]
     public void MetaConditionEvaluator_EmptyOrNull_ReturnsFalse()
     {
         var evaluator = new MetaConditionEvaluator(new MetaTemplateRenderer());
@@ -368,6 +385,16 @@ public sealed class MetaCoreServicesTests
         Assert.Equal(2, parts.Count);
         Assert.Equal("not outputs.x == '1'", parts[0].Expression);
         Assert.Equal("outputs.y == '2'", parts[1].Expression);
+    }
+
+    [Fact]
+    public void MetaSplitByTopLevelOperators_SplitsUppercaseOperators()
+    {
+        var parts = MetaConditionEvaluator.SplitByTopLevelOperators("a == '1' AND b == '2' OR c == '3'");
+
+        Assert.Equal(3, parts.Count);
+        Assert.Equal("and", parts[0].Operator);
+        Assert.Equal("or", parts[1].Operator);
     }
 
     [Fact]
