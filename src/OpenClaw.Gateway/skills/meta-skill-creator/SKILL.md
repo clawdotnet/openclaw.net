@@ -5,18 +5,8 @@ kind: meta
 meta_priority: 90
 always: false
 final_text_mode: "step:final_response"
-triggers:
-  - "新增 meta 技能"
-  - "组合现有 skill 成 meta-skill"
-  - "create a meta-skill"
-  - "new meta-skill"
-  - "orchestrates existing skills"
-  - "compose existing skills"
-  - "synthesize meta-skill"
-  - "compose meta-skill"
-provenance:
-  origin: openclaw.net
-  license: MIT
+triggers: ["新增 meta 技能", "组合现有 skill 成 meta-skill", "create a meta-skill", "new meta-skill", "orchestrates existing skills", "compose existing skills", "synthesize meta-skill", "compose meta-skill"]
+provenance: {"origin": "openclaw.net", "license": "MIT"}
 composition:
   steps:
     - id: clarify_intent
@@ -129,6 +119,7 @@ composition:
     - id: harvest
       kind: skill_exec
       skill: history-explorer
+      skill_exec_entrypoint: scripts/explore.py
       depends_on: [clarify_intent, creator_clarify]
       when: "'route: meta-skill' in (outputs.clarify_intent | lower)"
       on_failure: harvest_empty

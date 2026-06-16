@@ -2350,9 +2350,10 @@ public sealed class MafAgentRuntime : IAgentRuntime
             return false;
         }
 
+        var sanitized = SanitizeJsonOutput(output);
         try
         {
-            using var doc = JsonDocument.Parse(output);
+            using var doc = JsonDocument.Parse(sanitized);
             if (doc.RootElement.ValueKind != JsonValueKind.Object)
             {
                 failureCode = "output_contract_failed";
@@ -2378,6 +2379,40 @@ public sealed class MafAgentRuntime : IAgentRuntime
             failureCode = "output_contract_failed";
             return false;
         }
+    }
+
+    private static string SanitizeJsonOutput(string output)
+    {
+        var trimmed = output.Trim();
+        if (trimmed.Length == 0)
+            return trimmed;
+
+        // 1. Strip ```json / ``` fences
+        if (trimmed.StartsWith("```", StringComparison.Ordinal))
+        {
+            var fenceEnd = trimmed.IndexOf('\n');
+            if (fenceEnd >= 0)
+            {
+                var contentStart = fenceEnd + 1;
+                var closingFence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
+                if (closingFence > contentStart)
+                    trimmed = trimmed[contentStart..closingFence].Trim();
+            }
+        }
+
+        // 2. Extract first { ... } if the output is not already pure JSON
+        if (trimmed.Length > 0 && trimmed[0] != '{')
+        {
+            var openBrace = trimmed.IndexOf('{');
+            if (openBrace >= 0)
+            {
+                var closeBrace = trimmed.LastIndexOf('}');
+                if (closeBrace > openBrace)
+                    trimmed = trimmed[openBrace..(closeBrace + 1)].Trim();
+            }
+        }
+
+        return trimmed;
     }
 
     private readonly record struct MetaChatStepExecutionResult(ChatResponse? Response, string? FailureCode, string? FailureMessage)

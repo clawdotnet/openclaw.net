@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using System.Text.Json;
 using OpenClaw.Core.Skills;
 using Xunit;
 
@@ -1105,6 +1107,82 @@ public class SkillLoaderTests
         Assert.Null(skill);
     }
 
+    [Theory]
+    [InlineData("community-research-insight", 8)]
+    [InlineData("meta-skill-creator", 19)]
+    public void ParseSkillContent_BundledMetaSkillYamlComposition_ParsesSuccessfully(string skillName, int minStepCount)
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var skillDir = Path.Combine(repositoryRoot, "src", "OpenClaw.Gateway", "skills", skillName);
+        var skillPath = Path.Combine(skillDir, "SKILL.md");
+        var content = File.ReadAllText(skillPath);
+
+        var ok = SkillLoader.TryParseSkillContent(content, skillDir, SkillSource.Bundled, out var skill, out var errorCode);
+
+        Assert.True(ok, errorCode);
+        Assert.NotNull(skill);
+        Assert.Equal(SkillKind.Meta, skill!.Kind);
+        Assert.NotNull(skill.Composition);
+        Assert.True(skill.Composition!.Steps.Count >= minStepCount);
+    }
+
+    [Fact]
+    public void ParseSkillContent_CommunityResearchInsight_MatchesExampleWorkflow()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var skillDir = Path.Combine(repositoryRoot, "src", "OpenClaw.Gateway", "skills", "community-research-insight");
+        var content = File.ReadAllText(Path.Combine(skillDir, "SKILL.md"));
+
+        var ok = SkillLoader.TryParseSkillContent(content, skillDir, SkillSource.Bundled, out var skill, out var errorCode);
+
+        Assert.True(ok, errorCode);
+        Assert.NotNull(skill);
+        Assert.Equal("step:final_response", skill!.FinalTextMode);
+
+        var steps = skill.Composition!.Steps.ToDictionary(static step => step.Id, StringComparer.OrdinalIgnoreCase);
+        var analyze = steps["analyze"];
+        Assert.Equal("llm_chat", analyze.Kind);
+        Assert.Null(analyze.Skill);
+        Assert.Contains("collect", analyze.DependsOn);
+        Assert.Equal("json", analyze.OutputContract.Format);
+        Assert.Contains("key_pain_points", analyze.OutputContract.RequiredProperties);
+        Assert.Contains("stakeholder_needs", analyze.OutputContract.RequiredProperties);
+        Assert.Contains("opportunities", analyze.OutputContract.RequiredProperties);
+        AssertRuntimeInputKey(analyze);
+
+        var validate = steps["validate"];
+        Assert.Equal("llm_chat", validate.Kind);
+        Assert.Equal(["PASS", "REVISE"], validate.OutputChoices);
+        Assert.Contains(validate.Routes, route => route.To == "preview" && route.When?.Contains("outputs.validate == 'PASS'", StringComparison.Ordinal) == true);
+        Assert.Contains(validate.Routes, route => route.To == "validation_revise");
+
+        var preview = steps["preview"];
+        Assert.Contains("draft", preview.DependsOn);
+        Assert.Contains("validate", preview.DependsOn);
+
+        var review = steps["review"];
+        Assert.Equal("chat", review.Clarify!.Mode);
+        using (var reviewWith = JsonDocument.Parse(review.WithJson!))
+        {
+            var root = reviewWith.RootElement;
+            Assert.True(root.TryGetProperty("prompt", out var prompt));
+            Assert.Contains("outputs.preview", prompt.GetString(), StringComparison.Ordinal);
+        }
+
+        var finalResponse = steps["final_response"];
+        Assert.Contains("review", finalResponse.DependsOn);
+        Assert.Contains("preview", finalResponse.DependsOn);
+
+        foreach (var step in steps.Values.Where(static step => step.Kind.Equals("llm_chat", StringComparison.OrdinalIgnoreCase)))
+        {
+            AssertRuntimeInputKey(step);
+            using var withDoc = JsonDocument.Parse(step.WithJson!);
+            Assert.True(withDoc.RootElement.TryGetProperty("system_prompt", out _), $"Step '{step.Id}' should use runtime key 'system_prompt'.");
+            Assert.False(withDoc.RootElement.TryGetProperty("system", out _), $"Step '{step.Id}' uses ignored key 'system'.");
+            Assert.False(withDoc.RootElement.TryGetProperty("task", out _), $"Step '{step.Id}' uses ignored key 'task'.");
+        }
+    }
+
     [Fact]
     public void ParseSkillContent_ReplacesBaseDir()
     {
@@ -1168,6 +1246,39 @@ public class SkillLoaderTests
         Assert.Empty(meta.Os);
         Assert.Empty(meta.RequireBins);
         Assert.Empty(meta.RequireEnv);
+    }
+
+    private static void AssertRuntimeInputKey(MetaSkillStepDefinition step)
+    {
+        Assert.False(string.IsNullOrWhiteSpace(step.WithJson), $"Step '{step.Id}' should declare a with payload.");
+        using var withDoc = JsonDocument.Parse(step.WithJson!);
+        Assert.True(withDoc.RootElement.TryGetProperty("input", out _), $"Step '{step.Id}' should use runtime key 'input'.");
+    }
+
+    private static string FindRepositoryRoot([CallerFilePath] string sourceFilePath = "")
+    {
+        var sourceDirectory = string.IsNullOrWhiteSpace(sourceFilePath)
+            ? null
+            : Path.GetDirectoryName(sourceFilePath);
+        foreach (var startDirectory in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory(), sourceDirectory })
+        {
+            if (string.IsNullOrWhiteSpace(startDirectory))
+                continue;
+
+            var current = new DirectoryInfo(startDirectory);
+            while (current is not null)
+            {
+                if (File.Exists(Path.Combine(current.FullName, "OpenClaw.Net.slnx")) &&
+                    Directory.Exists(Path.Combine(current.FullName, "src")))
+                {
+                    return current.FullName;
+                }
+
+                current = current.Parent;
+            }
+        }
+
+        throw new InvalidOperationException("Could not locate repository root from test output directory.");
     }
 
     [Fact]
@@ -1627,6 +1738,29 @@ public class SkillLoaderTests
         {
             Directory.Delete(tempDir, true);
         }
+    }
+
+    [Fact]
+    public void LoadAll_BundledMetaYamlSkills_LoadWithoutParseWarnings()
+    {
+        var config = new SkillsConfig
+        {
+            Enabled = true,
+            Load = new SkillLoadConfig
+            {
+                IncludeBundled = true,
+                IncludeManaged = false,
+                IncludeWorkspace = false
+            }
+        };
+        var logger = new CapturingTestLogger();
+
+        var skills = SkillLoader.LoadAll(config, null, logger);
+
+        Assert.Contains(skills, skill => skill.Name == "community-research-insight" && skill.Kind == SkillKind.Meta);
+        Assert.Contains(skills, skill => skill.Name == "meta-skill-creator" && skill.Kind == SkillKind.Meta);
+        Assert.DoesNotContain(logger.WarningMessages, message =>
+            message.Contains("Failed to parse skill", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

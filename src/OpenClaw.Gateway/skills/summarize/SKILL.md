@@ -1,18 +1,8 @@
 ---
 name: summarize
 description: Summarize, condense, or digest content into structured key points, details, and action items.
-triggers:
-  - summarize
-  - condense
-  - digest
-  - tldr
-  - summary
-  - 总结
-  - 摘要
-  - 概括
-provenance:
-  origin: openclaw.net
-  license: MIT
+triggers: ["summarize", "condense", "digest", "tldr", "summary", "总结", "摘要", "概括"]
+provenance: {"origin": "openclaw.net", "license": "MIT"}
 ---
 
 # Summarize

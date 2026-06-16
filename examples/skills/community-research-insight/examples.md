@@ -3,7 +3,7 @@
 ## Example Input
 
 ```text
-Transcript or notes from a community research discussion about access to local services, technology support, and barriers to participation.
+Transcript or notes from a community research discussion about access to local services, technology support, and barriers to participation.n.
 ```
 
 ## Expected Output Outline
