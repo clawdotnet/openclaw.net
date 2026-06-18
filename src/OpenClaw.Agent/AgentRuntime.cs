@@ -57,6 +57,8 @@ public sealed class AgentRuntime : IAgentRuntime
     private readonly ProviderUsageTracker? _providerUsage;
     private readonly ITurnTokenUsageObserver? _turnTokenUsageObserver;
     private readonly ILlmExecutionService? _llmExecutionService;
+    private readonly IGoalService? _goalService;
+    private readonly Agent.Goal.AgentRuntimeGoalIntegration? _goalIntegration;
     private readonly long _sessionTokenBudget;
     private readonly bool _estimateTokenBudgetAdmission;
     private readonly LlmProviderConfig _config;
@@ -125,7 +127,8 @@ public sealed class AgentRuntime : IAgentRuntime
         IToolGovernanceService? toolGovernance = null,
         IPlanExecuteVerifyOrchestrator? planExecuteVerify = null,
         ContextBudgetPlanner? contextBudgetPlanner = null,
-        ITurnRoutingPolicy? turnRoutingPolicy = null)
+        ITurnRoutingPolicy? turnRoutingPolicy = null,
+        IGoalService? goalService = null)
     {
         _chatClient = chatClient;
         _tools = tools;
@@ -150,6 +153,10 @@ public sealed class AgentRuntime : IAgentRuntime
         _providerUsage = providerUsage;
         _turnTokenUsageObserver = turnTokenUsageObserver;
         _llmExecutionService = llmExecutionService;
+        _goalService = goalService;
+        _goalIntegration = goalService is not null
+            ? new Agent.Goal.AgentRuntimeGoalIntegration(goalService, logger)
+            : null;
         _skillsConfig = skillsConfig;
         _metaSkillsEnabled = skillsConfig?.MetaSkill.Enabled ?? true;
         _skillWorkspacePath = skillWorkspacePath;
@@ -315,6 +322,18 @@ public sealed class AgentRuntime : IAgentRuntime
             await TryInjectProfileRecallAsync(messages, session, ct);
         }
 
+        // Inject Goal activation prompt if a goal is active
+        if (_goalIntegration is not null)
+        {
+            var goalPrompt = _goalIntegration.BuildGoalSystemPrompt(session.Id);
+            if (goalPrompt is not null)
+            {
+                // Insert after system prompt but before user message
+                messages.Insert(1, new ChatMessage(ChatRole.System, goalPrompt));
+                _logger?.LogInformation("[{CorrelationId}] Goal activation prompt injected", turnCtx.CorrelationId);
+            }
+        }
+
         // Build tool definitions for the LLM (use pre-cached declarations)
         var chatOptions = new ChatOptions
         {
@@ -443,6 +462,29 @@ public sealed class AgentRuntime : IAgentRuntime
             {
                 // Final text response
                 var text = _redaction.Redact(response.Text ?? "");
+
+                // ── Goal continuation check ──
+                if (_goalIntegration is not null)
+                {
+                    _goalIntegration.UpdateGoalTokenUsage(session);
+                    var continuationPrompt = _goalIntegration.EvaluateGoalContinuation(
+                        session, i, _maxIterations, text);
+                    if (continuationPrompt is not null)
+                    {
+                        messages.Add(new ChatMessage(ChatRole.System, continuationPrompt));
+                        session.History.Add(new ChatTurn
+                        {
+                            Role = "system",
+                            Content = $"[goal_check:{i}] Continue working toward objective..."
+                        });
+                        _logger?.LogInformation(
+                            "[{CorrelationId}] Goal auto-continue iteration {Iter}/{Max}",
+                            turnCtx.CorrelationId, i + 1, _maxIterations);
+                        continue; // ← Don't return — continue the loop
+                    }
+                }
+                // ── End Goal continuation check ──
+
                 session.History.Add(new ChatTurn { Role = "assistant", Content = text });
                 MarkCheckpointCompleted(session, SessionCheckpointStates.Completed, "final_response");
                 AppendContractSnapshot(session, "active");
@@ -554,6 +596,15 @@ public sealed class AgentRuntime : IAgentRuntime
             await TryInjectStructuredMemoryContextAsync(messages, session, userMessage, memoryRecallInjected, ct);
             await TryInjectProfileRecallAsync(messages, session, ct);
         }
+
+        // Inject Goal activation prompt in streaming path
+        if (_goalIntegration is not null)
+        {
+            var goalPrompt = _goalIntegration.BuildGoalSystemPrompt(session.Id);
+            if (goalPrompt is not null)
+                messages.Insert(1, new ChatMessage(ChatRole.System, goalPrompt));
+        }
+
         var chatOptions = new ChatOptions
         {
             ModelId = session.ModelOverride ?? _config.Model,
@@ -654,6 +705,26 @@ public sealed class AgentRuntime : IAgentRuntime
             {
                 // Final text response
                 var finalText = _redaction.Redact(streamResult.FullText);
+
+                // ── Goal continuation check (streaming path) ──
+                if (_goalIntegration is not null)
+                {
+                    _goalIntegration.UpdateGoalTokenUsage(session);
+                    var continuationPrompt = _goalIntegration.EvaluateGoalContinuation(
+                        session, i, _maxIterations, finalText);
+                    if (continuationPrompt is not null)
+                    {
+                        messages.Add(new ChatMessage(ChatRole.System, continuationPrompt));
+                        session.History.Add(new ChatTurn
+                        {
+                            Role = "system",
+                            Content = $"[goal_check:{i}] Continue working toward objective..."
+                        });
+                        continue; // ← Don't yield Complete — continue the loop
+                    }
+                }
+                // ── End Goal continuation check ──
+
                 session.History.Add(new ChatTurn { Role = "assistant", Content = finalText });
                 MarkCheckpointCompleted(session, SessionCheckpointStates.Completed, "final_response");
                 yield return AgentStreamEvent.Complete();

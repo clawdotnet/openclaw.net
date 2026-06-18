@@ -1,9 +1,12 @@
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Models.Goal;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Sessions;
 
@@ -29,18 +32,21 @@ public sealed class ChatCommandProcessor
         "/compact",
         "/concise",
         "/verbose",
+        "/goal",
         "/help"
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     private readonly SessionManager _sessionManager;
     private readonly ProviderUsageTracker? _providerUsage;
+    private readonly IGoalService? _goalService;
     private readonly ConcurrentDictionary<string, Func<string, CancellationToken, Task<string>>> _dynamicCommands = new(StringComparer.OrdinalIgnoreCase);
     private Func<Session, CancellationToken, Task<int>>? _compactCallback;
 
-    public ChatCommandProcessor(SessionManager sessionManager, ProviderUsageTracker? providerUsage = null)
+    public ChatCommandProcessor(SessionManager sessionManager, ProviderUsageTracker? providerUsage = null, IGoalService? goalService = null)
     {
         _sessionManager = sessionManager;
         _providerUsage = providerUsage;
+        _goalService = goalService;
     }
 
     /// <summary>
@@ -89,6 +95,7 @@ public sealed class ChatCommandProcessor
                 session.History.Clear();
                 session.TotalInputTokens = 0;
                 session.TotalOutputTokens = 0;
+                _goalService?.ClearGoal(session.Id);
                 await _sessionManager.PersistAsync(session, ct);
                 return (true, "Session history has been reset. Starting fresh!");
 
@@ -197,7 +204,10 @@ public sealed class ChatCommandProcessor
                 return (true, "Usage: /concise on|off|auto");
 
             case "/help":
-                return (true, "Available commands:\n/status - Show session details\n/new (or /reset) - Clear conversation history\n/model <name> - Override the LLM model for this session\n/model reset - Clear model override\n/usage - Show token counts\n/think <level> - Set reasoning effort (off/low/medium/high)\n/compact - Compact conversation history\n/concise on|off|auto - Control concise operational responses\n/verbose on|off - Toggle verbose output\n/help - Show this message");
+                return (true, "Available commands:\n/status - Show session details\n/new (or /reset) - Clear conversation history\n/model <name> - Override the LLM model for this session\n/model reset - Clear model override\n/usage - Show token counts\n/think <level> - Set reasoning effort (off/low/medium/high)\n/compact - Compact conversation history\n/concise on|off|auto - Control concise operational responses\n/verbose on|off - Toggle verbose output\n/goal <action> - Manage session goals (start/set/create/pause/resume/complete/done/block/blocked/clear/status)\n/goal start <objective> +500k - Start a goal with a token budget\n/goal start <objective> spend 1.5m tokens - Start a goal with a budget phrase\n/help - Show this message");
+
+            case "/goal":
+                return (true, await HandleGoalCommandAsync(session, args, ct));
 
             default:
                 if (_dynamicCommands.TryGetValue(command, out var dynamicHandler))
@@ -217,5 +227,180 @@ public sealed class ChatCommandProcessor
             return (session.TotalCacheReadTokens, session.TotalCacheWriteTokens);
 
         return _providerUsage?.GetLatestSessionCacheTotals(session.Id) ?? (0, 0);
+    }
+
+    /// <summary>
+    /// Handles the /goal command — full goal lifecycle management.
+    /// CLI commands support start, pause, resume, complete, clear, and status.
+    /// </summary>
+    private async Task<string> HandleGoalCommandAsync(Session session, string args, CancellationToken ct)
+    {
+        if (_goalService is null)
+            return "Goal system is not available. Start the gateway with goal support enabled.";
+
+        var parts = string.IsNullOrWhiteSpace(args) ? [] : args.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var subcommand = parts.Length > 0 ? parts[0].ToLowerInvariant() : "status";
+        var subargs = parts.Length > 1 ? parts[1] : "";
+
+        switch (subcommand)
+        {
+            case "start":
+            case "set":
+            case "create":
+            {
+                // Parse objective and optional budget from the arguments
+                // Format: /goal start <objective> or /goal start <objective> +<budget>
+                var remaining = subargs;
+                long budget = 0;
+
+                // Check for +N token budget suffix
+                var budgetMatch = Regex.Match(remaining, @"\+(?<budget>\d+(?:\.\d+)?)(?<suffix>[kKmM])?\s*$");
+                if (budgetMatch.Success)
+                {
+                    var budgetVal = double.Parse(budgetMatch.Groups["budget"].Value, CultureInfo.InvariantCulture);
+                    var multiplier = budgetMatch.Groups["suffix"].Value.ToLowerInvariant() switch
+                    {
+                        "k" => 1_000,
+                        "m" => 1_000_000,
+                        _ => 1,
+                    };
+                    budget = (long)(budgetVal * multiplier);
+                    remaining = remaining[..budgetMatch.Index].TrimEnd();
+                }
+
+                // Check for "spend N tokens" syntax
+                var spendMatch = Regex.Match(remaining, @"spend\s+(?<budget>\d+(?:\.\d+)?)\s*(?<suffix>[kKmM])?\s*tokens?\s*$", RegexOptions.IgnoreCase);
+                if (spendMatch.Success)
+                {
+                    var budgetVal = double.Parse(spendMatch.Groups["budget"].Value, CultureInfo.InvariantCulture);
+                    var multiplier = spendMatch.Groups["suffix"].Value.ToLowerInvariant() switch
+                    {
+                        "k" => 1_000,
+                        "m" => 1_000_000,
+                        _ => 1,
+                    };
+                    budget = (long)(budgetVal * multiplier);
+                    remaining = remaining[..spendMatch.Index].TrimEnd();
+                }
+
+                var objective = remaining.Trim();
+                if (string.IsNullOrWhiteSpace(objective))
+                    return "Usage: /goal start <objective> [+<budget>]\nExample: /goal start fix auth bug +500k";
+
+                // /new and /reset clear goals — enforce single-goal constraint
+                var existing = _goalService.GetGoal(session.Id);
+                if (existing is not null)
+                    return $"A goal already exists: \"{existing.Objective}\"\nClear it with /goal clear first.";
+
+                try
+                {
+                    var goal = _goalService.CreateGoal(session.Id, objective, budget, session.GetTotalTokens());
+                    var budgetInfo = budget > 0 ? $" with budget {budget}" : " (no budget limit)";
+                    return $"Goal created: \"{goal.Objective}\"{budgetInfo}";
+                }
+                catch (ArgumentException ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
+            }
+
+            case "pause":
+            {
+                var goal = _goalService.GetGoal(session.Id);
+                if (goal is null) return "No active goal to pause.";
+                try
+                {
+                    _goalService.UpdateStatus(session.Id, GoalStatus.Paused, subargs);
+                    return "Goal paused. Resume with /goal resume.";
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
+            }
+
+            case "resume":
+            {
+                var goal = _goalService.GetGoal(session.Id);
+                if (goal is null) return "No goal to resume.";
+                if (goal.Status.IsPursuable()) return "Goal is already active.";
+                if (goal.Status.IsTerminal())
+                    return "Cannot resume a completed goal. Start a new one with /goal start.";
+
+                try
+                {
+                    _goalService.UpdateStatus(session.Id, GoalStatus.Active, subargs);
+                    return "Goal resumed.";
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
+            }
+
+            case "complete":
+            case "done":
+            {
+                var goal = _goalService.GetGoal(session.Id);
+                if (goal is null) return "No active goal.";
+                try
+                {
+                    _goalService.UpdateStatus(session.Id, GoalStatus.Complete, subargs);
+                    return "Goal marked as complete!";
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
+            }
+
+            case "block":
+            case "blocked":
+            {
+                var goal = _goalService.GetGoal(session.Id);
+                if (goal is null) return "No active goal.";
+                try
+                {
+                    _goalService.UpdateStatus(session.Id, GoalStatus.Blocked, subargs);
+                    return "Goal marked as blocked. Resume with /goal resume.";
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
+            }
+
+            case "clear":
+            {
+                _goalService.ClearGoal(session.Id);
+                return "Goal cleared.";
+            }
+
+            case "status":
+            default:
+            {
+                var statusGoal = _goalService.GetGoal(session.Id);
+                if (statusGoal is null)
+                    return "No active goal. Use /goal start <objective> to create one.";
+
+                var result = $"Goal Status: {statusGoal.Status.ToDisplayName()}\n" +
+                             $"Objective: {statusGoal.Objective}\n" +
+                             $"Tokens Used: {statusGoal.TokensUsed}";
+
+                if (statusGoal.TokenBudget > 0)
+                    result += $"\nBudget: {statusGoal.TokenBudget} (Remaining: {statusGoal.RemainingBudget})";
+
+                if (!string.IsNullOrEmpty(statusGoal.StatusNote))
+                    result += $"\nNote: {statusGoal.StatusNote}";
+
+                result += $"\nContinuations: {statusGoal.ContinuationCount}/{SessionGoal.MaxContinuationsPerTurn}";
+
+                return result;
+            }
+        }
     }
 }

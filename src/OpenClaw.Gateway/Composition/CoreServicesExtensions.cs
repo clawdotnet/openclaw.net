@@ -5,19 +5,23 @@ using Microsoft.Extensions.Hosting;
 using OpenClaw.Channels;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Execution;
+using OpenClaw.Agent.Goal;
 using OpenClaw.Agent.Memory;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Agent.Routing;
+using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Features;
 using OpenClaw.Core.Governance;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Models.Goal;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Security;
+using OpenClaw.Core.Services;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
@@ -224,6 +228,22 @@ internal static class CoreServicesExtensions
         services.AddSingleton<HarnessContractService>();
         services.AddSingleton<EvidenceBundleService>();
         services.AddSingleton<GovernanceLedgerService>();
+
+        // Goal system
+        services.AddSingleton<IGoalService>(sp =>
+        {
+            var startupContext = sp.GetRequiredService<GatewayStartupContext>();
+            var logger = sp.GetRequiredService<ILogger<InMemoryGoalService>>();
+            var storagePath = startupContext.Config.Memory.StoragePath;
+            var historyPath = !string.IsNullOrEmpty(storagePath)
+                ? Path.Combine(Path.GetFullPath(storagePath), "goal-history.jsonl")
+                : null;
+            return new InMemoryGoalService(logger, historyPath);
+        });
+        services.AddSingleton<ITool, GetGoalTool>();
+        services.AddSingleton<ITool, CreateGoalTool>();
+        services.AddSingleton<ITool, UpdateGoalTool>();
+
         services.AddSingleton<SharedHarnessStateService>();
         services.AddSingleton<CodebaseHarnessMapService>();
         services.AddSingleton<PlanExecuteVerifyService>();
