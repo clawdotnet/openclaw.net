@@ -217,7 +217,7 @@ public sealed class MaintenanceCoordinatorTests
                 : UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
     }
 
-    private static ProviderTurnUsageEntry BuildTurn(string sessionId, long inputTokens)
+    private static TurnTokenUsageRecord BuildTurn(string sessionId, long inputTokens)
         => new()
         {
             SessionId = sessionId,

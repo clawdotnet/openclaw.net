@@ -11,7 +11,7 @@ public static class ModelDoctorEvaluator
     public static ModelSelectionDoctorResponse Build(
         GatewayConfig config,
         IModelProfileRegistry? registry = null,
-        IReadOnlyList<ProviderTurnUsageEntry>? recentTurns = null)
+        IReadOnlyList<TurnTokenUsageRecord>? recentTurns = null)
     {
         if (registry is not null)
             return BuildFromRegistry(registry, recentTurns);
@@ -44,7 +44,7 @@ public static class ModelDoctorEvaluator
 
     private static ModelSelectionDoctorResponse BuildFromRegistry(
         IModelProfileRegistry registry,
-        IReadOnlyList<ProviderTurnUsageEntry>? recentTurns)
+        IReadOnlyList<TurnTokenUsageRecord>? recentTurns)
     {
         var statuses = registry.ListStatuses();
         var warnings = new List<string>();
@@ -321,7 +321,7 @@ public static class ModelDoctorEvaluator
     private static IReadOnlyList<string> BuildPresetWarnings(
         ModelProfileStatus status,
         GatewayConfig? config,
-        IReadOnlyList<ProviderTurnUsageEntry>? recentTurns)
+        IReadOnlyList<TurnTokenUsageRecord>? recentTurns)
     {
         var warnings = new List<string>();
         if (status.ProviderId.Equals("ollama", StringComparison.OrdinalIgnoreCase) &&

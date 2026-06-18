@@ -61,27 +61,13 @@ public sealed class ProviderRouteHealthSnapshot
     public string? LastError { get; init; }
 }
 
-public sealed class ProviderTurnUsageEntry
-{
-    public DateTimeOffset TimestampUtc { get; init; } = DateTimeOffset.UtcNow;
-    public required string SessionId { get; init; }
-    public required string ChannelId { get; init; }
-    public required string ProviderId { get; init; }
-    public required string ModelId { get; init; }
-    public long InputTokens { get; init; }
-    public long OutputTokens { get; init; }
-    public long CacheReadTokens { get; init; }
-    public long CacheWriteTokens { get; init; }
-    public required InputTokenComponentEstimate EstimatedInputTokensByComponent { get; init; }
-}
-
 public sealed class ProviderAdminResponse
 {
     public IReadOnlyList<ProviderRouteHealthSnapshot> Routes { get; init; } = [];
     public ModelProfilesStatusResponse? ModelProfiles { get; init; }
     public IReadOnlyList<ProviderUsageSnapshot> Usage { get; init; } = [];
     public IReadOnlyList<ProviderPolicyRule> Policies { get; init; } = [];
-    public IReadOnlyList<ProviderTurnUsageEntry> RecentTurns { get; init; } = [];
+    public IReadOnlyList<TurnTokenUsageRecord> RecentTurns { get; init; } = [];
 }
 
 public sealed class RuntimeEventQuery
@@ -622,7 +608,7 @@ public sealed class SessionTimelineResponse
 {
     public required string SessionId { get; init; }
     public IReadOnlyList<RuntimeEventEntry> Events { get; init; } = [];
-    public IReadOnlyList<ProviderTurnUsageEntry> ProviderTurns { get; init; } = [];
+    public IReadOnlyList<TurnTokenUsageRecord> ProviderTurns { get; init; } = [];
 }
 
 public sealed class SessionExportItem

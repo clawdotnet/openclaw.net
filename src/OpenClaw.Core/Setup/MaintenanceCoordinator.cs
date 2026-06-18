@@ -14,7 +14,7 @@ public sealed class MaintenanceScanInputs
     public string? ConfigPath { get; init; }
     public SetupStatusResponse? SetupStatus { get; init; }
     public ModelSelectionDoctorResponse? ModelDoctor { get; init; }
-    public IReadOnlyList<ProviderTurnUsageEntry> RecentTurns { get; init; } = [];
+    public IReadOnlyList<TurnTokenUsageRecord> RecentTurns { get; init; } = [];
     public IReadOnlyList<ProviderRouteHealthSnapshot> ProviderRoutes { get; init; } = [];
     public IReadOnlyList<AutomationRunState> AutomationRunStates { get; init; } = [];
     public MetricsSnapshot? RuntimeMetrics { get; init; }
@@ -181,7 +181,7 @@ public static class MaintenanceCoordinator
     }
 
     private static MaintenancePromptBudgetSnapshot BuildPromptBudgetSnapshot(
-        IReadOnlyList<ProviderTurnUsageEntry> recentTurns,
+        IReadOnlyList<TurnTokenUsageRecord> recentTurns,
         IReadOnlyList<SkillDefinition> loadedSkills,
         string agentsPath,
         string soulPath)

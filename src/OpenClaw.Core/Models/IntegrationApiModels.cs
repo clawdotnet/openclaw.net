@@ -102,7 +102,7 @@ public sealed class IntegrationProvidersResponse
     public IReadOnlyList<ProviderRouteHealthSnapshot> Routes { get; init; } = [];
     public IReadOnlyList<OpenClaw.Core.Observability.ProviderUsageSnapshot> Usage { get; init; } = [];
     public IReadOnlyList<ProviderPolicyRule> Policies { get; init; } = [];
-    public IReadOnlyList<ProviderTurnUsageEntry> RecentTurns { get; init; } = [];
+    public IReadOnlyList<TurnTokenUsageRecord> RecentTurns { get; init; } = [];
 }
 
 public sealed class IntegrationPluginsResponse
@@ -136,7 +136,7 @@ public sealed class IntegrationSessionTimelineResponse
 {
     public required string SessionId { get; init; }
     public IReadOnlyList<RuntimeEventEntry> Events { get; init; } = [];
-    public IReadOnlyList<ProviderTurnUsageEntry> ProviderTurns { get; init; } = [];
+    public IReadOnlyList<TurnTokenUsageRecord> ProviderTurns { get; init; } = [];
 }
 
 public sealed class IntegrationDashboardResponse

@@ -44,7 +44,7 @@ jobs:
 
       - name: Run govulncheck
         working-directory: src/whatsapp-whatsmeow-worker
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...
 
   build-and-test:
     runs-on: ubuntu-latest

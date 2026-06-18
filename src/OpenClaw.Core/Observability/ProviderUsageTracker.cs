@@ -7,7 +7,7 @@ namespace OpenClaw.Core.Observability;
 public sealed class ProviderUsageTracker
 {
     private readonly ConcurrentDictionary<(string ProviderId, string ModelId), UsageCounter> _usage = new();
-    private readonly ConcurrentQueue<ProviderTurnUsageEntry> _recentTurns = new();
+    private readonly ConcurrentQueue<TurnTokenUsageRecord> _recentTurns = new();
     private const int MaxRecentTurns = 256;
 
     public void RecordRequest(string providerId, string modelId)
@@ -55,7 +55,7 @@ public sealed class ProviderUsageTracker
         long cacheWriteTokens,
         InputTokenComponentEstimate estimatedInputTokensByComponent)
     {
-        _recentTurns.Enqueue(new ProviderTurnUsageEntry
+        _recentTurns.Enqueue(new TurnTokenUsageRecord
         {
             SessionId = string.IsNullOrWhiteSpace(sessionId) ? "unknown" : sessionId,
             ChannelId = string.IsNullOrWhiteSpace(channelId) ? "unknown" : channelId,
@@ -92,7 +92,7 @@ public sealed class ProviderUsageTracker
             cacheWriteTokens: 0,
             estimatedInputTokensByComponent);
 
-    public IReadOnlyList<ProviderTurnUsageEntry> RecentTurns(string? sessionId = null, int limit = 50)
+    public IReadOnlyList<TurnTokenUsageRecord> RecentTurns(string? sessionId = null, int limit = 50)
     {
         var normalizedLimit = Math.Clamp(limit, 1, MaxRecentTurns);
         var items = _recentTurns.ToArray()
