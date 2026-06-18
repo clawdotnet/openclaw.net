@@ -232,9 +232,9 @@ internal static class CoreServicesExtensions
         // Goal system
         services.AddSingleton<IGoalService>(sp =>
         {
-            var startup = sp.GetRequiredService<GatewayStartupContext>();
+            var startupContext = sp.GetRequiredService<GatewayStartupContext>();
             var logger = sp.GetRequiredService<ILogger<InMemoryGoalService>>();
-            var storagePath = startup.Config.Memory.StoragePath;
+            var storagePath = startupContext.Config.Memory.StoragePath;
             var historyPath = !string.IsNullOrEmpty(storagePath)
                 ? Path.Combine(Path.GetFullPath(storagePath), "goal-history.jsonl")
                 : null;

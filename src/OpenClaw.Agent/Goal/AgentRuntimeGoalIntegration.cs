@@ -16,7 +16,7 @@ public sealed class AgentRuntimeGoalIntegration
     private readonly ILogger? _logger;
 
     /// <summary>Session types where auto-continuation is allowed (interactive human presence).</summary>
-    private static readonly HashSet<string> InteractiveChannelPrefixes = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> InteractiveChannelIds = new(StringComparer.OrdinalIgnoreCase)
     {
         "cli", "tui", "terminal", "console", "companion",
         "websocket", // WebChat UI — human interacting via browser
@@ -73,6 +73,9 @@ public sealed class AgentRuntimeGoalIntegration
 
         // Check budget
         _goalService.UpdateTokenUsage(session.Id, session.GetTotalTokens());
+        goal = _goalService.GetGoal(session.Id);
+        if (goal is null || !goal.Status.IsPursuable()) return null;
+
         if (goal.IsBudgetExceeded)
         {
             _goalService.UpdateStatus(session.Id, GoalStatus.BudgetLimited, "Token budget exceeded");
@@ -82,8 +85,9 @@ public sealed class AgentRuntimeGoalIntegration
         }
 
         // Check per-turn continuation limit
-        goal.ContinuationCount++;
-        if (goal.ContinuationCount > SessionGoal.MaxContinuationsPerTurn)
+        var continuationCount = _goalService.IncrementContinuationCount(session.Id);
+        if (continuationCount == 0) return null;
+        if (continuationCount > SessionGoal.MaxContinuationsPerTurn)
         {
             _goalService.UpdateStatus(session.Id, GoalStatus.Paused,
                 $"Auto-paused after {SessionGoal.MaxContinuationsPerTurn} continuations");
@@ -111,7 +115,7 @@ public sealed class AgentRuntimeGoalIntegration
 
         // Build continuation prompt
         _logger?.LogInformation("Goal {SessionId} auto-continuing (iteration {Iter}/{Max}, continuation #{Cont})",
-            session.Id, iteration, maxIterations, goal.ContinuationCount);
+            session.Id, iteration, maxIterations, continuationCount);
 
         return GoalPromptTemplates.BuildCheckPrompt(goal, iteration, maxIterations);
     }
@@ -123,6 +127,6 @@ public sealed class AgentRuntimeGoalIntegration
     private static bool IsInteractiveChannel(string? channelId)
     {
         if (string.IsNullOrWhiteSpace(channelId)) return true; // Default to interactive if unknown
-        return InteractiveChannelPrefixes.Contains(channelId);
+        return InteractiveChannelIds.Contains(channelId);
     }
 }

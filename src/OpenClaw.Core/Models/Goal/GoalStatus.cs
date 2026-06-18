@@ -99,7 +99,7 @@ public static class GoalStatusExtensions
         bar[0] = '[';
         for (int i = 0; i < filled; i++) bar[i + 1] = '=';
         if (filled < barWidth) bar[filled + 1] = '>';
-        for (int i = filled + 2; i <= barWidth; i++) bar[filled + 1] = ' ';
+        for (int i = filled + 2; i <= barWidth; i++) bar[i] = ' ';
         bar[barWidth + 1] = ']';
 
         return $"{new string(bar)} {pct * 100:F0}% ({goal.TokensUsed}/{goal.TokenBudget})";

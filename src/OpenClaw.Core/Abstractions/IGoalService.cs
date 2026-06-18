@@ -27,6 +27,12 @@ public interface IGoalService
     void UpdateTokenUsage(string sessionId, long sessionTotalTokens);
 
     /// <summary>
+    /// Increments the per-turn auto-continuation count for a goal.
+    /// Returns the updated count, or 0 if no goal exists.
+    /// </summary>
+    int IncrementContinuationCount(string sessionId);
+
+    /// <summary>
     /// Records a turn hash for blocker detection.
     /// Returns true if the blocker threshold (3 consecutive same-hash) has been reached.
     /// </summary>

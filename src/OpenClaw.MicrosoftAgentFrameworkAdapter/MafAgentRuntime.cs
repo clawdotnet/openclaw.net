@@ -140,6 +140,12 @@ public sealed class MafAgentRuntime : IAgentRuntime
         ApplySkills(context.Skills);
     }
 
+    private readonly record struct StreamingIterationResult(bool CanContinue)
+    {
+        public static StreamingIterationResult Success() => new(true);
+        public static StreamingIterationResult Terminal() => new(false);
+    }
+
     public CircuitState CircuitBreakerState => _llmExecutionService.DefaultCircuitState;
 
     public IReadOnlyList<string> LoadedSkillNames
@@ -327,6 +333,15 @@ public sealed class MafAgentRuntime : IAgentRuntime
 
             // Max iterations reached
             DisposeTurnRoutingScope();
+            await _sessionStateStore.SaveAsync(agent, session, mafSession, ct);
+
+            if (TryRejectContractBudget(session, out contractBudgetMessage))
+            {
+                AppendContractSnapshot(session, "budget_exceeded");
+                LogTurnComplete(turnCtx);
+                return contractBudgetMessage;
+            }
+
             AppendContractSnapshot(session, "active");
             LogTurnComplete(turnCtx);
             return "I've reached the maximum number of iterations. Please try a simpler request.";
@@ -409,7 +424,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         var turnRoutingScope = await ApplyTurnRoutingAsync(session, userMessage, responseSchema: null, ct);
         var turnRoutingScopeDisposed = false;
 
-        Task? producer = null;
+        Task<StreamingIterationResult>? producer = null;
         CancellationTokenSource? producerCts = null;
 
         try
@@ -472,10 +487,10 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 await foreach (var evt in eventChannel.Reader.ReadAllAsync(ct))
                     yield return evt;
 
-                await producer;
+                var iterationResult = await producer;
 
                 // Check Goal continuation after streaming completes
-                if (_goalIntegration is not null)
+                if (iterationResult.CanContinue && _goalIntegration is not null)
                 {
                     _goalIntegration.UpdateGoalTokenUsage(session);
                     var lastText = session.History.Count > 0
@@ -494,6 +509,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 }
 
                 // Normal completion — done with this streaming turn
+                yield return AgentStreamEvent.Complete();
+                LogTurnComplete(turnCtx);
                 yield break;
             }
 
@@ -502,6 +519,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 "I've reached the maximum number of iterations. Please try a simpler request.",
                 "max_iterations");
             yield return AgentStreamEvent.Complete();
+            LogTurnComplete(turnCtx);
         }
         finally
         {
@@ -539,7 +557,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         return _agentFactory.Create(_chatClient, GetSystemPrompt(session), tools);
     }
 
-    private async Task ProduceStreamingRunAsync(
+    private async Task<StreamingIterationResult> ProduceStreamingRunAsync(
         Session session,
         IReadOnlyList<ChatMessage> messages,
         ChatClientAgent agent,
@@ -607,14 +625,12 @@ public sealed class MafAgentRuntime : IAgentRuntime
             if (TryRejectContractBudget(session, out var contractBudgetMessage))
             {
                 await writer.WriteAsync(AgentStreamEvent.ErrorOccurred(contractBudgetMessage, "contract_budget_exceeded"), ct);
-                await writer.WriteAsync(AgentStreamEvent.Complete(), ct);
                 AppendContractSnapshot(session, "budget_exceeded");
-                return;
+                return StreamingIterationResult.Terminal();
             }
 
             AppendContractSnapshot(session, "active");
-            await writer.WriteAsync(AgentStreamEvent.Complete(), ct);
-            LogTurnComplete(turnCtx);
+            return StreamingIterationResult.Success();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -627,12 +643,13 @@ public sealed class MafAgentRuntime : IAgentRuntime
             try
             {
                 await writer.WriteAsync(AgentStreamEvent.ErrorOccurred(ex.Message, "model_selection_failed"), ct);
-                await writer.WriteAsync(AgentStreamEvent.Complete(), ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 throw;
             }
+
+            return StreamingIterationResult.Terminal();
         }
         catch (Exception ex)
         {
@@ -645,14 +662,13 @@ public sealed class MafAgentRuntime : IAgentRuntime
                         "Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly.",
                         "provider_failure"),
                     ct);
-                await writer.WriteAsync(AgentStreamEvent.Complete(), ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 throw;
             }
 
-            LogTurnComplete(turnCtx);
+            return StreamingIterationResult.Terminal();
         }
         finally
         {

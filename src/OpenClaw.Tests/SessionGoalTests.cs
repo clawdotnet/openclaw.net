@@ -86,16 +86,4 @@ public sealed class SessionGoalTests
         Assert.False(goal.IsBudgetExceeded);
     }
 
-    [Fact]
-    public void MaxObjectiveLength_Enforced()
-    {
-        var longObjective = new string('x', SessionGoal.MaxObjectiveLength + 1);
-        var goal = new SessionGoal
-        {
-            SessionId = "s1",
-            Objective = longObjective,
-            TokensAtStart = 0,
-        };
-        Assert.True(goal.Objective.Length > SessionGoal.MaxObjectiveLength);
-    }
 }

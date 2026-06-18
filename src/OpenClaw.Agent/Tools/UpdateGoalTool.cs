@@ -1,4 +1,6 @@
+using System.Text.Json;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Models;
 using OpenClaw.Core.Models.Goal;
 
 namespace OpenClaw.Agent.Tools;
@@ -31,9 +33,35 @@ public sealed class UpdateGoalTool : IToolWithContext
 
     public ValueTask<string> ExecuteAsync(string argumentsJson, ToolExecutionContext context, CancellationToken ct)
     {
-        using var args = System.Text.Json.JsonDocument.Parse(argumentsJson);
-        var status = args.RootElement.GetProperty("status").GetString()!;
-        var note = args.RootElement.TryGetProperty("note", out var n) ? n.GetString() : null;
+        if (string.IsNullOrWhiteSpace(argumentsJson))
+            return ValueTask.FromResult("Error: arguments payload is empty.");
+
+        string? status;
+        string? note = null;
+        try
+        {
+            using var args = JsonDocument.Parse(argumentsJson);
+            if (!args.RootElement.TryGetProperty("status", out var statusElement))
+                return ValueTask.FromResult("Error: status is required.");
+
+            if (statusElement.ValueKind != JsonValueKind.String)
+                return ValueTask.FromResult("Error: status must be a string.");
+
+            status = statusElement.GetString();
+            if (args.RootElement.TryGetProperty("note", out var n))
+            {
+                if (n.ValueKind is not JsonValueKind.String and not JsonValueKind.Null)
+                    return ValueTask.FromResult("Error: note must be a string.");
+                note = n.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            return ValueTask.FromResult("Error: arguments must be valid JSON.");
+        }
+
+        if (string.IsNullOrWhiteSpace(status))
+            return ValueTask.FromResult("Error: status is required.");
 
         var goal = _goalService.GetGoal(context.Session.Id);
         if (goal is null)
@@ -42,37 +70,53 @@ public sealed class UpdateGoalTool : IToolWithContext
         if (!goal.Status.IsPursuable())
             return ValueTask.FromResult($"Error: Goal is not active (current status: {goal.Status.ToDisplayName()}).");
 
-        switch (status.ToLowerInvariant())
+        try
         {
-            case "complete":
-                // External verification: reject if model is mid-tool-chain or at iteration 0
-                if (!TryVerifyCompletion(context))
+            switch (status.ToLowerInvariant())
+            {
+                case "complete":
+                    // External verification: reject if model is mid-tool-chain or at iteration 0
+                    if (!TryVerifyCompletion(context))
+                        return ValueTask.FromResult(
+                            "Warning: Cannot verify completion. The goal may not be fully achieved yet. " +
+                            "Please continue working toward the objective and verify all requirements before declaring completion.");
+                    _goalService.UpdateStatus(context.Session.Id, GoalStatus.Complete, note);
+                    return ValueTask.FromResult("Goal marked as complete. Well done!");
+
+                case "blocked":
+                    // Blocked requires 3+ consecutive same-blocker turns (enforced at integration layer)
+                    _goalService.UpdateStatus(context.Session.Id, GoalStatus.Blocked, note);
                     return ValueTask.FromResult(
-                        "Warning: Cannot verify completion. The goal may not be fully achieved yet. " +
-                        "Please continue working toward the objective and verify all requirements before declaring completion.");
-                _goalService.UpdateStatus(context.Session.Id, GoalStatus.Complete, note);
-                return ValueTask.FromResult("Goal marked as complete. Well done!");
+                        "Goal marked as blocked. The user can resume it with /goal resume.");
 
-            case "blocked":
-                // Blocked requires 3+ consecutive same-blocker turns (enforced at integration layer)
-                _goalService.UpdateStatus(context.Session.Id, GoalStatus.Blocked, note);
-                return ValueTask.FromResult(
-                    "Goal marked as blocked. The user can resume it with /goal resume.");
-
-            default:
-                return ValueTask.FromResult($"Error: Invalid status '{status}'. Use 'complete' or 'blocked'.");
+                default:
+                    return ValueTask.FromResult($"Error: Invalid status '{status}'. Use 'complete' or 'blocked'.");
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ValueTask.FromResult($"Error: {ex.Message}");
         }
     }
 
     /// <summary>
     /// External verification: checks that the model isn't declaring completion prematurely.
-    /// For the tool-level check, we rely on the runtime's iteration tracking.
+    /// Requires evidence of assistant work in the current session and no in-progress tool-chain marker.
     /// </summary>
     private static bool TryVerifyCompletion(ToolExecutionContext context)
     {
-        // The runtime's AgentRuntimeGoalIntegration.EvaluateGoalContinuation handles
-        // iteration-based verification. At the tool level, we accept the model's
-        // self-assessment when it explicitly calls update_goal(complete).
-        return true;
+        if (context.TurnContext.ToolCallCount > 0)
+            return false;
+
+        var latestAssistantTurn = context.Session.History.LastOrDefault(static turn =>
+            string.Equals(turn.Role, "assistant", StringComparison.OrdinalIgnoreCase));
+        if (latestAssistantTurn is null)
+            return false;
+
+        var content = latestAssistantTurn.Content?.Trim();
+        if (string.IsNullOrEmpty(content))
+            return false;
+
+        return !string.Equals(content, "[tool_use]", StringComparison.Ordinal);
     }
 }

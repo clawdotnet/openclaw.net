@@ -48,4 +48,19 @@ public sealed class GoalStatusTests
     {
         Assert.Equal(expected, status.ToDisplayName());
     }
+
+    [Fact]
+    public void FormatGoalProgressBar_FillsRemainingSlots()
+    {
+        var goal = new SessionGoal
+        {
+            SessionId = "s1",
+            Objective = "test",
+            TokenBudget = 100,
+            TokensAtStart = 0,
+            TokensUsed = 50,
+        };
+
+        Assert.Equal("[==========>         ] 50% (50/100)", GoalStatusExtensions.FormatGoalProgressBar(goal));
+    }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models.Goal;
 
@@ -30,21 +31,49 @@ public sealed class CreateGoalTool : IToolWithContext
 
     public ValueTask<string> ExecuteAsync(string argumentsJson, ToolExecutionContext context, CancellationToken ct)
     {
-        using var args = System.Text.Json.JsonDocument.Parse(argumentsJson);
-        var objective = args.RootElement.GetProperty("objective").GetString()!;
-        var tokenBudget = args.RootElement.TryGetProperty("token_budget", out var tb) ? tb.GetInt64() : 0L;
+        if (string.IsNullOrWhiteSpace(argumentsJson))
+            return ValueTask.FromResult("Error: arguments payload is empty.");
+
+        string? objective;
+        long tokenBudget = 0;
+        try
+        {
+            using var args = JsonDocument.Parse(argumentsJson);
+            if (!args.RootElement.TryGetProperty("objective", out var objectiveElement))
+                return ValueTask.FromResult("Error: objective is required.");
+
+            if (objectiveElement.ValueKind != JsonValueKind.String)
+                return ValueTask.FromResult("Error: objective must be a string.");
+
+            objective = objectiveElement.GetString();
+            if (args.RootElement.TryGetProperty("token_budget", out var tb))
+            {
+                if (tb.ValueKind != JsonValueKind.Number || !tb.TryGetInt64(out tokenBudget))
+                    return ValueTask.FromResult("Error: token_budget must be an integer.");
+            }
+        }
+        catch (JsonException)
+        {
+            return ValueTask.FromResult("Error: arguments must be valid JSON.");
+        }
 
         if (string.IsNullOrWhiteSpace(objective))
             return ValueTask.FromResult("Error: objective cannot be empty.");
+        if (tokenBudget < 0)
+            return ValueTask.FromResult("Error: token_budget cannot be negative.");
 
         try
         {
             var goal = _goalService.CreateGoal(
-                context.Session.Id, objective, Math.Max(0, tokenBudget),
+                context.Session.Id, objective, tokenBudget,
                 context.Session.GetTotalTokens());
             return ValueTask.FromResult($"Goal created. Status: {goal.Status.ToDisplayName()}. Objective: {goal.Objective}");
         }
         catch (InvalidOperationException ex)
+        {
+            return ValueTask.FromResult($"Error: {ex.Message}");
+        }
+        catch (ArgumentException ex)
         {
             return ValueTask.FromResult($"Error: {ex.Message}");
         }

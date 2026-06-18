@@ -207,8 +207,8 @@ public sealed class AgentRuntimeGoalIntegrationTests
             Assert.NotNull(result);
         }
 
-        // The 11th continuation should cause auto-pause
-        var pausedResult = integration.EvaluateGoalContinuation(session, 11, 50, "still working iteration 11");
+        // The next continuation reaches the exact pause boundary.
+        var pausedResult = integration.EvaluateGoalContinuation(session, 10, 50, "still working iteration 10");
         Assert.Null(pausedResult);
 
         // Verify the goal is paused

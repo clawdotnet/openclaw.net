@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -203,7 +204,7 @@ public sealed class ChatCommandProcessor
                 return (true, "Usage: /concise on|off|auto");
 
             case "/help":
-                return (true, "Available commands:\n/status - Show session details\n/new (or /reset) - Clear conversation history\n/model <name> - Override the LLM model for this session\n/model reset - Clear model override\n/usage - Show token counts\n/think <level> - Set reasoning effort (off/low/medium/high)\n/compact - Compact conversation history\n/concise on|off|auto - Control concise operational responses\n/verbose on|off - Toggle verbose output\n/goal <action> - Manage session goals (start/pause/resume/complete/clear/status)\n/help - Show this message");
+                return (true, "Available commands:\n/status - Show session details\n/new (or /reset) - Clear conversation history\n/model <name> - Override the LLM model for this session\n/model reset - Clear model override\n/usage - Show token counts\n/think <level> - Set reasoning effort (off/low/medium/high)\n/compact - Compact conversation history\n/concise on|off|auto - Control concise operational responses\n/verbose on|off - Toggle verbose output\n/goal <action> - Manage session goals (start/set/create/pause/resume/complete/done/block/blocked/clear/status)\n/goal start <objective> +500k - Start a goal with a token budget\n/goal start <objective> spend 1.5m tokens - Start a goal with a budget phrase\n/help - Show this message");
 
             case "/goal":
                 return (true, await HandleGoalCommandAsync(session, args, ct));
@@ -253,11 +254,11 @@ public sealed class ChatCommandProcessor
                 long budget = 0;
 
                 // Check for +N token budget suffix
-                var budgetMatch = Regex.Match(remaining, @"\+(?<budget>\d+(?:\.\d+)?)(k|K|m|M)?\s*$");
+                var budgetMatch = Regex.Match(remaining, @"\+(?<budget>\d+(?:\.\d+)?)(?<suffix>[kKmM])?\s*$");
                 if (budgetMatch.Success)
                 {
-                    var budgetVal = double.Parse(budgetMatch.Groups["budget"].Value);
-                    var multiplier = budgetMatch.Groups[1].Value.ToLowerInvariant() switch
+                    var budgetVal = double.Parse(budgetMatch.Groups["budget"].Value, CultureInfo.InvariantCulture);
+                    var multiplier = budgetMatch.Groups["suffix"].Value.ToLowerInvariant() switch
                     {
                         "k" => 1_000,
                         "m" => 1_000_000,
@@ -268,11 +269,11 @@ public sealed class ChatCommandProcessor
                 }
 
                 // Check for "spend N tokens" syntax
-                var spendMatch = Regex.Match(remaining, @"spend\s+(?<budget>\d+(?:\.\d+)?)\s*(k|K|m|M)?\s*tokens?\s*$", RegexOptions.IgnoreCase);
+                var spendMatch = Regex.Match(remaining, @"spend\s+(?<budget>\d+(?:\.\d+)?)\s*(?<suffix>[kKmM])?\s*tokens?\s*$", RegexOptions.IgnoreCase);
                 if (spendMatch.Success)
                 {
-                    var budgetVal = double.Parse(spendMatch.Groups["budget"].Value);
-                    var multiplier = spendMatch.Groups[1].Value.ToLowerInvariant() switch
+                    var budgetVal = double.Parse(spendMatch.Groups["budget"].Value, CultureInfo.InvariantCulture);
+                    var multiplier = spendMatch.Groups["suffix"].Value.ToLowerInvariant() switch
                     {
                         "k" => 1_000,
                         "m" => 1_000_000,
@@ -291,17 +292,35 @@ public sealed class ChatCommandProcessor
                 if (existing is not null)
                     return $"A goal already exists: \"{existing.Objective}\"\nClear it with /goal clear first.";
 
-                var goal = _goalService.CreateGoal(session.Id, objective, budget, session.GetTotalTokens());
-                var budgetInfo = budget > 0 ? $" with budget {budget}" : " (no budget limit)";
-                return $"Goal created: \"{goal.Objective}\"{budgetInfo}";
+                try
+                {
+                    var goal = _goalService.CreateGoal(session.Id, objective, budget, session.GetTotalTokens());
+                    var budgetInfo = budget > 0 ? $" with budget {budget}" : " (no budget limit)";
+                    return $"Goal created: \"{goal.Objective}\"{budgetInfo}";
+                }
+                catch (ArgumentException ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
             }
 
             case "pause":
             {
                 var goal = _goalService.GetGoal(session.Id);
                 if (goal is null) return "No active goal to pause.";
-                _goalService.UpdateStatus(session.Id, GoalStatus.Paused, subargs);
-                return "Goal paused. Resume with /goal resume.";
+                try
+                {
+                    _goalService.UpdateStatus(session.Id, GoalStatus.Paused, subargs);
+                    return "Goal paused. Resume with /goal resume.";
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
             }
 
             case "resume":
@@ -312,8 +331,15 @@ public sealed class ChatCommandProcessor
                 if (goal.Status.IsTerminal())
                     return "Cannot resume a completed goal. Start a new one with /goal start.";
 
-                _goalService.UpdateStatus(session.Id, GoalStatus.Active, subargs);
-                return "Goal resumed.";
+                try
+                {
+                    _goalService.UpdateStatus(session.Id, GoalStatus.Active, subargs);
+                    return "Goal resumed.";
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
             }
 
             case "complete":
@@ -321,8 +347,15 @@ public sealed class ChatCommandProcessor
             {
                 var goal = _goalService.GetGoal(session.Id);
                 if (goal is null) return "No active goal.";
-                _goalService.UpdateStatus(session.Id, GoalStatus.Complete, subargs);
-                return "Goal marked as complete!";
+                try
+                {
+                    _goalService.UpdateStatus(session.Id, GoalStatus.Complete, subargs);
+                    return "Goal marked as complete!";
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
             }
 
             case "block":
@@ -330,8 +363,15 @@ public sealed class ChatCommandProcessor
             {
                 var goal = _goalService.GetGoal(session.Id);
                 if (goal is null) return "No active goal.";
-                _goalService.UpdateStatus(session.Id, GoalStatus.Blocked, subargs);
-                return "Goal marked as blocked. Resume with /goal resume.";
+                try
+                {
+                    _goalService.UpdateStatus(session.Id, GoalStatus.Blocked, subargs);
+                    return "Goal marked as blocked. Resume with /goal resume.";
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
             }
 
             case "clear":

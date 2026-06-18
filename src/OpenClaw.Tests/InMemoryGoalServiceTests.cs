@@ -38,6 +38,25 @@ public sealed class InMemoryGoalServiceTests
     }
 
     [Fact]
+    public void CreateGoal_NegativeBudget_Throws()
+    {
+        var svc = CreateService();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            svc.CreateGoal("s1", "fix the bug", -1, 0));
+    }
+
+    [Fact]
+    public void CreateGoal_ObjectiveTooLong_Throws()
+    {
+        var svc = CreateService();
+        var longObjective = new string('x', SessionGoal.MaxObjectiveLength + 1);
+
+        Assert.Throws<ArgumentException>(() =>
+            svc.CreateGoal("s1", longObjective, 0, 0));
+    }
+
+    [Fact]
     public void GetGoal_Existing_ReturnsGoal()
     {
         var svc = CreateService();
@@ -146,6 +165,32 @@ public sealed class InMemoryGoalServiceTests
         // Would need 3 more of the NEW hash to trigger blocked
         Assert.False(svc.RecordTurnHash("s1", "Now I am stuck on step 2"));
         Assert.True(svc.RecordTurnHash("s1", "Now I am stuck on step 2"));
+    }
+
+    [Fact]
+    public void RecordTurnHash_EmptyText_DoesNotCountAsBlocker()
+    {
+        var svc = CreateService();
+        svc.CreateGoal("s1", "test", 0, 0);
+
+        Assert.False(svc.RecordTurnHash("s1", ""));
+        Assert.False(svc.RecordTurnHash("s1", " "));
+        Assert.False(svc.RecordTurnHash("s1", ""));
+
+        var goal = svc.GetGoal("s1")!;
+        Assert.Equal(0, goal.ConsecutiveBlockerCount);
+        Assert.Null(goal.LastBlockerHash);
+    }
+
+    [Fact]
+    public void IncrementContinuationCount_IncrementsPerSession()
+    {
+        var svc = CreateService();
+        svc.CreateGoal("s1", "test", 0, 0);
+
+        Assert.Equal(1, svc.IncrementContinuationCount("s1"));
+        Assert.Equal(2, svc.IncrementContinuationCount("s1"));
+        Assert.Equal(2, svc.GetGoal("s1")!.ContinuationCount);
     }
 
     [Fact]
