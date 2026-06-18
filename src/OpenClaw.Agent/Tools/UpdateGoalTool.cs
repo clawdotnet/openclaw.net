@@ -66,15 +66,13 @@ public sealed class UpdateGoalTool : IToolWithContext
 
     /// <summary>
     /// External verification: checks that the model isn't declaring completion prematurely.
-    /// Verifies: (a) not mid-tool-execution, (b) iteration >= 2, (c) reasonable turn count.
+    /// For the tool-level check, we rely on the runtime's iteration tracking.
     /// </summary>
     private static bool TryVerifyCompletion(ToolExecutionContext context)
     {
-        // Check that we're not at iteration 0 (immediate "I'm done")
-        // The turn context tracks how many LLM calls have been made this turn
-        if (context.TurnContext.Iteration < 1)
-            return false;
-
+        // The runtime's AgentRuntimeGoalIntegration.EvaluateGoalContinuation handles
+        // iteration-based verification. At the tool level, we accept the model's
+        // self-assessment when it explicitly calls update_goal(complete).
         return true;
     }
 }

@@ -1,4 +1,5 @@
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Models.Goal;
 
 namespace OpenClaw.Agent.Tools;
 

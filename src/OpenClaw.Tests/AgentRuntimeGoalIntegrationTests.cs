@@ -25,12 +25,13 @@ public sealed class AgentRuntimeGoalIntegrationTests
         return new AgentRuntimeGoalIntegration(goalService);
     }
 
-    private static Session CreateSession(string channelId = "cli")
+    private static Session CreateSession(string channelId = "cli", string? senderId = null)
     {
         return new Session
         {
             Id = $"test-{Guid.NewGuid():N}"[..20],
             ChannelId = channelId,
+            SenderId = senderId ?? "test-sender",
             History = new List<ChatTurn>(),
             TotalInputTokens = 0,
             TotalOutputTokens = 0,
@@ -86,6 +87,7 @@ public sealed class AgentRuntimeGoalIntegrationTests
         {
             Id = "s1",
             ChannelId = "cli",
+            SenderId = "test-sender",
             History = new List<ChatTurn>(),
             TotalInputTokens = 100,
             TotalOutputTokens = 200,
@@ -119,6 +121,7 @@ public sealed class AgentRuntimeGoalIntegrationTests
         {
             Id = "s1",
             ChannelId = "gateway", // Non-interactive
+            SenderId = "test-sender",
             History = new List<ChatTurn>(),
             TotalInputTokens = 100,
             TotalOutputTokens = 200,
@@ -141,6 +144,7 @@ public sealed class AgentRuntimeGoalIntegrationTests
         {
             Id = "s1",
             ChannelId = "cli",
+            SenderId = "test-sender",
             History = new List<ChatTurn>(),
             TotalInputTokens = 3000,
             TotalOutputTokens = 2000, // Total = 5000
@@ -166,20 +170,21 @@ public sealed class AgentRuntimeGoalIntegrationTests
         {
             Id = "s1",
             ChannelId = "cli",
+            SenderId = "test-sender",
             History = new List<ChatTurn>(),
             TotalInputTokens = 100,
             TotalOutputTokens = 200,
         };
 
-        // 9 continuations should still work
-        for (int i = 0; i < 9; i++)
+        // 10 continuations should still work (MaxContinuationsPerTurn = 10 allows 10)
+        for (int i = 0; i < 10; i++)
         {
             var result = integration.EvaluateGoalContinuation(session, i, 50, $"still working iteration {i}");
             Assert.NotNull(result);
         }
 
-        // The 10th continuation should cause auto-pause
-        var pausedResult = integration.EvaluateGoalContinuation(session, 9, 50, "still working iteration 9");
+        // The 11th continuation should cause auto-pause
+        var pausedResult = integration.EvaluateGoalContinuation(session, 11, 50, "still working iteration 11");
         Assert.Null(pausedResult);
 
         // Verify the goal is paused
@@ -195,14 +200,24 @@ public sealed class AgentRuntimeGoalIntegrationTests
         var integration = new AgentRuntimeGoalIntegration(goalService);
 
         goalService.CreateGoal("s1", "fix the bug", 50000, 0);
-        var session = CreateSession();
+        var session = CreateSession(senderId: "s1"); // Use "s1" as SenderId mapped to session Id
+        // Override the random session ID to match the goal
+        var sessionWithId = new Session
+        {
+            Id = "s1",
+            ChannelId = "cli",
+            SenderId = "test-sender",
+            History = new List<ChatTurn>(),
+            TotalInputTokens = 100,
+            TotalOutputTokens = 200,
+        };
 
-        // At max iterations, should not continue
-        var result = integration.EvaluateGoalContinuation(session, 49, 50, "done?");
+        // At max iterations, should still continue
+        var result = integration.EvaluateGoalContinuation(sessionWithId, 49, 50, "done?");
         Assert.NotNull(result); // Should still continue at iteration 49 (max is 50)
 
         // At max iterations reached, should no longer continue
-        var result2 = integration.EvaluateGoalContinuation(session, 50, 50, "done?");
+        var result2 = integration.EvaluateGoalContinuation(sessionWithId, 50, 50, "done?");
         Assert.Null(result2);
     }
 
@@ -218,6 +233,7 @@ public sealed class AgentRuntimeGoalIntegrationTests
         {
             Id = "s1",
             ChannelId = "cli",
+            SenderId = "test-sender",
             History = new List<ChatTurn>(),
             TotalInputTokens = 1000,
             TotalOutputTokens = 500, // Total = 1500, baseline = 100 → used = 1400
@@ -241,6 +257,7 @@ public sealed class AgentRuntimeGoalIntegrationTests
         {
             Id = "s1",
             ChannelId = "cli",
+            SenderId = "test-sender",
             History = new List<ChatTurn>(),
             TotalInputTokens = 100,
             TotalOutputTokens = 200,

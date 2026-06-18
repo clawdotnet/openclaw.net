@@ -45,6 +45,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
     private readonly int _compactionThreshold;
     private readonly int _compactionKeepRecent;
     private readonly long _sessionTokenBudget;
+    private readonly int _maxIterations;
     private readonly IGoalService? _goalService;
     private readonly AgentRuntimeGoalIntegration? _goalIntegration;
     private readonly MemoryRecallConfig? _recall;
@@ -108,6 +109,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         _compactionThreshold = Math.Max(4, context.Config.Memory.CompactionThreshold);
         _compactionKeepRecent = Math.Max(2, context.Config.Memory.CompactionKeepRecent);
         _sessionTokenBudget = context.Config.SessionTokenBudget;
+        _maxIterations = 50; // Matches Goal design doc's max iterations guard
         _recall = context.Config.Memory.Recall;
         _requireToolApproval = context.RequireToolApproval;
         _turnTokenUsageObserver = context.TurnTokenUsageObserver;
@@ -241,62 +243,93 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 var goalPrompt = _goalIntegration.BuildGoalSystemPrompt(session.Id);
                 if (goalPrompt is not null)
                 {
-                    // Insert after system prompts but before user message
                     messages.Insert(1, new ChatMessage(ChatRole.System, goalPrompt));
                     _logger?.LogInformation("[{CorrelationId}] Goal activation prompt injected for session {SessionId}",
                         turnCtx.CorrelationId, session.Id);
                 }
             }
 
-            using var scope = MafExecutionContextScope.Push(new MafExecutionContext
+            // Goal-aware iteration loop (mirrors AgentRuntime pattern)
+            for (var i = 0; i < _maxIterations; i++)
             {
-                Session = session,
-                TurnContext = turnCtx,
-                SystemPromptLength = GetSystemPromptLength(session),
-                SkillPromptLength = _skillPromptLength,
-                SessionTokenBudget = _sessionTokenBudget,
-                ToolInvocations = toolInvocations,
-                TurnTokenUsageObserver = _turnTokenUsageObserver,
-                RecordContractTurnUsage = _recordContractTurnUsage,
-                ApprovalCallback = approvalCallback
-            });
+                using var scope = MafExecutionContextScope.Push(new MafExecutionContext
+                {
+                    Session = session,
+                    TurnContext = turnCtx,
+                    SystemPromptLength = GetSystemPromptLength(session),
+                    SkillPromptLength = _skillPromptLength,
+                    SessionTokenBudget = _sessionTokenBudget,
+                    ToolInvocations = toolInvocations,
+                    TurnTokenUsageObserver = _turnTokenUsageObserver,
+                    RecordContractTurnUsage = _recordContractTurnUsage,
+                    ApprovalCallback = approvalCallback
+                });
 
-            var response = await agent.RunAsync(
-                messages,
-                mafSession,
-                new ChatClientAgentRunOptions(CreateChatOptions(session, responseSchema)),
-                ct);
+                var response = await agent.RunAsync(
+                    messages,
+                    mafSession,
+                    new ChatClientAgentRunOptions(CreateChatOptions(session, responseSchema)),
+                    ct);
 
-            var text = ExtractResponseText(response);
-            if (toolInvocations.Count > 0)
-            {
+                var text = ExtractResponseText(response);
+
+                // Record tool invocations and assistant response
+                if (toolInvocations.Count > 0)
+                {
+                    session.History.Add(new ChatTurn
+                    {
+                        Role = "assistant",
+                        Content = "[tool_use]",
+                        ToolCalls = toolInvocations
+                    });
+                }
+
                 session.History.Add(new ChatTurn
                 {
                     Role = "assistant",
-                    Content = "[tool_use]",
-                    ToolCalls = toolInvocations
+                    Content = text
                 });
-            }
 
-            session.History.Add(new ChatTurn
-            {
-                Role = "assistant",
-                Content = text
-            });
+                // ── Goal continuation check ──
+                if (_goalIntegration is not null)
+                {
+                    _goalIntegration.UpdateGoalTokenUsage(session);
+                    var continuationPrompt = _goalIntegration.EvaluateGoalContinuation(
+                        session, i, _maxIterations, text);
+                    if (continuationPrompt is not null)
+                    {
+                        // Inject check prompt and continue the loop
+                        messages.Add(new ChatMessage(ChatRole.System, continuationPrompt));
+                        toolInvocations.Clear();
+                        _logger?.LogInformation(
+                            "[{CorrelationId}] Goal auto-continue iteration {Iter}/{Max} for session {SessionId}",
+                            turnCtx.CorrelationId, i + 1, _maxIterations, session.Id);
+                        continue;
+                    }
+                }
+                // ── End Goal continuation check ──
 
-            DisposeTurnRoutingScope();
-            await _sessionStateStore.SaveAsync(agent, session, mafSession, ct);
+                // Save and return on normal completion
+                DisposeTurnRoutingScope();
+                await _sessionStateStore.SaveAsync(agent, session, mafSession, ct);
 
-            if (TryRejectContractBudget(session, out contractBudgetMessage))
-            {
-                AppendContractSnapshot(session, "budget_exceeded");
+                if (TryRejectContractBudget(session, out contractBudgetMessage))
+                {
+                    AppendContractSnapshot(session, "budget_exceeded");
+                    LogTurnComplete(turnCtx);
+                    return contractBudgetMessage;
+                }
+
+                AppendContractSnapshot(session, "active");
                 LogTurnComplete(turnCtx);
-                return contractBudgetMessage;
+                return text;
             }
 
+            // Max iterations reached
+            DisposeTurnRoutingScope();
             AppendContractSnapshot(session, "active");
             LogTurnComplete(turnCtx);
-            return text;
+            return "I've reached the maximum number of iterations. Please try a simpler request.";
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -391,13 +424,6 @@ public sealed class MafAgentRuntime : IAgentRuntime
             else
                 TrimHistory(session);
 
-            var eventChannel = Channel.CreateBounded<AgentStreamEvent>(new BoundedChannelOptions(256)
-            {
-                SingleReader = true,
-                SingleWriter = true,
-                FullMode = BoundedChannelFullMode.Wait
-            });
-
             var messages = BuildMessages(session);
             await TryInjectRecallAsync(messages, userMessage, ct);
 
@@ -409,22 +435,73 @@ public sealed class MafAgentRuntime : IAgentRuntime
                     messages.Insert(1, new ChatMessage(ChatRole.System, goalPrompt));
             }
 
-            producerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            producer = ProduceStreamingRunAsync(
-                session,
-                messages,
-                agent,
-                mafSession,
-                turnCtx,
-                approvalCallback,
-                eventChannel.Writer,
-                DisposeTurnRoutingScope,
-                producerCts.Token);
+            // Goal-aware iteration loop for streaming auto-continuation
+            for (var i = 0; i < _maxIterations; i++)
+            {
+                // Dispose previous producer if this is a continuation iteration
+                if (producer is not null)
+                {
+                    producerCts?.Cancel();
+                    try { await producer; } catch (OperationCanceledException) { }
+                    producerCts?.Dispose();
+                }
 
-            await foreach (var evt in eventChannel.Reader.ReadAllAsync(ct))
-                yield return evt;
+                var eventChannel = Channel.CreateBounded<AgentStreamEvent>(new BoundedChannelOptions(256)
+                {
+                    SingleReader = true,
+                    SingleWriter = true,
+                    FullMode = BoundedChannelFullMode.Wait
+                });
 
-            await producer;
+                producerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                var disposeOnce = false;
+                producer = ProduceStreamingRunAsync(
+                    session,
+                    messages,
+                    agent,
+                    mafSession,
+                    turnCtx,
+                    approvalCallback,
+                    eventChannel.Writer,
+                    () =>
+                    {
+                        if (!disposeOnce) { disposeOnce = true; DisposeTurnRoutingScope(); }
+                    },
+                    producerCts.Token);
+
+                await foreach (var evt in eventChannel.Reader.ReadAllAsync(ct))
+                    yield return evt;
+
+                await producer;
+
+                // Check Goal continuation after streaming completes
+                if (_goalIntegration is not null)
+                {
+                    _goalIntegration.UpdateGoalTokenUsage(session);
+                    var lastText = session.History.Count > 0
+                        ? session.History[^1].Content ?? ""
+                        : "";
+                    var continuationPrompt = _goalIntegration.EvaluateGoalContinuation(
+                        session, i, _maxIterations, lastText);
+                    if (continuationPrompt is not null)
+                    {
+                        messages.Add(new ChatMessage(ChatRole.System, continuationPrompt));
+                        _logger?.LogInformation(
+                            "[{CorrelationId}] Goal streaming auto-continue iteration {Iter}/{Max} for session {SessionId}",
+                            turnCtx.CorrelationId, i + 1, _maxIterations, session.Id);
+                        continue;
+                    }
+                }
+
+                // Normal completion — done with this streaming turn
+                yield break;
+            }
+
+            // Max iterations reached in streaming path
+            yield return AgentStreamEvent.ErrorOccurred(
+                "I've reached the maximum number of iterations. Please try a simpler request.",
+                "max_iterations");
+            yield return AgentStreamEvent.Complete();
         }
         finally
         {

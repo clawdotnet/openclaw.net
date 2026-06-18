@@ -133,19 +133,19 @@ public sealed class InMemoryGoalService : IGoalService
             var dir = Path.GetDirectoryName(_historyFilePath);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-            var record = new
+            var record = new GoalHistoryRecord
             {
-                timestamp = DateTime.UtcNow.ToString("O"),
-                session_id = goal.SessionId,
-                objective = goal.Objective,
-                status = goal.Status.ToDisplayName(),
-                token_budget = goal.TokenBudget,
-                tokens_used = goal.TokensUsed,
-                continuation_count = goal.ContinuationCount,
-                created_at = goal.CreatedAt.ToString("O"),
+                Timestamp = DateTime.UtcNow.ToString("O"),
+                SessionId = goal.SessionId,
+                Objective = goal.Objective,
+                Status = goal.Status.ToDisplayName(),
+                TokenBudget = goal.TokenBudget,
+                TokensUsed = goal.TokensUsed,
+                ContinuationCount = goal.ContinuationCount,
+                CreatedAt = goal.CreatedAt.ToString("O"),
             };
 
-            var json = System.Text.Json.JsonSerializer.Serialize(record);
+            var json = System.Text.Json.JsonSerializer.Serialize(record, GoalJsonContext.Default.GoalHistoryRecord);
             File.AppendAllText(_historyFilePath, json + Environment.NewLine);
         }
         catch (Exception ex)

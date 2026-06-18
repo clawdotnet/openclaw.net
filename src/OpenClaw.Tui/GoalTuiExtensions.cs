@@ -1,6 +1,5 @@
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models.Goal;
-using OpenClaw.Agent.Goal;
 
 namespace OpenClaw.Tui;
 
@@ -11,14 +10,13 @@ public static class GoalTuiExtensions
 {
     /// <summary>
     /// Formats the goal status line for the TUI footer.
-    /// Returns an empty string if no goal exists or the goal is terminal.
+    /// Returns an empty string if no goal exists.
     /// </summary>
     public static string FormatGoalFooterLine(IGoalService? goalService, string sessionId)
     {
         if (goalService is null) return string.Empty;
-
         var goal = goalService.GetGoal(sessionId);
-        return GoalPromptTemplates.FormatGoalFooterLine(goal);
+        return GoalStatusExtensions.FormatGoalFooterLine(goal);
     }
 
     /// <summary>
@@ -28,11 +26,9 @@ public static class GoalTuiExtensions
     public static string? FormatGoalProgressBar(IGoalService? goalService, string sessionId)
     {
         if (goalService is null) return null;
-
         var goal = goalService.GetGoal(sessionId);
         if (goal is null || !goal.Status.IsPursuable()) return null;
-
-        return GoalPromptTemplates.FormatProgressBar(goal);
+        return GoalStatusExtensions.FormatGoalProgressBar(goal);
     }
 
     /// <summary>
@@ -42,12 +38,11 @@ public static class GoalTuiExtensions
     public static string FormatGoalStatusLine(IGoalService? goalService, string sessionId)
     {
         if (goalService is null) return string.Empty;
-
         var goal = goalService.GetGoal(sessionId);
         if (goal is null) return string.Empty;
 
-        var statusText = GoalPromptTemplates.FormatGoalFooterLine(goal);
-        var progressBar = GoalPromptTemplates.FormatProgressBar(goal);
+        var statusText = GoalStatusExtensions.FormatGoalFooterLine(goal);
+        var progressBar = GoalStatusExtensions.FormatGoalProgressBar(goal);
 
         if (progressBar is not null)
             return $"{statusText} {progressBar}";
