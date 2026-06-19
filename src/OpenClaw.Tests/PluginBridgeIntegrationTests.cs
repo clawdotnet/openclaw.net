@@ -12,8 +12,7 @@ using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Core.Skills;
 using OpenClaw.Gateway.Extensions;
-using Xunit;
-using Xunit.Abstractions;
+using Xunit; 
 
 namespace OpenClaw.Tests;
 
@@ -1163,7 +1162,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
         };
 
         await adapter.StartAsync(CancellationToken.None);
-        var inbound = await inboundTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var inbound = await inboundTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
 
         Assert.Equal("notify-channel", inbound.ChannelId);
         Assert.Equal("user1", inbound.SenderId);
@@ -1258,8 +1257,8 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
 
         await adapter.StartAsync(CancellationToken.None);
 
-        var authEvt = await authTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var inbound = await inboundTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var authEvt = await authTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+        var inbound = await inboundTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
 
         Assert.Equal("bot@wa", adapter.SelfId);
         Assert.Equal("qr_code", authEvt.State);
@@ -1446,7 +1445,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
 
         Assert.Equal("echo:first", await tool.ExecuteAsync("""{"text":"first"}""", CancellationToken.None));
         Assert.Equal("restarting", await tool.ExecuteAsync("""{"kill":true}""", CancellationToken.None));
-        await Task.Delay(500);
+        await Task.Delay(500, CancellationToken.None);
         Assert.Equal("echo:second", await tool.ExecuteAsync("""{"text":"second"}""", CancellationToken.None));
     }
 
@@ -1501,7 +1500,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
 
         Assert.Equal("echo:first", await bridge.ExecuteToolAsync("restart_metrics_echo", """{"text":"first"}""", CancellationToken.None));
         Assert.Equal("restarting", await bridge.ExecuteToolAsync("restart_metrics_echo", """{"kill":true}""", CancellationToken.None));
-        await Task.Delay(500);
+        await Task.Delay(500, CancellationToken.None);
         Assert.Equal("echo:second", await bridge.ExecuteToolAsync("restart_metrics_echo", """{"text":"second"}""", CancellationToken.None));
         Assert.True(metrics.PluginBridgeRestartAttempts >= 1);
         Assert.Equal(0, metrics.PluginBridgeRestartFailures);
@@ -1705,11 +1704,11 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
 
         Assert.False(allowed);
 
-        var beforePayload = JsonDocument.Parse(await File.ReadAllTextAsync(beforePath)).RootElement;
+        var beforePayload = JsonDocument.Parse(await File.ReadAllTextAsync(beforePath, CancellationToken.None)).RootElement;
         Assert.Equal("shell_exec", beforePayload.GetProperty("toolName").GetString());
         Assert.Equal("before", beforePayload.GetProperty("phase").GetString());
 
-        var afterPayload = JsonDocument.Parse(await File.ReadAllTextAsync(afterPath)).RootElement;
+        var afterPayload = JsonDocument.Parse(await File.ReadAllTextAsync(afterPath, CancellationToken.None)).RootElement;
         Assert.Equal("number", afterPayload.GetProperty("durationType").GetString());
         Assert.Equal("boolean", afterPayload.GetProperty("failedType").GetString());
         Assert.True(afterPayload.GetProperty("failed").GetBoolean());
@@ -1852,10 +1851,10 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
         };
 
         await adapter.StartAsync(CancellationToken.None);
-        var inbound = await inboundTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var inbound = await inboundTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
 
         // Wait a bit to ensure no duplicate arrives
-        await Task.Delay(200);
+        await Task.Delay(200, CancellationToken.None);
 
         Assert.Equal("ping", inbound.Text);
         Assert.Equal(1, receivedCount);
