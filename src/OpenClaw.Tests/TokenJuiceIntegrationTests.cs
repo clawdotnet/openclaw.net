@@ -10,6 +10,15 @@ public class TokenJuiceIntegrationTests
     private static IReadOnlyList<TokenJuiceRule> LoadRules()
         => RuleLoader.LoadMergedRules();
 
+    private static string FindRepositoryRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "OpenClaw.Net.slnx")))
+            dir = dir.Parent;
+
+        return dir?.FullName ?? throw new DirectoryNotFoundException("Could not locate repository root.");
+    }
+
     [Fact]
     public void RuleMatcher_DotnetBuild_MatchesBuildRule()
     {
@@ -111,6 +120,17 @@ public class TokenJuiceIntegrationTests
         Assert.Contains("exit 1", result);
         Assert.Contains("error: 12", result);
         Assert.Contains("warning: 3", result);
+    }
+
+    [Fact]
+    public void ProjectFile_EmbedsRulesDirectoryWithCorrectCase()
+    {
+        var projectFile = Path.Combine(
+            FindRepositoryRoot(),
+            "src", "OpenClaw.Plugins.TokenJuice", "OpenClaw.Plugins.TokenJuice.csproj");
+        var projectXml = File.ReadAllText(projectFile);
+
+        Assert.Contains("<EmbeddedResource Include=\"Rules/**/*.json\" />", projectXml);
     }
 
     [Fact]
