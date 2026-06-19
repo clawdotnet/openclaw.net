@@ -100,7 +100,7 @@ public sealed class FractalMemoryTests
             Query = "reduce context bloat",
             Mode = "auto",
             MaxChars = 500
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.True(context.Success);
         Assert.True(context.Truncated);
@@ -127,7 +127,7 @@ public sealed class FractalMemoryTests
         {
             Query = "anything",
             Mode = "surprise"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         Assert.False(invalid.Success);
         Assert.Contains("Unsupported Fractal Memory context mode", invalid.Error, StringComparison.Ordinal);
 
@@ -136,7 +136,7 @@ public sealed class FractalMemoryTests
             Query = "anything",
             Mode = "auto",
             MaxTokens = int.MaxValue
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         Assert.True(valid.Success);
     }
 
@@ -147,7 +147,7 @@ public sealed class FractalMemoryTests
         var provider = new FakeStructuredMemoryProvider();
 
         var search = new FractalMemorySearchTool(provider);
-        var searchJson = await search.ExecuteAsync("""{"query":"handoff"}""", CancellationToken.None);
+        var searchJson = await search.ExecuteAsync("""{"query":"handoff"}""", TestContext.Current.CancellationToken);
         var searchResult = JsonSerializer.Deserialize(searchJson, CoreJsonContext.Default.StructuredMemorySearchResult);
         Assert.True(searchResult?.Success);
         Assert.IsNotAssignableFrom<IToolActionDescriptorProvider>(search);
@@ -168,19 +168,19 @@ public sealed class FractalMemoryTests
         var config = new FractalMemoryConfig();
 
         var search = new FractalMemorySearchTool(provider);
-        var malformed = await search.ExecuteAsync("""{"query":123}""", CancellationToken.None);
+        var malformed = await search.ExecuteAsync("""{"query":123}""", TestContext.Current.CancellationToken);
         var malformedResult = JsonSerializer.Deserialize(malformed, CoreJsonContext.Default.MutationResponse);
         Assert.False(malformedResult?.Success);
 
-        _ = await search.ExecuteAsync("""{"query":"handoff","limit":999}""", CancellationToken.None);
+        _ = await search.ExecuteAsync("""{"query":"handoff","limit":999}""", TestContext.Current.CancellationToken);
         Assert.Equal(50, provider.LastSearchLimit);
 
         var open = new FractalMemoryOpenTool(provider, config);
-        _ = await open.ExecuteAsync("""{"path":"projects/demo","depth":999}""", CancellationToken.None);
+        _ = await open.ExecuteAsync("""{"path":"projects/demo","depth":999}""", TestContext.Current.CancellationToken);
         Assert.Equal(3, provider.LastOpenDepth);
 
         var recent = new FractalMemoryRecentTool(provider);
-        _ = await recent.ExecuteAsync("""{"days":0,"limit":999}""", CancellationToken.None);
+        _ = await recent.ExecuteAsync("""{"days":0,"limit":999}""", TestContext.Current.CancellationToken);
         Assert.Equal(1, provider.LastRecentDays);
         Assert.Equal(100, provider.LastRecentLimit);
     }
@@ -232,7 +232,7 @@ public sealed class FractalMemoryTests
             contextBudgetPlanner: planner);
 
         var session = new Session { Id = "s1", ChannelId = "test", SenderId = "u1" };
-        _ = await agent.RunAsync(session, "what changed in project memory?", CancellationToken.None);
+        _ = await agent.RunAsync(session, "what changed in project memory?", TestContext.Current.CancellationToken);
 
         Assert.NotNull(captured);
         Assert.Contains(captured!, message =>
@@ -266,7 +266,7 @@ public sealed class FractalMemoryTests
             contextBudgetPlanner: planner);
 
         var session = new Session { Id = "s1", ChannelId = "test", SenderId = "u1" };
-        _ = await agent.RunAsync(session, "what changed in project memory?", CancellationToken.None);
+        _ = await agent.RunAsync(session, "what changed in project memory?", TestContext.Current.CancellationToken);
 
         Assert.NotNull(captured);
         Assert.DoesNotContain(captured!, message =>
@@ -307,7 +307,7 @@ public sealed class FractalMemoryTests
             contextBudgetPlanner: planner);
 
         var session = new Session { Id = "s1", ChannelId = "test", SenderId = "u1" };
-        _ = await agent.RunAsync(session, "what should I remember?", CancellationToken.None);
+        _ = await agent.RunAsync(session, "what should I remember?", TestContext.Current.CancellationToken);
 
         Assert.NotNull(captured);
         var recallIndex = captured!.Select((message, index) => (message, index))

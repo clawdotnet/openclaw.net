@@ -35,7 +35,7 @@ public sealed class HomeAssistantToolTests
         };
 
         using var client = new HomeAssistantRestClient(config, http);
-        var json = await client.GetStateAsync("light.kitchen", CancellationToken.None);
+        var json = await client.GetStateAsync("light.kitchen", TestContext.Current.CancellationToken);
         Assert.Contains("\"entity_id\":\"light.kitchen\"", json);
     }
 
@@ -60,7 +60,7 @@ public sealed class HomeAssistantToolTests
 
         using var tool = new HomeAssistantWriteTool(config, http);
         var result = await tool.ExecuteAsync("""{"op":"call_service","domain":"light","service":"turn_on","entity_id":"light.kitchen"}""",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("not allowed by policy", result);
     }

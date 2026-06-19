@@ -18,6 +18,7 @@
     <Project Path="src/OpenClaw.Payments.Core/OpenClaw.Payments.Core.csproj" />
     <Project Path="src/OpenClaw.Payments.StripeLink/OpenClaw.Payments.StripeLink.csproj" />
     <Project Path="src/OpenClaw.Providers.MicrosoftExtensionsAI/OpenClaw.Providers.MicrosoftExtensionsAI.csproj" />
+    <Project Path="src/OpenClaw.Plugins.TokenJuice/OpenClaw.Plugins.TokenJuice.csproj" />
     <Project Path="src/OpenClaw.Protocols.Browser/OpenClaw.Protocols.Browser.csproj" />
     <Project Path="src/OpenClaw.Protocols.Mqtt/OpenClaw.Protocols.Mqtt.csproj" />
     <Project Path="src/OpenClaw.Plugins.Payment/OpenClaw.Plugins.Payment.csproj" />

@@ -1,9 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <OpenClawEnableMempalace Condition="'$(OpenClawEnableMempalace)' == ''">false</OpenClawEnableMempalace>
     <OpenClawEnableOpenSandbox Condition="'$(OpenClawEnableOpenSandbox)' == ''">false</OpenClawEnableOpenSandbox>
     <RootNamespace>OpenClaw.Tests</RootNamespace>
+    <NoWarn>$(NoWarn);xUnit1051</NoWarn>
     <InterceptorsNamespaces>$(InterceptorsNamespaces);Microsoft.AspNetCore.OpenApi.Generated</InterceptorsNamespaces>
   </PropertyGroup>
 
@@ -26,7 +27,10 @@
     <ProjectReference Include="..\OpenClaw.SkillKit.Abstractions\OpenClaw.SkillKit.Abstractions.csproj" />
     <ProjectReference Include="..\OpenClaw.SkillKit\OpenClaw.SkillKit.csproj" />
     <ProjectReference Include="..\OpenClaw.PluginKit\OpenClaw.PluginKit.csproj" />
+    <ProjectReference Include="..\OpenClaw.Plugins.TokenJuice\OpenClaw.Plugins.TokenJuice.csproj" />
     <ProjectReference Include="..\OpenClaw.Testing\OpenClaw.Testing.csproj" />
+
+    <None Update="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\OpenClaw.TestPluginFixtures\OpenClaw.TestPluginFixtures.csproj" />
     <ProjectReference Include="..\OpenClaw.WhatsApp.BaileysWorker\OpenClaw.WhatsApp.BaileysWorker.csproj" />
   </ItemGroup>
@@ -38,9 +42,9 @@
     <ProjectReference Include="..\OpenClaw.Plugins.Mempalace\OpenClaw.Plugins.Mempalace.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Agents.AI" Version="1.3.0" />
-    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A" Version="1.3.0-preview.260423.1" />
-    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A.AspNetCore" Version="1.3.0-preview.260423.1" />
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.10.0" />
+    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A" Version="1.10.0-preview.260610.1" />
+    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A.AspNetCore" Version="1.10.0-preview.260610.1" />
     <PackageReference Include="A2A" Version="1.0.0-preview2" />
     <PackageReference Include="A2A.AspNetCore" Version="1.0.0-preview2" />
   </ItemGroup>
@@ -56,12 +60,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.6" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0-preview.3.25172.1" />
-    <PackageReference Include="Avalonia.Headless.XUnit" Version="11.3.12" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.9" />
+    <PackageReference Include="Avalonia.Headless.XUnit" Version="12.0.4" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+	<PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 </Project>

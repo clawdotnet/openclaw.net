@@ -42,7 +42,7 @@ public class VideoFrameExtractionServiceTests
                 Data = [1, 2, 3, 4],
                 FileName = "fixture.mp4"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
         Assert.Equal(12.5, result.DurationSeconds);
@@ -83,7 +83,7 @@ public class VideoFrameExtractionServiceTests
                 Data = [1, 2, 3, 4],
                 FileName = "fixture.mp4"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
         Assert.Equal("ffmpeg_or_ffprobe_missing", result.Issue);
@@ -118,7 +118,7 @@ public class VideoFrameExtractionServiceTests
                 Data = [1, 2, 3],
                 FileName = "fixture.mp4"
             },
-            CancellationToken.None));
+            TestContext.Current.CancellationToken));
 
         Assert.Contains("too large", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -151,7 +151,7 @@ public class VideoFrameExtractionServiceTests
                 MediaType = "video/mp4",
                 Uri = new UriBuilder { Scheme = Uri.UriSchemeFile, Path = missingPath }.Uri
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
         Assert.Equal("video_not_found", result.Issue);
@@ -184,7 +184,7 @@ public class VideoFrameExtractionServiceTests
                 MediaType = "video/mp4",
                 Uri = new Uri("data:video/mp4,not-binary-safe")
             },
-            CancellationToken.None));
+            TestContext.Current.CancellationToken));
 
         Assert.Contains("base64", ex.Message, StringComparison.OrdinalIgnoreCase);
     }

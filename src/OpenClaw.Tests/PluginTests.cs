@@ -363,7 +363,7 @@ public class PluginHostTests
         var logger = new TestLogger();
         var host = new PluginHost(config, "/nonexistent/bridge.mjs", logger);
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         Assert.Empty(tools);
     }
@@ -376,7 +376,7 @@ public class PluginHostTests
         var host = new PluginHost(config, "/nonexistent/bridge.mjs", logger);
 
         // No workspace, no global extensions — should discover nothing
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         Assert.Empty(tools);
     }

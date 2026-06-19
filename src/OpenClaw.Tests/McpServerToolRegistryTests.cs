@@ -42,7 +42,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
             NullLogger<McpServerToolRegistry>.Instance);
         using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
 
-        await registry.RegisterToolsAsync(nativeRegistry, CancellationToken.None);
+        await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(nativeRegistry.Tools);
         Assert.Equal("demo.echo", tool.Name);
@@ -55,7 +55,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
             Assert.True(properties.TryGetProperty("text", out var textProperty));
             Assert.Equal(JsonValueKind.Object, textProperty.ValueKind);
         }
-        Assert.Equal("demo:hello", await tool.ExecuteAsync("""{"text":"hello"}""", CancellationToken.None));
+        Assert.Equal("demo:hello", await tool.ExecuteAsync("""{"text":"hello"}""", TestContext.Current.CancellationToken));
         Assert.True(calls.InitializeCalls >= 1);
         Assert.True(calls.ListCalls >= 1);
         Assert.True(calls.CallCalls >= 1);
@@ -90,7 +90,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
                 NullLogger<McpServerToolRegistry>.Instance);
             using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
 
-            await registry.RegisterToolsAsync(nativeRegistry, CancellationToken.None);
+            await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
 
             // Verify headers were resolved and sent correctly
             Assert.True(receivedHeaders.ContainsKey("Authorization"));
@@ -126,10 +126,10 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
             NullLogger<McpServerToolRegistry>.Instance);
         using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
 
-        await registry.RegisterToolsAsync(nativeRegistry, CancellationToken.None);
+        await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(nativeRegistry.Tools);
-        var result = await tool.ExecuteAsync("{}", CancellationToken.None);
+        var result = await tool.ExecuteAsync("{}", TestContext.Current.CancellationToken);
         using var document = JsonDocument.Parse(result);
         Assert.Equal(123, document.RootElement.GetProperty("value").GetInt32());
         Assert.Equal("ok", document.RootElement.GetProperty("status").GetString());
@@ -155,10 +155,10 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
             NullLogger<McpServerToolRegistry>.Instance);
         using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
 
-        await registry.RegisterToolsAsync(nativeRegistry, CancellationToken.None);
+        await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(nativeRegistry.Tools);
-        var result = await tool.ExecuteAsync("{}", CancellationToken.None);
+        var result = await tool.ExecuteAsync("{}", TestContext.Current.CancellationToken);
         Assert.Contains("image/png", result, StringComparison.Ordinal);
         Assert.Contains("type", result, StringComparison.OrdinalIgnoreCase);
     }
@@ -183,8 +183,8 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
             NullLogger<McpServerToolRegistry>.Instance);
         using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
 
-        await registry.RegisterToolsAsync(nativeRegistry, CancellationToken.None);
-        await registry.RegisterToolsAsync(nativeRegistry, CancellationToken.None);
+        await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
+        await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
 
         Assert.Single(nativeRegistry.Tools);
 
@@ -213,10 +213,10 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
             NullLogger<McpServerToolRegistry>.Instance);
 
         var loads = await Task.WhenAll(
-            registry.LoadAsync(CancellationToken.None),
-            registry.LoadAsync(CancellationToken.None),
-            registry.LoadAsync(CancellationToken.None),
-            registry.LoadAsync(CancellationToken.None));
+            registry.LoadAsync(TestContext.Current.CancellationToken),
+            registry.LoadAsync(TestContext.Current.CancellationToken),
+            registry.LoadAsync(TestContext.Current.CancellationToken),
+            registry.LoadAsync(TestContext.Current.CancellationToken));
 
         Assert.All(loads, tools => Assert.Single(tools));
         Assert.Equal(1, calls.ListCalls);
@@ -245,14 +245,14 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
         using var registry = new McpServerToolRegistry(config, NullLogger<McpServerToolRegistry>.Instance);
         using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => registry.RegisterToolsAsync(nativeRegistry, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken));
         var clientsField = typeof(McpServerToolRegistry).GetField("_clients", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
         var clientsAfterFailure = Assert.IsType<List<ModelContextProtocol.Client.McpClient>>(clientsField?.GetValue(registry));
         Assert.Empty(clientsAfterFailure);
 
         config.Servers["broken"].Enabled = false;
 
-        await registry.RegisterToolsAsync(nativeRegistry, CancellationToken.None);
+        await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
         var clientsAfterSuccess = Assert.IsType<List<ModelContextProtocol.Client.McpClient>>(clientsField?.GetValue(registry));
         Assert.Single(clientsAfterSuccess);
 
@@ -282,7 +282,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
             NullLogger<McpServerToolRegistry>.Instance);
         using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
 
-        await registry.RegisterToolsAsync(nativeRegistry, CancellationToken.None);
+        await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(nativeRegistry.Tools);
         Assert.Equal("demo.echo", tool.Name);
@@ -301,7 +301,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
 
         registry.Dispose();
 
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => registry.LoadAsync(CancellationToken.None));
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => registry.LoadAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -317,7 +317,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
 
         await registry.DisposeAsync();
 
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => registry.LoadAsync(CancellationToken.None));
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => registry.LoadAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -340,7 +340,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
             NullLogger<McpServerToolRegistry>.Instance);
         using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
 
-        await registry.RegisterToolsAsync(nativeRegistry, CancellationToken.None);
+        await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
 
         var ex = Record.Exception(() =>
         {
@@ -371,7 +371,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
             NullLogger<McpServerToolRegistry>.Instance);
         using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
 
-        await registry.RegisterToolsAsync(nativeRegistry, CancellationToken.None);
+        await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
 
         var ex = await Record.ExceptionAsync(async () =>
         {

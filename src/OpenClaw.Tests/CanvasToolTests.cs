@@ -20,7 +20,7 @@ public sealed class CanvasToolTests
     {
         var tool = new CanvasPresentTool(CreateBroker(), new GatewayConfig());
 
-        var result = await tool.ExecuteAsync("{}", Context(channelId: "cli"), CancellationToken.None);
+        var result = await tool.ExecuteAsync("{}", Context(channelId: "cli"), TestContext.Current.CancellationToken);
 
         Assert.Contains("websocket session", result, StringComparison.OrdinalIgnoreCase);
     }
@@ -32,7 +32,7 @@ public sealed class CanvasToolTests
     {
         var tool = new CanvasNavigateTool(CreateBroker(), new GatewayConfig());
 
-        var result = await tool.ExecuteAsync($$"""{"url":"{{url}}"}""", Context(), CancellationToken.None);
+        var result = await tool.ExecuteAsync($$"""{"url":"{{url}}"}""", Context(), TestContext.Current.CancellationToken);
 
         Assert.Contains("only supports about:blank and openclaw-canvas://", result, StringComparison.OrdinalIgnoreCase);
     }
@@ -45,7 +45,7 @@ public sealed class CanvasToolTests
         var result = await tool.ExecuteAsync(
             """{"frames":"{\"type\":\"createSurface\",\"id\":\"main\"}"}""",
             Context(),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("createSurface", result, StringComparison.Ordinal);
     }
@@ -55,7 +55,7 @@ public sealed class CanvasToolTests
     {
         var tool = new A2UiPushTool(CreateBroker(), new GatewayConfig());
 
-        var result = await tool.ExecuteAsync("{}", Context(), CancellationToken.None);
+        var result = await tool.ExecuteAsync("{}", Context(), TestContext.Current.CancellationToken);
 
         Assert.Contains("'frames' is required", result, StringComparison.Ordinal);
     }
@@ -73,7 +73,7 @@ public sealed class CanvasToolTests
         var tool = new A2UiPushTool(CreateBroker(config: config), config);
         var frames = $$"""{"type":"text","id":"large","text":"{{new string('x', 200)}}"}""";
 
-        var result = await tool.ExecuteAsync(JsonSerializer.Serialize(new { frames }), Context(), CancellationToken.None);
+        var result = await tool.ExecuteAsync(JsonSerializer.Serialize(new { frames }), Context(), TestContext.Current.CancellationToken);
 
         Assert.Contains("exceeds 104 bytes", result, StringComparison.Ordinal);
     }
@@ -90,7 +90,7 @@ public sealed class CanvasToolTests
         };
         var tool = new A2UiEvalTool(CreateBroker(config: config), config);
 
-        var result = await tool.ExecuteAsync("""{"script":"return 1"}""", Context(), CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"script":"return 1"}""", Context(), TestContext.Current.CancellationToken);
 
         Assert.Contains("eval is disabled", result, StringComparison.OrdinalIgnoreCase);
     }
@@ -104,7 +104,7 @@ public sealed class CanvasToolTests
         var executeTask = tool.ExecuteAsync(
             JsonSerializer.Serialize(new { surfaceId = "surface-1" }),
             Context(senderId: "client"),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var sent = await WaitForSentEnvelopeAsync(ws);
         await AckAsync(broker, "client", sent, "sess");
         var result = await executeTask;
@@ -130,7 +130,7 @@ public sealed class CanvasToolTests
         var result = await tool.ExecuteAsync(
             JsonSerializer.Serialize(new { surfaceId = "surface-1", components = new[] { component } }),
             Context(senderId: "client"),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("unsupported component type 'Icon'", result, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(ws.Sent);
@@ -145,7 +145,7 @@ public sealed class CanvasToolTests
         var result = await tool.ExecuteAsync(
             JsonSerializer.Serialize(new { surfaceId = "surface-1", components = new[] { "not-json" } }),
             Context(senderId: "client"),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("not valid JSON", result, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(ws.Sent);
@@ -160,7 +160,7 @@ public sealed class CanvasToolTests
         var result = await tool.ExecuteAsync(
             """{"surfaceId":"surface-1","components":[123]}""",
             Context(senderId: "client"),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("must be a JSON string array", result, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(ws.Sent);
@@ -177,7 +177,7 @@ public sealed class CanvasToolTests
         var result = await tool.ExecuteAsync(
             JsonSerializer.Serialize(new { surfaceId = "surface-1", dataModelJson }),
             Context(senderId: "client"),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains(expectedError, result, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(ws.Sent);
@@ -201,7 +201,7 @@ public sealed class CanvasToolTests
             dataModelJson
         });
 
-        var executeTask = tool.ExecuteAsync(argumentsJson, Context(senderId: "client"), CancellationToken.None);
+        var executeTask = tool.ExecuteAsync(argumentsJson, Context(senderId: "client"), TestContext.Current.CancellationToken);
         var sent = await WaitForSentEnvelopeAsync(ws);
         await AckAsync(broker, "client", sent, "sess");
         var result = await executeTask;
@@ -225,13 +225,13 @@ public sealed class CanvasToolTests
         var config = new GatewayConfig();
         var context = Context(senderId: "client");
 
-        Assert.Contains("'surfaceId' is required", await new A2UiCreateSurfaceTool(broker, config).ExecuteAsync("{}", context, CancellationToken.None), StringComparison.Ordinal);
-        Assert.Contains("'surfaceId' is required", await new A2UiUpdateComponentsTool(broker, config).ExecuteAsync("{}", context, CancellationToken.None), StringComparison.Ordinal);
-        Assert.Contains("'components' is required", await new A2UiUpdateComponentsTool(broker, config).ExecuteAsync("""{"surfaceId":"surface-1"}""", context, CancellationToken.None), StringComparison.Ordinal);
-        Assert.Contains("'surfaceId' is required", await new A2UiUpdateDataModelTool(broker, config).ExecuteAsync("{}", context, CancellationToken.None), StringComparison.Ordinal);
-        Assert.Contains("'dataModelJson' is required", await new A2UiUpdateDataModelTool(broker, config).ExecuteAsync("""{"surfaceId":"surface-1"}""", context, CancellationToken.None), StringComparison.Ordinal);
-        Assert.Contains("'surfaceId' is required", await new A2UiDeleteSurfaceTool(broker, config).ExecuteAsync("{}", context, CancellationToken.None), StringComparison.Ordinal);
-        Assert.Contains("'surfaceId' is required", await new A2UiSyncUiToDataTool(broker, config).ExecuteAsync("{}", context, CancellationToken.None), StringComparison.Ordinal);
+        Assert.Contains("'surfaceId' is required", await new A2UiCreateSurfaceTool(broker, config).ExecuteAsync("{}", context, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.Contains("'surfaceId' is required", await new A2UiUpdateComponentsTool(broker, config).ExecuteAsync("{}", context, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.Contains("'components' is required", await new A2UiUpdateComponentsTool(broker, config).ExecuteAsync("""{"surfaceId":"surface-1"}""", context, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.Contains("'surfaceId' is required", await new A2UiUpdateDataModelTool(broker, config).ExecuteAsync("{}", context, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.Contains("'dataModelJson' is required", await new A2UiUpdateDataModelTool(broker, config).ExecuteAsync("""{"surfaceId":"surface-1"}""", context, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.Contains("'surfaceId' is required", await new A2UiDeleteSurfaceTool(broker, config).ExecuteAsync("{}", context, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.Contains("'surfaceId' is required", await new A2UiSyncUiToDataTool(broker, config).ExecuteAsync("{}", context, TestContext.Current.CancellationToken), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -249,7 +249,7 @@ public sealed class CanvasToolTests
                 metadata = "{}"
             }),
             Context(senderId: "client"),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("a2ui.v0_9", result, StringComparison.OrdinalIgnoreCase);
     }
@@ -262,10 +262,10 @@ public sealed class CanvasToolTests
         var context = Context(senderId: "client");
         var component = """{"type":"Text","id":"hello","text":"Hello"}""";
 
-        Assert.Contains("a2ui.v0_9", await new A2UiUpdateComponentsTool(broker, config).ExecuteAsync(JsonSerializer.Serialize(new { surfaceId = "surface-1", components = new[] { component } }), context, CancellationToken.None), StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("a2ui.v0_9", await new A2UiUpdateDataModelTool(broker, config).ExecuteAsync(JsonSerializer.Serialize(new { surfaceId = "surface-1", dataModelJson = "{}" }), context, CancellationToken.None), StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("a2ui.v0_9", await new A2UiDeleteSurfaceTool(broker, config).ExecuteAsync("""{"surfaceId":"surface-1"}""", context, CancellationToken.None), StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("a2ui.v0_9", await new A2UiSyncUiToDataTool(broker, config).ExecuteAsync("""{"surfaceId":"surface-1"}""", context, CancellationToken.None), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("a2ui.v0_9", await new A2UiUpdateComponentsTool(broker, config).ExecuteAsync(JsonSerializer.Serialize(new { surfaceId = "surface-1", components = new[] { component } }), context, TestContext.Current.CancellationToken), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("a2ui.v0_9", await new A2UiUpdateDataModelTool(broker, config).ExecuteAsync(JsonSerializer.Serialize(new { surfaceId = "surface-1", dataModelJson = "{}" }), context, TestContext.Current.CancellationToken), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("a2ui.v0_9", await new A2UiDeleteSurfaceTool(broker, config).ExecuteAsync("""{"surfaceId":"surface-1"}""", context, TestContext.Current.CancellationToken), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("a2ui.v0_9", await new A2UiSyncUiToDataTool(broker, config).ExecuteAsync("""{"surfaceId":"surface-1"}""", context, TestContext.Current.CancellationToken), StringComparison.OrdinalIgnoreCase);
         Assert.Empty(ws.Sent);
     }
 
@@ -278,7 +278,7 @@ public sealed class CanvasToolTests
         var invalidResult = await tool.ExecuteAsync(
             JsonSerializer.Serialize(new { surfaceId = "surface-1", components = new[] { "not-json" } }),
             Context(senderId: "client"),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("not valid JSON", invalidResult, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(ws.Sent);
@@ -287,7 +287,7 @@ public sealed class CanvasToolTests
         var executeTask = tool.ExecuteAsync(
             JsonSerializer.Serialize(new { surfaceId = "surface-1", components = new[] { component } }),
             Context(senderId: "client"),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var sent = await WaitForSentEnvelopeAsync(ws);
         await AckAsync(broker, "client", sent, "sess");
         var result = await executeTask;
@@ -309,7 +309,7 @@ public sealed class CanvasToolTests
         var result = await tool.ExecuteAsync(
             """{"surfaceId":"surface-1","components":[true]}""",
             Context(senderId: "client"),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("must be a JSON string array", result, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(ws.Sent);
@@ -326,7 +326,7 @@ public sealed class CanvasToolTests
         var result = await tool.ExecuteAsync(
             JsonSerializer.Serialize(new { surfaceId = "surface-1", dataModelJson }),
             Context(senderId: "client"),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains(expectedError, result, StringComparison.OrdinalIgnoreCase);
     }
@@ -341,7 +341,7 @@ public sealed class CanvasToolTests
         var executeTask = tool.ExecuteAsync(
             JsonSerializer.Serialize(new { surfaceId = "surface-1", dataModelJson }),
             Context(senderId: "client"),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var sent = await WaitForSentEnvelopeAsync(ws);
         await AckAsync(broker, "client", sent, "sess");
         var result = await executeTask;
@@ -359,7 +359,7 @@ public sealed class CanvasToolTests
         var (broker, ws) = await CreateConnectedBrokerAsync(["a2ui.v0_9"], [A2UiCatalogRegistry.AGenUiCatalogId]);
         var tool = new A2UiDeleteSurfaceTool(broker, new GatewayConfig());
 
-        var executeTask = tool.ExecuteAsync("""{"surfaceId":"surface-1"}""", Context(senderId: "client"), CancellationToken.None);
+        var executeTask = tool.ExecuteAsync("""{"surfaceId":"surface-1"}""", Context(senderId: "client"), TestContext.Current.CancellationToken);
         var sent = await WaitForSentEnvelopeAsync(ws);
         await AckAsync(broker, "client", sent, "sess");
         var result = await executeTask;
@@ -384,7 +384,7 @@ public sealed class CanvasToolTests
                 syncMode = "merge"
             }),
             Context(senderId: "client"),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var sent = await WaitForSentEnvelopeAsync(ws);
         await broker.HandleClientEnvelopeAsync("client", new WsClientEnvelope
         {
@@ -394,7 +394,7 @@ public sealed class CanvasToolTests
             SurfaceId = "surface-1",
             Success = true,
             ValueJson = "{\"value\":\"updated\"}"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         var result = await executeTask;
 
         Assert.Equal("{\"value\":\"updated\"}", result);
@@ -423,7 +423,7 @@ public sealed class CanvasToolTests
         var createTask = createTool.ExecuteAsync(
             """{"surfaceId":"details","components":["{\"type\":\"Text\",\"id\":\"title\",\"text\":\"ok\"}"],"dataModelJson":"{\"status\":\"draft\"}"}""",
             context,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var createSent = await WaitForSentEnvelopeAsync(ws);
         await AckAsync(broker, "client", createSent, "sess");
         var createResult = await createTask;
@@ -433,7 +433,7 @@ public sealed class CanvasToolTests
         Assert.Equal("createSurface", createSent.Operation);
         Assert.Equal("details", createSent.SurfaceId);
 
-        var snapshotTask1 = snapshotTool.ExecuteAsync("""{"surfaceId":"details"}""", context, CancellationToken.None);
+        var snapshotTask1 = snapshotTool.ExecuteAsync("""{"surfaceId":"details"}""", context, TestContext.Current.CancellationToken);
         var snapshotSent1 = await WaitForSentEnvelopeAsync(ws, skip: 1);
         await RespondWithSnapshotAsync(
             broker,
@@ -452,7 +452,7 @@ public sealed class CanvasToolTests
         var updateModelTask = updateModelTool.ExecuteAsync(
             """{"surfaceId":"details","dataModelJson":"{\"status\":\"approved\"}"}""",
             context,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var updateModelSent = await WaitForSentEnvelopeAsync(ws, skip: 2);
         await AckAsync(broker, "client", updateModelSent, "sess");
         var updateModelResult = await updateModelTask;
@@ -463,7 +463,7 @@ public sealed class CanvasToolTests
         var updateComponentsTask = updateComponentsTool.ExecuteAsync(
             """{"surfaceId":"details","components":["{\"type\":\"Text\",\"id\":\"title\",\"text\":\"updated\"}"]}""",
             context,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var updateComponentsSent = await WaitForSentEnvelopeAsync(ws, skip: 3);
         await AckAsync(broker, "client", updateComponentsSent, "sess");
         var updateComponentsResult = await updateComponentsTask;
@@ -472,7 +472,7 @@ public sealed class CanvasToolTests
         Assert.Equal("a2ui_update_components", updateComponentsSent.Type);
         Assert.Equal("updateComponents", updateComponentsSent.Operation);
 
-        var snapshotTask2 = snapshotTool.ExecuteAsync("""{"surfaceId":"details"}""", context, CancellationToken.None);
+        var snapshotTask2 = snapshotTool.ExecuteAsync("""{"surfaceId":"details"}""", context, TestContext.Current.CancellationToken);
         var snapshotSent2 = await WaitForSentEnvelopeAsync(ws, skip: 4);
         await RespondWithSnapshotAsync(
             broker,
@@ -491,7 +491,7 @@ public sealed class CanvasToolTests
         var syncTask = syncTool.ExecuteAsync(
             """{"surfaceId":"details","syncMode":"full"}""",
             context,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var syncSent = await WaitForSentEnvelopeAsync(ws, skip: 5);
         await broker.HandleClientEnvelopeAsync("client", new WsClientEnvelope
         {
@@ -501,13 +501,13 @@ public sealed class CanvasToolTests
             SurfaceId = "details",
             Success = true,
             ValueJson = "{\"status\":\"approved\"}"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         var syncResult = await syncTask;
 
         Assert.Equal("{\"status\":\"approved\"}", syncResult);
         Assert.Equal("a2ui_sync_ui_to_data", syncSent.Type);
 
-        var deleteTask = deleteTool.ExecuteAsync("""{"surfaceId":"details"}""", context, CancellationToken.None);
+        var deleteTask = deleteTool.ExecuteAsync("""{"surfaceId":"details"}""", context, TestContext.Current.CancellationToken);
         var deleteSent = await WaitForSentEnvelopeAsync(ws, skip: 6);
         await AckAsync(broker, "client", deleteSent, "sess");
         var deleteResult = await deleteTask;
@@ -532,7 +532,7 @@ public sealed class CanvasToolTests
             RequestId = sent.RequestId,
             SessionId = sessionId,
             Success = true
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
     private static async Task RespondWithSnapshotAsync(
         CanvasCommandBroker broker,
@@ -547,7 +547,7 @@ public sealed class CanvasToolTests
             SurfaceId = surfaceId,
             Success = true,
             SnapshotJson = snapshotJson
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
     private static async Task<(CanvasCommandBroker Broker, TestWebSocket WebSocket)> CreateConnectedBrokerAsync(
         string[] capabilities,
@@ -568,7 +568,7 @@ public sealed class CanvasToolTests
             Type = "canvas_ready",
             Capabilities = capabilities,
             SupportedCatalogIds = supportedCatalogIds
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         return (broker, ws);
     }
 

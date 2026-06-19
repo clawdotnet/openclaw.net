@@ -227,9 +227,9 @@ public sealed class AgentRuntimeComponentTests
         session.History.Add(new ChatTurn { Role = "user", Content = "what should I remember?" });
         var messages = assembler.BuildMessages(session, maxHistoryTurns: 10);
 
-        var memoryInjected = await assembler.TryInjectRecallAsync(messages, "what should I remember?", CancellationToken.None);
-        await assembler.TryInjectStructuredMemoryContextAsync(messages, session, "what should I remember?", memoryInjected, CancellationToken.None);
-        await assembler.TryInjectProfileRecallAsync(messages, session, CancellationToken.None);
+        var memoryInjected = await assembler.TryInjectRecallAsync(messages, "what should I remember?", TestContext.Current.CancellationToken);
+        await assembler.TryInjectStructuredMemoryContextAsync(messages, session, "what should I remember?", memoryInjected, TestContext.Current.CancellationToken);
+        await assembler.TryInjectProfileRecallAsync(messages, session, TestContext.Current.CancellationToken);
 
         var userTexts = messages
             .Where(message => message.Role == ChatRole.User)
@@ -291,7 +291,7 @@ public sealed class AgentRuntimeComponentTests
             new TurnContext { SessionId = session.Id, ChannelId = session.ChannelId },
             iteration: 0,
             [invocation],
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(2, memory.SaveAttempts);
         Assert.NotNull(memory.SavedCheckpoint);
@@ -320,7 +320,7 @@ public sealed class AgentRuntimeComponentTests
                 new TurnContext { SessionId = session.Id, ChannelId = session.ChannelId },
                 iteration: 0,
                 [invocation],
-                CancellationToken.None));
+                TestContext.Current.CancellationToken));
 
         Assert.Equal(3, memory.SaveAttempts);
         Assert.NotNull(session.ExecutionCheckpoint);
@@ -368,14 +368,14 @@ public sealed class AgentRuntimeComponentTests
                 new ChatOptions { ModelId = "primary-model" },
                 turnCtx,
                 skillPromptLength: 0,
-                CancellationToken.None));
+                TestContext.Current.CancellationToken));
         var streamResult = await executor.StreamLlmCollectAsync(
             session,
             messages,
             new ChatOptions { ModelId = "primary-model" },
             turnCtx,
             skillPromptLength: 0,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("close to its token budget", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("close to its token budget", streamResult.Error, StringComparison.OrdinalIgnoreCase);
@@ -409,7 +409,7 @@ public sealed class AgentRuntimeComponentTests
             new ChatOptions { ModelId = "primary-model" },
             new TurnContext { SessionId = "sess-retry", ChannelId = "websocket" },
             skillPromptLength: 0,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("retry ok", result.Response.Text);
         Assert.Equal(2, chatClient.Calls);
@@ -443,7 +443,7 @@ public sealed class AgentRuntimeComponentTests
             new ChatOptions { ModelId = "primary-model" },
             new TurnContext { SessionId = "sess-model", ChannelId = "websocket" },
             skillPromptLength: 0,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Null(result.Error);
         Assert.Equal("fallback ok", result.FullText);
@@ -478,7 +478,7 @@ public sealed class AgentRuntimeComponentTests
             new ChatOptions { ModelId = "primary-model" },
             new TurnContext { SessionId = "sess-cache-reset", ChannelId = "websocket" },
             skillPromptLength: 0,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Null(result.Error);
         Assert.Equal("fallback ok", result.FullText);
@@ -612,7 +612,7 @@ public sealed class AgentRuntimeComponentTests
             new TurnContext { SessionId = "sess-tools", ChannelId = "websocket" },
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(2, batch.Invocations.Count);
         Assert.Equal(expectedMaxConcurrent, tool.MaxConcurrent);
@@ -636,7 +636,7 @@ public sealed class AgentRuntimeComponentTests
             new Session { Id = "sess-tools", ChannelId = "websocket", SenderId = "user" },
             new TurnContext { SessionId = "sess-tools", ChannelId = "websocket" },
             approvalCallback: null,
-            CancellationToken.None).GetAsyncEnumerator();
+            TestContext.Current.CancellationToken).GetAsyncEnumerator();
 
         Assert.True(await enumerator.MoveNextAsync());
         var evt = enumerator.Current.StreamEvent!.Value;
@@ -669,7 +669,7 @@ public sealed class AgentRuntimeComponentTests
             new Session { Id = "sess-tools", ChannelId = "websocket", SenderId = "user" },
             new TurnContext { SessionId = "sess-tools", ChannelId = "websocket" },
             approvalCallback: null,
-            CancellationToken.None))
+            TestContext.Current.CancellationToken))
         {
             updates.Add(update);
         }

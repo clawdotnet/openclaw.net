@@ -63,7 +63,7 @@ public class FeatureParityTests
         var session = CreateSession();
         var events = new List<AgentStreamEvent>();
 
-        await foreach (var evt in agent.RunStreamingAsync(session, "Hi", CancellationToken.None))
+        await foreach (var evt in agent.RunStreamingAsync(session, "Hi", TestContext.Current.CancellationToken))
             events.Add(evt);
 
         Assert.Contains(events, e => e.Type == AgentStreamEventType.TextDelta && e.Content == "Hello ");
@@ -91,7 +91,7 @@ public class FeatureParityTests
         var session = CreateSession();
         var events = new List<AgentStreamEvent>();
 
-        await foreach (var evt in agent.RunStreamingAsync(session, "Hi", CancellationToken.None))
+        await foreach (var evt in agent.RunStreamingAsync(session, "Hi", TestContext.Current.CancellationToken))
             events.Add(evt);
 
         Assert.Contains(events, e => e.Type == AgentStreamEventType.Error);
@@ -118,7 +118,7 @@ public class FeatureParityTests
         var agent = new AgentRuntime(chatClient, [], memory, DefaultConfig, maxHistoryTurns: 10);
         var session = CreateSession();
 
-        await foreach (var _ in agent.RunStreamingAsync(session, "Hi", CancellationToken.None))
+        await foreach (var _ in agent.RunStreamingAsync(session, "Hi", TestContext.Current.CancellationToken))
         {
             // drain
         }
@@ -170,7 +170,7 @@ public class FeatureParityTests
             parallelToolExecution: false);
         var session = CreateSession();
 
-        await using var enumerator = agent.RunStreamingAsync(session, "Run a slow tool", CancellationToken.None)
+        await using var enumerator = agent.RunStreamingAsync(session, "Run a slow tool", TestContext.Current.CancellationToken)
             .GetAsyncEnumerator();
 
         var firstMove = enumerator.MoveNextAsync().AsTask();
@@ -221,7 +221,7 @@ public class FeatureParityTests
         var agent = new AgentRuntime(chatClient, [], memory, DefaultConfig, maxHistoryTurns: 10);
         var session = CreateSession();
 
-        await using var enumerator = agent.RunStreamingAsync(session, "Run tool", CancellationToken.None)
+        await using var enumerator = agent.RunStreamingAsync(session, "Run tool", TestContext.Current.CancellationToken)
             .GetAsyncEnumerator();
 
         Assert.True(await enumerator.MoveNextAsync());
@@ -251,7 +251,7 @@ public class FeatureParityTests
         var session = CreateSession();
         session.TotalInputTokens = 95;
 
-        var result = await agent.RunAsync(session, new string('x', 40), CancellationToken.None);
+        var result = await agent.RunAsync(session, new string('x', 40), TestContext.Current.CancellationToken);
 
         Assert.Contains("close to its token budget", result, StringComparison.OrdinalIgnoreCase);
         await chatClient.DidNotReceiveWithAnyArgs().GetResponseAsync(default!, default!, default);
@@ -273,7 +273,7 @@ public class FeatureParityTests
         var session = CreateSession();
         session.SystemPromptOverride = "Answer like the incident response agent.";
 
-        _ = await agent.RunAsync(session, "hello", CancellationToken.None);
+        _ = await agent.RunAsync(session, "hello", TestContext.Current.CancellationToken);
 
         Assert.NotNull(captured);
         var systemMessage = Assert.Single(captured!, static message => message.Role == ChatRole.System);
@@ -349,7 +349,7 @@ public class FeatureParityTests
             maxHistoryTurns: 10, parallelToolExecution: true);
         var session = CreateSession();
 
-        var result = await agent.RunAsync(session, "Run tools", CancellationToken.None);
+        var result = await agent.RunAsync(session, "Run tools", TestContext.Current.CancellationToken);
 
         Assert.Equal("Both tools done!", result);
         // With parallel execution, both tools should have been running concurrently
@@ -411,7 +411,7 @@ public class FeatureParityTests
             maxHistoryTurns: 10, parallelToolExecution: false);
         var session = CreateSession();
 
-        var result = await agent.RunAsync(session, "Run tools", CancellationToken.None);
+        var result = await agent.RunAsync(session, "Run tools", TestContext.Current.CancellationToken);
 
         Assert.Equal("Done", result);
         // With sequential execution, max concurrent should be 1
@@ -463,7 +463,7 @@ public class FeatureParityTests
         // Approval callback denies
         ToolApprovalCallback denyAll = (_, _, _) => ValueTask.FromResult(false);
 
-        var result = await agent.RunAsync(session, "Run dangerous command", CancellationToken.None, denyAll);
+        var result = await agent.RunAsync(session, "Run dangerous command", TestContext.Current.CancellationToken, denyAll);
 
         Assert.Equal("OK, I won't do that.", result);
         // Tool should NOT have been executed
@@ -515,7 +515,7 @@ public class FeatureParityTests
         // Approval callback approves
         ToolApprovalCallback allowAll = (_, _, _) => ValueTask.FromResult(true);
 
-        var result = await agent.RunAsync(session, "List files", CancellationToken.None, allowAll);
+        var result = await agent.RunAsync(session, "List files", TestContext.Current.CancellationToken, allowAll);
 
         Assert.Equal("Here are the files.", result);
         // Tool should have been executed
@@ -563,7 +563,7 @@ public class FeatureParityTests
         var session = CreateSession();
 
         // No approval callback — should deny by default
-        var result = await agent.RunAsync(session, "List files", CancellationToken.None);
+        var result = await agent.RunAsync(session, "List files", TestContext.Current.CancellationToken);
 
         await shellTool.DidNotReceive().ExecuteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -608,7 +608,7 @@ public class FeatureParityTests
             approvalRequiredTools: ["file_write"]);
         var session = CreateSession();
 
-        var result = await agent.RunAsync(session, "Write a file", CancellationToken.None);
+        var result = await agent.RunAsync(session, "Write a file", TestContext.Current.CancellationToken);
 
         Assert.Equal("Cannot execute without approval.", result);
         await writeTool.DidNotReceive().ExecuteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -660,7 +660,7 @@ public class FeatureParityTests
             maxHistoryTurns: 10, hooks: [denyHook]);
         var session = CreateSession();
 
-        var result = await agent.RunAsync(session, "Use tool", CancellationToken.None);
+        var result = await agent.RunAsync(session, "Use tool", TestContext.Current.CancellationToken);
 
         await tool.DidNotReceive().ExecuteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         Assert.Equal("Hook denied the tool.", result);
@@ -712,7 +712,7 @@ public class FeatureParityTests
             maxHistoryTurns: 10, hooks: [auditHook]);
         var session = CreateSession();
 
-        await agent.RunAsync(session, "Use tool", CancellationToken.None);
+        await agent.RunAsync(session, "Use tool", TestContext.Current.CancellationToken);
 
         await auditHook.Received(1).AfterExecuteAsync(
             "some_tool", Arg.Any<string>(), "tool result", Arg.Any<TimeSpan>(), false, Arg.Any<CancellationToken>());
@@ -726,7 +726,7 @@ public class FeatureParityTests
 
         Assert.Equal("AuditLog", hook.Name);
 
-        var result = await hook.BeforeExecuteAsync("shell", "{}", CancellationToken.None);
+        var result = await hook.BeforeExecuteAsync("shell", "{}", TestContext.Current.CancellationToken);
         Assert.True(result);
     }
 
@@ -746,7 +746,7 @@ public class FeatureParityTests
         for (var i = 0; i < 10; i++)
             session.History.Add(new ChatTurn { Role = "user", Content = $"msg {i}" });
 
-        await agent.CompactHistoryAsync(session, CancellationToken.None);
+        await agent.CompactHistoryAsync(session, TestContext.Current.CancellationToken);
 
         // No compaction should have occurred — no LLM calls
         await chatClient.DidNotReceive().GetResponseAsync(
@@ -777,7 +777,7 @@ public class FeatureParityTests
         for (var i = 0; i < 15; i++)
             session.History.Add(new ChatTurn { Role = i % 2 == 0 ? "user" : "assistant", Content = $"msg {i}" });
 
-        await agent.CompactHistoryAsync(session, CancellationToken.None);
+        await agent.CompactHistoryAsync(session, TestContext.Current.CancellationToken);
 
         // First turn should be the summary
         Assert.StartsWith("[Previous conversation summary:", session.History[0].Content);
@@ -828,7 +828,7 @@ public class FeatureParityTests
         for (var i = 0; i < 15; i++)
             session.History.Add(new ChatTurn { Role = i % 2 == 0 ? "user" : "assistant", Content = $"msg {i}" });
 
-        await agent.CompactHistoryAsync(session, CancellationToken.None);
+        await agent.CompactHistoryAsync(session, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, callCount);
         Assert.StartsWith("[Previous conversation summary:", session.History[0].Content);
@@ -848,31 +848,31 @@ public class FeatureParityTests
             // Save
             var saveResult = await tool.ExecuteAsync(
                 """{"action":"save","key":"arch","content":"Microservices with event sourcing"}""",
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
             Assert.Contains("Saved", saveResult);
 
             // Load
             var loadResult = await tool.ExecuteAsync(
                 """{"action":"load","key":"arch"}""",
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
             Assert.Equal("Microservices with event sourcing", loadResult);
 
             // List
             var listResult = await tool.ExecuteAsync(
                 """{"action":"list"}""",
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
             Assert.Contains("arch", listResult);
 
             // Delete
             var deleteResult = await tool.ExecuteAsync(
                 """{"action":"delete","key":"arch"}""",
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
             Assert.Contains("Deleted", deleteResult);
 
             // Load after delete
             var loadAfterDelete = await tool.ExecuteAsync(
                 """{"action":"load","key":"arch"}""",
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
             Assert.Contains("No project memory found", loadAfterDelete);
         }
         finally
@@ -895,18 +895,18 @@ public class FeatureParityTests
             // Save to project A
             await toolA.ExecuteAsync(
                 """{"action":"save","key":"config","content":"A's config"}""",
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             // Load from project B — should not find it
             var result = await toolB.ExecuteAsync(
                 """{"action":"load","key":"config"}""",
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
             Assert.Contains("No project memory found", result);
 
             // Load from project A — should find it
             result = await toolA.ExecuteAsync(
                 """{"action":"load","key":"config"}""",
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
             Assert.Equal("A's config", result);
         }
         finally
@@ -923,7 +923,7 @@ public class FeatureParityTests
         var tool = new ProjectMemoryTool(memory, "test");
 
         var result = await tool.ExecuteAsync(
-            """{"action":"purge"}""", CancellationToken.None);
+            """{"action":"purge"}""", TestContext.Current.CancellationToken);
         Assert.Contains("Unknown action", result);
     }
 
@@ -934,7 +934,7 @@ public class FeatureParityTests
         var tool = new ProjectMemoryTool(memory, "test");
 
         var result = await tool.ExecuteAsync(
-            """{"action":"save","content":"x"}""", CancellationToken.None);
+            """{"action":"save","content":"x"}""", TestContext.Current.CancellationToken);
         Assert.Contains("'key' is required", result);
     }
 
@@ -955,7 +955,7 @@ public class FeatureParityTests
         var channel = new WebSocketChannel(wsConfig);
 
         // Should not throw for non-existent client
-        await channel.SendStreamEventAsync("no-client", "assistant_chunk", "hello", null, CancellationToken.None);
+        await channel.SendStreamEventAsync("no-client", "assistant_chunk", "hello", null, TestContext.Current.CancellationToken);
     }
 
     // ── Multi-Provider Config Tests ──────────────────────────────────────
@@ -1003,12 +1003,12 @@ public class FeatureParityTests
         {
             var store = new OpenClaw.Core.Memory.FileMemoryStore(tempDir, 10);
 
-            await store.SaveNoteAsync("test-key", "test-content", CancellationToken.None);
-            var loaded = await store.LoadNoteAsync("test-key", CancellationToken.None);
+            await store.SaveNoteAsync("test-key", "test-content", TestContext.Current.CancellationToken);
+            var loaded = await store.LoadNoteAsync("test-key", TestContext.Current.CancellationToken);
             Assert.Equal("test-content", loaded);
 
-            await store.DeleteNoteAsync("test-key", CancellationToken.None);
-            loaded = await store.LoadNoteAsync("test-key", CancellationToken.None);
+            await store.DeleteNoteAsync("test-key", TestContext.Current.CancellationToken);
+            loaded = await store.LoadNoteAsync("test-key", TestContext.Current.CancellationToken);
             Assert.Null(loaded);
         }
         finally
@@ -1026,12 +1026,12 @@ public class FeatureParityTests
         {
             var store = new OpenClaw.Core.Memory.FileMemoryStore(tempDir, 10);
 
-            await store.SaveNoteAsync("project:myapp:arch", "microservices", CancellationToken.None);
-            await store.SaveNoteAsync("project:myapp:stack", "dotnet", CancellationToken.None);
-            await store.SaveNoteAsync("project:other:config", "v2", CancellationToken.None);
-            await store.SaveNoteAsync("session-note", "ephemeral", CancellationToken.None);
+            await store.SaveNoteAsync("project:myapp:arch", "microservices", TestContext.Current.CancellationToken);
+            await store.SaveNoteAsync("project:myapp:stack", "dotnet", TestContext.Current.CancellationToken);
+            await store.SaveNoteAsync("project:other:config", "v2", TestContext.Current.CancellationToken);
+            await store.SaveNoteAsync("session-note", "ephemeral", TestContext.Current.CancellationToken);
 
-            var results = await store.ListNotesWithPrefixAsync("project:myapp:", CancellationToken.None);
+            var results = await store.ListNotesWithPrefixAsync("project:myapp:", TestContext.Current.CancellationToken);
 
             Assert.Equal(2, results.Count);
             Assert.Contains(results, k => k.Contains("arch"));

@@ -85,7 +85,7 @@ public sealed class DoctorCheckTests
                         }
                     ]
                 }
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             var text = SetupVerificationService.RenderDoctorText(report);
 
@@ -137,7 +137,7 @@ public sealed class DoctorCheckTests
                 Offline = true,
                 RequireProvider = false,
                 CheckPortAvailability = false
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             var tailscale = Assert.Single(report.Checks, static item => item.Id == "tailscale_serve");
             Assert.Equal(SetupCheckStates.Skip, tailscale.Status);
@@ -172,7 +172,7 @@ public sealed class DoctorCheckTests
                     string.Empty,
                     "missing"))
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.NotNull(status);
         Assert.False(status!.TailscaleCliDetected);
@@ -199,7 +199,7 @@ public sealed class DoctorCheckTests
                 CheckCli = false,
                 CommandRunner = (_, _) => throw new InvalidOperationException("CLI probe should not run.")
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.NotNull(status);
         Assert.False(status!.TailscaleCliDetected);
@@ -228,7 +228,7 @@ public sealed class DoctorCheckTests
                     ? new TailscaleCommandResult(0, "connected", string.Empty)
                     : new TailscaleCommandResult(0, "serve is configured for https://example.tailnet.ts.net", string.Empty))
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.NotNull(status);
         Assert.Equal("unknown", status!.ServeDetected);

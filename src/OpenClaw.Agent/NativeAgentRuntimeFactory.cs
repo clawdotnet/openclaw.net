@@ -56,7 +56,8 @@ public sealed class NativeAgentRuntimeFactory : IAgentRuntimeFactory
             appendContractSnapshot: context.AppendContractSnapshot,
             turnTokenUsageObserver: context.TurnTokenUsageObserver,
             toolAuditLog: context.ToolAuditLog,
-            goalService: context.Services.GetService(typeof(OpenClaw.Core.Abstractions.IGoalService)) as OpenClaw.Core.Abstractions.IGoalService);
+            goalService: context.Services.GetService(typeof(OpenClaw.Core.Abstractions.IGoalService)) as OpenClaw.Core.Abstractions.IGoalService,
+            interceptors: context.Interceptors);
 
     public IAgentRuntime Create(AgentRuntimeFactoryContext context)
     {

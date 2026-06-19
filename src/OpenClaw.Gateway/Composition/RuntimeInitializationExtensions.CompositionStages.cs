@@ -70,7 +70,8 @@ internal static partial class RuntimeInitializationExtensions
             ExternalCliRegistry = app.Services.GetRequiredService<IExternalCliConnectorRegistry>(),
             ExternalCliRunner = app.Services.GetRequiredService<IExternalCliRunner>(),
             ExternalCliAudit = app.Services.GetRequiredService<IExternalCliAuditSink>(),
-            ExternalCliEvents = app.Services.GetRequiredService<IExternalCliEventSink>()
+            ExternalCliEvents = app.Services.GetRequiredService<IExternalCliEventSink>(),
+            GoalService = app.Services.GetRequiredService<IGoalService>()
         };
 
     private static async Task<ChannelComposition> BuildChannelCompositionAsync(
@@ -588,6 +589,7 @@ internal static partial class RuntimeInitializationExtensions
         public required IExternalCliRunner ExternalCliRunner { get; init; }
         public required IExternalCliAuditSink ExternalCliAudit { get; init; }
         public required IExternalCliEventSink ExternalCliEvents { get; init; }
+        public required IGoalService GoalService { get; init; }
     }
 
     private sealed class ChannelComposition

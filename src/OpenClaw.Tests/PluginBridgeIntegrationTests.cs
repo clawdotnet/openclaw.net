@@ -12,8 +12,7 @@ using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Core.Skills;
 using OpenClaw.Gateway.Extensions;
-using Xunit;
-using Xunit.Abstractions;
+using Xunit; 
 
 namespace OpenClaw.Tests;
 
@@ -117,10 +116,10 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(tools);
-        var result = await tool.ExecuteAsync("""{"text":"hello"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"text":"hello"}""", TestContext.Current.CancellationToken);
         Assert.Equal("JS:hello", result);
         Assert.Single(host.Reports, r => r.PluginId == "js-tool" && r.Loaded);
     }
@@ -147,10 +146,10 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
 
         await using var host = CreateHost(new PluginsConfig { Enabled = true });
 
-        var tools = await host.LoadAsync(workspace, CancellationToken.None);
+        var tools = await host.LoadAsync(workspace, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(tools);
-        var result = await tool.ExecuteAsync("""{"text":"hello"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"text":"hello"}""", TestContext.Current.CancellationToken);
         Assert.Equal("MJS:hello", result);
     }
 
@@ -180,10 +179,10 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(tools);
-        var result = await tool.ExecuteAsync("""{"text":"hello"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"text":"hello"}""", TestContext.Current.CancellationToken);
         Assert.Equal("TS:hello", result);
     }
 
@@ -213,10 +212,10 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(tools);
-        var result = await tool.ExecuteAsync("""{"text":"hello"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"text":"hello"}""", TestContext.Current.CancellationToken);
         Assert.Equal("TSFILE:hello", result);
     }
 
@@ -249,10 +248,10 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(tools);
-        var result = await tool.ExecuteAsync("""{"text":"hello"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"text":"hello"}""", TestContext.Current.CancellationToken);
         Assert.Equal("TSWIN:hello", result);
     }
 
@@ -281,7 +280,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         Assert.Empty(tools);
         var report = Assert.Single(host.Reports, r => r.PluginId == "ts-no-jiti" && !r.Loaded);
@@ -322,7 +321,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         }))
         {
-            var tools = await host.LoadAsync(null, CancellationToken.None);
+            var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
             Assert.Single(tools);
             Assert.True(File.Exists(startPath));
         }
@@ -380,7 +379,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Enabled = true,
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
-        _ = await host.LoadAsync(workspaceDir, CancellationToken.None);
+        _ = await host.LoadAsync(workspaceDir, TestContext.Current.CancellationToken);
 
         var skillConfig = new SkillsConfig
         {
@@ -439,9 +438,9 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             }
         });
 
-        var validTools = await validHost.LoadAsync(null, CancellationToken.None);
+        var validTools = await validHost.LoadAsync(null, TestContext.Current.CancellationToken);
         var validTool = Assert.Single(validTools);
-        Assert.Equal("safe", await validTool.ExecuteAsync("{}", CancellationToken.None));
+        Assert.Equal("safe", await validTool.ExecuteAsync("{}", TestContext.Current.CancellationToken));
 
         await using var invalidHost = CreateHost(new PluginsConfig
         {
@@ -456,7 +455,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             }
         });
 
-        var invalidTools = await invalidHost.LoadAsync(null, CancellationToken.None);
+        var invalidTools = await invalidHost.LoadAsync(null, TestContext.Current.CancellationToken);
         Assert.Empty(invalidTools);
         var report = Assert.Single(invalidHost.Reports, r => r.PluginId == "schema-plugin" && !r.Loaded);
         Assert.Contains(report.Diagnostics, d => d.Code == "config_enum_mismatch");
@@ -494,10 +493,10 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(tools);
-        Assert.Equal("unset", await tool.ExecuteAsync("{}", CancellationToken.None));
+        Assert.Equal("unset", await tool.ExecuteAsync("{}", TestContext.Current.CancellationToken));
         Assert.Single(host.Reports, r => r.PluginId == "undefined-config-plugin" && r.Loaded);
     }
 
@@ -551,9 +550,9 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             }
         });
 
-        var validTools = await validHost.LoadAsync(null, CancellationToken.None);
+        var validTools = await validHost.LoadAsync(null, TestContext.Current.CancellationToken);
         var validTool = Assert.Single(validTools);
-        Assert.Equal("advanced", await validTool.ExecuteAsync("{}", CancellationToken.None));
+        Assert.Equal("advanced", await validTool.ExecuteAsync("{}", TestContext.Current.CancellationToken));
 
         await using var invalidHost = CreateHost(new PluginsConfig
         {
@@ -568,7 +567,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             }
         });
 
-        var invalidTools = await invalidHost.LoadAsync(null, CancellationToken.None);
+        var invalidTools = await invalidHost.LoadAsync(null, TestContext.Current.CancellationToken);
         Assert.Empty(invalidTools);
         var report = Assert.Single(invalidHost.Reports, r => r.PluginId == "oneof-plugin" && !r.Loaded);
         Assert.Contains(report.Diagnostics, d => d.Code == "config_one_of_mismatch");
@@ -600,7 +599,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         Assert.Empty(tools);
         var report = Assert.Single(host.Reports, r => r.PluginId == "unsupported-plugin" && !r.Loaded);
@@ -649,7 +648,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [root] }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         Assert.Single(tools);
         Assert.Contains(host.Reports, r => r.Diagnostics.Any(d => d.Code == "duplicate_tool_name"));
@@ -790,7 +789,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             .FirstOrDefault(f => f is "index.js" or "index.ts");
         Assert.False(string.IsNullOrWhiteSpace(entryFile));
 
-        var init = await bridge.StartAsync(Path.Combine(pluginDir, entryFile!), pluginId, null, CancellationToken.None);
+        var init = await bridge.StartAsync(Path.Combine(pluginDir, entryFile!), pluginId, null, TestContext.Current.CancellationToken);
         Assert.True(init.Compatible);
         Assert.NotEmpty(init.Tools);
 
@@ -870,7 +869,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         Assert.Single(tools);
         Assert.Single(host.ChannelAdapters);
@@ -910,7 +909,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         Assert.Single(tools);
         var report = Assert.Single(host.Reports, r => r.PluginId == "command-plugin" && r.Loaded);
@@ -948,7 +947,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         Assert.Single(tools);
         var report = Assert.Single(host.Reports, r => r.PluginId == "provider-plugin" && r.Loaded);
@@ -983,7 +982,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         Assert.Single(tools);
         Assert.Single(host.ToolHooks);
@@ -1042,10 +1041,10 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             },
             RuntimeModeResolver.Resolve(new RuntimeConfig { Mode = "aot" }, dynamicCodeSupported: true));
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(tools);
-        Assert.Equal("loaded", await tool.ExecuteAsync("{}", CancellationToken.None));
+        Assert.Equal("loaded", await tool.ExecuteAsync("{}", TestContext.Current.CancellationToken));
         Assert.Single(host.ChannelAdapters);
         Assert.Single(host.CommandRegistrations);
         Assert.Single(host.ProviderRegistrations);
@@ -1094,10 +1093,10 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             },
             RuntimeModeResolver.Resolve(new RuntimeConfig { Mode = "aot" }, dynamicCodeSupported: true));
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(tools);
-        Assert.Equal("safe:hello", await tool.ExecuteAsync("""{"text":"hello"}""", CancellationToken.None));
+        Assert.Equal("safe:hello", await tool.ExecuteAsync("""{"text":"hello"}""", TestContext.Current.CancellationToken));
         var report = Assert.Single(host.Reports, r => r.PluginId == "aot-safe-plugin" && r.Loaded);
         Assert.Contains(PluginCapabilityPolicy.Tools, report.RequestedCapabilities);
         Assert.Contains(PluginCapabilityPolicy.Services, report.RequestedCapabilities);
@@ -1151,7 +1150,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Transport = new BridgeTransportConfig { Mode = transportMode }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
         var tool = Assert.Single(tools);
         var adapter = Assert.Single(host.ChannelAdapters);
 
@@ -1162,15 +1161,15 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             return ValueTask.CompletedTask;
         };
 
-        await adapter.StartAsync(CancellationToken.None);
-        var inbound = await inboundTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await adapter.StartAsync(TestContext.Current.CancellationToken);
+        var inbound = await inboundTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.Equal("notify-channel", inbound.ChannelId);
         Assert.Equal("user1", inbound.SenderId);
         Assert.Equal("hello from plugin", inbound.Text);
         Assert.Equal("sess-123", inbound.SessionId);
 
-        var result = await tool.ExecuteAsync("""{"text":"hello"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"text":"hello"}""", TestContext.Current.CancellationToken);
         Assert.Equal("echo:hello", result);
     }
 
@@ -1244,7 +1243,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
                 ? RuntimeModeResolver.Resolve(new RuntimeConfig { Mode = "aot" }, dynamicCodeSupported: true)
                 : null);
 
-        _ = await host.LoadAsync(null, CancellationToken.None);
+        _ = await host.LoadAsync(null, TestContext.Current.CancellationToken);
         var adapter = Assert.IsType<BridgedChannelAdapter>(Assert.Single(host.ChannelAdapters));
 
         var authTcs = new TaskCompletionSource<BridgeChannelAuthEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1256,10 +1255,10 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             return ValueTask.CompletedTask;
         };
 
-        await adapter.StartAsync(CancellationToken.None);
+        await adapter.StartAsync(TestContext.Current.CancellationToken);
 
-        var authEvt = await authTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var inbound = await inboundTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var authEvt = await authTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var inbound = await inboundTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.Equal("bot@wa", adapter.SelfId);
         Assert.Equal("qr_code", authEvt.State);
@@ -1288,10 +1287,10 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             SessionId = "sess-out",
             ReplyToMessageId = "msg-1",
             Subject = "subject"
-        }, CancellationToken.None);
-        await adapter.SendTypingAsync("group-1@wa", true, "acc-1", CancellationToken.None);
-        await adapter.SendReadReceiptAsync("msg-1", "group-1@wa", "sender@wa", "acc-1", CancellationToken.None);
-        await adapter.SendReactionAsync("msg-1", "👍", "group-1@wa", "sender@wa", "acc-1", CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
+        await adapter.SendTypingAsync("group-1@wa", true, "acc-1", TestContext.Current.CancellationToken);
+        await adapter.SendReadReceiptAsync("msg-1", "group-1@wa", "sender@wa", "acc-1", TestContext.Current.CancellationToken);
+        await adapter.SendReactionAsync("msg-1", "👍", "group-1@wa", "sender@wa", "acc-1", TestContext.Current.CancellationToken);
 
         var sendPayload = JsonDocument.Parse(await WaitForFileTextAsync(sendPath, TimeSpan.FromSeconds(5))).RootElement;
         Assert.Equal("group-1@wa", sendPayload.GetProperty("recipientId").GetString());
@@ -1310,7 +1309,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             ChannelId = "whatsapp",
             RecipientId = "group-1@wa",
             Text = "[DOCUMENT:telegram:file_id=doc123]\nkeep marker as text"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         sendPayload = JsonDocument.Parse(await WaitForFileTextAsync(sendPath, TimeSpan.FromSeconds(5))).RootElement;
         Assert.Equal("[DOCUMENT:telegram:file_id=doc123]\nkeep marker as text", sendPayload.GetProperty("text").GetString());
@@ -1385,13 +1384,13 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
                 ? RuntimeModeResolver.Resolve(new RuntimeConfig { Mode = "aot" }, dynamicCodeSupported: true)
                 : null);
 
-        _ = await host.LoadAsync(null, CancellationToken.None);
+        _ = await host.LoadAsync(null, TestContext.Current.CancellationToken);
         var adapter = Assert.IsType<BridgedChannelAdapter>(Assert.Single(host.ChannelAdapters));
 
-        await adapter.StartAsync(CancellationToken.None);
+        await adapter.StartAsync(TestContext.Current.CancellationToken);
         Assert.Equal("bot-1@wa", adapter.SelfId);
 
-        await adapter.RestartAsync(CancellationToken.None);
+        await adapter.RestartAsync(TestContext.Current.CancellationToken);
         Assert.Equal("bot-2@wa", adapter.SelfId);
 
         var state = JsonDocument.Parse(await WaitForFileTextAsync(statePath, TimeSpan.FromSeconds(5))).RootElement;
@@ -1441,13 +1440,13 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Transport = new BridgeTransportConfig { Mode = transportMode }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
         var tool = Assert.Single(tools);
 
-        Assert.Equal("echo:first", await tool.ExecuteAsync("""{"text":"first"}""", CancellationToken.None));
-        Assert.Equal("restarting", await tool.ExecuteAsync("""{"kill":true}""", CancellationToken.None));
-        await Task.Delay(500);
-        Assert.Equal("echo:second", await tool.ExecuteAsync("""{"text":"second"}""", CancellationToken.None));
+        Assert.Equal("echo:first", await tool.ExecuteAsync("""{"text":"first"}""", TestContext.Current.CancellationToken));
+        Assert.Equal("restarting", await tool.ExecuteAsync("""{"kill":true}""", TestContext.Current.CancellationToken));
+        await Task.Delay(500, TestContext.Current.CancellationToken);
+        Assert.Equal("echo:second", await tool.ExecuteAsync("""{"text":"second"}""", TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -1496,13 +1495,13 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Path.Combine(pluginDir, "index.js"),
             $"restart-metrics-plugin-{transportMode}",
             null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         Assert.True(init.Compatible);
 
-        Assert.Equal("echo:first", await bridge.ExecuteToolAsync("restart_metrics_echo", """{"text":"first"}""", CancellationToken.None));
-        Assert.Equal("restarting", await bridge.ExecuteToolAsync("restart_metrics_echo", """{"kill":true}""", CancellationToken.None));
-        await Task.Delay(500);
-        Assert.Equal("echo:second", await bridge.ExecuteToolAsync("restart_metrics_echo", """{"text":"second"}""", CancellationToken.None));
+        Assert.Equal("echo:first", await bridge.ExecuteToolAsync("restart_metrics_echo", """{"text":"first"}""", TestContext.Current.CancellationToken));
+        Assert.Equal("restarting", await bridge.ExecuteToolAsync("restart_metrics_echo", """{"kill":true}""", TestContext.Current.CancellationToken));
+        await Task.Delay(500, TestContext.Current.CancellationToken);
+        Assert.Equal("echo:second", await bridge.ExecuteToolAsync("restart_metrics_echo", """{"text":"second"}""", TestContext.Current.CancellationToken));
         Assert.True(metrics.PluginBridgeRestartAttempts >= 1);
         Assert.Equal(0, metrics.PluginBridgeRestartFailures);
     }
@@ -1537,7 +1536,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        _ = await host.LoadAsync(null, CancellationToken.None);
+        _ = await host.LoadAsync(null, TestContext.Current.CancellationToken);
         var memoryStore = Substitute.For<IMemoryStore>();
         var sessionManager = new SessionManager(memoryStore, new GatewayConfig());
         var processor = new ChatCommandProcessor(sessionManager);
@@ -1550,7 +1549,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             SenderId = "user"
         };
 
-        var (handled, response) = await processor.TryProcessCommandAsync(session, "/greet Codex", CancellationToken.None);
+        var (handled, response) = await processor.TryProcessCommandAsync(session, "/greet Codex", TestContext.Current.CancellationToken);
 
         Assert.True(handled);
         Assert.Equal("Hello, Codex!", response);
@@ -1603,7 +1602,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        _ = await host.LoadAsync(null, CancellationToken.None);
+        _ = await host.LoadAsync(null, TestContext.Current.CancellationToken);
         var registration = Assert.Single(host.ProviderRegistrations);
         var provider = new BridgedLlmProvider(registration.Bridge, registration.ProviderId, new TestLogger());
 
@@ -1637,7 +1636,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
         var response = await provider.GetResponseAsync(
             [new ChatMessage(ChatRole.User, "hello")],
             options,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         var payload = JsonDocument.Parse(response.Text ?? "{}").RootElement;
         Assert.Equal("custom-2", payload.GetProperty("modelId").GetString());
@@ -1697,19 +1696,19 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        _ = await host.LoadAsync(null, CancellationToken.None);
+        _ = await host.LoadAsync(null, TestContext.Current.CancellationToken);
         var hook = Assert.Single(host.ToolHooks);
 
-        var allowed = await hook.BeforeExecuteAsync("shell_exec", """{"cmd":"ls"}""", CancellationToken.None);
-        await hook.AfterExecuteAsync("shell_exec", """{"cmd":"ls"}""", "done", TimeSpan.FromMilliseconds(123), failed: true, CancellationToken.None);
+        var allowed = await hook.BeforeExecuteAsync("shell_exec", """{"cmd":"ls"}""", TestContext.Current.CancellationToken);
+        await hook.AfterExecuteAsync("shell_exec", """{"cmd":"ls"}""", "done", TimeSpan.FromMilliseconds(123), failed: true, TestContext.Current.CancellationToken);
 
         Assert.False(allowed);
 
-        var beforePayload = JsonDocument.Parse(await File.ReadAllTextAsync(beforePath)).RootElement;
+        var beforePayload = JsonDocument.Parse(await File.ReadAllTextAsync(beforePath, TestContext.Current.CancellationToken)).RootElement;
         Assert.Equal("shell_exec", beforePayload.GetProperty("toolName").GetString());
         Assert.Equal("before", beforePayload.GetProperty("phase").GetString());
 
-        var afterPayload = JsonDocument.Parse(await File.ReadAllTextAsync(afterPath)).RootElement;
+        var afterPayload = JsonDocument.Parse(await File.ReadAllTextAsync(afterPath, TestContext.Current.CancellationToken)).RootElement;
         Assert.Equal("number", afterPayload.GetProperty("durationType").GetString());
         Assert.Equal("boolean", afterPayload.GetProperty("failedType").GetString());
         Assert.True(afterPayload.GetProperty("failed").GetBoolean());
@@ -1755,9 +1754,9 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Transport = new BridgeTransportConfig { Mode = transportMode }
         }))
         {
-            _ = await host.LoadAsync(null, CancellationToken.None);
+            _ = await host.LoadAsync(null, TestContext.Current.CancellationToken);
             var adapter = Assert.Single(host.ChannelAdapters);
-            await adapter.StartAsync(CancellationToken.None);
+            await adapter.StartAsync(TestContext.Current.CancellationToken);
         }
 
         Assert.True(File.Exists(stopPath));
@@ -1792,7 +1791,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         Assert.Empty(tools);
         var report = Assert.Single(host.Reports, r => r.PluginId == "mixed-plugin" && !r.Loaded);
@@ -1838,7 +1837,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Transport = new BridgeTransportConfig { Mode = "hybrid" }
         });
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
         Assert.Single(tools);
         var adapter = Assert.Single(host.ChannelAdapters);
 
@@ -1851,11 +1850,11 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             return ValueTask.CompletedTask;
         };
 
-        await adapter.StartAsync(CancellationToken.None);
-        var inbound = await inboundTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await adapter.StartAsync(TestContext.Current.CancellationToken);
+        var inbound = await inboundTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         // Wait a bit to ensure no duplicate arrives
-        await Task.Delay(200);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
 
         Assert.Equal("ping", inbound.Text);
         Assert.Equal(1, receivedCount);
@@ -1890,11 +1889,11 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             Load = new PluginLoadConfig { Paths = [pluginDir] }
         });
 
-        _ = await host.LoadAsync(null, CancellationToken.None);
+        _ = await host.LoadAsync(null, TestContext.Current.CancellationToken);
         var hook = Assert.Single(host.ToolHooks);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var allowed = await hook.BeforeExecuteAsync("shell_exec", """{"cmd":"ls"}""", CancellationToken.None);
+        var allowed = await hook.BeforeExecuteAsync("shell_exec", """{"cmd":"ls"}""", TestContext.Current.CancellationToken);
         sw.Stop();
 
         Assert.True(allowed, "Hook should default to allow on timeout");

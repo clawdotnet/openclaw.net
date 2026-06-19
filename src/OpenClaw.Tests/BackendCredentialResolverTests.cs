@@ -34,7 +34,7 @@ public sealed class BackendCredentialResolverTests
             var envResolved = await resolver.ResolveAsync("codex", new ConnectedAccountSecretRef
             {
                 SecretRef = "env:TEST_BACKEND_SECRET"
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             Assert.Equal("env-secret", envResolved!.Secret);
 
             var tokenFile = Path.Combine(root, "token.txt");
@@ -42,7 +42,7 @@ public sealed class BackendCredentialResolverTests
             var fileResolved = await resolver.ResolveAsync("gemini-cli", new ConnectedAccountSecretRef
             {
                 TokenFilePath = tokenFile
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             Assert.Equal("file-secret", fileResolved!.Secret);
 
             var created = await accounts.CreateAsync(new ConnectedAccountCreateRequest
@@ -50,12 +50,12 @@ public sealed class BackendCredentialResolverTests
                 Provider = "github-copilot-cli",
                 DisplayName = "Stored",
                 Secret = "protected-secret"
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             var protectedResolved = await resolver.ResolveAsync("github-copilot-cli", new ConnectedAccountSecretRef
             {
                 ConnectedAccountId = created.Id
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             Assert.Equal("protected-secret", protectedResolved!.Secret);
             Assert.Equal(created.Id, protectedResolved.AccountId);
         }

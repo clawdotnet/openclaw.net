@@ -36,6 +36,7 @@ public sealed class AgentRuntimeFactoryContext
     public Func<Session, bool>? IsContractRuntimeBudgetExceeded { get; init; }
     public Action<Session, string, string, long, long>? RecordContractTurnUsage { get; init; }
     public Action<Session, string>? AppendContractSnapshot { get; init; }
+    public IReadOnlyList<IToolResultInterceptor>? Interceptors { get; init; }
 }
 
 public interface IAgentRuntimeFactory

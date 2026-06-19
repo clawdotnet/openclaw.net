@@ -65,7 +65,7 @@ public sealed class DelegateToolTests
 
             var result = await tool.ExecuteAsync("""
                 {"profile":"reviewer","task":"Inspect the change"}
-                """, CancellationToken.None);
+                """, TestContext.Current.CancellationToken);
 
             Assert.Equal("delegated-result", result);
             Assert.True(wasCalled);
@@ -155,7 +155,7 @@ public sealed class DelegateToolTests
 
             var result = await tool.ExecuteAsync("""
                 {"profile":"reviewer","task":"Inspect the change"}
-                """, context, CancellationToken.None);
+                """, context, TestContext.Current.CancellationToken);
 
             Assert.Equal("delegated-result", result);
             var parentSummary = Assert.Single(parentSession.DelegatedSessions);
@@ -163,7 +163,7 @@ public sealed class DelegateToolTests
             Assert.Equal("completed", parentSummary.Status);
             Assert.Contains(parentSummary.ToolUsage, item => item.ToolName == "shell");
 
-            var persisted = await memoryStore.GetSessionAsync(parentSummary.SessionId, CancellationToken.None);
+            var persisted = await memoryStore.GetSessionAsync(parentSummary.SessionId, TestContext.Current.CancellationToken);
             Assert.NotNull(persisted);
             Assert.Equal("delegation", persisted!.ChannelId);
             Assert.NotNull(persisted.Delegation);

@@ -15,10 +15,10 @@ public sealed class OpenClawLiveClientTests
         ws.BlockSendUntilReleased();
         client.SetConnectedSocketForTest(ws);
 
-        var sendTask = client.SendTextAsync("hello", turnComplete: true, CancellationToken.None);
+        var sendTask = client.SendTextAsync("hello", turnComplete: true, TestContext.Current.CancellationToken);
         await ws.WaitForSendToStartAsync();
 
-        var disconnectTask = client.DisconnectAsync(CancellationToken.None);
+        var disconnectTask = client.DisconnectAsync(TestContext.Current.CancellationToken);
         Assert.False(disconnectTask.IsCompleted);
 
         ws.ReleaseBlockedSend();
@@ -49,7 +49,7 @@ public sealed class OpenClawLiveClientTests
         client.OnTextChunk += chunks.Add;
         client.OnEnvelopeReceived += envelope => types.Add(envelope.Type);
 
-        await client.RunReceiveLoopForTest(ws, CancellationToken.None);
+        await client.RunReceiveLoopForTest(ws, TestContext.Current.CancellationToken);
 
         Assert.Equal(["chunk-one"], chunks);
         Assert.Equal(["text", "turn_complete"], types);

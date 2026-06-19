@@ -586,9 +586,9 @@ public sealed class CoreServicesExtensionsTests
 
     private sealed class TestHostApplicationLifetime(CancellationToken applicationStopping) : IHostApplicationLifetime
     {
-        public CancellationToken ApplicationStarted => CancellationToken.None;
+        public CancellationToken ApplicationStarted => TestContext.Current.CancellationToken;
         public CancellationToken ApplicationStopping => applicationStopping;
-        public CancellationToken ApplicationStopped => CancellationToken.None;
+        public CancellationToken ApplicationStopped => TestContext.Current.CancellationToken;
         public void StopApplication()
         {
         }

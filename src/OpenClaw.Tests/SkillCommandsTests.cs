@@ -396,7 +396,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -821,7 +821,7 @@ public sealed class SkillCommandsTests : IDisposable
                     }
                 };
 
-                await store.SaveSessionAsync(session, CancellationToken.None);
+                await store.SaveSessionAsync(session, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -953,7 +953,7 @@ public sealed class SkillCommandsTests : IDisposable
                     }
                 };
 
-                await store.SaveSessionAsync(session, CancellationToken.None);
+                await store.SaveSessionAsync(session, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1033,7 +1033,7 @@ public sealed class SkillCommandsTests : IDisposable
                     }
                 };
 
-                await store.SaveSessionAsync(session, CancellationToken.None);
+                await store.SaveSessionAsync(session, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1079,7 +1079,7 @@ public sealed class SkillCommandsTests : IDisposable
                     Id = "sess-meta-empty",
                     ChannelId = "cli",
                     SenderId = "tester"
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1148,7 +1148,7 @@ public sealed class SkillCommandsTests : IDisposable
                     }
                 };
 
-                await store.SaveSessionAsync(session, CancellationToken.None);
+                await store.SaveSessionAsync(session, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1215,7 +1215,7 @@ public sealed class SkillCommandsTests : IDisposable
                     }
                 };
 
-                await store.SaveSessionAsync(session, CancellationToken.None);
+                await store.SaveSessionAsync(session, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1274,7 +1274,7 @@ public sealed class SkillCommandsTests : IDisposable
                             CompletedAtUtc = DateTimeOffset.Parse("2026-06-12T13:20:01Z")
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1349,7 +1349,7 @@ public sealed class SkillCommandsTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1405,7 +1405,7 @@ public sealed class SkillCommandsTests : IDisposable
                     Id = "sess-meta-json-empty",
                     ChannelId = "cli",
                     SenderId = "tester"
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1478,7 +1478,7 @@ public sealed class SkillCommandsTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1550,7 +1550,7 @@ public sealed class SkillCommandsTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1664,7 +1664,7 @@ public sealed class SkillCommandsTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1736,7 +1736,7 @@ public sealed class SkillCommandsTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1827,7 +1827,7 @@ public sealed class SkillCommandsTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1893,7 +1893,7 @@ public sealed class SkillCommandsTests : IDisposable
                             CompletedAtUtc = DateTimeOffset.Parse("2026-06-12T13:31:03Z")
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -1979,7 +1979,7 @@ public sealed class SkillCommandsTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -2053,7 +2053,7 @@ public sealed class SkillCommandsTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -2129,7 +2129,7 @@ public sealed class SkillCommandsTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -2198,7 +2198,7 @@ public sealed class SkillCommandsTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -2281,7 +2281,7 @@ public sealed class SkillCommandsTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -2378,7 +2378,7 @@ public sealed class SkillCommandsTests : IDisposable
                             ["primary"] = "fallback"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -2458,7 +2458,7 @@ public sealed class SkillCommandsTests : IDisposable
                         PendingStepIds = ["ask_user"],
                         BlockedStepIds = ["finalize"]
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -2663,7 +2663,7 @@ public sealed class SkillCommandsTests : IDisposable
                             Status = "completed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -2717,7 +2717,7 @@ public sealed class SkillCommandsTests : IDisposable
                             Status = "completed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -2814,7 +2814,7 @@ public sealed class SkillCommandsTests : IDisposable
                             ["tool_call"] = "tool_failed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -2900,7 +2900,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -2979,7 +2979,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -3075,7 +3075,7 @@ public sealed class SkillCommandsTests : IDisposable
                             ["tool_call"] = "tool_failed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -3161,7 +3161,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -3233,7 +3233,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -3314,7 +3314,7 @@ public sealed class SkillCommandsTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -3402,7 +3402,7 @@ public sealed class SkillCommandsTests : IDisposable
                             ["tool_call"] = "tool_failed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -3481,7 +3481,7 @@ public sealed class SkillCommandsTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -3567,7 +3567,7 @@ public sealed class SkillCommandsTests : IDisposable
                         PendingStepIds = ["ask_user"],
                         BlockedStepIds = ["finalize"]
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -3639,7 +3639,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -3719,7 +3719,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -3743,7 +3743,7 @@ public sealed class SkillCommandsTests : IDisposable
             var featureStore = new FileFeatureStore(memoryPath);
             var durable = await featureStore.GetProposalAsync(
                 "meta-run-proposal:sess-meta-proposal-durable:meta-run:run-paused-001:paused",
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.NotNull(durable);
             Assert.Equal(LearningProposalKind.MetaRunProposal, durable!.Kind);
@@ -3824,7 +3824,7 @@ public sealed class SkillCommandsTests : IDisposable
                         PendingStepId = "ask_user",
                         Prompt = "Need more detail"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -3913,7 +3913,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -3990,7 +3990,7 @@ public sealed class SkillCommandsTests : IDisposable
                             ErrorCode = "tool_failed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -4065,7 +4065,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -4139,7 +4139,7 @@ public sealed class SkillCommandsTests : IDisposable
                             ErrorCode = "tool_failed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -4188,7 +4188,7 @@ public sealed class SkillCommandsTests : IDisposable
             var featureStore = new FileFeatureStore(memoryPath);
             var durable = await featureStore.GetProposalAsync(
                 "meta-run-proposal:sess-meta-proposals-change-after-rollback-json:meta-run:run-failed-001:failed",
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.NotNull(durable);
             Assert.Equal("opensquilla-authoring-v1", durable!.Metadata["meta_run_proposal_accept_gate_profile"]);
@@ -4240,7 +4240,7 @@ public sealed class SkillCommandsTests : IDisposable
                             ErrorCode = "tool_failed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -4333,7 +4333,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -4470,7 +4470,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -4606,7 +4606,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -4793,7 +4793,7 @@ public sealed class SkillCommandsTests : IDisposable
                             ErrorCode = "tool_failed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -4918,7 +4918,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -4937,7 +4937,7 @@ public sealed class SkillCommandsTests : IDisposable
 
             var featureStore = new FileFeatureStore(memoryPath);
             const string workflowDurableId = "meta-run-workflow:sess-phase3-e2e-change-denied:meta-run:run-paused-001:paused";
-            var workflowBeforeDenied = await featureStore.GetProposalAsync(workflowDurableId, CancellationToken.None);
+            var workflowBeforeDenied = await featureStore.GetProposalAsync(workflowDurableId, TestContext.Current.CancellationToken);
 
             Assert.NotNull(workflowBeforeDenied);
             var transitionCountBeforeDenied = workflowBeforeDenied!.Metadata["meta_run_workflow_transition_count"];
@@ -4962,7 +4962,7 @@ public sealed class SkillCommandsTests : IDisposable
                 Assert.Equal("permission_denied", deniedDocument.RootElement.GetProperty("errorCode").GetString());
             }
 
-            var workflowAfterDenied = await featureStore.GetProposalAsync(workflowDurableId, CancellationToken.None);
+            var workflowAfterDenied = await featureStore.GetProposalAsync(workflowDurableId, TestContext.Current.CancellationToken);
             Assert.NotNull(workflowAfterDenied);
             Assert.Equal(transitionCountBeforeDenied, workflowAfterDenied!.Metadata["meta_run_workflow_transition_count"]);
         }
@@ -5010,7 +5010,7 @@ public sealed class SkillCommandsTests : IDisposable
                             ErrorCode = "tool_failed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -5030,7 +5030,7 @@ public sealed class SkillCommandsTests : IDisposable
 
             var featureStore = new FileFeatureStore(memoryPath);
             const string workflowDurableId = "meta-run-workflow:sess-phase3-e2e-conflict-nondrift:meta-run:run-failed-001:failed";
-            var workflowBeforeConflict = await featureStore.GetProposalAsync(workflowDurableId, CancellationToken.None);
+            var workflowBeforeConflict = await featureStore.GetProposalAsync(workflowDurableId, TestContext.Current.CancellationToken);
 
             Assert.NotNull(workflowBeforeConflict);
             var transitionCountBeforeConflict = workflowBeforeConflict!.Metadata["meta_run_workflow_transition_count"];
@@ -5053,7 +5053,7 @@ public sealed class SkillCommandsTests : IDisposable
                 Assert.Equal("proposal_already_reviewed", conflictDocument.RootElement.GetProperty("errorCode").GetString());
             }
 
-            var workflowAfterConflict = await featureStore.GetProposalAsync(workflowDurableId, CancellationToken.None);
+            var workflowAfterConflict = await featureStore.GetProposalAsync(workflowDurableId, TestContext.Current.CancellationToken);
             Assert.NotNull(workflowAfterConflict);
             Assert.Equal(transitionCountBeforeConflict, workflowAfterConflict!.Metadata["meta_run_workflow_transition_count"]);
         }
@@ -5105,7 +5105,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -5229,7 +5229,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -5272,7 +5272,7 @@ public sealed class SkillCommandsTests : IDisposable
             var featureStore = new FileFeatureStore(memoryPath);
             var workflow = await featureStore.GetProposalAsync(
                 "meta-run-workflow:sess-phase3-e2e-workflow-history:meta-run:run-paused-001:paused",
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.NotNull(workflow);
             Assert.Equal(LearningProposalKind.MetaRunReviewWorkflow, workflow!.Kind);
@@ -5328,7 +5328,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -5459,7 +5459,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -5566,7 +5566,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -5639,7 +5639,7 @@ public sealed class SkillCommandsTests : IDisposable
                             ErrorCode = "tool_failed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -5714,7 +5714,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -5786,7 +5786,7 @@ public sealed class SkillCommandsTests : IDisposable
                             ErrorCode = "tool_failed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -5910,7 +5910,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -5972,7 +5972,7 @@ public sealed class SkillCommandsTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -6027,7 +6027,7 @@ public sealed class SkillCommandsTests : IDisposable
                             FinalText = "done"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();

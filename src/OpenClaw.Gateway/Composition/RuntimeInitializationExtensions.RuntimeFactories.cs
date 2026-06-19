@@ -167,6 +167,11 @@ internal static partial class RuntimeInitializationExtensions
             new MetaSkillSmokeRunTool(),
             new MetaSkillRuntimeE2ERunTool(),
             new MetaSkillPersistProposalTool(),
+
+            // Goal system
+            new GetGoalTool(services.GoalService),
+            new CreateGoalTool(services.GoalService),
+            new UpdateGoalTool(services.GoalService),
         };
 
         if (browserAvailability.Registered)
@@ -294,7 +299,8 @@ internal static partial class RuntimeInitializationExtensions
         IReadOnlyList<string> pluginSkillDirs,
         bool requireToolApproval,
         IReadOnlyList<string> approvalRequiredTools,
-        IToolSandbox? toolSandbox)
+        IToolSandbox? toolSandbox,
+        IReadOnlyList<IToolResultInterceptor>? interceptors = null)
     {
         var factory = AgentRuntimeFactorySelector.Select(
             services.GetServices<IAgentRuntimeFactory>(),
@@ -329,7 +335,8 @@ internal static partial class RuntimeInitializationExtensions
             IsContractTokenBudgetExceeded = contractGovernance.IsTokenBudgetExceeded,
             IsContractRuntimeBudgetExceeded = contractGovernance.IsRuntimeBudgetExceeded,
             RecordContractTurnUsage = contractGovernance.RecordTurnUsage,
-            AppendContractSnapshot = (session, status) => contractGovernance.AppendSnapshot(session, status)
+            AppendContractSnapshot = (session, status) => contractGovernance.AppendSnapshot(session, status),
+            Interceptors = interceptors
         });
     }
 

@@ -225,7 +225,7 @@ public sealed class ContractGovernanceTests
     {
         var service = CreateService();
 
-        var result = await service.EvaluateVerificationAsync(policy: null, CancellationToken.None);
+        var result = await service.EvaluateVerificationAsync(policy: null, TestContext.Current.CancellationToken);
 
         Assert.Equal(AutomationVerificationStatuses.NotVerified, result.VerificationStatus);
         Assert.Contains("no verification policy", result.VerificationSummary, StringComparison.OrdinalIgnoreCase);
@@ -252,7 +252,7 @@ public sealed class ContractGovernanceTests
                         Path = path
                     }
                 ]
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             Assert.Equal(AutomationVerificationStatuses.Verified, result.VerificationStatus);
             Assert.Single(result.Checks);
@@ -280,7 +280,7 @@ public sealed class ContractGovernanceTests
                     Prompt = "Confirm that the downstream system applied the change."
                 }
             ]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(AutomationVerificationStatuses.Blocked, result.VerificationStatus);
         Assert.Single(result.Checks);
@@ -304,7 +304,7 @@ public sealed class ContractGovernanceTests
                     ExpectedStatusCode = 200
                 }
             ]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(AutomationVerificationStatuses.Failed, result.VerificationStatus);
         Assert.Single(result.Checks);
@@ -328,7 +328,7 @@ public sealed class ContractGovernanceTests
                     Contains = "ok"
                 }
             ]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(AutomationVerificationStatuses.Failed, result.VerificationStatus);
         Assert.Single(result.Checks);
@@ -457,7 +457,7 @@ public sealed class ContractGovernanceTests
             IsStreaming = false
         };
 
-        var result = await hook.BeforeExecuteAsync(context, CancellationToken.None);
+        var result = await hook.BeforeExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.True(result);
     }
 
@@ -486,7 +486,7 @@ public sealed class ContractGovernanceTests
             IsStreaming = false
         };
 
-        var result = await hook.BeforeExecuteAsync(context, CancellationToken.None);
+        var result = await hook.BeforeExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.False(result);
     }
 
@@ -511,7 +511,7 @@ public sealed class ContractGovernanceTests
             IsStreaming = false
         };
 
-        var result = await hook.BeforeExecuteAsync(context, CancellationToken.None);
+        var result = await hook.BeforeExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.False(result);
     }
 
@@ -537,7 +537,7 @@ public sealed class ContractGovernanceTests
             IsStreaming = false
         };
 
-        var result = await hook.BeforeExecuteAsync(context, CancellationToken.None);
+        var result = await hook.BeforeExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.False(result);
     }
 
@@ -561,7 +561,7 @@ public sealed class ContractGovernanceTests
             IsStreaming = false
         };
 
-        var result = await hook.BeforeExecuteAsync(context, CancellationToken.None);
+        var result = await hook.BeforeExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.False(result);
     }
 
@@ -581,7 +581,7 @@ public sealed class ContractGovernanceTests
             IsStreaming = false
         };
 
-        var result = await hook.BeforeExecuteAsync(context, CancellationToken.None);
+        var result = await hook.BeforeExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.True(result);
     }
 
@@ -668,7 +668,7 @@ public sealed class ContractGovernanceTests
         var context = new MessageContext { ChannelId = "ws", SenderId = "user1", Text = "hello" };
         var nextCalled = false;
 
-        await middleware.InvokeAsync(context, () => { nextCalled = true; return ValueTask.CompletedTask; }, CancellationToken.None);
+        await middleware.InvokeAsync(context, () => { nextCalled = true; return ValueTask.CompletedTask; }, TestContext.Current.CancellationToken);
 
         Assert.True(context.IsShortCircuited);
         Assert.False(nextCalled);
@@ -685,7 +685,7 @@ public sealed class ContractGovernanceTests
         var context = new MessageContext { ChannelId = "ws", SenderId = "user1", Text = "hello" };
         var nextCalled = false;
 
-        await middleware.InvokeAsync(context, () => { nextCalled = true; return ValueTask.CompletedTask; }, CancellationToken.None);
+        await middleware.InvokeAsync(context, () => { nextCalled = true; return ValueTask.CompletedTask; }, TestContext.Current.CancellationToken);
 
         Assert.False(context.IsShortCircuited);
         Assert.True(nextCalled);

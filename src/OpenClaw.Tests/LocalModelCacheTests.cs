@@ -110,7 +110,7 @@ public sealed class LocalModelCacheTests : IDisposable
                 SourcePath = sourcePath,
                 ModelsRoot = modelsRoot
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.False(denied.Success);
         Assert.Contains("requires explicit license acceptance", denied.Message, StringComparison.OrdinalIgnoreCase);
@@ -123,7 +123,7 @@ public sealed class LocalModelCacheTests : IDisposable
                 ModelsRoot = modelsRoot,
                 AcceptLicense = true
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.True(installed.Success, installed.Message);
         Assert.NotNull(installed.Status);
@@ -131,7 +131,7 @@ public sealed class LocalModelCacheTests : IDisposable
         Assert.True(installed.Status.Verified);
         Assert.True(File.Exists(LocalModelCache.GetModelPath(package, modelsRoot)));
 
-        var expectedSha = await LocalModelCache.ComputeSha256Async(sourcePath, CancellationToken.None);
+        var expectedSha = await LocalModelCache.ComputeSha256Async(sourcePath, TestContext.Current.CancellationToken);
         Assert.Equal(expectedSha, installed.Status.Sha256);
 
         var manifestJson = await File.ReadAllTextAsync(LocalModelCache.GetManifestPath(package, modelsRoot));
@@ -140,7 +140,7 @@ public sealed class LocalModelCacheTests : IDisposable
         Assert.True(manifest!.LicenseAccepted);
         Assert.Equal(expectedSha, manifest.Sha256);
 
-        var verified = await LocalModelCache.VerifyAsync(package, modelsRoot, CancellationToken.None);
+        var verified = await LocalModelCache.VerifyAsync(package, modelsRoot, TestContext.Current.CancellationToken);
         Assert.True(verified.Verified);
         Assert.Equal(expectedSha, verified.Sha256);
 

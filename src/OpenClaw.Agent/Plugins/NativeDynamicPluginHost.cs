@@ -28,6 +28,7 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable, IPluginRuntimeTe
     private readonly List<IChannelAdapter> _channelAdapters = [];
     private readonly List<(string PluginId, string ChannelId, IChannelAdapter Adapter)> _channelRegistrations = [];
     private readonly List<IToolHook> _toolHooks = [];
+    private readonly List<IToolResultInterceptor> _resultInterceptors = [];
     private readonly List<(string PluginId, string Name, string Description, Func<string, CancellationToken, Task<string>> Handler)> _commands = [];
     private readonly List<(string ProviderId, string[] Models, IChatClient Client)> _providerRegistrations = [];
     private readonly List<(string PluginId, string ProviderId, string[] Models, IChatClient Client)> _providerRegistrationsDetailed = [];
@@ -54,6 +55,7 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable, IPluginRuntimeTe
     public IReadOnlyList<IChannelAdapter> ChannelAdapters => _channelAdapters;
     public IReadOnlyList<(string PluginId, string ChannelId, IChannelAdapter Adapter)> ChannelRegistrations => _channelRegistrations;
     public IReadOnlyList<IToolHook> ToolHooks => _toolHooks;
+    public IReadOnlyList<IToolResultInterceptor> ResultInterceptors => _resultInterceptors;
     public IReadOnlyList<(string ProviderId, string[] Models, IChatClient Client)> ProviderRegistrations => _providerRegistrations;
     public IReadOnlyList<(string PluginId, string Name, string Description, Func<string, CancellationToken, Task<string>> Handler)> CommandRegistrations => _commands;
     public IReadOnlyList<(string PluginId, string ProviderId, string[] Models, IChatClient Client)> ProviderRegistrationsDetailed => _providerRegistrationsDetailed;
@@ -74,6 +76,7 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable, IPluginRuntimeTe
         _channelAdapters.Clear();
         _channelRegistrations.Clear();
         _toolHooks.Clear();
+        _resultInterceptors.Clear();
         _commands.Clear();
         _providerRegistrations.Clear();
         _providerRegistrationsDetailed.Clear();
@@ -219,6 +222,7 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable, IPluginRuntimeTe
         var channelAdaptersBefore = _channelAdapters.Count;
         var channelRegistrationsBefore = _channelRegistrations.Count;
         var toolHooksBefore = _toolHooks.Count;
+        var resultInterceptorsBefore = _resultInterceptors.Count;
         var commandsBefore = _commands.Count;
         var providerRegistrationsBefore = _providerRegistrations.Count;
         var providerRegistrationsDetailedBefore = _providerRegistrationsDetailed.Count;
@@ -270,6 +274,7 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable, IPluginRuntimeTe
             _channelAdapters.AddRange(registrationContext.Channels);
             _channelRegistrations.AddRange(registrationContext.Channels.Select(channel => (manifest.Id, channel.ChannelId, channel)));
             _toolHooks.AddRange(registrationContext.Hooks);
+            _resultInterceptors.AddRange(registrationContext.ResultInterceptors);
             _commands.AddRange(registrationContext.Commands.Select(cmd => (manifest.Id, cmd.Name, cmd.Description, cmd.Handler)));
             _providerRegistrations.AddRange(registrationContext.Providers);
             _providerRegistrationsDetailed.AddRange(registrationContext.Providers.Select(provider => (manifest.Id, provider.ProviderId, provider.Models, provider.Client)));
@@ -336,6 +341,7 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable, IPluginRuntimeTe
             Truncate(_channelAdapters, channelAdaptersBefore);
             Truncate(_channelRegistrations, channelRegistrationsBefore);
             Truncate(_toolHooks, toolHooksBefore);
+            Truncate(_resultInterceptors, resultInterceptorsBefore);
             Truncate(_commands, commandsBefore);
             Truncate(_providerRegistrations, providerRegistrationsBefore);
             Truncate(_providerRegistrationsDetailed, providerRegistrationsDetailedBefore);
@@ -689,6 +695,7 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable, IPluginRuntimeTe
         _channelAdapters.Clear();
         _channelRegistrations.Clear();
         _toolHooks.Clear();
+        _resultInterceptors.Clear();
         _commands.Clear();
         _providerRegistrations.Clear();
         _providerRegistrationsDetailed.Clear();
@@ -871,6 +878,14 @@ public sealed class NativeDynamicPluginHost : IAsyncDisposable, IPluginRuntimeTe
             Services.Add(service);
             Capabilities.Add(PluginCapabilityPolicy.Services);
         }
+
+        public void RegisterResultInterceptor(IToolResultInterceptor interceptor)
+        {
+            ResultInterceptors.Add(interceptor);
+            Capabilities.Add(PluginCapabilityPolicy.Hooks);
+        }
+
+        public List<IToolResultInterceptor> ResultInterceptors { get; } = [];
     }
 
     private sealed record LoadedNativePlugin(

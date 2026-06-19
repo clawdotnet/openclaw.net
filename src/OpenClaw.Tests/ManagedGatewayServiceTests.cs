@@ -122,7 +122,7 @@ public sealed class ManagedGatewayServiceTests : IDisposable
             ApiKey: null,
             ModelPresetId: null,
             WorkspacePath: Path.Join(_tempDir, "workspace"),
-            ConfigPath: Path.Join(_tempDir, "config.json")), CancellationToken.None);
+            ConfigPath: Path.Join(_tempDir, "config.json")), TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccess);
         Assert.Contains("API key", result.Message, StringComparison.OrdinalIgnoreCase);
@@ -161,7 +161,7 @@ public sealed class ManagedGatewayServiceTests : IDisposable
                 ApiKey: null,
                 ModelPresetId: null,
                 WorkspacePath: Path.Join(_tempDir, "workspace"),
-                ConfigPath: Path.Join(_tempDir, "config.json")), CancellationToken.None);
+                ConfigPath: Path.Join(_tempDir, "config.json")), TestContext.Current.CancellationToken);
 
             var args = File.ReadAllText(argCapturePath);
 
@@ -210,7 +210,7 @@ public sealed class ManagedGatewayServiceTests : IDisposable
                 "install",
                 "embedded-gemma-small-q4",
                 "/tmp/model.gguf",
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             var args = File.ReadAllText(argCapturePath);
             Assert.True(result.IsSuccess, result.Message);
@@ -267,7 +267,7 @@ public sealed class ManagedGatewayServiceTests : IDisposable
                 ApiKey: "super-secret",
                 ModelPresetId: null,
                 WorkspacePath: Path.Join(_tempDir, "workspace"),
-                ConfigPath: Path.Join(_tempDir, "config.json")), CancellationToken.None);
+                ConfigPath: Path.Join(_tempDir, "config.json")), TestContext.Current.CancellationToken);
 
             var args = File.ReadAllText(argCapturePath);
             var childProviderKey = File.ReadAllText(envCapturePath);
@@ -357,7 +357,7 @@ public sealed class ManagedGatewayServiceTests : IDisposable
             using var service = new ManagedGatewayService(_tempDir, httpClient, configPath: configPath);
             service.SetProviderApiKey("super-secret");
 
-            var result = await service.StartAsync(authToken: null, CancellationToken.None);
+            var result = await service.StartAsync(authToken: null, TestContext.Current.CancellationToken);
 
             Assert.False(result.IsSuccess);
             Assert.Equal("super-secret", File.ReadAllText(envCapturePath));

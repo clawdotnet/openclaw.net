@@ -20,7 +20,7 @@ public sealed class FileReadToolTests
 
         var output = await tool.ExecuteAsync(
             System.Text.Json.JsonSerializer.Serialize(new { path }),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         Assert.Equal("hello", output);
     }
 
@@ -38,7 +38,7 @@ public sealed class FileReadToolTests
 
         var output = await tool.ExecuteAsync(
             System.Text.Json.JsonSerializer.Serialize(new { path, max_lines = -5 }),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         Assert.StartsWith("line1", output, StringComparison.Ordinal);
     }
 

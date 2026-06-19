@@ -135,11 +135,11 @@ public sealed class A2AIntegrationTests
         var session = await agent.DeserializeSessionAsync(
             document.RootElement,
             jsonSerializerOptions: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var serialized = await agent.SerializeSessionAsync(
             session,
             jsonSerializerOptions: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.True(serialized.TryGetProperty("SessionId", out var sessionId));
         Assert.True(serialized.TryGetProperty("SenderId", out var senderId));
@@ -167,7 +167,7 @@ public sealed class A2AIntegrationTests
                 StreamingResponse = false
             },
             eventQueue,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         eventQueue.Complete(null!);
 
         var events = new List<StreamResponse>();

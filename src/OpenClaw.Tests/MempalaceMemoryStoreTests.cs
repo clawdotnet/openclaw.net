@@ -15,16 +15,16 @@ public sealed class MempalaceMemoryStoreTests : IAsyncLifetime
 {
     private readonly string _storagePath = Path.Join(Path.GetTempPath(), "openclaw-mempalace-tests", Guid.NewGuid().ToString("N"));
 
-    public Task InitializeAsync()
+    public ValueTask InitializeAsync()
     {
         Directory.CreateDirectory(_storagePath);
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         try { Directory.Delete(_storagePath, recursive: true); } catch { }
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public sealed class MempalaceMemoryStoreTests : IAsyncLifetime
             RuntimeModeResolver.Resolve(new RuntimeConfig { Mode = "jit" }, dynamicCodeSupported: true),
             new TestLogger());
 
-        var providers = await host.LoadMemoryProvidersAsync(null, CancellationToken.None);
+        var providers = await host.LoadMemoryProvidersAsync(null, TestContext.Current.CancellationToken);
         var provider = Assert.Single(providers, static item => string.Equals(item.ProviderId, "mempalace", StringComparison.OrdinalIgnoreCase));
 
         var store = provider.Factory(new NativeDynamicMemoryProviderContext
@@ -61,14 +61,14 @@ public sealed class MempalaceMemoryStoreTests : IAsyncLifetime
 
         await using var disposableStore = store as IAsyncDisposable;
 
-        await store.SaveNoteAsync("project:demo:plugin", "Loaded through INativeDynamicPlugin.", CancellationToken.None);
+        await store.SaveNoteAsync("project:demo:plugin", "Loaded through INativeDynamicPlugin.", TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(host.Tools, static item => item.Name == "mempalace_kg");
         var toolResult = await tool.ExecuteAsync(
             """{"action":"query","subject":"memory:project:demo:plugin","predicate":"stored-in"}""",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
-        Assert.Equal("Loaded through INativeDynamicPlugin.", await store.LoadNoteAsync("project:demo:plugin", CancellationToken.None));
+        Assert.Equal("Loaded through INativeDynamicPlugin.", await store.LoadNoteAsync("project:demo:plugin", TestContext.Current.CancellationToken));
         Assert.Contains("memory:project:demo:plugin stored-in drawer:plugin", toolResult, StringComparison.Ordinal);
         Assert.Contains(host.Reports, report => report.PluginId == "openclaw-mempalace-memory" && report.Loaded);
     }
@@ -78,12 +78,12 @@ public sealed class MempalaceMemoryStoreTests : IAsyncLifetime
     {
         await using var store = CreateStore();
 
-        await store.SaveNoteAsync("project:demo:cats", "Cats prefer quiet sunny rooms.", CancellationToken.None);
-        await store.SaveNoteAsync("project:demo:dogs", "Dogs enjoy daily walks.", CancellationToken.None);
+        await store.SaveNoteAsync("project:demo:cats", "Cats prefer quiet sunny rooms.", TestContext.Current.CancellationToken);
+        await store.SaveNoteAsync("project:demo:dogs", "Dogs enjoy daily walks.", TestContext.Current.CancellationToken);
 
-        var loaded = await store.LoadNoteAsync("project:demo:cats", CancellationToken.None);
-        var hits = await store.SearchNotesAsync("cats sunny", "project:demo:", 5, CancellationToken.None);
-        var entries = await store.ListNotesAsync("project:demo:", 10, CancellationToken.None);
+        var loaded = await store.LoadNoteAsync("project:demo:cats", TestContext.Current.CancellationToken);
+        var hits = await store.SearchNotesAsync("cats sunny", "project:demo:", 5, TestContext.Current.CancellationToken);
+        var entries = await store.ListNotesAsync("project:demo:", 10, TestContext.Current.CancellationToken);
 
         Assert.Equal("Cats prefer quiet sunny rooms.", loaded);
         Assert.Contains(hits, hit => hit.Key == "project:demo:cats");
@@ -97,14 +97,14 @@ public sealed class MempalaceMemoryStoreTests : IAsyncLifetime
     {
         await using var store = CreateStore();
 
-        await store.SaveNoteAsync("project:demo:cats", "Cats prefer quiet sunny rooms.", CancellationToken.None);
+        await store.SaveNoteAsync("project:demo:cats", "Cats prefer quiet sunny rooms.", TestContext.Current.CancellationToken);
 
         var triples = await store.KnowledgeGraph.QueryAsync(
             new TriplePattern(
                 new EntityRef("memory", "project:demo:cats"),
                 "stored-in",
                 null!),
-            ct: CancellationToken.None);
+            ct: TestContext.Current.CancellationToken);
 
         var triple = Assert.Single(triples);
         Assert.Equal("drawer:cats", triple.Triple.Object.ToString());
@@ -118,10 +118,10 @@ public sealed class MempalaceMemoryStoreTests : IAsyncLifetime
 
         var add = await tool.ExecuteAsync(
             """{"action":"add","subject":"agent:openclaw","predicate":"uses","object":"memory:mempalace"}""",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var query = await tool.ExecuteAsync(
             """{"action":"query","subject":"agent:openclaw","predicate":"uses"}""",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("Added temporal triple", add, StringComparison.Ordinal);
         Assert.Contains("agent:openclaw uses memory:mempalace", query, StringComparison.Ordinal);
@@ -133,7 +133,7 @@ public sealed class MempalaceMemoryStoreTests : IAsyncLifetime
         await using var store = CreateStore();
         var tool = new MempalaceKnowledgeGraphTool(store.KnowledgeGraph);
 
-        var result = await tool.ExecuteAsync("{", CancellationToken.None);
+        var result = await tool.ExecuteAsync("{", TestContext.Current.CancellationToken);
 
         Assert.StartsWith("Error: invalid JSON arguments.", result, StringComparison.Ordinal);
     }

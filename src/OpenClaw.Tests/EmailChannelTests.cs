@@ -13,7 +13,7 @@ public sealed class EmailChannelTests
     {
         var channel = new EmailChannel(new EmailConfig { Enabled = true, InboundEnabled = false }, NullLogger<EmailChannel>.Instance);
 
-        await channel.StartAsync(CancellationToken.None);
+        await channel.StartAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -21,7 +21,7 @@ public sealed class EmailChannelTests
     {
         var channel = new EmailChannel(new EmailConfig { Enabled = true, InboundEnabled = true }, NullLogger<EmailChannel>.Instance);
 
-        await channel.StartAsync(CancellationToken.None);
+        await channel.StartAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -35,7 +35,7 @@ public sealed class EmailChannelTests
                 ChannelId = "email",
                 RecipientId = "person@example.com",
                 Text = "hello"
-            }, CancellationToken.None));
+            }, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -53,6 +53,6 @@ public sealed class EmailChannelTests
                 ChannelId = "email",
                 RecipientId = "person@example.com",
                 Text = "hello"
-            }, CancellationToken.None));
+            }, TestContext.Current.CancellationToken));
     }
 }

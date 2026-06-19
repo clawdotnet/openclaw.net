@@ -58,8 +58,8 @@ public sealed class GatewayRuntimeLifecycleTests
                 return ValueTask.CompletedTask;
             });
 
-            await coordinator.StopAsync(CancellationToken.None);
-            await coordinator.StopAsync(CancellationToken.None);
+            await coordinator.StopAsync(TestContext.Current.CancellationToken);
+            await coordinator.StopAsync(TestContext.Current.CancellationToken);
 
             Assert.Equal(["second", "first"], calls);
         }
@@ -125,7 +125,7 @@ public sealed class GatewayRuntimeLifecycleTests
             });
 
             var service = new SkillWatcherService(config, null, [], agentRuntime, NullLogger<SkillWatcherService>.Instance);
-            service.Start(CancellationToken.None);
+            service.Start(TestContext.Current.CancellationToken);
             service.NotifySkillChanged();
 
             await reloadStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
@@ -256,8 +256,8 @@ public sealed class GatewayRuntimeLifecycleTests
                 return Task.FromResult((0, string.Empty));
             });
 
-        await service.StartAsync(CancellationToken.None);
-        await service.StartAsync(CancellationToken.None);
+        await service.StartAsync(TestContext.Current.CancellationToken);
+        await service.StartAsync(TestContext.Current.CancellationToken);
         await service.DisposeAsync();
         await service.DisposeAsync();
 

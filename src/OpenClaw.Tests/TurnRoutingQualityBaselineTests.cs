@@ -456,7 +456,7 @@ public sealed class TurnRoutingQualityBaselineTests
 
         foreach (var sample in dataset)
         {
-            var decision = await policy.ResolveAsync(BuildRequest(sample.Text), CancellationToken.None);
+            var decision = await policy.ResolveAsync(BuildRequest(sample.Text), TestContext.Current.CancellationToken);
             var gold = TierToIndex(sample.GoldTier);
             var predicted = TierToIndex(decision.Tier);
 

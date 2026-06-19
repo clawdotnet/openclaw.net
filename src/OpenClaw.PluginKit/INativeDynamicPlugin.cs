@@ -26,6 +26,7 @@ public interface INativeDynamicPluginContext
     void RegisterMemoryProvider(string providerId, Func<NativeDynamicMemoryProviderContext, IMemoryStore> factory);
     void RegisterHook(IToolHook hook);
     void RegisterService(INativeDynamicPluginService service);
+    void RegisterResultInterceptor(IToolResultInterceptor interceptor);
 }
 
 public sealed class NativeDynamicMemoryProviderContext

@@ -65,7 +65,7 @@ public sealed class TeamsWebhookHandlerTests
                 ["exp"] = DateTimeOffset.UtcNow.AddMinutes(30).ToUnixTimeSeconds()
             });
 
-        var isValid = await validator.ValidateAsync($"Bearer {token}", serviceUrl, "msteams", CancellationToken.None);
+        var isValid = await validator.ValidateAsync($"Bearer {token}", serviceUrl, "msteams", TestContext.Current.CancellationToken);
 
         Assert.True(isValid);
     }
@@ -121,7 +121,7 @@ public sealed class TeamsWebhookHandlerTests
                 ["exp"] = DateTimeOffset.UtcNow.AddMinutes(30).ToUnixTimeSeconds()
             });
 
-        var isValid = await validator.ValidateAsync($"Bearer {forgedToken}", serviceUrl, "msteams", CancellationToken.None);
+        var isValid = await validator.ValidateAsync($"Bearer {forgedToken}", serviceUrl, "msteams", TestContext.Current.CancellationToken);
 
         Assert.False(isValid);
     }
@@ -215,7 +215,7 @@ public sealed class TeamsWebhookHandlerTests
                     captured = message;
                     return ValueTask.CompletedTask;
                 },
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
             Assert.NotNull(captured);

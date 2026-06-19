@@ -46,18 +46,18 @@ public sealed class ProcessToolTests
         var start = await tool.ExecuteAsync(
             $$"""{"action":"start","command":"{{CreateCommand()}}","timeout_seconds":30}""",
             context,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var match = Regex.Match(start, @"Started process (?<id>\S+)");
         Assert.True(match.Success);
         var processId = match.Groups["id"].Value;
 
-        var list = await tool.ExecuteAsync("""{"action":"list"}""", context, CancellationToken.None);
+        var list = await tool.ExecuteAsync("""{"action":"list"}""", context, TestContext.Current.CancellationToken);
         Assert.Contains(processId, list, StringComparison.Ordinal);
 
-        var wait = await tool.ExecuteAsync($$"""{"action":"wait","process_id":"{{processId}}"}""", context, CancellationToken.None);
+        var wait = await tool.ExecuteAsync($$"""{"action":"wait","process_id":"{{processId}}"}""", context, TestContext.Current.CancellationToken);
         Assert.Contains("completed", wait, StringComparison.OrdinalIgnoreCase);
 
-        var log = await tool.ExecuteAsync($$"""{"action":"log","process_id":"{{processId}}"}""", context, CancellationToken.None);
+        var log = await tool.ExecuteAsync($$"""{"action":"log","process_id":"{{processId}}"}""", context, TestContext.Current.CancellationToken);
         Assert.Contains("hello", log, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("done", log, StringComparison.OrdinalIgnoreCase);
     }
@@ -111,10 +111,10 @@ public sealed class ProcessToolTests
         var start = await tool.ExecuteAsync(
             $$"""{"action":"start","command":"{{CreateCommand()}}","timeout_seconds":30}""",
             ownerContext,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var processId = Regex.Match(start, @"Started process (?<id>\S+)").Groups["id"].Value;
 
-        var poll = await tool.ExecuteAsync($$"""{"action":"poll","process_id":"{{processId}}"}""", attackerContext, CancellationToken.None);
+        var poll = await tool.ExecuteAsync($$"""{"action":"poll","process_id":"{{processId}}"}""", attackerContext, TestContext.Current.CancellationToken);
         Assert.Contains("was not found", poll, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -236,7 +236,7 @@ public sealed class ProcessToolTests
             WorkingDirectory = workspace,
             TimeoutSeconds = 10,
             RequireWorkspace = true
-        }, CancellationToken.None));
+        }, TestContext.Current.CancellationToken));
 
         Assert.Contains("does not support long-running background processes", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -271,8 +271,8 @@ public sealed class ProcessToolTests
                 WorkingDirectory = workspace,
                 TimeoutSeconds = 10,
                 RequireWorkspace = true
-            }, CancellationToken.None);
-            await processes.WaitAsync(handle.ProcessId, "sess_owner", CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
+            await processes.WaitAsync(handle.ProcessId, "sess_owner", TestContext.Current.CancellationToken);
         }
 
         var retained = processes.List("sess_owner");

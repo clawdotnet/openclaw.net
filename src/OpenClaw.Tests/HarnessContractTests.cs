@@ -34,11 +34,11 @@ public sealed class HarnessContractTests
     {
         var root = CreateTempDir();
         var store = new FileHarnessContractStore(root);
-        await store.SaveAsync(BuildContract("hctr_draft", HarnessContractStatus.Draft), CancellationToken.None);
-        await store.SaveAsync(BuildContract("hctr_verified", HarnessContractStatus.Verified), CancellationToken.None);
+        await store.SaveAsync(BuildContract("hctr_draft", HarnessContractStatus.Draft), TestContext.Current.CancellationToken);
+        await store.SaveAsync(BuildContract("hctr_verified", HarnessContractStatus.Verified), TestContext.Current.CancellationToken);
 
-        var loaded = await store.GetAsync("hctr_draft", CancellationToken.None);
-        var filtered = await store.ListAsync(new HarnessContractListQuery { Status = HarnessContractStatus.Verified }, CancellationToken.None);
+        var loaded = await store.GetAsync("hctr_draft", TestContext.Current.CancellationToken);
+        var filtered = await store.ListAsync(new HarnessContractListQuery { Status = HarnessContractStatus.Verified }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal("hctr_draft", loaded!.Id);
@@ -53,9 +53,9 @@ public sealed class HarnessContractTests
         var unsafeContract = BuildContract("../escape", HarnessContractStatus.Draft);
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await store.SaveAsync(unsafeContract, CancellationToken.None));
+            await store.SaveAsync(unsafeContract, TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await store.GetAsync("../escape", CancellationToken.None));
+            await store.GetAsync("../escape", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public sealed class HarnessContractTests
                     ActionType = "read"
                 }
             ]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.StartsWith("hctr_", created.Id, StringComparison.Ordinal);
         Assert.Equal(HarnessContractRiskLevels.Low, created.RiskLevel);
@@ -94,9 +94,9 @@ public sealed class HarnessContractTests
     {
         var root = CreateTempDir();
         var service = CreateService(root);
-        var created = await service.CreateAsync(BuildContract("hctr_status", HarnessContractStatus.Proposed), CancellationToken.None);
+        var created = await service.CreateAsync(BuildContract("hctr_status", HarnessContractStatus.Proposed), TestContext.Current.CancellationToken);
 
-        var updated = await service.MarkStatusAsync(created.Id, $" {HarnessContractStatus.Verified} ", CancellationToken.None);
+        var updated = await service.MarkStatusAsync(created.Id, $" {HarnessContractStatus.Verified} ", TestContext.Current.CancellationToken);
 
         Assert.NotNull(updated);
         Assert.Equal(HarnessContractStatus.Verified, updated!.Status);
@@ -112,10 +112,10 @@ public sealed class HarnessContractTests
     public async Task HarnessContractService_RejectsUnknownStatus()
     {
         var service = CreateService(CreateTempDir());
-        var created = await service.CreateAsync(BuildContract("hctr_invalid_status", HarnessContractStatus.Proposed), CancellationToken.None);
+        var created = await service.CreateAsync(BuildContract("hctr_invalid_status", HarnessContractStatus.Proposed), TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await service.MarkStatusAsync(created.Id, "unknown_status", CancellationToken.None));
+            await service.MarkStatusAsync(created.Id, "unknown_status", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -137,7 +137,7 @@ public sealed class HarnessContractTests
             """;
         var contract = JsonSerializer.Deserialize(json, CoreJsonContext.Default.HarnessContract);
 
-        var created = await service.CreateAsync(contract!, CancellationToken.None);
+        var created = await service.CreateAsync(contract!, TestContext.Current.CancellationToken);
 
         Assert.Empty(created.PlannedActions);
         Assert.Empty(created.WriteSet);
@@ -152,7 +152,7 @@ public sealed class HarnessContractTests
         var service = CreateService(CreateTempDir());
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await service.CreateAsync(BuildContract("hctr_invalid_risk", HarnessContractStatus.Draft, "severe"), CancellationToken.None));
+            await service.CreateAsync(BuildContract("hctr_invalid_risk", HarnessContractStatus.Draft, "severe"), TestContext.Current.CancellationToken));
     }
 
     [Theory]

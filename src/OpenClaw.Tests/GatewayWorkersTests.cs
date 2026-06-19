@@ -209,7 +209,7 @@ public sealed class GatewayWorkersTests
             {
                 var callback = callInfo.ArgAt<ToolApprovalCallback?>(3);
                 if (callback is not null)
-                    await callback("shell", """{"cmd":"ls"}""", CancellationToken.None);
+                    await callback("shell", """{"cmd":"ls"}""", TestContext.Current.CancellationToken);
                 return "ok";
             });
         var toolApprovalService = new ToolApprovalService();
@@ -437,10 +437,10 @@ public sealed class GatewayWorkersTests
         };
 
         var sessionManager = new SessionManager(store, config, NullLogger.Instance);
-        var session = await sessionManager.GetOrCreateByIdAsync("sess-stream", "websocket", "ws-user", CancellationToken.None)
+        var session = await sessionManager.GetOrCreateByIdAsync("sess-stream", "websocket", "ws-user", TestContext.Current.CancellationToken)
             ?? throw new InvalidOperationException("Failed to create session.");
         session.VerboseMode = true;
-        await sessionManager.PersistAsync(session, CancellationToken.None);
+        await sessionManager.PersistAsync(session, TestContext.Current.CancellationToken);
 
         var heartbeatService = new HeartbeatService(config, store, sessionManager, NullLogger<HeartbeatService>.Instance);
         var pipeline = new MessagePipeline();
@@ -570,7 +570,7 @@ public sealed class GatewayWorkersTests
             {
                 var callback = callInfo.ArgAt<ToolApprovalCallback?>(3)
                     ?? throw new InvalidOperationException("Approval callback was not supplied.");
-                var approved = await callback("shell", """{"cmd":"ls"}""", CancellationToken.None);
+                var approved = await callback("shell", """{"cmd":"ls"}""", TestContext.Current.CancellationToken);
                 return approved ? "approved" : "timed-out";
             });
 
@@ -1488,9 +1488,9 @@ public sealed class GatewayWorkersTests
     {
         private readonly CancellationTokenSource _stopping = new();
 
-        public CancellationToken ApplicationStarted => CancellationToken.None;
+        public CancellationToken ApplicationStarted => TestContext.Current.CancellationToken;
         public CancellationToken ApplicationStopping => _stopping.Token;
-        public CancellationToken ApplicationStopped => CancellationToken.None;
+        public CancellationToken ApplicationStopped => TestContext.Current.CancellationToken;
 
         public void StopApplication() => _stopping.Cancel();
 

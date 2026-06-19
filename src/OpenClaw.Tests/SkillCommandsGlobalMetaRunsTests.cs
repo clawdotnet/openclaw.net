@@ -236,7 +236,7 @@ public sealed class SkillCommandsGlobalMetaRunsTests
                     FinalText = "completed"
                 }
             }
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         await store.SaveSessionAsync(new Session
         {
@@ -264,7 +264,7 @@ public sealed class SkillCommandsGlobalMetaRunsTests
                     }
                 }
             }
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
     }
 
     private static string CreateTempRoot()

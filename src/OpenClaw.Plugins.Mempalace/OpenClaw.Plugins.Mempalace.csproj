@@ -14,9 +14,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MemPalace.Backends.Sqlite" Version="0.15.0" />
-    <PackageReference Include="MemPalace.Core" Version="0.15.0" />
-    <PackageReference Include="MemPalace.KnowledgeGraph" Version="0.15.0" />
+    <PackageReference Include="MemPalace.Backends.Sqlite" Version="0.15.2" />
+    <PackageReference Include="MemPalace.Core" Version="0.15.2" />
+    <PackageReference Include="MemPalace.KnowledgeGraph" Version="0.15.2" />
   </ItemGroup>
 
   <ItemGroup>

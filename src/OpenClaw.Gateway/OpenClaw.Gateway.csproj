@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
     <ProjectReference Include="..\OpenClaw.Agent\OpenClaw.Agent.csproj" />
+    <ProjectReference Include="..\OpenClaw.Plugins.TokenJuice\OpenClaw.Plugins.TokenJuice.csproj" />
     <ProjectReference Include="..\OpenClaw.Routing.Onnx\OpenClaw.Routing.Onnx.csproj" />
     <ProjectReference Include="..\OpenClaw.Channels\OpenClaw.Channels.csproj" />
     <ProjectReference Include="..\OpenClaw.Protocols.Browser\OpenClaw.Protocols.Browser.csproj" />
@@ -32,6 +33,7 @@
     <ProjectReference Include="..\OpenClaw.Payments.Core\OpenClaw.Payments.Core.csproj" />
     <ProjectReference Include="..\OpenClaw.Payments.StripeLink\OpenClaw.Payments.StripeLink.csproj" />
     <ProjectReference Include="..\OpenClaw.Plugins.Payment\OpenClaw.Plugins.Payment.csproj" />
+    <ProjectReference Include="..\OpenClaw.Plugins.TokenJuice\OpenClaw.Plugins.TokenJuice.csproj" />
   </ItemGroup>
   <!-- Dashboard Blazor WASM is integrated via CopyDashboardFiles targets below.
        Keep it out of ProjectReference to avoid Static Web Assets cross-project
@@ -40,9 +42,9 @@
     <ProjectReference Include="..\OpenClaw.MicrosoftAgentFrameworkAdapter\OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
     <PackageReference Include="A2A" Version="1.0.0-preview2" />
     <PackageReference Include="A2A.AspNetCore" Version="1.0.0-preview2" />
-    <PackageReference Include="Microsoft.Agents.AI" Version="1.3.0" />
-    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A" Version="1.3.0-preview.260423.1" />
-    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A.AspNetCore" Version="1.3.0-preview.260423.1" />
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.10.0" />
+    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A" Version="1.10.0-preview.260610.1" />
+    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A.AspNetCore" Version="1.10.0-preview.260610.1" />
   </ItemGroup>
   <ItemGroup Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">
     <ProjectReference Include="..\OpenClawNet.Sandbox.OpenSandbox\OpenClawNet.Sandbox.OpenSandbox.csproj" />
@@ -51,21 +53,21 @@
     <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_OPENSANDBOX</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Anthropic" Version="12.11.0" />
+    <PackageReference Include="Anthropic" Version="12.29.1" />
     <!-- Dashboard hosting is done manually via PhysicalFileProvider + URL rewrite in PipelineExtensions.cs.
          Microsoft.AspNetCore.Components.WebAssembly.Server is intentionally NOT referenced because
          its Static Web Assets integration conflicts with our ReferenceOutputAssembly=false approach. -->
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
-    <PackageReference Include="GeminiDotnet.Extensions.AI" Version="0.23.0" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.1.0" />
-    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageReference Include="GeminiDotnet.Extensions.AI" Version="0.25.0" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.4.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
-    <PackageReference Include="QRCoder" Version="1.6.0" />
-    <PackageReference Include="TickerQ" Version="10.3.0" />
+    <PackageReference Include="QRCoder" Version="1.8.0" />
+    <PackageReference Include="TickerQ" Version="10.4.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -97,29 +99,18 @@
     <ItemGroup>
       <_DashboardPublishFiles Include="$(_DashboardPublishWwwroot)\**\*" />
     </ItemGroup>
-    <Copy SourceFiles="@(_DashboardPublishFiles)"
-          DestinationFolder="$(OutputPath)wwwroot\dashboard\%(RecursiveDir)"
-          SkipUnchangedFiles="true"
-          Condition="'@(_DashboardPublishFiles)' != ''" />
+    <Copy SourceFiles="@(_DashboardPublishFiles)" DestinationFolder="$(OutputPath)wwwroot\dashboard\%(RecursiveDir)" SkipUnchangedFiles="true" Condition="'@(_DashboardPublishFiles)' != ''" />
     <!-- Create a non-fingerprinted copy of the Blazor boot script so that the
          <script src="_framework/blazor.webassembly.js"> reference in index.html
          resolves to an actual file when served by UseStaticFiles in production. -->
     <ItemGroup>
-      <_BlazorBootScript Include="$(OutputPath)wwwroot\dashboard\_framework\blazor.webassembly.*.js"
-                         Exclude="$(OutputPath)wwwroot\dashboard\_framework\blazor.webassembly.*.js.gz;$(OutputPath)wwwroot\dashboard\_framework\blazor.webassembly.*.js.br;$(OutputPath)wwwroot\dashboard\_framework\blazor.webassembly.js" />
+      <_BlazorBootScript Include="$(OutputPath)wwwroot\dashboard\_framework\blazor.webassembly.*.js" Exclude="$(OutputPath)wwwroot\dashboard\_framework\blazor.webassembly.*.js.gz;$(OutputPath)wwwroot\dashboard\_framework\blazor.webassembly.*.js.br;$(OutputPath)wwwroot\dashboard\_framework\blazor.webassembly.js" />
     </ItemGroup>
-    <Copy SourceFiles="@(_BlazorBootScript)"
-          DestinationFiles="$(OutputPath)wwwroot\dashboard\_framework\blazor.webassembly.js"
-          SkipUnchangedFiles="true"
-          Condition="'@(_BlazorBootScript)' != ''" />
+    <Copy SourceFiles="@(_BlazorBootScript)" DestinationFiles="$(OutputPath)wwwroot\dashboard\_framework\blazor.webassembly.js" SkipUnchangedFiles="true" Condition="'@(_BlazorBootScript)' != ''" />
     <ItemGroup>
-      <_DotNetBootScript Include="$(OutputPath)wwwroot\dashboard\_framework\dotnet.*.js"
-                         Exclude="$(OutputPath)wwwroot\dashboard\_framework\dotnet.runtime.*.js;$(OutputPath)wwwroot\dashboard\_framework\dotnet.native.*.js;$(OutputPath)wwwroot\dashboard\_framework\dotnet.*.js.gz;$(OutputPath)wwwroot\dashboard\_framework\dotnet.*.js.br;$(OutputPath)wwwroot\dashboard\_framework\dotnet.js" />
+      <_DotNetBootScript Include="$(OutputPath)wwwroot\dashboard\_framework\dotnet.*.js" Exclude="$(OutputPath)wwwroot\dashboard\_framework\dotnet.runtime.*.js;$(OutputPath)wwwroot\dashboard\_framework\dotnet.native.*.js;$(OutputPath)wwwroot\dashboard\_framework\dotnet.*.js.gz;$(OutputPath)wwwroot\dashboard\_framework\dotnet.*.js.br;$(OutputPath)wwwroot\dashboard\_framework\dotnet.js" />
     </ItemGroup>
-    <Copy SourceFiles="@(_DotNetBootScript)"
-          DestinationFiles="$(OutputPath)wwwroot\dashboard\_framework\dotnet.js"
-          SkipUnchangedFiles="true"
-          Condition="'@(_DotNetBootScript)' != ''" />
+    <Copy SourceFiles="@(_DotNetBootScript)" DestinationFiles="$(OutputPath)wwwroot\dashboard\_framework\dotnet.js" SkipUnchangedFiles="true" Condition="'@(_DotNetBootScript)' != ''" />
   </Target>
 
   <Target Name="CleanDashboardFilesWhenSkipped" AfterTargets="Build" Condition="'$(OpenClawSkipDashboardBuild)' == 'true'">
@@ -138,26 +129,15 @@
     <ItemGroup>
       <_DashboardPublishPubFiles Include="$(_DashboardPublishWwwrootPub)\**\*" />
     </ItemGroup>
-    <Copy SourceFiles="@(_DashboardPublishPubFiles)"
-          DestinationFolder="$(PublishDir)wwwroot\dashboard\%(RecursiveDir)"
-          SkipUnchangedFiles="true"
-          Condition="'@(_DashboardPublishPubFiles)' != ''" />
+    <Copy SourceFiles="@(_DashboardPublishPubFiles)" DestinationFolder="$(PublishDir)wwwroot\dashboard\%(RecursiveDir)" SkipUnchangedFiles="true" Condition="'@(_DashboardPublishPubFiles)' != ''" />
     <!-- Create non-fingerprinted boot script copy for production -->
     <ItemGroup>
-      <_BlazorBootScriptPub Include="$(PublishDir)wwwroot\dashboard\_framework\blazor.webassembly.*.js"
-                            Exclude="$(PublishDir)wwwroot\dashboard\_framework\blazor.webassembly.*.js.gz;$(PublishDir)wwwroot\dashboard\_framework\blazor.webassembly.*.js.br;$(PublishDir)wwwroot\dashboard\_framework\blazor.webassembly.js" />
+      <_BlazorBootScriptPub Include="$(PublishDir)wwwroot\dashboard\_framework\blazor.webassembly.*.js" Exclude="$(PublishDir)wwwroot\dashboard\_framework\blazor.webassembly.*.js.gz;$(PublishDir)wwwroot\dashboard\_framework\blazor.webassembly.*.js.br;$(PublishDir)wwwroot\dashboard\_framework\blazor.webassembly.js" />
     </ItemGroup>
-    <Copy SourceFiles="@(_BlazorBootScriptPub)"
-          DestinationFiles="$(PublishDir)wwwroot\dashboard\_framework\blazor.webassembly.js"
-          SkipUnchangedFiles="true"
-          Condition="'@(_BlazorBootScriptPub)' != ''" />
+    <Copy SourceFiles="@(_BlazorBootScriptPub)" DestinationFiles="$(PublishDir)wwwroot\dashboard\_framework\blazor.webassembly.js" SkipUnchangedFiles="true" Condition="'@(_BlazorBootScriptPub)' != ''" />
     <ItemGroup>
-      <_DotNetBootScriptPub Include="$(PublishDir)wwwroot\dashboard\_framework\dotnet.*.js"
-                            Exclude="$(PublishDir)wwwroot\dashboard\_framework\dotnet.runtime.*.js;$(PublishDir)wwwroot\dashboard\_framework\dotnet.native.*.js;$(PublishDir)wwwroot\dashboard\_framework\dotnet.*.js.gz;$(PublishDir)wwwroot\dashboard\_framework\dotnet.*.js.br;$(PublishDir)wwwroot\dashboard\_framework\dotnet.js" />
+      <_DotNetBootScriptPub Include="$(PublishDir)wwwroot\dashboard\_framework\dotnet.*.js" Exclude="$(PublishDir)wwwroot\dashboard\_framework\dotnet.runtime.*.js;$(PublishDir)wwwroot\dashboard\_framework\dotnet.native.*.js;$(PublishDir)wwwroot\dashboard\_framework\dotnet.*.js.gz;$(PublishDir)wwwroot\dashboard\_framework\dotnet.*.js.br;$(PublishDir)wwwroot\dashboard\_framework\dotnet.js" />
     </ItemGroup>
-    <Copy SourceFiles="@(_DotNetBootScriptPub)"
-          DestinationFiles="$(PublishDir)wwwroot\dashboard\_framework\dotnet.js"
-          SkipUnchangedFiles="true"
-          Condition="'@(_DotNetBootScriptPub)' != ''" />
+    <Copy SourceFiles="@(_DotNetBootScriptPub)" DestinationFiles="$(PublishDir)wwwroot\dashboard\_framework\dotnet.js" SkipUnchangedFiles="true" Condition="'@(_DotNetBootScriptPub)' != ''" />
   </Target>
 </Project>

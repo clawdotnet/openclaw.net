@@ -45,7 +45,7 @@ public sealed class OpenClawToolExecutorTests
             },
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("requires approval", result.ResultText, StringComparison.OrdinalIgnoreCase);
         await tool.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default);
@@ -65,7 +65,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("local-result", result.ResultText);
         Assert.Equal(1, tool.LocalExecutionCount);
@@ -110,7 +110,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("formatted:sandbox-result", result.ResultText);
         Assert.Equal(0, tool.LocalExecutionCount);
@@ -142,7 +142,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("local-result", result.ResultText);
         Assert.Equal(1, tool.LocalExecutionCount);
@@ -165,7 +165,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("requires sandboxing", result.ResultText, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, tool.LocalExecutionCount);
@@ -208,7 +208,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("local-result", result.ResultText);
         Assert.Equal(1, tool.LocalExecutionCount);
@@ -250,7 +250,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("denied by hook", result.ResultText, StringComparison.OrdinalIgnoreCase);
         await sandbox.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default);
@@ -270,7 +270,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
         Assert.Equal(ToolFailureCodes.OperatorAuthRequired, result.FailureCode);
@@ -294,7 +294,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
         Assert.Equal(ToolFailureCodes.RuntimeCapabilityUnavailable, result.FailureCode);
@@ -317,13 +317,37 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
         Assert.Equal(ToolFailureCodes.RuntimeCapabilityUnavailable, result.FailureCode);
         Assert.Equal(ToolFailureCodes.RuntimeCapabilityUnavailable, result.Invocation.FailureCode);
         Assert.Equal(tool.LocalExecutionUnavailableMessage, result.ResultText);
         Assert.Contains("Configure the required execution backend or sandbox", result.NextStep ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenToolFails_PassesFailureContextToInterceptors()
+    {
+        var tool = new ThrowingTool("Execution backend 'docker' is not configured.");
+        var interceptor = new RecordingInterceptor();
+        var executor = CreateExecutor([tool], interceptors: [interceptor]);
+
+        var result = await executor.ExecuteAsync(
+            "auth_bound",
+            """{"action":"restricted"}""",
+            callId: null,
+            CreateSession(),
+            CreateTurnContext(),
+            isStreaming: false,
+            approvalCallback: null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
+        Assert.NotNull(interceptor.Context);
+        Assert.True(interceptor.Context.Value.IsError);
+        Assert.Equal(1, interceptor.Context.Value.ExitCode);
+        Assert.Contains("execution backend", interceptor.Context.Value.RawOutput, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -342,7 +366,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
         Assert.Equal(ToolFailureCodes.PresetBlocked, result.FailureCode);
@@ -378,7 +402,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("meta:meta-research:hello", result.ResultText);
         Assert.Equal(1, callbackCalls);
@@ -413,7 +437,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("tool-fallback", result.ResultText);
         Assert.Equal(0, callbackCalls);
@@ -443,7 +467,7 @@ public sealed class OpenClawToolExecutorTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
         Assert.Equal(ToolFailureCodes.RuntimeCapabilityUnavailable, result.FailureCode);
@@ -455,7 +479,8 @@ public sealed class OpenClawToolExecutorTests
         IReadOnlyList<ITool> tools,
         IToolSandbox? toolSandbox = null,
         GatewayConfig? config = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IReadOnlyList<IToolResultInterceptor>? interceptors = null)
         => new(
             tools,
             toolTimeoutSeconds: 5,
@@ -465,7 +490,8 @@ public sealed class OpenClawToolExecutorTests
             metrics: new RuntimeMetrics(),
             logger: logger ?? NullLogger.Instance,
             config: config,
-            toolSandbox: toolSandbox);
+            toolSandbox: toolSandbox,
+            interceptors: interceptors);
 
     private static Session CreateSession(string channelId = "websocket", string? prompt = null)
         => new()
@@ -553,6 +579,19 @@ public sealed class OpenClawToolExecutorTests
 
         public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
             => throw new InvalidOperationException("Local execution should not be invoked.");
+    }
+
+    private sealed class RecordingInterceptor : IToolResultInterceptor
+    {
+        public int Order => 0;
+        public string Name => "recording";
+        public ReductionContext? Context { get; private set; }
+
+        public ValueTask<string> InterceptAsync(ReductionContext context, CancellationToken ct)
+        {
+            Context = context;
+            return new ValueTask<string>(context.RawOutput);
+        }
     }
 
     private sealed class ListLogger : ILogger

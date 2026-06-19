@@ -79,7 +79,7 @@ public sealed class TelegramChannelTests
                 Text = "[DOCUMENT_URL:https://cdn.example.test/report.pdf]\nReport ready",
                 ReplyToMessageId = "42"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         var request = Assert.Single(requests);
         Assert.EndsWith("/sendDocument", request.Url, StringComparison.Ordinal);
@@ -118,7 +118,7 @@ public sealed class TelegramChannelTests
                 RecipientId = "-1001234567890",
                 Text = "[IMAGE_URL:https://cdn.example.test/cat.png]\n" + new string('a', 1030)
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(2, requests.Count);
         Assert.EndsWith("/sendPhoto", requests[0].Url, StringComparison.Ordinal);
@@ -162,7 +162,7 @@ public sealed class TelegramChannelTests
                 RecipientId = "12345",
                 Text = "[STICKER_URL:https://cdn.example.test/sticker.webp]\nsticker caption"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(2, requests.Count);
         Assert.EndsWith("/sendSticker", requests[0].Url, StringComparison.Ordinal);
@@ -202,7 +202,7 @@ public sealed class TelegramChannelTests
                 RecipientId = "openclaw_updates",
                 Text = "hello"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.False(called);
     }
@@ -246,7 +246,7 @@ public sealed class TelegramChannelTests
                     captured = message;
                     return ValueTask.CompletedTask;
                 },
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.Equal(200, result.StatusCode);
             Assert.NotNull(captured);
@@ -275,7 +275,7 @@ public sealed class TelegramChannelTests
                 AllowlistSemantics.Legacy,
                 NullLogger<TelegramWebhookHandler>.Instance);
 
-            var result = await handler.HandleAsync("{", (_, _) => ValueTask.CompletedTask, CancellationToken.None);
+            var result = await handler.HandleAsync("{", (_, _) => ValueTask.CompletedTask, TestContext.Current.CancellationToken);
 
             Assert.Equal(400, result.StatusCode);
         }

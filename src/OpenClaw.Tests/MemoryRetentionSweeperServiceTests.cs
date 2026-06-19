@@ -33,7 +33,7 @@ public sealed class MemoryRetentionSweeperServiceTests
             new RuntimeMetrics(),
             NullLogger<MemoryRetentionSweeperService>.Instance);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SweepNowAsync(dryRun: true, CancellationToken.None).AsTask());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SweepNowAsync(dryRun: true, TestContext.Current.CancellationToken).AsTask());
     }
 
     [Fact]
@@ -73,8 +73,8 @@ public sealed class MemoryRetentionSweeperServiceTests
             metrics,
             NullLogger<MemoryRetentionSweeperService>.Instance);
 
-        var result = await service.SweepNowAsync(dryRun: false, CancellationToken.None);
-        var status = await service.GetStatusAsync(CancellationToken.None);
+        var result = await service.SweepNowAsync(dryRun: false, TestContext.Current.CancellationToken);
+        var status = await service.GetStatusAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(3, result.TotalDeleted);
         Assert.True(status.LastRunSucceeded);
@@ -122,10 +122,10 @@ public sealed class MemoryRetentionSweeperServiceTests
             new RuntimeMetrics(),
             NullLogger<MemoryRetentionSweeperService>.Instance);
 
-        var first = service.SweepNowAsync(dryRun: false, CancellationToken.None).AsTask();
+        var first = service.SweepNowAsync(dryRun: false, TestContext.Current.CancellationToken).AsTask();
         await gate.Task;
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.SweepNowAsync(dryRun: false, CancellationToken.None).AsTask());
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.SweepNowAsync(dryRun: false, TestContext.Current.CancellationToken).AsTask());
         Assert.Contains("already running", ex.Message, StringComparison.OrdinalIgnoreCase);
 
         release.TrySetResult();
@@ -166,7 +166,7 @@ public sealed class MemoryRetentionSweeperServiceTests
                 NullLogger<MemoryRetentionSweeperService>.Instance,
                 metadataStore.GetAll);
 
-            _ = await service.SweepNowAsync(dryRun: true, CancellationToken.None);
+            _ = await service.SweepNowAsync(dryRun: true, TestContext.Current.CancellationToken);
 
             Assert.Contains("session-starred", store.LastProtectedSessionIds);
         }

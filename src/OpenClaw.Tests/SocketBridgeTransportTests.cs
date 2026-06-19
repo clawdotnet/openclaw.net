@@ -28,7 +28,7 @@ public sealed class SocketBridgeTransportTests
             "expected-token",
             NullLogger.Instance,
             metrics);
-        await transport.PrepareAsync(CancellationToken.None);
+        await transport.PrepareAsync(TestContext.Current.CancellationToken);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var startTask = transport.StartAsync(Process.GetCurrentProcess(), cts.Token);
@@ -68,7 +68,7 @@ public sealed class SocketBridgeTransportTests
             "expected-token",
             NullLogger.Instance))
         {
-            await transport.PrepareAsync(CancellationToken.None);
+            await transport.PrepareAsync(TestContext.Current.CancellationToken);
         }
 
         Assert.True(Directory.Exists(tempDir));

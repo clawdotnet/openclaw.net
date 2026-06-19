@@ -29,7 +29,7 @@ public sealed class SqliteSessionSearchTests
                         Content = "invoice status"
                     }
                 ]
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             await store.SaveSessionAsync(new Session
             {
@@ -44,7 +44,7 @@ public sealed class SqliteSessionSearchTests
                         Content = "invoice status"
                     }
                 ]
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             var results = await ((ISessionSearchStore)store).SearchSessionsAsync(
                 new SessionSearchQuery
@@ -52,7 +52,7 @@ public sealed class SqliteSessionSearchTests
                     Text = "invoice",
                     ChannelId = "sms"
                 },
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             var hit = Assert.Single(results.Items);
             Assert.Equal("session-sms", hit.SessionId);
@@ -96,14 +96,14 @@ public sealed class SqliteSessionSearchTests
                         ]
                     }
                 ]
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             var results = await ((ISessionSearchStore)store).SearchSessionsAsync(
                 new SessionSearchQuery
                 {
                     Text = "invoice"
                 },
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             var hit = Assert.Single(results.Items);
             Assert.Equal("session-tool", hit.SessionId);
@@ -137,7 +137,7 @@ public sealed class SqliteSessionSearchTests
                         Content = "hello world"
                     }
                 ]
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             var results = await ((ISessionSearchStore)store).SearchSessionsAsync(
                 new SessionSearchQuery
@@ -145,7 +145,7 @@ public sealed class SqliteSessionSearchTests
                     // Unclosed phrase quote is invalid FTS5 syntax.
                     Text = "\"unclosed"
                 },
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.Empty(results.Items);
         }
@@ -169,7 +169,7 @@ public sealed class SqliteSessionSearchTests
                     Id = "session-corrupt",
                     ChannelId = "websocket",
                     SenderId = "alice"
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
 
                 await using (var conn = new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = dbPath }.ToString()))
                 {
@@ -181,7 +181,7 @@ public sealed class SqliteSessionSearchTests
                 }
 
                 var ex = await Assert.ThrowsAsync<MemoryStoreCorruptionException>(async () =>
-                    await store.GetSessionAsync("session-corrupt", CancellationToken.None));
+                    await store.GetSessionAsync("session-corrupt", TestContext.Current.CancellationToken));
                 Assert.Equal("session-corrupt", ex.SessionId);
             }
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();

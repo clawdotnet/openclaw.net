@@ -55,7 +55,7 @@ public sealed class ChatCommandProcessorTests
             new ChatTurn { Role = "assistant", Content = "a2" }
         ]);
 
-        var (handled, response) = await processor.TryProcessCommandAsync(session, "/compact", CancellationToken.None);
+        var (handled, response) = await processor.TryProcessCommandAsync(session, "/compact", TestContext.Current.CancellationToken);
 
         Assert.True(handled);
         Assert.Equal("Compacted: 4 turns → 6 turns remaining.", response);
@@ -85,7 +85,7 @@ public sealed class ChatCommandProcessorTests
             SenderId = "user1"
         };
 
-        var (handled, response) = await processor.TryProcessCommandAsync(session, "/status", CancellationToken.None);
+        var (handled, response) = await processor.TryProcessCommandAsync(session, "/status", TestContext.Current.CancellationToken);
 
         Assert.True(handled);
         Assert.Contains("Prompt Cache: 512 read / 0 write", response, StringComparison.Ordinal);
@@ -103,15 +103,15 @@ public sealed class ChatCommandProcessorTests
             SenderId = "user1"
         };
 
-        var (_, onResponse) = await processor.TryProcessCommandAsync(session, "/concise on", CancellationToken.None);
+        var (_, onResponse) = await processor.TryProcessCommandAsync(session, "/concise on", TestContext.Current.CancellationToken);
         Assert.Equal(SessionResponseModes.ConciseOps, session.ResponseMode);
         Assert.Equal("Concise operational mode enabled.", onResponse);
 
-        var (_, offResponse) = await processor.TryProcessCommandAsync(session, "/concise off", CancellationToken.None);
+        var (_, offResponse) = await processor.TryProcessCommandAsync(session, "/concise off", TestContext.Current.CancellationToken);
         Assert.Equal(SessionResponseModes.Full, session.ResponseMode);
         Assert.Equal("Concise operational mode disabled for this session.", offResponse);
 
-        var (_, autoResponse) = await processor.TryProcessCommandAsync(session, "/concise auto", CancellationToken.None);
+        var (_, autoResponse) = await processor.TryProcessCommandAsync(session, "/concise auto", TestContext.Current.CancellationToken);
         Assert.Equal(SessionResponseModes.Default, session.ResponseMode);
         Assert.Equal("Concise mode reset to automatic behavior.", autoResponse);
     }
@@ -128,7 +128,7 @@ public sealed class ChatCommandProcessorTests
             SenderId = "user1"
         };
 
-        var (handled, response) = await processor.TryProcessCommandAsync(session, "/help", CancellationToken.None);
+        var (handled, response) = await processor.TryProcessCommandAsync(session, "/help", TestContext.Current.CancellationToken);
 
         Assert.True(handled);
         Assert.Contains("/concise on|off|auto", response, StringComparison.Ordinal);

@@ -90,7 +90,7 @@ public sealed class ToolApprovalServiceTests
         var service = new ToolApprovalService();
         var request = service.Create("sess-1", "telegram", "user-1", "shell", "{}", TimeSpan.FromSeconds(2));
 
-        var waitTask = service.WaitForDecisionOutcomeAsync(request.ApprovalId, TimeSpan.FromSeconds(2), CancellationToken.None);
+        var waitTask = service.WaitForDecisionOutcomeAsync(request.ApprovalId, TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
 
         await Task.Delay(50);
         service.TrySetDecision(request.ApprovalId, approved: true,
@@ -111,7 +111,7 @@ public sealed class ToolApprovalServiceTests
             approved: true,
             requesterChannelId: "telegram",
             requesterSenderId: "user-1");
-        var outcome = await service.WaitForDecisionOutcomeAsync(request.ApprovalId, TimeSpan.FromSeconds(2), CancellationToken.None);
+        var outcome = await service.WaitForDecisionOutcomeAsync(request.ApprovalId, TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
 
         Assert.Equal(ToolApprovalDecisionResult.Recorded, decision);
         Assert.Equal(ToolApprovalWaitResult.Approved, outcome.Result);
@@ -126,7 +126,7 @@ public sealed class ToolApprovalServiceTests
         var request = service.Create("sess-1", "telegram", "user-1", "shell", "{}", TimeSpan.FromSeconds(5));
 
         var outcome = await service.WaitForDecisionOutcomeAsync(
-            request.ApprovalId, TimeSpan.FromMilliseconds(100), CancellationToken.None);
+            request.ApprovalId, TimeSpan.FromMilliseconds(100), TestContext.Current.CancellationToken);
 
         Assert.Equal(ToolApprovalWaitResult.TimedOut, outcome.Result);
     }

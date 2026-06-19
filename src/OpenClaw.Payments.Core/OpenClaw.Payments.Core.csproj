@@ -10,7 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
     <ProjectReference Include="..\OpenClaw.Payments.Abstractions\OpenClaw.Payments.Abstractions.csproj" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.6" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
   </ItemGroup>
 </Project>

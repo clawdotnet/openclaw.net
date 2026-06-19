@@ -34,13 +34,13 @@ public sealed class GovernanceLedgerTests
     {
         var root = CreateTempDir();
         var store = new FileGovernanceLedgerStore(root);
-        await store.SaveAsync(BuildEntry("gov_approved", GovernanceDecisions.Approved, "shell", "sess_one"), CancellationToken.None);
-        await store.SaveAsync(BuildEntry("gov_rejected", GovernanceDecisions.Rejected, "file_write", "sess_two"), CancellationToken.None);
+        await store.SaveAsync(BuildEntry("gov_approved", GovernanceDecisions.Approved, "shell", "sess_one"), TestContext.Current.CancellationToken);
+        await store.SaveAsync(BuildEntry("gov_rejected", GovernanceDecisions.Rejected, "file_write", "sess_two"), TestContext.Current.CancellationToken);
 
-        var loaded = await store.GetAsync("gov_approved", CancellationToken.None);
-        var byDecision = await store.ListAsync(new GovernanceLedgerListQuery { Decision = GovernanceDecisions.Rejected }, CancellationToken.None);
-        var byTool = await store.ListAsync(new GovernanceLedgerListQuery { ToolName = "shell" }, CancellationToken.None);
-        var bySession = await store.ListAsync(new GovernanceLedgerListQuery { SessionId = "sess_two" }, CancellationToken.None);
+        var loaded = await store.GetAsync("gov_approved", TestContext.Current.CancellationToken);
+        var byDecision = await store.ListAsync(new GovernanceLedgerListQuery { Decision = GovernanceDecisions.Rejected }, TestContext.Current.CancellationToken);
+        var byTool = await store.ListAsync(new GovernanceLedgerListQuery { ToolName = "shell" }, TestContext.Current.CancellationToken);
+        var bySession = await store.ListAsync(new GovernanceLedgerListQuery { SessionId = "sess_two" }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal("gov_approved", loaded!.Id);
@@ -59,19 +59,19 @@ public sealed class GovernanceLedgerTests
         var unsafeEntry = BuildEntry("../escape", GovernanceDecisions.Approved, "shell", "sess");
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await store.SaveAsync(unsafeEntry, CancellationToken.None));
+            await store.SaveAsync(unsafeEntry, TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await store.GetAsync("../escape", CancellationToken.None));
+            await store.GetAsync("../escape", TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task FileGovernanceLedgerStore_RevokeMarksEntryWithoutDeleting()
     {
         var store = new FileGovernanceLedgerStore(CreateTempDir());
-        await store.SaveAsync(BuildEntry("gov_revoke", GovernanceDecisions.Approved, "shell", "sess"), CancellationToken.None);
+        await store.SaveAsync(BuildEntry("gov_revoke", GovernanceDecisions.Approved, "shell", "sess"), TestContext.Current.CancellationToken);
 
-        var revoked = await store.RevokeAsync("gov_revoke", "operator", "scope changed", CancellationToken.None);
-        var loaded = await store.GetAsync("gov_revoke", CancellationToken.None);
+        var revoked = await store.RevokeAsync("gov_revoke", "operator", "scope changed", TestContext.Current.CancellationToken);
+        var loaded = await store.GetAsync("gov_revoke", TestContext.Current.CancellationToken);
 
         Assert.NotNull(revoked);
         Assert.Equal(GovernanceDecisionStatuses.Revoked, revoked!.Status);
@@ -85,12 +85,12 @@ public sealed class GovernanceLedgerTests
     public async Task FileGovernanceLedgerStore_RevokeRejectsBlankActorOrReason()
     {
         var store = new FileGovernanceLedgerStore(CreateTempDir());
-        await store.SaveAsync(BuildEntry("gov_revoke_blank", GovernanceDecisions.Approved, "shell", "sess"), CancellationToken.None);
+        await store.SaveAsync(BuildEntry("gov_revoke_blank", GovernanceDecisions.Approved, "shell", "sess"), TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await store.RevokeAsync("gov_revoke_blank", "", "scope changed", CancellationToken.None));
+            await store.RevokeAsync("gov_revoke_blank", "", "scope changed", TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await store.RevokeAsync("gov_revoke_blank", "operator", " ", CancellationToken.None));
+            await store.RevokeAsync("gov_revoke_blank", "operator", " ", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -103,10 +103,10 @@ public sealed class GovernanceLedgerTests
         var expired = BuildApprovalRequest("apr_expired", "web_fetch", isMutation: false);
         var grant = BuildApprovalRequest("grant_1", "file_read", isMutation: false);
 
-        var approved = await service.RecordApprovalAsync(approval, GovernanceLedgerSources.ToolApproval, "operator", "web", "operator", CancellationToken.None);
-        var rejected = await service.RecordRejectionAsync(rejection, GovernanceLedgerSources.ToolApproval, "operator", "web", "operator", CancellationToken.None);
-        var timedOut = await service.RecordExpiredAsync(expired, GovernanceLedgerSources.ApprovalTimeout, "timeout", CancellationToken.None);
-        var grantConsumed = await service.RecordApprovalAsync(grant, GovernanceLedgerSources.ApprovalGrantConsumed, "grant-admin", null, "grant-admin", CancellationToken.None);
+        var approved = await service.RecordApprovalAsync(approval, GovernanceLedgerSources.ToolApproval, "operator", "web", "operator", TestContext.Current.CancellationToken);
+        var rejected = await service.RecordRejectionAsync(rejection, GovernanceLedgerSources.ToolApproval, "operator", "web", "operator", TestContext.Current.CancellationToken);
+        var timedOut = await service.RecordExpiredAsync(expired, GovernanceLedgerSources.ApprovalTimeout, "timeout", TestContext.Current.CancellationToken);
+        var grantConsumed = await service.RecordApprovalAsync(grant, GovernanceLedgerSources.ApprovalGrantConsumed, "grant-admin", null, "grant-admin", TestContext.Current.CancellationToken);
 
         Assert.Equal(GovernanceDecisions.Approved, approved.Decision);
         Assert.Equal(GovernanceRiskLevels.High, approved.RiskLevel);
@@ -150,7 +150,7 @@ public sealed class GovernanceLedgerTests
                 CorrelationId = "corr_redacted",
                 Properties = new Dictionary<string, string> { ["secret"] = "value sk-testsecret123" }
             }
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain("sk-testsecret123", redacted.ActionSummary);
         Assert.DoesNotContain("sk-testsecret123", redacted.DecisionReason ?? "");
@@ -176,9 +176,9 @@ public sealed class GovernanceLedgerTests
             {
                 SessionId = "sess_grant"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
-        var grantEntries = await service.ListAsync(new GovernanceLedgerListQuery { SessionId = "sess_grant", Limit = 0 }, CancellationToken.None);
+        var grantEntries = await service.ListAsync(new GovernanceLedgerListQuery { SessionId = "sess_grant", Limit = 0 }, TestContext.Current.CancellationToken);
         var grantEntry = Assert.Single(grantEntries);
         Assert.Equal(GovernanceLedgerSources.ApprovalGrantConsumed, grantEntry.Source);
         Assert.Equal(GovernanceScopes.Session, grantEntry.Scope);
@@ -205,7 +205,7 @@ public sealed class GovernanceLedgerTests
         };
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await service.CreateAsync(entry, CancellationToken.None));
+            await service.CreateAsync(entry, TestContext.Current.CancellationToken));
     }
 
     private static GovernanceLedgerService CreateService(string root)

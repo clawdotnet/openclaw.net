@@ -105,7 +105,7 @@ public sealed class WebSocketChannelTests
             ChannelId = "websocket",
             RecipientId = "a",
             Text = "hello"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.Single(ws1.Sent);
         Assert.Empty(ws2.Sent);
@@ -128,7 +128,7 @@ public sealed class WebSocketChannelTests
             return ValueTask.CompletedTask;
         };
 
-        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken);
 
         Assert.NotNull(received);
         Assert.Equal("hello", received!.Text);
@@ -151,7 +151,7 @@ public sealed class WebSocketChannelTests
             return ValueTask.CompletedTask;
         };
 
-        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken);
 
         Assert.NotNull(received);
         Assert.Equal("legacy", received!.Text);
@@ -174,7 +174,7 @@ public sealed class WebSocketChannelTests
             return ValueTask.CompletedTask;
         };
 
-        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken);
 
         Assert.NotNull(received);
         Assert.Equal("sess-restart", received!.SessionId);
@@ -203,7 +203,7 @@ public sealed class WebSocketChannelTests
             return ValueTask.CompletedTask;
         };
 
-        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken);
 
         Assert.NotNull(canvasEnvelope);
         Assert.Equal("canvas_ready", canvasEnvelope!.Type);
@@ -237,7 +237,7 @@ public sealed class WebSocketChannelTests
             return ValueTask.CompletedTask;
         };
 
-        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken);
 
         Assert.Equal(["canvas_ack", "canvas_snapshot_result", "canvas_eval_result", "a2ui_error", "a2ui_sync_result"], canvasTypes);
         Assert.False(messageObserved);
@@ -259,7 +259,7 @@ public sealed class WebSocketChannelTests
             return ValueTask.CompletedTask;
         };
 
-        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken);
 
         Assert.NotNull(received);
         Assert.Null(received!.Event);
@@ -288,7 +288,7 @@ public sealed class WebSocketChannelTests
             return ValueTask.CompletedTask;
         };
 
-        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken);
 
         Assert.NotNull(canvasEnvelope);
         Assert.NotNull(received);
@@ -323,7 +323,7 @@ public sealed class WebSocketChannelTests
             return ValueTask.CompletedTask;
         };
 
-        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken);
 
         Assert.NotNull(canvasEnvelope);
         Assert.NotNull(received);
@@ -357,7 +357,7 @@ public sealed class WebSocketChannelTests
             return ValueTask.CompletedTask;
         };
 
-        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken);
 
         Assert.False(observed);
     }
@@ -376,7 +376,7 @@ public sealed class WebSocketChannelTests
             RecipientId = "a",
             Text = "hello",
             ReplyToMessageId = "m1"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         var payload = System.Text.Encoding.UTF8.GetString(ws.Sent.Single());
         var env = JsonSerializer.Deserialize(payload, CoreJsonContext.Default.WsServerEnvelope);
@@ -405,7 +405,7 @@ public sealed class WebSocketChannelTests
             return ValueTask.CompletedTask;
         };
 
-        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, receivedCount);
         Assert.NotEmpty(ws.Sent);
@@ -427,7 +427,7 @@ public sealed class WebSocketChannelTests
         var ws = new TestWebSocket();
         ws.BlockReceiveUntilCancelled();
 
-        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, CancellationToken.None);
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken);
 
         Assert.Equal(WebSocketState.Closed, ws.State);
     }
@@ -446,7 +446,7 @@ public sealed class WebSocketChannelTests
             ChannelId = "websocket",
             RecipientId = "a",
             Text = "first"
-        }, CancellationToken.None).AsTask();
+        }, TestContext.Current.CancellationToken).AsTask();
 
         await ws.WaitForSendToStartAsync();
 
@@ -455,7 +455,7 @@ public sealed class WebSocketChannelTests
             ChannelId = "websocket",
             RecipientId = "a",
             Text = "second"
-        }, CancellationToken.None).AsTask();
+        }, TestContext.Current.CancellationToken).AsTask();
 
         channel.RemoveConnectionForTest("a");
         ws.ReleaseBlockedSend();

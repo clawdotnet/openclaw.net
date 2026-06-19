@@ -58,10 +58,10 @@ public sealed class NativeDynamicPluginHostTests : IDisposable
             RuntimeModeResolver.Resolve(new RuntimeConfig { Mode = "jit" }, dynamicCodeSupported: true),
             new TestLogger());
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(tools);
-        Assert.Equal("native:hello", await tool.ExecuteAsync("""{"text":"hello"}""", CancellationToken.None));
+        Assert.Equal("native:hello", await tool.ExecuteAsync("""{"text":"hello"}""", TestContext.Current.CancellationToken));
         Assert.True(File.Exists(startPath));
 
         var sessionManager = new SessionManager(Substitute.For<IMemoryStore>(), new GatewayConfig());
@@ -74,7 +74,7 @@ public sealed class NativeDynamicPluginHostTests : IDisposable
             SenderId = "user"
         };
 
-        var (handled, response) = await processor.TryProcessCommandAsync(session, "/native_dynamic_echo hi", CancellationToken.None);
+        var (handled, response) = await processor.TryProcessCommandAsync(session, "/native_dynamic_echo hi", TestContext.Current.CancellationToken);
         Assert.True(handled);
         Assert.Equal("cmd:hi", response);
 
@@ -111,7 +111,7 @@ public sealed class NativeDynamicPluginHostTests : IDisposable
             RuntimeModeResolver.Resolve(new RuntimeConfig { Mode = "aot" }, dynamicCodeSupported: true),
             new TestLogger());
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => host.LoadAsync(null, CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => host.LoadAsync(null, TestContext.Current.CancellationToken));
 
         Assert.Contains("AOT", ex.Message, StringComparison.OrdinalIgnoreCase);
         var report = Assert.Single(host.Reports, r => r.PluginId == "native-dynamic-blocked");
@@ -149,7 +149,7 @@ public sealed class NativeDynamicPluginHostTests : IDisposable
             RuntimeModeResolver.Resolve(new RuntimeConfig { Mode = "jit" }, dynamicCodeSupported: true),
             new TestLogger());
 
-        var providers = await host.LoadMemoryProvidersAsync(null, CancellationToken.None);
+        var providers = await host.LoadMemoryProvidersAsync(null, TestContext.Current.CancellationToken);
         Assert.Single(providers);
 
         await host.DisposeAsync();
@@ -185,7 +185,7 @@ public sealed class NativeDynamicPluginHostTests : IDisposable
             RuntimeModeResolver.Resolve(new RuntimeConfig { Mode = "jit" }, dynamicCodeSupported: true),
             new TestLogger());
 
-        var tools = await host.LoadAsync(null, CancellationToken.None);
+        var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
 
         Assert.Empty(tools);
         var report = Assert.Single(host.Reports);

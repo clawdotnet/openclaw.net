@@ -77,7 +77,7 @@ public sealed class MaintenanceCoordinatorTests
                         }
                     ]
                 },
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             var report = await MaintenanceCoordinator.ScanAsync(
                 config,
@@ -100,7 +100,7 @@ public sealed class MaintenanceCoordinatorTests
                         }
                     ]
                 },
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.Equal(0, lowScan.Drift.PromptP95Delta);
             Assert.True(report.Drift.PromptP95Delta > 0);
@@ -121,7 +121,7 @@ public sealed class MaintenanceCoordinatorTests
                     Apply = "all"
                 },
                 new MaintenanceScanInputs(),
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.Contains(dryRun.Actions, action => action.Id == "metadata");
             Assert.Contains(dryRun.Actions, action => action.Id == "model-evaluations");
@@ -137,7 +137,7 @@ public sealed class MaintenanceCoordinatorTests
                     Apply = "all"
                 },
                 new MaintenanceScanInputs(),
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.True(applied.Success);
             Assert.False(File.Exists(Path.Combine(memoryRoot, "logs", "cache-trace.jsonl")));
@@ -188,7 +188,7 @@ public sealed class MaintenanceCoordinatorTests
                     Apply = "metadata"
                 },
                 new MaintenanceScanInputs(),
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.False(result.Success);
             Assert.Contains(result.Warnings, warning => warning.Contains("Metadata pruning could not run", StringComparison.OrdinalIgnoreCase));

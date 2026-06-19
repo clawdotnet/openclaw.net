@@ -38,7 +38,7 @@ namespace OpenClaw.Tests;
             recall: new MemoryRecallConfig { Enabled = true, MaxNotes = 5, MaxChars = 4000 });
 
         var session = new Session { Id = "s1", ChannelId = "test", SenderId = "u1" };
-            _ = await agent.RunAsync(session, "what should I remember?", CancellationToken.None);
+            _ = await agent.RunAsync(session, "what should I remember?", TestContext.Current.CancellationToken);
 
             Assert.NotNull(captured);
             Assert.Contains(captured!, m =>
@@ -78,7 +78,7 @@ namespace OpenClaw.Tests;
             });
 
         var session = new Session { Id = "s1", ChannelId = "test", SenderId = "u1" };
-        _ = await agent.RunAsync(session, "what should I remember?", CancellationToken.None);
+        _ = await agent.RunAsync(session, "what should I remember?", TestContext.Current.CancellationToken);
 
         await search.Received().SearchNotesAsync(
             "what should I remember?",

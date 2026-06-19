@@ -29,7 +29,7 @@ public sealed class MultimodalProviderTests
                 Text = "",
                 MediaType = "audio",
                 MediaUrl = "data:audio/ogg;base64,AQID"
-            }, CancellationToken.None));
+            }, TestContext.Current.CancellationToken));
 
         Assert.Contains("disabled", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -53,7 +53,7 @@ public sealed class MultimodalProviderTests
             Text = "",
             MediaType = "audio",
             MediaUrl = "data:audio/ogg;base64,AQID"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.False(providerA.WasCalled);
         Assert.True(providerB.WasCalled);
@@ -96,7 +96,7 @@ public sealed class MultimodalProviderTests
             MimeType = "audio/ogg",
             Model = "gemini-test",
             MaxAudioBytes = 1024
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(captured);
         Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-test:generateContent?key=test-key", captured!.RequestUri!.ToString());
@@ -127,7 +127,7 @@ public sealed class MultimodalProviderTests
                 MimeType = "audio/ogg",
                 Model = "gemini-test",
                 MaxAudioBytes = 2
-            }, CancellationToken.None));
+            }, TestContext.Current.CancellationToken));
 
         Assert.Contains("too large", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -163,7 +163,7 @@ public sealed class MultimodalProviderTests
             MimeType = "audio/ogg",
             Model = "  ",
             MaxAudioBytes = 1024
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(captured);
         Assert.Equal(
@@ -193,7 +193,7 @@ public sealed class MultimodalProviderTests
                 MimeType = "audio/ogg",
                 Model = "gemini-test",
                 MaxAudioBytes = 1024
-            }, CancellationToken.None));
+            }, TestContext.Current.CancellationToken));
 
         Assert.Contains("configured media cache root", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -235,7 +235,7 @@ public sealed class MultimodalProviderTests
             Model = "gemini-test",
             MaxAudioBytes = 1024,
             AllowedLocalFileRoots = [root]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.Contains("\"data\":\"AQID\"", capturedBody, StringComparison.Ordinal);
         Assert.Equal("local file transcript", result.Text);
@@ -301,7 +301,7 @@ public sealed class MultimodalProviderTests
         var result = await provider.SynthesizeSpeechAsync(new TextToSpeechRequest
         {
             Text = "Hello from ElevenLabs"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(captured);
         Assert.Equal("https://example.test/v1/text-to-speech/voice123?output_format=mp3_44100_128", captured!.RequestUri!.ToString());
@@ -324,7 +324,7 @@ public sealed class MultimodalProviderTests
             NullLogger<LiveSessionService>.Instance);
 
         using var socket = new ClientWebSocket();
-        await service.BridgeAsync(socket, new LiveSessionOpenRequest { Provider = "other" }, CancellationToken.None);
+        await service.BridgeAsync(socket, new LiveSessionOpenRequest { Provider = "other" }, TestContext.Current.CancellationToken);
 
         Assert.False(providerA.WasCalled);
         Assert.True(providerB.WasCalled);

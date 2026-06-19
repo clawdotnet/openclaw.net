@@ -174,7 +174,7 @@ public sealed class CliBackendAdapterTests
     {
         var method = backend.GetType().BaseType!.GetMethod("BuildEnvironmentAsync", BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.NotNull(method);
-        var task = (Task<Dictionary<string, string>>)method!.Invoke(backend, [null, requestEnvironment, CancellationToken.None])!;
+        var task = (Task<Dictionary<string, string>>)method!.Invoke(backend, [null, requestEnvironment, TestContext.Current.CancellationToken])!;
         return await task;
     }
 

@@ -87,6 +87,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             toolPresetResolver: context.Services.GetService(typeof(IToolPresetResolver)) as IToolPresetResolver,
             auditLog: context.ToolAuditLog,
             toolGovernance: context.ToolGovernance,
+            interceptors: context.Interceptors,
             metaInvokeExecutor: (session, skillName, input, token) => ExecuteMetaSkillAsync(session, skillName, input, token));
         _options = options;
         _agentFactory = agentFactory;

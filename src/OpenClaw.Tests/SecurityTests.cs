@@ -168,7 +168,7 @@ public class SecurityTests
     {
         var config = new OpenClaw.Core.Plugins.GitToolsConfig { Enabled = true };
         var tool = new OpenClaw.Agent.Tools.GitTool(config);
-        var result = await tool.ExecuteAsync("""{"subcommand":"status","args":"--porcelain; rm -rf /"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"subcommand":"status","args":"--porcelain; rm -rf /"}""", TestContext.Current.CancellationToken);
         Assert.Contains("disallowed character", result);
     }
 
@@ -178,7 +178,7 @@ public class SecurityTests
         var config = new OpenClaw.Core.Plugins.GitToolsConfig { Enabled = true };
         var tool = new OpenClaw.Agent.Tools.GitTool(config);
         // This should not error on metachar check (even if git itself errors on missing repo)
-        var result = await tool.ExecuteAsync("""{"subcommand":"status","args":"--porcelain"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"subcommand":"status","args":"--porcelain"}""", TestContext.Current.CancellationToken);
         Assert.DoesNotContain("disallowed character", result);
     }
 
@@ -189,7 +189,7 @@ public class SecurityTests
     {
         var store = new OpenClaw.Core.Memory.FileMemoryStore(Path.GetTempPath(), 10);
         var tool = new OpenClaw.Agent.Tools.MemoryNoteTool(store);
-        var result = await tool.ExecuteAsync("""{"action":"read","key":"../../etc/passwd"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"action":"read","key":"../../etc/passwd"}""", TestContext.Current.CancellationToken);
         Assert.Contains("disallowed characters", result);
     }
 
@@ -213,7 +213,7 @@ public class SecurityTests
         {
             var result = await tool.ExecuteAsync(
                 System.Text.Json.JsonSerializer.Serialize(new { path = tmpFile }),
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
             Assert.Contains("Read access denied", result);
         }
         finally
@@ -236,7 +236,7 @@ public class SecurityTests
         var tool = new OpenClaw.Agent.Tools.DatabaseTool(config);
 
         // Table name with SQL injection attempt — should be caught before any DB call
-        var result = await tool.ExecuteAsync("""{"action":"schema","table":"users'; DROP TABLE users;--"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"action":"schema","table":"users'; DROP TABLE users;--"}""", TestContext.Current.CancellationToken);
         Assert.Contains("Invalid table name", result);
     }
 
@@ -252,7 +252,7 @@ public class SecurityTests
         var tool = new OpenClaw.Agent.Tools.DatabaseTool(config);
 
         // Valid table name — will fail due to no registered provider, but should NOT say "Invalid table name"
-        var result = await tool.ExecuteAsync("""{"action":"schema","table":"users"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"action":"schema","table":"users"}""", TestContext.Current.CancellationToken);
         Assert.DoesNotContain("Invalid table name", result);
         // Should fail on provider registration, not table name validation
         Assert.Contains("provider", result, StringComparison.OrdinalIgnoreCase);
@@ -273,7 +273,7 @@ public class SecurityTests
         var tool = new OpenClaw.Agent.Tools.EmailTool(config);
 
         // Search with CRLF injection — should get sanitized (will fail on connect, not on injection)
-        var result = await tool.ExecuteAsync("""{"action":"search","query":"ALL\r\nA99 LOGOUT","folder":"INBOX"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"action":"search","query":"ALL\r\nA99 LOGOUT","folder":"INBOX"}""", TestContext.Current.CancellationToken);
         // Should not contain unsanitized injection; should fail on IMAP connect, not execute injected command
         Assert.DoesNotContain("A99 LOGOUT", result);
     }
@@ -291,7 +291,7 @@ public class SecurityTests
         var tool = new OpenClaw.Agent.Tools.EmailTool(config);
 
         // Folder with null byte
-        var result = await tool.ExecuteAsync("{\"action\":\"list\",\"folder\":\"INBOX\\u0000EVIL\"}", CancellationToken.None);
+        var result = await tool.ExecuteAsync("{\"action\":\"list\",\"folder\":\"INBOX\\u0000EVIL\"}", TestContext.Current.CancellationToken);
         Assert.Contains("control character", result);
     }
 
@@ -311,7 +311,7 @@ public class SecurityTests
         };
         var tool = new OpenClaw.Agent.Tools.InboxZeroTool(inboxZeroConfig, emailConfig);
 
-        var result = await tool.ExecuteAsync("{\"action\":\"analyze\",\"folder\":\"INBOX\\u0000EVIL\"}", CancellationToken.None);
+        var result = await tool.ExecuteAsync("{\"action\":\"analyze\",\"folder\":\"INBOX\\u0000EVIL\"}", TestContext.Current.CancellationToken);
         Assert.Contains("control character", result);
     }
 }

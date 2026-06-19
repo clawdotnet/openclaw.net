@@ -36,6 +36,7 @@ public sealed class OpenClawToolExecutor
     private readonly bool _requireToolApproval;
     private readonly HashSet<string> _approvalRequiredTools;
     private readonly IReadOnlyList<IToolHook> _hooks;
+    private readonly IReadOnlyList<IToolResultInterceptor>? _interceptors;
     private readonly RuntimeMetrics? _metrics;
     private readonly ILogger? _logger;
     private readonly GatewayConfig _config;
@@ -68,7 +69,8 @@ public sealed class OpenClawToolExecutor
         ISentinelSubstitutionService? sentinelSubstitution = null,
         IToolGovernanceService? toolGovernance = null,
         IPlanExecuteVerifyOrchestrator? planExecuteVerify = null,
-        Func<Session, string, string?, CancellationToken, Task<string>>? metaInvokeExecutor = null)
+        Func<Session, string, string?, CancellationToken, Task<string>>? metaInvokeExecutor = null,
+        IReadOnlyList<IToolResultInterceptor>? interceptors = null)
     {
         _toolsByName = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         _toolDeclarations = tools.Select(CreateDeclaration).Cast<AITool>().ToArray();
@@ -100,6 +102,7 @@ public sealed class OpenClawToolExecutor
         _toolGovernance = toolGovernance ?? new NoopToolGovernanceService();
         _planExecuteVerify = planExecuteVerify ?? NoopPlanExecuteVerifyOrchestrator.Instance;
         _metaInvokeExecutor = metaInvokeExecutor;
+        _interceptors = interceptors;
     }
 
     public IList<AITool> ToolDeclarations => _toolDeclarations;
@@ -548,6 +551,30 @@ public sealed class OpenClawToolExecutor
         result = _redaction.Redact(result);
         failureMessage = failureMessage is null ? null : _redaction.Redact(failureMessage);
         nextStep = nextStep is null ? null : _redaction.Redact(nextStep);
+
+        // Apply result interceptors (e.g., TokenJuice reduction)
+        if (_interceptors is { Count: > 0 })
+        {
+            foreach (var interceptor in _interceptors.OrderBy(i => i.Order))
+            {
+                try
+                {
+                    result = await interceptor.InterceptAsync(
+                        ReductionContext.From(
+                            tool.Name,
+                            persistedArgsJson,
+                            result,
+                            isError: toolFailed,
+                            exitCode: toolFailed ? 1 : 0),
+                        ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "[{CorrelationId}] Interceptor {Interceptor} failed, returning raw output",
+                        turnCtx.CorrelationId, interceptor.Name);
+                }
+            }
+        }
 
         _metrics?.IncrementToolCalls();
         Telemetry.ToolExecutionDuration.Record(
