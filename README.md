@@ -53,7 +53,8 @@ Start here:
 - **First-class optional Microsoft Agent Framework adapter** for `Runtime.Orchestrator=maf` without a special build
 - **Durable workflow delegation** through supported workflow backends such as `maf-durable-http`
 - **CLI and Companion** setup flows for source checkouts and desktop bundles
-- **48 native tools** covering file ops, sessions, memory, web, messaging, home automation, databases, email, and more
+- **/loop recurring-prompt command** with TickerQ-backed session-scoped timer injection, idempotent override, and dual-path semantic auto-termination for build health checks, log polling, and other periodic tasks
+- **75 native tools** covering file ops, sessions, memory, web, messaging, home automation, databases, email, and more
 - **9 channel adapters** (Telegram, SMS, WhatsApp, Teams, Slack, Discord, Signal, email, webhooks) with DM policy, allowlists, and signature validation
 - **Native LLM providers** for OpenAI, Claude, Gemini, Azure OpenAI, Ollama, and OpenAI-compatible endpoints
 - **Optional embedded local models** with Gemma 4 GGUF packages, package install/verify CLI commands, supervised sidecar inference, and frame-based video understanding
