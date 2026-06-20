@@ -128,7 +128,8 @@ public sealed class AgentRuntime : IAgentRuntime
         IPlanExecuteVerifyOrchestrator? planExecuteVerify = null,
         ContextBudgetPlanner? contextBudgetPlanner = null,
         ITurnRoutingPolicy? turnRoutingPolicy = null,
-        IGoalService? goalService = null)
+        IGoalService? goalService = null,
+        IReadOnlyList<IToolResultInterceptor>? interceptors = null)
     {
         _chatClient = chatClient;
         _tools = tools;
@@ -186,6 +187,7 @@ public sealed class AgentRuntime : IAgentRuntime
             toolGovernance: toolGovernance,
             planExecuteVerify: planExecuteVerify,
             auditLog: toolAuditLog,
+            interceptors: interceptors,
             metaInvokeExecutor: (session, skillName, input, token) => ExecuteMetaSkillAsync(session, skillName, input, token));
         _sessionTokenBudget = sessionTokenBudget;
         _estimateTokenBudgetAdmission = gatewayConfig?.EnableEstimatedTokenAdmissionControl ?? false;

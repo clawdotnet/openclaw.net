@@ -60,11 +60,11 @@ public sealed class SharedHarnessStateTests
             Goal = "Persist shared state"
         };
 
-        await store.SaveAsync(state, CancellationToken.None);
+        await store.SaveAsync(state, TestContext.Current.CancellationToken);
 
-        var loaded = await store.GetAsync("shs_store", CancellationToken.None);
-        var bySession = await store.GetBySessionAsync("session-store", CancellationToken.None);
-        var listed = await store.ListAsync(new SharedHarnessStateListQuery { SessionId = "session-store" }, CancellationToken.None);
+        var loaded = await store.GetAsync("shs_store", TestContext.Current.CancellationToken);
+        var bySession = await store.GetBySessionAsync("session-store", TestContext.Current.CancellationToken);
+        var listed = await store.ListAsync(new SharedHarnessStateListQuery { SessionId = "session-store" }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(loaded);
         Assert.NotNull(bySession);
@@ -76,14 +76,14 @@ public sealed class SharedHarnessStateTests
     public async Task Service_AddParticipantAndAction_Works()
     {
         var service = CreateService(out _);
-        var created = await service.CreateForSessionAsync("session-service", "Coordinate work", null, null, CancellationToken.None);
+        var created = await service.CreateForSessionAsync("session-service", "Coordinate work", null, null, TestContext.Current.CancellationToken);
 
         var withParticipant = await service.AddParticipantAsync(created.Id, new HarnessParticipant
         {
             Id = "coder",
             Role = HarnessParticipantRoles.Coder,
             SessionId = "session-coder"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         var withAction = await service.AddActionAsync(created.Id, new HarnessStateAction
         {
@@ -92,7 +92,7 @@ public sealed class SharedHarnessStateTests
             Title = "Edit code",
             ToolName = "file_write",
             WriteSet = [new HarnessResourceRef { Kind = HarnessContractResourceKinds.File, Path = "src/OpenClaw.Core/Models/SharedHarnessStateModels.cs" }]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(withParticipant);
         Assert.Single(withParticipant!.Participants);
@@ -104,10 +104,10 @@ public sealed class SharedHarnessStateTests
     public async Task Service_CreateAsync_RejectsDuplicateCallerSuppliedId()
     {
         var service = CreateService(out _);
-        await service.CreateAsync(new SharedHarnessState { Id = "shs_duplicate", SessionId = "session-a" }, CancellationToken.None);
+        await service.CreateAsync(new SharedHarnessState { Id = "shs_duplicate", SessionId = "session-a" }, TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await service.CreateAsync(new SharedHarnessState { Id = "shs_duplicate", SessionId = "session-b" }, CancellationToken.None));
+            await service.CreateAsync(new SharedHarnessState { Id = "shs_duplicate", SessionId = "session-b" }, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -118,10 +118,10 @@ public sealed class SharedHarnessStateTests
         {
             Id = "shs_missing_action",
             Actions = [new HarnessStateAction { Id = "existing" }]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await service.UpdateActionStatusAsync(created.Id, "missing", HarnessStateStatuses.Completed, CancellationToken.None));
+            await service.UpdateActionStatusAsync(created.Id, "missing", HarnessStateStatuses.Completed, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -133,15 +133,15 @@ public sealed class SharedHarnessStateTests
             Id = "shs_sparse_ids",
             Participants = [new HarnessParticipant { Id = "participant_1" }, new HarnessParticipant()],
             Actions = [new HarnessStateAction { Id = "action_1" }, new HarnessStateAction()]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.Contains(created.Participants, participant => participant.Id == "participant_1");
         Assert.Contains(created.Participants, participant => participant.Id == "participant_2");
         Assert.Contains(created.Actions, action => action.Id == "action_1");
         Assert.Contains(created.Actions, action => action.Id == "action_2");
 
-        var withParticipant = await service.AddParticipantAsync(created.Id, new HarnessParticipant(), CancellationToken.None);
-        var withAction = await service.AddActionAsync(created.Id, new HarnessStateAction(), CancellationToken.None);
+        var withParticipant = await service.AddParticipantAsync(created.Id, new HarnessParticipant(), TestContext.Current.CancellationToken);
+        var withAction = await service.AddActionAsync(created.Id, new HarnessStateAction(), TestContext.Current.CancellationToken);
 
         Assert.NotNull(withParticipant);
         Assert.Contains(withParticipant!.Participants, participant => participant.Id == "participant_1");
@@ -165,7 +165,7 @@ public sealed class SharedHarnessStateTests
                     new HarnessParticipant { Id = "participant" },
                     new HarnessParticipant { Id = "participant" }
                 ]
-            }, CancellationToken.None));
+            }, TestContext.Current.CancellationToken));
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
             await service.CreateAsync(new SharedHarnessState
@@ -176,7 +176,7 @@ public sealed class SharedHarnessStateTests
                     new HarnessStateAction { Id = "action" },
                     new HarnessStateAction { Id = "action" }
                 ]
-            }, CancellationToken.None));
+            }, TestContext.Current.CancellationToken));
     }
 
     [Fact]

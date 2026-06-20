@@ -25,17 +25,17 @@ public sealed class CodingBackendStoreTests
             IsActive = true
         };
 
-        await store.SaveAccountAsync(account, CancellationToken.None);
+        await store.SaveAccountAsync(account, TestContext.Current.CancellationToken);
 
-        var loaded = await store.GetAccountAsync(account.Id, CancellationToken.None);
+        var loaded = await store.GetAccountAsync(account.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(loaded);
         Assert.Equal(account.Provider, loaded.Provider);
 
-        var listed = await store.ListAccountsAsync(CancellationToken.None);
+        var listed = await store.ListAccountsAsync(TestContext.Current.CancellationToken);
         Assert.Contains(listed, item => item.Id == account.Id);
 
-        await store.DeleteAccountAsync(account.Id, CancellationToken.None);
-        Assert.Null(await store.GetAccountAsync(account.Id, CancellationToken.None));
+        await store.DeleteAccountAsync(account.Id, TestContext.Current.CancellationToken);
+        Assert.Null(await store.GetAccountAsync(account.Id, TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -54,31 +54,31 @@ public sealed class CodingBackendStoreTests
             State = BackendSessionState.Running
         };
 
-        await store.SaveBackendSessionAsync(session, CancellationToken.None);
+        await store.SaveBackendSessionAsync(session, TestContext.Current.CancellationToken);
         await store.AppendBackendEventAsync(new BackendAssistantMessageEvent
         {
             SessionId = session.SessionId,
             Sequence = 1,
             Text = "hello"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await store.AppendBackendEventAsync(new BackendSessionCompletedEvent
         {
             SessionId = session.SessionId,
             Sequence = 2,
             ExitCode = 0,
             Reason = "done"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
-        var loaded = await store.GetBackendSessionAsync(session.SessionId, CancellationToken.None);
+        var loaded = await store.GetBackendSessionAsync(session.SessionId, TestContext.Current.CancellationToken);
         Assert.NotNull(loaded);
 
-        var events = await store.ListBackendEventsAsync(session.SessionId, 0, 10, CancellationToken.None);
+        var events = await store.ListBackendEventsAsync(session.SessionId, 0, 10, TestContext.Current.CancellationToken);
         Assert.Equal(2, events.Count);
         Assert.IsType<BackendAssistantMessageEvent>(events[0]);
         Assert.IsType<BackendSessionCompletedEvent>(events[1]);
 
-        await store.DeleteBackendSessionAsync(session.SessionId, CancellationToken.None);
-        Assert.Null(await store.GetBackendSessionAsync(session.SessionId, CancellationToken.None));
+        await store.DeleteBackendSessionAsync(session.SessionId, TestContext.Current.CancellationToken);
+        Assert.Null(await store.GetBackendSessionAsync(session.SessionId, TestContext.Current.CancellationToken));
     }
 
     private static StoreFixture CreateStore(string provider)

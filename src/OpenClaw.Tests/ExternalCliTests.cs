@@ -120,7 +120,7 @@ public sealed class ExternalCliTests
             Parameters = Params(("payload", """{"ok":true}"""))
         }, dryRun: false);
 
-        var result = await runner.ExecuteAsync(prepared, CancellationToken.None);
+        var result = await runner.ExecuteAsync(prepared, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success);
         Assert.Null(result.ParseError);
@@ -146,7 +146,7 @@ public sealed class ExternalCliTests
             Parameters = Params(("value", "abcdefgh"))
         }, dryRun: false);
 
-        var result = await runner.ExecuteAsync(prepared, CancellationToken.None);
+        var result = await runner.ExecuteAsync(prepared, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success);
         Assert.True(result.StdoutTruncated);
@@ -183,7 +183,7 @@ public sealed class ExternalCliTests
         _ = await tool.ExecuteAsync(
             """{"action":"execute","connector":"test","command":"echo","parameters":{"value":"hello"}}""",
             context,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.NotNull(audit.Entry);
         Assert.False(string.IsNullOrWhiteSpace(audit.Entry.ApprovalFingerprint));
@@ -250,7 +250,7 @@ public sealed class ExternalCliTests
         };
         var registry = new ExternalCliConnectorRegistry(config);
 
-        var status = await registry.GetStatusAsync("test", CancellationToken.None);
+        var status = await registry.GetStatusAsync("test", TestContext.Current.CancellationToken);
 
         Assert.False(status.Authenticated.HasValue);
         Assert.Contains(status.Warnings, warning => warning.Contains("disabled", StringComparison.OrdinalIgnoreCase));
@@ -335,7 +335,7 @@ public sealed class ExternalCliTests
             turn,
             isStreaming: false,
             approvalCallback: (_, _, _) => ValueTask.FromResult(false),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
         Assert.Equal(ToolFailureCodes.ApprovalRequired, result.FailureCode);

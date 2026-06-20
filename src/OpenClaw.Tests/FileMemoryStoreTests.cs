@@ -77,10 +77,10 @@ public sealed class FileMemoryStoreTests
                 ]
             };
 
-            await writerStore.SaveSessionAsync(session, CancellationToken.None);
+            await writerStore.SaveSessionAsync(session, TestContext.Current.CancellationToken);
 
             var readerStore = new FileMemoryStore(storagePath, 4);
-            var loaded = await readerStore.GetSessionAsync(session.Id, CancellationToken.None);
+            var loaded = await readerStore.GetSessionAsync(session.Id, TestContext.Current.CancellationToken);
 
             Assert.NotNull(loaded);
             Assert.Equal(3, loaded!.History.Count);
@@ -130,7 +130,7 @@ public sealed class FileMemoryStoreTests
                 });
             }
 
-            await writerStore.SaveSessionAsync(session, CancellationToken.None);
+            await writerStore.SaveSessionAsync(session, TestContext.Current.CancellationToken);
 
             var readerStore = new FileMemoryStore(storagePath, 4);
             var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -138,7 +138,7 @@ public sealed class FileMemoryStoreTests
                 .Select(async _ =>
                 {
                     await gate.Task;
-                    return await readerStore.GetSessionAsync(session.Id, CancellationToken.None);
+                    return await readerStore.GetSessionAsync(session.Id, TestContext.Current.CancellationToken);
                 })
                 .ToArray();
 
@@ -165,11 +165,11 @@ public sealed class FileMemoryStoreTests
             var sessionId = "corrupt-session";
             var sessionFile = Path.Combine(storagePath, "sessions", "Y29ycnVwdC1zZXNzaW9u.json");
             Directory.CreateDirectory(Path.GetDirectoryName(sessionFile)!);
-            await File.WriteAllTextAsync(sessionFile, "{ this is not valid json", CancellationToken.None);
+            await File.WriteAllTextAsync(sessionFile, "{ this is not valid json", TestContext.Current.CancellationToken);
 
             var store = new FileMemoryStore(storagePath, 4);
             var ex = await Assert.ThrowsAsync<MemoryStoreCorruptionException>(async () =>
-                await store.GetSessionAsync(sessionId, CancellationToken.None));
+                await store.GetSessionAsync(sessionId, TestContext.Current.CancellationToken));
 
             Assert.Equal(sessionId, ex.SessionId);
             Assert.Contains(".corrupt-", ex.FilePath, StringComparison.Ordinal);
@@ -193,10 +193,10 @@ public sealed class FileMemoryStoreTests
             await File.WriteAllTextAsync(
                 escapedTarget,
                 """{"Id":"../escape-target","ChannelId":"test","SenderId":"user","History":[]}""",
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             var store = new FileMemoryStore(storagePath, 4);
-            var loaded = await store.GetSessionAsync("../escape-target", CancellationToken.None);
+            var loaded = await store.GetSessionAsync("../escape-target", TestContext.Current.CancellationToken);
 
             Assert.Null(loaded);
             Assert.True(File.Exists(escapedTarget));
@@ -218,9 +218,9 @@ public sealed class FileMemoryStoreTests
             var store = new FileMemoryStore(storagePath, 4);
             var longKey = "project:myapp:" + new string('k', 240);
 
-            await store.SaveNoteAsync(longKey, "remember this", CancellationToken.None);
+            await store.SaveNoteAsync(longKey, "remember this", TestContext.Current.CancellationToken);
 
-            var keys = await store.ListNotesWithPrefixAsync("project:myapp:", CancellationToken.None);
+            var keys = await store.ListNotesWithPrefixAsync("project:myapp:", TestContext.Current.CancellationToken);
 
             Assert.Contains(longKey, keys);
         }
@@ -241,9 +241,9 @@ public sealed class FileMemoryStoreTests
             var store = new FileMemoryStore(storagePath, 4);
             var longKey = "project:myapp:" + new string('p', 240);
 
-            await store.SaveNoteAsync(longKey, "architecture conventions", CancellationToken.None);
+            await store.SaveNoteAsync(longKey, "architecture conventions", TestContext.Current.CancellationToken);
 
-            var results = await store.SearchNotesAsync("conventions", "project:myapp:", 5, CancellationToken.None);
+            var results = await store.SearchNotesAsync("conventions", "project:myapp:", 5, TestContext.Current.CancellationToken);
 
             var hit = Assert.Single(results);
             Assert.Equal(longKey, hit.Key);
@@ -263,11 +263,11 @@ public sealed class FileMemoryStoreTests
         try
         {
             var store = new FileMemoryStore(storagePath, 4);
-            await store.SaveNoteAsync("project:demo:legacy", "architecture notes about migration", CancellationToken.None);
+            await store.SaveNoteAsync("project:demo:legacy", "architecture notes about migration", TestContext.Current.CancellationToken);
             await Task.Delay(20);
-            await store.SaveNoteAsync("project:demo:architecture", "architecture migration checklist", CancellationToken.None);
+            await store.SaveNoteAsync("project:demo:architecture", "architecture migration checklist", TestContext.Current.CancellationToken);
 
-            var hits = await store.SearchNotesAsync("architecture migration", "project:demo:", 2, CancellationToken.None);
+            var hits = await store.SearchNotesAsync("architecture migration", "project:demo:", 2, TestContext.Current.CancellationToken);
 
             Assert.Equal(2, hits.Count);
             Assert.Equal("project:demo:architecture", hits[0].Key);

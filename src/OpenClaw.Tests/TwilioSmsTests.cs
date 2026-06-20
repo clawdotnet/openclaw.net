@@ -56,7 +56,7 @@ public sealed class TwilioSmsTests
                 Assert.Equal("SM123", msg.MessageId);
                 return ValueTask.CompletedTask;
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(200, res.StatusCode);
         Assert.True(enqueued);
@@ -88,7 +88,7 @@ public sealed class TwilioSmsTests
             ["Body"] = "hello"
         };
 
-        var res = await handler.HandleAsync(form, "bad", (_, _) => ValueTask.CompletedTask, CancellationToken.None);
+        var res = await handler.HandleAsync(form, "bad", (_, _) => ValueTask.CompletedTask, TestContext.Current.CancellationToken);
         Assert.Equal(401, res.StatusCode);
         Assert.Null(recent.TryGetLatest("sms"));
     }
@@ -118,7 +118,7 @@ public sealed class TwilioSmsTests
             ["Body"] = "hello"
         };
 
-        var res = await handler.HandleAsync(form, null, (_, _) => ValueTask.CompletedTask, CancellationToken.None);
+        var res = await handler.HandleAsync(form, null, (_, _) => ValueTask.CompletedTask, TestContext.Current.CancellationToken);
         Assert.Equal(401, res.StatusCode);
     }
 
@@ -147,8 +147,8 @@ public sealed class TwilioSmsTests
             ["Body"] = "hello"
         };
 
-        var res1 = await handler.HandleAsync(form, null, (_, _) => ValueTask.CompletedTask, CancellationToken.None);
-        var res2 = await handler.HandleAsync(form, null, (_, _) => ValueTask.CompletedTask, CancellationToken.None);
+        var res1 = await handler.HandleAsync(form, null, (_, _) => ValueTask.CompletedTask, TestContext.Current.CancellationToken);
+        var res2 = await handler.HandleAsync(form, null, (_, _) => ValueTask.CompletedTask, TestContext.Current.CancellationToken);
 
         Assert.Equal(200, res1.StatusCode);
         Assert.Equal(429, res2.StatusCode);
@@ -182,7 +182,7 @@ public sealed class TwilioSmsTests
             },
             null,
             (_, _) => ValueTask.CompletedTask,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         await handler.HandleAsync(
             new Dictionary<string, string>
@@ -193,7 +193,7 @@ public sealed class TwilioSmsTests
             },
             null,
             (_, _) => ValueTask.CompletedTask,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(2, handler.ActiveRateWindowCount);
 
@@ -225,17 +225,17 @@ public sealed class TwilioSmsTests
         var help = new Dictionary<string, string> { ["From"] = "+15551234567", ["To"] = "+15557654321", ["Body"] = "HELP" };
         var start = new Dictionary<string, string> { ["From"] = "+15551234567", ["To"] = "+15557654321", ["Body"] = "START" };
 
-        var resStop = await handler.HandleAsync(stop, null, (_, _) => ValueTask.CompletedTask, CancellationToken.None);
+        var resStop = await handler.HandleAsync(stop, null, (_, _) => ValueTask.CompletedTask, TestContext.Current.CancellationToken);
         Assert.Equal(200, resStop.StatusCode);
-        Assert.True((await contacts.GetAsync("+15551234567", CancellationToken.None))!.DoNotText);
+        Assert.True((await contacts.GetAsync("+15551234567", TestContext.Current.CancellationToken))!.DoNotText);
 
-        var resHelp = await handler.HandleAsync(help, null, (_, _) => ValueTask.CompletedTask, CancellationToken.None);
+        var resHelp = await handler.HandleAsync(help, null, (_, _) => ValueTask.CompletedTask, TestContext.Current.CancellationToken);
         Assert.Equal(200, resHelp.StatusCode);
         Assert.Contains("<Message>help</Message>", resHelp.Body);
 
-        var resStart = await handler.HandleAsync(start, null, (_, _) => ValueTask.CompletedTask, CancellationToken.None);
+        var resStart = await handler.HandleAsync(start, null, (_, _) => ValueTask.CompletedTask, TestContext.Current.CancellationToken);
         Assert.Equal(200, resStart.StatusCode);
-        Assert.False((await contacts.GetAsync("+15551234567", CancellationToken.None))!.DoNotText);
+        Assert.False((await contacts.GetAsync("+15551234567", TestContext.Current.CancellationToken))!.DoNotText);
     }
 
     [Fact]
@@ -260,7 +260,7 @@ public sealed class TwilioSmsTests
             ChannelId = "sms",
             RecipientId = "+15551234567",
             Text = "hi"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         var body = handler.LastBody ?? "";
         Assert.Contains("MessagingServiceSid=MG123", body);
@@ -273,7 +273,7 @@ public sealed class TwilioSmsTests
     {
         var temp = CreateTempDir();
         var contacts = new FileContactStore(temp);
-        await contacts.SetDoNotTextAsync("+15551234567", true, CancellationToken.None);
+        await contacts.SetDoNotTextAsync("+15551234567", true, TestContext.Current.CancellationToken);
 
         var config = new TwilioSmsConfig
         {
@@ -293,7 +293,7 @@ public sealed class TwilioSmsTests
             ChannelId = "sms",
             RecipientId = "+15551234567",
             Text = "hi"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.Null(handler.LastBody);
     }

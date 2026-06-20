@@ -40,7 +40,7 @@ public sealed class GoalToolTests
     {
         var tool = new CreateGoalTool(CreateGoalService());
 
-        var result = await tool.ExecuteAsync("{", CreateContext(), CancellationToken.None);
+        var result = await tool.ExecuteAsync("{", CreateContext(), TestContext.Current.CancellationToken);
 
         Assert.Equal("Error: arguments must be valid JSON.", result);
     }
@@ -53,7 +53,7 @@ public sealed class GoalToolTests
         var result = await tool.ExecuteAsync(
             """{"objective":"fix bug","token_budget":-1}""",
             CreateContext(),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("Error: token_budget cannot be negative.", result);
     }
@@ -65,7 +65,7 @@ public sealed class GoalToolTests
         goalService.CreateGoal("s1", "fix bug", 0, 0);
         var tool = new UpdateGoalTool(goalService);
 
-        var result = await tool.ExecuteAsync("{}", CreateContext(), CancellationToken.None);
+        var result = await tool.ExecuteAsync("{}", CreateContext(), TestContext.Current.CancellationToken);
 
         Assert.Equal("Error: status is required.", result);
     }
@@ -80,7 +80,7 @@ public sealed class GoalToolTests
         var result = await tool.ExecuteAsync(
             """{"status":"complete"}""",
             CreateContext(),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.StartsWith("Warning: Cannot verify completion.", result);
         Assert.Equal(GoalStatus.Active, goalService.GetGoal("s1")!.Status);

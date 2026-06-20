@@ -50,11 +50,11 @@ public sealed class BeyondBaseTests
         var config = new GatewayConfig();
         var manager = new SessionManager(store, config);
 
-        var session = await manager.GetOrCreateAsync("ws", "user1", CancellationToken.None);
+        var session = await manager.GetOrCreateAsync("ws", "user1", TestContext.Current.CancellationToken);
         session.History.Add(new ChatTurn { Role = "user", Content = "Hello" });
         session.History.Add(new ChatTurn { Role = "assistant", Content = "Hi there!" });
 
-        var branchId = await manager.BranchAsync(session, "before-change", CancellationToken.None);
+        var branchId = await manager.BranchAsync(session, "before-change", TestContext.Current.CancellationToken);
 
         Assert.NotNull(branchId);
         Assert.Contains("before-change", branchId);
@@ -73,10 +73,10 @@ public sealed class BeyondBaseTests
         var config = new GatewayConfig();
         var manager = new SessionManager(store, config);
 
-        var session = await manager.GetOrCreateAsync("ws", "user1", CancellationToken.None);
+        var session = await manager.GetOrCreateAsync("ws", "user1", TestContext.Current.CancellationToken);
         session.History.Add(new ChatTurn { Role = "user", Content = "Original" });
 
-        var branchId = await manager.BranchAsync(session, "snapshot", CancellationToken.None);
+        var branchId = await manager.BranchAsync(session, "snapshot", TestContext.Current.CancellationToken);
 
         // Modify history after branching
         session.History.Clear();
@@ -84,7 +84,7 @@ public sealed class BeyondBaseTests
         Assert.Equal("Changed", session.History[0].Content);
 
         // Restore from branch
-        var restored = await manager.RestoreBranchAsync(session, branchId, CancellationToken.None);
+        var restored = await manager.RestoreBranchAsync(session, branchId, TestContext.Current.CancellationToken);
         Assert.True(restored);
         Assert.Single(session.History);
         Assert.Equal("Original", session.History[0].Content);
@@ -97,8 +97,8 @@ public sealed class BeyondBaseTests
         var config = new GatewayConfig();
         var manager = new SessionManager(store, config);
 
-        var session = await manager.GetOrCreateAsync("ws", "user1", CancellationToken.None);
-        var restored = await manager.RestoreBranchAsync(session, "nonexistent", CancellationToken.None);
+        var session = await manager.GetOrCreateAsync("ws", "user1", TestContext.Current.CancellationToken);
+        var restored = await manager.RestoreBranchAsync(session, "nonexistent", TestContext.Current.CancellationToken);
         Assert.False(restored);
     }
 
@@ -109,13 +109,13 @@ public sealed class BeyondBaseTests
         var config = new GatewayConfig();
         var manager = new SessionManager(store, config);
 
-        var session = await manager.GetOrCreateAsync("ws", "user1", CancellationToken.None);
+        var session = await manager.GetOrCreateAsync("ws", "user1", TestContext.Current.CancellationToken);
         session.History.Add(new ChatTurn { Role = "user", Content = "Test" });
 
-        await manager.BranchAsync(session, "branch-1", CancellationToken.None);
-        await manager.BranchAsync(session, "branch-2", CancellationToken.None);
+        await manager.BranchAsync(session, "branch-1", TestContext.Current.CancellationToken);
+        await manager.BranchAsync(session, "branch-2", TestContext.Current.CancellationToken);
 
-        var branches = await manager.ListBranchesAsync(session.Id, CancellationToken.None);
+        var branches = await manager.ListBranchesAsync(session.Id, TestContext.Current.CancellationToken);
         Assert.Equal(2, branches.Count);
     }
 
@@ -162,7 +162,7 @@ public sealed class BeyondBaseTests
 
         var result = await tool.ExecuteAsync(
             """{"profile":"researcher","task":"Explain quantum computing"}""",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("quantum computing", result, StringComparison.OrdinalIgnoreCase);
     }
@@ -183,7 +183,7 @@ public sealed class BeyondBaseTests
 
         var tool = new DelegateTool(chatClient, [], memory, DefaultConfig, delegationConfig);
         var result = await tool.ExecuteAsync(
-            """{"profile":"unknown","task":"test"}""", CancellationToken.None);
+            """{"profile":"unknown","task":"test"}""", TestContext.Current.CancellationToken);
 
         Assert.Contains("Unknown agent profile", result);
     }
@@ -206,7 +206,7 @@ public sealed class BeyondBaseTests
         // Set depth to MaxDepth (should be rejected)
         var tool = new DelegateTool(chatClient, [], memory, DefaultConfig, delegationConfig, currentDepth: 2);
         var result = await tool.ExecuteAsync(
-            """{"profile":"coder","task":"test"}""", CancellationToken.None);
+            """{"profile":"coder","task":"test"}""", TestContext.Current.CancellationToken);
 
         Assert.Contains("Maximum delegation depth", result);
     }
@@ -266,7 +266,7 @@ public sealed class BeyondBaseTests
         var tool = new DelegateTool(chatClient, [mockTool], memory, DefaultConfig, delegationConfig);
         var result = await tool.ExecuteAsync(
             """{"profile":"researcher","task":"Research this"}""",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("maximum number of tool iterations", result, StringComparison.OrdinalIgnoreCase);
     }
@@ -300,7 +300,7 @@ public sealed class BeyondBaseTests
     {
         var pipeline = new MiddlewarePipeline([]);
         var context = new MessageContext { ChannelId = "ws", SenderId = "u1", Text = "hi" };
-        var result = await pipeline.ExecuteAsync(context, CancellationToken.None);
+        var result = await pipeline.ExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.True(result);
     }
 
@@ -311,7 +311,7 @@ public sealed class BeyondBaseTests
         var pipeline = new MiddlewarePipeline([blockingMw]);
         var context = new MessageContext { ChannelId = "ws", SenderId = "u1", Text = "hi" };
 
-        var result = await pipeline.ExecuteAsync(context, CancellationToken.None);
+        var result = await pipeline.ExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.False(result);
         Assert.Equal("Blocked!", context.ShortCircuitResponse);
     }
@@ -325,7 +325,7 @@ public sealed class BeyondBaseTests
         var pipeline = new MiddlewarePipeline([mw1, mw2]);
         var context = new MessageContext { ChannelId = "ws", SenderId = "u1", Text = "hi" };
 
-        await pipeline.ExecuteAsync(context, CancellationToken.None);
+        await pipeline.ExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.Equal(["first", "second"], order);
     }
 
@@ -338,7 +338,7 @@ public sealed class BeyondBaseTests
         var pipeline = new MiddlewarePipeline([mw1, mw2]);
         var context = new MessageContext { ChannelId = "ws", SenderId = "u1", Text = "hi" };
 
-        await pipeline.ExecuteAsync(context, CancellationToken.None);
+        await pipeline.ExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.Empty(order); // Second middleware should not have executed
     }
 
@@ -349,7 +349,7 @@ public sealed class BeyondBaseTests
         var pipeline = new MiddlewarePipeline([transformMw]);
         var context = new MessageContext { ChannelId = "ws", SenderId = "u1", Text = "hello" };
 
-        await pipeline.ExecuteAsync(context, CancellationToken.None);
+        await pipeline.ExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.Equal("HELLO", context.Text);
     }
 
@@ -360,7 +360,7 @@ public sealed class BeyondBaseTests
         var context = new MessageContext { ChannelId = "ws", SenderId = "u1", Text = "hi" };
 
         // Warm up JIT
-        await pipeline.ExecuteAsync(context, CancellationToken.None);
+        await pipeline.ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         GC.Collect();
         GC.WaitForPendingFinalizers();
@@ -370,7 +370,7 @@ public sealed class BeyondBaseTests
         for (var i = 0; i < 10_000; i++)
         {
             context.Text = "hi";
-            await pipeline.ExecuteAsync(context, CancellationToken.None);
+            await pipeline.ExecuteAsync(context, TestContext.Current.CancellationToken);
         }
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
@@ -391,7 +391,7 @@ public sealed class BeyondBaseTests
 
         for (var i = 0; i < 5; i++)
         {
-            var result = await pipeline.ExecuteAsync(context, CancellationToken.None);
+            var result = await pipeline.ExecuteAsync(context, TestContext.Current.CancellationToken);
             Assert.True(result);
         }
     }
@@ -406,14 +406,14 @@ public sealed class BeyondBaseTests
         {
             var pipeline = new MiddlewarePipeline([mw]);
             var context = new MessageContext { ChannelId = "ws", SenderId = "u1", Text = "hi" };
-            var result = await pipeline.ExecuteAsync(context, CancellationToken.None);
+            var result = await pipeline.ExecuteAsync(context, TestContext.Current.CancellationToken);
             Assert.True(result);
         }
 
         // 4th should be blocked
         var blocked = new MessageContext { ChannelId = "ws", SenderId = "u1", Text = "hi" };
         var blockedPipeline = new MiddlewarePipeline([mw]);
-        var blockedResult = await blockedPipeline.ExecuteAsync(blocked, CancellationToken.None);
+        var blockedResult = await blockedPipeline.ExecuteAsync(blocked, TestContext.Current.CancellationToken);
         Assert.False(blockedResult);
         Assert.Contains("too quickly", blocked.ShortCircuitResponse);
     }
@@ -434,7 +434,7 @@ public sealed class BeyondBaseTests
             SessionOutputTokens = 300
         };
 
-        var result = await pipeline.ExecuteAsync(context, CancellationToken.None);
+        var result = await pipeline.ExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.True(result);
     }
 
@@ -450,7 +450,7 @@ public sealed class BeyondBaseTests
             SessionOutputTokens = 500
         };
 
-        var result = await pipeline.ExecuteAsync(context, CancellationToken.None);
+        var result = await pipeline.ExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.False(result);
         Assert.Contains("token budget", context.ShortCircuitResponse);
     }
@@ -467,7 +467,7 @@ public sealed class BeyondBaseTests
             SessionOutputTokens = 1_000_000
         };
 
-        var result = await pipeline.ExecuteAsync(context, CancellationToken.None);
+        var result = await pipeline.ExecuteAsync(context, TestContext.Current.CancellationToken);
         Assert.True(result);
     }
 
@@ -499,7 +499,7 @@ public sealed class BeyondBaseTests
         Assert.Equal(0, session.TotalInputTokens);
         Assert.Equal(0, session.TotalOutputTokens);
 
-        await agent.RunAsync(session, "Hello", CancellationToken.None);
+        await agent.RunAsync(session, "Hello", TestContext.Current.CancellationToken);
 
         Assert.Equal(100, session.TotalInputTokens);
         Assert.Equal(50, session.TotalOutputTokens);
@@ -526,8 +526,8 @@ public sealed class BeyondBaseTests
         var agent = new AgentRuntime(chatClient, [], memory, DefaultConfig, maxHistoryTurns: 10);
         var session = CreateSession();
 
-        await agent.RunAsync(session, "Hello", CancellationToken.None);
-        await agent.RunAsync(session, "Again", CancellationToken.None);
+        await agent.RunAsync(session, "Hello", TestContext.Current.CancellationToken);
+        await agent.RunAsync(session, "Again", TestContext.Current.CancellationToken);
 
         Assert.Equal(200, session.TotalInputTokens);
         Assert.Equal(100, session.TotalOutputTokens);
@@ -559,7 +559,7 @@ public sealed class BeyondBaseTests
         var agent = new AgentRuntime(chatClient, [], memory, DefaultConfig, maxHistoryTurns: 10);
         var session = CreateSession();
 
-        await agent.RunAsync(session, "Give me structured output", CancellationToken.None,
+        await agent.RunAsync(session, "Give me structured output", TestContext.Current.CancellationToken,
             responseSchema: schema.RootElement);
 
         Assert.NotNull(capturedOptions);
@@ -587,7 +587,7 @@ public sealed class BeyondBaseTests
         var agent = new AgentRuntime(chatClient, [], memory, DefaultConfig, maxHistoryTurns: 10);
         var session = CreateSession();
 
-        await agent.RunAsync(session, "Hello", CancellationToken.None);
+        await agent.RunAsync(session, "Hello", TestContext.Current.CancellationToken);
 
         Assert.NotNull(capturedOptions);
         Assert.Null(capturedOptions!.ResponseFormat);
@@ -680,8 +680,8 @@ public sealed class BeyondBaseTests
             History = [new ChatTurn { Role = "user", Content = "hi" }]
         };
 
-        await store.SaveBranchAsync(branch, CancellationToken.None);
-        var loaded = await store.LoadBranchAsync("b1", CancellationToken.None);
+        await store.SaveBranchAsync(branch, TestContext.Current.CancellationToken);
+        var loaded = await store.LoadBranchAsync("b1", TestContext.Current.CancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal("test-branch", loaded!.Name);
@@ -693,11 +693,11 @@ public sealed class BeyondBaseTests
     {
         var store = new TestMemoryStore();
 
-        await store.SaveBranchAsync(new SessionBranch { BranchId = "b1", SessionId = "s1", Name = "a", History = [] }, CancellationToken.None);
-        await store.SaveBranchAsync(new SessionBranch { BranchId = "b2", SessionId = "s1", Name = "b", History = [] }, CancellationToken.None);
-        await store.SaveBranchAsync(new SessionBranch { BranchId = "b3", SessionId = "s2", Name = "c", History = [] }, CancellationToken.None);
+        await store.SaveBranchAsync(new SessionBranch { BranchId = "b1", SessionId = "s1", Name = "a", History = [] }, TestContext.Current.CancellationToken);
+        await store.SaveBranchAsync(new SessionBranch { BranchId = "b2", SessionId = "s1", Name = "b", History = [] }, TestContext.Current.CancellationToken);
+        await store.SaveBranchAsync(new SessionBranch { BranchId = "b3", SessionId = "s2", Name = "c", History = [] }, TestContext.Current.CancellationToken);
 
-        var s1Branches = await store.ListBranchesAsync("s1", CancellationToken.None);
+        var s1Branches = await store.ListBranchesAsync("s1", TestContext.Current.CancellationToken);
         Assert.Equal(2, s1Branches.Count);
     }
 
@@ -792,7 +792,7 @@ public sealed class BeyondBaseTests
     public async Task DelegateTool_MissingProfile_ReturnsError()
     {
         var tool = CreateDelegateTool();
-        var result = await tool.ExecuteAsync("""{"task":"test"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"task":"test"}""", TestContext.Current.CancellationToken);
         Assert.Contains("'profile' parameter is required", result);
     }
 
@@ -800,7 +800,7 @@ public sealed class BeyondBaseTests
     public async Task DelegateTool_MissingTask_ReturnsError()
     {
         var tool = CreateDelegateTool();
-        var result = await tool.ExecuteAsync("""{"profile":"coder"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"profile":"coder"}""", TestContext.Current.CancellationToken);
         Assert.Contains("'task' parameter is required", result);
     }
 

@@ -21,7 +21,7 @@ public sealed class FileContactStoreTests
 
         var contactsPath = Path.Combine(root, "contacts.json");
         await using var stream = File.OpenRead(contactsPath);
-        var state = await JsonSerializer.DeserializeAsync(stream, CoreJsonContext.Default.ContactStoreState, CancellationToken.None);
+        var state = await JsonSerializer.DeserializeAsync(stream, CoreJsonContext.Default.ContactStoreState, TestContext.Current.CancellationToken);
 
         Assert.NotNull(state);
         Assert.Equal(numbers.Length, state!.ContactsByPhone.Count);

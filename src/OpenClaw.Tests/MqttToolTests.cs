@@ -20,7 +20,7 @@ public sealed class MqttToolTests
         };
 
         var tool = new MqttPublishTool(cfg);
-        var result = await tool.ExecuteAsync("""{"op":"publish","topic":"home/secret","payload":"x"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"op":"publish","topic":"home/secret","payload":"x"}""", TestContext.Current.CancellationToken);
         Assert.Contains("not allowed by policy", result);
     }
 
@@ -32,7 +32,7 @@ public sealed class MqttToolTests
         var cfg = new MqttConfig { Enabled = true };
         var tool = new MqttTool(cfg);
 
-        var result = await tool.ExecuteAsync("""{"op":"get_last","topic":"home/test"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"op":"get_last","topic":"home/test"}""", TestContext.Current.CancellationToken);
         Assert.Contains("hello", result);
     }
 }

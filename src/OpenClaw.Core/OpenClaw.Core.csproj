@@ -12,14 +12,15 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Jinja2.NET" Version="1.4.1" />
-    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.3.0" />
-    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.3" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.3" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.3" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.7" />
-    <PackageReference Include="Spectre.Console" Version="0.54.0" />
-    <PackageReference Include="NCrontab" Version="3.3.0" />
-    <PackageReference Include="TickerQ" Version="10.3.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.7.0" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+	<PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+    <PackageReference Include="Spectre.Console" Version="0.57.0" />
+    <PackageReference Include="NCrontab" Version="3.4.0" />
+    <PackageReference Include="TickerQ" Version="10.4.0" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../compat/public-smoke.json" LogicalName="OpenClaw.Core.Compatibility.public-smoke.json" />

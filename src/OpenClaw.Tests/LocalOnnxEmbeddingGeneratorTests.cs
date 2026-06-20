@@ -23,7 +23,7 @@ public sealed class LocalOnnxEmbeddingGeneratorTests
         using var callReturned = new ManualResetEventSlim();
         var caller = Task.Run(() =>
         {
-            valueTask = generator.GenerateAsync("hello", CancellationToken.None);
+            valueTask = generator.GenerateAsync("hello", TestContext.Current.CancellationToken);
             callReturned.Set();
         });
 

@@ -28,14 +28,14 @@ public sealed class BackendRuntimeTests
             {
                 BackendId = "fake-backend",
                 Prompt = "hello"
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             Assert.Equal(BackendSessionState.Running, session.State);
 
-            await coordinator.SendInputAsync("fake-backend", session.SessionId, new BackendInput { Text = "ping" }, CancellationToken.None);
-            await coordinator.StopSessionAsync("fake-backend", session.SessionId, CancellationToken.None);
+            await coordinator.SendInputAsync("fake-backend", session.SessionId, new BackendInput { Text = "ping" }, TestContext.Current.CancellationToken);
+            await coordinator.StopSessionAsync("fake-backend", session.SessionId, TestContext.Current.CancellationToken);
 
-            var events = await coordinator.ListEventsAsync(session.SessionId, 0, 20, CancellationToken.None);
+            var events = await coordinator.ListEventsAsync(session.SessionId, 0, 20, TestContext.Current.CancellationToken);
             Assert.Contains(events, item => item is BackendAssistantMessageEvent assistant && assistant.Text.Contains("hello", StringComparison.Ordinal));
             Assert.Contains(events, item => item is BackendSessionCompletedEvent);
         }
@@ -55,9 +55,9 @@ public sealed class BackendRuntimeTests
             var backendStore = new FileFeatureStore(root);
             var memoryStore = new FileMemoryStore(root, maxCachedSessions: 8);
             var sessionManager = new SessionManager(memoryStore, new GatewayConfig(), NullLogger.Instance);
-            var owner = await sessionManager.GetOrCreateByIdAsync("sess_owner", "api", "owner", CancellationToken.None);
+            var owner = await sessionManager.GetOrCreateByIdAsync("sess_owner", "api", "owner", TestContext.Current.CancellationToken);
             owner.History.Add(new ChatTurn { Role = "user", Content = "original" });
-            await sessionManager.PersistAsync(owner, CancellationToken.None);
+            await sessionManager.PersistAsync(owner, TestContext.Current.CancellationToken);
 
             var registry = new CodingAgentBackendRegistry([new FakeCodingAgentBackend()]);
             var coordinator = new BackendSessionCoordinator(registry, backendStore, new BackendSessionEventStreamStore(), sessionManager);
@@ -66,12 +66,12 @@ public sealed class BackendRuntimeTests
                 BackendId = "fake-backend",
                 OwnerSessionId = owner.Id,
                 Prompt = "delegate work"
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
-            await coordinator.SendInputAsync("fake-backend", backendSession.SessionId, new BackendInput { Text = "continue" }, CancellationToken.None);
-            await coordinator.StopSessionAsync("fake-backend", backendSession.SessionId, CancellationToken.None);
+            await coordinator.SendInputAsync("fake-backend", backendSession.SessionId, new BackendInput { Text = "continue" }, TestContext.Current.CancellationToken);
+            await coordinator.StopSessionAsync("fake-backend", backendSession.SessionId, TestContext.Current.CancellationToken);
 
-            var updated = await sessionManager.LoadAsync(owner.Id, CancellationToken.None);
+            var updated = await sessionManager.LoadAsync(owner.Id, TestContext.Current.CancellationToken);
             Assert.NotNull(updated);
             Assert.Contains(updated!.History, turn => turn.Role == "user" && turn.Content.Contains("[backend:fake-backend prompt] delegate work", StringComparison.Ordinal));
             Assert.Contains(updated.History, turn => turn.Role == "assistant" && turn.Content.Contains("fake received: delegate work", StringComparison.Ordinal));
@@ -98,7 +98,7 @@ public sealed class BackendRuntimeTests
             Command = "/bin/sh",
             Arguments = ["-lc", "printf hello && printf err >&2"],
             TimeoutSeconds = 5
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(0, execute.ExitCode);
         Assert.Equal("hello", execute.Stdout);
@@ -125,9 +125,9 @@ public sealed class BackendRuntimeTests
             line => [new BackendAssistantMessageEvent { SessionId = runtime.Session.SessionId, Text = line }],
             line => [new BackendStderrOutputEvent { SessionId = runtime.Session.SessionId, Text = line }],
             runtime,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
-        await host.WriteInputAsync(runtime.Session.SessionId, new BackendInput { Text = "echo-me", CloseInput = true }, CancellationToken.None);
+        await host.WriteInputAsync(runtime.Session.SessionId, new BackendInput { Text = "echo-me", CloseInput = true }, TestContext.Current.CancellationToken);
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
         while (DateTime.UtcNow < deadline &&
                !runtime.Events.ToArray().Any(item => item is BackendAssistantMessageEvent assistant && assistant.Text == "echo-me") &&
@@ -164,9 +164,9 @@ public sealed class BackendRuntimeTests
             _ => [],
             _ => [],
             runtime,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
-        await host.StopAsync(runtime.Session.SessionId, CancellationToken.None);
+        await host.StopAsync(runtime.Session.SessionId, TestContext.Current.CancellationToken);
 
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
         while (DateTime.UtcNow < deadline && runtime.Session.CompletedAtUtc is null)

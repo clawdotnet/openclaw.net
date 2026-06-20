@@ -42,7 +42,7 @@ public sealed class SemanticKernelInteropTests
             return k;
         }
 
-        var discovery = await Factory(CancellationToken.None);
+        var discovery = await Factory(TestContext.Current.CancellationToken);
         var tools = SemanticKernelToolFactory.CreateTools(Factory, discovery, new SemanticKernelInteropOptions
         {
             AllowedPlugins = ["demo"],
@@ -52,7 +52,7 @@ public sealed class SemanticKernelInteropTests
         var tool = Assert.Single(tools, t => t.Name == "sk_demo_echo");
 
         // Act
-        var result = await tool.ExecuteAsync(JsonSerializer.Serialize(new { text = "hello" }), CancellationToken.None);
+        var result = await tool.ExecuteAsync(JsonSerializer.Serialize(new { text = "hello" }), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal("hello", result);
@@ -78,7 +78,7 @@ public sealed class SemanticKernelInteropTests
 
         var session = new Session { Id = "s1", ChannelId = "test", SenderId = "u1" };
 
-        _ = await runtime.RunAsync(session, "hi", CancellationToken.None);
+        _ = await runtime.RunAsync(session, "hi", TestContext.Current.CancellationToken);
 
         Assert.NotNull(hook.Last);
         Assert.Equal("s1", hook.Last.Value.SessionId);
@@ -108,7 +108,7 @@ public sealed class SemanticKernelInteropTests
         var session = new Session { Id = "s1", ChannelId = "ws", SenderId = "u1" };
 
         var events = new List<AgentStreamEvent>();
-        await foreach (var evt in runtime.RunStreamingAsync(session, "hi", CancellationToken.None))
+        await foreach (var evt in runtime.RunStreamingAsync(session, "hi", TestContext.Current.CancellationToken))
             events.Add(evt);
 
         Assert.Contains(events, e => e.EnvelopeType == "tool_start" && e.ToolName == tool.Name);

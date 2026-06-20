@@ -34,18 +34,18 @@ public sealed class PaymentRuntimeTests
         var vault = new InMemoryPaymentSecretVault();
         var secret = new PaymentSecret("h1", "mock", pan: "4242424242424242", cvv: "123");
 
-        await vault.StoreAsync(secret, TimeSpan.FromMinutes(1), retrieveOnce: true, CancellationToken.None);
+        await vault.StoreAsync(secret, TimeSpan.FromMinutes(1), retrieveOnce: true, TestContext.Current.CancellationToken);
 
-        Assert.NotNull(await vault.TryRetrieveAsync("h1", "test", CancellationToken.None));
-        Assert.Null(await vault.TryRetrieveAsync("h1", "test", CancellationToken.None));
+        Assert.NotNull(await vault.TryRetrieveAsync("h1", "test", TestContext.Current.CancellationToken));
+        Assert.Null(await vault.TryRetrieveAsync("h1", "test", TestContext.Current.CancellationToken));
 
-        await vault.StoreAsync(new PaymentSecret("h2", "mock", pan: "4242424242424242"), TimeSpan.FromMilliseconds(1), retrieveOnce: false, CancellationToken.None);
+        await vault.StoreAsync(new PaymentSecret("h2", "mock", pan: "4242424242424242"), TimeSpan.FromMilliseconds(1), retrieveOnce: false, TestContext.Current.CancellationToken);
         await Task.Delay(20);
-        Assert.Null(await vault.TryRetrieveAsync("h2", "test", CancellationToken.None));
+        Assert.Null(await vault.TryRetrieveAsync("h2", "test", TestContext.Current.CancellationToken));
 
-        await vault.StoreAsync(new PaymentSecret("h3", "mock", pan: "4242424242424242"), TimeSpan.FromMinutes(1), retrieveOnce: false, CancellationToken.None);
-        await vault.RevokeAsync("h3", "test", CancellationToken.None);
-        Assert.Null(await vault.TryRetrieveAsync("h3", "test", CancellationToken.None));
+        await vault.StoreAsync(new PaymentSecret("h3", "mock", pan: "4242424242424242"), TimeSpan.FromMinutes(1), retrieveOnce: false, TestContext.Current.CancellationToken);
+        await vault.RevokeAsync("h3", "test", TestContext.Current.CancellationToken);
+        Assert.Null(await vault.TryRetrieveAsync("h3", "test", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public sealed class PaymentRuntimeTests
 
         var result = await tool.ExecuteAsync(
             """{"action":"issue_virtual_card","merchant":"Example Store","amount_minor":1200,"currency":"USD","environment":"test"}""",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("pvh_mock_", result, StringComparison.Ordinal);
         Assert.Contains("4242", result, StringComparison.Ordinal);
@@ -82,10 +82,10 @@ public sealed class PaymentRuntimeTests
 
         var missing = await tool.ExecuteAsync(
             """{"action":"issue_virtual_card","merchant":"Example Store","currency":"USD","environment":"test"}""",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var zero = await tool.ExecuteAsync(
             """{"action":"execute_machine_payment","merchant":"Paid API","amount_minor":0,"currency":"USD","environment":"test"}""",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("\"status\":\"error\"", missing, StringComparison.Ordinal);
         Assert.Contains("amount_minor", missing, StringComparison.Ordinal);
@@ -103,7 +103,7 @@ public sealed class PaymentRuntimeTests
             Action = PaymentActions.IssueVirtualCard,
             Summary = "Issue card",
             Environment = "prod"
-        }, approvalServiceAvailable: false, ct: CancellationToken.None);
+        }, approvalServiceAvailable: false, ct: TestContext.Current.CancellationToken);
 
         Assert.True(decision.Denied);
     }
@@ -120,7 +120,7 @@ public sealed class PaymentRuntimeTests
                 AmountMinor = 500,
                 Currency = "USD",
                 Environment = PaymentEnvironments.Live
-            }, new PaymentExecutionContext { Environment = PaymentEnvironments.Live }, CancellationToken.None));
+            }, new PaymentExecutionContext { Environment = PaymentEnvironments.Live }, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed class PaymentRuntimeTests
             AmountMinor = 100,
             Currency = "USD",
             Environment = PaymentEnvironments.Test
-        }, new PaymentExecutionContext { Environment = PaymentEnvironments.Test }, CancellationToken.None);
+        }, new PaymentExecutionContext { Environment = PaymentEnvironments.Test }, TestContext.Current.CancellationToken);
         var substitution = new PaymentSentinelSubstitutionService(runtime);
 
         var result = await substitution.SubstituteAsync(new SentinelSubstitutionContext
@@ -143,7 +143,7 @@ public sealed class PaymentRuntimeTests
             SessionId = "s1",
             ChannelId = "web",
             SenderId = "u1"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.True(result.Substituted);
         Assert.Contains("4242424242424242", result.ExecutionArgumentsJson, StringComparison.Ordinal);
@@ -164,7 +164,7 @@ public sealed class PaymentRuntimeTests
             AmountMinor = 100,
             Currency = "USD",
             Environment = PaymentEnvironments.Test
-        }, new PaymentExecutionContext { Environment = PaymentEnvironments.Test }, CancellationToken.None);
+        }, new PaymentExecutionContext { Environment = PaymentEnvironments.Test }, TestContext.Current.CancellationToken);
         var substitution = new PaymentSentinelSubstitutionService(runtime);
 
         var result = await substitution.SubstituteAsync(new SentinelSubstitutionContext
@@ -174,7 +174,7 @@ public sealed class PaymentRuntimeTests
             SessionId = "s1",
             ChannelId = "web",
             SenderId = "u1"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.True(result.Substituted);
         Assert.Contains("12/30", result.ExecutionArgumentsJson, StringComparison.Ordinal);
@@ -196,15 +196,15 @@ public sealed class PaymentRuntimeTests
                 AmountMinor = 42,
                 Currency = "USD"
             }
-        }, new PaymentExecutionContext { Environment = PaymentEnvironments.Test }, CancellationToken.None);
+        }, new PaymentExecutionContext { Environment = PaymentEnvironments.Test }, TestContext.Current.CancellationToken);
 
         var json = JsonSerializer.Serialize(result, PaymentJsonContext.Default.MachinePaymentResult);
         Assert.DoesNotContain("payment_mock_secret_token", json, StringComparison.Ordinal);
 
-        var secret = await runtime.RetrieveMachineAuthorizationOnceAsync(result.PaymentId, CancellationToken.None);
+        var secret = await runtime.RetrieveMachineAuthorizationOnceAsync(result.PaymentId, TestContext.Current.CancellationToken);
         Assert.NotNull(secret);
         Assert.Contains("payment_mock_secret_token", secret!.Resolve(PaymentSecretField.AuthorizationHeader), StringComparison.Ordinal);
-        Assert.Null(await runtime.RetrieveMachineAuthorizationOnceAsync(result.PaymentId, CancellationToken.None));
+        Assert.Null(await runtime.RetrieveMachineAuthorizationOnceAsync(result.PaymentId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -214,7 +214,7 @@ public sealed class PaymentRuntimeTests
             new StripeLinkOptions { CliPath = "missing-link-cli" },
             new StaticLinkRunner(new LinkCliCommandResult { ExitCode = -1, Stderr = "not found" }));
 
-        var status = await provider.GetSetupStatusAsync(CancellationToken.None);
+        var status = await provider.GetSetupStatusAsync(TestContext.Current.CancellationToken);
 
         Assert.False(status.Installed);
         Assert.Equal("not_installed", status.Status);
@@ -234,7 +234,7 @@ public sealed class PaymentRuntimeTests
                 workingDirectory: null,
                 environment: new Dictionary<string, string>(),
                 TimeSpan.FromSeconds(5),
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.Equal(0, result.ExitCode);
             Assert.Contains("hello;echo injected", result.Stdout, StringComparison.Ordinal);
@@ -307,10 +307,10 @@ public sealed class PaymentRuntimeTests
                 Content = "card 4242424242424242"
             });
 
-            await store.SaveSessionAsync(session, CancellationToken.None);
+            await store.SaveSessionAsync(session, TestContext.Current.CancellationToken);
 
             Assert.Contains("4242424242424242", session.History[0].Content, StringComparison.Ordinal);
-            var loaded = await store.GetSessionAsync("s1", CancellationToken.None);
+            var loaded = await store.GetSessionAsync("s1", TestContext.Current.CancellationToken);
             Assert.NotNull(loaded);
             Assert.DoesNotContain("4242424242424242", loaded!.History[0].Content, StringComparison.Ordinal);
         }

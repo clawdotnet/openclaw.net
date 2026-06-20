@@ -106,7 +106,7 @@ public sealed class LlmClientFactoryTests
         var response = await client.GetResponseAsync(
             [new ChatMessage(ChatRole.User, "ready?")],
             new ChatOptions { ModelId = "aperture-route" },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("READY", response.Text);
         Assert.False(server.Headers.ContainsKey("Authorization"));
@@ -139,7 +139,7 @@ public sealed class LlmClientFactoryTests
         var response = await client.GetResponseAsync(
             [new ChatMessage(ChatRole.User, "ready?")],
             options,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("READY", response.Text);
         Assert.Equal("Bearer test-token", server.Headers["Authorization"]);
@@ -179,7 +179,7 @@ public sealed class LlmClientFactoryTests
                 ApiKey = "stale-token",
                 AuthMode = "tailnet-identity"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(SetupCheckStates.Pass, result.Status);
         Assert.False(server.Headers.ContainsKey("Authorization"));
@@ -199,7 +199,7 @@ public sealed class LlmClientFactoryTests
                 ApiKey = "provider-token",
                 AuthMode = "tailnet-identity"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(SetupCheckStates.Pass, result.Status);
         Assert.Equal("Bearer provider-token", server.Headers["Authorization"]);

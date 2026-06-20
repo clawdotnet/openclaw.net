@@ -37,7 +37,7 @@ public sealed class LocalInferenceSupervisorTests : IDisposable
                 ModelsRoot = modelsRoot,
                 AcceptLicense = true
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         Assert.True(install.Success, install.Message);
 
         var runtimePath = WriteFakeSidecarScript();
@@ -64,7 +64,7 @@ public sealed class LocalInferenceSupervisorTests : IDisposable
         {
             response = await client.GetResponseAsync(
                 [new ChatMessage(ChatRole.User, "hello")],
-                cancellationToken: CancellationToken.None);
+                cancellationToken: TestContext.Current.CancellationToken);
         }
         catch (Exception ex)
         {
@@ -93,14 +93,14 @@ public sealed class LocalInferenceSupervisorTests : IDisposable
 
         var restarted = await client.GetResponseAsync(
             [new ChatMessage(ChatRole.User, "restart")],
-            cancellationToken: CancellationToken.None);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains(
             Assert.Single(restarted.Messages).Contents.OfType<TextContent>(),
             content => content.Text == "READY");
         Assert.True(supervisor.GetStatus().Running);
 
-        await supervisor.StopAsync(CancellationToken.None);
+        await supervisor.StopAsync(TestContext.Current.CancellationToken);
         Assert.False(supervisor.GetStatus().Running);
 
         var logPath = Path.Combine(logsPath, $"{package.Id}.localinfer.log");
@@ -126,7 +126,7 @@ public sealed class LocalInferenceSupervisorTests : IDisposable
                 ModelsRoot = modelsRoot,
                 AcceptLicense = true
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         Assert.True(install.Success, install.Message);
 
         var runtimePath = WriteFakeSidecarScript();
@@ -168,7 +168,7 @@ public sealed class LocalInferenceSupervisorTests : IDisposable
 
             _ = await client.GetResponseAsync(
                 [new ChatMessage(ChatRole.User, "hello")],
-                cancellationToken: CancellationToken.None);
+                cancellationToken: TestContext.Current.CancellationToken);
         }
         finally
         {

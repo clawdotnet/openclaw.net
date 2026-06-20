@@ -30,7 +30,7 @@ public sealed class TurnRoutingPolicyTests
             },
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("hello"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("hello"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T2", decision.Tier);
         Assert.Equal("classifier_unavailable", decision.Reason);
@@ -91,7 +91,7 @@ public sealed class TurnRoutingPolicyTests
             },
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("Read README and summarize the key modules."), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("Read README and summarize the key modules."), TestContext.Current.CancellationToken);
 
         Assert.True(
             string.Equals(decision.Tier, "T0", StringComparison.Ordinal)
@@ -120,7 +120,7 @@ public sealed class TurnRoutingPolicyTests
         var resolved = DynamicTurnRoutingConfigNormalizer.Normalize(config, new OpenSquillaBundleLoader());
         var policy = new OnnxTurnRoutingPolicy(resolved, NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("Read README and summarize the key modules."), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("Read README and summarize the key modules."), TestContext.Current.CancellationToken);
 
         Assert.Equal("bundle", resolved.Source);
         Assert.Equal(Path.Join(bundlePath, "classifier.onnx"), resolved.Assets.ClassifierModelPath);
@@ -146,7 +146,7 @@ public sealed class TurnRoutingPolicyTests
             predictedTier: 0,
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("answer directly without tools"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("answer directly without tools"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T0", decision.Tier);
         Assert.True(decision.DisableTools);
@@ -162,7 +162,7 @@ public sealed class TurnRoutingPolicyTests
             predictedTier: 2,
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("use the default tool route"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("use the default tool route"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T2", decision.Tier);
         Assert.False(decision.DisableTools);
@@ -177,7 +177,7 @@ public sealed class TurnRoutingPolicyTests
             predictedTier: 1,
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("read README and summarize"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("read README and summarize"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T1", decision.Tier);
         Assert.Equal("mini-readonly", decision.ModelProfileId);
@@ -195,7 +195,7 @@ public sealed class TurnRoutingPolicyTests
             new StubTierClassifier(3),
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("write and verify the production rollout plan"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("write and verify the production rollout plan"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T3", decision.Tier);
         Assert.Equal("frontier-deep", decision.ModelProfileId);
@@ -211,7 +211,7 @@ public sealed class TurnRoutingPolicyTests
             new StubTierClassifier(3, [0.01f, 0.02f, 0.07f, 0.90f]),
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("你好"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("你好"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T1", decision.Tier);
         Assert.Contains("greeting_cap", decision.Reason, StringComparison.OrdinalIgnoreCase);
@@ -226,7 +226,7 @@ public sealed class TurnRoutingPolicyTests
             new StubTierClassifier(3, [0.01f, 0.02f, 0.07f, 0.90f]),
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("你好，请删除生产库"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("你好，请删除生产库"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T3", decision.Tier);
         Assert.DoesNotContain("greeting_cap", decision.Reason, StringComparison.OrdinalIgnoreCase);
@@ -257,7 +257,7 @@ public sealed class TurnRoutingPolicyTests
             new StubTierClassifier(2),
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await sut.ResolveAsync(BuildRequest("plan production rollout"), CancellationToken.None);
+        var decision = await sut.ResolveAsync(BuildRequest("plan production rollout"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T2", decision.Tier);
         Assert.Equal("frontier-tools-fallback", decision.DirectModelFallbackProfileId);
@@ -278,7 +278,7 @@ public sealed class TurnRoutingPolicyTests
             new StubTierClassifier(1),
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("read README and summarize"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("read README and summarize"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T1", decision.Tier);
         Assert.Equal("mini-readonly", decision.ModelProfileId);
@@ -295,7 +295,7 @@ public sealed class TurnRoutingPolicyTests
 
         var decision = await policy.ResolveAsync(
             BuildRequest("prepare the production migration and rollback checklist before deploy"),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("T2", decision.Tier);
         Assert.Equal("frontier-tools", decision.ModelProfileId);
@@ -326,7 +326,7 @@ public sealed class TurnRoutingPolicyTests
             new StubTierClassifier(0, [0.91f, 0.05f, 0.03f, 0.01f]),
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(request, CancellationToken.None);
+        var decision = await policy.ResolveAsync(request, TestContext.Current.CancellationToken);
 
         Assert.Equal("T1", decision.Tier);
         Assert.Equal("mini-readonly", decision.ModelProfileId);
@@ -342,7 +342,7 @@ public sealed class TurnRoutingPolicyTests
             new StubTierClassifier(1),
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("read README and summarize"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("read README and summarize"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T2", decision.Tier);
         Assert.Equal("classifier_runtime_error", decision.Reason);
@@ -357,7 +357,7 @@ public sealed class TurnRoutingPolicyTests
             new ThrowingTierClassifier(),
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("read README and summarize"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("read README and summarize"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T2", decision.Tier);
         Assert.Equal("classifier_runtime_error", decision.Reason);
@@ -375,7 +375,7 @@ public sealed class TurnRoutingPolicyTests
             new StubTierClassifier(1, [0.35f, 0.38f, 0.20f, 0.07f]),
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("quick summary"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("quick summary"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T1", decision.Tier);
         Assert.DoesNotContain("margin_upgrade", decision.Reason, StringComparison.OrdinalIgnoreCase);
@@ -393,7 +393,7 @@ public sealed class TurnRoutingPolicyTests
             new StubTierClassifier(1, [0.06f, 0.48f, 0.31f, 0.15f]),
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("quick summary"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("quick summary"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T1", decision.Tier);
         Assert.DoesNotContain("under_routing_safety", decision.Reason, StringComparison.OrdinalIgnoreCase);
@@ -414,7 +414,7 @@ public sealed class TurnRoutingPolicyTests
         var request = BuildRequest("hello");
         request.Session.RouteModelTier = "T3";
 
-        var decision = await policy.ResolveAsync(request, CancellationToken.None);
+        var decision = await policy.ResolveAsync(request, TestContext.Current.CancellationToken);
 
         Assert.Equal("T0", decision.Tier);
         Assert.DoesNotContain("sticky_tier", decision.Reason, StringComparison.OrdinalIgnoreCase);
@@ -432,7 +432,7 @@ public sealed class TurnRoutingPolicyTests
             new StubTierClassifier(1, [0.32f, 0.50f, 0.10f, 0.08f]),
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("quick summary"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("quick summary"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T2", decision.Tier);
         Assert.Contains("margin_upgrade", decision.Reason, StringComparison.OrdinalIgnoreCase);
@@ -451,7 +451,7 @@ public sealed class TurnRoutingPolicyTests
             new StubTierClassifier(0, [0.30f, 0.29f, 0.25f, 0.16f]),
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("simple prompt"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("simple prompt"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T1", decision.Tier);
         Assert.Contains("r1_rescue", decision.Reason, StringComparison.OrdinalIgnoreCase);
@@ -471,7 +471,7 @@ public sealed class TurnRoutingPolicyTests
             new StubTierClassifier(0, [0.30f, 0.29f, 0.25f, 0.16f]),
             NullLogger<OnnxTurnRoutingPolicy>.Instance);
 
-        var decision = await policy.ResolveAsync(BuildRequest("simple prompt"), CancellationToken.None);
+        var decision = await policy.ResolveAsync(BuildRequest("simple prompt"), TestContext.Current.CancellationToken);
 
         Assert.Equal("T0", decision.Tier);
         Assert.DoesNotContain("r1_rescue", decision.Reason, StringComparison.OrdinalIgnoreCase);

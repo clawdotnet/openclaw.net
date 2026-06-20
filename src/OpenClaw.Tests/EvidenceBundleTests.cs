@@ -31,12 +31,12 @@ public sealed class EvidenceBundleTests
     {
         var root = CreateTempDir();
         var store = new FileEvidenceBundleStore(root);
-        await store.SaveAsync(BuildBundle("evb_one", sessionId: "sess_one", contractId: "hctr_one"), CancellationToken.None);
-        await store.SaveAsync(BuildBundle("evb_two", sessionId: "sess_two", contractId: "hctr_two"), CancellationToken.None);
+        await store.SaveAsync(BuildBundle("evb_one", sessionId: "sess_one", contractId: "hctr_one"), TestContext.Current.CancellationToken);
+        await store.SaveAsync(BuildBundle("evb_two", sessionId: "sess_two", contractId: "hctr_two"), TestContext.Current.CancellationToken);
 
-        var loaded = await store.GetAsync("evb_one", CancellationToken.None);
-        var bySession = await store.ListAsync(new EvidenceBundleListQuery { SourceSessionId = "sess_one" }, CancellationToken.None);
-        var byContract = await store.ListAsync(new EvidenceBundleListQuery { HarnessContractId = "hctr_two" }, CancellationToken.None);
+        var loaded = await store.GetAsync("evb_one", TestContext.Current.CancellationToken);
+        var bySession = await store.ListAsync(new EvidenceBundleListQuery { SourceSessionId = "sess_one" }, TestContext.Current.CancellationToken);
+        var byContract = await store.ListAsync(new EvidenceBundleListQuery { HarnessContractId = "hctr_two" }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal("evb_one", loaded!.Id);
@@ -53,9 +53,9 @@ public sealed class EvidenceBundleTests
         var unsafeBundle = BuildBundle("../escape");
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await store.SaveAsync(unsafeBundle, CancellationToken.None));
+            await store.SaveAsync(unsafeBundle, TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await store.GetAsync("../escape", CancellationToken.None));
+            await store.GetAsync("../escape", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public sealed class EvidenceBundleTests
             SourceSessionId = "sess_create",
             Confidence = EvidenceConfidenceLevels.Medium,
             Tags = ["evidence"]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.StartsWith("evb_", created.Id, StringComparison.Ordinal);
         Assert.True(created.CreatedAtUtc > DateTimeOffset.MinValue);
@@ -88,31 +88,31 @@ public sealed class EvidenceBundleTests
     {
         var root = CreateTempDir();
         var service = CreateService(root);
-        var created = await service.CreateAsync(BuildBundle("evb_append"), CancellationToken.None);
+        var created = await service.CreateAsync(BuildBundle("evb_append"), TestContext.Current.CancellationToken);
 
         var withItem = await service.AddItemAsync(created.Id, new EvidenceItem
         {
             Kind = EvidenceItemKinds.Note,
             Title = "Operator note",
             Summary = "The operator checked the output."
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         var withCheck = await service.AddCheckAsync(created.Id, new EvidenceCheck
         {
             Name = "Focused tests",
             Status = EvidenceCheckStatuses.Passed,
             Summary = "Tests passed."
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         var withRisk = await service.AddRiskAsync(created.Id, new EvidenceRisk
         {
             RiskLevel = EvidenceRiskLevels.Low,
             Description = "Residual manual-review risk."
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         var withReview = await service.AddHumanReviewAsync(created.Id, new EvidenceHumanReview
         {
             Reviewer = "operator",
             Decision = "accepted",
             Notes = "Looks consistent."
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(withItem);
         Assert.Equal(2, withItem!.Items.Count);
@@ -147,7 +147,7 @@ public sealed class EvidenceBundleTests
         };
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await service.CreateAsync(bundle, CancellationToken.None));
+            await service.CreateAsync(bundle, TestContext.Current.CancellationToken));
     }
 
     [Fact]

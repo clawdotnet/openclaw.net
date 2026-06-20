@@ -109,7 +109,7 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
         Directory.CreateDirectory(workspaceDir);
 
         await using var host = CreateHost(BuildPluginConfig(entry, packageDir));
-        var tools = await host.LoadAsync(workspaceDir, CancellationToken.None);
+        var tools = await host.LoadAsync(workspaceDir, TestContext.Current.CancellationToken);
         var report = host.Reports.LastOrDefault(r => string.Equals(r.PluginId, entry.PluginId, StringComparison.Ordinal));
         Assert.NotNull(report);
 

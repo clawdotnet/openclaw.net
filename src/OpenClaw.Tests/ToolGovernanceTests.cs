@@ -282,7 +282,7 @@ public sealed class ToolGovernanceTests
             },
             isStreaming: false,
             approvalCallback: approvalCallback,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
     private static HttpSidecarToolGovernanceService CreateSidecarService(ToolGovernanceSidecarResponse response)
     {

@@ -73,7 +73,7 @@ public sealed class ChannelAdapterSecurityTests
                 enqueued = true;
                 return ValueTask.CompletedTask;
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(403, result.StatusCode);
         Assert.False(enqueued);
@@ -113,7 +113,7 @@ public sealed class ChannelAdapterSecurityTests
             signatureHeader: null,
             timestampHeader: null,
             (msg, ct) => ValueTask.CompletedTask,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(403, result.StatusCode);
         Assert.Equal("blocked-user", recentSenders.TryGetLatest("discord")?.SenderId);
@@ -150,7 +150,7 @@ public sealed class ChannelAdapterSecurityTests
             signatureHeader: null,
             rawBody: "user_id=user-1",
             (msg, ct) => ValueTask.CompletedTask,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(403, result.StatusCode);
     }
@@ -189,7 +189,7 @@ public sealed class ChannelAdapterSecurityTests
                 RecipientId = "123",
                 Text = "hello"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(2, requestCount);
     }
@@ -221,7 +221,7 @@ public sealed class ChannelAdapterSecurityTests
                 Text = "[IMAGE_URL:https://cdn.example.test/cat.png]\ncaption",
                 ReplyToMessageId = "msg-1"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.NotNull(capturedPayload);
         var payload = JsonDocument.Parse(capturedPayload!).RootElement;
@@ -252,7 +252,7 @@ public sealed class ChannelAdapterSecurityTests
                 RecipientId = "15551234567",
                 Text = "hello"
             },
-            CancellationToken.None).AsTask());
+            TestContext.Current.CancellationToken).AsTask());
     }
 
     [Fact]
@@ -275,7 +275,7 @@ public sealed class ChannelAdapterSecurityTests
                 RecipientId = "15551234567",
                 Text = "[IMAGE_PATH:/tmp/cat.png]"
             },
-            CancellationToken.None).AsTask());
+            TestContext.Current.CancellationToken).AsTask());
 
         Assert.Contains("does not support marker kind", ex.Message, StringComparison.Ordinal);
     }
@@ -305,7 +305,7 @@ public sealed class ChannelAdapterSecurityTests
                 RecipientId = "group-1@g.us",
                 Text = "[VIDEO_URL:https://cdn.example.test/clip.mp4]"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.NotNull(capturedPayload);
         var payload = JsonDocument.Parse(capturedPayload!).RootElement;
@@ -370,7 +370,7 @@ public sealed class ChannelAdapterSecurityTests
             context.Request.Method = HttpMethods.Post;
             context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
 
-            var result = await handler.HandleAsync(context, (_, _) => ValueTask.CompletedTask, CancellationToken.None);
+            var result = await handler.HandleAsync(context, (_, _) => ValueTask.CompletedTask, TestContext.Current.CancellationToken);
             var latest = recentSenders.TryGetLatest("whatsapp");
 
             Assert.Equal(200, result.StatusCode);
@@ -438,7 +438,7 @@ public sealed class ChannelAdapterSecurityTests
                     captured = message;
                     return ValueTask.CompletedTask;
                 },
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.Equal(200, result.StatusCode);
             Assert.NotNull(captured);
@@ -509,7 +509,7 @@ public sealed class ChannelAdapterSecurityTests
                     captured = message;
                     return ValueTask.CompletedTask;
                 },
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.Equal(200, result.StatusCode);
             Assert.NotNull(captured);

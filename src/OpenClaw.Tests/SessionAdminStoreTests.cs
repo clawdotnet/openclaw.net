@@ -16,7 +16,7 @@ public sealed class SessionAdminStoreTests
             var store = new FileMemoryStore(root);
             await SeedSessionsAsync(store);
 
-            var page = await ((ISessionAdminStore)store).ListSessionsAsync(page: 1, pageSize: 1, new SessionListQuery(), CancellationToken.None);
+            var page = await ((ISessionAdminStore)store).ListSessionsAsync(page: 1, pageSize: 1, new SessionListQuery(), TestContext.Current.CancellationToken);
 
             Assert.Single(page.Items);
             Assert.True(page.HasMore);
@@ -39,7 +39,7 @@ public sealed class SessionAdminStoreTests
             {
                 await SeedSessionsAsync(store);
 
-                var page = await ((ISessionAdminStore)store).ListSessionsAsync(page: 1, pageSize: 1, new SessionListQuery(), CancellationToken.None);
+                var page = await ((ISessionAdminStore)store).ListSessionsAsync(page: 1, pageSize: 1, new SessionListQuery(), TestContext.Current.CancellationToken);
 
                 Assert.Single(page.Items);
                 Assert.True(page.HasMore);
@@ -65,7 +65,7 @@ public sealed class SessionAdminStoreTests
                 page: 1,
                 pageSize: 10,
                 new SessionListQuery { ChannelId = "sms" },
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             Assert.Single(page.Items);
             Assert.Equal("session-3", page.Items[0].Id);
@@ -91,7 +91,7 @@ public sealed class SessionAdminStoreTests
                     page: 1,
                     pageSize: 1,
                     new SessionListQuery { Search = "sms" },
-                    CancellationToken.None);
+                    TestContext.Current.CancellationToken);
 
                 Assert.Single(page.Items);
                 Assert.False(page.HasMore);
@@ -119,7 +119,7 @@ public sealed class SessionAdminStoreTests
                     page: 1,
                     pageSize: 10,
                     new SessionListQuery { State = SessionState.Paused },
-                    CancellationToken.None);
+                    TestContext.Current.CancellationToken);
 
                 Assert.Single(page.Items);
                 Assert.Equal("session-3", page.Items[0].Id);
@@ -139,7 +139,7 @@ public sealed class SessionAdminStoreTests
             ChannelId = "websocket",
             SenderId = "alice",
             LastActiveAt = DateTimeOffset.UtcNow.AddMinutes(-10)
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         await store.SaveSessionAsync(new Session
         {
@@ -147,7 +147,7 @@ public sealed class SessionAdminStoreTests
             ChannelId = "websocket",
             SenderId = "bob",
             LastActiveAt = DateTimeOffset.UtcNow
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         await store.SaveSessionAsync(new Session
         {
@@ -156,7 +156,7 @@ public sealed class SessionAdminStoreTests
             SenderId = "carol",
             LastActiveAt = DateTimeOffset.UtcNow.AddMinutes(-1),
             State = SessionState.Paused
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
     }
 
     private static string CreateTempDirectory()

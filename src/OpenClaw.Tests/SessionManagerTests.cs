@@ -17,13 +17,13 @@ public sealed class SessionManagerTests
             SessionTimeoutMinutes = 30
         });
 
-        var t1 = Task.Run(() => manager.GetOrCreateAsync("websocket", "alice", CancellationToken.None).AsTask());
-        var t2 = Task.Run(() => manager.GetOrCreateAsync("websocket", "alice", CancellationToken.None).AsTask());
+        var t1 = Task.Run(() => manager.GetOrCreateAsync("websocket", "alice", TestContext.Current.CancellationToken).AsTask());
+        var t2 = Task.Run(() => manager.GetOrCreateAsync("websocket", "alice", TestContext.Current.CancellationToken).AsTask());
 
         var sessions = await Task.WhenAll(t1, t2);
         Assert.Same(sessions[0], sessions[1]);
 
-        var next = await manager.GetOrCreateAsync("websocket", "alice", CancellationToken.None);
+        var next = await manager.GetOrCreateAsync("websocket", "alice", TestContext.Current.CancellationToken);
         Assert.Same(sessions[0], next);
     }
 
@@ -37,7 +37,7 @@ public sealed class SessionManagerTests
             SessionTimeoutMinutes = 30
         });
 
-        await manager.GetOrCreateAsync("websocket", "bob", CancellationToken.None);
+        await manager.GetOrCreateAsync("websocket", "bob", TestContext.Current.CancellationToken);
         Assert.True(manager.IsActive("websocket:bob"));
         Assert.False(manager.IsActive("websocket:nobody"));
     }
@@ -52,8 +52,8 @@ public sealed class SessionManagerTests
             SessionTimeoutMinutes = 30
         });
 
-        var s1 = await manager.GetOrCreateByIdAsync("cron:daily-news", "cron", "system", CancellationToken.None);
-        var s2 = await manager.GetOrCreateByIdAsync("cron:daily-news", "cron", "system", CancellationToken.None);
+        var s1 = await manager.GetOrCreateByIdAsync("cron:daily-news", "cron", "system", TestContext.Current.CancellationToken);
+        var s2 = await manager.GetOrCreateByIdAsync("cron:daily-news", "cron", "system", TestContext.Current.CancellationToken);
 
         Assert.Same(s1, s2);
         Assert.True(manager.IsActive("cron:daily-news"));
@@ -70,7 +70,7 @@ public sealed class SessionManagerTests
             SessionTimeoutMinutes = 1
         });
 
-        var session = await manager.GetOrCreateAsync("websocket", "charlie", CancellationToken.None);
+        var session = await manager.GetOrCreateAsync("websocket", "charlie", TestContext.Current.CancellationToken);
         session.LastActiveAt = DateTimeOffset.UtcNow.AddMinutes(-10);
 
         var evicted = manager.SweepExpiredActiveSessions();
@@ -101,7 +101,7 @@ public sealed class SessionManagerTests
             SessionTimeoutMinutes = 30
         });
 
-        var restored = await manager.GetOrCreateByIdAsync("paused-session", "websocket", "dana", CancellationToken.None);
+        var restored = await manager.GetOrCreateByIdAsync("paused-session", "websocket", "dana", TestContext.Current.CancellationToken);
 
         Assert.Equal("paused-session", restored.Id);
         Assert.Equal(SessionState.Active, restored.State);
@@ -132,7 +132,7 @@ public sealed class SessionManagerTests
             SessionTimeoutMinutes = 30
         });
 
-        var restored = await manager.GetOrCreateByIdAsync("expired-session", "websocket", "erin", CancellationToken.None);
+        var restored = await manager.GetOrCreateByIdAsync("expired-session", "websocket", "erin", TestContext.Current.CancellationToken);
 
         Assert.Equal("expired-session", restored.Id);
         Assert.Equal(SessionState.Active, restored.State);
@@ -168,7 +168,7 @@ public sealed class SessionManagerTests
         {
             try
             {
-                var session = await manager.GetOrCreateByIdAsync(sessionId, "websocket", sessionId, CancellationToken.None);
+                var session = await manager.GetOrCreateByIdAsync(sessionId, "websocket", sessionId, TestContext.Current.CancellationToken);
                 return (session, null);
             }
             catch (Exception ex)
@@ -195,7 +195,7 @@ public sealed class SessionManagerTests
             () => manager.GetOrCreateAsync("websocket", "alice", cts.Token).AsTask());
 
         // Semaphore must not be corrupted — subsequent call should succeed
-        var session = await manager.GetOrCreateAsync("websocket", "alice", CancellationToken.None);
+        var session = await manager.GetOrCreateAsync("websocket", "alice", TestContext.Current.CancellationToken);
         Assert.NotNull(session);
     }
 

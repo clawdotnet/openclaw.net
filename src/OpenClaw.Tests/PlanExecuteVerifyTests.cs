@@ -63,11 +63,11 @@ public sealed class PlanExecuteVerifyTests
     {
         var root = CreateTempDir();
         var service = CreateService(root, new GatewayConfig());
-        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), TestContext.Current.CancellationToken);
 
         Assert.False(decision.RequiresPlanExecuteVerify);
         Assert.Empty(service.ListRuns());
-        Assert.Empty(await new FileHarnessContractStore(root).ListAsync(new HarnessContractListQuery(), CancellationToken.None));
+        Assert.Empty(await new FileHarnessContractStore(root).ListAsync(new HarnessContractListQuery(), TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -76,15 +76,15 @@ public sealed class PlanExecuteVerifyTests
         var root = CreateTempDir();
         var service = CreateService(root, CreateEnabledConfig());
 
-        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), TestContext.Current.CancellationToken);
 
         Assert.True(decision.RequiresPlanExecuteVerify);
         Assert.True(decision.RequiresApproval);
         Assert.NotNull(decision.Run);
         Assert.Equal(PlanExecuteVerifyStatus.AwaitingApproval, decision.Run!.Status);
 
-        var contracts = await new FileHarnessContractStore(root).ListAsync(new HarnessContractListQuery(), CancellationToken.None);
-        var evidence = await new FileEvidenceBundleStore(root).ListAsync(new EvidenceBundleListQuery(), CancellationToken.None);
+        var contracts = await new FileHarnessContractStore(root).ListAsync(new HarnessContractListQuery(), TestContext.Current.CancellationToken);
+        var evidence = await new FileEvidenceBundleStore(root).ListAsync(new EvidenceBundleListQuery(), TestContext.Current.CancellationToken);
         Assert.Single(contracts);
         Assert.Equal(HarnessContractApprovalRequirements.Required, contracts[0].ApprovalRequired);
         Assert.Single(evidence);
@@ -97,7 +97,7 @@ public sealed class PlanExecuteVerifyTests
         var root = CreateTempDir();
         var service = CreateService(root, CreateEnabledConfig());
 
-        var decision = await service.EvaluateToolAsync(CreateContext("read_file", ToolGovernanceRiskLevel.Low, readOnly: true), CancellationToken.None);
+        var decision = await service.EvaluateToolAsync(CreateContext("read_file", ToolGovernanceRiskLevel.Low, readOnly: true), TestContext.Current.CancellationToken);
 
         Assert.False(decision.RequiresPlanExecuteVerify);
         Assert.Empty(service.ListRuns());
@@ -108,13 +108,13 @@ public sealed class PlanExecuteVerifyTests
     {
         var root = CreateTempDir();
         var service = CreateService(root, CreateEnabledConfig());
-        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), TestContext.Current.CancellationToken);
 
-        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, CancellationToken.None);
+        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, TestContext.Current.CancellationToken);
 
         var run = service.GetRun(decision.Run!.Id);
-        var ledger = await new FileGovernanceLedgerStore(root).ListAsync(new GovernanceLedgerListQuery(), CancellationToken.None);
-        var evidence = await new FileEvidenceBundleStore(root).GetAsync(run!.EvidenceBundleId!, CancellationToken.None);
+        var ledger = await new FileGovernanceLedgerStore(root).ListAsync(new GovernanceLedgerListQuery(), TestContext.Current.CancellationToken);
+        var evidence = await new FileEvidenceBundleStore(root).GetAsync(run!.EvidenceBundleId!, TestContext.Current.CancellationToken);
 
         Assert.True(run.Approved);
         Assert.Equal(PlanExecuteVerifyStatus.Executing, run.Status);
@@ -123,7 +123,7 @@ public sealed class PlanExecuteVerifyTests
         Assert.NotNull(evidence);
         Assert.Contains(evidence!.Items, item => item.Kind == EvidenceItemKinds.Approval && item.Status == GovernanceDecisions.Approved);
 
-        var contract = await new FileHarnessContractStore(root).GetAsync(run.HarnessContractId!, CancellationToken.None);
+        var contract = await new FileHarnessContractStore(root).GetAsync(run.HarnessContractId!, TestContext.Current.CancellationToken);
         Assert.Equal(HarnessContractStatus.Executing, contract!.Status);
         Assert.NotNull(contract.ApprovedAtUtc);
     }
@@ -133,10 +133,10 @@ public sealed class PlanExecuteVerifyTests
     {
         var root = CreateTempDir();
         var service = CreateService(root, CreateEnabledConfig());
-        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
-        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, CancellationToken.None);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), TestContext.Current.CancellationToken);
+        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, TestContext.Current.CancellationToken);
 
-        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), CancellationToken.None);
+        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), TestContext.Current.CancellationToken);
 
         Assert.NotNull(completed);
         Assert.Equal(PlanExecuteVerifyStatus.Verified, completed!.Status);
@@ -148,13 +148,13 @@ public sealed class PlanExecuteVerifyTests
     {
         var root = CreateTempDir();
         var service = CreateService(root, CreateEnabledConfig());
-        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
-        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, CancellationToken.None);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), TestContext.Current.CancellationToken);
+        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, TestContext.Current.CancellationToken);
 
         var completed = await service.CompleteToolAsync(
             decision.Run,
             CreateInvocation(ToolResultStatuses.Failed, ToolFailureCodes.ToolFailed),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.NotNull(completed);
         Assert.Equal(PlanExecuteVerifyStatus.Failed, completed!.Status);
@@ -167,13 +167,13 @@ public sealed class PlanExecuteVerifyTests
     {
         var root = CreateTempDir();
         var service = CreateService(root, CreateEnabledConfig());
-        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), TestContext.Current.CancellationToken);
 
-        await service.RecordApprovalDecisionAsync(decision.Run, approved: false, CancellationToken.None);
-        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Blocked, ToolFailureCodes.ApprovalRequired), CancellationToken.None);
+        await service.RecordApprovalDecisionAsync(decision.Run, approved: false, TestContext.Current.CancellationToken);
+        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Blocked, ToolFailureCodes.ApprovalRequired), TestContext.Current.CancellationToken);
 
         Assert.Equal(PlanExecuteVerifyStatus.Rejected, completed!.Status);
-        var contract = await new FileHarnessContractStore(root).GetAsync(completed.HarnessContractId!, CancellationToken.None);
+        var contract = await new FileHarnessContractStore(root).GetAsync(completed.HarnessContractId!, TestContext.Current.CancellationToken);
         Assert.Equal(HarnessContractStatus.Rejected, contract!.Status);
     }
 
@@ -182,15 +182,15 @@ public sealed class PlanExecuteVerifyTests
     {
         var root = CreateTempDir();
         var service = CreateService(root, CreateEnabledConfig());
-        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
-        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, CancellationToken.None);
-        await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), CancellationToken.None);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), TestContext.Current.CancellationToken);
+        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, TestContext.Current.CancellationToken);
+        await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), TestContext.Current.CancellationToken);
 
-        var verified = await service.VerifyRunAsync(decision.Run!.Id, CancellationToken.None);
+        var verified = await service.VerifyRunAsync(decision.Run!.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(PlanExecuteVerifyStatus.Verified, verified!.Status);
-        var contract = await new FileHarnessContractStore(root).GetAsync(verified.HarnessContractId!, CancellationToken.None);
-        var evidence = await new FileEvidenceBundleStore(root).GetAsync(verified.EvidenceBundleId!, CancellationToken.None);
+        var contract = await new FileHarnessContractStore(root).GetAsync(verified.HarnessContractId!, TestContext.Current.CancellationToken);
+        var evidence = await new FileEvidenceBundleStore(root).GetAsync(verified.EvidenceBundleId!, TestContext.Current.CancellationToken);
         Assert.Equal(HarnessContractStatus.Verified, contract!.Status);
         Assert.Contains(evidence!.Checks, check => check.Kind == EvidenceItemKinds.VerificationResult);
     }
@@ -200,13 +200,13 @@ public sealed class PlanExecuteVerifyTests
     {
         var root = CreateTempDir();
         var service = CreateService(root, CreateEnabledConfig());
-        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), TestContext.Current.CancellationToken);
 
-        var cancelled = await service.CancelRunAsync(decision.Run!.Id, CancellationToken.None);
+        var cancelled = await service.CancelRunAsync(decision.Run!.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(PlanExecuteVerifyStatus.Cancelled, cancelled!.Status);
-        var contract = await new FileHarnessContractStore(root).GetAsync(cancelled.HarnessContractId!, CancellationToken.None);
-        var evidence = await new FileEvidenceBundleStore(root).GetAsync(cancelled.EvidenceBundleId!, CancellationToken.None);
+        var contract = await new FileHarnessContractStore(root).GetAsync(cancelled.HarnessContractId!, TestContext.Current.CancellationToken);
+        var evidence = await new FileEvidenceBundleStore(root).GetAsync(cancelled.EvidenceBundleId!, TestContext.Current.CancellationToken);
         Assert.Equal(HarnessContractStatus.Cancelled, contract!.Status);
         Assert.Contains(evidence!.Checks, check => check.Name == "Plan-Execute-Verify cancellation");
     }
@@ -222,7 +222,7 @@ public sealed class PlanExecuteVerifyTests
 
         var decision = await service.EvaluateToolAsync(
             CreateContext("read_file", ToolGovernanceRiskLevel.Low, readOnly: true, toolCallCount: 2),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.True(decision.RequiresPlanExecuteVerify);
         Assert.False(decision.RequiresApproval);
@@ -237,7 +237,7 @@ public sealed class PlanExecuteVerifyTests
         config.Harness.PlanExecuteVerify.MaxPlanActions = 0;
         var service = CreateService(root, config);
 
-        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), TestContext.Current.CancellationToken);
 
         Assert.Equal(PlanExecuteVerifyDecisionKinds.Reject, decision.Decision);
         Assert.Empty(service.ListRuns());
@@ -250,10 +250,10 @@ public sealed class PlanExecuteVerifyTests
         var config = CreateEnabledConfig();
         config.Harness.PlanExecuteVerify.MaxVerificationSteps = 1;
         var service = CreateService(root, config);
-        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
-        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, CancellationToken.None);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), TestContext.Current.CancellationToken);
+        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, TestContext.Current.CancellationToken);
 
-        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), CancellationToken.None);
+        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), TestContext.Current.CancellationToken);
 
         Assert.Contains(completed!.Verification!.Checks, check => check.Id == "verification.omitted");
         Assert.DoesNotContain(completed.Verification.Checks, check => check.Id == "approval");
@@ -266,14 +266,14 @@ public sealed class PlanExecuteVerifyTests
         var config = CreateEnabledConfig();
         config.Harness.PlanExecuteVerify.RunVerification = false;
         var service = CreateService(root, config);
-        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
-        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, CancellationToken.None);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), TestContext.Current.CancellationToken);
+        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, TestContext.Current.CancellationToken);
 
-        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), CancellationToken.None);
+        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), TestContext.Current.CancellationToken);
 
         Assert.Equal(PlanExecuteVerifyStatus.Escalated, completed!.Status);
         Assert.Equal(HarnessVerificationStatus.Skipped, completed.Verification!.Status);
-        var contract = await new FileHarnessContractStore(root).GetAsync(completed.HarnessContractId!, CancellationToken.None);
+        var contract = await new FileHarnessContractStore(root).GetAsync(completed.HarnessContractId!, TestContext.Current.CancellationToken);
         Assert.Equal(HarnessContractStatus.Executing, contract!.Status);
     }
 
@@ -284,10 +284,10 @@ public sealed class PlanExecuteVerifyTests
         var config = CreateEnabledConfig();
         config.Harness.PlanExecuteVerify.RegressionCategories = ["security"];
         var service = CreateService(root, config);
-        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), CancellationToken.None);
-        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, CancellationToken.None);
+        var decision = await service.EvaluateToolAsync(CreateContext("shell", ToolGovernanceRiskLevel.Critical), TestContext.Current.CancellationToken);
+        await service.RecordApprovalDecisionAsync(decision.Run, approved: true, TestContext.Current.CancellationToken);
 
-        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), CancellationToken.None);
+        var completed = await service.CompleteToolAsync(decision.Run, CreateInvocation(ToolResultStatuses.Completed), TestContext.Current.CancellationToken);
 
         Assert.Contains(completed!.Verification!.Checks, check => check.Id == "regression" && check.Status == HarnessVerificationStatus.Skipped);
     }
@@ -300,9 +300,9 @@ public sealed class PlanExecuteVerifyTests
 
         var decision = await service.EvaluateToolAsync(
             CreateContext("shell", ToolGovernanceRiskLevel.Critical, argumentsJson: """{"cmd":"dotnet test"}"""),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
-        var contract = await new FileHarnessContractStore(root).GetAsync(decision.Run!.HarnessContractId!, CancellationToken.None);
+        var contract = await new FileHarnessContractStore(root).GetAsync(decision.Run!.HarnessContractId!, TestContext.Current.CancellationToken);
         Assert.DoesNotContain(contract!.ReadSet, item => item.Path == "dotnet test");
         Assert.DoesNotContain(contract.WriteSet, item => item.Path == "dotnet test");
     }
@@ -332,7 +332,7 @@ public sealed class PlanExecuteVerifyTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: (_, _, _) => ValueTask.FromResult(true),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("ok", result.ResultText);
         Assert.Equal(1, tool.ExecutionCount);
@@ -365,7 +365,7 @@ public sealed class PlanExecuteVerifyTests
             CreateTurnContext(),
             isStreaming: false,
             approvalCallback: (_, _, _) => ValueTask.FromResult(true),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
         Assert.Equal(0, tool.ExecutionCount);

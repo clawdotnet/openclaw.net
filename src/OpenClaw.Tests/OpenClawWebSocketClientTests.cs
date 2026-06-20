@@ -13,10 +13,10 @@ public sealed class OpenClawWebSocketClientTests
         ws.BlockSendUntilReleased();
         client.SetConnectedSocketForTest(ws);
 
-        var sendTask = client.SendUserMessageAsync("hello", "m1", replyToMessageId: null, CancellationToken.None);
+        var sendTask = client.SendUserMessageAsync("hello", "m1", replyToMessageId: null, TestContext.Current.CancellationToken);
         await ws.WaitForSendToStartAsync();
 
-        var disconnectTask = client.DisconnectAsync(CancellationToken.None);
+        var disconnectTask = client.DisconnectAsync(TestContext.Current.CancellationToken);
         Assert.False(disconnectTask.IsCompleted);
 
         ws.ReleaseBlockedSend();
@@ -49,7 +49,7 @@ public sealed class OpenClawWebSocketClientTests
         };
         client.OnError += message => error = message;
 
-        await client.RunReceiveLoopForTest(ws, CancellationToken.None);
+        await client.RunReceiveLoopForTest(ws, TestContext.Current.CancellationToken);
 
         Assert.Equal(["first", "second"], received);
         Assert.Equal("boom", error);

@@ -1173,7 +1173,7 @@ public sealed class GatewayAdminEndpointTests
             Prompt = "Report failures.",
             DeliveryChannelId = "cron",
             RetryPolicy = new AutomationRetryPolicy()
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await store.SaveRunStateAsync(new AutomationRunState
         {
             AutomationId = "auto-observability-fail",
@@ -1183,9 +1183,9 @@ public sealed class GatewayAdminEndpointTests
             LastRunId = "run-observe-1",
             FailureStreak = 1,
             VerificationSummary = "Expected report file was missing."
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
-        var heartbeatSession = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("heartbeat-observe", "web", "viewer-observe", CancellationToken.None);
+        var heartbeatSession = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("heartbeat-observe", "web", "viewer-observe", TestContext.Current.CancellationToken);
         heartbeatService.RecordResult(heartbeatSession, "Urgent competitor alert", suppressed: false, inputTokenDelta: 12, outputTokenDelta: 34);
 
         var range = $"fromUtc={Uri.EscapeDataString(now.AddHours(-1).ToString("O"))}&toUtc={Uri.EscapeDataString(now.AddMinutes(1).ToString("O"))}";
@@ -1271,7 +1271,7 @@ public sealed class GatewayAdminEndpointTests
             ActionSummary = "Audit export governance record.",
             ToolName = "shell",
             SessionId = "sess-audit-export"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var exportRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/audit/export?fromUtc={Uri.EscapeDataString(DateTimeOffset.UtcNow.AddDays(-30).ToString("O"))}");
         exportRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token!.Token);
@@ -1317,9 +1317,9 @@ public sealed class GatewayAdminEndpointTests
         harness.App.Services.GetRequiredService<ToolUsageTracker>()
             .RecordToolCall("web_fetch", TimeSpan.FromMilliseconds(125), failed: false, timedOut: false);
 
-        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-insights", "web", "operator", CancellationToken.None);
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-insights", "web", "operator", TestContext.Current.CancellationToken);
         session.History.Add(new ChatTurn { Role = "user", Content = "hello" });
-        await harness.Runtime.SessionManager.PersistAsync(session, CancellationToken.None);
+        await harness.Runtime.SessionManager.PersistAsync(session, TestContext.Current.CancellationToken);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/insights");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -1344,7 +1344,7 @@ public sealed class GatewayAdminEndpointTests
     public async Task AdminTrajectoryExport_ExportsJsonlAndAnonymizes()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
-        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-trajectory", "web", "alice@example.com", CancellationToken.None);
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-trajectory", "web", "alice@example.com", TestContext.Current.CancellationToken);
         session.History.Add(new ChatTurn
         {
             Role = "user",
@@ -1363,7 +1363,7 @@ public sealed class GatewayAdminEndpointTests
             ]
         });
         session.History.Add(new ChatTurn { Role = "assistant", Content = "Done for alice@example.com" });
-        await harness.Runtime.SessionManager.PersistAsync(session, CancellationToken.None);
+        await harness.Runtime.SessionManager.PersistAsync(session, TestContext.Current.CancellationToken);
         var evidenceService = new EvidenceBundleService(
             new FileEvidenceBundleStore(harness.StoragePath),
             harness.Runtime.Operations.RuntimeEvents,
@@ -1402,7 +1402,7 @@ public sealed class GatewayAdminEndpointTests
                     ["ticket"] = "alice@example.com sk-testsecret123"
                 }
             }
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await CreateGovernanceLedgerService(harness).CreateAsync(new GovernanceLedgerEntry
         {
             Id = "gov-trajectory",
@@ -1421,7 +1421,7 @@ public sealed class GatewayAdminEndpointTests
             DecidedBy = "alice@example.com",
             DecisionReason = "reviewed with sk-testsecret123",
             Tags = ["alice@example.com", "sk-testsecret123"]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/trajectory/export?sessionId=sess-trajectory&anonymize=true");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -1793,7 +1793,7 @@ public sealed class GatewayAdminEndpointTests
                     SourceSessionIds = ["sess-prev"]
                 }
             ]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         await store.SaveProposalAsync(new LearningProposal
         {
@@ -1825,7 +1825,7 @@ public sealed class GatewayAdminEndpointTests
             },
             SourceSessionIds = ["sess-1", "sess-2"],
             Confidence = 0.72f
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/learning/proposals/lp_detail_profile");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -1949,7 +1949,7 @@ public sealed class GatewayAdminEndpointTests
             Preferences = ["plain-text", "charts"]
         };
 
-        await store.SaveProfileAsync(updatedProfile, CancellationToken.None);
+        await store.SaveProfileAsync(updatedProfile, TestContext.Current.CancellationToken);
         await store.SaveProposalAsync(new LearningProposal
         {
             Id = "lp_rollback_profile",
@@ -1964,7 +1964,7 @@ public sealed class GatewayAdminEndpointTests
             Confidence = 0.8f,
             ReviewedAtUtc = DateTimeOffset.UtcNow,
             ReviewNotes = "approved"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var rollbackRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_rollback_profile/rollback")
         {
@@ -2015,10 +2015,10 @@ public sealed class GatewayAdminEndpointTests
                 ]
             };
 
-            await service.ObserveSessionAsync(session, CancellationToken.None);
-            await service.ObserveSessionAsync(session, CancellationToken.None);
+            await service.ObserveSessionAsync(session, TestContext.Current.CancellationToken);
+            await service.ObserveSessionAsync(session, TestContext.Current.CancellationToken);
 
-            var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.SkillDraft, CancellationToken.None);
+            var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.SkillDraft, TestContext.Current.CancellationToken);
             var proposal = Assert.Single(proposals);
             Assert.Equal("high", proposal.RiskLevel);
             Assert.Equal("warning", proposal.ValidationStatus);
@@ -2069,9 +2069,9 @@ public sealed class GatewayAdminEndpointTests
                 ]
             };
 
-            await service.ObserveSessionAsync(session, CancellationToken.None);
+            await service.ObserveSessionAsync(session, TestContext.Current.CancellationToken);
 
-            var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.SkillDraft, CancellationToken.None);
+            var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.SkillDraft, TestContext.Current.CancellationToken);
             Assert.Empty(proposals);
         }
         finally
@@ -2102,10 +2102,10 @@ public sealed class GatewayAdminEndpointTests
                 searchStore,
                 NullLogger<LearningService>.Instance);
 
-            await service.ObserveSessionAsync(BuildUserSession("sess-auto-1", "Send the daily review"), CancellationToken.None);
-            await service.ObserveSessionAsync(BuildUserSession("sess-auto-2", "Send the daily review"), CancellationToken.None);
+            await service.ObserveSessionAsync(BuildUserSession("sess-auto-1", "Send the daily review"), TestContext.Current.CancellationToken);
+            await service.ObserveSessionAsync(BuildUserSession("sess-auto-2", "Send the daily review"), TestContext.Current.CancellationToken);
 
-            var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.AutomationSuggestion, CancellationToken.None);
+            var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.AutomationSuggestion, TestContext.Current.CancellationToken);
             var proposal = Assert.Single(proposals);
             Assert.Equal("medium", proposal.RiskLevel);
             Assert.Equal("warning", proposal.ValidationStatus);
@@ -2192,7 +2192,7 @@ public sealed class GatewayAdminEndpointTests
                 PredictedImprovement = "Improve retrieval precision for governed context.",
                 FalsificationTests = ["harness regression: memory"],
                 SourceRuntimeEventIds = ["evt_1"]
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             var second = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
             {
                 ActorId = "operator:harness",
@@ -2206,7 +2206,7 @@ public sealed class GatewayAdminEndpointTests
                 RiskLevel = LearningProposalRiskLevels.High,
                 RequiresRegression = false,
                 RegressionCategories = ["harness"]
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             var third = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
             {
                 ActorId = "operator:harness",
@@ -2220,7 +2220,7 @@ public sealed class GatewayAdminEndpointTests
                 RiskLevel = LearningProposalRiskLevels.High,
                 RequiresRegression = false,
                 RegressionCategories = ["harness"]
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             var toolPolicy = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
             {
                 Component = HarnessEvolutionComponents.Tools,
@@ -2230,7 +2230,7 @@ public sealed class GatewayAdminEndpointTests
                 FalsificationTests = ["harness regression: tools"],
                 RollbackPlan = "Keep existing tool policy.",
                 RegressionCategories = ["tools"]
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             var pulse = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
             {
                 Component = HarnessEvolutionComponents.Pulse,
@@ -2239,7 +2239,7 @@ public sealed class GatewayAdminEndpointTests
                 PredictedImprovement = "Reduce repeated pulse skip warnings.",
                 FalsificationTests = ["pulse schedule check"],
                 RollbackPlan = "Keep existing pulse thresholds."
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             var unknown = await service.CreateHarnessChangeProposalAsync(new HarnessEvolutionProposalCreateRequest
             {
                 Component = HarnessEvolutionComponents.Unknown,
@@ -2249,7 +2249,7 @@ public sealed class GatewayAdminEndpointTests
                 FalsificationTests = ["harness regression: harness"],
                 RollbackPlan = "Keep existing classification.",
                 RegressionCategories = ["harness"]
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             Assert.Equal(first.Id, second.Id);
             Assert.Equal(second.Id, third.Id);
@@ -2277,9 +2277,9 @@ public sealed class GatewayAdminEndpointTests
                     RollbackPlan = "Restore current security policy.",
                     IsAutoApplicable = true,
                     RegressionCategories = ["security"]
-                }, CancellationToken.None).AsTask());
+                }, TestContext.Current.CancellationToken).AsTask());
 
-            var proposals = await store.ListProposalsAsync(null, LearningProposalKind.HarnessChange, CancellationToken.None);
+            var proposals = await store.ListProposalsAsync(null, LearningProposalKind.HarnessChange, TestContext.Current.CancellationToken);
             Assert.Equal(4, proposals.Count);
         }
         finally
@@ -2331,7 +2331,7 @@ public sealed class GatewayAdminEndpointTests
             var response = await service.DetectHarnessChangeProposalsAsync(
                 runtimeEvents,
                 new HarnessEvolutionDetectionRequest { Threshold = 3 },
-                CancellationToken.None);
+                TestContext.Current.CancellationToken);
 
             var proposal = Assert.Single(response.Proposals);
             Assert.Equal(2, response.GroupsEvaluated);
@@ -2369,9 +2369,9 @@ public sealed class GatewayAdminEndpointTests
                     Component = HarnessEvolutionComponents.Memory,
                     FailureMode = "Memory misses repeated project notes.",
                     ProposedChange = "Tune project-scoped memory retrieval ranking."
-                }, CancellationToken.None).AsTask());
+                }, TestContext.Current.CancellationToken).AsTask());
             await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-                await service.DetectHarnessChangeProposalsAsync(runtimeEvents, null, CancellationToken.None).AsTask());
+                await service.DetectHarnessChangeProposalsAsync(runtimeEvents, null, TestContext.Current.CancellationToken).AsTask());
         }
         finally
         {
@@ -2433,14 +2433,14 @@ public sealed class GatewayAdminEndpointTests
         Assert.Equal("approved; manual application required", approvePayload.RootElement.GetProperty("reviewNotes").GetString());
         Assert.NotEmpty(approvePayload.RootElement.GetProperty("harnessEvolution").GetProperty("relatedGovernanceLedgerIds").EnumerateArray());
 
-        var automations = await new FileFeatureStore(harness.StoragePath).ListAutomationsAsync(CancellationToken.None);
+        var automations = await new FileFeatureStore(harness.StoragePath).ListAutomationsAsync(TestContext.Current.CancellationToken);
         Assert.Empty(automations);
 
         var ledger = await CreateGovernanceLedgerService(harness).ListAsync(new GovernanceLedgerListQuery
         {
             Decision = GovernanceDecisions.Approved,
             Limit = 10
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         Assert.Contains(ledger, entry => entry.LearningProposalId == proposalId && entry.Source == GovernanceLedgerSources.LearningProposal);
 
         var rejectJson = JsonSerializer.Serialize(new HarnessEvolutionProposalCreateRequest
@@ -2497,9 +2497,9 @@ public sealed class GatewayAdminEndpointTests
                 searchStore,
                 NullLogger<LearningService>.Instance);
 
-            await service.ObserveSessionAsync(BuildUserSession("sess-auto-review", "比较当前的会话内容，做一个整体的评估"), CancellationToken.None);
+            await service.ObserveSessionAsync(BuildUserSession("sess-auto-review", "比较当前的会话内容，做一个整体的评估"), TestContext.Current.CancellationToken);
 
-            var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.AutomationSuggestion, CancellationToken.None);
+            var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.AutomationSuggestion, TestContext.Current.CancellationToken);
             var proposal = Assert.Single(proposals);
             Assert.NotNull(proposal.AutomationDraft);
             Assert.False(proposal.AutomationDraft.Enabled);
@@ -2541,9 +2541,9 @@ public sealed class GatewayAdminEndpointTests
                 runtimeHolder: null,
                 deliveryChannelIds: ["websocket", "email"]);
 
-            await service.ObserveSessionAsync(BuildUserSession("sess-auto-no-cron", "比较当前的会话内容，做一个整体的评估"), CancellationToken.None);
+            await service.ObserveSessionAsync(BuildUserSession("sess-auto-no-cron", "比较当前的会话内容，做一个整体的评估"), TestContext.Current.CancellationToken);
 
-            var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.AutomationSuggestion, CancellationToken.None);
+            var proposals = await store.ListProposalsAsync(LearningProposalStatus.Pending, LearningProposalKind.AutomationSuggestion, TestContext.Current.CancellationToken);
             var proposal = Assert.Single(proposals);
             Assert.Null(proposal.AutomationDraft);
             Assert.Equal(AutomationSuggestionQualityDecisions.LearningOnly, proposal.AutomationQuality!.Decision);
@@ -2744,9 +2744,9 @@ public sealed class GatewayAdminEndpointTests
                 ]
             };
 
-            await store.SaveProposalAsync(proposal, CancellationToken.None);
+            await store.SaveProposalAsync(proposal, TestContext.Current.CancellationToken);
 
-            var loaded = await store.GetProposalAsync("lp_quality_roundtrip", CancellationToken.None);
+            var loaded = await store.GetProposalAsync("lp_quality_roundtrip", TestContext.Current.CancellationToken);
             Assert.NotNull(loaded);
             Assert.Equal("daily_conversation_review", loaded.AutomationIntent!.Intent);
             Assert.Equal(88, loaded.AutomationQuality!.Score);
@@ -2834,7 +2834,7 @@ public sealed class GatewayAdminEndpointTests
                     Decision = AutomationSuggestionQualityDecisions.ReadyDraft
                 },
                 AppliedAutomationId = "suggested:editfeed"
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             await store.SaveAutomationAsync(new AutomationDefinition
             {
                 Id = "suggested:editfeed",
@@ -2846,7 +2846,7 @@ public sealed class GatewayAdminEndpointTests
                 IsDraft = true,
                 Source = "learning",
                 CreatedByLearningProposalId = "lp_edit_feedback"
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             var service = new GatewayAutomationService(
                 new GatewayConfig(),
                 store,
@@ -2865,9 +2865,9 @@ public sealed class GatewayAdminEndpointTests
                 IsDraft = true,
                 Source = "learning",
                 CreatedByLearningProposalId = "lp_edit_feedback"
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
-            var proposal = await store.GetProposalAsync("lp_edit_feedback", CancellationToken.None);
+            var proposal = await store.GetProposalAsync("lp_edit_feedback", TestContext.Current.CancellationToken);
             Assert.NotNull(proposal);
             var feedbackEvent = Assert.Single(proposal.FeedbackEvents);
             Assert.Equal(LearningProposalFeedbackActions.EditedAfterApproval, feedbackEvent.Action);
@@ -2919,7 +2919,7 @@ public sealed class GatewayAdminEndpointTests
                     Score = 88,
                     Decision = AutomationSuggestionQualityDecisions.ReadyDraft
                 }
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             await store.SaveProposalAsync(new LearningProposal
             {
                 Id = "lp_feedback_reject",
@@ -2932,10 +2932,10 @@ public sealed class GatewayAdminEndpointTests
                     Score = 48,
                     Decision = AutomationSuggestionQualityDecisions.LearningOnly
                 }
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
-            var approved = await approveService.ApproveAsync("lp_feedback_accept", Substitute.For<IAgentRuntime>(), CancellationToken.None);
-            var rejected = await approveService.RejectAsync("lp_feedback_reject", "not useful", CancellationToken.None);
+            var approved = await approveService.ApproveAsync("lp_feedback_accept", Substitute.For<IAgentRuntime>(), TestContext.Current.CancellationToken);
+            var rejected = await approveService.RejectAsync("lp_feedback_reject", "not useful", TestContext.Current.CancellationToken);
 
             Assert.NotNull(approved);
             var acceptedEvent = Assert.Single(approved.FeedbackEvents);
@@ -2992,7 +2992,7 @@ public sealed class GatewayAdminEndpointTests
                 RiskLevel = LearningProposalRiskLevels.High,
                 ValidationStatus = LearningProposalValidationStatuses.Warning,
                 ValidationWarnings = ["Observed tool sequence includes mutating tools."]
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             using var approveRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_rollback_skill/approve");
             approveRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -3054,14 +3054,14 @@ public sealed class GatewayAdminEndpointTests
             },
             RiskLevel = LearningProposalRiskLevels.Medium,
             ValidationStatus = LearningProposalValidationStatuses.Warning
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var approveRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_rollback_automation/approve");
         approveRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
         using var approveResponse = await harness.Client.SendAsync(approveRequest);
         Assert.Equal(HttpStatusCode.OK, approveResponse.StatusCode);
 
-        var approvedAutomation = await store.GetAutomationAsync("auto_learning_rollback", CancellationToken.None);
+        var approvedAutomation = await store.GetAutomationAsync("auto_learning_rollback", TestContext.Current.CancellationToken);
         Assert.NotNull(approvedAutomation);
         Assert.False(approvedAutomation.Enabled);
         Assert.True(approvedAutomation.IsDraft);
@@ -3079,7 +3079,7 @@ public sealed class GatewayAdminEndpointTests
             Source = "learning",
             CreatedByLearningProposalId = "lp_rollback_automation",
             TemplateKey = "custom"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var rollbackRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_rollback_automation/rollback")
         {
@@ -3091,7 +3091,7 @@ public sealed class GatewayAdminEndpointTests
         using var rollbackPayload = await ReadJsonAsync(rollbackResponse);
         Assert.Equal("rolled_back", rollbackPayload.RootElement.GetProperty("status").GetString());
 
-        var rolledBackAutomation = await store.GetAutomationAsync("auto_learning_rollback", CancellationToken.None);
+        var rolledBackAutomation = await store.GetAutomationAsync("auto_learning_rollback", TestContext.Current.CancellationToken);
         Assert.NotNull(rolledBackAutomation);
         Assert.False(rolledBackAutomation.Enabled);
         Assert.True(rolledBackAutomation.IsDraft);
@@ -3124,7 +3124,7 @@ public sealed class GatewayAdminEndpointTests
             SkillName = "reasoning-leak-skill",
             DraftContent = draft,
             DraftContentHash = ComputeTestHash(draft)
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var approveRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_reasoning_markup_skill/approve");
         approveRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -3177,7 +3177,7 @@ public sealed class GatewayAdminEndpointTests
                 RiskLevel = LearningProposalRiskLevels.High,
                 ValidationStatus = LearningProposalValidationStatuses.Warning,
                 ValidationWarnings = ["Observed tool sequence includes mutating tools."]
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             using var approveRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_reload_failure_skill/approve");
             approveRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -3245,7 +3245,7 @@ public sealed class GatewayAdminEndpointTests
                 ValidationWarnings = null!,
                 ValidationErrors = null!,
                 ToolObservations = null!
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             using var approveRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_legacy_null_collections_skill/approve");
             approveRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -3279,7 +3279,7 @@ public sealed class GatewayAdminEndpointTests
             SkillName = "invalid-skill",
             DraftContent = "---\nname: invalid-skill\ndescription: Invalid hash test skill\n---\nUse for validation tests.",
             DraftContentHash = "not-the-reviewed-hash"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var approveRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/learning/proposals/lp_invalid_skill/approve");
         approveRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -3313,7 +3313,7 @@ public sealed class GatewayAdminEndpointTests
             Tone = "direct",
             Preferences = ["summaries"],
             ActiveProjects = ["roadmap"]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await sourceStore.SaveProposalAsync(new LearningProposal
         {
             Id = "lp_portable_profile",
@@ -3333,7 +3333,7 @@ public sealed class GatewayAdminEndpointTests
             },
             SourceSessionIds = ["sess-portable"],
             Confidence = 0.66f
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var exportRequest = new HttpRequestMessage(HttpMethod.Get, $"/admin/profiles/export?actorId={Uri.EscapeDataString(actorId)}");
         exportRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", sourceHarness.AuthToken);
@@ -3373,8 +3373,8 @@ public sealed class GatewayAdminEndpointTests
     public async Task AdminMemoryNotes_ListSearchSaveAndDelete_Work()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
-        await harness.MemoryStore.SaveNoteAsync("project:alpha:architecture", "Use NativeAOT for the shipping target.", CancellationToken.None);
-        await harness.MemoryStore.SaveNoteAsync("runbook:deploy-checklist", "Confirm doctor and posture before deploy.", CancellationToken.None);
+        await harness.MemoryStore.SaveNoteAsync("project:alpha:architecture", "Use NativeAOT for the shipping target.", TestContext.Current.CancellationToken);
+        await harness.MemoryStore.SaveNoteAsync("runbook:deploy-checklist", "Confirm doctor and posture before deploy.", TestContext.Current.CancellationToken);
 
         using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/notes?memoryClass=project_fact&projectId=alpha");
         listRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -3419,7 +3419,7 @@ public sealed class GatewayAdminEndpointTests
         var deleteResponse = await harness.Client.SendAsync(deleteRequest);
         Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
 
-        Assert.Null(await harness.MemoryStore.LoadNoteAsync("automation:daily-triage", CancellationToken.None));
+        Assert.Null(await harness.MemoryStore.LoadNoteAsync("automation:daily-triage", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -3430,7 +3430,7 @@ public sealed class GatewayAdminEndpointTests
         await using var sourceHarness = await CreateHarnessAsync(nonLoopbackBind: true);
         var sourceFeatureStore = new FileFeatureStore(sourceHarness.StoragePath);
 
-        await sourceHarness.MemoryStore.SaveNoteAsync("project:apollo:runbook", "Escalate incidents through the launch room.", CancellationToken.None);
+        await sourceHarness.MemoryStore.SaveNoteAsync("project:apollo:runbook", "Escalate incidents through the launch room.", TestContext.Current.CancellationToken);
         await sourceFeatureStore.SaveProfileAsync(new UserProfile
         {
             ActorId = actorId,
@@ -3439,7 +3439,7 @@ public sealed class GatewayAdminEndpointTests
             Summary = "Portable operator profile",
             Tone = "direct",
             Preferences = ["daily-summary"]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await sourceFeatureStore.SaveProposalAsync(new LearningProposal
         {
             Id = "lp_memory_bundle",
@@ -3453,7 +3453,7 @@ public sealed class GatewayAdminEndpointTests
             DraftContentHash = "hash",
             SourceSessionIds = ["sess-memory"],
             Confidence = 0.7f
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await sourceFeatureStore.SaveAutomationAsync(new AutomationDefinition
         {
             Id = "auto_memory_bundle",
@@ -3465,7 +3465,7 @@ public sealed class GatewayAdminEndpointTests
             IsDraft = true,
             Source = "learning",
             TemplateKey = "custom"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var exportRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/export?projectId=apollo");
         exportRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", sourceHarness.AuthToken);
@@ -3573,7 +3573,7 @@ public sealed class GatewayAdminEndpointTests
                 Assert.Equal(HttpStatusCode.OK, updateSettingsResponse.StatusCode);
             }
 
-            await sourceHarness.MemoryStore.SaveNoteAsync("project:apollo:runbook", "Escalate incidents through the launch room.", CancellationToken.None);
+            await sourceHarness.MemoryStore.SaveNoteAsync("project:apollo:runbook", "Escalate incidents through the launch room.", TestContext.Current.CancellationToken);
             await sourceFeatureStore.SaveProfileAsync(new UserProfile
             {
                 ActorId = actorId,
@@ -3582,7 +3582,7 @@ public sealed class GatewayAdminEndpointTests
                 Summary = "Portable operator profile",
                 Tone = "direct",
                 Preferences = ["daily-summary"]
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             await sourceFeatureStore.SaveProposalAsync(new LearningProposal
             {
                 Id = "lp_agent_bundle",
@@ -3596,7 +3596,7 @@ public sealed class GatewayAdminEndpointTests
                 DraftContentHash = "hash",
                 SourceSessionIds = ["sess-agent-bundle"],
                 Confidence = 0.7f
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             await sourceFeatureStore.SaveAutomationAsync(new AutomationDefinition
             {
                 Id = "auto_agent_bundle",
@@ -3608,7 +3608,7 @@ public sealed class GatewayAdminEndpointTests
                 IsDraft = true,
                 Source = "learning",
                 TemplateKey = "custom"
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             using (var providerPolicyRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/providers/policies")
             {
@@ -3854,15 +3854,15 @@ public sealed class GatewayAdminEndpointTests
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
 
-        await harness.MemoryStore.SaveNoteAsync("competitor-watch", "Check https://example.com/status for outages.", CancellationToken.None);
+        await harness.MemoryStore.SaveNoteAsync("competitor-watch", "Check https://example.com/status for outages.", TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(Path.Combine(harness.StoragePath, "memory.md"), "Please keep checking https://example.com/status for major changes.");
-        var session = await harness.Runtime.SessionManager.GetOrCreateAsync("websocket", "tester", CancellationToken.None);
+        var session = await harness.Runtime.SessionManager.GetOrCreateAsync("websocket", "tester", TestContext.Current.CancellationToken);
         session.History.Add(new ChatTurn
         {
             Role = "user",
             Content = "Please monitor https://example.com/status and /tmp/competitor-alerts for changes."
         });
-        await harness.Runtime.SessionManager.PersistAsync(session, CancellationToken.None);
+        await harness.Runtime.SessionManager.PersistAsync(session, TestContext.Current.CancellationToken);
 
         var dailyConfig = new HeartbeatConfigDto
         {
@@ -4195,7 +4195,7 @@ public sealed class GatewayAdminEndpointTests
         var activeSession = await FindStableSessionAsync(harness, stableSessionId);
         Assert.NotNull(activeSession);
 
-        var persisted = await harness.MemoryStore.GetSessionAsync(activeSession!.Id, CancellationToken.None);
+        var persisted = await harness.MemoryStore.GetSessionAsync(activeSession!.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(persisted);
         Assert.Collection(
             persisted!.History,
@@ -4384,7 +4384,7 @@ public sealed class GatewayAdminEndpointTests
         using var secondResponse = await harness.Client.SendAsync(secondRequest);
         Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
 
-        var stableSessions = (await harness.Runtime.SessionManager.ListActiveAsync(CancellationToken.None))
+        var stableSessions = (await harness.Runtime.SessionManager.ListActiveAsync(TestContext.Current.CancellationToken))
             .Where(session => string.Equals(session.StableSessionBinding?.ExternalSessionId, stableSessionId, StringComparison.Ordinal))
             .OrderBy(session => session.SenderId, StringComparer.Ordinal)
             .ToArray();
@@ -4429,7 +4429,7 @@ public sealed class GatewayAdminEndpointTests
             scopedSessionId,
             "openai-http",
             "another-requester",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         conflictingSession.StableSessionBinding = new StableSessionBindingInfo
         {
             ExternalSessionId = stableSessionId,
@@ -4512,7 +4512,7 @@ public sealed class GatewayAdminEndpointTests
         var activeSession = await FindStableSessionAsync(harness, stableSessionId);
         Assert.NotNull(activeSession);
 
-        var persisted = await harness.MemoryStore.GetSessionAsync(activeSession!.Id, CancellationToken.None);
+        var persisted = await harness.MemoryStore.GetSessionAsync(activeSession!.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(persisted);
         Assert.Collection(
             persisted!.History,
@@ -4577,7 +4577,7 @@ public sealed class GatewayAdminEndpointTests
         var activeSession = await FindStableSessionAsync(harness, stableSessionId);
         Assert.NotNull(activeSession);
 
-        var persisted = await harness.MemoryStore.GetSessionAsync(activeSession!.Id, CancellationToken.None);
+        var persisted = await harness.MemoryStore.GetSessionAsync(activeSession!.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(persisted);
         Assert.Collection(
             persisted!.History,
@@ -4618,7 +4618,7 @@ public sealed class GatewayAdminEndpointTests
             scopedSessionId,
             "openai-responses",
             "another-requester",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         conflictingSession.StableSessionBinding = new StableSessionBindingInfo
         {
             ExternalSessionId = stableSessionId,
@@ -4864,7 +4864,7 @@ public sealed class GatewayAdminEndpointTests
         Assert.False(decision.Approved);
 
         var governance = await CreateGovernanceLedgerService(harness)
-            .ListAsync(new GovernanceLedgerListQuery { SessionId = approval.SessionId, Decision = GovernanceDecisions.Expired }, CancellationToken.None);
+            .ListAsync(new GovernanceLedgerListQuery { SessionId = approval.SessionId, Decision = GovernanceDecisions.Expired }, TestContext.Current.CancellationToken);
         var expired = Assert.Single(governance);
         Assert.Equal(GovernanceDecisionStatuses.Expired, expired.Status);
         Assert.Equal(approval.ApprovalId, expired.ApprovalId);
@@ -5192,9 +5192,9 @@ public sealed class GatewayAdminEndpointTests
         using var grantPayload = await ReadJsonAsync(listGrantResponse);
         Assert.Equal(1, grantPayload.RootElement.GetProperty("items").GetArrayLength());
 
-        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-timeline", "telegram", "user1", CancellationToken.None);
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-timeline", "telegram", "user1", TestContext.Current.CancellationToken);
         session.History.Add(new ChatTurn { Role = "user", Content = "hello" });
-        await harness.Runtime.SessionManager.PersistAsync(session, CancellationToken.None);
+        await harness.Runtime.SessionManager.PersistAsync(session, TestContext.Current.CancellationToken);
         harness.Runtime.Operations.RuntimeEvents.Append(new RuntimeEventEntry
         {
             Id = "evt_timeline",
@@ -5340,7 +5340,7 @@ public sealed class GatewayAdminEndpointTests
             LastActiveAt = t,
             State = SessionState.Active,
             History = []
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await harness.MemoryStore.SaveSessionAsync(new Session
         {
             Id = "sess-mid",
@@ -5350,7 +5350,7 @@ public sealed class GatewayAdminEndpointTests
             LastActiveAt = t.AddHours(1),
             State = SessionState.Active,
             History = []
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await harness.MemoryStore.SaveSessionAsync(new Session
         {
             Id = "sess-new",
@@ -5360,7 +5360,7 @@ public sealed class GatewayAdminEndpointTests
             LastActiveAt = t.AddHours(2),
             State = SessionState.Active,
             History = []
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         harness.Runtime.Operations.SessionMetadata.Set("sess-old", new SessionMetadataUpdateRequest { Starred = true });
 
@@ -5390,7 +5390,7 @@ public sealed class GatewayAdminEndpointTests
                 LastActiveAt = t.AddHours(i),
                 State = SessionState.Active,
                 History = []
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
         }
 
         harness.Runtime.Operations.SessionMetadata.Set("sess-tag-0", new SessionMetadataUpdateRequest { Tags = ["vip"] });
@@ -5410,9 +5410,9 @@ public sealed class GatewayAdminEndpointTests
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
 
-        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-integration", "api", "user1", CancellationToken.None);
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-integration", "api", "user1", TestContext.Current.CancellationToken);
         session.History.Add(new ChatTurn { Role = "user", Content = "hello" });
-        await harness.Runtime.SessionManager.PersistAsync(session, CancellationToken.None);
+        await harness.Runtime.SessionManager.PersistAsync(session, TestContext.Current.CancellationToken);
         harness.Runtime.Operations.RuntimeEvents.Append(new RuntimeEventEntry
         {
             Id = "evt_integration",
@@ -5471,7 +5471,7 @@ public sealed class GatewayAdminEndpointTests
         using var enqueuePayload = await ReadJsonAsync(enqueueResponse);
         Assert.True(enqueuePayload.RootElement.GetProperty("accepted").GetBoolean());
 
-        var queued = await harness.Runtime.Pipeline.InboundReader.ReadAsync(CancellationToken.None);
+        var queued = await harness.Runtime.Pipeline.InboundReader.ReadAsync(TestContext.Current.CancellationToken);
         Assert.Equal("api", queued.ChannelId);
         Assert.Equal("client-1", queued.SenderId);
         Assert.Equal("queued message", queued.Text);
@@ -5482,7 +5482,7 @@ public sealed class GatewayAdminEndpointTests
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
 
-        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-promote", "api", "user-promote", CancellationToken.None);
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-promote", "api", "user-promote", TestContext.Current.CancellationToken);
         session.History.Add(new ChatTurn
         {
             Role = "user",
@@ -5529,7 +5529,7 @@ public sealed class GatewayAdminEndpointTests
             ],
             FinalResponsePreview = "Reviewed and summarized."
         });
-        await harness.Runtime.SessionManager.PersistAsync(session, CancellationToken.None);
+        await harness.Runtime.SessionManager.PersistAsync(session, TestContext.Current.CancellationToken);
         harness.Runtime.ProviderUsage.RecordTurn(
             session.Id,
             session.ChannelId,
@@ -5591,9 +5591,9 @@ public sealed class GatewayAdminEndpointTests
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
         var store = new FileFeatureStore(harness.StoragePath);
 
-        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-dashboard", "api", "user-dashboard", CancellationToken.None);
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-dashboard", "api", "user-dashboard", TestContext.Current.CancellationToken);
         session.History.Add(new ChatTurn { Role = "user", Content = "inspect me" });
-        await harness.Runtime.SessionManager.PersistAsync(session, CancellationToken.None);
+        await harness.Runtime.SessionManager.PersistAsync(session, TestContext.Current.CancellationToken);
 
         var approval = harness.Runtime.ToolApprovalService.Create("sess-dashboard", "api", "user-dashboard", "shell", "{\"cmd\":\"pwd\"}", TimeSpan.FromMinutes(5));
         harness.Runtime.ApprovalAuditStore.RecordCreated(approval);
@@ -5627,7 +5627,7 @@ public sealed class GatewayAdminEndpointTests
             Prompt = "Fail",
             DeliveryChannelId = "cron",
             RetryPolicy = new AutomationRetryPolicy()
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await store.SaveRunStateAsync(new AutomationRunState
         {
             AutomationId = "auto-dashboard-legacy",
@@ -5635,7 +5635,7 @@ public sealed class GatewayAdminEndpointTests
             LastRunAtUtc = DateTimeOffset.UtcNow.AddMinutes(-10),
             LastRunId = "legacy-run-1",
             FailureStreak = 1
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var dashboardRequest = new HttpRequestMessage(HttpMethod.Get, "/api/integration/dashboard");
         dashboardRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -5809,7 +5809,7 @@ public sealed class GatewayAdminEndpointTests
             Prompt = "Summarize alerts.",
             DeliveryChannelId = "cron",
             RetryPolicy = new AutomationRetryPolicy()
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         await store.SaveRunStateAsync(new AutomationRunState
         {
@@ -5824,7 +5824,7 @@ public sealed class GatewayAdminEndpointTests
             FailureStreak = 3,
             QuarantinedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-4),
             QuarantineReason = "Repeated failures."
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await store.SaveRunRecordAsync(new AutomationRunRecord
         {
             RunId = "run-1",
@@ -5835,7 +5835,7 @@ public sealed class GatewayAdminEndpointTests
             VerificationSummary = "Expected file does not exist.",
             StartedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
             CompletedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-4)
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var runsRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/automations/auto_run_history/runs");
         runsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -5858,7 +5858,7 @@ public sealed class GatewayAdminEndpointTests
         using var replayPayload = await ReadJsonAsync(replayResponse);
         Assert.True(replayPayload.RootElement.GetProperty("success").GetBoolean());
 
-        var replayed = await harness.Runtime.Pipeline.InboundReader.ReadAsync(CancellationToken.None);
+        var replayed = await harness.Runtime.Pipeline.InboundReader.ReadAsync(TestContext.Current.CancellationToken);
         Assert.Equal("auto_run_history", replayed.CronJobName);
         Assert.Equal(AutomationRunTriggerSources.Replay, replayed.AutomationTriggerSource);
         Assert.False(string.IsNullOrWhiteSpace(replayed.AutomationRunId));
@@ -5868,7 +5868,7 @@ public sealed class GatewayAdminEndpointTests
         var clearResponse = await harness.Client.SendAsync(clearRequest);
         Assert.Equal(HttpStatusCode.OK, clearResponse.StatusCode);
 
-        var clearedState = await store.GetRunStateAsync("auto_run_history", CancellationToken.None);
+        var clearedState = await store.GetRunStateAsync("auto_run_history", TestContext.Current.CancellationToken);
         Assert.NotNull(clearedState);
         Assert.Null(clearedState!.QuarantinedAtUtc);
         Assert.Equal(0, clearedState.FailureStreak);
@@ -5889,7 +5889,7 @@ public sealed class GatewayAdminEndpointTests
             Prompt = "Summarize changes.",
             DeliveryChannelId = "cron",
             RetryPolicy = new AutomationRetryPolicy()
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         await store.SaveRunStateAsync(new AutomationRunState
         {
@@ -5904,7 +5904,7 @@ public sealed class GatewayAdminEndpointTests
             FailureStreak = 3,
             QuarantinedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
             QuarantineReason = "Repeated failures."
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await store.SaveRunRecordAsync(new AutomationRunRecord
         {
             RunId = "run-int-1",
@@ -5915,7 +5915,7 @@ public sealed class GatewayAdminEndpointTests
             VerificationSummary = "Expected endpoint returned 500.",
             StartedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-6),
             CompletedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5)
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var runsRequest = new HttpRequestMessage(HttpMethod.Get, "/api/integration/automations/auto_integration_runs/runs");
         runsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -5938,7 +5938,7 @@ public sealed class GatewayAdminEndpointTests
         using var replayPayload = await ReadJsonAsync(replayResponse);
         Assert.True(replayPayload.RootElement.GetProperty("success").GetBoolean());
 
-        var replayed = await harness.Runtime.Pipeline.InboundReader.ReadAsync(CancellationToken.None);
+        var replayed = await harness.Runtime.Pipeline.InboundReader.ReadAsync(TestContext.Current.CancellationToken);
         Assert.Equal("auto_integration_runs", replayed.CronJobName);
         Assert.Equal(AutomationRunTriggerSources.Replay, replayed.AutomationTriggerSource);
         Assert.False(string.IsNullOrWhiteSpace(replayed.AutomationRunId));
@@ -5948,7 +5948,7 @@ public sealed class GatewayAdminEndpointTests
         var clearResponse = await harness.Client.SendAsync(clearRequest);
         Assert.Equal(HttpStatusCode.OK, clearResponse.StatusCode);
 
-        var clearedState = await store.GetRunStateAsync("auto_integration_runs", CancellationToken.None);
+        var clearedState = await store.GetRunStateAsync("auto_integration_runs", TestContext.Current.CancellationToken);
         Assert.NotNull(clearedState);
         Assert.Null(clearedState!.QuarantinedAtUtc);
         Assert.Equal(0, clearedState.FailureStreak);
@@ -6072,32 +6072,32 @@ public sealed class GatewayAdminEndpointTests
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
 
-        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-client-mcp", "api", "sdk-user", CancellationToken.None);
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-client-mcp", "api", "sdk-user", TestContext.Current.CancellationToken);
         session.History.Add(new ChatTurn { Role = "user", Content = "hello from sdk" });
-        await harness.Runtime.SessionManager.PersistAsync(session, CancellationToken.None);
+        await harness.Runtime.SessionManager.PersistAsync(session, TestContext.Current.CancellationToken);
 
         using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
 
-        var initialize = await client.InitializeMcpAsync(new McpInitializeRequest { ProtocolVersion = "2025-03-26" }, CancellationToken.None);
+        var initialize = await client.InitializeMcpAsync(new McpInitializeRequest { ProtocolVersion = "2025-03-26" }, TestContext.Current.CancellationToken);
         Assert.NotNull(initialize.ServerInfo);
 
-        var tools = await client.ListMcpToolsAsync(CancellationToken.None);
+        var tools = await client.ListMcpToolsAsync(TestContext.Current.CancellationToken);
         Assert.Contains(tools.Tools, item => item.Name == "openclaw.get_dashboard");
 
-        var templates = await client.ListMcpResourceTemplatesAsync(CancellationToken.None);
+        var templates = await client.ListMcpResourceTemplatesAsync(TestContext.Current.CancellationToken);
         Assert.Contains(templates.ResourceTemplates, item => item.UriTemplate == "openclaw://sessions/{sessionId}");
 
         var prompt = await client.GetMcpPromptAsync(
             "openclaw_session_summary",
             new Dictionary<string, string> { ["sessionId"] = session.Id },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         Assert.Contains(session.Id, prompt.Messages[0].Content.Text);
 
-        var sessionResource = await client.ReadMcpResourceAsync($"openclaw://sessions/{Uri.EscapeDataString(session.Id)}", CancellationToken.None);
+        var sessionResource = await client.ReadMcpResourceAsync($"openclaw://sessions/{Uri.EscapeDataString(session.Id)}", TestContext.Current.CancellationToken);
         Assert.Contains(session.Id, sessionResource.Contents[0].Text);
 
         using var emptyArguments = JsonDocument.Parse("{}");
-        var toolResult = await client.CallMcpToolAsync("openclaw.get_status", emptyArguments.RootElement.Clone(), CancellationToken.None);
+        var toolResult = await client.CallMcpToolAsync("openclaw.get_status", emptyArguments.RootElement.Clone(), TestContext.Current.CancellationToken);
         Assert.False(toolResult.IsError);
         Assert.Contains("activeSessions", toolResult.Content[0].Text);
     }
@@ -6107,13 +6107,13 @@ public sealed class GatewayAdminEndpointTests
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
         var proposalStore = new FileFeatureStore(harness.StoragePath);
-        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-client-promotion", "api", "sdk-user", CancellationToken.None);
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-client-promotion", "api", "sdk-user", TestContext.Current.CancellationToken);
         session.History.Add(new ChatTurn
         {
             Role = "user",
             Content = "Summarize SDK-visible state."
         });
-        await harness.Runtime.SessionManager.PersistAsync(session, CancellationToken.None);
+        await harness.Runtime.SessionManager.PersistAsync(session, TestContext.Current.CancellationToken);
         await proposalStore.SaveProposalAsync(new LearningProposal
         {
             Id = "lp_client_detail",
@@ -6132,11 +6132,11 @@ public sealed class GatewayAdminEndpointTests
             },
             SourceSessionIds = ["sess-client-proposal"],
             Confidence = 0.61f
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
 
-        var templates = await client.GetAdminAutomationTemplatesAsync(CancellationToken.None);
+        var templates = await client.GetAdminAutomationTemplatesAsync(TestContext.Current.CancellationToken);
         Assert.Contains(templates.Items, item => item.Key == "daily_summary");
 
         var saved = await client.SaveAutomationAsync(
@@ -6153,10 +6153,10 @@ public sealed class GatewayAdminEndpointTests
                 Source = "managed",
                 TemplateKey = "daily_summary"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         Assert.Equal("auto_client_surface", saved.Automation!.Id);
 
-        var detail = await client.GetLearningProposalDetailAsync("lp_client_detail", CancellationToken.None);
+        var detail = await client.GetLearningProposalDetailAsync("lp_client_detail", TestContext.Current.CancellationToken);
         Assert.Equal("lp_client_detail", detail.Proposal!.Id);
 
         var promoted = await client.PromoteSessionAsync(
@@ -6166,12 +6166,12 @@ public sealed class GatewayAdminEndpointTests
                 Target = SessionPromotionTarget.Automation,
                 Name = "SDK promoted automation"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         Assert.True(promoted.Success);
         Assert.Equal("automation", promoted.Target);
         Assert.NotNull(promoted.Automation);
 
-        var deleted = await client.DeleteAdminAutomationAsync("auto_client_surface", CancellationToken.None);
+        var deleted = await client.DeleteAdminAutomationAsync("auto_client_surface", TestContext.Current.CancellationToken);
         Assert.True(deleted.Success);
     }
 
@@ -6283,8 +6283,8 @@ public sealed class GatewayAdminEndpointTests
                 services.AddSingleton<ICodingAgentBackend, FakeCodingAgentBackend>();
             });
 
-        var owner = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-backend-owner", "api", "owner", CancellationToken.None);
-        await harness.Runtime.SessionManager.PersistAsync(owner, CancellationToken.None);
+        var owner = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("sess-backend-owner", "api", "owner", TestContext.Current.CancellationToken);
+        await harness.Runtime.SessionManager.PersistAsync(owner, TestContext.Current.CancellationToken);
 
         using var startRequest = new HttpRequestMessage(HttpMethod.Post, "/api/integration/backends/fake-backend/sessions")
         {
@@ -6369,7 +6369,7 @@ public sealed class GatewayAdminEndpointTests
 
         using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
 
-        var initial = await client.GetWhatsAppSetupAsync(CancellationToken.None);
+        var initial = await client.GetWhatsAppSetupAsync(TestContext.Current.CancellationToken);
         Assert.Equal("official", initial.ActiveBackend);
         Assert.True(initial.Enabled);
         Assert.Equal("phone-1", initial.PhoneNumberId);
@@ -6394,14 +6394,14 @@ public sealed class GatewayAdminEndpointTests
             BridgeToken = "bridge-token",
             BridgeTokenRef = "env:WA_BRIDGE_TOKEN",
             BridgeSuppressSendExceptions = true
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal("bridge", updated.ConfiguredType);
         Assert.Equal("http://127.0.0.1:3001", updated.BridgeUrl);
         Assert.True(updated.BridgeSuppressSendExceptions);
         Assert.True(updated.RestartRequired);
 
-        var reloaded = await client.GetWhatsAppSetupAsync(CancellationToken.None);
+        var reloaded = await client.GetWhatsAppSetupAsync(TestContext.Current.CancellationToken);
         Assert.Equal("bridge", reloaded.ConfiguredType);
         Assert.Equal("open", reloaded.DmPolicy);
         Assert.Equal("/wa/hook", reloaded.WebhookPath);
@@ -6504,7 +6504,7 @@ public sealed class GatewayAdminEndpointTests
                   ]
                 }
                 """
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal("first_party_worker", updated.ConfiguredType);
         Assert.NotNull(updated.FirstPartyWorker);
@@ -6513,7 +6513,7 @@ public sealed class GatewayAdminEndpointTests
         Assert.False(string.IsNullOrWhiteSpace(updated.FirstPartyWorkerConfigSchemaJson));
         Assert.Contains("\"whatsmeow\"", updated.FirstPartyWorkerConfigSchemaJson, StringComparison.Ordinal);
 
-        var reloaded = await client.GetWhatsAppSetupAsync(CancellationToken.None);
+        var reloaded = await client.GetWhatsAppSetupAsync(TestContext.Current.CancellationToken);
         Assert.Equal("first_party_worker", reloaded.ConfiguredType);
         Assert.Equal("simulated", reloaded.FirstPartyWorker?.Driver);
     }
@@ -6551,7 +6551,7 @@ public sealed class GatewayAdminEndpointTests
             CloudApiTokenRef = "env:WA_TOKEN",
             BridgeToken = null,
             BridgeTokenRef = "env:WA_BRIDGE"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.True(preserved.WebhookVerifyTokenConfigured);
         Assert.True(preserved.WebhookAppSecretConfigured);
@@ -6572,7 +6572,7 @@ public sealed class GatewayAdminEndpointTests
             CloudApiTokenRef = "",
             BridgeToken = null,
             BridgeTokenRef = ""
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.False(cleared.WebhookVerifyTokenConfigured);
         Assert.False(cleared.WebhookAppSecretConfigured);
@@ -7303,7 +7303,7 @@ public sealed class GatewayAdminEndpointTests
 
     private static async Task<Session?> FindStableSessionAsync(GatewayTestHarness harness, string externalStableSessionId)
     {
-        var sessions = await harness.Runtime.SessionManager.ListActiveAsync(CancellationToken.None);
+        var sessions = await harness.Runtime.SessionManager.ListActiveAsync(TestContext.Current.CancellationToken);
         return sessions.FirstOrDefault(session =>
             string.Equals(session.StableSessionBinding?.ExternalSessionId, externalStableSessionId, StringComparison.Ordinal));
     }
@@ -7319,7 +7319,7 @@ public sealed class GatewayAdminEndpointTests
         var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
         {
-            var session = await store.GetSessionAsync(sessionId, CancellationToken.None);
+            var session = await store.GetSessionAsync(sessionId, TestContext.Current.CancellationToken);
             if (session is not null)
                 return session;
 

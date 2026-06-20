@@ -19,14 +19,14 @@ public sealed class CanvasCommandBrokerTests
         var ws = new TestWebSocket();
         Assert.True(channel.TryAddConnectionForTest("client", ws, IPAddress.Loopback, useJsonEnvelope: true));
         var broker = CreateBroker(channel);
-        await broker.HandleClientEnvelopeAsync("client", Ready("canvas.present"), CancellationToken.None);
+        await broker.HandleClientEnvelopeAsync("client", Ready("canvas.present"), TestContext.Current.CancellationToken);
 
         var task = broker.SendCommandAsync(
             Session("sess", "client"),
             new WsServerEnvelope { Type = "canvas_present" },
             "canvas_ack",
             "canvas.present",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         var sent = await WaitForSentEnvelopeAsync(ws);
         Assert.Equal("canvas_present", sent.Type);
@@ -38,7 +38,7 @@ public sealed class CanvasCommandBrokerTests
             RequestId = sent.RequestId,
             SessionId = "sess",
             Success = true
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         var result = await task;
 
@@ -54,14 +54,14 @@ public sealed class CanvasCommandBrokerTests
         var ws = new TestWebSocket();
         Assert.True(channel.TryAddConnectionForTest("client", ws, IPAddress.Loopback, useJsonEnvelope: true));
         var broker = CreateBroker(channel, config);
-        await broker.HandleClientEnvelopeAsync("client", Ready("canvas.present"), CancellationToken.None);
+        await broker.HandleClientEnvelopeAsync("client", Ready("canvas.present"), TestContext.Current.CancellationToken);
 
         var result = await broker.SendCommandAsync(
             Session("sess", "client"),
             new WsServerEnvelope { Type = "canvas_present" },
             "canvas_ack",
             "canvas.present",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Contains("timed out", result.Error, StringComparison.OrdinalIgnoreCase);
@@ -77,7 +77,7 @@ public sealed class CanvasCommandBrokerTests
             new WsServerEnvelope { Type = "canvas_present" },
             "canvas_ack",
             "canvas.present",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Contains("not connected", result.Error, StringComparison.OrdinalIgnoreCase);
@@ -95,7 +95,7 @@ public sealed class CanvasCommandBrokerTests
             new WsServerEnvelope { Type = "canvas_present" },
             "canvas_ack",
             "canvas.present",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Contains("not advertised", result.Error, StringComparison.OrdinalIgnoreCase);
@@ -108,14 +108,14 @@ public sealed class CanvasCommandBrokerTests
         var ws = new TestWebSocket();
         Assert.True(channel.TryAddConnectionForTest("client", ws, IPAddress.Loopback, useJsonEnvelope: true));
         var broker = CreateBroker(channel);
-        await broker.HandleClientEnvelopeAsync("client", Ready("canvas.present"), CancellationToken.None);
+        await broker.HandleClientEnvelopeAsync("client", Ready("canvas.present"), TestContext.Current.CancellationToken);
 
         var task = broker.SendCommandAsync(
             Session("sess", "client"),
             new WsServerEnvelope { Type = "canvas_present" },
             "canvas_ack",
             "canvas.present",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         var sent = await WaitForSentEnvelopeAsync(ws);
         await broker.HandleClientEnvelopeAsync("client", new WsClientEnvelope
@@ -124,7 +124,7 @@ public sealed class CanvasCommandBrokerTests
             RequestId = sent.RequestId,
             SessionId = "other",
             Success = true
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         var result = await task;
 
@@ -146,14 +146,14 @@ public sealed class CanvasCommandBrokerTests
         var ws = new TestWebSocket();
         Assert.True(channel.TryAddConnectionForTest("client", ws, IPAddress.Loopback, useJsonEnvelope: true));
         var broker = CreateBroker(channel, config);
-        await broker.HandleClientEnvelopeAsync("client", Ready("snapshot.state"), CancellationToken.None);
+        await broker.HandleClientEnvelopeAsync("client", Ready("snapshot.state"), TestContext.Current.CancellationToken);
 
         var task = broker.SendCommandAsync(
             Session("sess", "client"),
             new WsServerEnvelope { Type = "canvas_snapshot" },
             "canvas_snapshot_result",
             "snapshot.state",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         var sent = await WaitForSentEnvelopeAsync(ws);
         await broker.HandleClientEnvelopeAsync("client", new WsClientEnvelope
@@ -163,7 +163,7 @@ public sealed class CanvasCommandBrokerTests
             SessionId = "sess",
             Success = true,
             SnapshotJson = """{"text":"oversized"}"""
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         var result = await task;
 
@@ -185,7 +185,7 @@ public sealed class CanvasCommandBrokerTests
             " urn:a2ui:catalog:agenui_catalog ",
             "URN:A2UI:CATALOG:AGenUI_CATALOG",
             "urn:a2ui:catalog:openclaw_v0_8"
-        ]), CancellationToken.None);
+        ]), TestContext.Current.CancellationToken);
 
         Assert.Equal(["canvas.present"], broker.GetClientCapabilities("client"));
         Assert.Equal([
@@ -197,7 +197,7 @@ public sealed class CanvasCommandBrokerTests
         {
             Type = "canvas_ack",
             SupportedCatalogIds = ["urn:a2ui:catalog:openclaw_v0_8"]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal([A2UiCatalogRegistry.OpenClawV08CatalogId], broker.GetClientSupportedCatalogIds("client"));
     }
@@ -208,7 +208,7 @@ public sealed class CanvasCommandBrokerTests
         var broker = CreateBroker(new WebSocketChannel(new WebSocketConfig()));
         await broker.HandleClientEnvelopeAsync("client", ReadyWithCatalogs(
             ["canvas.a2ui"],
-            [A2UiCatalogRegistry.OpenClawV08CatalogId]), CancellationToken.None);
+            [A2UiCatalogRegistry.OpenClawV08CatalogId]), TestContext.Current.CancellationToken);
 
         Assert.True(broker.TryChooseCatalog("client", null, out var chosen, out var error));
         Assert.Equal(A2UiCatalogRegistry.OpenClawV08CatalogId, chosen?.CatalogId);
@@ -225,7 +225,7 @@ public sealed class CanvasCommandBrokerTests
         var broker = CreateBroker(new WebSocketChannel(new WebSocketConfig()));
         await broker.HandleClientEnvelopeAsync("client", ReadyWithCatalogs(
             ["canvas.a2ui"],
-            [A2UiCatalogRegistry.OpenClawV08CatalogId, A2UiCatalogRegistry.AGenUiCatalogId]), CancellationToken.None);
+            [A2UiCatalogRegistry.OpenClawV08CatalogId, A2UiCatalogRegistry.AGenUiCatalogId]), TestContext.Current.CancellationToken);
 
         Assert.True(broker.TryChooseCatalog("client", null, out var chosen, out var error));
         Assert.Equal(A2UiCatalogRegistry.AGenUiCatalogId, chosen?.CatalogId);
@@ -239,14 +239,14 @@ public sealed class CanvasCommandBrokerTests
         var ws = new TestWebSocket();
         Assert.True(channel.TryAddConnectionForTest("client", ws, IPAddress.Loopback, useJsonEnvelope: true));
         var broker = CreateBroker(channel);
-        await broker.HandleClientEnvelopeAsync("client", Ready("a2ui.v0_8"), CancellationToken.None);
+        await broker.HandleClientEnvelopeAsync("client", Ready("a2ui.v0_8"), TestContext.Current.CancellationToken);
 
         var task = broker.SendCommandAsync(
             Session("sess", "client"),
             new WsServerEnvelope { Type = "a2ui_push" },
             "canvas_ack",
             "a2ui.v0_8",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         var sent = await WaitForSentEnvelopeAsync(ws);
         await AckAsync(broker, "client", sent, "sess");
@@ -266,7 +266,7 @@ public sealed class CanvasCommandBrokerTests
         var broker = CreateBroker(channel);
         await broker.HandleClientEnvelopeAsync("client", ReadyWithCatalogs(
             ["a2ui.v0_8"],
-            [A2UiCatalogRegistry.OpenClawV08CatalogId]), CancellationToken.None);
+            [A2UiCatalogRegistry.OpenClawV08CatalogId]), TestContext.Current.CancellationToken);
 
         var task = broker.SendCommandAsync(
             Session("sess", "client"),
@@ -277,7 +277,7 @@ public sealed class CanvasCommandBrokerTests
             },
             "canvas_ack",
             "a2ui.v0_8",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         var sent = await WaitForSentEnvelopeAsync(ws);
         await AckAsync(broker, "client", sent, "sess");
@@ -297,7 +297,7 @@ public sealed class CanvasCommandBrokerTests
         var broker = CreateBroker(channel);
         await broker.HandleClientEnvelopeAsync("client", ReadyWithCatalogs(
             ["canvas.a2ui"],
-            [A2UiCatalogRegistry.OpenClawV08CatalogId]), CancellationToken.None);
+            [A2UiCatalogRegistry.OpenClawV08CatalogId]), TestContext.Current.CancellationToken);
 
         var task = broker.SendCommandAsync(
             Session("sess", "client"),
@@ -309,7 +309,7 @@ public sealed class CanvasCommandBrokerTests
             },
             "canvas_ack",
             "canvas.a2ui",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         var sent = await WaitForSentEnvelopeAsync(ws);
         await AckAsync(broker, "client", sent, "sess");
@@ -329,7 +329,7 @@ public sealed class CanvasCommandBrokerTests
         var broker = CreateBroker(channel);
         await broker.HandleClientEnvelopeAsync("client", ReadyWithCatalogs(
             ["canvas.a2ui"],
-            [A2UiCatalogRegistry.OpenClawV08CatalogId, A2UiCatalogRegistry.AGenUiCatalogId]), CancellationToken.None);
+            [A2UiCatalogRegistry.OpenClawV08CatalogId, A2UiCatalogRegistry.AGenUiCatalogId]), TestContext.Current.CancellationToken);
 
         var task = broker.SendCommandAsync(
             Session("sess", "client"),
@@ -341,7 +341,7 @@ public sealed class CanvasCommandBrokerTests
             },
             "canvas_ack",
             "canvas.a2ui",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         var sent = await WaitForSentEnvelopeAsync(ws);
         await AckAsync(broker, "client", sent, "sess");
@@ -361,7 +361,7 @@ public sealed class CanvasCommandBrokerTests
         var broker = CreateBroker(channel);
         await broker.HandleClientEnvelopeAsync("client", ReadyWithCatalogs(
             ["canvas.a2ui"],
-            [A2UiCatalogRegistry.OpenClawV08CatalogId, A2UiCatalogRegistry.AGenUiCatalogId]), CancellationToken.None);
+            [A2UiCatalogRegistry.OpenClawV08CatalogId, A2UiCatalogRegistry.AGenUiCatalogId]), TestContext.Current.CancellationToken);
         await LockSurfaceCatalogThroughCreateAsync(broker, ws, "client", "sess", "surface-1", A2UiCatalogRegistry.OpenClawV08CatalogId);
 
         var result = await broker.SendCommandAsync(
@@ -374,7 +374,7 @@ public sealed class CanvasCommandBrokerTests
             },
             "canvas_ack",
             "canvas.a2ui",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Contains("catalog", result.Error, StringComparison.OrdinalIgnoreCase);
@@ -390,7 +390,7 @@ public sealed class CanvasCommandBrokerTests
         var broker = CreateBroker(channel);
         await broker.HandleClientEnvelopeAsync("client", ReadyWithCatalogs(
             ["canvas.a2ui"],
-            [A2UiCatalogRegistry.OpenClawV08CatalogId, A2UiCatalogRegistry.AGenUiCatalogId]), CancellationToken.None);
+            [A2UiCatalogRegistry.OpenClawV08CatalogId, A2UiCatalogRegistry.AGenUiCatalogId]), TestContext.Current.CancellationToken);
         await LockSurfaceCatalogThroughCreateAsync(broker, ws, "client", "sess", "Main", A2UiCatalogRegistry.OpenClawV08CatalogId);
 
         var task = broker.SendCommandAsync(
@@ -403,7 +403,7 @@ public sealed class CanvasCommandBrokerTests
             },
             "canvas_ack",
             "canvas.a2ui",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         if (await Task.WhenAny(task, Task.Delay(200)) != task)
         {
@@ -426,7 +426,7 @@ public sealed class CanvasCommandBrokerTests
         var broker = CreateBroker(channel);
         await broker.HandleClientEnvelopeAsync("client", ReadyWithCatalogs(
             ["canvas.a2ui"],
-            [A2UiCatalogRegistry.OpenClawV08CatalogId, A2UiCatalogRegistry.AGenUiCatalogId]), CancellationToken.None);
+            [A2UiCatalogRegistry.OpenClawV08CatalogId, A2UiCatalogRegistry.AGenUiCatalogId]), TestContext.Current.CancellationToken);
         await LockSurfaceCatalogThroughCreateAsync(broker, ws, "client", "sess", "surface-1", A2UiCatalogRegistry.OpenClawV08CatalogId);
 
         var task = broker.SendCommandAsync(
@@ -439,7 +439,7 @@ public sealed class CanvasCommandBrokerTests
             },
             "canvas_ack",
             "canvas.a2ui",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         if (await Task.WhenAny(task, Task.Delay(200)) != task)
         {
@@ -462,7 +462,7 @@ public sealed class CanvasCommandBrokerTests
         var broker = CreateBroker(channel);
         await broker.HandleClientEnvelopeAsync("client", ReadyWithCatalogs(
             ["canvas.a2ui"],
-            [A2UiCatalogRegistry.OpenClawV08CatalogId]), CancellationToken.None);
+            [A2UiCatalogRegistry.OpenClawV08CatalogId]), TestContext.Current.CancellationToken);
         await LockSurfaceCatalogThroughCreateAsync(broker, ws, "client", "sess", "surface-1", A2UiCatalogRegistry.OpenClawV08CatalogId);
 
         var task = broker.SendCommandAsync(
@@ -474,7 +474,7 @@ public sealed class CanvasCommandBrokerTests
             },
             "canvas_ack",
             "canvas.a2ui",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         var sent = await WaitForSentEnvelopeAsync(ws, skip: 1);
         await AckAsync(broker, "client", sent, "sess");
@@ -493,7 +493,7 @@ public sealed class CanvasCommandBrokerTests
         var broker = CreateBroker(channel);
         await broker.HandleClientEnvelopeAsync("client", ReadyWithCatalogs(
             ["canvas.a2ui"],
-            [A2UiCatalogRegistry.OpenClawV08CatalogId, A2UiCatalogRegistry.AGenUiCatalogId]), CancellationToken.None);
+            [A2UiCatalogRegistry.OpenClawV08CatalogId, A2UiCatalogRegistry.AGenUiCatalogId]), TestContext.Current.CancellationToken);
         await LockSurfaceCatalogThroughCreateAsync(broker, ws, "client", "sess", "surface-1", A2UiCatalogRegistry.OpenClawV08CatalogId);
 
         var deleteTask = broker.SendCommandAsync(
@@ -501,7 +501,7 @@ public sealed class CanvasCommandBrokerTests
             new WsServerEnvelope { Type = "a2ui_delete_surface", SurfaceId = "surface-1" },
             "canvas_ack",
             "canvas.a2ui",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var deleteSent = await WaitForSentEnvelopeAsync(ws, skip: 1);
         await AckAsync(broker, "client", deleteSent, "sess");
         Assert.True((await deleteTask).Success);
@@ -517,7 +517,7 @@ public sealed class CanvasCommandBrokerTests
             },
             "canvas_ack",
             "canvas.a2ui",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var createSent = await WaitForSentEnvelopeAsync(ws, skip: 2);
         await AckAsync(broker, "client", createSent, "sess");
         Assert.True((await createTask).Success);
@@ -566,7 +566,7 @@ public sealed class CanvasCommandBrokerTests
             },
             "canvas_ack",
             "canvas.a2ui",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         var createSent = await WaitForSentEnvelopeAsync(ws);
         await AckAsync(broker, clientId, createSent, sessionId);
         Assert.True((await createTask).Success);
@@ -579,7 +579,7 @@ public sealed class CanvasCommandBrokerTests
             RequestId = sent.RequestId,
             SessionId = sessionId,
             Success = true
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
     private static Session Session(string id, string senderId)
         => new()

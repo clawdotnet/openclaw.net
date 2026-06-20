@@ -11,7 +11,7 @@ public sealed class MetaSkillCreatorToolsTests
     {
         var tool = new EmitTextTool();
 
-        var result = await tool.ExecuteAsync("{\"text\":\"hello\"}", CancellationToken.None);
+        var result = await tool.ExecuteAsync("{\"text\":\"hello\"}", TestContext.Current.CancellationToken);
 
         Assert.Equal("hello", result);
     }
@@ -21,7 +21,7 @@ public sealed class MetaSkillCreatorToolsTests
     {
         var tool = new MetaSkillAssembleTool();
 
-        var result = await tool.ExecuteAsync("{\"pattern_id\":\"unknown\",\"slots_json\":\"{}\"}", CancellationToken.None);
+        var result = await tool.ExecuteAsync("{\"pattern_id\":\"unknown\",\"slots_json\":\"{}\"}", TestContext.Current.CancellationToken);
 
         using var document = JsonDocument.Parse(result);
         Assert.Equal("error", document.RootElement.GetProperty("status").GetString());
@@ -35,7 +35,7 @@ public sealed class MetaSkillCreatorToolsTests
 
         var result = await tool.ExecuteAsync(
             "{\"pattern_id\":\"unknown\",\"history_summary\":\"h\",\"user_intent\":\"u\"}",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         using var document = JsonDocument.Parse(result);
         Assert.Equal("error", document.RootElement.GetProperty("status").GetString());
@@ -49,7 +49,7 @@ public sealed class MetaSkillCreatorToolsTests
 
         var result = await tool.ExecuteAsync(
             "{\"pattern_id\":\"p1_sequential\",\"history_summary\":\"\",\"user_intent\":\"need report\"}",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         using var document = JsonDocument.Parse(result);
         Assert.Equal("error", document.RootElement.GetProperty("status").GetString());
@@ -69,7 +69,7 @@ public sealed class MetaSkillCreatorToolsTests
                         }
                         """;
 
-                var result = await tool.ExecuteAsync(input, CancellationToken.None);
+                var result = await tool.ExecuteAsync(input, TestContext.Current.CancellationToken);
 
                 using var document = JsonDocument.Parse(result);
                 var triggers = document.RootElement.GetProperty("triggers");
@@ -102,7 +102,7 @@ public sealed class MetaSkillCreatorToolsTests
                         slots_json = slotsJson
                 });
 
-                var result = await tool.ExecuteAsync(argsJson, CancellationToken.None);
+                var result = await tool.ExecuteAsync(argsJson, TestContext.Current.CancellationToken);
 
                 Assert.Contains("kind: meta", result, StringComparison.Ordinal);
                 Assert.Contains("composition:", result, StringComparison.Ordinal);
@@ -117,7 +117,7 @@ public sealed class MetaSkillCreatorToolsTests
 
                     var result = await tool.ExecuteAsync(
                         "{\"pattern_id\":\"p1_sequential\",\"slots_json\":\"{not-json}\"}",
-                        CancellationToken.None);
+                        TestContext.Current.CancellationToken);
 
                     using var document = JsonDocument.Parse(result);
                     Assert.Equal("error", document.RootElement.GetProperty("status").GetString());
@@ -149,7 +149,7 @@ public sealed class MetaSkillCreatorToolsTests
                         """;
 
                 var argsJson = JsonSerializer.Serialize(new { skill_md = skillMd, gates = "G1,G2" });
-                var result = await tool.ExecuteAsync(argsJson, CancellationToken.None);
+                var result = await tool.ExecuteAsync(argsJson, TestContext.Current.CancellationToken);
 
                 using var document = JsonDocument.Parse(result);
                 Assert.False(document.RootElement.GetProperty("passed").GetBoolean());
@@ -178,7 +178,7 @@ public sealed class MetaSkillCreatorToolsTests
                         """;
 
                 var argsJson = JsonSerializer.Serialize(new { skill_md = skillMd, classifier_model = "stub" });
-                var result = await tool.ExecuteAsync(argsJson, CancellationToken.None);
+                var result = await tool.ExecuteAsync(argsJson, TestContext.Current.CancellationToken);
 
                 using var document = JsonDocument.Parse(result);
                 Assert.True(document.RootElement.TryGetProperty("G3", out var g3));
@@ -194,7 +194,7 @@ public sealed class MetaSkillCreatorToolsTests
                 var tool = new MetaSkillRuntimeE2ERunTool();
                 var argsJson = JsonSerializer.Serialize(new { skill_md = "---\nname: n\nkind: meta\n---\n" });
 
-                var result = await tool.ExecuteAsync(argsJson, CancellationToken.None);
+                var result = await tool.ExecuteAsync(argsJson, TestContext.Current.CancellationToken);
 
                 using var document = JsonDocument.Parse(result);
                 Assert.Equal("unavailable", document.RootElement.GetProperty("status").GetString());
@@ -233,7 +233,7 @@ public sealed class MetaSkillCreatorToolsTests
                 }
 
                 using var ctx = MetaSkillRuntimeE2ERunTool.PushContext(new MetaSkillRuntimeE2EContext(Runner, Judge));
-                var result = await tool.ExecuteAsync(argsJson, CancellationToken.None);
+                var result = await tool.ExecuteAsync(argsJson, TestContext.Current.CancellationToken);
 
                 using var document = JsonDocument.Parse(result);
                 Assert.Equal("ok", document.RootElement.GetProperty("status").GetString());
@@ -263,7 +263,7 @@ public sealed class MetaSkillCreatorToolsTests
 
                 try
                 {
-                        var result = await tool.ExecuteAsync(argsJson, CancellationToken.None);
+                        var result = await tool.ExecuteAsync(argsJson, TestContext.Current.CancellationToken);
 
                         using var document = JsonDocument.Parse(result);
                         Assert.Equal("ok", document.RootElement.GetProperty("status").GetString());
@@ -295,7 +295,7 @@ public sealed class MetaSkillCreatorToolsTests
 
         var result = await tool.ExecuteAsync(
             "{\"skill_md\":\"---\\nname: demo\\n---\\n\",\"lint_result\":\"{}\",\"smoke_result\":\"{}\"}",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         using var document = JsonDocument.Parse(result);
         Assert.Equal("ok", document.RootElement.GetProperty("status").GetString());
@@ -307,7 +307,7 @@ public sealed class MetaSkillCreatorToolsTests
     {
         var tool = new MetaSkillPersistProposalTool();
 
-        var result = await tool.ExecuteAsync("{\"skill_md\":\"---\\nname: demo\\n---\\n\"}", CancellationToken.None);
+        var result = await tool.ExecuteAsync("{\"skill_md\":\"---\\nname: demo\\n---\\n\"}", TestContext.Current.CancellationToken);
 
         using var document = JsonDocument.Parse(result);
         Assert.Equal("error", document.RootElement.GetProperty("status").GetString());
@@ -332,7 +332,7 @@ public sealed class MetaSkillCreatorToolsTests
 
         try
         {
-            var result = await tool.ExecuteAsync(argsJson, CancellationToken.None);
+            var result = await tool.ExecuteAsync(argsJson, TestContext.Current.CancellationToken);
             using var document = JsonDocument.Parse(result);
 
             // snake_case and camelCase proposal-id fields must contain the same value
@@ -370,7 +370,7 @@ public sealed class MetaSkillCreatorToolsTests
                 """;
 
         var argsJson = JsonSerializer.Serialize(new { skill_md = skillMd });
-        var result = await tool.ExecuteAsync(argsJson, CancellationToken.None);
+        var result = await tool.ExecuteAsync(argsJson, TestContext.Current.CancellationToken);
         using var document = JsonDocument.Parse(result);
 
         // G3 fields
@@ -410,7 +410,7 @@ public sealed class MetaSkillCreatorToolsTests
                 """;
 
         var argsJson = JsonSerializer.Serialize(new { skill_md = skillMd, gates = "G1,G2" });
-        var result = await tool.ExecuteAsync(argsJson, CancellationToken.None);
+        var result = await tool.ExecuteAsync(argsJson, TestContext.Current.CancellationToken);
         using var document = JsonDocument.Parse(result);
 
         Assert.Equal("ok", document.RootElement.GetProperty("status").GetString());
@@ -452,7 +452,7 @@ public sealed class MetaSkillCreatorToolsTests
         }
 
         using var ctx = MetaSkillRuntimeE2ERunTool.PushContext(new MetaSkillRuntimeE2EContext(Runner, Judge));
-        var result = await tool.ExecuteAsync(argsJson, CancellationToken.None);
+        var result = await tool.ExecuteAsync(argsJson, TestContext.Current.CancellationToken);
         using var document = JsonDocument.Parse(result);
 
         Assert.Equal("ok", document.RootElement.GetProperty("status").GetString());
@@ -476,7 +476,7 @@ public sealed class MetaSkillCreatorToolsTests
 
         var result = await tool.ExecuteAsync(
             "{\"pattern_id\":\"p1_sequential\",\"history_summary\":\"h\",\"user_intent\":\"\"}",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         using var document = JsonDocument.Parse(result);
         Assert.Equal("error", document.RootElement.GetProperty("status").GetString());
@@ -490,7 +490,7 @@ public sealed class MetaSkillCreatorToolsTests
 
         var result = await tool.ExecuteAsync(
             "{\"pattern_id\":\"\",\"history_summary\":\"h\",\"user_intent\":\"u\"}",
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         using var document = JsonDocument.Parse(result);
         Assert.Equal("error", document.RootElement.GetProperty("status").GetString());

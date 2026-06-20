@@ -808,7 +808,7 @@ public sealed class ModelProfileSelectionTests
                 EstimatedInputTokens = 200_000,
                 EstimatedInputTokensByComponent = new InputTokenComponentEstimate()
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("frontier-tools", result.ProfileId);
         Assert.Equal("frontier", result.ModelId);
@@ -856,7 +856,7 @@ public sealed class ModelProfileSelectionTests
                 EstimatedInputTokens = 16,
                 EstimatedInputTokensByComponent = new InputTokenComponentEstimate()
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("default", result.ProfileId);
         Assert.Equal("fake-injected-provider", result.ProviderId);
@@ -880,7 +880,7 @@ public sealed class ModelProfileSelectionTests
             ProfileId = "frontier-tools",
             ScenarioIds = ["plain-chat", "json-extraction", "tool-invocation"],
             IncludeMarkdown = true
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal("frontier-tools", Assert.Single(report.Profiles).ProfileId);
         Assert.True(File.Exists(report.JsonPath));

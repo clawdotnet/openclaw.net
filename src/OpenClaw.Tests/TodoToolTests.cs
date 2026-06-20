@@ -32,11 +32,11 @@ public sealed class TodoToolTests
             }
         };
 
-        var addResult = await tool.ExecuteAsync("""{"action":"add","text":"Review deployment notes"}""", context, CancellationToken.None);
+        var addResult = await tool.ExecuteAsync("""{"action":"add","text":"Review deployment notes"}""", context, TestContext.Current.CancellationToken);
         var todoId = addResult.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
         Assert.Contains("Review deployment notes", addResult, StringComparison.Ordinal);
 
-        var completeResult = await tool.ExecuteAsync($$"""{"action":"complete","id":"{{todoId}}"}""", context, CancellationToken.None);
+        var completeResult = await tool.ExecuteAsync($$"""{"action":"complete","id":"{{todoId}}"}""", context, TestContext.Current.CancellationToken);
         Assert.Contains("[done]", completeResult, StringComparison.Ordinal);
 
         var metadata = metadataStore.Get("sess_todo");

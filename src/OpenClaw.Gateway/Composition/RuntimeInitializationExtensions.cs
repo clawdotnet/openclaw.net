@@ -27,6 +27,7 @@ using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Profiles;
 using OpenClaw.Gateway.Tools;
 using OpenClaw.Gateway.Pipeline;
+using OpenClaw.Plugins.TokenJuice;
 
 namespace OpenClaw.Gateway.Composition;
 
@@ -146,6 +147,12 @@ internal static partial class RuntimeInitializationExtensions
             pluginComposition.NativeDynamicPluginHost,
             services.SessionManager,
             services.ContractGovernance);
+
+        var interceptors = new List<IToolResultInterceptor>
+        {
+            TokenJuicePluginRegistration.CreateInterceptor()
+        };
+
         var (effectiveRequireToolApproval, effectiveApprovalRequiredTools) = ResolveApprovalMode(config);
 
         var agentLogger = loggerFactory.CreateLogger("AgentRuntime");
@@ -168,7 +175,8 @@ internal static partial class RuntimeInitializationExtensions
             combinedPluginSkillRoots,
             effectiveRequireToolApproval,
             effectiveApprovalRequiredTools,
-            services.ToolSandbox);
+            services.ToolSandbox,
+            interceptors);
         runtimeForLoadSkill = agentRuntime;
 
         if (agentRuntime is AgentRuntime concreteRuntime)

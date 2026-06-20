@@ -19,7 +19,7 @@ public sealed class ResilienceTests
         var cb = new CircuitBreaker(failureThreshold: 3, cooldown: TimeSpan.FromSeconds(10));
         Assert.Equal(CircuitState.Closed, cb.State);
 
-        var result = await cb.ExecuteAsync(_ => Task.FromResult(42), CancellationToken.None);
+        var result = await cb.ExecuteAsync(_ => Task.FromResult(42), TestContext.Current.CancellationToken);
         Assert.Equal(42, result);
         Assert.Equal(CircuitState.Closed, cb.State);
     }
@@ -31,12 +31,12 @@ public sealed class ResilienceTests
 
         // Failure 1 — stays closed
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("fail"), CancellationToken.None));
+            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("fail"), TestContext.Current.CancellationToken));
         Assert.Equal(CircuitState.Closed, cb.State);
 
         // Failure 2 — opens
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("fail"), CancellationToken.None));
+            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("fail"), TestContext.Current.CancellationToken));
         Assert.Equal(CircuitState.Open, cb.State);
     }
 
@@ -47,12 +47,12 @@ public sealed class ResilienceTests
 
         // Trip the breaker
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("fail"), CancellationToken.None));
+            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("fail"), TestContext.Current.CancellationToken));
         Assert.Equal(CircuitState.Open, cb.State);
 
         // Subsequent calls are short-circuited
         var ex = await Assert.ThrowsAsync<CircuitOpenException>(() =>
-            cb.ExecuteAsync(_ => Task.FromResult(1), CancellationToken.None));
+            cb.ExecuteAsync(_ => Task.FromResult(1), TestContext.Current.CancellationToken));
         Assert.True(ex.RetryAfter > TimeSpan.Zero);
     }
 
@@ -63,14 +63,14 @@ public sealed class ResilienceTests
 
         // Trip the breaker
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("fail"), CancellationToken.None));
+            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("fail"), TestContext.Current.CancellationToken));
         Assert.Equal(CircuitState.Open, cb.State);
 
         // Wait for cooldown
         await Task.Delay(100);
 
         // Next call should succeed (probe) and close the circuit
-        var result = await cb.ExecuteAsync(_ => Task.FromResult(99), CancellationToken.None);
+        var result = await cb.ExecuteAsync(_ => Task.FromResult(99), TestContext.Current.CancellationToken);
         Assert.Equal(99, result);
         Assert.Equal(CircuitState.Closed, cb.State);
     }
@@ -82,18 +82,18 @@ public sealed class ResilienceTests
 
         // Trip the breaker
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("fail"), CancellationToken.None));
+            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("fail"), TestContext.Current.CancellationToken));
 
         // Wait for cooldown
         await Task.Delay(100);
 
         // Probe fails → re-opens
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("still broken"), CancellationToken.None));
+            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("still broken"), TestContext.Current.CancellationToken));
         Assert.Equal(CircuitState.Open, cb.State);
 
         var ex = await Assert.ThrowsAsync<CircuitOpenException>(() =>
-            cb.ExecuteAsync(_ => Task.FromResult(1), CancellationToken.None));
+            cb.ExecuteAsync(_ => Task.FromResult(1), TestContext.Current.CancellationToken));
         Assert.True(ex.RetryAfter > TimeSpan.FromMilliseconds(50));
     }
 
@@ -104,19 +104,19 @@ public sealed class ResilienceTests
 
         // 2 failures (under threshold)
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("f1"), CancellationToken.None));
+            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("f1"), TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("f2"), CancellationToken.None));
+            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("f2"), TestContext.Current.CancellationToken));
         Assert.Equal(CircuitState.Closed, cb.State);
 
         // 1 success — resets counter
-        await cb.ExecuteAsync(_ => Task.FromResult(1), CancellationToken.None);
+        await cb.ExecuteAsync(_ => Task.FromResult(1), TestContext.Current.CancellationToken);
 
         // 2 more failures — still under threshold (counter was reset)
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("f3"), CancellationToken.None));
+            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("f3"), TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("f4"), CancellationToken.None));
+            cb.ExecuteAsync<int>(_ => throw new InvalidOperationException("f4"), TestContext.Current.CancellationToken));
         Assert.Equal(CircuitState.Closed, cb.State);
     }
 
@@ -215,7 +215,7 @@ public sealed class ResilienceTests
         for (var i = 0; i < tasks.Length; i++)
         {
             var val = i;
-            tasks[i] = cb.ExecuteAsync(_ => Task.FromResult(val), CancellationToken.None);
+            tasks[i] = cb.ExecuteAsync(_ => Task.FromResult(val), TestContext.Current.CancellationToken);
         }
 
         var results = await Task.WhenAll(tasks);

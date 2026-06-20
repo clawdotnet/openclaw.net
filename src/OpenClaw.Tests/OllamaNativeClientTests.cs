@@ -50,7 +50,7 @@ public sealed class OllamaNativeClientTests
                         returnJsonSchema: null)
                 ]
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         var request = Assert.Single(requests);
         Assert.Equal("/api/chat", request.Uri.AbsolutePath);
@@ -89,7 +89,7 @@ public sealed class OllamaNativeClientTests
             httpClient);
 
         var updates = new List<ChatResponseUpdate>();
-        await foreach (var update in client.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "hello")], cancellationToken: CancellationToken.None))
+        await foreach (var update in client.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "hello")], cancellationToken: TestContext.Current.CancellationToken))
             updates.Add(update);
 
         Assert.Equal("Hello", string.Concat(updates.SelectMany(static update => update.Contents).OfType<TextContent>().Select(static content => content.Text)));
@@ -126,7 +126,7 @@ public sealed class OllamaNativeClientTests
             "nomic-embed-text",
             httpClient);
 
-        var embeddings = await generator.GenerateAsync(["alpha", "beta"], cancellationToken: CancellationToken.None);
+        var embeddings = await generator.GenerateAsync(["alpha", "beta"], cancellationToken: TestContext.Current.CancellationToken);
 
         var request = Assert.Single(requests);
         Assert.Equal("/api/embed", request.Uri.AbsolutePath);

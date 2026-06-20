@@ -23,14 +23,14 @@ public sealed class SqliteMemoryStoreRetentionTests
             ChannelId = "websocket",
             SenderId = "alice",
             LastActiveAt = now.AddDays(-45)
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await store.SaveSessionAsync(new Session
         {
             Id = "session-fresh",
             ChannelId = "websocket",
             SenderId = "bob",
             LastActiveAt = now.AddDays(-1)
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await store.SaveBranchAsync(new SessionBranch
         {
             BranchId = "branch-expired",
@@ -38,7 +38,7 @@ public sealed class SqliteMemoryStoreRetentionTests
             Name = "old",
             CreatedAt = now.AddDays(-20),
             History = []
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await store.SaveBranchAsync(new SessionBranch
         {
             BranchId = "branch-fresh",
@@ -46,7 +46,7 @@ public sealed class SqliteMemoryStoreRetentionTests
             Name = "new",
             CreatedAt = now.AddDays(-1),
             History = []
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         var staleEpoch = now.AddDays(-45).ToUnixTimeSeconds();
         await SetUpdatedAtAsync(dbPath, "sessions", "id", "session-expired", staleEpoch);
@@ -64,16 +64,16 @@ public sealed class SqliteMemoryStoreRetentionTests
                 MaxItems = 1000
             },
             protectedSessionIds: new HashSet<string>(StringComparer.Ordinal),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.DeletedSessions);
         Assert.Equal(1, result.DeletedBranches);
         Assert.Equal(1, result.ArchivedSessions);
         Assert.Equal(1, result.ArchivedBranches);
-        Assert.Null(await store.GetSessionAsync("session-expired", CancellationToken.None));
-        Assert.NotNull(await store.GetSessionAsync("session-fresh", CancellationToken.None));
-        Assert.Null(await store.LoadBranchAsync("branch-expired", CancellationToken.None));
-        Assert.NotNull(await store.LoadBranchAsync("branch-fresh", CancellationToken.None));
+        Assert.Null(await store.GetSessionAsync("session-expired", TestContext.Current.CancellationToken));
+        Assert.NotNull(await store.GetSessionAsync("session-fresh", TestContext.Current.CancellationToken));
+        Assert.Null(await store.LoadBranchAsync("branch-expired", TestContext.Current.CancellationToken));
+        Assert.NotNull(await store.LoadBranchAsync("branch-fresh", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public sealed class SqliteMemoryStoreRetentionTests
                 ChannelId = "websocket",
                 SenderId = id,
                 LastActiveAt = now.AddDays(-90)
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
             await SetUpdatedAtAsync(dbPath, "sessions", "id", id, now.AddDays(-90).ToUnixTimeSeconds());
         }
 
@@ -109,12 +109,12 @@ public sealed class SqliteMemoryStoreRetentionTests
                 MaxItems = 2
             },
             protectedSessionIds: new HashSet<string>(StringComparer.Ordinal) { "s1" },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.SkippedProtectedSessions);
         Assert.Equal(2, result.DeletedSessions);
         Assert.True(result.MaxItemsLimitReached);
-        Assert.NotNull(await store.GetSessionAsync("s1", CancellationToken.None));
+        Assert.NotNull(await store.GetSessionAsync("s1", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed class SqliteMemoryStoreRetentionTests
             ChannelId = "websocket",
             SenderId = "alice",
             LastActiveAt = now.AddDays(-90)
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await SetUpdatedAtAsync(dbPath, "sessions", "id", "session-expired", now.AddDays(-90).ToUnixTimeSeconds());
 
         var result = await store.SweepAsync(
@@ -148,11 +148,11 @@ public sealed class SqliteMemoryStoreRetentionTests
                 MaxItems = 1000
             },
             protectedSessionIds: new HashSet<string>(StringComparer.Ordinal),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(0, result.DeletedSessions);
         Assert.NotEmpty(result.Errors);
-        Assert.NotNull(await store.GetSessionAsync("session-expired", CancellationToken.None));
+        Assert.NotNull(await store.GetSessionAsync("session-expired", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -177,12 +177,12 @@ public sealed class SqliteMemoryStoreRetentionTests
                     Content = "legacy needle"
                 }
             ]
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await SetUpdatedAtAsync(dbPath, "sessions", "id", "session-expired", now.AddDays(-90).ToUnixTimeSeconds());
 
         var beforeSweep = await store.SearchSessionsAsync(
             new SessionSearchQuery { Text = "legacy" },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         Assert.Single(beforeSweep.Items);
 
         var result = await store.SweepAsync(
@@ -197,13 +197,13 @@ public sealed class SqliteMemoryStoreRetentionTests
                 MaxItems = 1000
             },
             protectedSessionIds: new HashSet<string>(StringComparer.Ordinal),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.DeletedSessions);
 
         var afterSweep = await store.SearchSessionsAsync(
             new SessionSearchQuery { Text = "legacy" },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         Assert.Empty(afterSweep.Items);
     }
 
@@ -222,7 +222,7 @@ public sealed class SqliteMemoryStoreRetentionTests
             Name = "old",
             CreatedAt = now.AddDays(-30),
             History = []
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
         await SetUpdatedAtAsync(dbPath, "branches", "branch_id", "branch-expired", now.ToUnixTimeSeconds());
 
         var result = await store.SweepAsync(
@@ -237,10 +237,10 @@ public sealed class SqliteMemoryStoreRetentionTests
                 MaxItems = 1000
             },
             protectedSessionIds: new HashSet<string>(StringComparer.Ordinal),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.DeletedBranches);
-        Assert.Null(await store.LoadBranchAsync("branch-expired", CancellationToken.None));
+        Assert.Null(await store.LoadBranchAsync("branch-expired", TestContext.Current.CancellationToken));
     }
 
     [Fact]

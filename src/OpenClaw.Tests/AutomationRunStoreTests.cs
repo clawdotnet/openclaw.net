@@ -36,7 +36,7 @@ public sealed class AutomationRunStoreTests
             SessionId = "automation:auto.test",
             MessagePreview = "test prompt",
             VerificationSummary = "All verification checks passed."
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         await store.SaveRunRecordAsync(new AutomationRunRecord
         {
@@ -62,11 +62,11 @@ public sealed class AutomationRunStoreTests
             InputTokens = 12,
             OutputTokens = 34,
             MessagePreview = "test prompt"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
-        var state = await store.GetRunStateAsync("auto.test", CancellationToken.None);
-        var run = await store.GetRunRecordAsync("auto.test", "run-1", CancellationToken.None);
-        var runs = await store.ListRunRecordsAsync("auto.test", 10, CancellationToken.None);
+        var state = await store.GetRunStateAsync("auto.test", TestContext.Current.CancellationToken);
+        var run = await store.GetRunRecordAsync("auto.test", "run-1", TestContext.Current.CancellationToken);
+        var runs = await store.ListRunRecordsAsync("auto.test", 10, TestContext.Current.CancellationToken);
 
         Assert.NotNull(state);
         Assert.Equal(AutomationVerificationStatuses.Verified, state!.VerificationStatus);
@@ -98,11 +98,11 @@ public sealed class AutomationRunStoreTests
                 VerificationStatus = AutomationVerificationStatuses.Verified,
                 StartedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-i),
                 CompletedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-i).AddSeconds(30)
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
         }
 
-        await store.PruneRunRecordsAsync("auto.prune", 2, CancellationToken.None);
-        var runs = await store.ListRunRecordsAsync("auto.prune", 10, CancellationToken.None);
+        await store.PruneRunRecordsAsync("auto.prune", 2, TestContext.Current.CancellationToken);
+        var runs = await store.ListRunRecordsAsync("auto.prune", 10, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, runs.Count);
         Assert.DoesNotContain(runs, item => item.RunId == "run-2");

@@ -42,12 +42,12 @@ public sealed class AutomationRunCoordinatorTests
             ChannelId = "cron",
             SenderId = "automation:auto.verified",
             Prompt = automation.Prompt
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(message);
         Assert.NotNull(message!.AutomationRunId);
 
-        await harness.Coordinator.MarkRunningAsync(automation, message, CancellationToken.None);
+        await harness.Coordinator.MarkRunningAsync(automation, message, TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(verificationPath, "ok");
 
         var session = new Session
@@ -66,10 +66,10 @@ public sealed class AutomationRunCoordinatorTests
         {
             InputTokens = 10,
             OutputTokens = 20
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
-        var state = await harness.Store.GetRunStateAsync(automation.Id, CancellationToken.None);
-        var run = await harness.Store.GetRunRecordAsync(automation.Id, message.AutomationRunId!, CancellationToken.None);
+        var state = await harness.Store.GetRunStateAsync(automation.Id, TestContext.Current.CancellationToken);
+        var run = await harness.Store.GetRunRecordAsync(automation.Id, message.AutomationRunId!, TestContext.Current.CancellationToken);
 
         Assert.NotNull(state);
         Assert.Equal(AutomationVerificationStatuses.Verified, state!.VerificationStatus);
@@ -108,19 +108,19 @@ public sealed class AutomationRunCoordinatorTests
                 ChannelId = "cron",
                 SenderId = "automation:auto.quarantine",
                 Prompt = automation.Prompt
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
 
             Assert.NotNull(message);
-            await harness.Coordinator.MarkRunningAsync(automation, message!, CancellationToken.None);
+            await harness.Coordinator.MarkRunningAsync(automation, message!, TestContext.Current.CancellationToken);
             await harness.Coordinator.FinalizeRunAsync(automation, message!, session: null, new AutomationRunCompletion
             {
                 VerificationStatus = AutomationVerificationStatuses.Failed,
                 VerificationSummary = $"failure {i}",
                 RetryAttempt = 0
-            }, CancellationToken.None);
+            }, TestContext.Current.CancellationToken);
         }
 
-        var state = await harness.Store.GetRunStateAsync(automation.Id, CancellationToken.None);
+        var state = await harness.Store.GetRunStateAsync(automation.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(state);
         Assert.Equal(3, state!.FailureStreak);
@@ -148,10 +148,10 @@ public sealed class AutomationRunCoordinatorTests
             ChannelId = "cron",
             SenderId = "automation:auto.contract",
             Prompt = automation.Prompt
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(message);
-        await harness.Coordinator.MarkRunningAsync(automation, message!, CancellationToken.None);
+        await harness.Coordinator.MarkRunningAsync(automation, message!, TestContext.Current.CancellationToken);
 
         var session = new Session
         {
@@ -168,7 +168,7 @@ public sealed class AutomationRunCoordinatorTests
         await harness.Coordinator.FinalizeRunAsync(automation, message!, session, new AutomationRunCompletion
         {
             VerificationStatus = AutomationVerificationStatuses.Verified
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(session.ContractPolicy);
         Assert.Equal("ctr_existing", session.ContractPolicy!.Id);
@@ -193,10 +193,10 @@ public sealed class AutomationRunCoordinatorTests
             ChannelId = "cron",
             SenderId = "automation:auto.matching",
             Prompt = automation.Prompt
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.NotNull(message);
-        await harness.Coordinator.MarkRunningAsync(automation, message!, CancellationToken.None);
+        await harness.Coordinator.MarkRunningAsync(automation, message!, TestContext.Current.CancellationToken);
 
         var session = new Session
         {
@@ -213,7 +213,7 @@ public sealed class AutomationRunCoordinatorTests
         await harness.Coordinator.FinalizeRunAsync(automation, message!, session, new AutomationRunCompletion
         {
             VerificationStatus = AutomationVerificationStatuses.Verified
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         Assert.Null(session.ContractPolicy);
     }
@@ -238,7 +238,7 @@ public sealed class AutomationRunCoordinatorTests
             HealthState = AutomationHealthStates.Unknown,
             LastRunAtUtc = DateTimeOffset.UtcNow.Subtract(AutomationRunCoordinator.StuckThreshold).Subtract(TimeSpan.FromMinutes(1)),
             LastRunId = "run-stuck"
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         await harness.Store.SaveRunRecordAsync(new AutomationRunRecord
         {
@@ -248,11 +248,11 @@ public sealed class AutomationRunCoordinatorTests
             LifecycleState = AutomationLifecycleStates.Running,
             VerificationStatus = AutomationVerificationStatuses.NotRun,
             StartedAtUtc = DateTimeOffset.UtcNow.Subtract(AutomationRunCoordinator.StuckThreshold).Subtract(TimeSpan.FromMinutes(1))
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
-        var state = await harness.Store.GetRunStateAsync(automation.Id, CancellationToken.None);
-        var transitioned = await harness.Coordinator.MarkRunStuckAsync(automation, state!, CancellationToken.None);
-        var updated = await harness.Store.GetRunStateAsync(automation.Id, CancellationToken.None);
+        var state = await harness.Store.GetRunStateAsync(automation.Id, TestContext.Current.CancellationToken);
+        var transitioned = await harness.Coordinator.MarkRunStuckAsync(automation, state!, TestContext.Current.CancellationToken);
+        var updated = await harness.Store.GetRunStateAsync(automation.Id, TestContext.Current.CancellationToken);
 
         Assert.True(transitioned);
         Assert.NotNull(updated);

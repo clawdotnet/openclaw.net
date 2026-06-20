@@ -114,7 +114,7 @@ public sealed class SkillCommandsMetaGovernanceTests : IDisposable
                             Status = "failed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -180,7 +180,7 @@ public sealed class SkillCommandsMetaGovernanceTests : IDisposable
                             Status = "failed"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -271,7 +271,7 @@ public sealed class SkillCommandsMetaGovernanceTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -340,7 +340,7 @@ public sealed class SkillCommandsMetaGovernanceTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -405,7 +405,7 @@ public sealed class SkillCommandsMetaGovernanceTests : IDisposable
                         SkillName = "meta-flow",
                         PendingStepId = "ask_user"
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -469,7 +469,7 @@ public sealed class SkillCommandsMetaGovernanceTests : IDisposable
                             ErrorCode = "TOOL_ERROR"
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();
@@ -549,7 +549,7 @@ public sealed class SkillCommandsMetaGovernanceTests : IDisposable
                             }
                         }
                     }
-                }, CancellationToken.None);
+                }, TestContext.Current.CancellationToken);
             }
 
             using var output = new StringWriter();

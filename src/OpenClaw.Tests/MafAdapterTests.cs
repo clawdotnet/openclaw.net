@@ -59,11 +59,11 @@ public sealed class MafAdapterTests
             var agent = CreateAgent();
             var session = CreateSession("maf-roundtrip");
             var agentSession = await CreatePopulatedAgentSessionAsync(agent);
-            var savedState = NormalizeJson(await agent.SerializeSessionAsync(agentSession, jsonSerializerOptions: null, CancellationToken.None));
+            var savedState = NormalizeJson(await agent.SerializeSessionAsync(agentSession, jsonSerializerOptions: null, TestContext.Current.CancellationToken));
 
-            await store.SaveAsync(agent, session, agentSession, CancellationToken.None);
-            var loadedSession = await store.LoadAsync(agent, session, CancellationToken.None);
-            var loadedState = NormalizeJson(await agent.SerializeSessionAsync(loadedSession, jsonSerializerOptions: null, CancellationToken.None));
+            await store.SaveAsync(agent, session, agentSession, TestContext.Current.CancellationToken);
+            var loadedSession = await store.LoadAsync(agent, session, TestContext.Current.CancellationToken);
+            var loadedState = NormalizeJson(await agent.SerializeSessionAsync(loadedSession, jsonSerializerOptions: null, TestContext.Current.CancellationToken));
 
             Assert.Equal(savedState, loadedState);
         }
@@ -172,8 +172,8 @@ public sealed class MafAdapterTests
             var runtime = CreateRuntime(storagePath, new TestLlmExecutionService(), new MafOptions(), logs);
             var session = CreateSession("maf-runtime-sidecar-runasync");
 
-            await runtime.RunAsync(session, "first turn", CancellationToken.None);
-            await runtime.RunAsync(session, "follow-up turn", CancellationToken.None);
+            await runtime.RunAsync(session, "first turn", TestContext.Current.CancellationToken);
+            await runtime.RunAsync(session, "follow-up turn", TestContext.Current.CancellationToken);
 
             Assert.Contains(logs, message => message.Contains("Restored MAF session sidecar", StringComparison.Ordinal));
             Assert.DoesNotContain(logs, message => message.Contains("history hash mismatch", StringComparison.Ordinal));
@@ -216,8 +216,8 @@ public sealed class MafAdapterTests
             var runtime = CreateRuntime(storagePath, new TestLlmExecutionService(), new MafOptions(), logs, routing);
             var session = CreateSession("maf-runtime-sidecar-transient-routing");
 
-            await runtime.RunAsync(session, "first turn", CancellationToken.None);
-            await runtime.RunAsync(session, "follow-up turn", CancellationToken.None);
+            await runtime.RunAsync(session, "first turn", TestContext.Current.CancellationToken);
+            await runtime.RunAsync(session, "follow-up turn", TestContext.Current.CancellationToken);
 
             Assert.Contains(logs, message => message.Contains("Restored MAF session sidecar", StringComparison.Ordinal));
             Assert.DoesNotContain(logs, message => message.Contains("history hash mismatch", StringComparison.Ordinal));
@@ -240,12 +240,12 @@ public sealed class MafAdapterTests
             var runtime = CreateRuntime(storagePath, new StreamingTestLlmExecutionService(), new MafOptions { EnableStreaming = true }, logs);
             var session = CreateSession("maf-runtime-sidecar-streaming");
 
-            await foreach (var _ in runtime.RunStreamingAsync(session, "first turn", CancellationToken.None))
+            await foreach (var _ in runtime.RunStreamingAsync(session, "first turn", TestContext.Current.CancellationToken))
             {
                 // Intentionally drain the stream to completion; assertions are on side effects/logs.
             }
 
-            await foreach (var _ in runtime.RunStreamingAsync(session, "follow-up turn", CancellationToken.None))
+            await foreach (var _ in runtime.RunStreamingAsync(session, "follow-up turn", TestContext.Current.CancellationToken))
             {
                 // Intentionally drain the stream to completion; assertions are on side effects/logs.
             }
@@ -397,7 +397,7 @@ public sealed class MafAdapterTests
             var session = CreateSession("maf-tool-filter");
             session.RouteAllowedTools = ["echo_tool"];
 
-            await runtime.RunAsync(session, "use tools", CancellationToken.None);
+            await runtime.RunAsync(session, "use tools", TestContext.Current.CancellationToken);
 
             var toolNames = executionService.LastToolNames;
             Assert.Equal(["echo_tool"], toolNames);
@@ -478,7 +478,7 @@ public sealed class MafAdapterTests
             var session = CreateSession("maf-preset-filter");
             session.RoutePresetId = "test-preset";
 
-            await runtime.RunAsync(session, "use tools", CancellationToken.None);
+            await runtime.RunAsync(session, "use tools", TestContext.Current.CancellationToken);
 
             var toolNames = executionService.LastToolNames;
             Assert.Equal(["echo_tool"], toolNames);
@@ -577,7 +577,7 @@ public sealed class MafAdapterTests
             session.ReasoningEffort = "low";
             session.ResponseMode = "concise";
 
-            await runtime.RunAsync(session, "Open README.md", CancellationToken.None);
+            await runtime.RunAsync(session, "Open README.md", TestContext.Current.CancellationToken);
 
             Assert.Equal(["echo_tool"], executionService.LastToolNames);
             Assert.Equal(["mini-readonly-fallback", "legacy-fallback"], executionService.LastFallbackModelProfileIds);
@@ -638,7 +638,7 @@ public sealed class MafAdapterTests
                 tools: [new TestTool("echo_tool")]);
             var session = CreateSession("maf-onnx-fallback");
 
-            var result = await runtime.RunAsync(session, "route this turn", CancellationToken.None);
+            var result = await runtime.RunAsync(session, "route this turn", TestContext.Current.CancellationToken);
 
             Assert.Equal("ok", result);
             Assert.Equal("T2", session.RouteModelTier);
@@ -701,7 +701,7 @@ public sealed class MafAdapterTests
             session.ReasoningEffort = "low";
             session.ResponseMode = "concise";
 
-            var result = await runtime.RunAsync(session, "route this turn", CancellationToken.None);
+            var result = await runtime.RunAsync(session, "route this turn", TestContext.Current.CancellationToken);
 
             Assert.Equal("ok", result);
             Assert.Equal("T2", session.RouteModelTier);
@@ -743,7 +743,7 @@ public sealed class MafAdapterTests
             session.RouteAllowedTools = ["shell"];
             session.SystemPromptOverride = "Original route prompt";
 
-            var result = await runtime.RunAsync(session, "Open README.md", CancellationToken.None);
+            var result = await runtime.RunAsync(session, "Open README.md", TestContext.Current.CancellationToken);
 
             Assert.Equal("Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly.", result);
             Assert.Equal(["shell"], session.RouteAllowedTools);
@@ -783,7 +783,7 @@ public sealed class MafAdapterTests
 
             await Assert.ThrowsAsync<KeyNotFoundException>(async () =>
             {
-                await foreach (var _ in runtime.RunStreamingAsync(session, "Open README.md", CancellationToken.None))
+                await foreach (var _ in runtime.RunStreamingAsync(session, "Open README.md", TestContext.Current.CancellationToken))
                 {
                     // Intentionally consume the stream to trigger agent creation and surface the expected exception.
                 }
@@ -826,7 +826,7 @@ public sealed class MafAdapterTests
                 tools: [new TestTool("echo_tool"), new TestTool("shell")]);
             var session = CreateSession("maf-disable-tools");
 
-            await runtime.RunAsync(session, "answer directly", CancellationToken.None);
+            await runtime.RunAsync(session, "answer directly", TestContext.Current.CancellationToken);
 
             Assert.Empty(executionService.LastToolNames);
             Assert.False(session.RouteToolsDisabled);
@@ -864,7 +864,7 @@ public sealed class MafAdapterTests
             var session = CreateSession("maf-allow-tools-after-disable");
             session.RouteToolsDisabled = true;
 
-            await runtime.RunAsync(session, "read safely", CancellationToken.None);
+            await runtime.RunAsync(session, "read safely", TestContext.Current.CancellationToken);
 
             Assert.Equal(["echo_tool"], executionService.LastToolNames);
             Assert.True(session.RouteToolsDisabled);
@@ -898,7 +898,7 @@ public sealed class MafAdapterTests
             session.RouteAllowedTools = ["shell"];
             session.PreferredModelTags = ["manual-tag"];
 
-            await runtime.RunAsync(session, "use existing manual route", CancellationToken.None);
+            await runtime.RunAsync(session, "use existing manual route", TestContext.Current.CancellationToken);
 
             Assert.Equal(["shell"], executionService.LastToolNames);
             Assert.Equal(["manual-tag"], executionService.LastPreferredModelTags);
@@ -950,7 +950,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-structured-missing-dependency");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             using var doc = JsonDocument.Parse(result);
             Assert.Equal("meta-flow", doc.RootElement.GetProperty("skill").GetString());
@@ -1002,7 +1002,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-structured-user-input");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
 
             using var doc = JsonDocument.Parse(result);
             Assert.Equal("meta-flow", doc.RootElement.GetProperty("skill").GetString());
@@ -1079,13 +1079,13 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-structured-pause-resume");
 
-            var paused = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var paused = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
             Assert.Contains("requires user input", paused, StringComparison.OrdinalIgnoreCase);
             Assert.NotNull(session.MetaExecutionCheckpoint);
             Assert.Equal(1, preTool.CallCount);
             Assert.Equal(0, postTool.CallCount);
 
-            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "approved", CancellationToken.None);
+            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "approved", TestContext.Current.CancellationToken);
             Assert.Equal("completed", resumed);
             Assert.Null(session.MetaExecutionCheckpoint);
             Assert.Equal(1, preTool.CallCount);
@@ -1138,7 +1138,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-run-history");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             Assert.Equal("ok", result);
             Assert.NotNull(session.MetaRunHistory);
@@ -1201,7 +1201,7 @@ public sealed class MafAdapterTests
                 });
             var session = CreateSession("maf-meta-policy");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             Assert.Contains("disabled by runtime policy", result, StringComparison.OrdinalIgnoreCase);
             Assert.Empty(session.MetaRunHistory);
@@ -1255,7 +1255,7 @@ public sealed class MafAdapterTests
                 skills: [metaSkill]);
             var session = CreateSession("maf-meta-invalid-plan-after-pause");
 
-            var paused = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var paused = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
             Assert.Contains("requires user input", paused, StringComparison.OrdinalIgnoreCase);
             Assert.NotNull(session.MetaExecutionCheckpoint);
 
@@ -1284,7 +1284,7 @@ public sealed class MafAdapterTests
             Assert.NotNull(field);
             field!.SetValue(runtime, new[] { invalidSkill });
 
-            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "approved", CancellationToken.None);
+            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "approved", TestContext.Current.CancellationToken);
 
             Assert.Contains("missing dependency", resumed, StringComparison.OrdinalIgnoreCase);
             Assert.Null(session.MetaExecutionCheckpoint);
@@ -1353,7 +1353,7 @@ public sealed class MafAdapterTests
                 skills: [nestedMeta, outerMeta]);
             var session = CreateSession("maf-meta-nested");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "outer-meta", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "outer-meta", "hello", TestContext.Current.CancellationToken);
 
             Assert.Contains("cannot compose meta skill 'nested-meta'", result, StringComparison.OrdinalIgnoreCase);
             var run = Assert.Single(session.MetaRunHistory);
@@ -1421,7 +1421,7 @@ public sealed class MafAdapterTests
                 skills: [metaSkill]);
             var session = CreateSession("maf-meta-plan-changed-after-pause");
 
-            var paused = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var paused = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
             Assert.Contains("requires user input", paused, StringComparison.OrdinalIgnoreCase);
             Assert.NotNull(session.MetaExecutionCheckpoint);
 
@@ -1458,7 +1458,7 @@ public sealed class MafAdapterTests
             Assert.NotNull(field);
             field!.SetValue(runtime, new[] { changedSkill });
 
-            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "approved", CancellationToken.None);
+            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "approved", TestContext.Current.CancellationToken);
 
             Assert.Equal("final", resumed);
             Assert.Null(session.MetaExecutionCheckpoint);
@@ -1525,7 +1525,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-when-false");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
 
             Assert.Equal("skip", result);
             Assert.Equal(0, chosenTool.CallCount);
@@ -1585,7 +1585,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-route-array");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
 
             Assert.Equal("chosen", result);
             Assert.Equal(1, chosenTool.CallCount);
@@ -1647,7 +1647,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-tool-args");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "incident-42", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "incident-42", TestContext.Current.CancellationToken);
 
             Assert.Equal("{\"trace\":\"incident-42\",\"mode\":\"step\",\"state\":\"ready\"}", result);
         }
@@ -1722,7 +1722,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-skill-exec");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "incident-42", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "incident-42", TestContext.Current.CancellationToken);
 
             Assert.Equal("skill:incident-42", result.Trim());
         }
@@ -1797,7 +1797,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-skill-exec-stdin");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "incident-stdin", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "incident-stdin", TestContext.Current.CancellationToken);
 
             Assert.Equal("stdin:incident-stdin", result.Trim());
 
@@ -1861,7 +1861,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-clarify-form");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "{\"topic\":\"OpenSquilla\"}", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "{\"topic\":\"OpenSquilla\"}", TestContext.Current.CancellationToken);
 
             Assert.Equal("{\"topic\":\"OpenSquilla\",\"priority\":\"medium\"}", result);
         }
@@ -1912,7 +1912,7 @@ public sealed class MafAdapterTests
                 ]);
 
             var session = CreateSession("maf-meta-skip-if");
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
 
             Assert.True(string.IsNullOrEmpty(result));
             Assert.Null(session.MetaExecutionCheckpoint);
@@ -1969,7 +1969,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-clarify-cancel");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "cancel", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "cancel", TestContext.Current.CancellationToken);
             using var doc = JsonDocument.Parse(result);
 
             Assert.Equal("user_input_cancelled", doc.RootElement.GetProperty("error_code").GetString());
@@ -2026,7 +2026,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-clarify-timeout");
 
-            var paused = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var paused = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
             Assert.Contains("requires user input", paused, StringComparison.OrdinalIgnoreCase);
 
             var checkpoint = Assert.IsType<SessionMetaExecutionCheckpoint>(session.MetaExecutionCheckpoint);
@@ -2052,7 +2052,7 @@ public sealed class MafAdapterTests
                 })]
             };
 
-            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "approved", CancellationToken.None);
+            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "approved", TestContext.Current.CancellationToken);
             using var doc = JsonDocument.Parse(resumed);
 
             Assert.Equal("user_input_timeout", doc.RootElement.GetProperty("error_code").GetString());
@@ -2109,7 +2109,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-output-choice");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
             using var doc = JsonDocument.Parse(result);
 
             Assert.Equal("invalid_output_choice", doc.RootElement.GetProperty("error_code").GetString());
@@ -2161,7 +2161,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-template-failure");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
             using var doc = JsonDocument.Parse(result);
 
             Assert.Equal("template_render_failed", doc.RootElement.GetProperty("error_code").GetString());
@@ -2216,7 +2216,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-tool-allowlist");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
             using var doc = JsonDocument.Parse(result);
 
             Assert.Equal("tool_not_allowlisted", doc.RootElement.GetProperty("error_code").GetString());
@@ -2279,11 +2279,11 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-tool-allowlist-resume");
 
-            var paused = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var paused = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
             Assert.Contains("requires user input", paused, StringComparison.OrdinalIgnoreCase);
             Assert.NotNull(session.MetaExecutionCheckpoint);
 
-            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "approved", CancellationToken.None);
+            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "approved", TestContext.Current.CancellationToken);
             using var doc = JsonDocument.Parse(resumed);
 
             Assert.Equal("tool_not_allowlisted", doc.RootElement.GetProperty("error_code").GetString());
@@ -2312,7 +2312,7 @@ public sealed class MafAdapterTests
                 skills: [CreateMetaSkillCreatorTestDefinition(fullGated: false)]);
             var session = CreateSession("maf-meta-creator-preview");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-skill-creator", "create a meta-skill preview", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-skill-creator", "create a meta-skill preview", TestContext.Current.CancellationToken);
 
             Assert.Contains("proposal preview ready", result, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("not found", result, StringComparison.OrdinalIgnoreCase);
@@ -2339,7 +2339,7 @@ public sealed class MafAdapterTests
                 skills: [CreateMetaSkillCreatorTestDefinition(fullGated: true)]);
             var session = CreateSession("maf-meta-creator-full");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-skill-creator", "create production-ready fully gated meta-skill", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-skill-creator", "create production-ready fully gated meta-skill", TestContext.Current.CancellationToken);
 
             Assert.Contains("proposal preview ready", result, StringComparison.OrdinalIgnoreCase);
             var run = Assert.Single(session.MetaRunHistory);
@@ -2370,7 +2370,7 @@ public sealed class MafAdapterTests
                 skills: [CreateMetaSkillCreatorLintFailureTestDefinition()]);
             var session = CreateSession("maf-meta-creator-lint-fail");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-skill-creator", "create fully gated meta-skill with broken deps", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-skill-creator", "create fully gated meta-skill with broken deps", TestContext.Current.CancellationToken);
 
             Assert.Contains("proposal preview ready", result, StringComparison.OrdinalIgnoreCase);
             var run = Assert.Single(session.MetaRunHistory);
@@ -2401,7 +2401,7 @@ public sealed class MafAdapterTests
                 skills: [CreateMetaSkillCreatorPersistFailureTestDefinition()]);
             var session = CreateSession("maf-meta-creator-persist-fail");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-skill-creator", "create fully gated meta-skill with persist broken args", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-skill-creator", "create fully gated meta-skill with persist broken args", TestContext.Current.CancellationToken);
 
             Assert.Contains("proposal preview ready", result, StringComparison.OrdinalIgnoreCase);
             var run = Assert.Single(session.MetaRunHistory);
@@ -2462,7 +2462,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-tool-failure-stop");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             Assert.Contains("Meta step 'first' failed", result, StringComparison.Ordinal);
             Assert.Equal(0, successTool.CallCount);
@@ -2520,7 +2520,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-tool-failure-continue");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             Assert.Equal("ok", result);
             Assert.Equal(1, successTool.CallCount);
@@ -2589,7 +2589,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-parallel-wave");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             Assert.Equal("joined", result);
             Assert.Equal(1, firstTool.CallCount);
@@ -2661,7 +2661,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-continue-route");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             Assert.Equal("routed", result);
             Assert.Equal(1, routedTool.CallCount);
@@ -2721,7 +2721,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-on-failure");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             Assert.Equal("fallback ok", result);
             Assert.Equal(1, fallbackTool.CallCount);
@@ -2778,7 +2778,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-on-failure-llm");
 
-            var result = await InvokeMafMetaSkillWithExecutionContextAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillWithExecutionContextAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             Assert.Equal("fallback ok", result);
             Assert.Equal(1, fallbackTool.CallCount);
@@ -2844,12 +2844,12 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-on-failure-resume");
 
-            var paused = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var paused = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
             Assert.Contains("requires user input", paused, StringComparison.OrdinalIgnoreCase);
             Assert.NotNull(session.MetaExecutionCheckpoint);
             Assert.Equal(0, postTool.CallCount);
 
-            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "approved", CancellationToken.None);
+            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "approved", TestContext.Current.CancellationToken);
 
             Assert.Equal("completed", resumed);
             Assert.Null(session.MetaExecutionCheckpoint);
@@ -2926,7 +2926,7 @@ public sealed class MafAdapterTests
                 StepResults = []
             };
 
-            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, CancellationToken.None);
+            var resumed = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", string.Empty, TestContext.Current.CancellationToken);
 
             Assert.Equal("fallback complete", resumed);
             Assert.Null(session.MetaExecutionCheckpoint);
@@ -2978,7 +2978,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-retry");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             Assert.Equal("ok after retry", result);
             Assert.Equal(3, flakyTool.CallCount);
@@ -3029,7 +3029,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-timeout");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             Assert.Equal("timed out", result);
         }
@@ -3081,7 +3081,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-output-contract");
 
-            var result = await InvokeMafMetaSkillWithExecutionContextAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillWithExecutionContextAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             using var doc = JsonDocument.Parse(result);
             Assert.Equal("output_contract_failed", doc.RootElement.GetProperty("error_code").GetString());
@@ -3152,7 +3152,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-classify-route");
 
-            var result = await InvokeMafMetaSkillWithExecutionContextAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillWithExecutionContextAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             Assert.Equal("chosen", result);
             Assert.Equal(1, chosenTool.CallCount);
@@ -3201,7 +3201,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-structured-unsupported-kind");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             using var doc = JsonDocument.Parse(result);
             Assert.Equal("meta-flow", doc.RootElement.GetProperty("skill").GetString());
@@ -3252,7 +3252,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-structured-missing-tool-declaration");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             using var doc = JsonDocument.Parse(result);
             Assert.Equal("meta-flow", doc.RootElement.GetProperty("skill").GetString());
@@ -3310,7 +3310,7 @@ public sealed class MafAdapterTests
                 ]);
             var session = CreateSession("maf-meta-structured-capability-denied");
 
-            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", CancellationToken.None);
+            var result = await InvokeMafMetaSkillAsync(runtime, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
 
             using var doc = JsonDocument.Parse(result);
             Assert.Contains("not permitted by metadata capabilities", doc.RootElement.GetProperty("error").GetString(), StringComparison.OrdinalIgnoreCase);
@@ -3351,8 +3351,8 @@ public sealed class MafAdapterTests
             var runtime = CreateRuntime(storagePath, new TestLlmExecutionService(), new MafOptions(), routingPolicy: routing);
             var session = CreateSession("maf-sticky-tier");
 
-            await runtime.RunAsync(session, "first", CancellationToken.None);
-            await runtime.RunAsync(session, "second", CancellationToken.None);
+            await runtime.RunAsync(session, "first", TestContext.Current.CancellationToken);
+            await runtime.RunAsync(session, "second", TestContext.Current.CancellationToken);
 
             Assert.Equal([null, "T3"], observedPreviousTiers);
             Assert.Equal("T1", session.RouteModelTier);
@@ -3445,7 +3445,7 @@ public sealed class MafAdapterTests
             session.RouteAllowedTools = ["shell"];
             session.SystemPromptOverride = "Original route prompt";
 
-            await runtime.RunAsync(session, "Open README.md", CancellationToken.None);
+            await runtime.RunAsync(session, "Open README.md", TestContext.Current.CancellationToken);
 
             Assert.Equal(["shell"], executionService.LastToolNames);
             await routing.Received(1).ResolveAsync(Arg.Any<TurnRoutingRequest>(), Arg.Any<CancellationToken>());
@@ -3473,7 +3473,7 @@ public sealed class MafAdapterTests
             var session = CreateSession("maf-mismatch");
             var agentSession = await CreatePopulatedAgentSessionAsync(agent);
 
-            await store.SaveAsync(agent, session, agentSession, CancellationToken.None);
+            await store.SaveAsync(agent, session, agentSession, TestContext.Current.CancellationToken);
 
             session.History.Add(new ChatTurn
             {
@@ -3481,9 +3481,9 @@ public sealed class MafAdapterTests
                 Content = "history changed"
             });
 
-            var loadedSession = await store.LoadAsync(agent, session, CancellationToken.None);
-            var loadedState = NormalizeJson(await agent.SerializeSessionAsync(loadedSession, jsonSerializerOptions: null, CancellationToken.None));
-            var freshState = NormalizeJson(await agent.SerializeSessionAsync(await agent.CreateSessionAsync(CancellationToken.None), jsonSerializerOptions: null, CancellationToken.None));
+            var loadedSession = await store.LoadAsync(agent, session, TestContext.Current.CancellationToken);
+            var loadedState = NormalizeJson(await agent.SerializeSessionAsync(loadedSession, jsonSerializerOptions: null, TestContext.Current.CancellationToken));
+            var freshState = NormalizeJson(await agent.SerializeSessionAsync(await agent.CreateSessionAsync(TestContext.Current.CancellationToken), jsonSerializerOptions: null, TestContext.Current.CancellationToken));
 
             Assert.Equal(freshState, loadedState);
         }
@@ -3506,12 +3506,12 @@ public sealed class MafAdapterTests
             var session = CreateSession("maf-corrupt");
             var agentSession = await CreatePopulatedAgentSessionAsync(agent);
 
-            await store.SaveAsync(agent, session, agentSession, CancellationToken.None);
-            await File.WriteAllTextAsync(store.GetSessionPath(session.Id), "{not-json", CancellationToken.None);
+            await store.SaveAsync(agent, session, agentSession, TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(store.GetSessionPath(session.Id), "{not-json", TestContext.Current.CancellationToken);
 
-            var loadedSession = await store.LoadAsync(agent, session, CancellationToken.None);
-            var loadedState = NormalizeJson(await agent.SerializeSessionAsync(loadedSession, jsonSerializerOptions: null, CancellationToken.None));
-            var freshState = NormalizeJson(await agent.SerializeSessionAsync(await agent.CreateSessionAsync(CancellationToken.None), jsonSerializerOptions: null, CancellationToken.None));
+            var loadedSession = await store.LoadAsync(agent, session, TestContext.Current.CancellationToken);
+            var loadedState = NormalizeJson(await agent.SerializeSessionAsync(loadedSession, jsonSerializerOptions: null, TestContext.Current.CancellationToken));
+            var freshState = NormalizeJson(await agent.SerializeSessionAsync(await agent.CreateSessionAsync(TestContext.Current.CancellationToken), jsonSerializerOptions: null, TestContext.Current.CancellationToken));
 
             Assert.Equal(freshState, loadedState);
         }
@@ -3537,7 +3537,7 @@ public sealed class MafAdapterTests
 
             Directory.CreateDirectory(path);
 
-            await Assert.ThrowsAnyAsync<Exception>(() => store.SaveAsync(agent, session, agentSession, CancellationToken.None));
+            await Assert.ThrowsAnyAsync<Exception>(() => store.SaveAsync(agent, session, agentSession, TestContext.Current.CancellationToken));
             Assert.False(File.Exists(path + ".tmp"));
         }
         finally
@@ -3628,10 +3628,10 @@ public sealed class MafAdapterTests
             var expectedHash = MafSessionStateStore.ComputeHistoryHash(session);
 
             var writerStore = new FileMemoryStore(storagePath, 4);
-            await writerStore.SaveSessionAsync(session, CancellationToken.None);
+            await writerStore.SaveSessionAsync(session, TestContext.Current.CancellationToken);
 
             var readerStore = new FileMemoryStore(storagePath, 4);
-            var loaded = await readerStore.GetSessionAsync(session.Id, CancellationToken.None);
+            var loaded = await readerStore.GetSessionAsync(session.Id, TestContext.Current.CancellationToken);
 
             Assert.NotNull(loaded);
             Assert.Equal(expectedHash, MafSessionStateStore.ComputeHistoryHash(loaded!));
@@ -4063,12 +4063,12 @@ public sealed class MafAdapterTests
 
     private static async Task<AgentSession> CreatePopulatedAgentSessionAsync(ChatClientAgent agent)
     {
-        var agentSession = await agent.CreateSessionAsync(CancellationToken.None);
+        var agentSession = await agent.CreateSessionAsync(TestContext.Current.CancellationToken);
         _ = await agent.RunAsync(
             [new ChatMessage(ChatRole.User, "hello from maf sidecar")],
             agentSession,
             new ChatClientAgentRunOptions(new ChatOptions()),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
         return agentSession;
     }
 

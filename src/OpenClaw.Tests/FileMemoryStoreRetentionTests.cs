@@ -46,10 +46,10 @@ public sealed class FileMemoryStoreRetentionTests
             History = []
         };
 
-        await store.SaveSessionAsync(expiredSession, CancellationToken.None);
-        await store.SaveSessionAsync(freshSession, CancellationToken.None);
-        await store.SaveBranchAsync(expiredBranch, CancellationToken.None);
-        await store.SaveBranchAsync(freshBranch, CancellationToken.None);
+        await store.SaveSessionAsync(expiredSession, TestContext.Current.CancellationToken);
+        await store.SaveSessionAsync(freshSession, TestContext.Current.CancellationToken);
+        await store.SaveBranchAsync(expiredBranch, TestContext.Current.CancellationToken);
+        await store.SaveBranchAsync(freshBranch, TestContext.Current.CancellationToken);
 
         var result = await store.SweepAsync(
             new RetentionSweepRequest
@@ -63,17 +63,17 @@ public sealed class FileMemoryStoreRetentionTests
                 MaxItems = 1000
             },
             protectedSessionIds: new HashSet<string>(StringComparer.Ordinal),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.DeletedSessions);
         Assert.Equal(1, result.DeletedBranches);
         Assert.Equal(1, result.ArchivedSessions);
         Assert.Equal(1, result.ArchivedBranches);
 
-        Assert.Null(await store.GetSessionAsync("session-expired", CancellationToken.None));
-        Assert.NotNull(await store.GetSessionAsync("session-fresh", CancellationToken.None));
-        Assert.Null(await store.LoadBranchAsync("branch-expired", CancellationToken.None));
-        Assert.NotNull(await store.LoadBranchAsync("branch-fresh", CancellationToken.None));
+        Assert.Null(await store.GetSessionAsync("session-expired", TestContext.Current.CancellationToken));
+        Assert.NotNull(await store.GetSessionAsync("session-fresh", TestContext.Current.CancellationToken));
+        Assert.Null(await store.LoadBranchAsync("branch-expired", TestContext.Current.CancellationToken));
+        Assert.NotNull(await store.LoadBranchAsync("branch-fresh", TestContext.Current.CancellationToken));
 
         Assert.NotEmpty(Directory.EnumerateFiles(archive, "*.json", SearchOption.AllDirectories));
     }
@@ -91,7 +91,7 @@ public sealed class FileMemoryStoreRetentionTests
             ChannelId = "websocket",
             SenderId = "alice",
             LastActiveAt = now.AddDays(-90)
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         var result = await store.SweepAsync(
             new RetentionSweepRequest
@@ -108,11 +108,11 @@ public sealed class FileMemoryStoreRetentionTests
             {
                 "session-protected"
             },
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.SkippedProtectedSessions);
         Assert.Equal(0, result.DeletedSessions);
-        Assert.NotNull(await store.GetSessionAsync("session-protected", CancellationToken.None));
+        Assert.NotNull(await store.GetSessionAsync("session-protected", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public sealed class FileMemoryStoreRetentionTests
             ChannelId = "websocket",
             SenderId = "alice",
             LastActiveAt = now.AddDays(-90)
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         var result = await store.SweepAsync(
             new RetentionSweepRequest
@@ -144,11 +144,11 @@ public sealed class FileMemoryStoreRetentionTests
                 MaxItems = 1000
             },
             protectedSessionIds: new HashSet<string>(StringComparer.Ordinal),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(0, result.DeletedSessions);
         Assert.NotEmpty(result.Errors);
-        Assert.NotNull(await store.GetSessionAsync("session-expired", CancellationToken.None));
+        Assert.NotNull(await store.GetSessionAsync("session-expired", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -179,7 +179,7 @@ public sealed class FileMemoryStoreRetentionTests
                 MaxItems = 1000
             },
             protectedSessionIds: new HashSet<string>(StringComparer.Ordinal),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.ArchivePurgedFiles);
         Assert.False(File.Exists(oldFile));

@@ -67,9 +67,9 @@
 						<TextBlock Grid.Row="0" Grid.Column="3" Text="Remember" FontWeight="SemiBold" />
 						<TextBlock Grid.Row="0" Grid.Column="4" Text="Plaintext" FontWeight="SemiBold" />
 						<TextBlock Grid.Row="0" Grid.Column="5" Text="Debug" FontWeight="SemiBold" />
-						<TextBox Grid.Row="1" Grid.Column="0" Text="{Binding ServerUrl}" Watermark="ws://127.0.0.1:18789/ws" />
-						<TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Username}" Watermark="viewer1 / operator1 / admin1" />
-						<TextBox Grid.Row="1" Grid.Column="2" Text="{Binding AuthToken}" PasswordChar="•" Watermark="Operator account token" />
+						<TextBox Grid.Row="1" Grid.Column="0" Text="{Binding ServerUrl}" PlaceholderText="ws://127.0.0.1:18789/ws" />
+						<TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Username}" PlaceholderText="viewer1 / operator1 / admin1" />
+						<TextBox Grid.Row="1" Grid.Column="2" Text="{Binding AuthToken}" PasswordChar="•" PlaceholderText="Operator account token" />
 						<CheckBox Grid.Row="1" Grid.Column="3" IsChecked="{Binding RememberToken}" />
 						<CheckBox Grid.Row="1" Grid.Column="4" IsChecked="{Binding AllowPlaintextTokenFallback}" />
 						<CheckBox Grid.Row="1" Grid.Column="5" IsChecked="{Binding DebugMode}" />
@@ -217,7 +217,7 @@
 								<StackPanel Spacing="10">
 									<TextBlock Text="Embedded Local Model" Classes="section-title" />
 									<TextBlock Text="{Binding EmbeddedLocalModelDisabledReason}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding HasEmbeddedLocalModelDisabledReason}" />
-									<TextBox Text="{Binding SetupLocalModelPath}" Watermark="Local model path (.gguf / .litertlm)" />
+									<TextBox Text="{Binding SetupLocalModelPath}" PlaceholderText="Local model path (.gguf / .litertlm)" />
 									<StackPanel Orientation="Horizontal" Spacing="8">
 										<Button Content="Status" Command="{Binding RefreshEmbeddedLocalModelStatusCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
 										<Button Content="Install" Command="{Binding InstallEmbeddedLocalModelCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
@@ -253,8 +253,8 @@
 											  IsEditable="True" />
 								</Grid>
 								<Grid ColumnDefinitions="2*,*" ColumnSpacing="10">
-									<TextBox Grid.Column="0" Text="{Binding SetupWorkspacePath}" Watermark="Workspace path" />
-									<TextBox Grid.Column="1" Text="{Binding SetupApiKey}" PasswordChar="•" Watermark="Provider API key" />
+									<TextBox Grid.Column="0" Text="{Binding SetupWorkspacePath}" PlaceholderText="Workspace path" />
+									<TextBox Grid.Column="1" Text="{Binding SetupApiKey}" PasswordChar="•" PlaceholderText="Provider API key" />
 								</Grid>
 								<TextBlock Text="Provider API key is not needed for Ollama or Embedded. Secrets are stored through the configured token store when possible." Classes="muted" TextWrapping="Wrap" />
 								<Button Content="Set Up and Start" Command="{Binding SetupAndStartLocalGatewayCommand}" IsEnabled="{Binding CanRunLocalGatewaySetup}" Classes="primary" HorizontalAlignment="Left" />
@@ -311,7 +311,7 @@
 						</Grid>
 					</Border>
 					<Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="10">
-						<TextBox Text="{Binding InputText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" Watermark="Type a message. Shift+Enter is not required; click Send when ready." />
+						<TextBox Text="{Binding InputText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" PlaceholderText="Type a message. Shift+Enter is not required; click Send when ready." />
 						<Button Grid.Column="1" Content="Send" Command="{Binding SendCommand}" IsEnabled="{Binding IsConnected}" MinWidth="96" Classes="primary" />
 					</Grid>
 				</Grid>
@@ -365,7 +365,7 @@
 													<TextBlock Text="{Binding Body}" TextWrapping="Wrap" IsVisible="{Binding HasBody}" />
 													<Button Content="{Binding Label}" Command="{Binding ActivateCommand}" IsVisible="{Binding IsButton}" HorizontalAlignment="Left" Classes="primary" />
 													<Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding IsInput}">
-														<TextBox Text="{Binding ValueText}" Watermark="{Binding Label}" />
+														<TextBox Text="{Binding ValueText}" PlaceholderText="{Binding Label}" />
 														<Button Grid.Column="1" Content="Send" Command="{Binding CommitValueCommand}" />
 													</Grid>
 													<ItemsControl ItemsSource="{Binding Options}" IsVisible="{Binding HasOptions}">
@@ -408,12 +408,12 @@
 					</Grid>
 					<Border Grid.Row="1" Classes="section-card">
 						<Grid ColumnDefinitions="*,*,*,*,Auto,Auto" ColumnSpacing="8">
-							<TextBox Grid.Column="0" Text="{Binding SessionsSearchText}" Watermark="Search text" />
-							<TextBox Grid.Column="1" Text="{Binding SessionsChannelId}" Watermark="Channel ID" />
-							<TextBox Grid.Column="2" Text="{Binding SessionsSenderId}" Watermark="Sender ID" />
-							<TextBox Grid.Column="3" Text="{Binding SessionsState}" Watermark="State" />
+							<TextBox Grid.Column="0" Text="{Binding SessionsSearchText}" PlaceholderText="Search text" />
+							<TextBox Grid.Column="1" Text="{Binding SessionsChannelId}" PlaceholderText="Channel ID" />
+							<TextBox Grid.Column="2" Text="{Binding SessionsSenderId}" PlaceholderText="Sender ID" />
+							<TextBox Grid.Column="3" Text="{Binding SessionsState}" PlaceholderText="State" />
 							<CheckBox Grid.Column="4" Content="Starred" IsChecked="{Binding SessionsStarredOnly}" VerticalAlignment="Center" />
-							<TextBox Grid.Column="5" Text="{Binding SessionsTag}" Watermark="Tag" MinWidth="120" />
+							<TextBox Grid.Column="5" Text="{Binding SessionsTag}" PlaceholderText="Tag" MinWidth="120" />
 						</Grid>
 					</Border>
 					<Grid Grid.Row="2" ColumnDefinitions="2*,3*" ColumnSpacing="12">
@@ -569,11 +569,11 @@
 						<Border Grid.Column="1" Classes="section-card">
 							<Grid RowDefinitions="Auto,Auto,*,*,Auto" RowSpacing="8">
 								<Grid ColumnDefinitions="*,Auto">
-									<TextBox Text="{Binding WorkflowInput}" Watermark="Workflow input" AcceptsReturn="True" MinHeight="58" TextWrapping="Wrap" />
+									<TextBox Text="{Binding WorkflowInput}" PlaceholderText="Workflow input" AcceptsReturn="True" MinHeight="58" TextWrapping="Wrap" />
 									<Button Grid.Column="1" Content="Run" Command="{Binding RunSelectedWorkflowCommand}" Margin="8,0,0,0" />
 								</Grid>
 								<Grid Grid.Row="1" ColumnDefinitions="*,Auto">
-									<TextBox Text="{Binding WorkflowRunId}" Watermark="Run id" />
+									<TextBox Text="{Binding WorkflowRunId}" PlaceholderText="Run id" />
 									<Button Grid.Column="1" Content="Load Run" Command="{Binding LoadWorkflowRunCommand}" Margin="8,0,0,0" />
 								</Grid>
 								<TextBox Grid.Row="2" Text="{Binding WorkflowRunDetail}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" />
@@ -687,11 +687,11 @@
 					</Grid>
 					<Border Grid.Row="1" Classes="section-card">
 						<Grid ColumnDefinitions="*,*,*,*,*,Auto" ColumnSpacing="8">
-							<TextBox Text="{Binding RuntimeEventsSessionId}" Watermark="Session" />
-							<TextBox Grid.Column="1" Text="{Binding RuntimeEventsChannelId}" Watermark="Channel" />
-							<TextBox Grid.Column="2" Text="{Binding RuntimeEventsSenderId}" Watermark="Sender" />
-							<TextBox Grid.Column="3" Text="{Binding RuntimeEventsComponent}" Watermark="Component" />
-							<TextBox Grid.Column="4" Text="{Binding RuntimeEventsAction}" Watermark="Action" />
+							<TextBox Text="{Binding RuntimeEventsSessionId}" PlaceholderText="Session" />
+							<TextBox Grid.Column="1" Text="{Binding RuntimeEventsChannelId}" PlaceholderText="Channel" />
+							<TextBox Grid.Column="2" Text="{Binding RuntimeEventsSenderId}" PlaceholderText="Sender" />
+							<TextBox Grid.Column="3" Text="{Binding RuntimeEventsComponent}" PlaceholderText="Component" />
+							<TextBox Grid.Column="4" Text="{Binding RuntimeEventsAction}" PlaceholderText="Action" />
 							<NumericUpDown Grid.Column="5" Value="{Binding RuntimeEventsLimit}" Minimum="1" Maximum="500" Width="90" />
 						</Grid>
 					</Border>
@@ -798,7 +798,7 @@
 					</Grid>
 					<Border Grid.Row="1" Classes="section-card">
 						<Grid ColumnDefinitions="*,Auto">
-							<TextBox Text="{Binding MemorySearchText}" Watermark="Search memory notes" />
+							<TextBox Text="{Binding MemorySearchText}" PlaceholderText="Search memory notes" />
 							<Button Grid.Column="1" Content="Search" Command="{Binding SearchMemoryNotesCommand}" Margin="8,0,0,0" />
 						</Grid>
 					</Border>
@@ -914,9 +914,9 @@
 								<StackPanel Spacing="10">
 									<TextBlock Text="Operator Access" Classes="section-title" />
 									<Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
-										<TextBox Text="{Binding Username}" Watermark="Username" />
-										<TextBox Grid.Column="1" Text="{Binding Password}" PasswordChar="•" Watermark="Password" />
-										<TextBox Grid.Column="2" Text="{Binding OperatorTokenLabel}" Watermark="Token label" />
+										<TextBox Text="{Binding Username}" PlaceholderText="Username" />
+										<TextBox Grid.Column="1" Text="{Binding Password}" PasswordChar="•" PlaceholderText="Password" />
+										<TextBox Grid.Column="2" Text="{Binding OperatorTokenLabel}" PlaceholderText="Token label" />
 									</Grid>
 									<StackPanel Orientation="Horizontal" Spacing="8">
 										<Button Content="Issue Operator Token" Command="{Binding IssueOperatorTokenCommand}" />
@@ -984,19 +984,19 @@
 							<StackPanel Spacing="10">
 								<TextBlock Text="Official Cloud API" Classes="section-title" />
 								<Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10">
-									<TextBox Text="{Binding WhatsAppWebhookPath}" Watermark="/whatsapp/inbound" />
-									<TextBox Grid.Column="1" Text="{Binding WhatsAppWebhookPublicBaseUrl}" Watermark="https://example.com" />
-									<TextBox Grid.Row="1" Text="{Binding WhatsAppWebhookVerifyToken}" PasswordChar="•" Watermark="Verify token" />
-									<TextBox Grid.Row="1" Grid.Column="1" Text="{Binding WhatsAppWebhookVerifyTokenRef}" Watermark="env:WHATSAPP_VERIFY_TOKEN" />
+									<TextBox Text="{Binding WhatsAppWebhookPath}" PlaceholderText="/whatsapp/inbound" />
+									<TextBox Grid.Column="1" Text="{Binding WhatsAppWebhookPublicBaseUrl}" PlaceholderText="https://example.com" />
+									<TextBox Grid.Row="1" Text="{Binding WhatsAppWebhookVerifyToken}" PasswordChar="•" PlaceholderText="Verify token" />
+									<TextBox Grid.Row="1" Grid.Column="1" Text="{Binding WhatsAppWebhookVerifyTokenRef}" PlaceholderText="env:WHATSAPP_VERIFY_TOKEN" />
 									<CheckBox Grid.Row="2" Content="Validate signature" IsChecked="{Binding WhatsAppValidateSignature}" />
-									<TextBox Grid.Row="3" Text="{Binding WhatsAppWebhookAppSecret}" PasswordChar="•" Watermark="App secret" />
-									<TextBox Grid.Row="3" Grid.Column="1" Text="{Binding WhatsAppWebhookAppSecretRef}" Watermark="env:WHATSAPP_APP_SECRET" />
-									<TextBox Grid.Row="4" Text="{Binding WhatsAppCloudApiToken}" PasswordChar="•" Watermark="Cloud API token" />
-									<TextBox Grid.Row="4" Grid.Column="1" Text="{Binding WhatsAppCloudApiTokenRef}" Watermark="env:WHATSAPP_CLOUD_API_TOKEN" />
+									<TextBox Grid.Row="3" Text="{Binding WhatsAppWebhookAppSecret}" PasswordChar="•" PlaceholderText="App secret" />
+									<TextBox Grid.Row="3" Grid.Column="1" Text="{Binding WhatsAppWebhookAppSecretRef}" PlaceholderText="env:WHATSAPP_APP_SECRET" />
+									<TextBox Grid.Row="4" Text="{Binding WhatsAppCloudApiToken}" PasswordChar="•" PlaceholderText="Cloud API token" />
+									<TextBox Grid.Row="4" Grid.Column="1" Text="{Binding WhatsAppCloudApiTokenRef}" PlaceholderText="env:WHATSAPP_CLOUD_API_TOKEN" />
 								</Grid>
 								<Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-									<TextBox Text="{Binding WhatsAppPhoneNumberId}" Watermark="Phone number ID" />
-									<TextBox Grid.Column="1" Text="{Binding WhatsAppBusinessAccountId}" Watermark="Business account ID" />
+									<TextBox Text="{Binding WhatsAppPhoneNumberId}" PlaceholderText="Phone number ID" />
+									<TextBox Grid.Column="1" Text="{Binding WhatsAppBusinessAccountId}" PlaceholderText="Business account ID" />
 								</Grid>
 							</StackPanel>
 						</Border>
@@ -1005,7 +1005,7 @@
 								<StackPanel Spacing="8">
 									<TextBlock Text="Plugin Bridge" Classes="section-title" />
 									<CheckBox Content="Plugin detected" IsChecked="{Binding WhatsAppPluginDetected}" IsEnabled="False" />
-									<TextBox Text="{Binding WhatsAppPluginId}" Watermark="Plugin ID" />
+									<TextBox Text="{Binding WhatsAppPluginId}" PlaceholderText="Plugin ID" />
 									<TextBlock Text="{Binding WhatsAppPluginWarning}" Classes="muted" TextWrapping="Wrap" />
 									<TextBox Text="{Binding WhatsAppPluginConfigJson}" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="120" />
 									<TextBox Text="{Binding WhatsAppFirstPartyWorkerConfigJson}" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="120" />
@@ -1014,9 +1014,9 @@
 							<Border Grid.Column="1" Classes="section-card">
 								<StackPanel Spacing="8">
 									<TextBlock Text="Bridge Secrets" Classes="section-title" />
-									<TextBox Text="{Binding WhatsAppBridgeUrl}" Watermark="Built-in bridge URL" />
-									<TextBox Text="{Binding WhatsAppBridgeToken}" PasswordChar="•" Watermark="Built-in bridge token" />
-									<TextBox Text="{Binding WhatsAppBridgeTokenRef}" Watermark="env:WHATSAPP_BRIDGE_TOKEN" />
+									<TextBox Text="{Binding WhatsAppBridgeUrl}" PlaceholderText="Built-in bridge URL" />
+									<TextBox Text="{Binding WhatsAppBridgeToken}" PasswordChar="•" PlaceholderText="Built-in bridge token" />
+									<TextBox Text="{Binding WhatsAppBridgeTokenRef}" PlaceholderText="env:WHATSAPP_BRIDGE_TOKEN" />
 									<CheckBox Content="Suppress bridge send exceptions" IsChecked="{Binding WhatsAppBridgeSuppressSendExceptions}" />
 								</StackPanel>
 							</Border>
@@ -1071,8 +1071,8 @@
 							<StackPanel Spacing="8">
 								<TextBlock Text="Setup" Classes="section-title" />
 								<Grid ColumnDefinitions="*,*">
-									<TextBox Text="{Binding PaymentProvider}" Watermark="Provider" />
-									<TextBox Grid.Column="1" Text="{Binding PaymentEnvironment}" Watermark="test/live" Margin="8,0,0,0" />
+									<TextBox Text="{Binding PaymentProvider}" PlaceholderText="Provider" />
+									<TextBox Grid.Column="1" Text="{Binding PaymentEnvironment}" PlaceholderText="test/live" Margin="8,0,0,0" />
 								</Grid>
 								<TextBox Text="{Binding PaymentSetupSummary}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="120" />
 							</StackPanel>
@@ -1095,28 +1095,28 @@
 						<Border Grid.Row="1" Grid.Column="0" Classes="section-card">
 							<StackPanel Spacing="8">
 								<TextBlock Text="Virtual Card" Classes="section-title" />
-								<TextBox Text="{Binding VirtualCardMerchantName}" Watermark="Merchant name" />
-								<TextBox Text="{Binding VirtualCardMerchantUrl}" Watermark="Merchant URL" />
+								<TextBox Text="{Binding VirtualCardMerchantName}" PlaceholderText="Merchant name" />
+								<TextBox Text="{Binding VirtualCardMerchantUrl}" PlaceholderText="Merchant URL" />
 								<Grid ColumnDefinitions="*,*">
-									<TextBox Text="{Binding VirtualCardAmountMinor}" Watermark="Amount minor" />
-									<TextBox Grid.Column="1" Text="{Binding VirtualCardCurrency}" Watermark="Currency" Margin="8,0,0,0" />
+									<TextBox Text="{Binding VirtualCardAmountMinor}" PlaceholderText="Amount minor" />
+									<TextBox Grid.Column="1" Text="{Binding VirtualCardCurrency}" PlaceholderText="Currency" Margin="8,0,0,0" />
 								</Grid>
-								<TextBox Text="{Binding VirtualCardFundingSourceId}" Watermark="Funding source ID" />
+								<TextBox Text="{Binding VirtualCardFundingSourceId}" PlaceholderText="Funding source ID" />
 								<Button Content="Issue Virtual Card" Command="{Binding IssueVirtualCardCommand}" Classes="danger" HorizontalAlignment="Left" />
 							</StackPanel>
 						</Border>
 						<Border Grid.Row="1" Grid.Column="1" Classes="section-card">
 							<StackPanel Spacing="8">
 								<TextBlock Text="Execute / Status" Classes="section-title" />
-								<TextBox Text="{Binding MachinePaymentMerchantName}" Watermark="Merchant name" />
+								<TextBox Text="{Binding MachinePaymentMerchantName}" PlaceholderText="Merchant name" />
 								<Grid ColumnDefinitions="*,*">
-									<TextBox Text="{Binding MachinePaymentAmountMinor}" Watermark="Amount minor" />
-									<TextBox Grid.Column="1" Text="{Binding MachinePaymentCurrency}" Watermark="Currency" Margin="8,0,0,0" />
+									<TextBox Text="{Binding MachinePaymentAmountMinor}" PlaceholderText="Amount minor" />
+									<TextBox Grid.Column="1" Text="{Binding MachinePaymentCurrency}" PlaceholderText="Currency" Margin="8,0,0,0" />
 								</Grid>
-								<TextBox Text="{Binding MachinePaymentFundingSourceId}" Watermark="Funding source ID" />
+								<TextBox Text="{Binding MachinePaymentFundingSourceId}" PlaceholderText="Funding source ID" />
 								<Button Content="Execute Payment" Command="{Binding ExecuteMachinePaymentCommand}" Classes="danger" HorizontalAlignment="Left" />
 								<Grid ColumnDefinitions="*,Auto">
-									<TextBox Text="{Binding PaymentStatusLookupId}" Watermark="Payment id" />
+									<TextBox Text="{Binding PaymentStatusLookupId}" PlaceholderText="Payment id" />
 									<Button Grid.Column="1" Content="Lookup" Command="{Binding LookupPaymentStatusCommand}" Margin="8,0,0,0" />
 								</Grid>
 								<TextBox Text="{Binding PaymentResultText}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="80" />

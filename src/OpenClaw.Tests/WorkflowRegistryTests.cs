@@ -69,7 +69,7 @@ public sealed class WorkflowRegistryTests : IDisposable
         using var registry = CreateRegistry(new GatewayConfig());
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-            registry.GetAsync("missing", "run_123", CancellationToken.None));
+            registry.GetAsync("missing", "run_123", TestContext.Current.CancellationToken));
     }
 
     [Fact]

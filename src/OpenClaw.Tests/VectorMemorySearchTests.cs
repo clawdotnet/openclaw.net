@@ -66,12 +66,12 @@ public sealed class VectorMemorySearchTests : IDisposable
         var store = new SqliteMemoryStore(_dbPath, enableFts: true,
             embeddingGenerator: mockGen, enableVectors: true);
 
-        await store.SaveNoteAsync("note:1", "The cat sat on the mat", CancellationToken.None);
-        await store.SaveNoteAsync("note:2", "A dog played in the park", CancellationToken.None);
-        await store.SaveNoteAsync("note:3", "The cat and dog are friends", CancellationToken.None);
+        await store.SaveNoteAsync("note:1", "The cat sat on the mat", TestContext.Current.CancellationToken);
+        await store.SaveNoteAsync("note:2", "A dog played in the park", TestContext.Current.CancellationToken);
+        await store.SaveNoteAsync("note:3", "The cat and dog are friends", TestContext.Current.CancellationToken);
 
         // Search for "cat" - the vector re-ranking should still return cat-related notes first
-        var results = await store.SearchNotesAsync("cat", prefix: null, limit: 3, CancellationToken.None);
+        var results = await store.SearchNotesAsync("cat", prefix: null, limit: 3, TestContext.Current.CancellationToken);
         Assert.NotEmpty(results);
         // The exact ordering depends on BM25+cosine combination, but cat-only note should be top
         Assert.Contains(results, r => r.Key == "note:1");
@@ -83,8 +83,8 @@ public sealed class VectorMemorySearchTests : IDisposable
         var store = new SqliteMemoryStore(_dbPath, enableFts: true,
             embeddingGenerator: null, enableVectors: false);
 
-        await store.SaveNoteAsync("note:1", "Hello world", CancellationToken.None);
-        var results = await store.SearchNotesAsync("hello", prefix: null, limit: 5, CancellationToken.None);
+        await store.SaveNoteAsync("note:1", "Hello world", TestContext.Current.CancellationToken);
+        var results = await store.SearchNotesAsync("hello", prefix: null, limit: 5, TestContext.Current.CancellationToken);
         Assert.Single(results);
         Assert.Equal("note:1", results[0].Key);
     }
@@ -97,8 +97,8 @@ public sealed class VectorMemorySearchTests : IDisposable
         var store = new SqliteMemoryStore(_dbPath, enableFts: true,
             embeddingGenerator: failGen, enableVectors: true);
 
-        await store.SaveNoteAsync("note:fail", "This should still save", CancellationToken.None);
-        var content = await store.LoadNoteAsync("note:fail", CancellationToken.None);
+        await store.SaveNoteAsync("note:fail", "This should still save", TestContext.Current.CancellationToken);
+        var content = await store.LoadNoteAsync("note:fail", TestContext.Current.CancellationToken);
         Assert.Equal("This should still save", content);
     }
 

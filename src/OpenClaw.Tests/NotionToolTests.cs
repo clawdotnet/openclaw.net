@@ -31,7 +31,7 @@ public sealed class NotionToolTests
         ]);
 
         using var tool = new NotionTool(CreateConfig(defaultPageId: "page-default"), new HttpClient(handler));
-        var result = await tool.ExecuteAsync("""{"op":"read_page"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"op":"read_page"}""", TestContext.Current.CancellationToken);
 
         Assert.Contains("title: Scratchpad", result);
         Assert.Contains("page_id: page-default", result);
@@ -44,7 +44,7 @@ public sealed class NotionToolTests
         var handler = new SequenceHandler([]);
         using var tool = new NotionTool(CreateConfig(defaultDatabaseId: "db-allowed"), new HttpClient(handler));
 
-        var result = await tool.ExecuteAsync("""{"op":"list_notes","database_id":"db-denied"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"op":"list_notes","database_id":"db-denied"}""", TestContext.Current.CancellationToken);
 
         Assert.Contains("not allowed", result);
         Assert.Equal(0, handler.RequestCount);
@@ -87,7 +87,7 @@ public sealed class NotionToolTests
         ]);
 
         using var tool = new NotionTool(CreateConfig(defaultDatabaseId: "db-allowed"), new HttpClient(handler));
-        var result = await tool.ExecuteAsync("""{"op":"search","query":"note"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"op":"search","query":"note"}""", TestContext.Current.CancellationToken);
 
         Assert.Contains("Allowed note", result);
         Assert.DoesNotContain("Denied note", result);
@@ -113,7 +113,7 @@ public sealed class NotionToolTests
         ]);
 
         using var tool = new NotionWriteTool(CreateConfig(defaultPageId: "page-default"), new HttpClient(handler));
-        var result = await tool.ExecuteAsync("""{"op":"append_page","content":"hello world"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"op":"append_page","content":"hello world"}""", TestContext.Current.CancellationToken);
 
         Assert.Contains("OK: appended content", result);
     }
@@ -147,7 +147,7 @@ public sealed class NotionToolTests
         ]);
 
         using var tool = new NotionWriteTool(CreateConfig(defaultDatabaseId: "db-allowed"), new HttpClient(handler));
-        var result = await tool.ExecuteAsync("""{"op":"create_note","title":"Release Notes","content":"shipped","tags":["ops"]}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"op":"create_note","title":"Release Notes","content":"shipped","tags":["ops"]}""", TestContext.Current.CancellationToken);
 
         Assert.Contains("OK: created note 'Release Notes'", result);
         Assert.Contains("page-created", result);
@@ -169,7 +169,7 @@ public sealed class NotionToolTests
         ]);
 
         using var tool = new NotionWriteTool(CreateConfig(defaultDatabaseId: "db-allowed"), new HttpClient(handler));
-        var result = await tool.ExecuteAsync("""{"op":"update_note","page_id":"page-note","title":"Release Notes v2","content":"new body"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"op":"update_note","page_id":"page-note","title":"Release Notes v2","content":"new body"}""", TestContext.Current.CancellationToken);
 
         Assert.Contains("OK: updated note 'Release Notes v2'", result);
     }
@@ -182,7 +182,7 @@ public sealed class NotionToolTests
             new HttpClient(new SequenceHandler([])),
             new ToolingConfig { ReadOnlyMode = true });
 
-        var result = await tool.ExecuteAsync("""{"op":"append_page","content":"x"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"op":"append_page","content":"x"}""", TestContext.Current.CancellationToken);
 
         Assert.Contains("Tooling.ReadOnlyMode", result);
     }
@@ -194,7 +194,7 @@ public sealed class NotionToolTests
             CreateConfig(defaultPageId: "page-default", readOnly: true),
             new HttpClient(new SequenceHandler([])));
 
-        var result = await tool.ExecuteAsync("""{"op":"append_page","content":"x"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"op":"append_page","content":"x"}""", TestContext.Current.CancellationToken);
 
         Assert.Contains("Plugins.Native.Notion.ReadOnly", result);
     }
@@ -211,7 +211,7 @@ public sealed class NotionToolTests
         ]);
 
         using var tool = new NotionTool(CreateConfig(defaultPageId: "page-default"), new HttpClient(handler));
-        var result = await tool.ExecuteAsync("""{"op":"read_page"}""", CancellationToken.None);
+        var result = await tool.ExecuteAsync("""{"op":"read_page"}""", TestContext.Current.CancellationToken);
 
         Assert.Contains("authorization failed", result, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("shared with the integration", result, StringComparison.OrdinalIgnoreCase);

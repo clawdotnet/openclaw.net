@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>OpenClaw.Plugins.TokenJuice</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsPackable>true</IsPackable>
+    <PackageId>OpenClaw.Plugins.TokenJuice</PackageId>
+    <Description>Bundled first-party token-juice tool output reduction for OpenClaw.NET.</Description>
+    <PackageTags>openclaw;tokenjuice;plugin;tool;reduction</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Rules/**/*.json" />
+  </ItemGroup>
+</Project>
