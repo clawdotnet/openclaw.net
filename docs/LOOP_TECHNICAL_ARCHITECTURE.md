@@ -1,6 +1,6 @@
 # OpenClaw.NET /loop Command — Technical Architecture
 
-> A TickerQ-powered session-scoped recurring prompt injection mechanism. Users set a /loop command and the system automatically injects preset prompts into the session at specified intervals, driving agent turns forward. Supports idempotent override, dual-path semantic auto-termination, and cross-restart persistence.
+> A TickerQ-powered session-scoped recurring prompt injection mechanism. Users set a /loop command and the system automatically injects preset prompts into the session at specified intervals, driving agent turns forward. Supports idempotent override and dual-path semantic auto-termination; active loop entries currently live in memory and do not survive process restarts.
 
 - **Status:** Implemented (branch: `Feature/Codex-loop`)
 - **Commits:** `78d115e`, `bb58cf3`, `42acf7c`
@@ -46,28 +46,28 @@ Traditional approaches require users to repeatedly type the same instruction, or
 `/loop` is a **recurring prompt injection** command. When a user types `/loop 5m check build status` in a session, the system:
 
 1. Parses the interval into a standard cron expression
-2. Registers a scheduled job with the TickerQ scheduling engine
-3. On each trigger, injects the preset prompt as a system message into the session
+2. Stores the loop entry in the in-memory scheduler registry
+3. On each polling tick that finds the entry due, injects the preset prompt as a system message into the session
 4. Advances the agent through a full tool-calling loop, producing a response
-5. When the task is complete (model declaration or keyword match), automatically deregisters the timer
+5. When the task is complete (model declaration or keyword match), removes the loop entry from the registry
 
 ### Ecosystem Comparison
 
 | Feature | Codex /loop | OpenClaw.NET /loop |
 |---------|-------------|---------------------|
-| Scheduling engine | In-memory timer (dies with client) | **TickerQ persistent cron jobs** |
-| Restart recovery | ❌ Lost | ✅ Auto-recovery |
+| Scheduling engine | In-memory timer (dies with client) | **TickerQ minute polling + in-memory loop registry** |
+| Restart recovery | ❌ Lost | ❌ Active loop registry lost on restart (persistence planned) |
 | Idempotent override | ✅ Single per session | ✅ Single per session |
 | Semantic auto-stop | ✅ Keyword detection | ✅ **Dual-path (tool + keyword)** |
 | Trigger channels | CLI/TUI only | **CLI + chat channels** |
-| Concurrency safety | No cluster support | TickerQ row locks |
+| Concurrency safety | No cluster support | `ConcurrentDictionary` + per-entry lock |
 | Host language | Rust | **C# / .NET** |
 
 ---
 
 ## 2. Architecture Overview
 
-```
+```plaintext
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    User / Operator (CLI / Channel)                    │
 │       /loop 5m check build status                                    │
@@ -150,20 +150,20 @@ Traditional approaches require users to repeatedly type the same instruction, or
 | State | Meaning | Trigger |
 |-------|---------|---------|
 | **Scheduled** | Loop registered, awaiting timer | `/loop <interval> <prompt>` |
-| **Running** | A loop turn is executing | TickerQ tick finds due entry |
+| **Running** | A loop turn is executing | TickerQ polling tick finds a due entry |
 | **Overridden** | Replaced by a new `/loop` command | Same session issues another `/loop` |
 | **Terminated** | Auto or manually canceled (terminal) | Semantic detection fires or `/loop cancel` |
 
 ### Transition Diagram
 
-```
+```plaintext
                           /loop 5m <prompt>
                                │
                                ▼
                          ┌──────────┐
             ┌───────────│ Scheduled │◄──────────────┐
             │           └─────┬─────┘               │
-            │    /loop cancel │  TickerQ tick         │ /loop 10m <new>
+            │    /loop cancel │  polling tick         │ /loop 10m <new>
             │                ▼                        │ (idempotent override)
             │           ┌─────────┐                  │
             │           │ Running  │─────────────────┘
@@ -202,7 +202,7 @@ Traditional approaches require users to repeatedly type the same instruction, or
 
 TickerQ 10.4.0's public API does not expose `ICronTickerManager` for dynamic registration. The solution uses a **compile-time `[TickerFunction]` + in-memory registry** hybrid:
 
-```
+```plaintext
 Compile-time                             Runtime
 ┌──────────────────────────┐      ┌──────────────────────────┐
 │ [TickerFunction(          │      │ ClawLoopScheduler         │
@@ -225,7 +225,7 @@ Compile-time                             Runtime
 | User Input | Cron Expression | Meaning |
 |------------|-----------------|---------|
 | `5m` | `*/5 * * * *` | Every 5 minutes |
-| `30s` | `*/30 * * * * *` | Every 30 seconds (seconds field) |
+| `30s` | `*/30 * * * * *` | 30-second cron expression; dispatch is observed by minute-based polling |
 | `120s` | `*/2 * * * *` | Every 120s = every 2 minutes |
 | `1h` | `0 */1 * * *` | Every hour (on the hour) |
 
@@ -265,14 +265,14 @@ private static readonly FrozenSet<string> TerminationKeywords = new[]
 }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 ```
 
-Any keyword hit triggers the same termination flow as Path 1. No hit means no action—the loop waits for the next tick.
+Any whole-keyword hit triggers the same termination flow as Path 1. Substrings inside longer words do not match. No hit means no action—the loop waits for the next tick.
 
 ### Defense Design
 
 | Scenario | Behavior |
 |----------|----------|
 | Tool calls `loop_control` but was denied by approval | Treated as not yet complete; loop continues |
-| Response text contains keyword but task is unfinished | False-positive risk (conservative strategy). Keywords are intentionally minimal |
+| Response text contains a complete keyword but task is unfinished | False-positive risk (conservative strategy). Keywords are intentionally minimal and matched on word boundaries |
 | Both paths fire simultaneously | `ConcurrentDictionary.TryRemove` is idempotent; second call is a no-op |
 | Response has neither tool call nor keyword | No termination triggered; normal cron wait |
 
@@ -293,7 +293,7 @@ Any keyword hit triggers the same termination flow as Path 1. No hit means no ac
 
 ### Examples
 
-```
+```plaintext
 User: /loop 5m check latest CI build status
 
 System: Loop started — interval: 5m, prompt: "check latest CI build status"
@@ -392,9 +392,9 @@ TickerQ automatically discovers classes annotated with `[TickerFunction]` via th
 | Layer | Mechanism |
 |-------|-----------|
 | `ClawLoopScheduler._entries` | `ConcurrentDictionary<string, LoopEntry>` — thread-safe AddOrUpdate/TryRemove |
-| `LoopEntry.IsDue()` | Intra-entry `_nextOccurrence` compare-and-update is not interlocked, but safe in TickerQ's single-threaded consumer model |
+| `LoopEntry.IsDue()` | Intra-entry `_nextOccurrence` compare-and-update is protected by a per-entry lock |
 | Agent layer | `AgentRuntime` already has session locks; only one turn per session at a time |
-| TickerQ | `[TickerFunction]` cron consumer runs single-threaded; no intra-tick race conditions |
+| TickerQ | `[TickerFunction]` invokes a minute-based polling job; per-loop state remains in the in-memory registry |
 
 ---
 
@@ -429,11 +429,11 @@ This ensures span depth is always constant for each loop tick, regardless of how
 | Dimension | /loop | /goal |
 |-----------|-------|-------|
 | Trigger | External timer injects prompt | Model auto-continues on stop |
-| Scheduling engine | TickerQ cron jobs | AgentRuntime loop inline |
+| Scheduling engine | TickerQ minute polling + in-memory registry | AgentRuntime loop inline |
 | Lifecycle | Scheduled → Running → Terminated | Active → Paused/Blocked/BudgetLimited → Complete |
 | Model tools | `loop_control` (complete only) | `get_goal`, `create_goal`, `update_goal` |
 | Budget system | None | Token budget + baseline mechanism |
-| Persistence | TickerQ database (survives restarts) | InMemory + JSONL history |
+| Persistence | In-memory loop registry (persistence planned) | InMemory + JSONL history |
 
 **Coexistence rules:**
 - A single session can have both `/loop` and `/goal` simultaneously
@@ -465,8 +465,8 @@ No `dynamic`, no `MakeGenericType`, no unannotated `[RequiresUnreferencedCode]`.
 | Component Under Test | Test File | Verification Points |
 |---------------------|-----------|---------------------|
 | `LoopCommandParser` | `LoopCommandParserTests.cs` | Valid schedule parsing (including Chinese prompts); cancel/stop/status exact matches; invalid input returns Invalid; non-loop commands return null |
-| `ClawLoopScheduler` | `ClawLoopSchedulerTests.cs` | Schedule → entry exists; Cancel → entry removed; SignalComplete → cancels via explicit interface; idempotent override; nonexistent session returns null; `IntervalToCron` correct conversion and invalid input throws |
-| `LoopTerminationDetector` | `LoopControlToolTests.cs` | Keyword hit triggers SignalComplete; no hit does not trigger; empty/null text returns false; OnToolComplete triggers SignalComplete |
+| `ClawLoopScheduler` | `ClawLoopSchedulerTests.cs` | Schedule → entry exists; seconds cron parses; invalid cron is normalized to `ArgumentException`; Cancel → entry removed; SignalComplete → cancels via explicit interface; idempotent override; due polling; concurrent `IsDue` access |
+| `LoopTerminationDetector` | `LoopControlToolTests.cs` | Whole-keyword hit triggers SignalComplete; substrings do not trigger; empty/null text returns false; OnToolComplete triggers SignalComplete |
 | `LoopControlTool` | `LoopControlToolTests.cs` | `status="complete"` correctly forwarded; invalid status returns error; no session context returns error; tool metadata verification |
 
 ### Test Statistics

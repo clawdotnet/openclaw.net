@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace OpenClaw.Core.Loops;
 
 /// <summary>
-/// Strongly-typed payload carried by TickerQ cron jobs for loop dispatch.
+/// Strongly-typed loop dispatch payload for future persisted scheduler storage.
 /// Uses source-generated JSON to stay AOT-safe.
 /// </summary>
 public sealed record AgentLoopRequestPayload(

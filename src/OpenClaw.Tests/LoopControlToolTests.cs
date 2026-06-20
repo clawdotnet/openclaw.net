@@ -101,6 +101,35 @@ public sealed class LoopTerminationDetectorTests
         await _mockControl.DidNotReceive().SignalCompleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData("ABANDONED")]
+    [InlineData("UNDONE")]
+    [InlineData("WORK_COMPLETED")]
+    [InlineData("PRELOOP_TERMINATE")]
+    public async Task ScanText_KeywordSubstring_DoesNotSignal(string text)
+    {
+        var detector = new LoopTerminationDetector(_mockControl, _mockLogger);
+
+        var result = await detector.ScanTextAsync("s1", text, TestContext.Current.CancellationToken);
+
+        Assert.False(result);
+        await _mockControl.DidNotReceive().SignalCompleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("DONE.")]
+    [InlineData("Status: WORK_COMPLETE")]
+    [InlineData("(LOOP_TERMINATE)")]
+    public async Task ScanText_WholeKeyword_SignalsComplete(string text)
+    {
+        var detector = new LoopTerminationDetector(_mockControl, _mockLogger);
+
+        var result = await detector.ScanTextAsync("s1", text, TestContext.Current.CancellationToken);
+
+        Assert.True(result);
+        await _mockControl.Received(1).SignalCompleteAsync("s1", Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task ScanText_EmptyOrNull_ReturnsFalse()
     {

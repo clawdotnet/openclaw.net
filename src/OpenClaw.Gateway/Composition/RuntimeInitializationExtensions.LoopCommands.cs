@@ -6,9 +6,9 @@ internal static partial class RuntimeInitializationExtensions
 {
     private static void WireLoopCommandCallback(WebApplication app, RuntimeServices services)
     {
+        var scheduler = app.Services.GetRequiredService<ClawLoopScheduler>();
         services.CommandProcessor.SetLoopCallback(async (session, text, ct) =>
         {
-            var scheduler = app.Services.GetRequiredService<ClawLoopScheduler>();
             var cmd = LoopCommandParser.TryParse(text);
             if (cmd is null || cmd.Action == LoopAction.Invalid)
                 return "Usage: /loop <interval> <prompt>  — e.g. /loop 5m check build status\n       /loop cancel  — cancel active loop\n       /loop status  — show loop status";

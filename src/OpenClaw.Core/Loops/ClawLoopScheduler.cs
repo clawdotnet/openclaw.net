@@ -30,11 +30,25 @@ public sealed class ClawLoopScheduler : ILoopControlService
     /// </summary>
     public Task ScheduleLoopAsync(string sessionId, string cronExpression, string prompt, CancellationToken ct)
     {
-        var schedule = CrontabSchedule.Parse(cronExpression);
+        var schedule = ParseCronExpression(cronExpression);
         var entry = new LoopEntry(sessionId, prompt, cronExpression, schedule);
         _entries.AddOrUpdate(sessionId, _ => entry, (_, _) => entry);
         _logger.LogInformation("Loop scheduled for session {SessionId} with cron '{Cron}'", sessionId, cronExpression);
         return Task.CompletedTask;
+    }
+
+    private static CrontabSchedule ParseCronExpression(string cronExpression)
+    {
+        try
+        {
+            var fieldCount = cronExpression.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+            var options = new CrontabSchedule.ParseOptions { IncludingSeconds = fieldCount == 6 };
+            return CrontabSchedule.Parse(cronExpression, options);
+        }
+        catch (Exception ex) when (ex is CrontabException or FormatException or ArgumentException)
+        {
+            throw new ArgumentException($"Invalid cron expression: {cronExpression}", nameof(cronExpression), ex);
+        }
     }
 
     /// <summary>
@@ -114,6 +128,7 @@ public sealed class LoopEntry
     public string CronExpression { get; }
     public DateTimeOffset ScheduledAt { get; }
 
+    private readonly object _gate = new();
     private readonly CrontabSchedule _schedule;
     private DateTimeOffset _nextOccurrence;
 
@@ -133,10 +148,13 @@ public sealed class LoopEntry
     /// </summary>
     public bool IsDue(DateTimeOffset now)
     {
-        if (now.UtcDateTime < _nextOccurrence)
-            return false;
+        lock (_gate)
+        {
+            if (now.UtcDateTime < _nextOccurrence)
+                return false;
 
-        _nextOccurrence = _schedule.GetNextOccurrence(now.UtcDateTime);
-        return true;
+            _nextOccurrence = _schedule.GetNextOccurrence(now.UtcDateTime);
+            return true;
+        }
     }
 }
