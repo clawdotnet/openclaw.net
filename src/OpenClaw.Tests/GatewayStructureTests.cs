@@ -33,7 +33,9 @@ public sealed class GatewayStructureTests
             "ClawLoopScheduler should be resolved before SetLoopCallback so missing DI registration fails during startup.");
 
         var lambdaStart = source.IndexOf("=>", setLoopIndex, StringComparison.Ordinal);
+        Assert.True(lambdaStart >= 0, "Loop callback lambda was not found.");
         var lambdaEnd = source.IndexOf("});", lambdaStart, StringComparison.Ordinal);
+        Assert.True(lambdaEnd >= 0, "Loop callback lambda end was not found.");
         var lambdaBody = source[lambdaStart..lambdaEnd];
         Assert.DoesNotContain("GetRequiredService<ClawLoopScheduler>", lambdaBody);
     }
