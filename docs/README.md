@@ -12,6 +12,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [QUICKSTART.md](QUICKSTART.md) | You want the shortest supported path to a running local instance. |
 | [GLOSSARY.md](GLOSSARY.md) | A term in another doc is unfamiliar — *gateway*, *runtime*, *skill*, *plugin*, *profile*, *posture*, `aot` / `jit` / `auto`, etc. |
 | [../README.md](../README.md) | High-level overview, feature list, and headline capabilities. |
+| [../README-cn.md](../README-cn.md) | 项目概述、功能列表和核心能力（简体中文）。 |
 | [ARCHITECTURE_BOUNDARIES.md](ARCHITECTURE_BOUNDARIES.md) | Core, gateway, extension, AOT/JIT, and Industrial Pack boundaries. |
 | [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md) | Core, optional, experimental, and JIT-only capability lanes. |
 | [zh-CN/CAPABILITY_MATRIX.md](zh-CN/CAPABILITY_MATRIX.md) | 能力矩阵（简体中文）。 |
