@@ -30,10 +30,11 @@ public static class SkillLoader
         var allSkills = new Dictionary<string, SkillDefinition>(StringComparer.OrdinalIgnoreCase);
 
         // 1. Extra dirs (lowest precedence — added first, overwritten by higher)
+        var scanSubdirectories = config.Load.ScanSubdirectories;
         foreach (var dir in config.Load.ExtraDirs)
         {
             if (Directory.Exists(dir))
-                ScanDirectory(dir, SkillSource.Extra, allSkills, logger);
+                ScanDirectory(dir, SkillSource.Extra, allSkills, logger, scanSubdirectories);
         }
 
         // 2. Bundled skills
@@ -41,7 +42,7 @@ public static class SkillLoader
         {
             var bundledDir = Path.Combine(AppContext.BaseDirectory, "skills");
             if (Directory.Exists(bundledDir))
-                ScanDirectory(bundledDir, SkillSource.Bundled, allSkills, logger);
+                ScanDirectory(bundledDir, SkillSource.Bundled, allSkills, logger, scanSubdirectories);
         }
 
         // 3. Managed/local skills
@@ -51,7 +52,7 @@ public static class SkillLoader
                 ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".openclaw", "skills")
                 : NormalizeManagedRootPath(config.Load.ManagedRoot, logger);
             if (managedDir is not null && TryDirectoryExists(managedDir))
-                ScanDirectory(managedDir, SkillSource.Managed, allSkills, logger);
+                ScanDirectory(managedDir, SkillSource.Managed, allSkills, logger, scanSubdirectories);
         }
 
         // 4. Plugin-packaged skills
@@ -60,7 +61,7 @@ public static class SkillLoader
             foreach (var pluginDir in pluginSkillDirs)
             {
                 if (Directory.Exists(pluginDir))
-                    ScanDirectory(pluginDir, SkillSource.Plugin, allSkills, logger);
+                    ScanDirectory(pluginDir, SkillSource.Plugin, allSkills, logger, scanSubdirectories);
             }
         }
 
@@ -69,7 +70,7 @@ public static class SkillLoader
         {
             var wsSkillsDir = Path.Combine(workspacePath, "skills");
             if (Directory.Exists(wsSkillsDir))
-                ScanDirectory(wsSkillsDir, SkillSource.Workspace, allSkills, logger);
+                ScanDirectory(wsSkillsDir, SkillSource.Workspace, allSkills, logger, scanSubdirectories);
         }
 
         // Filter by config and requirements
@@ -157,12 +158,16 @@ public static class SkillLoader
 
     /// <summary>
     /// Scan a directory for subdirectories containing SKILL.md.
+    /// When <paramref name="scanSubdirectories"/> is true, descends into nested
+    /// subdirectories (e.g. subskills/docx/SKILL.md) so that parent skill
+    /// directories can bundle sub-skills.
     /// </summary>
     private static void ScanDirectory(
         string rootDir,
         SkillSource source,
         Dictionary<string, SkillDefinition> results,
-        ILogger logger)
+        ILogger logger,
+        bool scanSubdirectories = false)
     {
         try
         {
@@ -186,7 +191,11 @@ public static class SkillLoader
                 }
             }
 
-            foreach (var skillDir in Directory.GetDirectories(rootDir))
+            var searchOption = scanSubdirectories
+                ? SearchOption.AllDirectories
+                : SearchOption.TopDirectoryOnly;
+
+            foreach (var skillDir in Directory.GetDirectories(rootDir, "*", searchOption))
             {
                 var skillFile = Path.Combine(skillDir, "SKILL.md");
                 if (!File.Exists(skillFile))

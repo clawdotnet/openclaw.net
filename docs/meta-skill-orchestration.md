@@ -172,6 +172,11 @@ than defaulting to a full sub-agent for everything.
 as the system prompt to generate a full agent response. This kind allows the model
 to perform multi-turn reasoning and tool calls.
 
+The referenced skill must be a standard skill (`kind: standard`), not another
+MetaSkill. Sub-skills can be discovered from nested subdirectories (e.g.
+`subskills/docx/SKILL.md`) when `Skills.Load.ScanSubdirectories` is enabled in
+config.
+
 ### `llm_classify` — Constrained Classification
 
 Forces the model to return exactly one label from `output_choices`. Used for routing

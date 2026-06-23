@@ -148,6 +148,9 @@ if (!TryValidateMetaPlan(steps, LoadedSkills, out var validationError))
 
 `agent` 是默认类型，通过注入被引用 Skill 的 `SKILL.md` 指令作为 system prompt 来生成完整 Agent 响应。该类型允许模型进行多轮推理和工具调用。
 
+被引用的 Skill 必须是标准 Skill（`kind: standard`），不能是另一个 MetaSkill。当配置中启用
+`Skills.Load.ScanSubdirectories` 时，子 Skill 可从嵌套子目录（如 `subskills/docx/SKILL.md`）中发现。
+
 ### `llm_classify` —— 约束分类
 
 强制模型从 `output_choices` 中返回恰好一个标签。用于路由和分流场景：

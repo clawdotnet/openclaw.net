@@ -59,6 +59,39 @@ src/OpenClaw.Gateway/skills/<skill-name>/SKILL.md    # Gateway 内置
 生成的提案审查通过后才安装。接受提案后，OpenClaw.NET 将其提升并刷新 Skill
 加载器。
 
+## 打包子 Skill
+
+MetaSkill 可通过 `kind: agent` 或 `kind: skill_exec` 委托标准 Skill。这些被委托的子 Skill
+可以与 MetaSkill 一起打包在嵌套子目录中：
+
+```
+~/.openclaw/skills/my-meta/
+  SKILL.md                        # kind: meta (my-meta)
+  subskills/
+    fetcher/SKILL.md               # kind: standard (fetcher)
+    reporter/SKILL.md              # kind: standard (reporter)
+    pdf/SKILL.md                   # kind: standard (pdf)
+```
+
+在配置中启用递归扫描，使加载器能发现嵌套的 `SKILL.md` 文件：
+
+```json
+{
+  "Skills": {
+    "Load": {
+      "ScanSubdirectories": true
+    }
+  }
+}
+```
+
+当 `ScanSubdirectories` 为 `true` 时，`SkillLoader` 使用 `SearchOption.AllDirectories`
+替代 `TopDirectoryOnly`。这使得每个嵌套的 `SKILL.md` 文件都可被发现，无需将每个子
+Skill 目录单独注册为 `ExtraDirs` 条目。
+
+默认为 `false` 以保持向后兼容。该标志统一应用于 ExtraDirs、Bundled、Managed、Plugin
+和 Workspace 技能目录。
+
 ## 必需的前置元数据
 
 ```yaml

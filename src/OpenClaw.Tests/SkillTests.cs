@@ -1360,6 +1360,105 @@ public class SkillLoaderTests
     }
 
     [Fact]
+    public void LoadAll_DefaultScanSubdirectories_DoesNotLoadNestedSkills()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"openclaw-test-skills-shallow-{Guid.NewGuid():N}");
+        var rootSkillDir = Path.Combine(tempDir, "skills", "meta-skill");
+        var nestedSkillDir = Path.Combine(rootSkillDir, "subskills", "reporter");
+        Directory.CreateDirectory(nestedSkillDir);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(rootSkillDir, "SKILL.md"), """
+                ---
+                name: meta-skill
+                description: Root meta skill
+                kind: meta
+                composition: {"steps":[{"id":"collect","kind":"user_input","with":{"prompt":"ok?"}}]}
+                ---
+                Root instructions.
+                """);
+
+            File.WriteAllText(Path.Combine(nestedSkillDir, "SKILL.md"), """
+                ---
+                name: reporter
+                description: Nested reporter skill
+                ---
+                Reporter instructions.
+                """);
+
+            var config = new SkillsConfig
+            {
+                Enabled = true,
+                Load = new SkillLoadConfig { IncludeBundled = false, IncludeManaged = false }
+            };
+            var logger = new TestLogger();
+
+            var skills = SkillLoader.LoadAll(config, tempDir, logger);
+
+            Assert.Contains(skills, skill => skill.Name == "meta-skill");
+            Assert.DoesNotContain(skills, skill => skill.Name == "reporter");
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void LoadAll_ScanSubdirectories_LoadsNestedWorkspaceSkills()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"openclaw-test-skills-recursive-{Guid.NewGuid():N}");
+        var rootSkillDir = Path.Combine(tempDir, "skills", "meta-skill");
+        var nestedSkillDir = Path.Combine(rootSkillDir, "subskills", "reporter");
+        Directory.CreateDirectory(nestedSkillDir);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(rootSkillDir, "SKILL.md"), """
+                ---
+                name: meta-skill
+                description: Root meta skill
+                kind: meta
+                composition: {"steps":[{"id":"collect","kind":"user_input","with":{"prompt":"ok?"}}]}
+                ---
+                Root instructions.
+                """);
+
+            File.WriteAllText(Path.Combine(nestedSkillDir, "SKILL.md"), """
+                ---
+                name: reporter
+                description: Nested reporter skill
+                ---
+                Reporter instructions.
+                """);
+
+            var config = new SkillsConfig
+            {
+                Enabled = true,
+                Load = new SkillLoadConfig
+                {
+                    IncludeBundled = false,
+                    IncludeManaged = false,
+                    ScanSubdirectories = true
+                }
+            };
+            var logger = new TestLogger();
+
+            var skills = SkillLoader.LoadAll(config, tempDir, logger);
+
+            Assert.Contains(skills, skill => skill.Name == "meta-skill");
+            var nestedSkill = Assert.Single(skills, skill => skill.Name == "reporter");
+            Assert.Equal(SkillSource.Workspace, nestedSkill.Source);
+            Assert.Equal(nestedSkillDir, nestedSkill.Location);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
     public void LoadAll_MetaPolicy_FiltersRiskAndCapabilities()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"openclaw-test-skills-meta-policy-{Guid.NewGuid():N}");
