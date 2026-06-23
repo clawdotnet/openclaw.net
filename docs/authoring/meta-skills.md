@@ -64,6 +64,42 @@ src/OpenClaw.Gateway/skills/<skill-name>/SKILL.md    # Gateway bundled
 Generated proposals are reviewed before installation. After accepting a
 proposal, OpenClaw.NET promotes it and refreshes the skill loader.
 
+## Bundling Sub-Skills
+
+A MetaSkill may delegate to standard skills via `kind: agent` or `kind: skill_exec`.
+These delegated (sub-)skills can be bundled alongside the MetaSkill in nested
+subdirectories:
+
+```
+~/.openclaw/skills/my-meta/
+  SKILL.md                        # kind: meta (my-meta)
+  subskills/
+    fetcher/SKILL.md               # kind: standard (fetcher)
+    reporter/SKILL.md              # kind: standard (reporter)
+    pdf/SKILL.md                   # kind: standard (pdf)
+```
+
+Enable recursive scanning in your config so the loader discovers nested `SKILL.md`
+files:
+
+```json
+{
+  "Skills": {
+    "Load": {
+      "ScanSubdirectories": true
+    }
+  }
+}
+```
+
+When `ScanSubdirectories` is `true`, `SkillLoader` uses `SearchOption.AllDirectories`
+instead of `TopDirectoryOnly`. This makes every nested `SKILL.md` discoverable
+without requiring each sub-skill directory to be registered as a separate
+`ExtraDirs` entry.
+
+Defaults to `false` for backward compatibility. The flag applies to ExtraDirs,
+Bundled, Managed, Plugin, and Workspace skill directories uniformly.
+
 ## Required Frontmatter
 
 ```yaml
