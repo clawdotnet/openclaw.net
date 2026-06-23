@@ -263,13 +263,23 @@ internal static class GatewayBootstrapExtensions
 
     private static void HydratePluginEntryConfigJson(GatewayConfig config, IConfiguration configuration)
     {
-        var entriesSection = configuration.GetSection("OpenClaw").GetSection("Plugins").GetSection("Entries");
+        var pluginsSection = configuration.GetSection("OpenClaw").GetSection("Plugins");
+        HydrateEntryConfigJson(pluginsSection.GetSection("Entries"), config.Plugins.Entries);
+        HydrateEntryConfigJson(
+            pluginsSection.GetSection("DynamicNative").GetSection("Entries"),
+            config.Plugins.DynamicNative.Entries);
+    }
+
+    private static void HydrateEntryConfigJson(
+        IConfigurationSection entriesSection,
+        Dictionary<string, PluginEntryConfig> entries)
+    {
         foreach (var pluginSection in entriesSection.GetChildren())
         {
-            if (!config.Plugins.Entries.TryGetValue(pluginSection.Key, out var entry))
+            if (!entries.TryGetValue(pluginSection.Key, out var entry))
             {
                 entry = new PluginEntryConfig();
-                config.Plugins.Entries[pluginSection.Key] = entry;
+                entries[pluginSection.Key] = entry;
             }
 
             var pluginConfigSection = pluginSection.GetSection("Config");

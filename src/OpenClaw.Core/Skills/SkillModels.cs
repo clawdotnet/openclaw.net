@@ -80,6 +80,14 @@ public sealed class SkillLoadConfig
 
     /// <summary>Debounce interval for the watcher (ms).</summary>
     public int WatchDebounceMs { get; set; } = 250;
+
+    /// <summary>
+    /// When true, ExtraDirs and ManagedRoot are scanned recursively (all nested
+    /// subdirectories) for SKILL.md files. This allows a parent skill directory
+    /// to bundle sub-skills in nested folders (e.g. subskills/docx/SKILL.md).
+    /// Defaults to false for backward compatibility.
+    /// </summary>
+    public bool ScanSubdirectories { get; set; } = false;
 }
 
 /// <summary>

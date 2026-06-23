@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
@@ -27,6 +28,51 @@ public sealed class GatewayBootstrapExtensionsTests
         Assert.Equal(["/app/workspace"], config.Tooling.AllowedReadRoots);
         Assert.Equal(["/app/workspace"], config.Tooling.AllowedWriteRoots);
         GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true);
+    }
+
+    [Fact]
+    public void LoadGatewayConfig_HydratesPluginEntryConfigJson()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["OpenClaw:Plugins:Entries:bridge-plugin:Enabled"] = "true",
+                ["OpenClaw:Plugins:Entries:bridge-plugin:Config:apiKey"] = "secret",
+                ["OpenClaw:Plugins:Entries:bridge-plugin:Config:retries"] = "3"
+            })
+            .Build();
+
+        var config = GatewayBootstrapExtensions.LoadGatewayConfig(configuration);
+
+        Assert.True(config.Plugins.Entries.TryGetValue("bridge-plugin", out var entry));
+        Assert.NotNull(entry!.Config);
+        var element = entry.Config!.Value;
+        Assert.Equal("secret", element.GetProperty("apiKey").GetString());
+        Assert.Equal(3, element.GetProperty("retries").GetInt32());
+    }
+
+    [Fact]
+    public void LoadGatewayConfig_HydratesDynamicNativePluginEntryConfigJson()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["OpenClaw:Plugins:DynamicNative:Enabled"] = "true",
+                ["OpenClaw:Plugins:DynamicNative:Entries:native-plugin:Enabled"] = "true",
+                ["OpenClaw:Plugins:DynamicNative:Entries:native-plugin:Config:endpoint"] = "https://example.com",
+                ["OpenClaw:Plugins:DynamicNative:Entries:native-plugin:Config:maxItems"] = "42"
+            })
+            .Build();
+
+        var config = GatewayBootstrapExtensions.LoadGatewayConfig(configuration);
+
+        Assert.True(config.Plugins.DynamicNative.Entries.TryGetValue("native-plugin", out var entry));
+        Assert.True(entry!.Enabled);
+        Assert.NotNull(entry.Config);
+        var element = entry.Config!.Value;
+        Assert.Equal(JsonValueKind.Object, element.ValueKind);
+        Assert.Equal("https://example.com", element.GetProperty("endpoint").GetString());
+        Assert.Equal(42, element.GetProperty("maxItems").GetInt32());
     }
 
     [Fact]
