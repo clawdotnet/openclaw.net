@@ -67,7 +67,8 @@ Keep heartbeat prompts short. Do not put secrets in `HEARTBEAT.md`; it is prompt
 ## Response Contract
 
 - `HEARTBEAT_OK` by itself is treated as OK and suppressed by default.
-- A reply that starts or ends with `HEARTBEAT_OK` and stays within `AckMaxChars` is also treated as OK.
+- Only an exact match of `HEARTBEAT_OK` (after trimming whitespace) suppresses delivery.
+  A reply that starts or ends with `HEARTBEAT_OK` but contains other text alongside it is not suppressed.
 - `HEARTBEAT_OK` in the middle of a longer reply is not treated specially.
 - Alerts should not include `HEARTBEAT_OK`.
 

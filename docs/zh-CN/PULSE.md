@@ -67,7 +67,8 @@ tasks:
 ## 响应合约
 
 - `HEARTBEAT_OK` 单独出现被视为 OK 且默认抑制。
-- 以 `HEARTBEAT_OK` 开头或结尾且保持在 `AckMaxChars` 内的回复也被视为 OK。
+- 仅 `HEARTBEAT_OK` 的精确匹配（去除首尾空格后）会抑制交付。
+  以 `HEARTBEAT_OK` 开头或结尾但包含其他文字的回复不会被抑制。
 - `HEARTBEAT_OK` 在较长回复的中间不会被特殊处理。
 - 告警不应包含 `HEARTBEAT_OK`。
 
