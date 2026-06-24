@@ -169,7 +169,7 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
             ApiKey = config.Llm.ApiKey,
             AuthMode = config.Llm.AuthMode,
             SendRequestMetadata = config.Llm.SendRequestMetadata,
-            CorrelationIdHeader = config.Llm.CorrelationIdHeader ?? "X-OpenClaw-Correlation-Id",
+            CorrelationIdHeader = NormalizeCorrelationIdHeader(config.Llm.CorrelationIdHeader, null),
             FallbackModels = config.Llm.FallbackModels,
             Capabilities = GuessCapabilities(config.Llm.Provider),
             PromptCaching = ClonePromptCaching(config.Llm.PromptCaching)
@@ -235,7 +235,7 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
             ApiKey = ResolveSecretValue(model.ApiKey),
             AuthMode = Normalize(model.AuthMode) ?? Normalize(config.Llm.AuthMode) ?? "bearer",
             SendRequestMetadata = model.SendRequestMetadata ?? config.Llm.SendRequestMetadata,
-            CorrelationIdHeader = model.CorrelationIdHeader ?? "X-OpenClaw-Correlation-Id",
+            CorrelationIdHeader = NormalizeCorrelationIdHeader(model.CorrelationIdHeader, config.Llm.CorrelationIdHeader),
             Tags = MergeTags(model),
             FallbackProfileIds = NormalizeDistinct(model.FallbackProfileIds),
             FallbackModels = NormalizeDistinct(model.FallbackModels),
@@ -308,6 +308,12 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
 
     private static string? Normalize(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string NormalizeCorrelationIdHeader(string? profileValue, string? globalValue)
+    {
+        var normalized = Normalize(profileValue) ?? Normalize(globalValue);
+        return normalized ?? "X-OpenClaw-Correlation-Id";
+    }
 
     private static string? ResolveSecretValue(string? value)
     {

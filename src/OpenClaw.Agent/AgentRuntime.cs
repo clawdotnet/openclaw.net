@@ -257,6 +257,11 @@ public sealed class AgentRuntime : IAgentRuntime
     /// Run the agent loop for a single user turn. Supports multi-step tool use,
     /// parallel tool execution, hooks, and optional tool approval.
     /// </summary>
+    private static string ResolveCorrelationId(string? correlationId)
+        => !string.IsNullOrWhiteSpace(correlationId)
+            ? correlationId
+            : Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16];
+
     public async Task<string> RunAsync(
         Session session, string userMessage, CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
@@ -267,9 +272,10 @@ public sealed class AgentRuntime : IAgentRuntime
         activity?.SetTag("session.id", session.Id);
         activity?.SetTag("channel.id", session.ChannelId);
 
+        var resolvedCorrelationId = ResolveCorrelationId(correlationId);
         var turnCtx = new TurnContext
         {
-            CorrelationId = correlationId ?? (Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16]),
+            CorrelationId = resolvedCorrelationId,
             SessionId = session.Id,
             ChannelId = session.ChannelId
         };
@@ -294,7 +300,7 @@ public sealed class AgentRuntime : IAgentRuntime
 
             // Compaction or simple trim
             if (_enableCompaction)
-                await CompactHistoryAsync(session, ct);
+                await CompactHistoryAsync(session, ct, resolvedCorrelationId);
             else
                 TrimHistory(session);
         }
@@ -538,9 +544,10 @@ public sealed class AgentRuntime : IAgentRuntime
         activity?.SetTag("session.id", session.Id);
         activity?.SetTag("channel.id", session.ChannelId);
 
+        var resolvedCorrelationId = ResolveCorrelationId(correlationId);
         var turnCtx = new TurnContext
         {
-            CorrelationId = correlationId ?? (Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16]),
+            CorrelationId = resolvedCorrelationId,
             SessionId = session.Id,
             ChannelId = session.ChannelId
         };
@@ -573,7 +580,7 @@ public sealed class AgentRuntime : IAgentRuntime
             session.History.Add(new ChatTurn { Role = "user", Content = userMessage });
 
             if (_enableCompaction)
-                await CompactHistoryAsync(session, ct);
+                await CompactHistoryAsync(session, ct, resolvedCorrelationId);
             else
                 TrimHistory(session);
         }
@@ -1620,7 +1627,7 @@ public sealed class AgentRuntime : IAgentRuntime
     /// Compacts session history by summarizing older turns via the LLM.
     /// Keeps the most recent turns verbatim and replaces older ones with a summary.
     /// </summary>
-    public async Task CompactHistoryAsync(Session session, CancellationToken ct)
+    public async Task CompactHistoryAsync(Session session, CancellationToken ct, string? correlationId = null)
     {
         if (session.History.Count <= _compactionThreshold)
         {
@@ -2218,6 +2225,7 @@ public sealed class AgentRuntime : IAgentRuntime
         }
         var turnCtx = new TurnContext
         {
+            CorrelationId = ResolveCorrelationId(null),
             SessionId = session.Id,
             ChannelId = session.ChannelId
         };

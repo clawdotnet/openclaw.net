@@ -239,7 +239,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             session.History.Add(new ChatTurn { Role = "user", Content = userMessage });
 
             if (_enableCompaction)
-                await CompactHistoryAsync(session, ct);
+                await CompactHistoryAsync(session, ct, turnCtx.CorrelationId);
             else
                 TrimHistory(session);
 
@@ -440,7 +440,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             session.History.Add(new ChatTurn { Role = "user", Content = userMessage });
 
             if (_enableCompaction)
-                await CompactHistoryAsync(session, ct);
+                await CompactHistoryAsync(session, ct, turnCtx.CorrelationId);
             else
                 TrimHistory(session);
 
@@ -3114,7 +3114,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         }
     }
 
-    private async Task CompactHistoryAsync(Session session, CancellationToken ct)
+    private async Task CompactHistoryAsync(Session session, CancellationToken ct, string? correlationId = null)
     {
         if (session.History.Count <= _compactionThreshold)
         {
@@ -3158,6 +3158,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
 
             var summaryTurnContext = new TurnContext
             {
+                CorrelationId = correlationId ?? (Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16]),
                 SessionId = session.Id,
                 ChannelId = session.ChannelId
             };
