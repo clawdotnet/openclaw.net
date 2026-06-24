@@ -207,7 +207,7 @@ public sealed class DelegateToolTests
             string userMessage,
             CancellationToken ct,
             ToolApprovalCallback? approvalCallback = null,
-            JsonElement? responseSchema = null, 
+            JsonElement? responseSchema = null,
             string? correlationId = null)
         {
             _ = userMessage;

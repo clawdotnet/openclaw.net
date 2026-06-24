@@ -192,7 +192,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
 
     private static string ResolveCorrelationId(string? correlationId)
         => !string.IsNullOrWhiteSpace(correlationId)
-            ? correlationId
+            ? correlationId.Trim()
             : Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16];
 
     public async Task<string> RunAsync(
@@ -3165,7 +3165,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
 
             var summaryTurnContext = new TurnContext
             {
-                CorrelationId = correlationId ?? (Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16]),
+                CorrelationId = ResolveCorrelationId(correlationId),
                 SessionId = session.Id,
                 ChannelId = session.ChannelId
             };

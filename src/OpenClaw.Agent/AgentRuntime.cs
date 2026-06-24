@@ -253,15 +253,15 @@ public sealed class AgentRuntime : IAgentRuntime
     /// </summary>
     public CircuitState CircuitBreakerState => _llmExecutionService?.DefaultCircuitState ?? _circuitBreaker.State;
 
+    private static string ResolveCorrelationId(string? correlationId)
+        => !string.IsNullOrWhiteSpace(correlationId)
+            ? correlationId.Trim()
+            : Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16];
+
     /// <summary>
     /// Run the agent loop for a single user turn. Supports multi-step tool use,
     /// parallel tool execution, hooks, and optional tool approval.
     /// </summary>
-    private static string ResolveCorrelationId(string? correlationId)
-        => !string.IsNullOrWhiteSpace(correlationId)
-            ? correlationId
-            : Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16];
-
     public async Task<string> RunAsync(
         Session session, string userMessage, CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
@@ -1681,6 +1681,7 @@ public sealed class AgentRuntime : IAgentRuntime
             var summaryOptions = new ChatOptions { MaxOutputTokens = 256, Temperature = 0.3f };
             var compactionTurnCtx = new TurnContext
             {
+                CorrelationId = ResolveCorrelationId(correlationId),
                 SessionId = session.Id,
                 ChannelId = session.ChannelId
             };
