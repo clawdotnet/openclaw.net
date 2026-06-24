@@ -172,6 +172,13 @@ internal static partial class OpenAiEndpoints
                 var created = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 var model = req.Model ?? startup.Config.Llm.Model;
 
+                // Accept an external trace/correlation ID from the caller for end-to-end distributed tracing.
+                var correlationId = ctx.Request.Headers.TryGetValue("X-Request-Id", out var requestIdValues) && requestIdValues.Count > 0
+                    ? requestIdValues.ToString()
+                    : ctx.Request.Headers.TryGetValue("X-Trace-Id", out var traceIdValues) && traceIdValues.Count > 0
+                        ? traceIdValues.ToString()
+                        : null;
+
                 if (req.Stream)
                 {
                     ctx.Response.ContentType = "text/event-stream";
@@ -240,7 +247,8 @@ internal static partial class OpenAiEndpoints
                         session,
                         userText ?? "",
                         ctx.RequestAborted,
-                        approvalCallback: approvalCallback))
+                        approvalCallback: approvalCallback,
+                        correlationId: correlationId))
                     {
                         if (evt.Type == AgentStreamEventType.TextDelta && !string.IsNullOrEmpty(evt.Content))
                         {
@@ -323,7 +331,8 @@ internal static partial class OpenAiEndpoints
                         session,
                         userText ?? "",
                         ctx.RequestAborted,
-                        approvalCallback: approvalCallback);
+                        approvalCallback: approvalCallback,
+                        correlationId: correlationId);
 
                     var response = new OpenAiChatCompletionResponse
                     {

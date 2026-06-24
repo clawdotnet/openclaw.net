@@ -216,7 +216,7 @@ OpenClaw supports native routing for several providers out-of-the-box. Change th
 - **Provider**: `"aperture"` or `"openai-compatible"` with an Aperture endpoint
 - **Required**: `Endpoint`/`BaseUrl` and `Model`; `ApiKey` is required for bearer-token mode
 - **Optional**: `AuthMode = "tailnet-identity"` for tailnet identity access without a provider bearer token
-- **Notes**: Aperture is an optional upstream AI gateway route. OpenClaw.NET still owns agents, tools, sessions, approvals, memory, channels, MCP, and runtime governance. Request metadata headers are disabled by default and are sent only when `SendRequestMetadata` is explicitly enabled.
+- **Notes**: Aperture is an optional upstream AI gateway route. OpenClaw.NET still owns agents, tools, sessions, approvals, memory, channels, MCP, and runtime governance. Request metadata headers are disabled by default and are sent only when `SendRequestMetadata` is explicitly enabled. The correlation ID header name is configurable per model profile via `CorrelationIdHeader` (default: `X-OpenClaw-Correlation-Id`).
 
 Setup helper:
 

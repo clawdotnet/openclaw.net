@@ -216,7 +216,7 @@ OpenClaw 开箱即支持多个提供商的原生路由。更改配置中的 `Pro
 - **Provider**：`"aperture"` 或带有 Aperture 端点的 `"openai-compatible"`
 - **必需**：`Endpoint`/`BaseUrl` 和 `Model`；`ApiKey` 对于 bearer-token 模式是必需的
 - **可选**：`AuthMode = "tailnet-identity"` 用于无需提供商 bearer 令牌的 tailnet 身份访问
-- **说明**：Aperture 是一个可选的上游 AI 网关路由。OpenClaw.NET 仍然拥有 Agent、工具、会话、审批、记忆、频道、MCP 和运行时治理。请求元数据头默认禁用，仅在 `SendRequestMetadata` 显式启用时发送。
+- **说明**：Aperture 是一个可选的上游 AI 网关路由。OpenClaw.NET 仍然拥有 Agent、工具、会话、审批、记忆、频道、MCP 和运行时治理。请求元数据头默认禁用，仅在 `SendRequestMetadata` 显式启用时发送。关联 ID 头名称可通过模型配置项 `CorrelationIdHeader` 自定义（默认：`X-OpenClaw-Correlation-Id`）。
 
 设置助手：
 

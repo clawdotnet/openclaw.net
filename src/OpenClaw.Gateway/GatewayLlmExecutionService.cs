@@ -636,7 +636,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         AddHeader(headers, "X-OpenClaw-Model-Profile", profile.Id);
         AddHeader(headers, "X-OpenClaw-Run-Mode", streaming ? "streaming" : "standard");
         AddHeader(headers, "X-OpenClaw-Purpose", "chat");
-        AddHeader(headers, "X-OpenClaw-Correlation-Id", correlationId);
+        AddHeader(headers, profile.CorrelationIdHeader, correlationId);
 
         if (headers.Count == 0)
             return;

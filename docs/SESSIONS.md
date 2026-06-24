@@ -134,7 +134,7 @@ OpenClaw now records each turn's token usage as an append-only audit stream, so 
 
 - **Write model:** append-only JSONL, one line per turn.
 - **Default file path:** `<Memory.StoragePath>/audit/turn-token-usage.jsonl`.
-- **Record shape:** `TurnTokenUsageRecord` (`SessionId`, `ChannelId`, `ProviderId`, `ModelId`, input/output/cache tokens, `EstimatedInputTokensByComponent`, `IsEstimated`, `TimestampUtc`).
+- **Record shape:** `TurnTokenUsageRecord` (`CorrelationId`, `SessionId`, `ChannelId`, `ProviderId`, `ModelId`, input/output/cache tokens, `EstimatedInputTokensByComponent`, `IsEstimated`, `TimestampUtc`).
 - **Execution path:** turn accounting emits `ITurnTokenUsageObserver` records; default gateway wiring uses a composite observer that writes to both `ProviderUsageTracker` (bounded recent-turn investigative view) and `TurnTokenUsageAuditLog` (persistent append-only ledger).
 
 Operational notes:
@@ -142,6 +142,16 @@ Operational notes:
 - This ledger is the durable source for per-turn/session-task audits.
 - Dashboard provider timeline remains a bounded recent-turn view for troubleshooting.
 - `IsEstimated=true` indicates provider usage was missing and accounting relied on estimation.
+
+### End-to-End Correlation ID Tracing
+
+Each turn is assigned a `CorrelationId` that flows through the entire request pipeline, enabling three-way correlation:
+
+1. **Structured logs** — all log entries for a turn are tagged `[{CorrelationId}]`.
+2. **Upstream provider headers** — when `SendRequestMetadata` is enabled, the correlation ID is forwarded as an HTTP header (default `X-OpenClaw-Correlation-Id`, configurable per model profile via `CorrelationIdHeader`).
+3. **Persistent JSONL audit** — each `TurnTokenUsageRecord` in `turn-token-usage.jsonl` includes the `CorrelationId` field.
+
+**External trace ID injection:** Callers of the OpenAI-compatible `/v1/chat/completions` endpoint can pass an `X-Request-Id` or `X-Trace-Id` HTTP header. The gateway propagates this value as the turn's `CorrelationId`, enabling end-to-end distributed tracing from external systems through OpenClaw.NET to upstream LLM providers.
 
 ### Viewing token usage in Dashboard
 

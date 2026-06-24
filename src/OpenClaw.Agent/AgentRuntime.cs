@@ -260,7 +260,8 @@ public sealed class AgentRuntime : IAgentRuntime
     public async Task<string> RunAsync(
         Session session, string userMessage, CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
-        JsonElement? responseSchema = null)
+        JsonElement? responseSchema = null,
+        string? correlationId = null)
     {
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.RunAsync");
         activity?.SetTag("session.id", session.Id);
@@ -268,6 +269,7 @@ public sealed class AgentRuntime : IAgentRuntime
 
         var turnCtx = new TurnContext
         {
+            CorrelationId = correlationId ?? (Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16]),
             SessionId = session.Id,
             ChannelId = session.ChannelId
         };
@@ -529,7 +531,8 @@ public sealed class AgentRuntime : IAgentRuntime
     public async IAsyncEnumerable<AgentStreamEvent> RunStreamingAsync(
         Session session, string userMessage,
         [EnumeratorCancellation] CancellationToken ct,
-        ToolApprovalCallback? approvalCallback = null)
+        ToolApprovalCallback? approvalCallback = null,
+        string? correlationId = null)
     {
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.RunStreamingAsync");
         activity?.SetTag("session.id", session.Id);
@@ -537,6 +540,7 @@ public sealed class AgentRuntime : IAgentRuntime
 
         var turnCtx = new TurnContext
         {
+            CorrelationId = correlationId ?? (Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16]),
             SessionId = session.Id,
             ChannelId = session.ChannelId
         };

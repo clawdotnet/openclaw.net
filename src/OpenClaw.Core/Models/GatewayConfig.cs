@@ -92,7 +92,8 @@ public sealed class LlmProviderConfig
     public string? ApiKey { get; set; }
     public string? Endpoint { get; set; }
     public string AuthMode { get; set; } = "bearer";
-    public bool SendRequestMetadata { get; set; } = false;
+    public bool SendRequestMetadata { get; set; } = false;  
+    public string? CorrelationIdHeader { get; set; }
     public string[] FallbackModels { get; set; } = [];
     public int MaxTokens { get; set; } = 4096;
     public float Temperature { get; set; } = 0.7f;

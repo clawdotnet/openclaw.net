@@ -195,11 +195,13 @@ public sealed class MafAgentRuntime : IAgentRuntime
         string userMessage,
         CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
-        System.Text.Json.JsonElement? responseSchema = null)
+        System.Text.Json.JsonElement? responseSchema = null,
+        string? correlationId = null)
     {
         using var activity = _telemetry.StartRunActivity("Agent.Maf.RunAsync", session, _runtimeState);
         var turnCtx = new TurnContext
         {
+            CorrelationId = correlationId ?? (Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16]),
             SessionId = session.Id,
             ChannelId = session.ChannelId
         };
@@ -383,7 +385,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
         Session session,
         string userMessage,
         [EnumeratorCancellation] CancellationToken ct,
-        ToolApprovalCallback? approvalCallback = null)
+        ToolApprovalCallback? approvalCallback = null,
+        string? correlationId = null)
     {
         if (!_options.EnableStreaming)
             throw new NotSupportedException("MAF streaming is disabled for this runtime.");
@@ -391,6 +394,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         using var activity = _telemetry.StartRunActivity("Agent.Maf.RunStreamingAsync", session, _runtimeState);
         var turnCtx = new TurnContext
         {
+            CorrelationId = correlationId ?? (Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16]),
             SessionId = session.Id,
             ChannelId = session.ChannelId
         };
