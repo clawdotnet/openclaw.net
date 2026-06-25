@@ -190,16 +190,24 @@ public sealed class MafAgentRuntime : IAgentRuntime
         return Task.FromResult<IReadOnlyList<string>>(LoadedSkillNames);
     }
 
+    private static string ResolveCorrelationId(string? correlationId)
+        => !string.IsNullOrWhiteSpace(correlationId)
+            ? correlationId.Trim()
+            : Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16];
+
     public async Task<string> RunAsync(
         Session session,
         string userMessage,
         CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
-        System.Text.Json.JsonElement? responseSchema = null)
+        System.Text.Json.JsonElement? responseSchema = null,
+        string? correlationId = null)
     {
         using var activity = _telemetry.StartRunActivity("Agent.Maf.RunAsync", session, _runtimeState);
+        var resolvedCorrelationId = ResolveCorrelationId(correlationId);
         var turnCtx = new TurnContext
         {
+            CorrelationId = resolvedCorrelationId,
             SessionId = session.Id,
             ChannelId = session.ChannelId
         };
@@ -237,7 +245,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             session.History.Add(new ChatTurn { Role = "user", Content = userMessage });
 
             if (_enableCompaction)
-                await CompactHistoryAsync(session, ct);
+                await CompactHistoryAsync(session, ct, turnCtx.CorrelationId);
             else
                 TrimHistory(session);
 
@@ -383,14 +391,17 @@ public sealed class MafAgentRuntime : IAgentRuntime
         Session session,
         string userMessage,
         [EnumeratorCancellation] CancellationToken ct,
-        ToolApprovalCallback? approvalCallback = null)
+        ToolApprovalCallback? approvalCallback = null,
+        string? correlationId = null)
     {
         if (!_options.EnableStreaming)
             throw new NotSupportedException("MAF streaming is disabled for this runtime.");
 
         using var activity = _telemetry.StartRunActivity("Agent.Maf.RunStreamingAsync", session, _runtimeState);
+        var resolvedCorrelationId = ResolveCorrelationId(correlationId);
         var turnCtx = new TurnContext
         {
+            CorrelationId = resolvedCorrelationId,
             SessionId = session.Id,
             ChannelId = session.ChannelId
         };
@@ -436,7 +447,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             session.History.Add(new ChatTurn { Role = "user", Content = userMessage });
 
             if (_enableCompaction)
-                await CompactHistoryAsync(session, ct);
+                await CompactHistoryAsync(session, ct, turnCtx.CorrelationId);
             else
                 TrimHistory(session);
 
@@ -3110,7 +3121,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         }
     }
 
-    private async Task CompactHistoryAsync(Session session, CancellationToken ct)
+    private async Task CompactHistoryAsync(Session session, CancellationToken ct, string? correlationId = null)
     {
         if (session.History.Count <= _compactionThreshold)
         {
@@ -3154,6 +3165,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
 
             var summaryTurnContext = new TurnContext
             {
+                CorrelationId = ResolveCorrelationId(correlationId),
                 SessionId = session.Id,
                 ChannelId = session.ChannelId
             };
@@ -3285,6 +3297,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
 
         var record = new TurnTokenUsageRecord
         {
+            CorrelationId = turnContext.CorrelationId,
             SessionId = session.Id,
             ChannelId = session.ChannelId,
             ProviderId = execution.ProviderId,

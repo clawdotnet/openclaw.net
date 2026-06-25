@@ -144,7 +144,8 @@ internal sealed class AgentTurnAccounting
             isUsageEstimated
                 ? LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, inputTokens, skillPromptLength)
                 : new InputTokenComponentEstimate(),
-            isEstimated: isUsageEstimated);
+            isEstimated: isUsageEstimated,
+            correlationId: turnCtx.CorrelationId);
     }
 
     public void RecordStreamingTurnUsage(
@@ -184,7 +185,8 @@ internal sealed class AgentTurnAccounting
             isUsageEstimated
                 ? LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, streamResult.InputTokens, skillPromptLength)
                 : new InputTokenComponentEstimate(),
-            isEstimated: isUsageEstimated);
+            isEstimated: isUsageEstimated,
+            correlationId: turnCtx.CorrelationId);
     }
 
     public void RecordCompactionUsage(
@@ -222,7 +224,8 @@ internal sealed class AgentTurnAccounting
             isUsageEstimated
                 ? LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, inputTokens, skillPromptLength)
                 : new InputTokenComponentEstimate(),
-            isEstimated: isUsageEstimated);
+            isEstimated: isUsageEstimated,
+            correlationId: turnCtx.CorrelationId);
     }
 
     private void RecordTurnUsage(
@@ -234,10 +237,12 @@ internal sealed class AgentTurnAccounting
         long cacheReadTokens,
         long cacheWriteTokens,
         InputTokenComponentEstimate estimatedInputTokensByComponent,
-        bool isEstimated)
+        bool isEstimated,
+        string? correlationId)
     {
         var record = new TurnTokenUsageRecord
         {
+            CorrelationId = correlationId,
             SessionId = session.Id,
             ChannelId = session.ChannelId,
             ProviderId = providerId,

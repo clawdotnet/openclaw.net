@@ -2,6 +2,7 @@ namespace OpenClaw.Core.Models;
 
 public sealed record TurnTokenUsageRecord
 {
+    public string? CorrelationId { get; init; }
     public required string SessionId { get; init; }
     public required string ChannelId { get; init; }
     public required string ProviderId { get; init; }

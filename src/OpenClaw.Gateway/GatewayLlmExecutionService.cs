@@ -249,7 +249,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
                 }
 
                 effectiveOptions.ModelId = modelId;
-                AddRequestMetadataIfEnabled(effectiveOptions, session, candidate.Profile, streaming: false);
+                AddRequestMetadataIfEnabled(effectiveOptions, session, candidate.Profile, streaming: false, turnContext.CorrelationId);
                 var prepared = _promptCacheCoordinator.Prepare(session, candidate.Profile, modelId, messages, effectiveOptions);
                 _promptCacheWarmRegistry.Record(prepared);
 
@@ -378,7 +378,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
             }
 
             var selectedModelId = ResolveRequestedModelId(session, candidate.Profile);
-            AddRequestMetadataIfEnabled(effectiveOptions, session, candidate.Profile, streaming: true);
+            AddRequestMetadataIfEnabled(effectiveOptions, session, candidate.Profile, streaming: true, turnContext.CorrelationId);
             var prepared = _promptCacheCoordinator.Prepare(session, candidate.Profile, selectedModelId, messages, effectiveOptions);
             _promptCacheWarmRegistry.Record(prepared);
             var routeState = GetOrAddRouteState(candidate.Profile.Id, candidate.Profile.ProviderId, selectedModelId);
@@ -624,7 +624,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         return true;
     }
 
-    private static void AddRequestMetadataIfEnabled(ChatOptions options, Session session, ModelProfile profile, bool streaming)
+    private static void AddRequestMetadataIfEnabled(ChatOptions options, Session session, ModelProfile profile, bool streaming, string? correlationId)
     {
         if (!profile.SendRequestMetadata)
             return;
@@ -636,6 +636,7 @@ internal sealed class GatewayLlmExecutionService : ILlmExecutionService
         AddHeader(headers, "X-OpenClaw-Model-Profile", profile.Id);
         AddHeader(headers, "X-OpenClaw-Run-Mode", streaming ? "streaming" : "standard");
         AddHeader(headers, "X-OpenClaw-Purpose", "chat");
+        AddHeader(headers, profile.CorrelationIdHeader, correlationId);
 
         if (headers.Count == 0)
             return;

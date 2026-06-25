@@ -253,6 +253,11 @@ public sealed class AgentRuntime : IAgentRuntime
     /// </summary>
     public CircuitState CircuitBreakerState => _llmExecutionService?.DefaultCircuitState ?? _circuitBreaker.State;
 
+    private static string ResolveCorrelationId(string? correlationId)
+        => !string.IsNullOrWhiteSpace(correlationId)
+            ? correlationId.Trim()
+            : Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N")[..16];
+
     /// <summary>
     /// Run the agent loop for a single user turn. Supports multi-step tool use,
     /// parallel tool execution, hooks, and optional tool approval.
@@ -260,14 +265,17 @@ public sealed class AgentRuntime : IAgentRuntime
     public async Task<string> RunAsync(
         Session session, string userMessage, CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
-        JsonElement? responseSchema = null)
+        JsonElement? responseSchema = null,
+        string? correlationId = null)
     {
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.RunAsync");
         activity?.SetTag("session.id", session.Id);
         activity?.SetTag("channel.id", session.ChannelId);
 
+        var resolvedCorrelationId = ResolveCorrelationId(correlationId);
         var turnCtx = new TurnContext
         {
+            CorrelationId = resolvedCorrelationId,
             SessionId = session.Id,
             ChannelId = session.ChannelId
         };
@@ -292,7 +300,7 @@ public sealed class AgentRuntime : IAgentRuntime
 
             // Compaction or simple trim
             if (_enableCompaction)
-                await CompactHistoryAsync(session, ct);
+                await CompactHistoryAsync(session, ct, resolvedCorrelationId);
             else
                 TrimHistory(session);
         }
@@ -446,7 +454,8 @@ public sealed class AgentRuntime : IAgentRuntime
                 response.Usage is null
                     ? LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, inputTokens, _skillPromptLength)
                     : new InputTokenComponentEstimate(),
-                isEstimated: response.Usage is null);
+                isEstimated: response.Usage is null,
+                correlationId: turnCtx.CorrelationId);
 
             if (TryRejectContractBudget(session, out contractBudgetMessage))
             {
@@ -528,14 +537,17 @@ public sealed class AgentRuntime : IAgentRuntime
     public async IAsyncEnumerable<AgentStreamEvent> RunStreamingAsync(
         Session session, string userMessage,
         [EnumeratorCancellation] CancellationToken ct,
-        ToolApprovalCallback? approvalCallback = null)
+        ToolApprovalCallback? approvalCallback = null,
+        string? correlationId = null)
     {
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.RunStreamingAsync");
         activity?.SetTag("session.id", session.Id);
         activity?.SetTag("channel.id", session.ChannelId);
 
+        var resolvedCorrelationId = ResolveCorrelationId(correlationId);
         var turnCtx = new TurnContext
         {
+            CorrelationId = resolvedCorrelationId,
             SessionId = session.Id,
             ChannelId = session.ChannelId
         };
@@ -568,7 +580,7 @@ public sealed class AgentRuntime : IAgentRuntime
             session.History.Add(new ChatTurn { Role = "user", Content = userMessage });
 
             if (_enableCompaction)
-                await CompactHistoryAsync(session, ct);
+                await CompactHistoryAsync(session, ct, resolvedCorrelationId);
             else
                 TrimHistory(session);
         }
@@ -689,7 +701,8 @@ public sealed class AgentRuntime : IAgentRuntime
                         isUsageEstimated
                             ? LlmExecutionEstimateBuilder.BuildInputTokenEstimate(messages, streamResult.InputTokens, _skillPromptLength)
                             : new InputTokenComponentEstimate(),
-                        isEstimated: isUsageEstimated);
+                        isEstimated: isUsageEstimated,
+                        correlationId: turnCtx.CorrelationId);
             }
 
             if (TryRejectContractBudget(session, out contractBudgetMessage))
@@ -868,10 +881,12 @@ public sealed class AgentRuntime : IAgentRuntime
         long cacheReadTokens,
         long cacheWriteTokens,
         InputTokenComponentEstimate estimatedInputTokensByComponent,
-        bool isEstimated)
+        bool isEstimated,
+        string? correlationId)
     {
         var record = new TurnTokenUsageRecord
         {
+            CorrelationId = correlationId,
             SessionId = session.Id,
             ChannelId = session.ChannelId,
             ProviderId = providerId,
@@ -1612,7 +1627,7 @@ public sealed class AgentRuntime : IAgentRuntime
     /// Compacts session history by summarizing older turns via the LLM.
     /// Keeps the most recent turns verbatim and replaces older ones with a summary.
     /// </summary>
-    public async Task CompactHistoryAsync(Session session, CancellationToken ct)
+    public async Task CompactHistoryAsync(Session session, CancellationToken ct, string? correlationId = null)
     {
         if (session.History.Count <= _compactionThreshold)
         {
@@ -1666,6 +1681,7 @@ public sealed class AgentRuntime : IAgentRuntime
             var summaryOptions = new ChatOptions { MaxOutputTokens = 256, Temperature = 0.3f };
             var compactionTurnCtx = new TurnContext
             {
+                CorrelationId = ResolveCorrelationId(correlationId),
                 SessionId = session.Id,
                 ChannelId = session.ChannelId
             };
@@ -2210,6 +2226,7 @@ public sealed class AgentRuntime : IAgentRuntime
         }
         var turnCtx = new TurnContext
         {
+            CorrelationId = ResolveCorrelationId(null),
             SessionId = session.Id,
             ChannelId = session.ChannelId
         };

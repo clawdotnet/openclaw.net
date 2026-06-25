@@ -207,7 +207,8 @@ public sealed class DelegateToolTests
             string userMessage,
             CancellationToken ct,
             ToolApprovalCallback? approvalCallback = null,
-            JsonElement? responseSchema = null)
+            JsonElement? responseSchema = null,
+            string? correlationId = null)
         {
             _ = userMessage;
             _ = ct;
@@ -227,7 +228,8 @@ public sealed class DelegateToolTests
             Session session,
             string userMessage,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct,
-            ToolApprovalCallback? approvalCallback = null)
+            ToolApprovalCallback? approvalCallback = null,
+            string? correlationId = null)
         {
             _ = session;
             _ = userMessage;

@@ -16,6 +16,7 @@ public sealed class ModelProfileConfig
     public string? ApiKey { get; set; }
     public string? AuthMode { get; set; }
     public bool? SendRequestMetadata { get; set; }
+    public string? CorrelationIdHeader { get; set; }
     public string[] Tags { get; set; } = [];
     public string[] FallbackProfileIds { get; set; } = [];
     public string[] FallbackModels { get; set; } = [];
@@ -71,6 +72,7 @@ public sealed class ModelProfile
     public string? ApiKey { get; init; }
     public string AuthMode { get; init; } = "bearer";
     public bool SendRequestMetadata { get; init; }
+    public string CorrelationIdHeader { get; init; } = "X-OpenClaw-Correlation-Id";
     public string[] Tags { get; init; } = [];
     public string[] FallbackProfileIds { get; init; } = [];
     public string[] FallbackModels { get; init; } = [];
@@ -91,6 +93,7 @@ public sealed class ModelProfileStatus
     public string? ProviderGateway { get; init; }
     public string AuthMode { get; init; } = "bearer";
     public bool SendRequestMetadata { get; init; }
+    public string CorrelationIdHeader { get; init; } = "X-OpenClaw-Correlation-Id";
     public string[] Tags { get; init; } = [];
     public required ModelCapabilities Capabilities { get; init; }
     public PromptCachingConfig PromptCaching { get; init; } = new();

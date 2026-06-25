@@ -13,10 +13,11 @@ public sealed class TurnContext
 {
     /// <summary>
     /// Correlation ID that ties all log entries for a single user turn together.
-    /// Consumers can set <see cref="Activity.Current"/> upstream for distributed tracing
-    /// and this will pick up the trace ID automatically.
+    /// Can be set externally (e.g. from an HTTP <c>X-Request-Id</c> header) to enable
+    /// end-to-end distributed tracing. Falls back to <see cref="Activity.Current"/> or
+    /// a short GUID when not explicitly provided.
     /// </summary>
-    public string CorrelationId { get; } = Activity.Current?.TraceId.ToString()
+    public string CorrelationId { get; init; } = Activity.Current?.TraceId.ToString()
                                            ?? Guid.NewGuid().ToString("N")[..16];
 
     public string SessionId { get; init; } = "";
