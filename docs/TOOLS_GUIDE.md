@@ -55,7 +55,7 @@ There are two primary ways to add new capabilities to your agent:
 | Goal & Loop | `get_goal`, `create_goal`, `update_goal`, `loop_control` |
 | FractalMemory | `fractal_memory_search`, `fractal_memory_open`, `fractal_memory_recent`, `fractal_memory_export`, `fractal_memory_validate`, `fractal_memory_handoff_create`, `fractal_memory_index_refresh` |
 | MetaSkill | `emit_text`, `meta_skill_fill_slots`, `meta_skill_assemble`, `meta_skill_lint_run`, `meta_skill_smoke_run`, `meta_skill_runtime_e2e_run`, `meta_skill_persist_proposal` |
-| Skills | `load_skill`, `read_skill_resource`, `meta_invoke` |
+| Skills | `load_skill`, `read_skill_resource`, `meta_invoke`, `list_tools` |
 | External & MCP | `external_cli`, `mcp_native` (dynamic) |
 | Semantic Kernel | `semantic_kernel_entrypoint`, `semantic_kernel_function` |
 | Payment & Mempalace | `payment`, `mempalace_knowledge_graph` |
@@ -239,6 +239,14 @@ Use Notion as an optional shared scratchpad or note database.
 - Create a dedicated internal integration in Notion and store the token in `NOTION_API_KEY`.
 - Share the target page/database explicitly with that integration.
 - Start with one scratchpad page and one notes database rather than a workspace-wide token + broad allowlist.
+
+### 21. List Tools (`list_tools`)
+Runtime discovery of all registered tools. Returns every tool's name, description, and full JSON parameter schema.
+- **Purpose**: Enables MetaSKILLs and other orchestration flows to introspect available capabilities at runtime without hardcoding tool names.
+- **Parameters**:
+  - `filter` (optional): substring match against tool names (case-insensitive). Omitting `filter` returns all tools.
+- **Output**: JSON array of objects with `name` (string), `description` (string), and `parameterSchema` (JSON object, the tool's input schema).
+- **Usage**: Called programmatically by MetaSKILL `kind: fan_out` steps to validate tool availability, or directly by the agent when reasoning about which tools to use.
 
 ---
 

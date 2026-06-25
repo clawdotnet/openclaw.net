@@ -113,6 +113,42 @@ Four layers of timeout protection:
 | `tool_call` | Direct tool execution with `tool_allowlist` |
 | `skill_exec` | Run a skill's entrypoint as a subprocess |
 | `user_input` | Pause for structured human input |
+| `fan_out` | Dynamic step expansion over a runtime-generated list (batch parallelism) |
+
+### Dynamic Step Expansion (`fan_out`)
+
+When the number of sub-tasks depends on a previous step's output, `fan_out`
+evaluates a Jinja expression into a list, clones a step template for each item,
+and executes children in controlled parallel batches. Shared logic lives in
+`MetaFanOutExecutor` — no code duplication between runtimes.
+
+```yaml
+- id: search_all
+  kind: fan_out
+  iterable: "{{ outputs.extract | from_json }}"
+  fan_out_max_concurrency: 3
+  fan_out_merge_mode: json_array
+  with:
+    continue_on_error: true
+  fan_out_template:
+    kind: tool_call
+    tool: web_search
+    with:
+      query: "{{ item }}"
+```
+
+### Runtime Tool Discovery (`list_tools`)
+
+A built-in `list_tools` tool returns name/description/schema for every registered
+tool. Use it in a `tool_call` step before invoking unknown tools:
+
+```yaml
+- id: discover
+  kind: tool_call
+  tool: list_tools
+  with:
+    filter: "web"
+```
 
 ## How to Activate
 

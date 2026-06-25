@@ -958,6 +958,30 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 continue;
             }
 
+            if (await MetaFanOutExecutor.TryExecuteFanOutStepAsync(
+                    session,
+                    metaSkill,
+                    steps,
+                    stepById,
+                    dependentsByStep,
+                    pending,
+                    blocked,
+                    outputs,
+                    failureAliases,
+                    stepResults,
+                    input,
+                    turnCtx,
+                    templateRenderer,
+                    conditionEvaluator,
+                    toolArgumentResolver,
+                    routePlanner,
+                    ExecuteFanOutChildAsync,
+                    (msg, ex) => _logger?.LogWarning(ex, "{FanOutMessage}", msg),
+                    ct))
+            {
+                continue;
+            }
+
             foreach (var step in steps)
             {
                 if (!pending.Contains(step.Id))
@@ -1701,6 +1725,12 @@ public sealed class MafAgentRuntime : IAgentRuntime
                         break;
                     }
 
+                    case "fan_out":
+                    {
+                        // Managed entirely by TryExecuteFanOutStepAsync.
+                        break;
+                    }
+
                     default:
                         return ReturnMetaExecutionOutput(session, metaSkill, finalText: null, stepResults, $"Meta step '{step.Id}' has unsupported kind '{step.Kind}'.", preserveCheckpoint: false);
                 }
@@ -1865,6 +1895,95 @@ public sealed class MafAgentRuntime : IAgentRuntime
         }
 
         return true;
+    }
+
+    private async Task<(string Output, string? FailureCode)> ExecuteFanOutChildAsync(
+        SkillDefinition metaSkill,
+        MetaSkillStepDefinition template,
+        string childId,
+        string childInput,
+        MetaExecutionContext childContext,
+        Session session,
+        TurnContext turnCtx,
+        CancellationToken ct)
+    {
+        switch (NormalizeMetaStepKind(template.Kind))
+        {
+            case "tool_call":
+            {
+                var toolName = template.Tool;
+                if (string.IsNullOrWhiteSpace(toolName))
+                    return ($"Error: fan-out child step '{childId}' is 'tool_call' but does not declare a tool.", "missing_tool");
+
+                if (template.ToolAllowlist.Count > 0 && !template.ToolAllowlist.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+                    return ($"Error: tool '{toolName}' is not allowlisted for fan-out child step '{childId}'.", "tool_not_allowlisted");
+
+                if (!IsToolAllowedByMetaCapabilities(metaSkill, toolName))
+                    return ($"Error: tool '{toolName}' is not permitted by metadata capabilities for fan-out child step '{childId}'.", "metadata_capability_denied");
+
+                string toolArgsJson;
+                try
+                {
+                    toolArgsJson = new MetaToolArgumentResolver(new MetaTemplateRenderer())
+                        .Resolve(null, template.WithJson, template.ToolArgsJson, childContext);
+                }
+                catch (InvalidOperationException)
+                {
+                    return ($"Error: invalid tool arguments for child step '{childId}'.", "invalid_tool_args");
+                }
+
+                var result = await ExecuteMetaToolStepWithPolicyAsync(
+                    metaSkill,
+                    new MetaSkillStepDefinition { Id = childId, Kind = template.Kind, Retry = template.Retry, TimeoutSeconds = template.TimeoutSeconds },
+                    toolName,
+                    toolArgsJson,
+                    session,
+                    turnCtx,
+                    ct);
+
+                var completed = string.Equals(result.ResultStatus, ToolResultStatuses.Completed, StringComparison.Ordinal);
+                var failureCode = result.FailureCode;
+                if (completed && !TryValidateMetaStepOutput(template, result.ResultText, out failureCode))
+                    completed = false;
+                return completed ? (result.ResultText, null) : (result.ResultText, failureCode);
+            }
+
+            case "llm_chat":
+            {
+                var stepArgs = DeserializeStepArgs(template.WithJson);
+                var systemPrompt = GetOptionalString(stepArgs, "system_prompt")
+                    ?? "Return the result for this step.";
+                var chatOptions = new ChatOptions
+                {
+                    ModelId = session.ModelOverride ?? _config.Model,
+                    MaxOutputTokens = GetOptionalInt32(stepArgs, "max_tokens") ?? _config.MaxTokens,
+                    Temperature = GetOptionalSingle(stepArgs, "temperature") ?? _config.Temperature
+                };
+                var messages = new List<ChatMessage>
+                {
+                    new(ChatRole.System, systemPrompt),
+                    new(ChatRole.User, childInput)
+                };
+
+                var response = await ExecuteMetaChatStepWithPolicyAsync(
+                    new MetaSkillStepDefinition { Id = childId, Kind = template.Kind, Retry = template.Retry, TimeoutSeconds = template.TimeoutSeconds },
+                    token => _chatClient.GetResponseAsync(messages, chatOptions, token),
+                    ct);
+
+                if (!response.Completed)
+                    return (response.FailureMessage ?? "", response.FailureCode);
+
+                var output = response.Response!.Text ?? "";
+                var failureCode = (string?)null;
+                if (!TryValidateMetaStepOutput(template, output, out failureCode))
+                    return (output, failureCode);
+
+                return (output, null);
+            }
+
+            default:
+                return ($"Error: unsupported fan_out child kind '{template.Kind}'.", "unsupported_child_kind");
+        }
     }
 
     private static string ReturnMetaExecutionOutput(
@@ -2262,7 +2381,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 lastResult = await _toolExecutor.ExecuteAsync(
                     toolName,
                     toolArgsJson,
-                    $"meta:{metaSkill.Name}:{step.Id}:attempt:{attempt}",
+                    $"meta:{metaSkill?.Name ?? "fan_out"}:{step.Id}:attempt:{attempt}",
                     session,
                     turnCtx,
                     isStreaming: false,
@@ -2571,15 +2690,6 @@ public sealed class MafAgentRuntime : IAgentRuntime
         var deadline = checkpoint.CreatedAtUtc + TimeSpan.FromSeconds(step.Clarify.TimeoutSeconds.Value);
         return DateTimeOffset.UtcNow >= deadline;
     }
-
-    private readonly record struct MetaStepExecutionResult(
-        string Id,
-        string Kind,
-        string Status,
-        string? FailureCode,
-        double DurationMs,
-        bool Continued,
-        SessionMetaStepExecutionEvidence? ExecutionEvidence = null);
 
     private static Dictionary<string, object?> DeserializeStepArgs(string? withJson)
     {

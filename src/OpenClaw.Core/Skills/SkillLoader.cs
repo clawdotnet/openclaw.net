@@ -1269,6 +1269,25 @@ public static class SkillLoader
                 if (!TryParseSkillExecOptions(stepElement, kind, out var skillExecEntrypoint, out var skillExecArgs, out var skillExecStdin, out var skillExecCwd, out var skillExecParseMode, out errorCode))
                     return null;
 
+                // ── fan_out fields ──
+                string? iterable = null;
+                if (stepElement.TryGetProperty("iterable", out var iterableElement) && iterableElement.ValueKind == JsonValueKind.String)
+                    iterable = iterableElement.GetString();
+
+                var fanOutMaxConcurrency = 4;
+                if (stepElement.TryGetProperty("fan_out_max_concurrency", out var concurrencyElement) && concurrencyElement.ValueKind == JsonValueKind.Number)
+                    fanOutMaxConcurrency = concurrencyElement.GetInt32();
+
+                string? fanOutMergeMode = null;
+                if (stepElement.TryGetProperty("fan_out_merge_mode", out var mergeElement) && mergeElement.ValueKind == JsonValueKind.String)
+                    fanOutMergeMode = mergeElement.GetString();
+
+                MetaSkillStepDefinition? fanOutTemplate = null;
+                if (stepElement.TryGetProperty("fan_out_template", out var templateElement) && templateElement.ValueKind == JsonValueKind.Object)
+                {
+                    fanOutTemplate = ParseSingleFanOutTemplate(templateElement);
+                }
+
                 steps.Add(new MetaSkillStepDefinition
                 {
                     Id = idElement.GetString()!,
@@ -1291,7 +1310,11 @@ public static class SkillLoader
                     OnFailure = onFailure,
                     TimeoutSeconds = timeoutSeconds,
                     Retry = retry,
-                    OutputContract = outputContract
+                    OutputContract = outputContract,
+                    Iterable = iterable,
+                    FanOutMaxConcurrency = fanOutMaxConcurrency,
+                    FanOutMergeMode = fanOutMergeMode ?? "concat",
+                    FanOutTemplate = fanOutTemplate
                 });
             }
 
@@ -1331,7 +1354,8 @@ public static class SkillLoader
             "tool_call",
             "llm_chat",
             "llm_classify",
-            "user_input"
+            "user_input",
+            "fan_out"
         };
 
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1404,6 +1428,40 @@ public static class SkillLoader
             {
                 errorCode = "invalid_step_kind_fields";
                 return false;
+            }
+
+            if (step.Kind.Equals("fan_out", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(step.Iterable))
+                {
+                    errorCode = "invalid_step_kind_fields";
+                    return false;
+                }
+
+                if (step.FanOutTemplate is null)
+                {
+                    errorCode = "invalid_step_kind_fields";
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(step.FanOutTemplate.Kind))
+                {
+                    errorCode = "invalid_step_kind_fields";
+                    return false;
+                }
+
+                var normalizedTemplateKind = step.FanOutTemplate.Kind.Trim().ToLowerInvariant();
+                if (normalizedTemplateKind != "tool_call" && normalizedTemplateKind != "llm_chat")
+                {
+                    errorCode = "invalid_step_kind_fields";
+                    return false;
+                }
+
+                if (normalizedTemplateKind == "tool_call" && string.IsNullOrWhiteSpace(step.FanOutTemplate.Tool))
+                {
+                    errorCode = "invalid_step_kind_fields";
+                    return false;
+                }
             }
         }
 
@@ -2051,6 +2109,46 @@ public static class SkillLoader
         }
 
         return true;
+    }
+
+    private static MetaSkillStepDefinition? ParseSingleFanOutTemplate(JsonElement templateElement)
+    {
+        var kindElement = templateElement.TryGetProperty("kind", out var k) && k.ValueKind == JsonValueKind.String
+            ? k.GetString()
+            : null;
+        if (string.IsNullOrWhiteSpace(kindElement))
+            return null;
+
+        var skill = templateElement.TryGetProperty("skill", out var s) && s.ValueKind == JsonValueKind.String
+            ? s.GetString()
+            : null;
+        var tool = templateElement.TryGetProperty("tool", out var t) && t.ValueKind == JsonValueKind.String
+            ? t.GetString()
+            : null;
+
+        string? withJson = null;
+        if (templateElement.TryGetProperty("with", out var withElement) && withElement.ValueKind == JsonValueKind.Object)
+            withJson = withElement.GetRawText();
+
+        string? toolArgsJson = null;
+        if (templateElement.TryGetProperty("tool_args", out var toolArgsElement) && toolArgsElement.ValueKind == JsonValueKind.Object)
+            toolArgsJson = toolArgsElement.GetRawText();
+
+        int? timeoutSeconds = null;
+        if (templateElement.TryGetProperty("timeout_seconds", out var ts) && ts.ValueKind == JsonValueKind.Number && ts.TryGetInt32(out var parsed) && parsed > 0)
+            timeoutSeconds = parsed;
+
+        return new MetaSkillStepDefinition
+        {
+            Id = "_template_",
+            Kind = kindElement,
+            Skill = skill,
+            Tool = tool,
+            WithJson = withJson,
+            ToolArgsJson = toolArgsJson,
+            Retry = new MetaStepRetryPolicy { MaxAttempts = 1, BackoffMs = 0 },
+            TimeoutSeconds = timeoutSeconds,
+        };
     }
 
     private static bool TryParseRouteArray(

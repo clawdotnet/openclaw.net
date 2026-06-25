@@ -103,6 +103,40 @@ openclaw skills meta-runs reconstruct <sid> --run <id>
 | `tool_call` | 直接工具执行，带 `tool_allowlist` |
 | `skill_exec` | 作为子进程运行 Skill 的 entrypoint |
 | `user_input` | 暂停等待结构化人工输入 |
+| `fan_out` | 动态步骤展开：对运行时列表逐项克隆模板并批量并行执行 |
+
+### 动态步骤展开 (`fan_out`)
+
+当子任务数量依赖前一步输出时，`fan_out` 将 Jinja 表达式求值为列表，为每个元素
+克隆步骤模板，并在受控的并行批次中执行子步骤。共享逻辑位于 `MetaFanOutExecutor`
+——双重运行时之间无代码重复。
+
+```yaml
+- id: search_all
+  kind: fan_out
+  iterable: "{{ outputs.extract | from_json }}"
+  fan_out_max_concurrency: 3
+  fan_out_merge_mode: json_array
+  fan_out_template:
+    kind: tool_call
+    tool: web_search
+    with:
+      query: "{{ item }}"
+    continue_on_error: true
+```
+
+### 运行时工具发现 (`list_tools`)
+
+内置的 `list_tools` 工具返回每个已注册工具的名称/描述/参数模式。在调用未知
+工具之前，在 `tool_call` 步骤中使用：
+
+```yaml
+- id: discover
+  kind: tool_call
+  tool: list_tools
+  with:
+    filter: "web"
+```
 
 ## 激活方式
 

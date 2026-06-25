@@ -12,6 +12,8 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Overview | Getting Started | [GETTING_STARTED.md](GETTING_STARTED.md) |
 | Guides | User Guide | [USER_GUIDE.md](USER_GUIDE.md) |
 | Guides | Tools Guide | [TOOLS_GUIDE.md](TOOLS_GUIDE.md) |
+| Guides | Tool Hooks | [HOOKS.md](HOOKS.md) |
+| Guides | Tool Hooks (zh-CN) | [zh-CN/HOOKS.md](zh-CN/HOOKS.md) |
 | Guides | Embedded Local Models | [LOCAL_MODELS.md](LOCAL_MODELS.md) |
 | Guides | MetaSkills (Feature Overview) | [meta-skills.md](meta-skills.md) |
 | Guides | MetaSkill Orchestration Architecture | [meta-skill-orchestration.md](meta-skill-orchestration.md) |

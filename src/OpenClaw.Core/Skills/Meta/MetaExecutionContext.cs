@@ -6,7 +6,8 @@ public sealed class MetaExecutionContext
         string? input,
         IReadOnlyDictionary<string, string>? outputs = null,
         IReadOnlyDictionary<string, object>? inputs = null,
-        IReadOnlyDictionary<string, object>? steps = null)
+        IReadOnlyDictionary<string, object>? steps = null,
+        IReadOnlyList<ToolDescriptor>? tools = null)
     {
         Input = input ?? string.Empty;
         Outputs = outputs ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -21,6 +22,7 @@ public sealed class MetaExecutionContext
 
         Inputs = normalizedInputs;
         Steps = steps ?? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        Tools = tools ?? [];
     }
 
     public string Input { get; }
@@ -30,4 +32,10 @@ public sealed class MetaExecutionContext
     public IReadOnlyDictionary<string, object> Inputs { get; }
 
     public IReadOnlyDictionary<string, object> Steps { get; }
+
+    /// <summary>
+    /// Available tools for the current execution context. Populated by the runtime
+    /// so that templates can reference <c>{{ tools | json }}</c> for dynamic discovery.
+    /// </summary>
+    public IReadOnlyList<ToolDescriptor> Tools { get; }
 }

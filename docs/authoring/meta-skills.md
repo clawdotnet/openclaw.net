@@ -223,6 +223,60 @@ Pause for structured human input with `clarify` schema validation.
 Supported field types: `string`, `enum`, `integer`, `boolean`. Use `skip_if` to
 bypass when context is sufficient.
 
+### `fan_out` — Dynamic Step Expansion
+
+Iterate over a runtime-generated list, cloning a step template for each item and
+executing children in parallel batches. Use when the number of sub-tasks cannot
+be known at authoring time — for example, searching N topics extracted from a
+previous step's LLM output.
+
+**Required fields:**
+
+| Field | Purpose |
+| --- | --- |
+| `kind` | Must be `fan_out` |
+| `iterable` | Jinja expression evaluating to a JSON array of strings |
+| `fan_out_template` | Step definition cloned per item (must declare `kind`, `tool` or `skill`) |
+
+**Optional fields:**
+
+| Field | Default | Purpose |
+| --- | --- | --- |
+| `fan_out_max_concurrency` | `4` | Max child steps running concurrently per batch |
+| `fan_out_merge_mode` | `concat` | How child outputs are joined: `concat`, `json_array`, `first`, `last` |
+
+```yaml
+- id: search_every_topic
+  kind: fan_out
+  iterable: "{{ outputs.extract_topics | from_json }}"
+  fan_out_max_concurrency: 3
+  fan_out_merge_mode: json_array
+  fan_out_template:
+    kind: tool_call
+    tool: web_search
+    with:
+      query: "{{ item }}"
+    continue_on_error: true
+  depends_on:
+    - extract_topics
+```
+
+Each child step receives `{{ item }}` as its input context. The template supports
+`tool_call` and `llm_chat` child kinds. Child failures are logged and reflected
+in step results; with `continue_on_error: true` the fan_out continues past
+individual child failures.
+
+### `tool_call` — Direct Tool Execution
+
+Bypasses the LLM and invokes a registered tool. Use `list_tools` at runtime to
+discover available tools before calling them:
+
+```yaml
+- id: discover
+  kind: tool_call
+  tool: list_tools
+```
+
 ## Dependencies and Parallelism
 
 Steps without `depends_on` may run in parallel (wave-based scheduling). A step

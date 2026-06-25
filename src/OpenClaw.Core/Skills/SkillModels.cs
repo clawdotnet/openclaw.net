@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenClaw.Core.Models;
 
 namespace OpenClaw.Core.Skills;
 
@@ -252,6 +253,33 @@ public sealed class MetaSkillStepDefinition
 
     /// <summary>Optional contract for validating this step's intermediate output.</summary>
     public MetaStepOutputContract OutputContract { get; init; } = new();
+
+    // ─── fan_out fields ───
+
+    /// <summary>
+    /// Jinja expression that must evaluate to a JSON array. Each element becomes
+    /// the input for one child iteration. Only valid when <see cref="Kind"/> is <c>"fan_out"</c>.
+    /// Example: <c>{{ outputs.extract.result | from_json }}</c>.
+    /// </summary>
+    public string? Iterable { get; init; }
+
+    /// <summary>Maximum number of child steps to execute concurrently. 0 = no limit.</summary>
+    public int FanOutMaxConcurrency { get; init; } = 4;
+
+    /// <summary>
+    /// Step template cloned for each iterable item. The template's <c>Id</c> and <c>input</c>
+    /// are rewritten per iteration. Only valid when <see cref="Kind"/> is <c>"fan_out"</c>.
+    /// </summary>
+    public MetaSkillStepDefinition? FanOutTemplate { get; init; }
+
+    /// <summary>
+    /// Merge mode for child step outputs:
+    /// <c>"concat"</c> — join with newlines (default);
+    /// <c>"json_array"</c> — wrap as JSON array;
+    /// <c>"first"</c> — return first child output;
+    /// <c>"last"</c> — return last child output.
+    /// </summary>
+    public string FanOutMergeMode { get; init; } = "concat";
 }
 
 /// <summary>
@@ -430,3 +458,25 @@ public sealed class SkillMetadata
     /// <summary>Optional capability allowlist used by governance and runtime guards.</summary>
     public string[] Capabilities { get; set; } = [];
 }
+
+/// <summary>
+/// Lightweight descriptor for a tool that can be serialized into templates
+/// and prompt contexts without exposing the full <see cref="ITool"/> contract.
+/// </summary>
+public sealed record ToolDescriptor(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("description")] string Description,
+    [property: JsonPropertyName("parameterSchema")] string ParameterSchema);
+
+/// <summary>
+/// Runtime execution result for a single meta-skill step.
+/// Shared between <c>AgentRuntime</c> and <c>MafAgentRuntime</c>.
+/// </summary>
+public readonly record struct MetaStepExecutionResult(
+    string Id,
+    string Kind,
+    string Status,
+    string? FailureCode,
+    double DurationMs,
+    bool Continued,
+    SessionMetaStepExecutionEvidence? ExecutionEvidence = null);

@@ -1614,6 +1614,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(TailscaleConfig))]
 [JsonSerializable(typeof(GmailPubSubConfig))]
 [JsonSerializable(typeof(MdnsConfig))]
+[JsonSerializable(typeof(List<ToolDescriptor>))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
