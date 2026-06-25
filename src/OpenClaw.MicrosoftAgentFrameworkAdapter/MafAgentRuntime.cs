@@ -1969,9 +1969,16 @@ public sealed class MafAgentRuntime : IAgentRuntime
                     new MetaSkillStepDefinition { Id = childId, Kind = template.Kind, Retry = template.Retry, TimeoutSeconds = template.TimeoutSeconds },
                     token => _chatClient.GetResponseAsync(messages, chatOptions, token),
                     ct);
-                return response.Completed
-                    ? (response.Response!.Text ?? "", null)
-                    : (response.FailureMessage ?? "", response.FailureCode);
+
+                if (!response.Completed)
+                    return (response.FailureMessage ?? "", response.FailureCode);
+
+                var output = response.Response!.Text ?? "";
+                var failureCode = (string?)null;
+                if (!TryValidateMetaStepOutput(template, output, out failureCode))
+                    return (output, failureCode);
+
+                return (output, null);
             }
 
             default:

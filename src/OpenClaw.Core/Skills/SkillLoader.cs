@@ -2135,11 +2135,8 @@ public static class SkillLoader
             toolArgsJson = toolArgsElement.GetRawText();
 
         int? timeoutSeconds = null;
-        if (templateElement.TryGetProperty("timeout_seconds", out var ts) && ts.ValueKind == JsonValueKind.Number)
-        {
-            if (ts.TryGetInt32(out var parsed) && parsed > 0)
-                timeoutSeconds = parsed;
-        }
+        if (templateElement.TryGetProperty("timeout_seconds", out var ts) && ts.ValueKind == JsonValueKind.Number && ts.TryGetInt32(out var parsed) && parsed > 0)
+            timeoutSeconds = parsed;
 
         return new MetaSkillStepDefinition
         {

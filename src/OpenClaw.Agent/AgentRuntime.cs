@@ -3280,9 +3280,16 @@ public sealed class AgentRuntime : IAgentRuntime
                     new MetaSkillStepDefinition { Id = childId, Kind = template.Kind, Retry = template.Retry, TimeoutSeconds = template.TimeoutSeconds },
                     token => CallLlmWithResilienceAsync(session, messages, chatOptions, turnCtx, token),
                     ct);
-                return llmResult.Completed
-                    ? (llmResult.ExecutionResult?.Response.Text ?? "", null)
-                    : (llmResult.FailureMessage ?? "", llmResult.FailureCode);
+
+                if (!llmResult.Completed)
+                    return (llmResult.FailureMessage ?? "", llmResult.FailureCode);
+
+                var output = llmResult.ExecutionResult?.Response.Text ?? "";
+                var failureCode = (string?)null;
+                if (!TryValidateMetaStepOutput(template, output, out failureCode))
+                    return (output, failureCode);
+
+                return (output, null);
             }
 
             default:
