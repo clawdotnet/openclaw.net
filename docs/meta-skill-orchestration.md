@@ -28,7 +28,7 @@ fields:
 | Field | Type | Description |
 | --- | --- | --- |
 | `Id` | `string` | Unique identifier within the plan |
-| `Kind` | `string` | Step execution kind (`agent`, `llm_chat`, `llm_classify`, `tool_call`, `skill_exec`, `user_input`) |
+| `Kind` | `string` | Step execution kind (`agent`, `llm_chat`, `llm_classify`, `tool_call`, `skill_exec`, `user_input`, `fan_out`) |
 | `Skill` | `string?` | Delegated skill name (required for `agent` / `skill_exec` kinds) |
 | `Tool` | `string?` | Delegated tool name (required for `tool_call` kind) |
 | `DependsOn` | `IReadOnlyList<string>` | Upstream dependency step IDs, forming DAG edges |
@@ -42,6 +42,10 @@ fields:
 | `Clarify` | `MetaClarifySchema?` | User input clarification form definition |
 | `OutputContract` | `MetaStepOutputContract` | Step output validation contract (`Format` + `RequiredProperties`) |
 | `SkillExecEntrypoint` / `SkillExecArgs` / `SkillExecParseMode` | various | Entrypoint, arguments, and output parse mode for `skill_exec` subprocess execution |
+| `Iterable` | `string?` | Jinja expression evaluating to JSON array; required for `fan_out` steps |
+| `FanOutMaxConcurrency` | `int` | Max concurrent child steps per batch (default 4) |
+| `FanOutMergeMode` | `string` | Merge mode: `concat`, `json_array`, `first`, `last` (default `concat`) |
+| `FanOutTemplate` | `MetaSkillStepDefinition?` | Step template cloned per iterable item; required for `fan_out` steps |
 
 ### SkillDefinition — Complete Runtime Representation of a Skill
 
@@ -165,6 +169,7 @@ than defaulting to a full sub-agent for everything.
 | `tool_call` | Direct tool invocation | ✅ Direct | ❌ | Lowest | Deterministic side-effects (memory_save, file writes) |
 | `skill_exec` | Subprocess execution | ✅ Subprocess | ❌ | Low | CLI-wrapped skill execution |
 | `user_input` | Pause for human input | ❌ (optional NL extract) | ❌ | Pause overhead | Human-in-the-loop clarification forms |
+| `fan_out` | Dynamic step expansion over iterable list | ✅ (child template) | ✅ (if child is `llm_chat`) | Medium | N-way parallel search / batch tool calls |
 
 ### `agent` — Full Sub-Agent
 
@@ -210,6 +215,32 @@ Runs a skill's declared `entrypoint` manifest as a subprocess. Supports `json`,
 
 Pauses DAG execution to collect structured user input. See the
 [User-Input Pause and Resume](#user-input-pause-and-resume) section for details.
+
+### `fan_out` — Dynamic Step Expansion (since v2.x)
+
+Evaluates a Jinja `iterable` expression at runtime to produce a list of items,
+then clones a `fan_out_template` step definition for each item and executes
+them in parallel batches with concurrency control (`fan_out_max_concurrency`).
+
+**Execution flow:**
+
+1. Evaluate `iterable` → `List<string>` items
+2. Clone `fan_out_template` for each item, rewriting `Id` → `{parentId}_{index}`
+3. Execute children in batches of `fan_out_max_concurrency`, collecting outputs
+4. Merge child outputs per `fan_out_merge_mode`
+
+**Shared executor:** `MetaFanOutExecutor.TryExecuteFanOutStepAsync` (`src/OpenClaw.Core/Skills/Meta/MetaFanOutExecutor.cs`) — a static utility consumed by both `AgentRuntime` and `MafAgentRuntime`, eliminating code duplication. Each runtime provides a `FanOutChildExecutor` delegate that dispatches `tool_call` and `llm_chat` children through its own LLM/tool infrastructure.
+
+**Failure handling:** Child failures are logged (via the runtime's `ILogger`) and reflected in `stepResults`. The `continue_on_error` flag controls whether individual child failures halt the fan_out or are tolerated.
+
+**Merge modes:**
+
+| Mode | Behavior |
+| --- | --- |
+| `concat` | Join child outputs with `\n` (default) |
+| `json_array` | Wrap as `["output1", "output2", ...]` |
+| `first` | Return first child's output |
+| `last` | Return last child's output |
 
 ---
 
@@ -298,6 +329,7 @@ flowchart TD
         S7[MetaRoutePlanner]
         S8[Checkpoint Save/Restore]
         S9[ReturnMetaExecutionOutput]
+        S10[MetaFanOutExecutor]
     end
 
     subgraph AR["AgentRuntime (Native)"]

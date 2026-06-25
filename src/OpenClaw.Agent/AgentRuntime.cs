@@ -2267,6 +2267,30 @@ public sealed class AgentRuntime : IAgentRuntime
                 continue;
             }
 
+            if (await MetaFanOutExecutor.TryExecuteFanOutStepAsync(
+                    session,
+                    metaSkill,
+                    steps,
+                    stepById,
+                    dependentsByStep,
+                    pending,
+                    blocked,
+                    outputs,
+                    failureAliases,
+                    stepResults,
+                    input,
+                    turnCtx,
+                    templateRenderer,
+                    conditionEvaluator,
+                    toolArgumentResolver,
+                    routePlanner,
+                    ExecuteFanOutChildAsync,
+                    (msg, ex) => _logger?.LogWarning(ex, "{FanOutMessage}", msg),
+                    ct))
+            {
+                continue;
+            }
+
             foreach (var step in steps)
             {
                 if (!pending.Contains(step.Id))
@@ -3010,6 +3034,14 @@ public sealed class AgentRuntime : IAgentRuntime
                         break;
                     }
 
+                    case "fan_out":
+                    {
+                        // Managed primarily by TryExecuteFanOutStepAsync (called above the loop).
+                        // If a step reaches here its dependencies are still unsatisfied —
+                        // skip and retry next iteration.
+                        break;
+                    }
+
                     default:
                         return ReturnMetaExecutionOutput(session, metaSkill, finalText: null, stepResults, $"Meta step '{step.Id}' has unsupported kind '{step.Kind}'.", preserveCheckpoint: false);
                 }
@@ -3174,6 +3206,75 @@ public sealed class AgentRuntime : IAgentRuntime
         }
 
         return true;
+    }
+
+    private async Task<(string Output, string? FailureCode)> ExecuteFanOutChildAsync(
+        MetaSkillStepDefinition template,
+        string childId,
+        string childInput,
+        MetaExecutionContext childContext,
+        Session session,
+        TurnContext turnCtx,
+        CancellationToken ct)
+    {
+        switch (NormalizeMetaStepKind(template.Kind))
+        {
+            case "tool_call":
+            {
+                var toolName = template.Tool!;
+                string toolArgsJson;
+                try
+                {
+                    toolArgsJson = new MetaToolArgumentResolver(new MetaTemplateRenderer())
+                        .Resolve(null, template.WithJson, template.ToolArgsJson, childContext);
+                }
+                catch (InvalidOperationException)
+                {
+                    return ($"Error: invalid tool arguments for child step '{childId}'.", "invalid_tool_args");
+                }
+
+                var result = await ExecuteMetaToolStepWithPolicyAsync(
+                    metaSkill: null!,
+                    new MetaSkillStepDefinition { Id = childId, Kind = template.Kind, Retry = template.Retry, TimeoutSeconds = template.TimeoutSeconds },
+                    toolName,
+                    toolArgsJson,
+                    session,
+                    turnCtx,
+                    ct);
+
+                var completed = string.Equals(result.ResultStatus, ToolResultStatuses.Completed, StringComparison.Ordinal);
+                return completed ? (result.ResultText, null) : (result.ResultText, result.FailureCode);
+            }
+
+            case "llm_chat":
+            {
+                var stepArgs = DeserializeStepArgs(template.WithJson);
+                var systemPrompt = GetOptionalString(stepArgs, "system_prompt")
+                    ?? "Return the result for this step.";
+                var chatOptions = new ChatOptions
+                {
+                    ModelId = session.ModelOverride ?? _config.Model,
+                    MaxOutputTokens = GetOptionalInt32(stepArgs, "max_tokens") ?? _maxTokens,
+                    Temperature = GetOptionalSingle(stepArgs, "temperature") ?? _temperature
+                };
+                var messages = new List<ChatMessage>
+                {
+                    new(ChatRole.System, systemPrompt),
+                    new(ChatRole.User, childInput)
+                };
+
+                var llmResult = await ExecuteMetaLlmStepWithPolicyAsync(
+                    new MetaSkillStepDefinition { Id = childId, Kind = template.Kind, Retry = template.Retry, TimeoutSeconds = template.TimeoutSeconds },
+                    token => CallLlmWithResilienceAsync(session, messages, chatOptions, turnCtx, token),
+                    ct);
+                return llmResult.Completed
+                    ? (llmResult.ExecutionResult?.Response.Text ?? "", null)
+                    : (llmResult.FailureMessage ?? "", llmResult.FailureCode);
+            }
+
+            default:
+                return ($"Error: unsupported fan_out child kind '{template.Kind}'.", "unsupported_child_kind");
+        }
     }
 
     private static string ReturnMetaExecutionOutput(
@@ -3570,7 +3671,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 lastResult = await _toolExecutor.ExecuteAsync(
                     toolName,
                     toolArgsJson,
-                    $"meta:{metaSkill.Name}:{step.Id}:attempt:{attempt}",
+                    $"meta:{metaSkill?.Name ?? "fan_out"}:{step.Id}:attempt:{attempt}",
                     session,
                     turnCtx,
                     isStreaming: false,
@@ -3879,15 +3980,6 @@ public sealed class AgentRuntime : IAgentRuntime
         var deadline = checkpoint.CreatedAtUtc + TimeSpan.FromSeconds(step.Clarify.TimeoutSeconds.Value);
         return DateTimeOffset.UtcNow >= deadline;
     }
-
-    private readonly record struct MetaStepExecutionResult(
-        string Id,
-        string Kind,
-        string Status,
-        string? FailureCode,
-        double DurationMs,
-        bool Continued,
-        SessionMetaStepExecutionEvidence? ExecutionEvidence = null);
 
     private static Dictionary<string, object?> DeserializeStepArgs(string? withJson)
     {

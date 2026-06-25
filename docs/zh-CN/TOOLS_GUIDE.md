@@ -54,7 +54,7 @@
 | Goal 与 Loop | `get_goal`、`create_goal`、`update_goal`、`loop_control` |
 | 分形记忆 | `fractal_memory_search`、`fractal_memory_open`、`fractal_memory_recent`、`fractal_memory_export`、`fractal_memory_validate`、`fractal_memory_handoff_create`、`fractal_memory_index_refresh` |
 | 元技能 | `emit_text`、`meta_skill_fill_slots`、`meta_skill_assemble`、`meta_skill_lint_run`、`meta_skill_smoke_run`、`meta_skill_runtime_e2e_run`、`meta_skill_persist_proposal` |
-| 技能 | `load_skill`、`read_skill_resource`、`meta_invoke` |
+| 技能 | `load_skill`、`read_skill_resource`、`meta_invoke`、`list_tools` |
 | 外部与 MCP | `external_cli`、`mcp_native`（动态） |
 | Semantic Kernel | `semantic_kernel_entrypoint`、`semantic_kernel_function` |
 | 支付与 Mempalace | `payment`、`mempalace_knowledge_graph` |
@@ -142,6 +142,14 @@ AI 驱动的邮件分类整理。
 
 ### 20. Notion (`notion`、`notion_write`)
 使用 Notion 作为可选的共享便签或笔记数据库。
+
+### 21. 工具列表 (`list_tools`)
+运行时发现所有已注册的工具。返回每个工具的名称、描述和完整的 JSON 参数 schema。
+- **用途**：使 MetaSKILL 和其他编排流程能够在运行时自省可用能力，无需硬编码工具名称。
+- **参数**：
+  - `filter`（可选）：对工具名称进行子串匹配（不区分大小写）。省略 `filter` 会返回所有工具。
+- **输出**：JSON 数组，每个元素包含 `name`（字符串）、`description`（字符串）和 `parameterSchema`（JSON 对象，即工具的输入 schema）。
+- **使用方式**：可由 MetaSKILL `kind: fan_out` 步骤程序化调用来验证工具可用性，也可由 Agent 在推理使用哪些工具时直接调用。
 
 ---
 

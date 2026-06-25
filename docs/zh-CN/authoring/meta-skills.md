@@ -212,6 +212,57 @@ composition:
 支持的字段类型：`string`、`enum`、`integer`、`boolean`。使用 `skip_if` 在上下文
 足够时跳过。
 
+### `fan_out` —— 动态步骤展开
+
+对运行时生成的列表进行迭代，为每个元素克隆步骤模板，并在并行批次中执行子步骤。
+适用于子任务数量在编写时无法确定的情况——例如，对前一步 LLM 输出中提取的
+N 个主题进行搜索。
+
+**必需字段：**
+
+| 字段 | 用途 |
+| --- | --- |
+| `kind` | 必须为 `fan_out` |
+| `iterable` | Jinja 表达式，求值为字符串 JSON 数组 |
+| `fan_out_template` | 每个元素克隆的步骤定义（必须声明 `kind`、`tool` 或 `skill`） |
+
+**可选字段：**
+
+| 字段 | 默认值 | 用途 |
+| --- | --- | --- |
+| `fan_out_max_concurrency` | `4` | 每批最大并发子步骤数 |
+| `fan_out_merge_mode` | `concat` | 子步骤输出合并方式：`concat`、`json_array`、`first`、`last` |
+
+```yaml
+- id: search_every_topic
+  kind: fan_out
+  iterable: "{{ outputs.extract_topics | from_json }}"
+  fan_out_max_concurrency: 3
+  fan_out_merge_mode: json_array
+  fan_out_template:
+    kind: tool_call
+    tool: web_search
+    with:
+      query: "{{ item }}"
+    continue_on_error: true
+  depends_on:
+    - extract_topics
+```
+
+每个子步骤接收 `{{ item }}` 作为其输入上下文。模板支持 `tool_call` 和
+`llm_chat` 两种子步骤类型。子步骤失败会记录日志并反映在 stepResults 中；
+设置 `continue_on_error: true` 使 fan_out 在单个子步骤失败后继续执行。
+
+### `tool_call` —— 直接工具执行
+
+绕过 LLM，直接调用注册的工具。使用 `list_tools` 在运行时发现可用工具：
+
+```yaml
+- id: discover
+  kind: tool_call
+  tool: list_tools
+```
+
 ## 依赖与并行
 
 没有 `depends_on` 的步骤可以并行执行（波次调度）。有 `depends_on` 的步骤等待
