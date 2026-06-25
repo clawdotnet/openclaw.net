@@ -1,5 +1,7 @@
 using System.Text.Json;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 using OpenClaw.Core.Skills;
 using Xunit;
 
@@ -453,5 +455,157 @@ public sealed class MetaFanOutTests
         Assert.Contains("Analyze", step.FanOutTemplate.WithJson);
         Assert.Equal("concat", step.FanOutMergeMode);
         Assert.Equal(2, step.FanOutMaxConcurrency);
+    }
+
+    [Fact]
+    public async Task ExecuteFanOutStep_ChildFailureWithoutFailureBranch_BlocksDependents()
+    {
+        var fanOutStep = CreateFanOutStep();
+        var dependentStep = new MetaSkillStepDefinition
+        {
+            Id = "summarize",
+            Kind = "llm_chat",
+            DependsOn = ["fan"]
+        };
+        var steps = new[] { fanOutStep, dependentStep };
+        var stepById = steps.ToDictionary(static step => step.Id, StringComparer.OrdinalIgnoreCase);
+        var dependentsByStep = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["fan"] = ["summarize"]
+        };
+        var pending = new HashSet<string>(["fan", "summarize"], StringComparer.OrdinalIgnoreCase);
+        var blocked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var outputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var failureAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var stepResults = new List<MetaStepExecutionResult>();
+
+        var executed = await MetaFanOutExecutor.TryExecuteFanOutStepAsync(
+            CreateSession(),
+            CreateMetaSkill(),
+            steps,
+            stepById,
+            dependentsByStep,
+            pending,
+            blocked,
+            outputs,
+            failureAliases,
+            stepResults,
+            "input",
+            new TurnContext { SessionId = "sess-fan", ChannelId = "test" },
+            new MetaTemplateRenderer(),
+            new MetaConditionEvaluator(new MetaTemplateRenderer()),
+            new MetaToolArgumentResolver(new MetaTemplateRenderer()),
+            new MetaRoutePlanner(new MetaConditionEvaluator(new MetaTemplateRenderer())),
+            FailFirstChildAsync,
+            logger: null,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(executed);
+        Assert.DoesNotContain("fan", pending);
+        Assert.DoesNotContain("summarize", pending);
+        Assert.Contains("fan", blocked);
+        Assert.Contains("summarize", blocked);
+        Assert.Empty(outputs);
+
+        var parentResult = Assert.Single(stepResults, static result => result.Id == "fan");
+        Assert.Equal(ToolResultStatuses.Failed, parentResult.Status);
+        Assert.Equal("child_step_failed", parentResult.FailureCode);
+    }
+
+    [Fact]
+    public async Task ExecuteFanOutStep_ChildFailureWithFailureBranch_ActivatesFallback()
+    {
+        var fanOutStep = CreateFanOutStep(onFailure: "fallback");
+        var fallbackStep = new MetaSkillStepDefinition
+        {
+            Id = "fallback",
+            Kind = "tool_call",
+            Tool = "search"
+        };
+        var steps = new[] { fanOutStep, fallbackStep };
+        var stepById = steps.ToDictionary(static step => step.Id, StringComparer.OrdinalIgnoreCase);
+        var dependentsByStep = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var pending = new HashSet<string>(["fan"], StringComparer.OrdinalIgnoreCase);
+        var blocked = new HashSet<string>(["fallback"], StringComparer.OrdinalIgnoreCase);
+        var outputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var failureAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var stepResults = new List<MetaStepExecutionResult>();
+
+        var executed = await MetaFanOutExecutor.TryExecuteFanOutStepAsync(
+            CreateSession(),
+            CreateMetaSkill(),
+            steps,
+            stepById,
+            dependentsByStep,
+            pending,
+            blocked,
+            outputs,
+            failureAliases,
+            stepResults,
+            "input",
+            new TurnContext { SessionId = "sess-fan", ChannelId = "test" },
+            new MetaTemplateRenderer(),
+            new MetaConditionEvaluator(new MetaTemplateRenderer()),
+            new MetaToolArgumentResolver(new MetaTemplateRenderer()),
+            new MetaRoutePlanner(new MetaConditionEvaluator(new MetaTemplateRenderer())),
+            FailFirstChildAsync,
+            logger: null,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(executed);
+        Assert.DoesNotContain("fan", pending);
+        Assert.Contains("fallback", pending);
+        Assert.DoesNotContain("fallback", blocked);
+        Assert.Equal("fan", failureAliases["fallback"]);
+
+        var parentResult = Assert.Single(stepResults, static result => result.Id == "fan");
+        Assert.Equal(ToolResultStatuses.Failed, parentResult.Status);
+    }
+
+    private static MetaSkillStepDefinition CreateFanOutStep(string? onFailure = null) => new()
+    {
+        Id = "fan",
+        Kind = "fan_out",
+        Iterable = """["alpha","beta"]""",
+        FanOutTemplate = new MetaSkillStepDefinition
+        {
+            Id = "template",
+            Kind = "tool_call",
+            Tool = "search"
+        },
+        OnFailure = onFailure
+    };
+
+    private static Session CreateSession() => new()
+    {
+        Id = "sess-fan",
+        ChannelId = "test",
+        SenderId = "user"
+    };
+
+    private static SkillDefinition CreateMetaSkill() => new()
+    {
+        Name = "fanout-test",
+        Description = "Fan-out test skill",
+        Instructions = "Test",
+        Location = "/skills/fanout-test",
+        Kind = SkillKind.Meta,
+        Source = SkillSource.Workspace
+    };
+
+    private static Task<(string Output, string? FailureCode)> FailFirstChildAsync(
+        SkillDefinition _,
+        MetaSkillStepDefinition __,
+        string childId,
+        string ___,
+        MetaExecutionContext ____,
+        Session _____,
+        TurnContext ______,
+        CancellationToken _______)
+    {
+        return Task.FromResult(
+            childId.EndsWith("_0", StringComparison.Ordinal)
+                ? ("boom", (string?)"child_failed")
+                : ("ok", null));
     }
 }

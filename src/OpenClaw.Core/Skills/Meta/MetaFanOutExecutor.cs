@@ -187,8 +187,11 @@ public static class MetaFanOutExecutor
 
         if (anyChildFailed)
         {
-            pending.Remove(fanOutStep.Id);
             stepResults.Add(new MetaStepExecutionResult(fanOutStep.Id, fanOutStep.Kind, ToolResultStatuses.Failed, "child_step_failed", fanSw.Elapsed.TotalMilliseconds, Continued: false));
+            if (TryActivateFailureBranch(fanOutStep, stepById, pending, blocked, failureAliases))
+                return true;
+
+            BlockStepAndDependents(fanOutStep.Id, blocked, pending, dependentsByStep);
             return true;
         }
 
@@ -224,6 +227,27 @@ public static class MetaFanOutExecutor
         if (failureAliases.TryGetValue(step.Id, out var primaryStepId))
             outputs[primaryStepId] = output;
         pending.Remove(step.Id);
+    }
+
+    private static bool TryActivateFailureBranch(
+        MetaSkillStepDefinition step,
+        IReadOnlyDictionary<string, MetaSkillStepDefinition> stepById,
+        HashSet<string> pending,
+        HashSet<string> blocked,
+        Dictionary<string, string> failureAliases)
+    {
+        if (string.IsNullOrWhiteSpace(step.OnFailure))
+            return false;
+
+        var fallbackStepId = step.OnFailure.Trim();
+        if (!stepById.ContainsKey(fallbackStepId))
+            return false;
+
+        pending.Remove(step.Id);
+        blocked.Remove(fallbackStepId);
+        pending.Add(fallbackStepId);
+        failureAliases[fallbackStepId] = step.Id;
+        return true;
     }
 
     private static void BlockStepAndDependents(
