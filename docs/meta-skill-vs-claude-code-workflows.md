@@ -82,7 +82,7 @@ composition:
 **Key characteristics:**
 
 - Orchestration logic is **declarative YAML**
-- 7 step kinds covering different execution needs
+- 7 kinds of steps covering different execution needs
 - `depends_on` declares DAG dependencies
 - `fan_out` dynamically expands parallel child steps
 - `routes` conditional routing branches
@@ -143,14 +143,14 @@ composition:
 **Strengths:**
 - Parse-time DAG validation (cycle detection, 5 on_failure constraints)
 - Three-tier security gating guarantees tool access scope
-- 7 step kinds for fine-grained execution cost control
+- 7 kinds of steps for fine-grained execution cost control
 - 4-layer timeout protection
 - Full audit trail + CLI replay/reconstruct
 - Dual-runtime (AgentRuntime + MafAgentRuntime)
 
 **Costs:**
 - Expressiveness limited to DAG (no loops, MetaSkills cannot invoke MetaSkills)
-- Learning YAML structure and 7 step kinds
+- Learning YAML structure and 7 kinds of steps
 - Requires OpenClaw.NET Gateway runtime
 
 ## 5. Suitability
