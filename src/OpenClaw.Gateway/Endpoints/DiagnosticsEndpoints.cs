@@ -25,7 +25,7 @@ internal static class DiagnosticsEndpoints
         var operatorAccounts = app.Services.GetRequiredService<OperatorAccountService>();
         var modelProfiles = app.Services.GetService<IModelProfileRegistry>()
             ?? runtime.Operations.ModelProfiles as IModelProfileRegistry
-            ?? new ConfiguredModelProfileRegistry(startup.Config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+            ?? ConfiguredModelProfileRegistry.CreateInitialized(startup.Config);
         var providerSmokeRegistry = app.Services.GetService<ProviderSmokeRegistry>()
             ?? new ProviderSmokeRegistry();
 

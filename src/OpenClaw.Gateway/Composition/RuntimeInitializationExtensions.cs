@@ -103,14 +103,11 @@ internal static partial class RuntimeInitializationExtensions
 
         if (!services.ProviderRegistry.MarkDefault(config.Llm.Provider) && !services.ProviderRegistry.TryGet(config.Llm.Provider, out _))
         {
-            var suffix = builtInInitError is null
-                ? string.Empty
-                : $" Built-in provider initialization failed: {builtInInitError}.";
+            var suffix = builtInInitError is null ? string.Empty : $" Built-in provider initialization failed: {builtInInitError}.";
             throw new InvalidOperationException(
                 $"Configured provider '{config.Llm.Provider}' is not available.{suffix} " +
                 "Register it as the built-in provider or via a compatible plugin.");
         }
-
         services.ModelProfiles.SetDefaultProfileId();
 
         var chatClient = services.ProviderRegistry.TryGet("default", out var defaultRegistration) && defaultRegistration is not null

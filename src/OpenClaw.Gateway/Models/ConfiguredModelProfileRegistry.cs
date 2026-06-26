@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
@@ -47,8 +48,17 @@ internal sealed class ConfiguredModelProfileRegistry : IModelProfileRegistry, ID
 
     public string? DefaultProfileId { get; private set; }
 
+    internal static ConfiguredModelProfileRegistry CreateInitialized(GatewayConfig config)
+    {
+        var registry = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        registry.SetDefaultProfileId();
+        return registry;
+    }
+
     public void SetDefaultProfileId()
     {
+        if (DefaultProfileId is not null)
+            return;
         DefaultProfileId = BuildRegistrations(_config);
     }
 

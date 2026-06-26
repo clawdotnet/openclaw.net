@@ -86,11 +86,11 @@ internal static partial class AdminEndpoints
             ?? new SetupVerificationSnapshotStore(startup.Config.Memory.StoragePath);
         var modelProfiles = app.Services.GetService<IModelProfileRegistry>()
             ?? runtime.Operations.ModelProfiles as IModelProfileRegistry
-            ?? new ConfiguredModelProfileRegistry(startup.Config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
+            ?? ConfiguredModelProfileRegistry.CreateInitialized(startup.Config);
         var modelEvaluationRunner = app.Services.GetService<ModelEvaluationRunner>()
             ?? new ModelEvaluationRunner(
                 runtime.Operations.ModelProfiles as ConfiguredModelProfileRegistry
-                    ?? new ConfiguredModelProfileRegistry(startup.Config, NullLogger<ConfiguredModelProfileRegistry>.Instance),
+                    ?? ConfiguredModelProfileRegistry.CreateInitialized(startup.Config),
                 startup.Config,
                 NullLogger<ModelEvaluationRunner>.Instance);
         var redaction = app.Services.GetService<IRedactionPipeline>();
