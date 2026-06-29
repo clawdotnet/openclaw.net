@@ -1,5 +1,6 @@
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Gateway.Bootstrap;
+using OpenClaw.McpApp;
 using OpenClaw.Protocols.Mqtt.Tools;
 
 namespace OpenClaw.Gateway.Composition;
@@ -27,6 +28,9 @@ internal static class ToolServicesExtensions
             new McpServerToolRegistry(
                 startup.Config.Plugins.Mcp,
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger<McpServerToolRegistry>()));
+
+        // MCP App support — discovery and hosting
+        services.AddOpenClawMcpAppServices(startup.Config.McpApps);
 
         return services;
     }

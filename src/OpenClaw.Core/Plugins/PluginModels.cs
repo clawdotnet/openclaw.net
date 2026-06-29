@@ -151,6 +151,69 @@ public sealed class McpServerConfig
     public int RequestTimeoutSeconds { get; set; } = 60;
 }
 
+/// <summary>
+/// Top-level MCP Apps configuration section. Lives under
+/// <c>McpApps</c> in GatewayConfig / appsettings.
+/// MCP Apps are self-contained MCP servers (like GroceryInventory.Api)
+/// that can be discovered via manifest files and hosted by OpenClaw.
+/// </summary>
+public sealed class McpAppsConfig
+{
+    /// <summary>Master toggle for MCP App support.</summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Directories to scan for MCP App manifests (openclaw.mcpapp.json).
+    /// Relative paths are resolved against the gateway root.
+    /// </summary>
+    public string[] DiscoveryPaths { get; set; } = ["./mcpapps"];
+
+    /// <summary>
+    /// Allowlist semantics for MCP Apps: "legacy" (backward-compatible)
+    /// or "strict" ([]=deny, ["*"]=allow-all).
+    /// </summary>
+    public string AllowlistSemantics { get; set; } = "legacy";
+
+    /// <summary>App id allowlist. Empty means all allowed in legacy mode.</summary>
+    public string[] Allow { get; set; } = [];
+
+    /// <summary>App id denylist. Deny wins over allow.</summary>
+    public string[] Deny { get; set; } = [];
+
+    /// <summary>Per-app toggles and overrides.</summary>
+    public Dictionary<string, McpAppEntryConfig> Entries { get; set; } = new(StringComparer.Ordinal);
+}
+
+/// <summary>
+/// Per-app configuration entry with enable/disable and optional overrides.
+/// </summary>
+public sealed class McpAppEntryConfig
+{
+    /// <summary>Whether this specific app is enabled.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Override the transport mode for this app.</summary>
+    public string? Transport { get; set; }
+
+    /// <summary>Override the command for this app.</summary>
+    public string? Command { get; set; }
+
+    /// <summary>Override the URL for this app.</summary>
+    public string? Url { get; set; }
+
+    /// <summary>Override the tool name prefix for this app.</summary>
+    public string? ToolNamePrefix { get; set; }
+
+    /// <summary>Override startup timeout.</summary>
+    public int? StartupTimeoutSeconds { get; set; }
+
+    /// <summary>Override request timeout.</summary>
+    public int? RequestTimeoutSeconds { get; set; }
+
+    /// <summary>Extra environment variables for this app instance.</summary>
+    public Dictionary<string, string> Environment { get; set; } = new(StringComparer.Ordinal);
+}
+
 public static class McpServerConfigExtensions
 {
     public static string NormalizeTransport(this McpServerConfig config)

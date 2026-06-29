@@ -1,0 +1,22 @@
+{
+  "id": "grocery-inventory",
+  "name": "Grocery Inventory Dashboard",
+  "description": "Multi-store grocery inventory management MCP App with interactive dashboard. Manage products, categories, suppliers, stores, and inventory levels across a retail chain. Includes stock adjustment, low-stock alerts, restock recommendations, and purchase order drafting.",
+  "version": "1.0.0",
+  "protocolVersion": "2025-03-26",
+  "iconUrl": "https://img.icons8.com/color/48/grocery-store.png",
+  "author": "OpenClaw MCP App Demo",
+  "license": "MIT",
+  "homepageUrl": "https://github.com/MCPAppsDemo/GroceryInventory.Api",
+  "tags": ["grocery", "inventory", "retail", "supply-chain", "dashboard"],
+  "transport": "http",
+  "url": "https://localhost:5001/mcp",
+  "hasUi": true,
+  "uiResourceUri": "ui://grocery/store-dashboard.html",
+  "category": "data",
+  "capabilities": ["tools", "resources", "prompts", "completions"],
+  "startupTimeoutSeconds": 10,
+  "requestTimeoutSeconds": 60,
+  "toolNamePrefix": "grocery.",
+  "headers": {}
+}

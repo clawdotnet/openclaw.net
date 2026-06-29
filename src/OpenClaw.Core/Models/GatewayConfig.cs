@@ -41,6 +41,7 @@ public sealed class GatewayConfig
     public WebhooksConfig Webhooks { get; set; } = new();
     public DynamicTurnRoutingConfig DynamicTurnRouting { get; set; } = new();
     public RoutingConfig Routing { get; set; } = new();
+    public McpAppsConfig McpApps { get; set; } = new();
     public DeploymentConfig Deployment { get; set; } = new();
     public TailscaleConfig Tailscale { get; set; } = new();
     public GmailPubSubConfig GmailPubSub { get; set; } = new();

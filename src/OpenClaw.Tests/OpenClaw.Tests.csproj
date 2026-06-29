@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
     <ProjectReference Include="..\OpenClaw.Agent\OpenClaw.Agent.csproj" />
+    <ProjectReference Include="..\mcpapp\OpenClaw.McpApp\OpenClaw.McpApp.csproj" />
     <ProjectReference Include="..\OpenClaw.Channels\OpenClaw.Channels.csproj" />
     <ProjectReference Include="..\OpenClaw.Cli\OpenClaw.Cli.csproj" />
     <ProjectReference Include="..\OpenClaw.Companion\OpenClaw.Companion.csproj" />

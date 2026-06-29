@@ -23,10 +23,12 @@ using OpenClaw.Core.Validation;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
+using OpenClaw.Gateway.Mcp;
 using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Profiles;
 using OpenClaw.Gateway.Tools;
 using OpenClaw.Gateway.Pipeline;
+using OpenClaw.McpApp;
 using OpenClaw.Plugins.TokenJuice;
 
 namespace OpenClaw.Gateway.Composition;
@@ -75,6 +77,8 @@ internal static partial class RuntimeInitializationExtensions
             startup.RuntimeState);
         if (config.Plugins.Mcp.Enabled)
             await services.McpRegistry.RegisterToolsAsync(services.NativeRegistry, app.Lifetime.ApplicationStopping);
+        if (config.McpApps.Enabled)
+            await services.McpAppRegistry.RegisterMcpAppToolsAsync(services.NativeRegistry, config.McpApps, app.Lifetime.ApplicationStopping);
 
         LlmClientFactory.ResetDynamicProviders();
         var videoFrameExtraction = app.Services.GetRequiredService<IVideoFrameExtractionService>();
@@ -203,6 +207,7 @@ internal static partial class RuntimeInitializationExtensions
         var profile = app.Services.GetRequiredService<IRuntimeProfile>();
         var shutdownCoordinator = app.Services.GetRequiredService<GatewayRuntimeShutdownCoordinator>();
         shutdownCoordinator.RegisterAsyncCleanup("mcp registry", _ => services.McpRegistry.DisposeAsync());
+        shutdownCoordinator.RegisterAsyncCleanup("mcpapp registry", _ => services.McpAppRegistry.DisposeAsync());
         var runtime = CreateGatewayRuntime(
             config,
             services,

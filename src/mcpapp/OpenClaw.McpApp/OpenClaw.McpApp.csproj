@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>OpenClaw.McpApp</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsPackable>true</IsPackable>
+    <PackageId>OpenClaw.McpApp</PackageId>
+    <Description>MCP App support for OpenClaw.NET — discover, host, and manage MCP Applications as first-class citizens.</Description>
+    <PackageTags>openclaw;mcp;mcp-app;ai;agent;dotnet</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenClaw.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\OpenClaw.Core\OpenClaw.Core.csproj" />
+    <PackageReference Include="ModelContextProtocol" Version="1.4.0" />
+  </ItemGroup>
+</Project>

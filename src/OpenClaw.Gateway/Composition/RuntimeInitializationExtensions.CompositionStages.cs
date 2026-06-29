@@ -17,6 +17,7 @@ using OpenClaw.Core.Validation;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Models;
+using OpenClaw.McpApp;
 using OpenClaw.Payments.Core;
 
 namespace OpenClaw.Gateway.Composition;
@@ -67,6 +68,7 @@ internal static partial class RuntimeInitializationExtensions
             CanvasBroker = app.Services.GetRequiredService<CanvasCommandBroker>(),
             NativeRegistry = app.Services.GetRequiredService<NativePluginRegistry>(),
             McpRegistry = app.Services.GetRequiredService<McpServerToolRegistry>(),
+            McpAppRegistry = app.Services.GetRequiredService<McpAppRegistry>(),
             ExternalCliRegistry = app.Services.GetRequiredService<IExternalCliConnectorRegistry>(),
             ExternalCliRunner = app.Services.GetRequiredService<IExternalCliRunner>(),
             ExternalCliAudit = app.Services.GetRequiredService<IExternalCliAuditSink>(),
@@ -585,6 +587,7 @@ internal static partial class RuntimeInitializationExtensions
         public required CanvasCommandBroker CanvasBroker { get; init; }
         public required NativePluginRegistry NativeRegistry { get; init; }
         public required McpServerToolRegistry McpRegistry { get; init; }
+        public required McpAppRegistry McpAppRegistry { get; init; }
         public required IExternalCliConnectorRegistry ExternalCliRegistry { get; init; }
         public required IExternalCliRunner ExternalCliRunner { get; init; }
         public required IExternalCliAuditSink ExternalCliAudit { get; init; }
