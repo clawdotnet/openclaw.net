@@ -14,6 +14,9 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Guides | Tools Guide | [TOOLS_GUIDE.md](TOOLS_GUIDE.md) |
 | Guides | Tool Hooks | [HOOKS.md](HOOKS.md) |
 | Guides | Tool Hooks (zh-CN) | [zh-CN/HOOKS.md](zh-CN/HOOKS.md) |
+| Guides | TokenJuice Output Reduction | [tokenjuice.md](tokenjuice.md) |
+| Guides | Goal Auto-Continuation | [GOAL_TECHNICAL_ARCHITECTURE.md](GOAL_TECHNICAL_ARCHITECTURE.md) |
+| Guides | Loop Recurring Prompts | [LOOP_TECHNICAL_ARCHITECTURE.md](LOOP_TECHNICAL_ARCHITECTURE.md) |
 | Guides | Embedded Local Models | [LOCAL_MODELS.md](LOCAL_MODELS.md) |
 | Guides | MetaSkills (Feature Overview) | [meta-skills.md](meta-skills.md) |
 | Guides | MetaSkill Orchestration Architecture | [meta-skill-orchestration.md](meta-skill-orchestration.md) |
@@ -42,6 +45,7 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Reference | Canvas and A2UI | [CANVAS_A2UI.md](CANVAS_A2UI.md) |
 | Reference | Glossary | [GLOSSARY.md](GLOSSARY.md) |
 | Integrations | Semantic Kernel | [SEMANTIC_KERNEL.md](SEMANTIC_KERNEL.md) |
+| Integrations | MCP Apps | [MCPAPP.md](MCPAPP.md) |
 | Integrations | Microsoft Agent Framework | [integrations/microsoft-agent-framework.md](integrations/microsoft-agent-framework.md) |
 | Integrations | Workflow Backends | [workflow-backends.md](workflow-backends.md) |
 | Integrations | Microsoft Teams | [TEAMS_SETUP.md](TEAMS_SETUP.md) |
@@ -68,6 +72,9 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Project | Roadmap | [ROADMAP.md](ROADMAP.md) |
 | Project | AI Contributor Guide | [ai-contributor-guide.md](ai-contributor-guide.md) |
 | International | Simplified Chinese Start Here | [zh-CN/START_HERE.md](zh-CN/START_HERE.md) |
+| International | Simplified Chinese Site Map | [zh-CN/SITE_MAP.md](zh-CN/SITE_MAP.md) |
+| International | 中文用户指南 | [zh-CN/USER_GUIDE.md](zh-CN/USER_GUIDE.md) |
+| International | 中文工具指南 | [zh-CN/TOOLS_GUIDE.md](zh-CN/TOOLS_GUIDE.md) |
 | International | 中文 MetaSkill 用户指南 | [zh-CN/meta-skill-user-guide.md](zh-CN/meta-skill-user-guide.md) |
 | International | 中文 MetaSkill 功能概览 | [zh-CN/meta-skills.md](zh-CN/meta-skills.md) |
 | International | 中文 MetaSkill 编写指南 | [zh-CN/authoring/meta-skills.md](zh-CN/authoring/meta-skills.md) |
@@ -92,6 +99,10 @@ Overview
 Guides
   User Guide
   Tools Guide
+  Tool Hooks
+  TokenJuice Output Reduction
+  Goal Auto-Continuation
+  Loop Recurring Prompts
   Embedded Local Models
   OpenSquilla Dynamic Turn Routing
   Dynamic Routing and Model Profiles
@@ -118,6 +129,7 @@ Reference
 
 Integrations
   Semantic Kernel
+  MCP Apps
   Microsoft Agent Framework
   Workflow Backends
   Microsoft Teams
@@ -150,6 +162,9 @@ Project
 
 International
   Simplified Chinese Start Here
+  Simplified Chinese Site Map
+  中文用户指南
+  中文工具指南
 ```
 
 ## Build Notes

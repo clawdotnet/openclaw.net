@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![NativeAOT-friendly](https://img.shields.io/badge/NativeAOT-friendly-blue)
 ![Plugin compatibility](https://img.shields.io/badge/plugin%20compatibility-evolving-green)
-![Tools](https://img.shields.io/badge/native%20tools-75-green)
+![Tools](https://img.shields.io/badge/native%20tools-80%2B-green)
 ![Channels](https://img.shields.io/badge/channels-9-green)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/clawdotnet/openclaw.net)
 
@@ -50,11 +50,14 @@ Start here:
 - **Shared Harness State** for passive delegated-work coordination across participants, actions, read/write sets, assumptions, verifier obligations, evidence links, and conflicts
 - **Codebase Harness Map** via `openclaw harness map` for passive static repository maps of projects, modules, endpoints, tools, providers, channels, config, and tests
 - **OpenClaw SkillKit** via `openclaw skill` for local-first skill authoring, validation, critique, packaging, and dry-run execution planning
+- **First-class MCP App support** for manifest-discovered third-party MCP apps with lifecycle management, tool bridging, and interactive UI resources
+- **Session-scoped `/goal` auto-continuation** for long-running work that should continue until complete, blocked, or budget-limited
+- **TokenJuice output reduction** for deterministic, rule-driven compression of verbose tool output before it enters model context
 - **First-class optional Microsoft Agent Framework adapter** for `Runtime.Orchestrator=maf` without a special build
 - **Durable workflow delegation** through supported workflow backends such as `maf-durable-http`
 - **CLI and Companion** setup flows for source checkouts and desktop bundles
 - **/loop recurring-prompt command** with TickerQ-backed session-scoped timer injection, idempotent override, and dual-path semantic auto-termination for build health checks, log polling, and other periodic tasks
-- **75 native tools** covering file ops, sessions, memory, web, messaging, home automation, databases, email, and more
+- **80+ native and optional tool surfaces** covering file ops, sessions, memory, web, messaging, home automation, databases, email, MCP apps, and more
 - **9 channel adapters** (Telegram, SMS, WhatsApp, Teams, Slack, Discord, Signal, email, webhooks) with DM policy, allowlists, and signature validation
 - **Native LLM providers** for OpenAI, Claude, Gemini, Azure OpenAI, Ollama, and OpenAI-compatible endpoints
 - **Optional embedded local models** with Gemma 4 GGUF packages, package install/verify CLI commands, supervised sidecar inference, and frame-based video understanding
@@ -212,6 +215,10 @@ The public documentation site is **[AgentQi.dev](https://agentqi.dev)**. The sou
 | [docs/CAPABILITY_MATRIX.md](docs/CAPABILITY_MATRIX.md) | Core, optional, experimental, and JIT-only capability lanes |
 | [docs/build/dashboard-assets.md](docs/build/dashboard-assets.md) | Gateway Dashboard asset build and publish behavior |
 | [docs/TOOLS_GUIDE.md](docs/TOOLS_GUIDE.md) | Native tool catalog and configuration |
+| [docs/MCPAPP.md](docs/MCPAPP.md) | MCP App manifest discovery, lifecycle management, tool bridging, and UI resources |
+| [docs/tokenjuice.md](docs/tokenjuice.md) | Rule-driven tool output reduction and configuration |
+| [docs/GOAL_TECHNICAL_ARCHITECTURE.md](docs/GOAL_TECHNICAL_ARCHITECTURE.md) | Session-scoped goal auto-continuation architecture |
+| [docs/LOOP_TECHNICAL_ARCHITECTURE.md](docs/LOOP_TECHNICAL_ARCHITECTURE.md) | `/loop` recurring-prompt command architecture |
 | [docs/LOCAL_MODELS.md](docs/LOCAL_MODELS.md) | Embedded local models, frame-based video, and experimental LiteRT-LM adapter notes |
 | [docs/opensquilla-dynamic-turn-routing.md](docs/opensquilla-dynamic-turn-routing.md) | Independent guide to the OpenSquilla-style dynamic turn-routing surface and its current implementation status |
 | [docs/mempalace-memory.md](docs/mempalace-memory.md) | Optional MemPalace.NET memory provider and temporal knowledge graph |
@@ -220,6 +227,7 @@ The public documentation site is **[AgentQi.dev](https://agentqi.dev)**. The sou
 | [docs/deployment/TAILSCALE.md](docs/deployment/TAILSCALE.md) | Optional Tailscale Serve private access |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Supported upstream skill, plugin, and channel surface |
 | [docs/zh-CN/START_HERE.md](docs/zh-CN/START_HERE.md) | Simplified Chinese first-run orientation |
+| [docs/zh-CN/SITE_MAP.md](docs/zh-CN/SITE_MAP.md) | Simplified Chinese documentation map |
 | [SECURITY.md](SECURITY.md) | Hardening guidance for public deployments |
 
 Capability lanes at a glance:

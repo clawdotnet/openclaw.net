@@ -27,7 +27,7 @@ This matrix summarizes the current OpenClaw.NET capability lanes. It complements
 
 | Capability | Lane | Notes |
 | --- | --- | --- |
-| First-party native tools (75 total) | Core | File, shell, memory, session, web, database, email, calendar, browser, MQTT, Canvas/A2UI, FractalMemory, MetaSkill, Goal, Loop, and related tools. |
+| First-party and optional tool surfaces (80+) | Core / Optional | File, shell, memory, session, web, database, email, calendar, browser, MQTT, Canvas/A2UI, FractalMemory, MetaSkill, Goal, Loop, MCP App, Semantic Kernel, and related tools. The active set is configuration-dependent. |
 | Browser tool | Optional | Implemented in `OpenClaw.Protocols.Browser`; conservative defaults; local execution depends on runtime capability and sandbox/backend settings. |
 | MQTT tools and event bridge | Optional | Implemented in `OpenClaw.Protocols.Mqtt` and composed by the gateway when native MQTT config is enabled. |
 | Home Assistant tools and event bridge | Optional | Native home-automation surface under native plugin config. |

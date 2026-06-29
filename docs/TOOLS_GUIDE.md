@@ -2,7 +2,7 @@
 
 This guide provides a comprehensive overview of the native tools available in OpenClaw.NET and how to configure them securely.
 
-> **Total tools: 84** (native C# `ITool` / `IToolWithContext` implementations across `Agent`, `Core`, `Gateway`, `Protocols`, `Plugins`, and `SemanticKernelAdapter`). Updated 2026-06-20.
+> **Total tools: 80+ registered tool surfaces** (native C# `ITool` / `IToolWithContext` implementations plus optional and dynamic bridge surfaces across `Agent`, `Core`, `Gateway`, `Protocols`, `Plugins`, `MCP App`, and `SemanticKernelAdapter`). The active set depends on configuration. Updated 2026-06-29.
 
 ---
 
@@ -37,29 +37,29 @@ There are two primary ways to add new capabilities to your agent:
 
 ---
 
-## 📊 Tool Inventory (84 tools, as of 2026-06-20)
+## 📊 Tool Inventory (80+ tool surfaces, as of 2026-06-29)
 
 | Category | Tools |
 |----------|-------|
-| File & Shell | `shell`, `read_file`, `write_file`, `edit_file` |
+| File & Shell | `shell`, `read_file`, `write_file`, `edit_file`, `apply_patch`, `process` |
 | Memory | `memory`, `memory_search`, `memory_get`, `project_memory` |
 | Web & Search | `browser`, `web_search`, `web_fetch`, `x_search` |
-| Code & Execution | `code_exec`, `git`, `apply_patch`, `pdf_read` |
+| Code & Execution | `code_exec`, `git`, `pdf_read` |
 | Communication | `email`, `message`, `inbox_zero` |
 | Database & Notion | `database`, `notion`, `notion_write` |
 | Home Automation | `home_assistant`, `home_assistant_write`, `mqtt`, `mqtt_publish` |
-| Calendar & Image | `calendar`, `image_gen` |
-| Sessions & Delegation | `sessions`, `delegate_agent`, `process` |
-| Canvas & A2UI | `canvas_present`, `canvas_hide`, `canvas_navigate`, `canvas_snapshot`, `a2ui_push`, `a2ui_reset`, `a2ui_eval`, `a2ui_create_surface`, `a2ui_update_components`, `a2ui_update_data_model`, `a2ui_delete_surface` |
+| Calendar & Media | `calendar`, `image_gen`, `vision_analyze`, `text_to_speech` |
+| Sessions & Delegation | `sessions`, `delegate_agent` |
+| Canvas & A2UI | `canvas_present`, `canvas_hide`, `canvas_navigate`, `canvas_snapshot`, `a2ui_push`, `a2ui_reset`, `a2ui_eval`, `a2ui_create_surface`, `a2ui_update_components`, `a2ui_update_data_model`, `a2ui_delete_surface`, `a2ui_sync_ui_to_data` |
 | Gateway & Admin | `automation`, `cron`, `gateway`, `agents_list`, `profile_read`, `profile_write`, `session_search`, `sessions_history`, `sessions_send`, `sessions_spawn`, `sessions_yield`, `session_status`, `todo` |
 | Goal & Loop | `get_goal`, `create_goal`, `update_goal`, `loop_control` |
 | FractalMemory | `fractal_memory_search`, `fractal_memory_open`, `fractal_memory_recent`, `fractal_memory_export`, `fractal_memory_validate`, `fractal_memory_handoff_create`, `fractal_memory_index_refresh` |
 | MetaSkill | `emit_text`, `meta_skill_fill_slots`, `meta_skill_assemble`, `meta_skill_lint_run`, `meta_skill_smoke_run`, `meta_skill_runtime_e2e_run`, `meta_skill_persist_proposal` |
 | Skills | `load_skill`, `read_skill_resource`, `meta_invoke`, `list_tools` |
-| External & MCP | `external_cli`, `mcp_native` (dynamic) |
-| Semantic Kernel | `semantic_kernel_entrypoint`, `semantic_kernel_function` |
-| Payment & Mempalace | `payment`, `mempalace_knowledge_graph` |
-| Streaming & Test | `streaming_smoke_echo`, `bridged_plugin` (dynamic) |
+| External & MCP | `external_cli`, MCP App local tool names discovered from `openclaw.mcpapp.json` and registered under plugin id `mcpapp:{appId}` |
+| Semantic Kernel | `semantic_kernel`, plus optional mapped SK function tools |
+| Payment & Mempalace | `payment`, `mempalace_kg` |
+| Streaming & Test | `stream_echo` (env-gated), bridged plugin tools (dynamic) |
 
 ---
 

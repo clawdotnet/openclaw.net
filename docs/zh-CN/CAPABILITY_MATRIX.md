@@ -27,7 +27,7 @@
 
 | 能力 | 通道 | 备注 |
 | --- | --- | --- |
-| 第一方原生工具（共 75 个） | Core | 文件、shell、记忆、会话、网页、数据库、邮件、日历、浏览器、MQTT、Canvas/A2UI、分形记忆、元技能、Goal、Loop 及相关工具 |
+| 第一方和可选工具界面（80+） | Core / Optional | 文件、shell、记忆、会话、网页、数据库、邮件、日历、浏览器、MQTT、Canvas/A2UI、分形记忆、元技能、Goal、Loop、MCP App、Semantic Kernel 及相关工具。实际启用集合取决于配置。 |
 | 浏览器工具 | Optional | 在 `OpenClaw.Protocols.Browser` 中实现；保守默认值 |
 | MQTT 工具与事件桥接 | Optional | 在 `OpenClaw.Protocols.Mqtt` 中实现 |
 | Home Assistant 工具与事件桥接 | Optional | 原生家庭自动化接口 |

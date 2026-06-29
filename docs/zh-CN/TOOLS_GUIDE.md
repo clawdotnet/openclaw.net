@@ -2,7 +2,7 @@
 
 本指南全面介绍 OpenClaw.NET 中可用的原生工具及其安全配置方法。
 
-> **工具总数：75**（原生 C# `ITool` / `IToolWithContext` 实现，分布在 `Agent`、`Core`、`Gateway`、`Protocols`、`Plugins` 和 `SemanticKernelAdapter` 中）。更新于 2026-06-20。
+> **工具总数：80+ 个已注册工具界面**（原生 C# `ITool` / `IToolWithContext` 实现，以及分布在 `Agent`、`Core`、`Gateway`、`Protocols`、`Plugins`、`MCP App` 和 `SemanticKernelAdapter` 中的可选/动态桥接界面）。实际启用集合取决于配置。更新于 2026-06-29。
 
 ---
 
@@ -36,29 +36,29 @@
 
 ---
 
-## 📊 工具清单（84 个工具，截至 2026-06-20）
+## 📊 工具清单（80+ 个工具界面，截至 2026-06-29）
 
 | 类别 | 工具 |
 |----------|-------|
-| 文件与 Shell | `shell`、`read_file`、`write_file`、`edit_file` |
+| 文件与 Shell | `shell`、`read_file`、`write_file`、`edit_file`、`apply_patch`、`process` |
 | 记忆 | `memory`、`memory_search`、`memory_get`、`project_memory` |
 | 网页与搜索 | `browser`、`web_search`、`web_fetch`、`x_search` |
-| 代码与执行 | `code_exec`、`git`、`apply_patch`、`pdf_read` |
+| 代码与执行 | `code_exec`、`git`、`pdf_read` |
 | 通讯 | `email`、`message`、`inbox_zero` |
 | 数据库与 Notion | `database`、`notion`、`notion_write` |
 | 家庭自动化 | `home_assistant`、`home_assistant_write`、`mqtt`、`mqtt_publish` |
-| 日历与图像 | `calendar`、`image_gen` |
-| 会话与委托 | `sessions`、`delegate_agent`、`process` |
-| Canvas 与 A2UI | `canvas_present`、`canvas_hide`、`canvas_navigate`、`canvas_snapshot`、`a2ui_push`、`a2ui_reset`、`a2ui_eval`、`a2ui_create_surface`、`a2ui_update_components`、`a2ui_update_data_model`、`a2ui_delete_surface` |
+| 日历与媒体 | `calendar`、`image_gen`、`vision_analyze`、`text_to_speech` |
+| 会话与委托 | `sessions`、`delegate_agent` |
+| Canvas 与 A2UI | `canvas_present`、`canvas_hide`、`canvas_navigate`、`canvas_snapshot`、`a2ui_push`、`a2ui_reset`、`a2ui_eval`、`a2ui_create_surface`、`a2ui_update_components`、`a2ui_update_data_model`、`a2ui_delete_surface`、`a2ui_sync_ui_to_data` |
 | Gateway 与管理 | `automation`、`cron`、`gateway`、`agents_list`、`profile_read`、`profile_write`、`session_search`、`sessions_history`、`sessions_send`、`sessions_spawn`、`sessions_yield`、`session_status`、`todo` |
 | Goal 与 Loop | `get_goal`、`create_goal`、`update_goal`、`loop_control` |
 | 分形记忆 | `fractal_memory_search`、`fractal_memory_open`、`fractal_memory_recent`、`fractal_memory_export`、`fractal_memory_validate`、`fractal_memory_handoff_create`、`fractal_memory_index_refresh` |
 | 元技能 | `emit_text`、`meta_skill_fill_slots`、`meta_skill_assemble`、`meta_skill_lint_run`、`meta_skill_smoke_run`、`meta_skill_runtime_e2e_run`、`meta_skill_persist_proposal` |
 | 技能 | `load_skill`、`read_skill_resource`、`meta_invoke`、`list_tools` |
-| 外部与 MCP | `external_cli`、`mcp_native`（动态） |
-| Semantic Kernel | `semantic_kernel_entrypoint`、`semantic_kernel_function` |
-| 支付与 Mempalace | `payment`、`mempalace_knowledge_graph` |
-| 流式与测试 | `streaming_smoke_echo`、`bridged_plugin`（动态） |
+| 外部与 MCP | `external_cli`、从 `openclaw.mcpapp.json` 发现并以插件 id `mcpapp:{appId}` 注册的 MCP App 本地工具名 |
+| Semantic Kernel | `semantic_kernel`，以及可选映射的 SK 函数工具 |
+| 支付与 Mempalace | `payment`、`mempalace_kg` |
+| 流式与测试 | `stream_echo`（环境变量启用）、桥接插件工具（动态） |
 
 ---
 
@@ -168,7 +168,7 @@ AI 驱动的邮件分类整理。
 ## ⏰ 定时任务（Cron）
 OpenClaw.NET 可通过 `OpenClaw:Cron` 运行定时提示词。设置 `ChannelId` 和 `RecipientId` 以通过频道适配器发送响应。
 
-详见 [LOOP_TECHNICAL_ARCHITECTURE.md](zh-CN/LOOP_TECHNICAL_ARCHITECTURE.md)。
+详见 [LOOP_TECHNICAL_ARCHITECTURE.md](LOOP_TECHNICAL_ARCHITECTURE.md)。
 
 ---
 
