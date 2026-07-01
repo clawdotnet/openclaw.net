@@ -43,7 +43,8 @@ internal sealed class GatewayInboundMessageWorker
         GatewayAutomationService? automationService,
         ContractGovernanceService? contractGovernance,
         GovernanceLedgerService? governanceLedger,
-        AudioTranscriptionService? audioTranscriptionService = null)
+        AudioTranscriptionService? audioTranscriptionService = null,
+        Background.BackgroundExecutionLimiter? backgroundLimiter = null)
     {
         _ = isNonLoopbackBind;
         _ = sessionLocks;
@@ -670,17 +671,45 @@ internal sealed class GatewayInboundMessageWorker
                                 if (!string.IsNullOrWhiteSpace(effectiveResponseMode))
                                     session.ResponseMode = effectiveResponseMode!;
 
-                                string responseText;
+                                AgentTurnResult turnResult;
                                 try
                                 {
-                                    responseText = await agentRuntime.RunAsync(session, messageText, processingCt, approvalCallback: approvalCallback);
+                                    turnResult = await agentRuntime.RunTurnAsync(session, messageText, processingCt, approvalCallback: approvalCallback);
                                 }
                                 finally
                                 {
                                     session.ResponseMode = originalResponseMode;
                                 }
 
+                                var responseText = turnResult.Text;
+
                                 await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
+
+                                // Background continuation
+                                if (turnResult.ShouldContinue && config.BackgroundExecution.Enabled && session.BackgroundRun is not null)
+                                {
+                                    session.RunState = SessionRunState.Continuing;
+                                    session.BackgroundRun.ContinuationCount++;
+                                    session.BackgroundRun.ContinuationSequence++;
+                                    session.BackgroundRun.LastContinuedAtUtc = DateTimeOffset.UtcNow;
+                                    session.BackgroundRun.LastStopReason = turnResult.StopReason.ToString();
+
+                                    await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
+
+                                    await pipeline.InboundWriter.WriteAsync(new InboundMessage
+                                    {
+                                        ChannelId = msg.ChannelId,
+                                        SenderId = msg.SenderId,
+                                        AccountId = msg.AccountId,
+                                        SessionId = session.Id,
+                                        Text = turnResult.ContinuePrompt ?? "Continue working toward the active goal.",
+                                        Type = BackgroundMessageTypes.AutoContinue,
+                                        IsSystem = true,
+                                        BackgroundRunId = session.BackgroundRun.RunId,
+                                        BackgroundContinuationSequence = session.BackgroundRun.ContinuationSequence
+                                    }, lifetime.ApplicationStopping);
+                                }
+
                                 if (learningService is not null)
                                     await learningService.ObserveSessionAsync(session, processingCt);
 

@@ -42,6 +42,10 @@ public sealed record InboundMessage
     public string? MediaUrl { get; init; }
     public string? MediaMimeType { get; init; }
     public string? MediaFileName { get; init; }
+
+    // Background execution fields
+    public string? BackgroundRunId { get; init; }
+    public int? BackgroundContinuationSequence { get; init; }
 }
 
 /// <summary>
@@ -58,4 +62,13 @@ public sealed record OutboundMessage
     public string? AutomationRunId { get; init; }
     public string? Subject { get; init; }
     public string? ReplyToMessageId { get; init; }
+
+    // Background execution fields
+    public string? BackgroundRunId { get; init; }
+}
+
+public static class BackgroundMessageTypes
+{
+    public const string AutoContinue = "background_auto_continue";
+    public const string AutoResume = "background_auto_resume";
 }

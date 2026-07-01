@@ -166,7 +166,8 @@ internal static class PipelineExtensions
             app.Services.GetService<GatewayAutomationService>(),
             app.Services.GetService<ContractGovernanceService>(),
             FeatureFallbackServices.ResolveGovernanceLedgerService(startup, app.Services),
-            app.Services.GetService<AudioTranscriptionService>());
+            app.Services.GetService<AudioTranscriptionService>(),
+            app.Services.GetService<Background.BackgroundExecutionLimiter>());
     }
 
     private static void StartChannels(WebApplication app, GatewayAppRuntime runtime)
