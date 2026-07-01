@@ -11,13 +11,25 @@ WORKDIR /src
 
 # Copy build props for layer caching
 COPY Directory.Build.props ./
+COPY Directory.Build.targets ./
+COPY src/OpenClaw.Core/Directory.Build.targets src/OpenClaw.Core/
 
 # Copy csproj files individually for restore caching
-COPY src/OpenClaw.Core/OpenClaw.Core.csproj        src/OpenClaw.Core/
-COPY src/OpenClaw.Agent/OpenClaw.Agent.csproj       src/OpenClaw.Agent/
+COPY src/OpenClaw.Agent/OpenClaw.Agent.csproj src/OpenClaw.Agent/
 COPY src/OpenClaw.Channels/OpenClaw.Channels.csproj src/OpenClaw.Channels/
-COPY src/OpenClaw.Gateway/OpenClaw.Gateway.csproj   src/OpenClaw.Gateway/
+COPY src/OpenClaw.Core/OpenClaw.Core.csproj src/OpenClaw.Core/
+COPY src/OpenClaw.Gateway/OpenClaw.Gateway.csproj src/OpenClaw.Gateway/
+COPY src/OpenClaw.MicrosoftAgentFrameworkAdapter/OpenClaw.MicrosoftAgentFrameworkAdapter.csproj src/OpenClaw.MicrosoftAgentFrameworkAdapter/
+COPY src/OpenClaw.Payments.Abstractions/OpenClaw.Payments.Abstractions.csproj src/OpenClaw.Payments.Abstractions/
+COPY src/OpenClaw.Payments.Core/OpenClaw.Payments.Core.csproj src/OpenClaw.Payments.Core/
+COPY src/OpenClaw.Payments.StripeLink/OpenClaw.Payments.StripeLink.csproj src/OpenClaw.Payments.StripeLink/
 COPY src/OpenClaw.PluginKit/OpenClaw.PluginKit.csproj src/OpenClaw.PluginKit/
+COPY src/OpenClaw.Plugins.Payment/OpenClaw.Plugins.Payment.csproj src/OpenClaw.Plugins.Payment/
+COPY src/OpenClaw.Plugins.TokenJuice/OpenClaw.Plugins.TokenJuice.csproj src/OpenClaw.Plugins.TokenJuice/
+COPY src/OpenClaw.Protocols.Browser/OpenClaw.Protocols.Browser.csproj src/OpenClaw.Protocols.Browser/
+COPY src/OpenClaw.Protocols.Mqtt/OpenClaw.Protocols.Mqtt.csproj src/OpenClaw.Protocols.Mqtt/
+COPY src/OpenClaw.Routing.Onnx/OpenClaw.Routing.Onnx.csproj src/OpenClaw.Routing.Onnx/
+COPY src/mcpapp/OpenClaw.McpApp/OpenClaw.McpApp.csproj src/mcpapp/OpenClaw.McpApp/
 
 # Restore (cached unless csproj files change)
 RUN dotnet restore src/OpenClaw.Gateway/OpenClaw.Gateway.csproj
