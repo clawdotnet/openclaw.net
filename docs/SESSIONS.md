@@ -99,7 +99,9 @@ All three are grouped under the `group:sessions` tool preset in [src/OpenClaw.Ga
 
 - **Sessions are state, not threads.** They are just rows keyed by ID with a conversation list and some overrides. Nothing in `SessionManager` owns an execution context.
 - **Checkpoints are save points, not full runtime snapshots.** They are written after completed tool batches, which is the first durable point where OpenClaw can resume without duplicating already-run tools. They intentionally do not snapshot every internal token, stream, or provider transition.
-- **The pipeline is the only way in.** `sessions_spawn`, `sessions_yield`, `sessions send` all produce the same `InboundMessage` shape that a user's channel message produces. Sub-agent sessions are not a separate runtime path.
+- **The pipeline is the only way in.** `sessions_spawn`, `sessions_yield`, `sessions send`, `background_auto_continue`, and `background_auto_resume` all produce the same `InboundMessage` shape that a user's channel message produces. Sub-agent sessions and background continuations are not separate runtime paths.
+- **Sessions can continue in the background.** When a session has an active Goal and the current turn ends before completion, the Gateway writes a `background_auto_continue` internal message back into the pipeline. The session continues executing in bounded batches with separate concurrency limits. WebSocket disconnects and Channel client exits do not cancel background work.
+- **Startup recovery re-enqueues runnable sessions.** Gateway startup scans the persistent store for sessions with `RunState=Running|Continuing` and an active Goal, then re-enqueues them with staggered concurrency.
 - **Eviction is a cache decision.** Hitting the active cap or going idle past the timeout removes a session from memory, not from durable storage. The next message rehydrates it.
 - **Spawn vs yield** is the async/sync axis: spawn returns immediately; yield polls for a reply with a bounded timeout.
 - **Use `sessions list` / `sessions history`** when you want to introspect state without sending a message.

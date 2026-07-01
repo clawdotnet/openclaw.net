@@ -8,6 +8,8 @@
 
 **Tech Stack:** C# / .NET, ASP.NET Core Gateway, System.Threading.Channels, System.Text.Json source generation, file and SQLite memory stores, xUnit, NSubstitute.
 
+**Status:** Implemented — 7 implementation commits, 78 passing tests (9 new background session tests), full solution build passes.
+
 ---
 
 ## File Map
