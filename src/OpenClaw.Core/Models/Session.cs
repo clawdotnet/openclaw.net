@@ -27,6 +27,8 @@ public sealed class Session
     public DateTimeOffset LastActiveAt { get; set; } = DateTimeOffset.UtcNow;
     public List<ChatTurn> History { get; init; } = [];
     public SessionState State { get; set; } = SessionState.Active;
+    public SessionRunState RunState { get; set; } = SessionRunState.Idle;
+    public BackgroundRunMetadata? BackgroundRun { get; set; }
     
     /// <summary>Optional model override for this specific session (set via /model command).</summary>
     public string? ModelOverride { get; set; }
@@ -162,6 +164,35 @@ public enum SessionState : byte
     Active,
     Paused,
     Expired
+}
+
+public enum SessionRunState : byte
+{
+    Idle,
+    Running,
+    Continuing,
+    Paused,
+    Blocked,
+    BudgetLimited,
+    Completed,
+    Failed
+}
+
+public sealed class BackgroundRunMetadata
+{
+    public string RunId { get; set; } = string.Empty;
+    public string? Objective { get; set; }
+    public DateTimeOffset StartedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset LastContinuedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? LastNotificationAtUtc { get; set; }
+    public int ContinuationCount { get; set; }
+    public int ContinuationSequence { get; set; }
+    public int ConsecutiveNoProgressCount { get; set; }
+    public long ToolCallCount { get; set; }
+    public long TokenBudget { get; set; }
+    public int MaxContinuationTurns { get; set; }
+    public string? LastCheckpointId { get; set; }
+    public string? LastStopReason { get; set; }
 }
 
 public sealed record ChatTurn
@@ -753,6 +784,8 @@ public sealed class SessionDelegationChildSummary
 /// AOT-compatible JSON serialization context for all core models.
 /// </summary>
 [JsonSerializable(typeof(Session))]
+[JsonSerializable(typeof(SessionRunState))]
+[JsonSerializable(typeof(BackgroundRunMetadata))]
 [JsonSerializable(typeof(StableSessionBindingInfo))]
 [JsonSerializable(typeof(ChatTurn))]
 [JsonSerializable(typeof(List<ChatTurn>))]
@@ -816,6 +849,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(WsClientEnvelope))]
 [JsonSerializable(typeof(WsServerEnvelope))]
 [JsonSerializable(typeof(GatewayConfig))]
+[JsonSerializable(typeof(BackgroundExecutionConfig))]
 [JsonSerializable(typeof(RuntimeConfig))]
 [JsonSerializable(typeof(CanvasConfig))]
 [JsonSerializable(typeof(DeploymentConfig))]

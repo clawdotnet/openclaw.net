@@ -51,6 +51,7 @@ public sealed class GatewayConfig
 
     public int MaxConcurrentSessions { get; set; } = 64;
     public int SessionTimeoutMinutes { get; set; } = 30;
+    public BackgroundExecutionConfig BackgroundExecution { get; set; } = new();
 
     /// <summary>Max total tokens (input + output) per session. 0 = unlimited.</summary>
     public long SessionTokenBudget { get; set; } = 0;
@@ -84,6 +85,25 @@ public sealed class TokenCostRateConfig
 {
     public decimal InputUsdPer1K { get; set; }
     public decimal OutputUsdPer1K { get; set; }
+}
+
+public sealed class BackgroundExecutionConfig
+{
+    public bool Enabled { get; set; } = true;
+    public bool AutoResumeOnStartup { get; set; } = true;
+    public int AutoResumeStaggerSeconds { get; set; } = 5;
+    public int AutoResumeMaxConcurrent { get; set; } = 3;
+    public int MaxConcurrentBackgroundTurns { get; set; } = 3;
+    public int MaxIterationsPerBatch { get; set; } = 10;
+    public long DefaultTokenBudget { get; set; } = 128_000;
+    public int MaxWallClockMinutes { get; set; } = 360;
+    public int MaxToolCalls { get; set; } = 1_000;
+    public int MaxContinuationTurns { get; set; } = 200;
+    public int ProgressNotifyIntervalMinutes { get; set; } = 10;
+    public bool NotifyOnStart { get; set; } = true;
+    public bool NotifyOnCompletion { get; set; } = true;
+    public bool NotifyOnBlocked { get; set; } = true;
+    public bool NotifyOnBudgetLimited { get; set; } = true;
 }
 
 public sealed class LlmProviderConfig
