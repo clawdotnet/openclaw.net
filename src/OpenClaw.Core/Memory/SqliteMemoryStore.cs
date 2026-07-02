@@ -231,7 +231,12 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (JsonException ex)
+            {
+                _logger?.LogWarning(ex, "Skipping corrupt session row during background recovery scan");
+                session = null;
+            }
+            catch (InvalidOperationException ex)
             {
                 _logger?.LogWarning(ex, "Skipping corrupt session row during background recovery scan");
                 session = null;

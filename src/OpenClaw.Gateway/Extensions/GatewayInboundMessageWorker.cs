@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Agent;
@@ -1048,7 +1049,11 @@ internal sealed class GatewayInboundMessageWorker
             {
                 // Gateway is stopping; do not requeue background work.
             }
-            catch (Exception ex)
+            catch (ChannelClosedException ex)
+            {
+                logger.LogWarning(ex, "Failed to requeue background continuation for session {SessionId}", msg.SessionId);
+            }
+            catch (InvalidOperationException ex)
             {
                 logger.LogWarning(ex, "Failed to requeue background continuation for session {SessionId}", msg.SessionId);
             }

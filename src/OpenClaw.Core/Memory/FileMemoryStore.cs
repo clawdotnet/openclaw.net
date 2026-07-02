@@ -165,7 +165,15 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNo
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (IOException ex)
+            {
+                _logger?.LogWarning(ex, "Skipping corrupt session file during background scan: {Path}", file);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger?.LogWarning(ex, "Skipping corrupt session file during background scan: {Path}", file);
+            }
+            catch (JsonException ex)
             {
                 _logger?.LogWarning(ex, "Skipping corrupt session file during background scan: {Path}", file);
             }

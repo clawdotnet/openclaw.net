@@ -80,21 +80,34 @@ public sealed class BackgroundSessionStoreTests : IAsyncDisposable
         Assert.Equal("websocket:runnable", sessions[0].Id);
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         foreach (var dir in _tempDirs)
-        {
-            try { Directory.Delete(dir, recursive: true); } catch { /* best-effort cleanup */ }
-        }
+            TryDeleteDirectory(dir);
 
         foreach (var file in _tempFiles)
         {
-            try { File.Delete(file); } catch { /* best-effort cleanup */ }
-            try { File.Delete(file + "-wal"); } catch { /* best-effort cleanup */ }
-            try { File.Delete(file + "-shm"); } catch { /* best-effort cleanup */ }
+            TryDeleteFile(file);
+            TryDeleteFile(file + "-wal");
+            TryDeleteFile(file + "-shm");
         }
 
         GC.SuppressFinalize(this);
+        return ValueTask.CompletedTask;
+
+        static void TryDeleteDirectory(string path)
+        {
+            try { Directory.Delete(path, recursive: true); }
+            catch (IOException) { /* best-effort cleanup */ }
+            catch (UnauthorizedAccessException) { /* best-effort cleanup */ }
+        }
+
+        static void TryDeleteFile(string path)
+        {
+            try { File.Delete(path); }
+            catch (IOException) { /* best-effort cleanup */ }
+            catch (UnauthorizedAccessException) { /* best-effort cleanup */ }
+        }
     }
 
     [Fact]
