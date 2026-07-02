@@ -21,6 +21,9 @@ public sealed class SessionAdminStoreTests
             Assert.Single(page.Items);
             Assert.True(page.HasMore);
             Assert.Equal("session-2", page.Items[0].Id);
+            Assert.Equal(SessionRunState.Continuing, page.Items[0].RunState);
+            Assert.Equal("continue file-backed work", page.Items[0].BackgroundRunObjective);
+            Assert.Equal(3, page.Items[0].BackgroundContinuationCount);
         }
         finally
         {
@@ -44,6 +47,9 @@ public sealed class SessionAdminStoreTests
                 Assert.Single(page.Items);
                 Assert.True(page.HasMore);
                 Assert.Equal("session-2", page.Items[0].Id);
+                Assert.Equal(SessionRunState.Continuing, page.Items[0].RunState);
+                Assert.Equal("continue file-backed work", page.Items[0].BackgroundRunObjective);
+                Assert.Equal(3, page.Items[0].BackgroundContinuationCount);
             }
         }
         finally
@@ -146,7 +152,14 @@ public sealed class SessionAdminStoreTests
             Id = "session-2",
             ChannelId = "websocket",
             SenderId = "bob",
-            LastActiveAt = DateTimeOffset.UtcNow
+            LastActiveAt = DateTimeOffset.UtcNow,
+            RunState = SessionRunState.Continuing,
+            BackgroundRun = new BackgroundRunMetadata
+            {
+                RunId = "run-session-2",
+                Objective = "continue file-backed work",
+                ContinuationCount = 3
+            }
         }, TestContext.Current.CancellationToken);
 
         await store.SaveSessionAsync(new Session
