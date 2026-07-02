@@ -268,6 +268,17 @@ public sealed class AgentRuntime : IAgentRuntime
         JsonElement? responseSchema = null,
         string? correlationId = null)
     {
+        var result = await RunTurnAsync(session, userMessage, ct, approvalCallback, responseSchema, correlationId);
+        return result.Text;
+    }
+
+    /// <inheritdoc />
+    public async Task<AgentTurnResult> RunTurnAsync(
+        Session session, string userMessage, CancellationToken ct,
+        ToolApprovalCallback? approvalCallback = null,
+        JsonElement? responseSchema = null,
+        string? correlationId = null)
+    {
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.RunAsync");
         activity?.SetTag("session.id", session.Id);
         activity?.SetTag("channel.id", session.ChannelId);
@@ -289,7 +300,7 @@ public sealed class AgentRuntime : IAgentRuntime
         {
             AppendContractSnapshot(session, "budget_exceeded");
             LogTurnComplete(turnCtx);
-            return contractBudgetMessage;
+            return AgentTurnResult.Completed(contractBudgetMessage);
         }
 
         var resumeCheckpoint = TryGetResumableCheckpoint(session);
@@ -370,14 +381,19 @@ public sealed class AgentRuntime : IAgentRuntime
                 _logger?.LogInformation("[{CorrelationId}] Session token budget exceeded mid-turn ({Used}/{Budget})",
                     turnCtx.CorrelationId, session.GetTotalTokens(), _sessionTokenBudget);
                 LogTurnComplete(turnCtx);
-                return "You've reached the token limit for this session. Please start a new conversation.";
+                return new AgentTurnResult
+                {
+                    Text = "You've reached the token limit for this session. Please start a new conversation.",
+                    ShouldContinue = false,
+                    StopReason = AgentTurnStopReason.BudgetLimited
+                };
             }
 
             if (TryRejectContractBudget(session, out contractBudgetMessage))
             {
                 AppendContractSnapshot(session, "budget_exceeded");
                 LogTurnComplete(turnCtx);
-                return contractBudgetMessage;
+                return AgentTurnResult.Completed(contractBudgetMessage);
             }
 
             LlmExecutionResult? executionResult = null;
@@ -391,7 +407,12 @@ public sealed class AgentRuntime : IAgentRuntime
                 _logger?.LogWarning("[{CorrelationId}] Circuit breaker open — retry after {RetryAfter}s",
                     turnCtx.CorrelationId, coe.RetryAfter.TotalSeconds);
                 LogTurnComplete(turnCtx);
-                return coe.Message;
+                return new AgentTurnResult
+                {
+                    Text = coe.Message,
+                    ShouldContinue = false,
+                    StopReason = AgentTurnStopReason.Failed
+                };
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -400,13 +421,23 @@ public sealed class AgentRuntime : IAgentRuntime
             catch (EstimatedBudgetAdmissionException ex)
             {
                 LogTurnComplete(turnCtx);
-                return ex.Message;
+                return new AgentTurnResult
+                {
+                    Text = ex.Message,
+                    ShouldContinue = false,
+                    StopReason = AgentTurnStopReason.BudgetLimited
+                };
             }
             catch (ModelSelectionException ex)
             {
                 _logger?.LogWarning("[{CorrelationId}] Model selection failed: {Message}", turnCtx.CorrelationId, ex.Message);
                 LogTurnComplete(turnCtx);
-                return ex.Message;
+                return new AgentTurnResult
+                {
+                    Text = ex.Message,
+                    ShouldContinue = false,
+                    StopReason = AgentTurnStopReason.Failed
+                };
             }
 
             catch (Exception ex) when (IsExpectedLlmFailure(ex))
@@ -414,14 +445,14 @@ public sealed class AgentRuntime : IAgentRuntime
                 _metrics?.IncrementLlmErrors();
                 _logger?.LogError(ex, "[{CorrelationId}] LLM call failed after all retries and fallbacks", turnCtx.CorrelationId);
                 LogTurnComplete(turnCtx);
-                return "Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly.";
+                return AgentTurnResult.Completed("Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly.");
             }
             llmSw.Stop();
 
             if (executionResult is null)
             {
                  LogTurnComplete(turnCtx);
-                 return "Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly.";
+                 return AgentTurnResult.Completed("Sorry, I'm having trouble reaching my AI provider right now. Please try again shortly.");
             }
 
             var response = executionResult.Response;
@@ -461,7 +492,7 @@ public sealed class AgentRuntime : IAgentRuntime
             {
                 AppendContractSnapshot(session, "budget_exceeded");
                 LogTurnComplete(turnCtx);
-                return contractBudgetMessage;
+                return AgentTurnResult.Completed(contractBudgetMessage);
             }
 
             // Check for tool calls
@@ -500,7 +531,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 MarkCheckpointCompleted(session, SessionCheckpointStates.Completed, "final_response");
                 AppendContractSnapshot(session, "active");
                 LogTurnComplete(turnCtx);
-                return text;
+                return AgentTurnResult.Completed(text);
             }
 
             // Execute tool calls (parallel or sequential based on config)
@@ -527,7 +558,15 @@ public sealed class AgentRuntime : IAgentRuntime
         MarkCheckpointCompleted(session, SessionCheckpointStates.Failed, "max_iterations");
         AppendContractSnapshot(session, "active");
         LogTurnComplete(turnCtx);
-        return "I've reached the maximum number of tool iterations. Please try a simpler request.";
+
+        var hasActiveGoal = _goalIntegration?.BuildGoalSystemPrompt(session.Id) is not null;
+        return new AgentTurnResult
+        {
+            Text = "I've reached the maximum number of tool iterations. Continuing in the background.",
+            ShouldContinue = true,
+            StopReason = AgentTurnStopReason.BatchLimitReached,
+            ContinuePrompt = hasActiveGoal ? "Continue working toward the active goal." : "Continue working on the task."
+        };
     }
 
     /// <summary>

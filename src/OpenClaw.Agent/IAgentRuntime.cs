@@ -23,6 +23,19 @@ public interface IAgentRuntime
         JsonElement? responseSchema = null,
         string? correlationId = null);
 
+    /// <summary>
+    /// Runs a single agent turn and returns structured result metadata
+    /// including whether the session should continue in the background.
+    /// Implemented by both native AgentRuntime and MafAgentRuntime.
+    /// </summary>
+    Task<AgentTurnResult> RunTurnAsync(
+        Session session,
+        string userMessage,
+        CancellationToken ct,
+        ToolApprovalCallback? approvalCallback = null,
+        JsonElement? responseSchema = null,
+        string? correlationId = null);
+
     Task<IReadOnlyList<string>> ReloadSkillsAsync(CancellationToken ct = default);
 
     IAsyncEnumerable<AgentStreamEvent> RunStreamingAsync(

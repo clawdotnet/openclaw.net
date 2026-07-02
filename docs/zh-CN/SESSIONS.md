@@ -71,7 +71,9 @@ Agent 工具定义： [src/OpenClaw.Agent/Tools/SessionsTool.cs](../../src/OpenC
 
 - 会话是“状态单元”，不是“执行线程”。
 - 检查点是恢复点，不是完整运行时快照。
-- 所有会话消息都走同一入站管道。
+- 所有会话消息都走同一入站管道（`sessions_spawn`、`sessions_yield`、`sessions send`、`background_auto_continue`、`background_auto_resume` 均产生相同 `InboundMessage`）。
+- 会话可在后台持续运行：当当前 turn 达到最大迭代次数（`MaxIterationsPerBatch`，默认 20）时，无论是否有活跃 Goal，`RunTurnAsync` 均返回 `BatchLimitReached`（`ShouldContinue=true`），Gateway 自动初始化 `BackgroundRun`（首次）并将 `background_auto_continue` 消息写入管道，会话在有限批次中继续执行。存在活跃 Goal 时会附加目标续接提示。WebSocket 断开和 Channel 客户端离线不会取消后台任务。后台续跑同时受 `BackgroundExecution.Enabled`（默认 true）和 `MaxConcurrentBackgroundTurns`（默认 3）控制。
+- 启动恢复会重新入队可运行会话：Gateway 启动时扫描持久化存储中 `RunState=Running|Continuing` 且有活跃 Goal 的会话，按错峰并发重新入队。
 - 过期/淘汰是内存层行为，不等于持久化删除。
 - `spawn` 与 `yield` 的区别是异步触发 vs 同步等待。
 

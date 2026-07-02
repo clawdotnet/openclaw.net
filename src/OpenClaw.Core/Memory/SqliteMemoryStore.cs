@@ -9,7 +9,7 @@ using OpenClaw.Core.Security;
 
 namespace OpenClaw.Core.Memory;
 
-public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNoteCatalog, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IDisposable
+public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNoteCatalog, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IBackgroundSessionStore, IDisposable
 {
     private readonly string _dbPath;
     private readonly bool _enableFtsRequested;
@@ -204,6 +204,36 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
 
         await cmd.ExecuteNonQueryAsync(ct);
         await SyncSessionSearchIndexAsync(conn, persistedSession, ct);
+    }
+
+    public async ValueTask<IReadOnlyList<Session>> ListBackgroundRunnableSessionsAsync(int limit, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 500);
+        var sessions = new List<Session>();
+
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT json FROM sessions ORDER BY updated_at ASC LIMIT $limit;";
+        cmd.Parameters.AddWithValue("$limit", Math.Max(limit * 4, limit));
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            ct.ThrowIfCancellationRequested();
+            var json = reader.GetString(0);
+            var session = JsonSerializer.Deserialize(json, CoreJsonContext.Default.Session);
+            if (session is { BackgroundRun: not null, RunState: SessionRunState.Running or SessionRunState.Continuing })
+                sessions.Add(session);
+
+            if (sessions.Count >= limit)
+                break;
+        }
+
+        return sessions
+            .OrderBy(static s => s.BackgroundRun?.LastContinuedAtUtc ?? s.LastActiveAt)
+            .ToArray();
     }
 
     public async ValueTask<string?> LoadNoteAsync(string key, CancellationToken ct)

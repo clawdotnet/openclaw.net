@@ -17,6 +17,7 @@ public sealed class SessionManager : IAsyncDisposable, IDisposable
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lockLastUsed = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<long, Task> _backgroundPersists = new();
     private readonly IMemoryStore _store;
+    internal IMemoryStore Store => _store;
     private readonly ILogger? _logger;
     private readonly RuntimeMetrics? _metrics;
     private readonly TimeSpan _timeout;

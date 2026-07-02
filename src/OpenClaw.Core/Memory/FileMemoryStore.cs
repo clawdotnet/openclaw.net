@@ -29,7 +29,7 @@ public sealed class MemoryStoreCorruptionException : IOException
 /// Sessions and notes are stored as JSON files with URL-safe base64 encoded filenames
 /// to prevent path traversal attacks. Includes in-memory LRU cache for sessions.
 /// </summary>
-public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNoteCatalog, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IAsyncDisposable, IDisposable
+public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNoteCatalog, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IBackgroundSessionStore, IAsyncDisposable, IDisposable
 {
     private const int SessionLoadStripeCount = 64;
 
@@ -135,6 +135,37 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNo
         {
             loadGate.Release();
         }
+    }
+
+    public async ValueTask<IReadOnlyList<Session>> ListBackgroundRunnableSessionsAsync(int limit, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 500);
+        if (!Directory.Exists(_sessionsPath))
+            return [];
+
+        var sessions = new List<Session>();
+        foreach (var file in Directory.EnumerateFiles(_sessionsPath, "*.json"))
+        {
+            ct.ThrowIfCancellationRequested();
+            await using var stream = new FileStream(file, new FileStreamOptions
+            {
+                Mode = FileMode.Open,
+                Access = FileAccess.Read,
+                Share = FileShare.Read,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            });
+
+            var session = await JsonSerializer.DeserializeAsync(stream, CoreJsonContext.Default.Session, ct);
+            if (session is { BackgroundRun: not null, RunState: SessionRunState.Running or SessionRunState.Continuing })
+                sessions.Add(session);
+
+            if (sessions.Count >= limit)
+                break;
+        }
+
+        return sessions
+            .OrderBy(static s => s.BackgroundRun?.LastContinuedAtUtc ?? s.LastActiveAt)
+            .ToArray();
     }
 
     public ValueTask DisposeAsync()

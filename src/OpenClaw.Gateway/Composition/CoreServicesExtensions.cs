@@ -279,6 +279,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton<IMemoryRetentionCoordinator>(sp => sp.GetRequiredService<MemoryRetentionSweeperService>());
         services.AddHostedService(sp => sp.GetRequiredService<MemoryRetentionSweeperService>());
         services.AddSingleton<MessagePipeline>();
+        services.AddSingleton<Background.BackgroundExecutionLimiter>();
         services.AddSingleton(sp =>
             new CronScheduler(
                 sp.GetRequiredService<ICronJobSource>(),

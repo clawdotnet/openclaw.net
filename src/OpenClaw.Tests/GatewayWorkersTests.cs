@@ -204,13 +204,13 @@ public sealed class GatewayWorkersTests
         var wsChannel = new WebSocketChannel(config.WebSocket);
         await using var adapter = new RecordingChannelAdapter("telegram");
         var agentRuntime = Substitute.For<IAgentRuntime>();
-        agentRuntime.RunAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
+        agentRuntime.RunTurnAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
             .Returns(async callInfo =>
             {
                 var callback = callInfo.ArgAt<ToolApprovalCallback?>(3);
                 if (callback is not null)
                     await callback("shell", """{"cmd":"ls"}""", TestContext.Current.CancellationToken);
-                return "ok";
+                return AgentTurnResult.Completed("ok");
             });
         var toolApprovalService = new ToolApprovalService();
         var approvalAuditStore = new ApprovalAuditStore(storagePath, NullLogger<ApprovalAuditStore>.Instance);
@@ -339,11 +339,11 @@ public sealed class GatewayWorkersTests
         await using var adapter = new RecordingChannelAdapter("telegram");
         var agentRuntime = Substitute.For<IAgentRuntime>();
         Session? capturedSession = null;
-        agentRuntime.RunAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
+        agentRuntime.RunTurnAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
             .Returns(callInfo =>
             {
                 capturedSession = callInfo.Arg<Session>();
-                return Task.FromResult("ok");
+                return Task.FromResult(AgentTurnResult.Completed("ok"));
             });
         var toolApprovalService = new ToolApprovalService();
         var approvalAuditStore = new ApprovalAuditStore(storagePath, NullLogger<ApprovalAuditStore>.Instance);
@@ -565,13 +565,13 @@ public sealed class GatewayWorkersTests
         var wsChannel = new WebSocketChannel(config.WebSocket);
         await using var adapter = new RecordingChannelAdapter("telegram");
         var agentRuntime = Substitute.For<IAgentRuntime>();
-        agentRuntime.RunAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
+        agentRuntime.RunTurnAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
             .Returns(async callInfo =>
             {
                 var callback = callInfo.ArgAt<ToolApprovalCallback?>(3)
                     ?? throw new InvalidOperationException("Approval callback was not supplied.");
                 var approved = await callback("shell", """{"cmd":"ls"}""", TestContext.Current.CancellationToken);
-                return approved ? "approved" : "timed-out";
+                return AgentTurnResult.Completed(approved ? "approved" : "timed-out");
             });
 
         var toolApprovalService = new ToolApprovalService();
@@ -680,8 +680,8 @@ public sealed class GatewayWorkersTests
         var wsChannel = new WebSocketChannel(config.WebSocket);
         await using var adapter = new RecordingChannelAdapter("cron");
         var agentRuntime = Substitute.For<IAgentRuntime>();
-        agentRuntime.RunAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
-            .Returns("HEARTBEAT_OK");
+        agentRuntime.RunTurnAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
+            .Returns(AgentTurnResult.Completed("HEARTBEAT_OK"));
         var toolApprovalService = new ToolApprovalService();
         var approvalAuditStore = new ApprovalAuditStore(storagePath, NullLogger<ApprovalAuditStore>.Instance);
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
@@ -784,8 +784,8 @@ public sealed class GatewayWorkersTests
         var wsChannel = new WebSocketChannel(config.WebSocket);
         await using var adapter = new RecordingChannelAdapter("cron");
         var agentRuntime = Substitute.For<IAgentRuntime>();
-        agentRuntime.RunAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
-            .Returns("Urgent competitor alert");
+        agentRuntime.RunTurnAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
+            .Returns(AgentTurnResult.Completed("Urgent competitor alert"));
         var toolApprovalService = new ToolApprovalService();
         var approvalAuditStore = new ApprovalAuditStore(storagePath, NullLogger<ApprovalAuditStore>.Instance);
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
@@ -894,8 +894,8 @@ public sealed class GatewayWorkersTests
         var wsChannel = new WebSocketChannel(config.WebSocket);
         await using var adapter = new ThrowingChannelAdapter("cron");
         var agentRuntime = Substitute.For<IAgentRuntime>();
-        agentRuntime.RunAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
-            .Returns("Urgent competitor alert");
+        agentRuntime.RunTurnAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
+            .Returns(AgentTurnResult.Completed("Urgent competitor alert"));
         var toolApprovalService = new ToolApprovalService();
         var approvalAuditStore = new ApprovalAuditStore(storagePath, NullLogger<ApprovalAuditStore>.Instance);
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
@@ -999,8 +999,8 @@ public sealed class GatewayWorkersTests
         var wsChannel = new WebSocketChannel(config.WebSocket);
         await using var adapter = new RecordingChannelAdapter("cron");
         var agentRuntime = Substitute.For<IAgentRuntime>();
-        agentRuntime.RunAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
-            .Returns<Task<string>>(_ => throw new InvalidOperationException("boom"));
+        agentRuntime.RunTurnAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
+            .Returns<Task<AgentTurnResult>>(_ => throw new InvalidOperationException("boom"));
         var toolApprovalService = new ToolApprovalService();
         var approvalAuditStore = new ApprovalAuditStore(storagePath, NullLogger<ApprovalAuditStore>.Instance);
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
@@ -1108,8 +1108,8 @@ public sealed class GatewayWorkersTests
         var wsChannel = new WebSocketChannel(config.WebSocket);
         await using var adapter = new RecordingBridgedChannelAdapter("whatsapp");
         var agentRuntime = Substitute.For<IAgentRuntime>();
-        agentRuntime.RunAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
-            .Returns("group-response");
+        agentRuntime.RunTurnAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
+            .Returns(AgentTurnResult.Completed("group-response"));
         var toolApprovalService = new ToolApprovalService();
         var approvalAuditStore = new ApprovalAuditStore(storagePath, NullLogger<ApprovalAuditStore>.Instance);
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
@@ -1238,8 +1238,8 @@ public sealed class GatewayWorkersTests
         var wsChannel = new WebSocketChannel(config.WebSocket);
         await using var adapter = new RecordingBridgedChannelAdapter("whatsapp");
         var agentRuntime = Substitute.For<IAgentRuntime>();
-        agentRuntime.RunAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
-            .Returns<Task<string>>(_ => throw new InvalidOperationException("boom"));
+        agentRuntime.RunTurnAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
+            .Returns<Task<AgentTurnResult>>(_ => throw new InvalidOperationException("boom"));
         var toolApprovalService = new ToolApprovalService();
         var approvalAuditStore = new ApprovalAuditStore(storagePath, NullLogger<ApprovalAuditStore>.Instance);
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);
@@ -1349,8 +1349,8 @@ public sealed class GatewayWorkersTests
         var wsChannel = new WebSocketChannel(config.WebSocket);
         await using var adapter = new RecordingBridgedChannelAdapter("whatsapp");
         var agentRuntime = Substitute.For<IAgentRuntime>();
-        agentRuntime.RunAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
-            .Returns<Task<string>>(_ => throw new OperationCanceledException("simulated cancellation"));
+        agentRuntime.RunTurnAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
+            .Returns<Task<AgentTurnResult>>(_ => throw new OperationCanceledException("simulated cancellation"));
         var toolApprovalService = new ToolApprovalService();
         var approvalAuditStore = new ApprovalAuditStore(storagePath, NullLogger<ApprovalAuditStore>.Instance);
         var pairingManager = new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance);

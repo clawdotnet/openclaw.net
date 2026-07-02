@@ -15,6 +15,7 @@ This matrix summarizes the current OpenClaw.NET capability lanes. It complements
 | --- | --- | --- |
 | Agent runtime loop | Core | Tool calls, streaming, cancellation, retries, sessions, memory, and hooks. |
 | Gateway HTTP host | Core | Local/self-hosted host for chat, admin, health, diagnostics, OpenAI-compatible APIs, MCP, and websockets. |
+| Background session execution | Core | Sessions with active Goals auto-continue through the `MessagePipeline` after all Channel disconnects; bounded batches, native/MAF parity, startup recovery. |
 | CLI setup and launch | Core | Source checkout, managed local config, diagnostics, model/profile tools, plugin/skill commands. |
 | NativeAOT publish | Core | Runtime and gateway are designed for the strict AOT lane. |
 | Desktop Companion | Optional | Included in desktop bundles and solution builds; release managers should still run manual smoke checks. |

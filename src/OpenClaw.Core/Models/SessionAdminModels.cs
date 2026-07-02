@@ -16,6 +16,9 @@ public sealed class SessionSummary
     public long TotalOutputTokens { get; init; }
     public long TotalCacheReadTokens { get; init; }
     public long TotalCacheWriteTokens { get; init; }
+    public SessionRunState RunState { get; init; }
+    public string? BackgroundRunObjective { get; init; }
+    public int BackgroundContinuationCount { get; init; }
     public bool IsActive { get; init; }
 }
 

@@ -43,7 +43,8 @@ internal sealed class GatewayInboundMessageWorker
         GatewayAutomationService? automationService,
         ContractGovernanceService? contractGovernance,
         GovernanceLedgerService? governanceLedger,
-        AudioTranscriptionService? audioTranscriptionService = null)
+        AudioTranscriptionService? audioTranscriptionService = null,
+        Background.BackgroundExecutionLimiter? backgroundLimiter = null)
     {
         _ = isNonLoopbackBind;
         _ = sessionLocks;
@@ -70,8 +71,9 @@ internal sealed class GatewayInboundMessageWorker
                         long initialOutputTokens = 0;
                         var automationRetryAttempt = 0;
                         var conversationRecipientId = ResolveConversationRecipientId(msg);
-                        using var processingCts = CreateProcessingCts(msg.RequestCancellation, lifetime.ApplicationStopping);
-                        var processingCt = processingCts?.Token ?? lifetime.ApplicationStopping;
+                        // Browser / WebSocket / Channel request cancellation must not cancel runtime execution.
+                        // Only gateway shutdown stops a running turn.
+                        var processingCt = lifetime.ApplicationStopping;
 
                         async Task FinalizeAutomationRunAsync(AutomationRunCompletion completion, CancellationToken finalizeCt)
                         {
@@ -670,17 +672,91 @@ internal sealed class GatewayInboundMessageWorker
                                 if (!string.IsNullOrWhiteSpace(effectiveResponseMode))
                                     session.ResponseMode = effectiveResponseMode!;
 
-                                string responseText;
+                                AgentTurnResult turnResult;
                                 try
                                 {
-                                    responseText = await agentRuntime.RunAsync(session, messageText, processingCt, approvalCallback: approvalCallback);
+                                    turnResult = await agentRuntime.RunTurnAsync(session, messageText, processingCt, approvalCallback: approvalCallback);
                                 }
                                 finally
                                 {
                                     session.ResponseMode = originalResponseMode;
                                 }
 
+                                var responseText = turnResult.Text;
+
                                 await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
+
+                                // Background continuation
+                                if (turnResult.ShouldContinue && config.BackgroundExecution.Enabled)
+                                {
+                                    // Lazy-init BackgroundRun on first continuation
+                                    session.BackgroundRun ??= new BackgroundRunMetadata
+                                    {
+                                        RunId = $"bg_{session.Id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}",
+                                        StartedAtUtc = DateTimeOffset.UtcNow,
+                                        TokenBudget = config.BackgroundExecution.DefaultTokenBudget,
+                                        MaxContinuationTurns = config.BackgroundExecution.MaxContinuationTurns
+                                    };
+
+                                    session.RunState = SessionRunState.Continuing;
+                                    session.BackgroundRun.ContinuationCount++;
+                                    session.BackgroundRun.ContinuationSequence++;
+                                    session.BackgroundRun.LastContinuedAtUtc = DateTimeOffset.UtcNow;
+                                    session.BackgroundRun.LastStopReason = turnResult.StopReason.ToString();
+
+                                    await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
+
+                                    await pipeline.InboundWriter.WriteAsync(new InboundMessage
+                                    {
+                                        ChannelId = msg.ChannelId,
+                                        SenderId = msg.SenderId,
+                                        AccountId = msg.AccountId,
+                                        SessionId = session.Id,
+                                        Text = turnResult.ContinuePrompt ?? "Continue working toward the active goal.",
+                                        Type = BackgroundMessageTypes.AutoContinue,
+                                        IsSystem = true,
+                                        BackgroundRunId = session.BackgroundRun.RunId,
+                                        BackgroundContinuationSequence = session.BackgroundRun.ContinuationSequence
+                                    }, lifetime.ApplicationStopping);
+                                }
+
+                                // Lifecycle notifications for background task terminal states
+                                if (session.BackgroundRun is not null && !turnResult.ShouldContinue)
+                                {
+                                    var notifyText = turnResult.StopReason switch
+                                    {
+                                        AgentTurnStopReason.Completed => $"Background task completed: {turnResult.Text}",
+                                        AgentTurnStopReason.Blocked => $"Background task blocked: {turnResult.Text}",
+                                        AgentTurnStopReason.BudgetLimited => $"Background task paused: budget reached — {turnResult.Text}",
+                                        AgentTurnStopReason.Failed => $"Background task failed: {turnResult.Text}",
+                                        _ => null
+                                    };
+
+                                    if (notifyText is not null)
+                                    {
+                                        var shouldNotify = turnResult.StopReason switch
+                                        {
+                                            AgentTurnStopReason.Completed => config.BackgroundExecution.NotifyOnCompletion,
+                                            AgentTurnStopReason.Blocked => config.BackgroundExecution.NotifyOnBlocked,
+                                            AgentTurnStopReason.BudgetLimited => config.BackgroundExecution.NotifyOnBudgetLimited,
+                                            _ => false
+                                        };
+
+                                        if (shouldNotify)
+                                        {
+                                            await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
+                                            {
+                                                ChannelId = msg.ChannelId,
+                                                RecipientId = conversationRecipientId,
+                                                AccountId = msg.AccountId,
+                                                Text = notifyText,
+                                                SessionId = session.Id,
+                                                ReplyToMessageId = msg.MessageId
+                                            }, lifetime.ApplicationStopping);
+                                        }
+                                    }
+                                }
+
                                 if (learningService is not null)
                                     await learningService.ObserveSessionAsync(session, processingCt);
 
@@ -856,14 +932,6 @@ internal sealed class GatewayInboundMessageWorker
                 }
             }, lifetime.ApplicationStopping);
         }
-    }
-
-    private static CancellationTokenSource? CreateProcessingCts(CancellationToken requestCancellation, CancellationToken appStopping)
-    {
-        if (!requestCancellation.CanBeCanceled || requestCancellation == appStopping)
-            return null;
-
-        return CancellationTokenSource.CreateLinkedTokenSource(requestCancellation, appStopping);
     }
 
     private static string? ResolveOperationalResponseMode(Session session, AutomationDefinition? automation)

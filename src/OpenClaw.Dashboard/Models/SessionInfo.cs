@@ -9,7 +9,10 @@ public record SessionInfo(
     long TotalOutputTokens,
     long TotalCacheReadTokens,
     long TotalCacheWriteTokens,
-    Dictionary<string, object>? Metadata
+    Dictionary<string, object>? Metadata,
+    string? RunState = null,
+    string? BackgroundRunObjective = null,
+    int BackgroundContinuationCount = 0
 );
 
 public record SessionDetail(
@@ -22,7 +25,10 @@ public record SessionDetail(
     long TotalCacheReadTokens,
     long TotalCacheWriteTokens,
     Dictionary<string, object>? Metadata,
-    List<SessionMessage>? Messages
+    List<SessionMessage>? Messages,
+    string? RunState = null,
+    string? BackgroundRunObjective = null,
+    int BackgroundContinuationCount = 0
 );
 
 public record SessionMessage(

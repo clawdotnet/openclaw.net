@@ -218,6 +218,22 @@ public sealed class DelegateToolTests
             return Task.FromResult(response);
         }
 
+        public Task<AgentTurnResult> RunTurnAsync(
+            Session session,
+            string userMessage,
+            CancellationToken ct,
+            ToolApprovalCallback? approvalCallback = null,
+            JsonElement? responseSchema = null,
+            string? correlationId = null)
+        {
+            _ = userMessage;
+            _ = ct;
+            _ = approvalCallback;
+            _ = responseSchema;
+            mutateSession?.Invoke(session);
+            return Task.FromResult(AgentTurnResult.Completed(response));
+        }
+
         public Task<IReadOnlyList<string>> ReloadSkillsAsync(CancellationToken ct = default)
         {
             _ = ct;

@@ -15,6 +15,7 @@
 | --- | --- | --- |
 | Agent 运行时循环 | Core | 工具调用、流式、取消、重试、会话、记忆和钩子 |
 | Gateway HTTP 宿主 | Core | 本地/自托管宿主，提供聊天、管理、健康检查、诊断、OpenAI 兼容 API、MCP 和 WebSocket |
+| 后台会话执行 | Core | 有活跃 Goal 的会话在所有 Channel 断开后通过 `MessagePipeline` 自动续跑；有限批次、native/MAF 一致、启动恢复 |
 | CLI 安装与启动 | Core | 源码检出、托管本地配置、诊断、模型/配置文件工具、插件/技能命令 |
 | NativeAOT 发布 | Core | 运行时和 gateway 专为严格 AOT 通道设计 |
 | 桌面 Companion | Optional | 包含在桌面包和解决方案构建中 |

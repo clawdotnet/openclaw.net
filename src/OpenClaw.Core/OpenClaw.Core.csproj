@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="OpenClaw.Tests" />
+    <InternalsVisibleTo Include="OpenClaw.Gateway" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Jinja2.NET" Version="1.4.1" />

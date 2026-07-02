@@ -98,10 +98,16 @@
                                     @onclick="@(() => SelectSession(s))">
                                 <div class="sx-session-card__head">
                                     <code class="sx-mono sx-mono-id">@TruncateId(s.SessionId)</code>
-                                    @if (!string.IsNullOrEmpty(s.ChannelId))
-                                    {
-                                        <span class="sx-channel-tag">@s.ChannelId</span>
-                                    }
+                                    <div class="sx-card-tags">
+                                        @if (!string.IsNullOrEmpty(s.ChannelId))
+                                        {
+                                            <span class="sx-channel-tag">@s.ChannelId</span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(s.RunState) && s.RunState is not "Idle")
+                                        {
+                                            <span class="sx-runstate-tag @RunStateClass(s.RunState)">@RunStateLabel(s.RunState)</span>
+                                        }
+                                    </div>
                                 </div>
                                 <div class="sx-session-card__meta">
                                     <span class="sx-meta-icon">
@@ -170,6 +176,36 @@
                             <strong>@FormatTokenCount(_selectedDetail.TotalInputTokens + _selectedDetail.TotalOutputTokens)</strong>
                         </div>
                     </div>
+
+                    @if (!string.IsNullOrEmpty(_selectedDetail.RunState) && _selectedDetail.RunState is not "Idle")
+                    {
+                        <MudDivider Class="my-3" />
+                        <section class="sx-section">
+                            <div class="sx-section-head">
+                                <MudText Typo="Typo.subtitle2" Class="sx-section-label">
+                                    BACKGROUND TASK
+                                </MudText>
+                                <span class="sx-runstate-tag @RunStateClass(_selectedDetail.RunState)" style="font-size:12px">@RunStateLabel(_selectedDetail.RunState)</span>
+                            </div>
+                            <div class="sx-token-grid">
+                                <div class="sx-token-card">
+                                    <span>Run State</span>
+                                    <strong>@RunStateLabel(_selectedDetail.RunState)</strong>
+                                </div>
+                                @if (!string.IsNullOrEmpty(_selectedDetail.BackgroundRunObjective))
+                                {
+                                    <div class="sx-token-card" style="grid-column: span 2">
+                                        <span>Objective</span>
+                                        <strong style="font-size:13px">@_selectedDetail.BackgroundRunObjective</strong>
+                                    </div>
+                                }
+                                <div class="sx-token-card">
+                                    <span>Continuations</span>
+                                    <strong>@_selectedDetail.BackgroundContinuationCount</strong>
+                                </div>
+                            </div>
+                        </section>
+                    }
 
                     <MudDivider Class="my-3" />
 
@@ -581,7 +617,35 @@
         padding: 8px 12px; border-radius: 8px;
         border: 1px solid var(--mud-palette-lines-default);
         background: rgba(245,158,11,.04);
+    .sx-card-tags {
+        display: flex; align-items: center; gap: 4px;
     }
+    .sx-runstate-tag {
+        font-size: 10px; padding: 2px 8px; border-radius: 999px;
+        font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    }
+    .sx-runstate-tag.is-running {
+        background: rgba(59,130,246,.16); color: #3b82f6;
+    }
+    .sx-runstate-tag.is-continuing {
+        background: rgba(139,92,246,.16); color: #8b5cf6;
+    }
+    .sx-runstate-tag.is-paused {
+        background: rgba(148,163,184,.16); color: #94a3b8;
+    }
+    .sx-runstate-tag.is-blocked {
+        background: rgba(245,158,11,.16); color: #f59e0b;
+    }
+    .sx-runstate-tag.is-warning {
+        background: rgba(239,68,68,.12); color: #ef4444;
+    }
+    .sx-runstate-tag.is-success {
+        background: rgba(16,185,129,.16); color: #10b981;
+    }
+    .sx-runstate-tag.is-error {
+        background: rgba(239,68,68,.16); color: #ef4444;
+    }
+}
 </style>
 
 @code {
@@ -618,6 +682,30 @@
     }
 
     private void HandleLanguageChanged() => InvokeAsync(StateHasChanged);
+
+    private static string RunStateLabel(string? state) => state switch
+    {
+        "Running" => "Running",
+        "Continuing" => "Continuing",
+        "Paused" => "Paused",
+        "Blocked" => "Blocked",
+        "BudgetLimited" => "Budget",
+        "Completed" => "Completed",
+        "Failed" => "Failed",
+        _ => state ?? "—"
+    };
+
+    private static string RunStateClass(string? state) => state switch
+    {
+        "Running" => "is-running",
+        "Continuing" => "is-continuing",
+        "Paused" => "is-paused",
+        "Blocked" => "is-blocked",
+        "BudgetLimited" => "is-warning",
+        "Completed" => "is-success",
+        "Failed" => "is-error",
+        _ => ""
+    };
 
     private async Task LoadSessions()
     {
