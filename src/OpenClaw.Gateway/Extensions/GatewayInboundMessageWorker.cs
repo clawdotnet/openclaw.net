@@ -71,8 +71,9 @@ internal sealed class GatewayInboundMessageWorker
                         long initialOutputTokens = 0;
                         var automationRetryAttempt = 0;
                         var conversationRecipientId = ResolveConversationRecipientId(msg);
-                        using var processingCts = CreateProcessingCts(msg.RequestCancellation, lifetime.ApplicationStopping);
-                        var processingCt = processingCts?.Token ?? lifetime.ApplicationStopping;
+                        // Browser / WebSocket / Channel request cancellation must not cancel runtime execution.
+                        // Only gateway shutdown stops a running turn.
+                        var processingCt = lifetime.ApplicationStopping;
 
                         async Task FinalizeAutomationRunAsync(AutomationRunCompletion completion, CancellationToken finalizeCt)
                         {
@@ -931,14 +932,6 @@ internal sealed class GatewayInboundMessageWorker
                 }
             }, lifetime.ApplicationStopping);
         }
-    }
-
-    private static CancellationTokenSource? CreateProcessingCts(CancellationToken requestCancellation, CancellationToken appStopping)
-    {
-        if (!requestCancellation.CanBeCanceled || requestCancellation == appStopping)
-            return null;
-
-        return CancellationTokenSource.CreateLinkedTokenSource(requestCancellation, appStopping);
     }
 
     private static string? ResolveOperationalResponseMode(Session session, AutomationDefinition? automation)
