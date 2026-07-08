@@ -171,6 +171,7 @@ internal static class EndpointHelpers
         {
             "browser-session" when auth.BrowserSession is not null => $"browser:{auth.BrowserSession.SessionId}",
             OrganizationAuthModeNames.AccountToken => $"account-token:{GetRemoteIpKey(ctx)}",
+            OrganizationAuthModeNames.OidcJwt => $"oidc:{GetRemoteIpKey(ctx)}",
             "bearer" => $"bearer:{GetRemoteIpKey(ctx)}",
             "loopback-open" => "loopback",
             _ => $"operator:{GetRemoteIpKey(ctx)}"

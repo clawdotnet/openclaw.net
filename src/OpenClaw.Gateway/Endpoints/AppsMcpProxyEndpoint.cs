@@ -14,7 +14,7 @@ internal static class AppsMcpProxyEndpoint
         McpServerOptions sessionOptions,
         CancellationToken ct)
     {
-        if (httpContext.Request.RouteValues["appId"] is not string appId || string.IsNullOrEmpty(appId))
+        if (httpContext.Request.RouteValues["serverId"] is not string serverId || string.IsNullOrEmpty(serverId))
             return;
 
         var sessionId = httpContext.Request.Query["sessionId"].Count > 0
@@ -22,7 +22,7 @@ internal static class AppsMcpProxyEndpoint
             : null;
 
         var registry = httpContext.RequestServices.GetRequiredService<McpAppRegistry>();
-        var upstream = registry.GetApp(appId)?.Client;
+        var upstream = registry.GetApp(serverId)?.Client;
         if (upstream is null)
             return;
 
@@ -52,7 +52,7 @@ internal static class AppsMcpProxyEndpoint
 
     public static void MapOpenClawAppsMcpProxy(this WebApplication app, GatewayStartupContext startup)
     {
-        app.MapMcp("/apps/mcp/{appId}").AddEndpointFilter(async (ctx, next) =>
+        app.MapMcp("/apps/mcp/{serverId}").AddEndpointFilter(async (ctx, next) =>
         {
             var httpContext = ctx.HttpContext;
             var ip = httpContext.Connection.RemoteIpAddress;

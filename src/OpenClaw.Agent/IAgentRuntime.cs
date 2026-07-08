@@ -15,6 +15,12 @@ public interface IAgentRuntime
     /// </summary>
     IReadOnlyList<SkillDefinition> LoadedSkills { get; }
 
+    /// <summary>
+    /// Snapshot of the currently registered AITool declarations (kingcrab extension,
+    /// used by the dev UI / observability endpoints).
+    /// </summary>
+    IReadOnlyList<Microsoft.Extensions.AI.AITool> LoadedTools => [];
+
     Task<string> RunAsync(
         Session session,
         string userMessage,

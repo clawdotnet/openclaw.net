@@ -134,17 +134,17 @@ internal static class AppsEndpoints
         var builder = new StringBuilder();
         if (appEvents is { Count: > 0 })
         {
-            builder.Append("[界面事件] 用户刚在界面里完成了操作(这些工具调用绕过了你,特此同步,结果已是定稿):\n");
+            builder.Append("[UI Events] User just completed operations in the interface (these tool calls bypassed you, syncing results — they are final):\n");
             foreach (var entry in appEvents)
             {
                 var tool = AsString(entry?["tool"]) ?? "?";
                 var args = entry?["args"]?.ToJsonString() ?? "{}";
                 var resultText = AsString(entry?["resultText"]) ?? string.Empty;
-                builder.Append($"- 工具 {tool}({args}) → {resultText}\n");
+                builder.Append($"- Tool {tool}({args}) → {resultText}\n");
             }
 
             if (string.IsNullOrWhiteSpace(message))
-                builder.Append("请基于以上结果决定下一步:用一两句话确认/承接结论,并在合适时调用相应工具继续(不要重复罗列界面已展示的明细)。\n");
+                builder.Append("Based on the above results, decide the next step: confirm/continue in one or two sentences, and call appropriate tools when ready (do not repeat UI-displayed details).\n");
         }
 
         if (!string.IsNullOrWhiteSpace(message))
@@ -174,6 +174,6 @@ internal static class AppsEndpoints
         await ctx.Response.Body.FlushAsync(ct);
     }
 
-    private static string BuildAppMcpUrl(HttpContext ctx, string appId)
-        => $"{ctx.Request.Scheme}://{ctx.Request.Host}{ctx.Request.PathBase}/apps/mcp/{Uri.EscapeDataString(appId)}";
+    private static string BuildAppMcpUrl(HttpContext ctx, string serverId)
+        => $"{ctx.Request.Scheme}://{ctx.Request.Host}{ctx.Request.PathBase}/apps/mcp/{Uri.EscapeDataString(serverId)}";
 }

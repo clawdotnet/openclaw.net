@@ -274,3 +274,38 @@ public sealed class BranchRestoreResponse
     public required string BranchId { get; init; }
     public int TurnCount { get; init; }
 }
+
+public sealed class DigitalEmployeeUploadResponse
+{
+    public bool Success { get; init; }
+    public string? Error { get; init; }
+    public string? Name { get; init; }
+    public int SkillsInstalled { get; init; }
+    public IReadOnlyList<string> InstalledFiles { get; init; } = [];
+    public int TotalSkillsLoaded { get; init; }
+}
+
+public sealed class WorkspaceUploadResponse
+{
+    public bool Success { get; init; }
+    public string? Error { get; init; }
+    public List<string>? Files { get; init; }
+    public int FileCount { get; init; }
+}
+
+public sealed class WorkspaceTreeEntry
+{
+    public string Name { get; init; } = "";
+    public string Path { get; init; } = "";
+    public bool IsDir { get; init; }
+    public long? Size { get; init; }
+    public List<WorkspaceTreeEntry>? Children { get; init; }
+}
+
+public sealed class WorkspaceTreeResponse
+{
+    public bool Success { get; init; }
+    public string? Error { get; init; }
+    public string Root { get; init; } = "";
+    public List<WorkspaceTreeEntry>? Entries { get; init; }
+}

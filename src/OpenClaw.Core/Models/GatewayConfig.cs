@@ -561,6 +561,9 @@ public sealed class ChannelsConfig
     public SlackChannelConfig Slack { get; set; } = new();
     public DiscordChannelConfig Discord { get; set; } = new();
     public SignalChannelConfig Signal { get; set; } = new();
+    public FeishuChannelConfig Feishu { get; set; } = new();
+    public DingTalkChannelConfig DingTalk { get; set; } = new();
+    public WeComChannelConfig WeCom { get; set; } = new();
 }
 
 public sealed class WhatsAppChannelConfig

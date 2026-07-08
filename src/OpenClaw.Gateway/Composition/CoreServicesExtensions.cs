@@ -299,6 +299,7 @@ internal static class CoreServicesExtensions
                 config.Memory.StoragePath,
                 sp.GetRequiredService<ILogger<McpConfigStore>>()));
         services.AddSingleton<McpWatcherHolder>();
+        services.AddSingleton(sp => new MediaCacheStore(config.Multimodal.MediaCachePath));
         services.AddSingleton<GatewayLlmExecutionService>();
         services.AddSingleton<PromptCacheWarmService>();
         services.AddHostedService(sp => sp.GetRequiredService<PromptCacheWarmService>());

@@ -12,14 +12,6 @@ public sealed class MutationResponse
     public bool RestartRequired { get; init; }
 }
 
-public sealed class WorkspaceUploadResponse
-{
-    public bool Success { get; init; }
-    public string? Error { get; init; }
-    public List<string>? Files { get; init; }
-    public int FileCount { get; init; }
-}
-
 public sealed class InputTokenComponentEstimate
 {
     public long SystemPrompt { get; init; }
@@ -687,6 +679,21 @@ public sealed class ActorRateLimitResponse
 {
     public IReadOnlyList<ActorRateLimitPolicy> Policies { get; init; } = [];
     public IReadOnlyList<ActorRateLimitStatus> Active { get; init; } = [];
+}
+
+public sealed class WorkspaceBrowseEntry
+{
+    public string Name { get; init; } = "";
+    public string Path { get; init; } = "";
+    public bool IsDirectory { get; init; }
+    public long? Size { get; init; }
+}
+
+public sealed class WorkspaceBrowseResponse
+{
+    public bool Success { get; init; }
+    public string? Error { get; init; }
+    public IReadOnlyList<WorkspaceBrowseEntry> Files { get; init; } = [];
 }
 
 public sealed class SecurityPostureResponse
