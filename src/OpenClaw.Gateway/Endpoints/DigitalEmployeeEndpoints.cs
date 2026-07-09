@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using OpenClaw.Core.Models;
@@ -143,11 +144,8 @@ internal static class DigitalEmployeeEndpoints
             try
             {
                 using var zip = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
-                foreach (var entry in zip.Entries)
+                foreach (var (_, destRel) in GetMappedFileEntries(zip, zipPrefix))
                 {
-                    if (entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\')) continue;
-                    var destRel = MapEntryToWorkspaceRelative(entry.FullName, zipPrefix);
-                    if (destRel is null) continue;
                     var destFull = Path.GetFullPath(Path.Combine(workspaceRoot, destRel));
                     // Resolve any existing symlinks/junctions on the path and validate
                     // containment on the real filesystem path to prevent symlink escapes.
@@ -173,12 +171,8 @@ internal static class DigitalEmployeeEndpoints
             try
             {
                 using var zip = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
-                foreach (var entry in zip.Entries)
+                foreach (var (entry, destRel) in GetMappedFileEntries(zip, zipPrefix))
                 {
-                    if (entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\')) continue;
-                    var destRel = MapEntryToWorkspaceRelative(entry.FullName, zipPrefix);
-                    if (destRel is null) continue;
-
                     var destFull = Path.GetFullPath(Path.Combine(workspaceRoot, destRel));
                     Directory.CreateDirectory(Path.GetDirectoryName(destFull)!);
 
@@ -275,6 +269,13 @@ internal static class DigitalEmployeeEndpoints
 
         return null; // manifest.json and everything else is intentionally not extracted
     }
+
+    private static IEnumerable<(ZipArchiveEntry Entry, string DestRel)> GetMappedFileEntries(ZipArchive zip, string zipPrefix)
+        => zip.Entries
+            .Where(static entry => !entry.FullName.EndsWith('/') && !entry.FullName.EndsWith('\\'))
+            .Select(entry => (Entry: entry, DestRel: MapEntryToWorkspaceRelative(entry.FullName, zipPrefix)))
+            .Where(static item => item.DestRel is not null)
+            .Select(static item => (item.Entry, item.DestRel!));
 
     private static string StripPrefix(string path, string prefix)
         => prefix.Length > 0 && path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)

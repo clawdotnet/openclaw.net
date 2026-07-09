@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Linq;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
 using OpenClaw.Gateway.Bootstrap;
@@ -92,12 +93,8 @@ internal static class WorkspaceFileEndpoints
                 {
                     Directory.CreateDirectory(targetDir);
                     using var zip = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
-                    foreach (var entry in zip.Entries)
+                    foreach (var entry in zip.Entries.Where(static entry => !string.IsNullOrEmpty(entry.Name)))
                     {
-                        // Skip pure-directory entries (no filename component).
-                        if (string.IsNullOrEmpty(entry.Name))
-                            continue;
-
                         // ZIP-slip guard (step 1): lexical containment check.
                         var entryFull = Path.GetFullPath(Path.Combine(targetDir, entry.FullName));
                         var fullDestDirPath = Path.GetFullPath(targetDir + Path.DirectorySeparatorChar);
@@ -148,11 +145,8 @@ internal static class WorkspaceFileEndpoints
             try
             {
                 Directory.CreateDirectory(targetDir);
-                foreach (var file in files)
+                foreach (var file in files.Where(static file => file.Length != 0))
                 {
-                    if (file.Length == 0)
-                        continue;
-
                     if (file.Length > MaxUploadBytes)
                         return Results.Json(
                             new WorkspaceUploadResponse { Success = false, Error = $"File '{file.FileName}' too large (max {MaxUploadBytes / 1024 / 1024} MB)." },

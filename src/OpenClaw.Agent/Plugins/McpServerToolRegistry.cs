@@ -331,10 +331,9 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
         if (ui["visibility"] is not JsonArray visibility)
             return true;
 
-        foreach (var node in visibility.Where(static node => node is JsonValue))
+        foreach (var value in visibility.OfType<JsonValue>())
         {
-            if (node is JsonValue value &&
-                value.TryGetValue<string>(out var role) &&
+            if (value.TryGetValue<string>(out var role) &&
                 string.Equals(role, "model", StringComparison.Ordinal))
             {
                 return true;

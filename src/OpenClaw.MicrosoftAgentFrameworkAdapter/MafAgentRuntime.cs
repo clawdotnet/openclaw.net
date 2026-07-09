@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -201,10 +202,9 @@ public sealed class MafAgentRuntime : IAgentRuntime
         // superset of what _toolExecutor can return.  If CreateAgent() runs
         // between the two writes it will find every tool it asks for.
         var nextToolsByName = new Dictionary<string, AITool>(_mafToolsByName, StringComparer.Ordinal);
-        foreach (var name in toRemove)
+        foreach (var name in toRemove.Where(static name => !string.IsNullOrWhiteSpace(name)))
         {
-            if (!string.IsNullOrWhiteSpace(name))
-                nextToolsByName.Remove(name);
+            nextToolsByName.Remove(name);
         }
 
         foreach (var tool in toAdd)

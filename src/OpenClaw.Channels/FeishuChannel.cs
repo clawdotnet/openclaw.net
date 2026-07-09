@@ -829,13 +829,14 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
         var sb = new StringBuilder();
         foreach (var para in content.EnumerateArray().Where(static para => para.ValueKind == JsonValueKind.Array))
         {
-            foreach (var item in para.EnumerateArray().Where(static item => item.TryGetProperty("tag", out var tag) &&
-                                                                            string.Equals(tag.GetString(), "img", StringComparison.Ordinal)))
+            foreach (var imgKey in para.EnumerateArray()
+                         .Where(static item =>
+                             item.TryGetProperty("tag", out var tag) &&
+                             string.Equals(tag.GetString(), "img", StringComparison.Ordinal) &&
+                             item.TryGetProperty("image_key", out var imgKeyProp) &&
+                             !string.IsNullOrWhiteSpace(imgKeyProp.GetString()))
+                         .Select(static item => item.GetProperty("image_key").GetString()!))
             {
-                if (!item.TryGetProperty("image_key", out var imgKeyProp)) continue;
-                var imgKey = imgKeyProp.GetString();
-                if (string.IsNullOrWhiteSpace(imgKey)) continue;
-
                 var tempPath = await DownloadResourceToTempFileAsync(
                     msgId, imgKey, "image", isImage: true, fileName: null, msgType: "post", ct);
                 if (tempPath is not null)

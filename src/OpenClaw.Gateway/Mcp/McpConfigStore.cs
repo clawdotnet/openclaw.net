@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Plugins;
 
@@ -84,11 +85,8 @@ internal sealed class McpConfigStore
     private static Dictionary<string, McpServerConfig> ParseServers(JsonElement serversElement)
     {
         var servers = new Dictionary<string, McpServerConfig>(StringComparer.Ordinal);
-        foreach (var property in serversElement.EnumerateObject())
+        foreach (var property in serversElement.EnumerateObject().Where(static property => property.Value.ValueKind == JsonValueKind.Object))
         {
-            if (property.Value.ValueKind != JsonValueKind.Object)
-                continue;
-
             servers[property.Name] = ParseServerConfig(property.Value);
         }
 

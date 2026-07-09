@@ -2,6 +2,7 @@ using OpenClaw.Agent.Plugins;
 using OpenClaw.Core.Plugins;
 using OpenClaw.McpApp;
 using OpenClaw.McpApp.Shared;
+using System.Linq;
 using System.Text.Json;
 
 namespace OpenClaw.Gateway.Mcp;
@@ -80,12 +81,8 @@ internal static class McpAppToolRegistrationExtensions
         if (!uiElement.TryGetProperty("visibility", out var visibility) || visibility.ValueKind != JsonValueKind.Array)
             return true;
 
-        foreach (var item in visibility.EnumerateArray())
-        {
-            if (item.ValueKind == JsonValueKind.String && string.Equals(item.GetString(), "model", StringComparison.Ordinal))
-                return true;
-        }
-
-        return false;
+        return visibility.EnumerateArray()
+            .Where(static item => item.ValueKind == JsonValueKind.String)
+            .Any(static item => string.Equals(item.GetString(), "model", StringComparison.Ordinal));
     }
 }
