@@ -62,15 +62,14 @@ This surface is for ordinary `Plugins:Mcp` server definitions. When the config i
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| `POST` | `/admin/media/upload` | Upload media files for channel use |
-| `GET` | `/admin/media/{id}` | Serve uploaded media |
+| `POST` | `/media/upload` | Upload media files for channel use |
+| `GET` | `/media/{id}` | Serve uploaded media |
 
 ### Digital Employee
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| `GET` | `/admin/digital-employee` | List digital employee configs |
-| `POST` | `/admin/digital-employee` | Create or update a digital employee |
+| `POST` | `/admin/digital-employee/upload` | Upload a digital employee ZIP package |
 
 ## Authentication
 

@@ -62,15 +62,14 @@ OpenClaw.NET 在 `/admin/workspace/*` 下暴露一组管理端点，用于工作
 
 | 方法 | 端点 | 用途 |
 |--------|----------|---------|
-| `POST` | `/admin/media/upload` | 上传频道使用的媒体文件 |
-| `GET` | `/admin/media/{id}` | 提供已上传的媒体文件 |
+| `POST` | `/media/upload` | 上传频道使用的媒体文件 |
+| `GET` | `/media/{id}` | 提供已上传的媒体文件 |
 
 ### 数字员工
 
 | 方法 | 端点 | 用途 |
 |--------|----------|---------|
-| `GET` | `/admin/digital-employee` | 列出数字员工配置 |
-| `POST` | `/admin/digital-employee` | 创建或更新数字员工 |
+| `POST` | `/admin/digital-employee/upload` | 上传数字员工 ZIP 安装包 |
 
 ## 认证
 

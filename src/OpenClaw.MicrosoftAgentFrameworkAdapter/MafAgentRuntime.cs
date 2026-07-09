@@ -196,8 +196,10 @@ public sealed class MafAgentRuntime : IAgentRuntime
         CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        _toolExecutor.ReplaceMcpTools(toAdd, toRemove);
 
+        // Build the updated lookup first so that _mafToolsByName is always a
+        // superset of what _toolExecutor can return.  If CreateAgent() runs
+        // between the two writes it will find every tool it asks for.
         var nextToolsByName = new Dictionary<string, AITool>(_mafToolsByName, StringComparer.Ordinal);
         foreach (var name in toRemove)
         {
@@ -210,6 +212,9 @@ public sealed class MafAgentRuntime : IAgentRuntime
 
         _mafToolsByName = nextToolsByName;
         _mafTools = nextToolsByName.Values.ToArray();
+
+        // Update the executor after the lookup is already consistent.
+        _toolExecutor.ReplaceMcpTools(toAdd, toRemove);
         return Task.CompletedTask;
     }
 

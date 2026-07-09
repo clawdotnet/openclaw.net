@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using OpenClaw.Gateway.Bootstrap;
 
 namespace OpenClaw.Gateway.Endpoints;
@@ -20,7 +21,7 @@ internal static class MediaEndpoints
             EndpointHelpers.TrySetMaxRequestBodySize(ctx, MaxUploadBytes);
 
             if (!ctx.Request.HasFormContentType)
-                return Results.BadRequest(new { error = "multipart/form-data required" });
+                return Results.BadRequest(new JsonObject { ["error"] = "multipart/form-data required" });
 
             IFormFile? file;
             try
@@ -30,11 +31,11 @@ internal static class MediaEndpoints
             }
             catch (Exception)
             {
-                return Results.BadRequest(new { error = "Failed to read form data" });
+                return Results.BadRequest(new JsonObject { ["error"] = "Failed to read form data" });
             }
 
             if (file is null || file.Length == 0)
-                return Results.BadRequest(new { error = "No file provided" });
+                return Results.BadRequest(new JsonObject { ["error"] = "No file provided" });
 
             if (file.Length > MaxUploadBytes)
                 return Results.StatusCode(413);
@@ -49,13 +50,13 @@ internal static class MediaEndpoints
 
             var asset = await mediaCache.SaveAsync(bytes.AsMemory(), mimeType, file.FileName, ct);
 
-            return Results.Ok(new
+            return Results.Ok(new JsonObject
             {
-                id = asset.Id,
-                url = $"/media/{asset.Id}",
-                fileName = asset.FileName,
-                mimeType = asset.MediaType,
-                sizeBytes = asset.SizeBytes
+                ["id"] = asset.Id,
+                ["url"] = $"/media/{asset.Id}",
+                ["fileName"] = asset.FileName,
+                ["mimeType"] = asset.MediaType,
+                ["sizeBytes"] = asset.SizeBytes
             });
         });
 

@@ -54,21 +54,19 @@ internal sealed class ChannelConfigStore
     /// <summary>
     /// Persists a channel config to disk so it survives container restarts.
     /// Creates the channels directory if it doesn't exist yet.
+    /// Uses an atomic write (temp-file + rename) to protect against data loss
+    /// from crashes or power loss during the write.
     /// </summary>
     public void Save<T>(string channelId, T config, JsonTypeInfo<T> typeInfo)
     {
-        try
+        var path = FilePath(channelId);
+        if (!AtomicJsonFileStore.TryWriteAtomic(path, config, typeInfo, out var error))
         {
-            Directory.CreateDirectory(_dir);
-            var path = FilePath(channelId);
-            var json = JsonSerializer.Serialize(config, typeInfo);
-            File.WriteAllText(path, json);
-            _logger.LogInformation("Persisted config for channel '{ChannelId}' to '{Path}'.", channelId, path);
+            _logger.LogError("Failed to persist config for channel '{ChannelId}': {Error}", channelId, error);
+            return;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to persist config for channel '{ChannelId}'.", channelId);
-        }
+
+        _logger.LogInformation("Persisted config for channel '{ChannelId}' to '{Path}'.", channelId, path);
     }
 
     /// <summary>Deletes the persisted config for a channel (revert to appsettings).</summary>

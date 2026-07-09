@@ -140,7 +140,6 @@ internal static class DigitalEmployeeEndpoints
 
             // ── Phase 2: ZIP-slip validation ──────────────────────────────────────────────────────
             var workspaceRoot = Path.GetFullPath(workspacePath);
-            var workspaceRootPrefix = workspaceRoot + Path.DirectorySeparatorChar;
             try
             {
                 using var zip = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
@@ -150,7 +149,10 @@ internal static class DigitalEmployeeEndpoints
                     var destRel = MapEntryToWorkspaceRelative(entry.FullName, zipPrefix);
                     if (destRel is null) continue;
                     var destFull = Path.GetFullPath(Path.Combine(workspaceRoot, destRel));
-                    if (!destFull.StartsWith(workspaceRootPrefix, StringComparison.OrdinalIgnoreCase))
+                    // Resolve any existing symlinks/junctions on the path and validate
+                    // containment on the real filesystem path to prevent symlink escapes.
+                    var realDestFull = WorkspacePathHelpers.ResolveRealPath(destFull);
+                    if (!WorkspacePathHelpers.IsInsideDirectory(realDestFull, workspaceRoot))
                         return Results.Json(
                             new DigitalEmployeeUploadResponse { Success = false, Error = "ZIP contains a path traversal entry and was rejected." },
                             CoreJsonContext.Default.DigitalEmployeeUploadResponse,
@@ -180,11 +182,17 @@ internal static class DigitalEmployeeEndpoints
                     var destFull = Path.GetFullPath(Path.Combine(workspaceRoot, destRel));
                     Directory.CreateDirectory(Path.GetDirectoryName(destFull)!);
 
+                    // Re-resolve after the directory exists so newly visible symlinks
+                    // are caught, then re-validate containment before writing.
+                    var realDestFull = WorkspacePathHelpers.ResolveRealPath(destFull);
+                    if (!WorkspacePathHelpers.IsInsideDirectory(realDestFull, workspaceRoot))
+                        continue; // symlink/junction escape — skip silently
+
                     using var entryStream = entry.Open();
-                    using var fs = new FileStream(destFull, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true);
+                    using var fs = new FileStream(realDestFull, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true);
                     await entryStream.CopyToAsync(fs, ctx.RequestAborted);
 
-                    var relNorm = destRel.Replace('\\', '/');
+                    var relNorm = Path.GetRelativePath(workspaceRoot, realDestFull).Replace('\\', '/');
                     installedFiles.Add(relNorm);
 
                     // Track skill directory names for hot-reload.

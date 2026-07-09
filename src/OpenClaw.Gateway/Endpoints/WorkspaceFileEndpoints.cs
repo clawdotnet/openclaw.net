@@ -98,7 +98,7 @@ internal static class WorkspaceFileEndpoints
                         if (string.IsNullOrEmpty(entry.Name))
                             continue;
 
-                        // ZIP-slip guard: resolve both paths with GetFullPath and verify containment.
+                        // ZIP-slip guard (step 1): lexical containment check.
                         var entryFull = Path.GetFullPath(Path.Combine(targetDir, entry.FullName));
                         var fullDestDirPath = Path.GetFullPath(targetDir + Path.DirectorySeparatorChar);
                         if (!entryFull.StartsWith(fullDestDirPath, StringComparison.Ordinal))
@@ -112,11 +112,18 @@ internal static class WorkspaceFileEndpoints
                                 CoreJsonContext.Default.WorkspaceUploadResponse,
                                 statusCode: StatusCodes.Status400BadRequest);
 
+                        // ZIP-slip guard (step 2): create the parent directory first so
+                        // that ResolveRealPath can walk any existing symlinks/junctions,
+                        // then re-validate containment on the real filesystem path.
                         Directory.CreateDirectory(Path.GetDirectoryName(entryFull)!);
-                        await using var outStream = new FileStream(entryFull, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
+                        var realEntryFull = ResolveRealPath(entryFull);
+                        if (!IsInsideDirectory(realEntryFull, workspaceRoot))
+                            continue; // symlink/junction escape — skip
+
+                        await using var outStream = new FileStream(realEntryFull, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
                         await using var entryStream = entry.Open();
                         await entryStream.CopyToAsync(outStream, ctx.RequestAborted);
-                        extracted.Add(Path.GetRelativePath(workspaceRoot, entryFull).Replace('\\', '/'));
+                        extracted.Add(Path.GetRelativePath(workspaceRoot, realEntryFull).Replace('\\', '/'));
                     }
                 }
                 catch (Exception ex)
@@ -462,13 +469,7 @@ internal static class WorkspaceFileEndpoints
     /// Returns true when <paramref name="path"/> is the directory itself or a descendant of it.
     /// </summary>
     private static bool IsInsideDirectory(string path, string directory)
-    {
-        var dir = directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                  + Path.DirectorySeparatorChar;
-        return path.StartsWith(dir, StringComparison.OrdinalIgnoreCase)
-               || string.Equals(path, directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-                   StringComparison.OrdinalIgnoreCase);
-    }
+        => WorkspacePathHelpers.IsInsideDirectory(path, directory);
 
     /// <summary>
     /// Walks each component of <paramref name="path"/> and resolves any symlink or junction
@@ -476,38 +477,7 @@ internal static class WorkspaceFileEndpoints
     /// Non-existent components are kept as-is (they cannot be links).
     /// </summary>
     private static string ResolveRealPath(string path)
-    {
-        var root = Path.GetPathRoot(path) ?? string.Empty;
-        var remaining = path[root.Length..];
-        var parts = remaining.Split(
-            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
-            StringSplitOptions.RemoveEmptyEntries);
-
-        var resolved = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-        foreach (var part in parts)
-        {
-            var candidate = resolved + Path.DirectorySeparatorChar + part;
-
-            if (Directory.Exists(candidate))
-            {
-                var target = new DirectoryInfo(candidate).ResolveLinkTarget(returnFinalTarget: true);
-                resolved = target?.FullName ?? candidate;
-            }
-            else if (File.Exists(candidate))
-            {
-                var target = new FileInfo(candidate).ResolveLinkTarget(returnFinalTarget: true);
-                resolved = target?.FullName ?? candidate;
-            }
-            else
-            {
-                // Component does not exist yet — keep the logical path.
-                resolved = candidate;
-            }
-        }
-
-        return resolved;
-    }
+        => WorkspacePathHelpers.ResolveRealPath(path);
 
     private static bool IsZipFile(IFormFile file)
         => string.Equals(Path.GetExtension(file.FileName ?? ""), ".zip", StringComparison.OrdinalIgnoreCase);

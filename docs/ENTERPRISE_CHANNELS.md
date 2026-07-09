@@ -74,10 +74,9 @@ Channel configuration can be managed at runtime through admin endpoints without 
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| `GET` | `/admin/channels` | List all registered channels |
 | `GET` | `/admin/channels/{channelId}` | Get channel config |
-| `PUT` | `/admin/channels/{channelId}` | Update channel config |
-| `DELETE` | `/admin/channels/{channelId}` | Remove channel config override |
+| `POST` | `/admin/channels/{channelId}/update` | Update channel config |
+| `DELETE` | `/admin/channels/{channelId}/override` | Remove channel config override |
 
 Overrides written through the admin API are persisted in `ChannelConfigStore` and take precedence over file-based configuration. They survive gateway restarts.
 
