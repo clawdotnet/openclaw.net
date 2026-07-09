@@ -454,13 +454,11 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
                 // Try to get from mentions array (if WeCom provides it)
                 if (textProp.TryGetProperty("mentions", out var mentionsArr) && mentionsArr.ValueKind == JsonValueKind.Array)
                 {
-                    var list = new List<string>();
-                    foreach (var m in mentionsArr.EnumerateArray())
-                    {
-                        var uid = GetString(m, "userid");
-                        if (!string.IsNullOrWhiteSpace(uid))
-                            list.Add(uid);
-                    }
+                    var list = mentionsArr.EnumerateArray()
+                        .Select(static mention => GetString(mention, "userid"))
+                        .OfType<string>()
+                        .Where(static uid => !string.IsNullOrWhiteSpace(uid))
+                        .ToList();
                     if (list.Count > 0)
                         mentionedIds = [.. list];
                 }

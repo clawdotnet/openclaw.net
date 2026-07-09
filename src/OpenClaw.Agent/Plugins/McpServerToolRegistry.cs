@@ -165,8 +165,9 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
                         {
                             await DisposeClientAsync(client).ConfigureAwait(false);
                         }
-                        catch
+                        catch (Exception disposeEx)
                         {
+                            _logger.LogDebug(disposeEx, "Workspace MCP: failed to dispose client for server '{ServerId}' after connection failure.", serverId);
                         }
                     }
 
@@ -331,16 +332,11 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
         if (ui["visibility"] is not JsonArray visibility)
             return true;
 
-        foreach (var value in visibility.OfType<JsonValue>())
-        {
-            if (value.TryGetValue<string>(out var role) &&
-                string.Equals(role, "model", StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return visibility
+            .OfType<JsonValue>()
+            .Any(static value =>
+                value.TryGetValue<string>(out var role) &&
+                string.Equals(role, "model", StringComparison.Ordinal));
     }
 
     internal static bool ToolHasUi(JsonObject? meta)

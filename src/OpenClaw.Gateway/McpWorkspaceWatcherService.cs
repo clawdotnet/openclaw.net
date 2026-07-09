@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using System.Linq;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Core.Plugins;
@@ -143,9 +144,8 @@ internal sealed class McpWorkspaceWatcherService : IAsyncDisposable, IDisposable
         if (string.IsNullOrWhiteSpace(_workspacePath))
             return null;
 
-        foreach (var relativePath in McpJsonRelativePaths)
+        foreach (var filePath in McpJsonRelativePaths.Select(relativePath => Path.Combine(_workspacePath, relativePath)))
         {
-            var filePath = Path.Combine(_workspacePath, relativePath);
             if (!File.Exists(filePath))
                 continue;
 

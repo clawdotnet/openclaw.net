@@ -248,11 +248,9 @@ public sealed class AppsEndpointsTests : IAsyncDisposable
     private static List<JsonElement> ParseSseEvents(string body)
     {
         var events = new List<JsonElement>();
-        foreach (var line in body.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var line in body.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                     .Where(static line => line.StartsWith("data: ", StringComparison.Ordinal)))
         {
-            if (!line.StartsWith("data: ", StringComparison.Ordinal))
-                continue;
-
             using var document = JsonDocument.Parse(line[6..]);
             events.Add(document.RootElement.Clone());
         }

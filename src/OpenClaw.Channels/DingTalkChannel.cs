@@ -113,7 +113,7 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
                 if (_receiveLoop is not null)
                 {
                     try { await _receiveLoop; }
-                    catch (OperationCanceledException) { }
+                    catch (OperationCanceledException ex) { _logger.LogTrace(ex, "DingTalk receive loop canceled during restart."); }
                     catch (Exception ex) { _logger.LogDebug(ex, "DingTalk receive loop exited with error during restart."); }
                 }
                 _cts.Dispose();
@@ -424,13 +424,11 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
         string[]? mentions = null;
         if (data.TryGetProperty("atUsers", out var atUsers) && atUsers.ValueKind == JsonValueKind.Array)
         {
-            var list = new List<string>();
-            foreach (var mention in atUsers.EnumerateArray())
-            {
-                var mentionId = GetString(mention, "dingtalkId");
-                if (!string.IsNullOrWhiteSpace(mentionId))
-                    list.Add(mentionId);
-            }
+            var list = atUsers.EnumerateArray()
+                .Select(static mention => GetString(mention, "dingtalkId"))
+                .OfType<string>()
+                .Where(static mentionId => !string.IsNullOrWhiteSpace(mentionId))
+                .ToList();
             if (list.Count > 0)
                 mentions = [.. list];
         }
@@ -953,7 +951,7 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
             if (_receiveLoop is not null)
             {
                 try { await _receiveLoop; }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException ex) { _logger.LogTrace(ex, "DingTalk receive loop canceled during disposal."); }
             }
             _cts.Dispose();
         }

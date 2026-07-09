@@ -44,10 +44,8 @@ internal static class WorkspacePathHelpers
 
         var resolved = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-        foreach (var part in parts)
+        foreach (var candidate in parts.Select(part => resolved + Path.DirectorySeparatorChar + part))
         {
-            var candidate = resolved + Path.DirectorySeparatorChar + part;
-
             if (Directory.Exists(candidate))
             {
                 try
