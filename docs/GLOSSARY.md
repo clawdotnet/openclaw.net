@@ -81,3 +81,23 @@ A single place for the terms that show up across OpenClaw.NET docs. If a term in
 **MCP** — the Model Context Protocol endpoint exposed at `/mcp`. Lets external MCP clients call the gateway's tools.
 
 **Integration API** — the typed HTTP surface under `/api/integration/*`. Use `OpenClaw.Client` for typed .NET access.
+
+**OIDC / OIDC JWT** — an organization authentication mode (`oidc_jwt`) for OIDC/Keycloak JWT bearer flows. Used alongside `bootstrap_token`, `browser_session`, and `account_token` auth modes.
+
+## Enterprise Channels
+
+**Feishu channel** — Lark/Feishu IM adapter with hot-reloadable runtime config, message deduplication, media attachment handling, and gateway composition registration. Configurable via admin channel config endpoints.
+
+**DingTalk channel** — DingTalk IM adapter with hot-reloadable runtime config. Registered in gateway composition with admin-configurable overrides.
+
+**WeCom channel** — WeChat Work (企业微信) IM adapter with hot-reloadable runtime config. Registered in gateway composition with admin-configurable overrides.
+
+**Channel Config Store** — persistent backend store for per-channel configuration overrides. Ensures channel-level settings survive gateway restarts.
+
+## Workspace Management
+
+**Workspace MCP** — the `/admin/workspace/mcp` admin surface for persisting ordinary `Plugins:Mcp` server definitions and hot-reloading the standard MCP plugin tool surface without a gateway restart. Separate from MCP Apps (see [MCPAPP.md](MCPAPP.md)).
+
+**Workspace Admin APIs** — admin endpoints under `/admin/workspace/*` providing workspace file browse, directory tree, upload, download, and MCP configuration management.
+
+**Digital Employee endpoints** — admin endpoints for enterprise digital-employee scenarios, scoped under `/admin/digital-employee/*`.

@@ -45,11 +45,13 @@
 | 集成 | MCP App | [MCPAPP.md](MCPAPP.md) |
 | 集成 | Microsoft Agent Framework | [integrations/microsoft-agent-framework.md](integrations/microsoft-agent-framework.md) |
 | 集成 | 工作流后端 | [workflow-backends.md](workflow-backends.md) |
+| 集成 | 企业频道（飞书/钉钉/企微）| [ENTERPRISE_CHANNELS.md](ENTERPRISE_CHANNELS.md) |
 | 集成 | Microsoft Teams | [TEAMS_SETUP.md](TEAMS_SETUP.md) |
 | 集成 | WhatsApp | [WHATSAPP_SETUP.md](WHATSAPP_SETUP.md) |
 | 集成 | A2A | [a2a.md](a2a.md) |
 | 集成 | 外部编码后端 | [external-coding-backends.md](external-coding-backends.md) |
 | 集成 | Tailscale 部署 | [deployment/TAILSCALE.md](deployment/TAILSCALE.md) |
+| 运维 | 工作区管理 API | [WORKSPACE_ADMIN.md](WORKSPACE_ADMIN.md) |
 | 运维 | 安全 | [SECURITY.md](../../SECURITY.md) |
 | 运维 | 支付安全 | [security/payments.md](security/payments.md) |
 | 运维 | 工具治理 Sidecar | [governance/sidecar-pattern.md](governance/sidecar-pattern.md) |

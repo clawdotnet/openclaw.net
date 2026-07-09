@@ -22,6 +22,9 @@
 | TUI | Optional | 面向操作员工作流的终端 UI 界面 |
 | OpenAI 兼容端点 | Core | 由 gateway 托管 |
 | MCP 端点 | Core | 由 gateway 托管 |
+| 工作区 MCP 热重载 | Optional | 通过 `/admin/workspace/mcp` 持久化并热重载 `Plugins:Mcp` 服务器配置，无需重启网关。与 MCP Apps 分开。|
+| 工作区管理 API | Optional | 通过 `/admin/workspace/*` 管理工作区文件浏览、目录树、上传、下载和 MCP 配置 |
+| 管理频道配置端点 | Optional | 通过 `ChannelConfigStore` 持久化每频道配置覆盖，重启后保留 |
 | 公网绑定加固 | Core | Gateway 在所需设置加固前拒绝不安全的公网绑定配置 |
 
 ## 工具与扩展
@@ -70,6 +73,9 @@
 | Teams 频道 | Optional | Microsoft Teams 设置路径 |
 | Slack 频道 | Optional | 共享操作员模型的频道适配器 |
 | Discord 频道 | Optional | 包含斜杠命令入口对等 |
+| 飞书频道 | Optional | 飞书/Lark IM 适配器，支持热重载配置、消息去重和媒体处理 |
+| 钉钉频道 | Optional | 钉钉 IM 适配器，支持热重载配置 |
+| 企业微信频道 | Optional | 企业微信 IM 适配器，支持热重载配置 |
 | Signal 频道 | Optional | 共享操作员模型的频道适配器 |
 | 邮件频道 | Optional | 与聊天频道允许列表分开的操作接口 |
 | 通用 Webhook | Optional | 认证的入站触发器 |

@@ -22,6 +22,9 @@ This matrix summarizes the current OpenClaw.NET capability lanes. It complements
 | TUI | Optional | Terminal UI surface for operator workflows. |
 | OpenAI-compatible endpoints | Core | Hosted by the gateway. |
 | MCP endpoint | Core | Hosted by the gateway. |
+| Workspace MCP hot reload | Optional | Persist and hot-reload `Plugins:Mcp` server config via `/admin/workspace/mcp` without gateway restart. Separate from MCP Apps. |
+| Workspace admin APIs | Optional | Workspace file browse, tree, upload, download, and MCP config management via `/admin/workspace/*`. |
+| Admin channel config endpoints | Optional | Per-channel overrides persisted via `ChannelConfigStore` across restarts. |
 | Public-bind hardening | Core | Gateway refuses unsafe public-bind configurations until required settings are hardened. |
 
 ## Tools And Extensions
@@ -70,6 +73,9 @@ This matrix summarizes the current OpenClaw.NET capability lanes. It complements
 | Teams channel | Optional | Microsoft Teams setup path. |
 | Slack channel | Optional | Channel adapter with shared operator model. |
 | Discord channel | Optional | Includes slash-command ingress parity. |
+| Feishu channel | Optional | Lark/Feishu IM adapter with hot-reloadable config, message dedup, and media handling. |
+| DingTalk channel | Optional | DingTalk IM adapter with hot-reloadable config. |
+| WeCom channel | Optional | WeChat Work IM adapter with hot-reloadable config. |
 | Signal channel | Optional | Channel adapter with shared operator model. |
 | Email channel | Optional | Separate operational surface from chat-channel allowlists. |
 | Generic webhooks | Optional | Authenticated inbound triggers. |

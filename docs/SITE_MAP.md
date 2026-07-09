@@ -48,11 +48,13 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Integrations | MCP Apps | [MCPAPP.md](MCPAPP.md) |
 | Integrations | Microsoft Agent Framework | [integrations/microsoft-agent-framework.md](integrations/microsoft-agent-framework.md) |
 | Integrations | Workflow Backends | [workflow-backends.md](workflow-backends.md) |
+| Integrations | Enterprise Channels (Feishu/DingTalk/WeCom) | [ENTERPRISE_CHANNELS.md](ENTERPRISE_CHANNELS.md) |
 | Integrations | Microsoft Teams | [TEAMS_SETUP.md](TEAMS_SETUP.md) |
 | Integrations | WhatsApp | [WHATSAPP_SETUP.md](WHATSAPP_SETUP.md) |
 | Integrations | A2A | [a2a.md](a2a.md) |
 | Integrations | External Coding Backends | [external-coding-backends.md](external-coding-backends.md) |
 | Integrations | Tailscale Deployment | [deployment/TAILSCALE.md](deployment/TAILSCALE.md) |
+| Operations | Workspace Admin APIs | [WORKSPACE_ADMIN.md](WORKSPACE_ADMIN.md) |
 | Operations | Security | [SECURITY.md](../SECURITY.md) |
 | Operations | Payment Security | [security/payments.md](security/payments.md) |
 | Operations | Tool Governance Sidecar | [governance/sidecar-pattern.md](governance/sidecar-pattern.md) |
