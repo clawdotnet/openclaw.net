@@ -138,6 +138,43 @@ openclaw skills meta-runs reconstruct <sid> --run <id>
     filter: "web"
 ```
 
+### DAG 消费临时图 (`load_temporary_graph`)
+
+当你的流程采用“按需实例化”时，可以先用 `tool_call` 步骤加载一次临时图，
+再在后续步骤通过 `outputs.<step_id>` 消费该图内容。`load_temporary_graph`
+支持三类输入：
+
+- JSON/JSON-LD 文件（例如 `.json`、`.jsonld`）
+- Markdown 文档中的 fenced code block（例如 `jsonld` 代码块）
+- 通过 `max_chars` 控制返回体积，避免大图直接撑满上下文
+
+```yaml
+composition:
+  steps:
+    - id: load_graph
+      kind: tool_call
+      tool: load_temporary_graph
+      with:
+        path: "./tmp/quality-slice.md"
+        format: "markdown"
+        code_block_language: "jsonld"
+        max_chars: 120000
+
+    - id: reason
+      kind: llm_chat
+      depends_on: [load_graph]
+      with:
+        system_prompt: |
+          你是工业质量分析助手。输入包含临时实例图 JSON/JSON-LD，
+          只依据图内信息给出根因候选与下一步行动。
+        input: |
+          临时图载荷如下：
+          {{ outputs.load_graph }}
+```
+
+建议：临时图由外部切片器（例如 SPARQL CONSTRUCT + JSON-LD Framing）生成，
+MetaSkill 只负责“消费和推理”，不要在 DAG 内做大规模图构建。
+
 ## 激活方式
 
 自然语言触发：

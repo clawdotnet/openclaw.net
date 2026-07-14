@@ -189,6 +189,7 @@ internal static partial class RuntimeInitializationExtensions
             new MetaSkillSmokeRunTool(),
             new MetaSkillRuntimeE2ERunTool(),
             new MetaSkillPersistProposalTool(),
+            new LoadTemporaryGraphTool(config.Tooling),
 
             // Goal system
             new GetGoalTool(services.GoalService),
