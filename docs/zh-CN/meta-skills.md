@@ -85,6 +85,25 @@ openclaw skills meta-runs replay <sid> --run <id>
 openclaw skills meta-runs reconstruct <sid> --run <id>
 ```
 
+当 MetaSkill 的 `tool_call` 步骤调用 `action_execute` 时，工具结果会额外包含
+`governanceMapping`，用于把动作治理对象映射到可审计实体：
+
+```json
+{
+  "status": "proposal_only",
+  "decision": "proposal_only",
+  "governanceMapping": {
+    "sessionMetaRunRecord": "session_meta_run_record_pending",
+    "harnessContractId": "hctr_xxx",
+    "pevId": "pev_xxx",
+    "evidenceBundleId": "evb_xxx"
+  }
+}
+```
+
+运行时会在当前会话的 `SessionMetaRunRecord` 上保留这组映射字段，便于后续按会话追溯
+Harness Contract、PEV 和 Evidence Bundle。未使用 `action_execute` 的 MetaSkill 路径保持原有行为不变。
+
 ### 有界执行
 
 四层超时保护：

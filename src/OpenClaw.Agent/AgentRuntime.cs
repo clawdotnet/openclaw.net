@@ -3491,6 +3491,8 @@ public sealed class AgentRuntime : IAgentRuntime
         string? error,
         bool preserveCheckpoint)
     {
+        var governanceMapping = TryExtractGovernanceMapping(finalText);
+
         session.MetaRunHistory.Add(new SessionMetaRunRecord
         {
             RunId = $"meta_{Guid.NewGuid():N}",
@@ -3501,6 +3503,10 @@ public sealed class AgentRuntime : IAgentRuntime
             ErrorCode = string.IsNullOrWhiteSpace(error) ? null : DeriveMetaErrorCode(error, stepResults),
             StartedAtUtc = DateTimeOffset.UtcNow,
             CompletedAtUtc = DateTimeOffset.UtcNow,
+            GovernanceSessionMetaRunRecordRef = governanceMapping?.SessionMetaRunRecord,
+            GovernanceHarnessContractId = governanceMapping?.HarnessContractId,
+            GovernancePevId = governanceMapping?.PevId,
+            GovernanceEvidenceBundleId = governanceMapping?.EvidenceBundleId,
             StepResults = stepResults.Select(static result => new SessionMetaStepResult
             {
                 Id = result.Id,
@@ -3512,6 +3518,46 @@ public sealed class AgentRuntime : IAgentRuntime
                 ExecutionEvidence = result.ExecutionEvidence
             }).ToList()
         });
+    }
+
+    private static MetaGovernanceMapping? TryExtractGovernanceMapping(string? finalText)
+    {
+        if (string.IsNullOrWhiteSpace(finalText))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(finalText);
+            if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                !document.RootElement.TryGetProperty("governanceMapping", out var mapping) ||
+                mapping.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var sessionMetaRunRecord = GetOptionalJsonString(mapping, "sessionMetaRunRecord");
+            var harnessContractId = GetOptionalJsonString(mapping, "harnessContractId");
+            var pevId = GetOptionalJsonString(mapping, "pevId");
+            var evidenceBundleId = GetOptionalJsonString(mapping, "evidenceBundleId");
+
+            if (sessionMetaRunRecord is null && harnessContractId is null && pevId is null && evidenceBundleId is null)
+                return null;
+
+            return new MetaGovernanceMapping(sessionMetaRunRecord, harnessContractId, pevId, evidenceBundleId);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? GetOptionalJsonString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String)
+            return null;
+
+        var value = property.GetString();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
     private static string BuildMetaExecutionOutput(
@@ -3839,6 +3885,12 @@ public sealed class AgentRuntime : IAgentRuntime
 
         return false;
     }
+
+    private sealed record MetaGovernanceMapping(
+        string? SessionMetaRunRecord,
+        string? HarnessContractId,
+        string? PevId,
+        string? EvidenceBundleId);
 
     private async Task<ToolExecutionResult> ExecuteMetaToolStepWithPolicyAsync(
         SkillDefinition metaSkill,

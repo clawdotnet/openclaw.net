@@ -1,5 +1,6 @@
 using OpenClaw.Agent.Tools;
 using Xunit;
+using System.Text.Json;
 
 namespace OpenClaw.Tests;
 
@@ -47,6 +48,23 @@ public sealed class ActionExecuteToolTests
         var result = await tool.ExecuteAsync(BuildArguments(proposal), TestContext.Current.CancellationToken);
 
         Assert.Contains("policy_denied", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ProducesGovernanceMappingPayload()
+    {
+        var tool = new ActionExecuteTool();
+        var proposal = BuildProposalJson(
+            metadataFragment: "\"policyDecision\":\"proposal_only\",\"harnessContractId\":\"hctr_123\",\"pevId\":\"pev_456\",\"evidenceBundleId\":\"evb_789\"");
+
+        var result = await tool.ExecuteAsync(BuildArguments(proposal), TestContext.Current.CancellationToken);
+
+        using var document = JsonDocument.Parse(result);
+        var mapping = document.RootElement.GetProperty("governanceMapping");
+        Assert.Equal("session_meta_run_record_pending", mapping.GetProperty("sessionMetaRunRecord").GetString());
+        Assert.Equal("hctr_123", mapping.GetProperty("harnessContractId").GetString());
+        Assert.Equal("pev_456", mapping.GetProperty("pevId").GetString());
+        Assert.Equal("evb_789", mapping.GetProperty("evidenceBundleId").GetString());
     }
 
     [Fact]

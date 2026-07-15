@@ -295,6 +295,10 @@ public sealed class SessionMetaRunRecord
     public string? ErrorCode { get; init; }
     public DateTimeOffset StartedAtUtc { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset CompletedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    public string? GovernanceSessionMetaRunRecordRef { get; init; }
+    public string? GovernanceHarnessContractId { get; init; }
+    public string? GovernancePevId { get; init; }
+    public string? GovernanceEvidenceBundleId { get; init; }
     public List<SessionMetaStepResult> StepResults { get; init; } = [];
 }
 

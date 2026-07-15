@@ -1502,6 +1502,68 @@ public class AgentRuntimeTests
         var step = Assert.Single(run.StepResults);
         Assert.Equal("first", step.Id);
         Assert.Equal("completed", step.Status);
+        Assert.Null(run.GovernanceHarnessContractId);
+        Assert.Null(run.GovernancePevId);
+        Assert.Null(run.GovernanceEvidenceBundleId);
+        Assert.Null(run.GovernanceSessionMetaRunRecordRef);
+    }
+
+    [Fact]
+    public async Task ExecuteMetaSkillAsync_ActionExecuteResult_PersistsGovernanceMappingIntoMetaRunRecord()
+    {
+        var actionExecuteTool = new ActionExecuteTool();
+        var proposal = "{" +
+                       "\"actionName\":\"sync_customer_tier\"," +
+                       "\"source\":{\"metaSkill\":\"customer-risk-assistant\",\"runId\":\"run_1\",\"stepId\":\"step_1\"}," +
+                       "\"trigger\":{\"condition\":\"riskLevel == medium\",\"evidenceRefs\":[\"ev_001\"]}," +
+                       "\"target\":{\"system\":\"crm\",\"operation\":\"updateCustomerTier\"}," +
+                       "\"execution\":[{\"call\":\"crm.updateTier\",\"args\":{\"customerId\":\"C123\",\"tier\":\"B\"}}]," +
+                       "\"idempotencyKey\":\"proposal-C123-20260715-01\"," +
+                       "\"metadata\":{\"policyDecision\":\"proposal_only\",\"harnessContractId\":\"hctr_123\",\"pevId\":\"pev_456\",\"evidenceBundleId\":\"evb_789\"}" +
+                       "}";
+
+        var agent = new AgentRuntime(
+            _chatClient,
+            [actionExecuteTool],
+            _memory,
+            _config,
+            maxHistoryTurns: 5,
+            skills:
+            [
+                new SkillDefinition
+                {
+                    Name = "meta-flow",
+                    Description = "meta flow",
+                    Instructions = "...",
+                    Location = "/skills/meta-flow",
+                    Kind = SkillKind.Meta,
+                    FinalTextMode = "step:first",
+                    Composition = new MetaSkillComposition
+                    {
+                        Steps =
+                        [
+                            new MetaSkillStepDefinition
+                            {
+                                Id = "first",
+                                Kind = "tool_call",
+                                Tool = "action_execute",
+                                ToolArgsJson = "{\"proposal\":" + proposal + "}"
+                            }
+                        ]
+                    }
+                }
+            ]);
+
+        var session = new Session { Id = "meta-sess", SenderId = "user1", ChannelId = "test-channel" };
+
+        var result = await InvokeMetaSkillAsync(agent, session, "meta-flow", "hello", TestContext.Current.CancellationToken);
+
+        Assert.Contains("proposal_only", result, StringComparison.OrdinalIgnoreCase);
+        var run = Assert.Single(session.MetaRunHistory);
+        Assert.Equal("hctr_123", run.GovernanceHarnessContractId);
+        Assert.Equal("pev_456", run.GovernancePevId);
+        Assert.Equal("evb_789", run.GovernanceEvidenceBundleId);
+        Assert.Equal("session_meta_run_record_pending", run.GovernanceSessionMetaRunRecordRef);
     }
 
     [Fact]

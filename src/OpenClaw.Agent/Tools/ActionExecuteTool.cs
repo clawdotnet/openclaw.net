@@ -45,18 +45,19 @@ public sealed class ActionExecuteTool : ITool
         if (!normalized.Success || normalized.Proposal is null)
             return ValueTask.FromResult(BuildFailure(normalized.ErrorCode ?? "invalid_proposal", normalized.ErrorMessage));
 
+        var governanceMapping = BuildGovernanceMapping(normalized.Proposal);
         var decision = _policyEngine.Evaluate(normalized.Proposal);
 
         if (decision.Decision.Equals("policy_denied", StringComparison.OrdinalIgnoreCase))
-            return ValueTask.FromResult(BuildFailure("policy_denied", "Policy denied execution.", decision));
+            return ValueTask.FromResult(BuildFailure("policy_denied", "Policy denied execution.", decision, governanceMapping));
 
         if (decision.Decision.Equals("require_approval", StringComparison.OrdinalIgnoreCase))
-            return ValueTask.FromResult(BuildDecisionResult("pending_approval", decision));
+            return ValueTask.FromResult(BuildDecisionResult("pending_approval", decision, governanceMapping));
 
         if (decision.Decision.Equals("proposal_only", StringComparison.OrdinalIgnoreCase))
-            return ValueTask.FromResult(BuildDecisionResult("proposal_only", decision));
+            return ValueTask.FromResult(BuildDecisionResult("proposal_only", decision, governanceMapping));
 
-        return ValueTask.FromResult(BuildDecisionResult("execution_started", decision));
+        return ValueTask.FromResult(BuildDecisionResult("execution_started", decision, governanceMapping));
     }
 
     private static string? ExtractProposal(string argumentsJson)
@@ -83,7 +84,11 @@ public sealed class ActionExecuteTool : ITool
         }
     }
 
-    private static string BuildFailure(string failureCode, string? message, ActionPolicyDecision? decision = null)
+    private static string BuildFailure(
+        string failureCode,
+        string? message,
+        ActionPolicyDecision? decision = null,
+        ActionGovernanceMapping? governanceMapping = null)
     {
         using var stream = new MemoryStream();
         using var writer = new Utf8JsonWriter(stream);
@@ -96,21 +101,51 @@ public sealed class ActionExecuteTool : ITool
         if (decision is not null)
             WriteDecision(writer, decision);
 
+        if (governanceMapping is not null)
+            WriteGovernanceMapping(writer, governanceMapping);
+
         writer.WriteEndObject();
         writer.Flush();
         return System.Text.Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    private static string BuildDecisionResult(string status, ActionPolicyDecision decision)
+    private static string BuildDecisionResult(string status, ActionPolicyDecision decision, ActionGovernanceMapping governanceMapping)
     {
         using var stream = new MemoryStream();
         using var writer = new Utf8JsonWriter(stream);
         writer.WriteStartObject();
         writer.WriteString("status", status);
         WriteDecision(writer, decision);
+        WriteGovernanceMapping(writer, governanceMapping);
         writer.WriteEndObject();
         writer.Flush();
         return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static ActionGovernanceMapping BuildGovernanceMapping(OpenClaw.Core.Models.ActionProposal proposal)
+    {
+        var metadata = proposal.Metadata;
+        var key = proposal.IdempotencyKey;
+
+        return new ActionGovernanceMapping(
+            SessionMetaRunRecord: "session_meta_run_record_pending",
+            HarnessContractId: GetMetadataOrDefault(metadata, "harnessContractId", $"hctr_{key}"),
+            PevId: GetMetadataOrDefault(metadata, "pevId", $"pev_{key}"),
+            EvidenceBundleId: GetMetadataOrDefault(metadata, "evidenceBundleId", $"evb_{key}"));
+    }
+
+    private static string GetMetadataOrDefault(IReadOnlyDictionary<string, string> metadata, string key, string fallback)
+        => metadata.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : fallback;
+
+    private static void WriteGovernanceMapping(Utf8JsonWriter writer, ActionGovernanceMapping governanceMapping)
+    {
+        writer.WritePropertyName("governanceMapping");
+        writer.WriteStartObject();
+        writer.WriteString("sessionMetaRunRecord", governanceMapping.SessionMetaRunRecord);
+        writer.WriteString("harnessContractId", governanceMapping.HarnessContractId);
+        writer.WriteString("pevId", governanceMapping.PevId);
+        writer.WriteString("evidenceBundleId", governanceMapping.EvidenceBundleId);
+        writer.WriteEndObject();
     }
 
     private static void WriteDecision(Utf8JsonWriter writer, ActionPolicyDecision decision)
@@ -136,4 +171,10 @@ public sealed class ActionExecuteTool : ITool
             writer.WriteStringValue(constraint);
         writer.WriteEndArray();
     }
+
+    private sealed record ActionGovernanceMapping(
+        string SessionMetaRunRecord,
+        string HarnessContractId,
+        string PevId,
+        string EvidenceBundleId);
 }
