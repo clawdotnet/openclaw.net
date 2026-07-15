@@ -49,12 +49,23 @@ public sealed class IntegrationConnectorActionExecuteResponse
 
 public static class ConnectorActionContractValidator
 {
+    private static readonly string[] SupportedDecisions =
+    [
+        "proceed",
+        "require_approval",
+        "reject",
+        "escalate"
+    ];
+
     public static (bool Success, string? ErrorCode, string? ErrorMessage) ValidateForExecution(ConnectorActionExecuteRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
         if (string.IsNullOrWhiteSpace(request.Decision))
             return (false, "invalid_request", "Decision is required.");
+
+        if (!IsSupportedDecision(request.Decision))
+            return (false, "unsupported_decision", $"Unsupported decision '{request.Decision}'.");
 
         if (!request.Decision.Equals("require_approval", StringComparison.OrdinalIgnoreCase))
             return (true, null, null);
@@ -74,6 +85,15 @@ public static class ConnectorActionContractValidator
 
         return (true, null, null);
     }
+
+    internal static IReadOnlyList<string> GetSupportedDecisions()
+        => SupportedDecisions;
+
+    private static bool IsSupportedDecision(string decision)
+        => decision.Equals("proceed", StringComparison.OrdinalIgnoreCase)
+           || decision.Equals("require_approval", StringComparison.OrdinalIgnoreCase)
+           || decision.Equals("reject", StringComparison.OrdinalIgnoreCase)
+           || decision.Equals("escalate", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsUtcIso8601(string value)
     {

@@ -31,33 +31,57 @@ public static class ConnectorActionSchemaExporter
                  "type": "string"
                },
                "approval": {
-                 "type": "object",
-                 "additionalProperties": false,
-                 "required": [
-                   "approver",
-                   "decisionAt",
-                   "decisionReason",
-                   "ticketRef"
-                 ],
-                 "properties": {
-                   "approver": {
-                     "type": "string"
+                 "type": "object"
+               }
+             },
+             "allOf": [
+               {
+                 "if": {
+                   "properties": {
+                     "decision": {
+                       "const": "require_approval"
+                     }
                    },
-                   "decisionAt": {
-                     "type": "string"
-                   },
-                   "decisionReason": {
-                     "type": "string"
-                   },
-                   "ticketRef": {
-                     "type": "string"
-                   },
-                   "decisionType": {
-                     "type": "string"
+                   "required": [
+                     "decision"
+                   ]
+                 },
+                 "then": {
+                   "required": [
+                     "approval"
+                   ],
+                   "properties": {
+                     "approval": {
+                       "type": "object",
+                       "additionalProperties": false,
+                       "required": [
+                         "approver",
+                         "decisionAt",
+                         "decisionReason",
+                         "ticketRef"
+                       ],
+                       "properties": {
+                         "approver": {
+                           "type": "string"
+                         },
+                         "decisionAt": {
+                           "type": "string"
+                         },
+                         "decisionReason": {
+                           "type": "string"
+                         },
+                         "ticketRef": {
+                           "type": "string"
+                         },
+                         "decisionType": {
+                           "type": "string"
+                         }
+                       }
+                     }
                    }
                  }
                }
-             }
+             ]
            }
            """;
 }

@@ -45,3 +45,12 @@ Result:
 
 ## Concerns
 - None blocking.
+
+## Reviewer-finding fixes
+- Updated the exported schema so `approval` fields are only required in the `if/then` branch when `decision == require_approval`.
+- Updated runtime validation to reject unsupported decision values with `unsupported_decision`.
+- Strengthened tests to parse the JSON schema and assert conditional structure instead of checking substrings.
+
+## Verification
+- Command: `dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter "FullyQualifiedName~ConnectorActionContractTests" -v minimal`
+- Result: Passed (3 tests, 0 failed)
