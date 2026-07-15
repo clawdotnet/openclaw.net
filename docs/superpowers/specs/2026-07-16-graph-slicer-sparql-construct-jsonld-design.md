@@ -113,19 +113,34 @@ openclaw graph slice --profile production --info
 
 ### 5.2 项目结构
 
-不新建独立项目。代码集成到现有 CLI 项目 `src/OpenClaw.Cli/`，复用 `ConnectorCommands` 的
-命令注册模式。配置模型放入 `src/OpenClaw.Core/Models/`，与其他配置模型同处。
+新建独立类库项目 `src/OpenClaw.GraphSlicer/`。CLI 项目引用此类库，在 `Program.cs` 注册 `graph` 命令。
 
 ```
-src/OpenClaw.Core/Models/
-  GraphSliceProfile.cs            # 配置模型（GraphSliceProfile, SliceSourceConfig, SliceOutputConfig）
+src/OpenClaw.GraphSlicer/              ← 新独立类库
+  OpenClaw.GraphSlicer.csproj           （仅引用 dotNetRDF + OpenClaw.Core）
+  ISparqlSource.cs                      # 数据源接口
+  RemoteEndpointSource.cs               # 远程 SPARQL 端点适配器
+  LocalFilesSource.cs                   # 本地 RDF 文件适配器
+  GraphSlicerEngine.cs                  # 编排引擎
 
 src/OpenClaw.Cli/
-  GraphSliceCommands.cs           # CLI 命令入口 + ISparqlSource + RemoteEndpointSource + LocalFilesSource + GraphSlicerEngine
+  GraphSliceCommands.cs                 # CLI 命令入口（引用 GraphSlicer 引擎）
+
+src/OpenClaw.Core/Models/
+  GraphSliceProfile.cs                  # 配置模型
 ```
 
-dotNetRDF 依赖加入 `src/OpenClaw.Cli/OpenClaw.Cli.csproj`。CLI 项目本身已是独立可执行程序，
-不增加 Gateway 依赖负担。
+**依赖链：**
+
+```
+OpenClaw.Cli
+  ├─ OpenClaw.GraphSlicer  ← dotNetRDF 3.3.0 隔离在此
+  │     └─ OpenClaw.Core
+  └─ OpenClaw.Core
+```
+
+dotNetRDF 的依赖封闭在 `OpenClaw.GraphSlicer` 类库内。CLI 只通过 `GraphSlicerEngine` 的
+公共 API 调用，不直接接触 RDF 类型。Gateway 完全不触及这个依赖。
 
 ### 5.3 核心类型签名
 
@@ -365,12 +380,13 @@ Automation 集成（定时切片）：
 
 ## 9. 依赖
 
-dotNetRDF 仅加入 `OpenClaw.Cli.csproj`（CLI 可执行程序），不影响 Gateway 或其他库项目：
+dotNetRDF 封闭在 `OpenClaw.GraphSlicer` 类库内，CLI 通过公共 API 间接调用，Gateway 完全不触及：
 
 | 包 | 位置 | 用途 |
 |----|------|------|
-| dotNetRDF 3.3.0 | `OpenClaw.Cli.csproj` | RDF 解析、SPARQL 查询、JSON-LD 序列化与 Framing |
-| OpenClaw.Core | 已有引用 | 配置模型复用 |
+| dotNetRDF 3.3.0 | `OpenClaw.GraphSlicer.csproj` | RDF 解析、SPARQL 查询、JSON-LD 序列化与 Framing |
+| OpenClaw.Core | `OpenClaw.GraphSlicer.csproj` | 配置模型复用 |
+| OpenClaw.GraphSlicer | `OpenClaw.Cli.csproj` | CLI 通过项目引用调用引擎 |
 
 不引入额外的 SPARQL 或 JSON-LD 库。
 
@@ -388,10 +404,15 @@ dotNetRDF 仅加入 `OpenClaw.Cli.csproj`（CLI 可执行程序），不影响 G
 
 | 操作 | 文件 | 说明 |
 |------|------|------|
-| 修改 | `src/OpenClaw.Cli/OpenClaw.Cli.csproj` | 新增 dotNetRDF 3.3.0 依赖 |
-| 新建 | `src/OpenClaw.Cli/GraphSliceCommands.cs` | CLI 命令入口 + 引擎 + 适配器（单文件） |
+| 新建 | `src/OpenClaw.GraphSlicer/OpenClaw.GraphSlicer.csproj` | 独立类库，依赖 dotNetRDF 3.3.0 + OpenClaw.Core |
+| 新建 | `src/OpenClaw.GraphSlicer/ISparqlSource.cs` | 数据源接口 |
+| 新建 | `src/OpenClaw.GraphSlicer/RemoteEndpointSource.cs` | 远程 SPARQL 端点适配器 |
+| 新建 | `src/OpenClaw.GraphSlicer/LocalFilesSource.cs` | 本地 RDF 文件适配器 |
+| 新建 | `src/OpenClaw.GraphSlicer/GraphSlicerEngine.cs` | 编排引擎 |
 | 新建 | `src/OpenClaw.Core/Models/GraphSliceProfile.cs` | 配置模型 |
-| 修改 | `src/OpenClaw.Core/Models/Session.cs` | 新增 GraphSliceProfile 等 JsonSerializable 声明 |
+| 修改 | `src/OpenClaw.Core/Models/Session.cs` | 新增 JsonSerializable 声明 |
+| 修改 | `src/OpenClaw.Cli/OpenClaw.Cli.csproj` | 新增 OpenClaw.GraphSlicer 项目引用 |
+| 新建 | `src/OpenClaw.Cli/GraphSliceCommands.cs` | CLI 命令入口 |
 | 修改 | `src/OpenClaw.Cli/Program.cs` | 注册 `graph` 顶层命令 |
 | 新建 | `src/OpenClaw.Tests/GraphSliceCommandsTests.cs` | 单元测试 + 集成测试 |
 | 修改 | `docs/zh-CN/meta-skill-harness-action-writeback-pipeline.md` | 补充外部切片器章节引用 |
