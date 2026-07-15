@@ -178,21 +178,12 @@ internal sealed class IntegrationApiFacade
     }
 
     public async Task<IntegrationConnectorActionExecuteResponse> ExecuteConnectorActionAsync(
-        IntegrationConnectorActionExecuteRequest request,
+        ConnectorActionExecuteRequest request,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (!request.TryCreateExecutionRequest(out var executionRequest, out var errorMessage) || executionRequest is null)
-        {
-            return new IntegrationConnectorActionExecuteResponse
-            {
-                FailureCode = "invalid_request",
-                Message = errorMessage ?? "Request is required."
-            };
-        }
-
-        var validation = ConnectorActionContractValidator.ValidateForExecution(executionRequest);
+        var validation = ConnectorActionContractValidator.ValidateForExecution(request);
         if (!validation.Success)
         {
             return new IntegrationConnectorActionExecuteResponse
@@ -207,7 +198,15 @@ internal sealed class IntegrationApiFacade
         {
             writer.WriteStartObject();
             writer.WritePropertyName("proposal");
-            JsonSerializer.Serialize(writer, executionRequest.Proposal, CoreJsonContext.Default.ActionProposal);
+            JsonSerializer.Serialize(writer, request.Proposal, CoreJsonContext.Default.ActionProposal);
+            writer.WriteString("decision", request.Decision);
+            if (!string.IsNullOrWhiteSpace(request.RiskLevel))
+                writer.WriteString("riskLevel", request.RiskLevel);
+            if (request.Approval is not null)
+            {
+                writer.WritePropertyName("approval");
+                JsonSerializer.Serialize(writer, request.Approval, CoreJsonContext.Default.ConnectorApprovalPayload);
+            }
             writer.WriteEndObject();
         }
 

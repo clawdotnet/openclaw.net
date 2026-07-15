@@ -306,12 +306,12 @@ internal static class IntegrationEndpoints
             if (failure is not null)
                 return failure;
 
-            IntegrationConnectorActionExecuteRequest? request;
+            ConnectorActionExecuteRequest? request;
             try
             {
                 request = await JsonSerializer.DeserializeAsync(
                     ctx.Request.Body,
-                    CoreJsonContext.Default.IntegrationConnectorActionExecuteRequest,
+                    CoreJsonContext.Default.ConnectorActionExecuteRequest,
                     ctx.RequestAborted);
             }
             catch (JsonException)

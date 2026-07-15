@@ -51,6 +51,24 @@ public sealed class ActionExecuteToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_CallerRequireApprovalWithValidatedApproval_StartsExecution()
+    {
+        var tool = new ActionExecuteTool();
+
+        var result = await tool.ExecuteAsync(
+            BuildArguments(
+                BuildProposalJson(),
+                decision: "require_approval",
+                approvalJson: """{"approver":"u_zhangsan","decisionAt":"2026-07-15T08:30:00Z","decisionReason":"approved","ticketRef":"TICKET-123"}"""),
+            TestContext.Current.CancellationToken);
+
+        using var document = JsonDocument.Parse(result);
+        Assert.Equal("execution_started", document.RootElement.GetProperty("status").GetString());
+        Assert.Equal("require_approval", document.RootElement.GetProperty("decision").GetString());
+        Assert.Equal("medium", document.RootElement.GetProperty("riskLevel").GetString());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ProducesGovernanceMappingPayload()
     {
         var tool = new ActionExecuteTool();
@@ -88,8 +106,23 @@ public sealed class ActionExecuteToolTests
         Assert.Contains("invalid_proposal", result, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string BuildArguments(string proposalJson)
-        => "{\"proposal\":" + proposalJson + "}";
+    private static string BuildArguments(
+        string proposalJson,
+        string? decision = null,
+        string? riskLevel = null,
+        string? approvalJson = null)
+    {
+        var builder = new System.Text.StringBuilder("{\"proposal\":");
+        builder.Append(proposalJson);
+        if (!string.IsNullOrWhiteSpace(decision))
+            builder.Append(",\"decision\":\"").Append(decision).Append('"');
+        if (!string.IsNullOrWhiteSpace(riskLevel))
+            builder.Append(",\"riskLevel\":\"").Append(riskLevel).Append('"');
+        if (!string.IsNullOrWhiteSpace(approvalJson))
+            builder.Append(",\"approval\":").Append(approvalJson);
+        builder.Append('}');
+        return builder.ToString();
+    }
 
     private static string BuildProposalJson(
         string targetSystem = "crm",

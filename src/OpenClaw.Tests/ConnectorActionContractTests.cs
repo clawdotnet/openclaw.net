@@ -106,6 +106,40 @@ public sealed class ConnectorActionContractTests
         Assert.Equal(new[] { "approver", "decisionAt", "decisionReason", "ticketRef" }, approvalRequired);
     }
 
+    [Fact]
+    public void ExecuteRequest_WireShape_AlignsWithExportedSchema()
+    {
+        var request = new ConnectorActionExecuteRequest
+        {
+            Proposal = BuildValidProposal(),
+            Decision = "proceed",
+            RiskLevel = "low",
+            Approval = new ConnectorApprovalPayload
+            {
+                Approver = "u_zhangsan",
+                DecisionAt = "2026-07-15T08:30:00Z",
+                DecisionReason = "approved",
+                TicketRef = "TICKET-123"
+            }
+        };
+
+        var json = JsonSerializer.Serialize(request, CoreJsonContext.Default.ConnectorActionExecuteRequest);
+        using var payload = JsonDocument.Parse(json);
+        using var schema = JsonDocument.Parse(ConnectorActionSchemaExporter.ExportV1());
+
+        var propertyNames = schema.RootElement.GetProperty("properties")
+            .EnumerateObject()
+            .Select(static property => property.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(JsonValueKind.Object, payload.RootElement.GetProperty("proposal").ValueKind);
+        Assert.Equal("proceed", payload.RootElement.GetProperty("decision").GetString());
+        Assert.Equal("low", payload.RootElement.GetProperty("riskLevel").GetString());
+        Assert.True(payload.RootElement.TryGetProperty("approval", out _));
+        Assert.False(payload.RootElement.TryGetProperty("request", out _));
+        Assert.Equal(propertyNames, payload.RootElement.EnumerateObject().Select(static property => property.Name).ToHashSet(StringComparer.Ordinal));
+    }
+
     private static ActionProposal BuildValidProposal()
         => new()
         {

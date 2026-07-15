@@ -46,49 +46,6 @@ public sealed class ConnectorApprovalPayload
     public string? DecisionType { get; init; }
 }
 
-public sealed class IntegrationConnectorActionExecuteRequest
-{
-    public ConnectorActionExecuteRequest? Request { get; init; }
-    public ActionProposal? Proposal { get; init; }
-    public string? Decision { get; init; }
-    public string? RiskLevel { get; init; }
-    public ConnectorApprovalPayload? Approval { get; init; }
-
-    public bool TryCreateExecutionRequest(out ConnectorActionExecuteRequest? request, out string? errorMessage)
-    {
-        if (Request is not null)
-        {
-            request = Request;
-            errorMessage = null;
-            return true;
-        }
-
-        if (Proposal is null)
-        {
-            request = null;
-            errorMessage = "Proposal is required.";
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(Decision))
-        {
-            request = null;
-            errorMessage = "Decision is required.";
-            return false;
-        }
-
-        request = new ConnectorActionExecuteRequest
-        {
-            Proposal = Proposal,
-            Decision = Decision,
-            RiskLevel = RiskLevel,
-            Approval = Approval
-        };
-        errorMessage = null;
-        return true;
-    }
-}
-
 public sealed class IntegrationConnectorActionGovernanceMapping
 {
     public string? SessionMetaRunRecord { get; init; }

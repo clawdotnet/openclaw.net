@@ -262,6 +262,30 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task Integration_ExecuteConnectorAction_RequireApprovalKnownConnector_StartsExecutionAfterApprovalValidation()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
+
+        var response = await client.ExecuteConnectorActionAsync(
+            BuildConnectorActionExecuteRequest(
+                decision: "require_approval",
+                approval: new ConnectorApprovalPayload
+                {
+                    Approver = "u_zhangsan",
+                    DecisionAt = "2026-07-15T08:30:00Z",
+                    DecisionReason = "approved by ops",
+                    TicketRef = "TICKET-123"
+                }),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("execution_started", response.Status);
+        Assert.Equal("require_approval", response.Decision);
+        Assert.Null(response.FailureCode);
+        Assert.NotNull(response.GovernanceMapping);
+    }
+
+    [Fact]
     public async Task AuthSession_AccountTokenFlow_ReportsIdentity()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -7516,16 +7540,18 @@ public sealed class GatewayAdminEndpointTests
         return JsonDocument.Parse(payload);
     }
 
-    private static IntegrationConnectorActionExecuteRequest BuildConnectorActionExecuteRequest(
+    private static ConnectorActionExecuteRequest BuildConnectorActionExecuteRequest(
         string targetSystem = "crm",
-        string decision = "proceed")
+        string decision = "proceed",
+        ConnectorApprovalPayload? approval = null)
         => new()
         {
             Proposal = BuildConnectorActionProposal(targetSystem),
-            Decision = decision
+            Decision = decision,
+            Approval = approval
         };
 
-    private static IntegrationConnectorActionExecuteRequest BuildRequireApprovalMissingTicketRequest()
+    private static ConnectorActionExecuteRequest BuildRequireApprovalMissingTicketRequest()
         => new()
         {
             Proposal = BuildConnectorActionProposal(),

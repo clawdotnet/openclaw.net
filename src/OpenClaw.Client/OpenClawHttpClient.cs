@@ -328,12 +328,12 @@ public sealed class OpenClawHttpClient : IDisposable
         => GetAsync(_integrationStatusUri, CoreJsonContext.Default.IntegrationStatusResponse, cancellationToken);
 
     public async Task<IntegrationConnectorActionExecuteResponse> ExecuteConnectorActionAsync(
-        IntegrationConnectorActionExecuteRequest request,
+        ConnectorActionExecuteRequest request,
         CancellationToken cancellationToken)
     {
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _integrationConnectorActionsExecuteUri)
         {
-            Content = BuildJsonContent(request, CoreJsonContext.Default.IntegrationConnectorActionExecuteRequest)
+            Content = BuildJsonContent(request, CoreJsonContext.Default.ConnectorActionExecuteRequest)
         };
         return await SendAsync(httpRequest, CoreJsonContext.Default.IntegrationConnectorActionExecuteResponse, cancellationToken);
     }
