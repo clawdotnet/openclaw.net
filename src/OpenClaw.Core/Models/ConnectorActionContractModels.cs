@@ -2,6 +2,22 @@ using System.Globalization;
 
 namespace OpenClaw.Core.Models;
 
+internal static class ConnectorActionContractCatalog
+{
+    internal const string Proceed = "proceed";
+    internal const string RequireApproval = "require_approval";
+    internal const string Reject = "reject";
+    internal const string Escalate = "escalate";
+
+    internal static readonly string[] SupportedDecisions =
+    [
+        Proceed,
+        RequireApproval,
+        Reject,
+        Escalate
+    ];
+}
+
 public sealed class ConnectorActionExecuteRequest
 {
     public required ActionProposal Proposal { get; init; }
@@ -49,17 +65,10 @@ public sealed class IntegrationConnectorActionExecuteResponse
 
 public static class ConnectorActionContractValidator
 {
-    private static readonly string[] SupportedDecisions =
-    [
-        "proceed",
-        "require_approval",
-        "reject",
-        "escalate"
-    ];
-
     public static (bool Success, string? ErrorCode, string? ErrorMessage) ValidateForExecution(ConnectorActionExecuteRequest request)
     {
-        ArgumentNullException.ThrowIfNull(request);
+        if (request is null)
+            return (false, "invalid_request", "Request is required.");
 
         if (string.IsNullOrWhiteSpace(request.Decision))
             return (false, "invalid_request", "Decision is required.");
@@ -67,7 +76,7 @@ public static class ConnectorActionContractValidator
         if (!IsSupportedDecision(request.Decision))
             return (false, "unsupported_decision", $"Unsupported decision '{request.Decision}'.");
 
-        if (!request.Decision.Equals("require_approval", StringComparison.OrdinalIgnoreCase))
+        if (!request.Decision.Equals(ConnectorActionContractCatalog.RequireApproval, StringComparison.Ordinal))
             return (true, null, null);
 
         var approval = request.Approval;
@@ -87,13 +96,10 @@ public static class ConnectorActionContractValidator
     }
 
     internal static IReadOnlyList<string> GetSupportedDecisions()
-        => SupportedDecisions;
+        => ConnectorActionContractCatalog.SupportedDecisions;
 
     private static bool IsSupportedDecision(string decision)
-        => decision.Equals("proceed", StringComparison.OrdinalIgnoreCase)
-           || decision.Equals("require_approval", StringComparison.OrdinalIgnoreCase)
-           || decision.Equals("reject", StringComparison.OrdinalIgnoreCase)
-           || decision.Equals("escalate", StringComparison.OrdinalIgnoreCase);
+        => Array.IndexOf(ConnectorActionContractCatalog.SupportedDecisions, decision) >= 0;
 
     private static bool IsUtcIso8601(string value)
     {

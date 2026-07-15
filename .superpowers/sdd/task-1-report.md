@@ -54,3 +54,10 @@ Result:
 ## Verification
 - Command: `dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter "FullyQualifiedName~ConnectorActionContractTests" -v minimal`
 - Result: Passed (3 tests, 0 failed)
+
+## Follow-up fixes (re-review)
+- Aligned runtime validation with the exported schema by enforcing exact lowercase decision values; mixed-case decisions now fail with `unsupported_decision`.
+- Reduced schema drift risk by building the exporter from shared contract constants and model property names in an AOT-safe `JsonNode` implementation instead of a hard-coded schema string.
+- Updated null-input handling so `ValidateForExecution(null)` returns `invalid_request` rather than throwing.
+- Verification rerun: `dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter "FullyQualifiedName~ConnectorActionContractTests" -v minimal`
+- Result: Passed (5 tests, 0 failed)

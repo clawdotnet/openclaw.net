@@ -46,6 +46,30 @@ public sealed class ConnectorActionContractTests
     }
 
     [Fact]
+    public void ValidateForExecution_CaseVariantDecision_Fails()
+    {
+        var request = new ConnectorActionExecuteRequest
+        {
+            Proposal = BuildValidProposal(),
+            Decision = "Require_Approval"
+        };
+
+        var result = ConnectorActionContractValidator.ValidateForExecution(request);
+
+        Assert.False(result.Success);
+        Assert.Equal("unsupported_decision", result.ErrorCode);
+    }
+
+    [Fact]
+    public void ValidateForExecution_NullRequest_ReturnsInvalidRequest()
+    {
+        var result = ConnectorActionContractValidator.ValidateForExecution(null!);
+
+        Assert.False(result.Success);
+        Assert.Equal("invalid_request", result.ErrorCode);
+    }
+
+    [Fact]
     public void ExportV1_ReturnsJsonSchemaWithApprovalFields()
     {
         var schema = ConnectorActionSchemaExporter.ExportV1();
