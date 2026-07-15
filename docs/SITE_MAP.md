@@ -18,6 +18,7 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Guides | Goal Auto-Continuation | [GOAL_TECHNICAL_ARCHITECTURE.md](GOAL_TECHNICAL_ARCHITECTURE.md) |
 | Guides | Loop Recurring Prompts | [LOOP_TECHNICAL_ARCHITECTURE.md](LOOP_TECHNICAL_ARCHITECTURE.md) |
 | Guides | Embedded Local Models | [LOCAL_MODELS.md](LOCAL_MODELS.md) |
+| Guides | MetaSkill Temp Graph → Harness Action → API Writeback Pipeline | [meta-skill-harness-action-writeback-pipeline.md](meta-skill-harness-action-writeback-pipeline.md) |
 | Guides | MetaSkills (Feature Overview) | [meta-skills.md](meta-skills.md) |
 | Guides | MetaSkill Orchestration Architecture | [meta-skill-orchestration.md](meta-skill-orchestration.md) |
 | Guides | MetaSkill Orchestration (zh-CN) | [zh-CN/meta-skill-orchestration.md](zh-CN/meta-skill-orchestration.md) |
