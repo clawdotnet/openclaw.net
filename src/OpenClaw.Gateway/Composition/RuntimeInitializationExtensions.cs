@@ -77,7 +77,8 @@ internal static partial class RuntimeInitializationExtensions
             services,
             startup.WorkspacePath,
             startup.RuntimeState,
-            artifactRuntime);
+            artifactRuntime,
+            app.Services);
         if (config.Plugins.Mcp.Enabled)
             await services.McpRegistry.RegisterToolsAsync(services.NativeRegistry, app.Lifetime.ApplicationStopping);
         await using var mcpAppStartupCleanup = new AsyncStartupCleanupGuard();

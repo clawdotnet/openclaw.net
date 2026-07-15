@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using OpenClaw.Channels;
 using OpenClaw.Agent;
+using OpenClaw.Agent.Actions;
 using OpenClaw.Agent.Execution;
 using OpenClaw.Agent.Goal;
 using OpenClaw.Agent.Memory;
@@ -252,6 +253,26 @@ internal static class CoreServicesExtensions
         services.AddSingleton<ITool, CreateGoalTool>();
         services.AddSingleton<ITool, UpdateGoalTool>();
         services.AddSingleton<ITool, LoopControlTool>();
+
+        // Action Adapter — DI chain for policy-gated business API execution
+        var actionAdapterConfig = startup.Config.Harness.ActionAdapter;
+        if (actionAdapterConfig.Enabled)
+        {
+            services.TryAddSingleton<IActionAdapterConnector, HttpActionAdapterConnector>();
+            services.TryAddSingleton<IActionIdempotencyRegistry, InMemoryActionIdempotencyRegistry>();
+            services.TryAddSingleton<ActionAdapter>();
+            services.AddSingleton<ITool>(sp =>
+            {
+                var policyEngine = new ActionPolicyEngine();
+                var adapter = sp.GetRequiredService<ActionAdapter>();
+                return new ActionExecuteTool(policyEngine, adapter);
+            });
+        }
+        else
+        {
+            services.AddSingleton<ITool>(_ =>
+                new ActionExecuteTool(new ActionPolicyEngine()));
+        }
 
         services.AddSingleton<SharedHarnessStateService>();
         services.AddSingleton<CodebaseHarnessMapService>();

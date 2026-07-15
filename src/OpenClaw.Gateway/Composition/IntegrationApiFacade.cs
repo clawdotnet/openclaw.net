@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using OpenClaw.Agent.Actions;
 using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Compatibility;
 using OpenClaw.Core.Abstractions;
@@ -25,6 +26,7 @@ internal sealed class IntegrationApiFacade
     private readonly TextToSpeechService? _textToSpeechService;
     private readonly GatewayMaintenanceRuntimeService? _maintenanceService;
     private readonly AgentWorkflowRegistry _workflows;
+    private readonly ActionAdapter? _actionAdapter;
 
     public static IntegrationApiFacade Create(
         GatewayStartupContext startup,
@@ -45,6 +47,7 @@ internal sealed class IntegrationApiFacade
         var maintenanceService = services.GetService<GatewayMaintenanceRuntimeService>();
         var workflows = services.GetService<AgentWorkflowRegistry>()
             ?? new AgentWorkflowRegistry(new GatewayConfig(), runtime.Operations.RuntimeEvents, NullLoggerFactory.Instance);
+        var actionAdapter = services.GetService<ActionAdapter>();
 
         return new IntegrationApiFacade(
             startup,
@@ -58,7 +61,8 @@ internal sealed class IntegrationApiFacade
             toolPresetResolver,
             textToSpeechService,
             maintenanceService,
-            workflows);
+            workflows,
+            actionAdapter);
     }
 
     public IntegrationApiFacade(
@@ -73,7 +77,8 @@ internal sealed class IntegrationApiFacade
         IToolPresetResolver? toolPresetResolver,
         TextToSpeechService? textToSpeechService,
         GatewayMaintenanceRuntimeService? maintenanceService,
-        AgentWorkflowRegistry workflows)
+        AgentWorkflowRegistry workflows,
+        ActionAdapter? actionAdapter = null)
     {
         _startup = startup;
         _runtime = runtime;
@@ -87,6 +92,7 @@ internal sealed class IntegrationApiFacade
         _textToSpeechService = textToSpeechService;
         _maintenanceService = maintenanceService;
         _workflows = workflows;
+        _actionAdapter = actionAdapter;
     }
 
     public IntegrationStatusResponse BuildStatusResponse()
@@ -210,7 +216,10 @@ internal sealed class IntegrationApiFacade
             writer.WriteEndObject();
         }
 
-        var resultJson = await new ActionExecuteTool().ExecuteAsync(Encoding.UTF8.GetString(stream.ToArray()), ct);
+        var tool = _actionAdapter is not null
+            ? new ActionExecuteTool(new ActionPolicyEngine(), _actionAdapter)
+            : new ActionExecuteTool(new ActionPolicyEngine());
+        var resultJson = await tool.ExecuteAsync(Encoding.UTF8.GetString(stream.ToArray()), ct);
         return IntegrationConnectorActionExecuteResponse.FromToolJson(resultJson);
     }
 

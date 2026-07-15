@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using Microsoft.Extensions.AI;
 using OpenClaw.Agent;
+using OpenClaw.Agent.Actions;
 using OpenClaw.Agent.Integrations;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Agent.Tools;
@@ -128,7 +129,8 @@ internal static partial class RuntimeInitializationExtensions
         RuntimeServices services,
         string? workspacePath,
         GatewayRuntimeState runtimeState,
-        SkillArtifactRuntime artifactRuntime)
+        SkillArtifactRuntime artifactRuntime,
+        IServiceProvider? serviceProvider = null)
     {
         var projectId = config.Memory.ProjectId
             ?? Environment.GetEnvironmentVariable("OPENCLAW_PROJECT")
@@ -190,7 +192,7 @@ internal static partial class RuntimeInitializationExtensions
             new MetaSkillRuntimeE2ERunTool(),
             new MetaSkillPersistProposalTool(),
             new LoadTemporaryGraphTool(config.Tooling),
-            new ActionExecuteTool(),
+            ResolveActionExecuteTool(config, serviceProvider),
 
             // Goal system
             new GetGoalTool(services.GoalService),
@@ -234,6 +236,27 @@ internal static partial class RuntimeInitializationExtensions
             tools.Add(new EmitArtifactTool(services.MediaCache, services.WebSocketChannel, config, artifactRuntime));
 
         return tools;
+    }
+
+    private static ActionExecuteTool ResolveActionExecuteTool(GatewayConfig config, IServiceProvider? serviceProvider)
+    {
+        if (serviceProvider is not null)
+        {
+            var actionAdapterConfig = config.Harness.ActionAdapter;
+            if (actionAdapterConfig.Enabled)
+            {
+                var adapter = serviceProvider.GetService<ActionAdapter>();
+                if (adapter is not null)
+                    return new ActionExecuteTool(new ActionPolicyEngine(), adapter);
+            }
+
+            // Try to resolve from DI (already registered without adapter)
+            var tool = serviceProvider.GetService<ActionExecuteTool>();
+            if (tool is not null)
+                return tool;
+        }
+
+        return new ActionExecuteTool();
     }
 
     private static IReadOnlyList<IToolHook> CreateHooks(
