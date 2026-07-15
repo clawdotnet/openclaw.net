@@ -1,5 +1,7 @@
 namespace OpenClaw.Core.Models;
 
+using System.Text.Json;
+
 public sealed class ActionProposal
 {
     public required string ActionName { get; init; }
@@ -35,7 +37,7 @@ public sealed class ActionProposalTarget
 public sealed class ActionCall
 {
     public required string Call { get; init; }
-    public IReadOnlyDictionary<string, string> Args { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, JsonElement> Args { get; init; } = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
 }
 
 public sealed class ActionProposalNormalizationResult

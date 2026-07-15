@@ -87,7 +87,7 @@ internal static class ActionProposalBuilder
            || call.StartsWith("db.", StringComparison.OrdinalIgnoreCase)
            || call.StartsWith("database.", StringComparison.OrdinalIgnoreCase);
 
-    private static bool HasBlockedSqlArgs(IReadOnlyDictionary<string, string> args)
+    private static bool HasBlockedSqlArgs(IReadOnlyDictionary<string, JsonElement> args)
     {
         foreach (var pair in args)
         {
@@ -98,13 +98,25 @@ internal static class ActionProposalBuilder
                 || pair.Key.Equals("query", StringComparison.OrdinalIgnoreCase)
                 || pair.Key.Equals("statement", StringComparison.OrdinalIgnoreCase))
             {
-                if (ContainsSqlWriteVerb(pair.Value))
+                if (ContainsSqlWriteVerb(ExtractValueText(pair.Value)))
                     return true;
             }
         }
 
         return false;
     }
+
+    private static string ExtractValueText(JsonElement value)
+        => value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.Object => value.GetRawText(),
+            JsonValueKind.Array => value.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Number => value.GetRawText(),
+            _ => string.Empty
+        };
 
     private static bool HasRawSqlWritePatterns(string rawOutput)
     {
