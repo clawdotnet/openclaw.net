@@ -113,27 +113,19 @@ openclaw graph slice --profile production --info
 
 ### 5.2 项目结构
 
-新增独立项目：`src/OpenClaw.GraphSlicer/`
+不新建独立项目。代码集成到现有 CLI 项目 `src/OpenClaw.Cli/`，复用 `ConnectorCommands` 的
+命令注册模式。配置模型放入 `src/OpenClaw.Core/Models/`，与其他配置模型同处。
 
 ```
-src/OpenClaw.GraphSlicer/
-  ISparqlSource.cs               # 源接口
-  RemoteEndpointSource.cs        # 远程 SPARQL 端点适配器
-  LocalFilesSource.cs            # 本地 RDF 文件适配器
-  GraphSlicerEngine.cs           # 编排引擎
-  GraphSliceCommands.cs          # CLI 命令入口
+src/OpenClaw.Core/Models/
+  GraphSliceProfile.cs            # 配置模型（GraphSliceProfile, SliceSourceConfig, SliceOutputConfig）
+
+src/OpenClaw.Cli/
+  GraphSliceCommands.cs           # CLI 命令入口 + ISparqlSource + RemoteEndpointSource + LocalFilesSource + GraphSlicerEngine
 ```
 
-依赖：
-
-```xml
-<ItemGroup>
-    <PackageReference Include="dotNetRDF" Version="3.3.0" />
-    <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
-</ItemGroup>
-```
-
-仅引用 `OpenClaw.Core` 以复用配置模型和 `Options<T>` 模式，不引用 Gateway 或 Agent。
+dotNetRDF 依赖加入 `src/OpenClaw.Cli/OpenClaw.Cli.csproj`。CLI 项目本身已是独立可执行程序，
+不增加 Gateway 依赖负担。
 
 ### 5.3 核心类型签名
 
@@ -367,17 +359,18 @@ Automation 集成（定时切片）：
 | 多格式加载 | `FileLoader.Load()` | ✅ .ttl/.rdf/.jsonld/.nt/.n3 |
 | 图合并 | `IGraph.Merge()` / `Assert()` | ✅ |
 | .NET 8/9 | NuGet 3.3.0 | ✅ |
-| AOT | 需验证 | ⚠️ 反射路径需配置，作为独立 CLI 不影响 Gateway AOT |
+| AOT | 不要求 | CLI 项目不需要 AOT，不影响 Gateway AOT |
 
 **不需要的 dotNetRDF 部分：** RDF 推理引擎、OWL 推理、Stardog/AllegroGraph 专用连接器（用通用 HTTP SPARQL 端点）。
 
 ## 9. 依赖
 
-| 包 | 版本 | 用途 |
+dotNetRDF 仅加入 `OpenClaw.Cli.csproj`（CLI 可执行程序），不影响 Gateway 或其他库项目：
+
+| 包 | 位置 | 用途 |
 |----|------|------|
-| dotNetRDF | 3.3.0 | RDF 解析、SPARQL 查询、JSON-LD 序列化与 Framing |
-| OpenClaw.Core | 本地 | 配置模型、`Options<T>` 模式 |
-| Microsoft.Extensions.Configuration.Yaml | 本地已有 | YAML 配置解析 |
+| dotNetRDF 3.3.0 | `OpenClaw.Cli.csproj` | RDF 解析、SPARQL 查询、JSON-LD 序列化与 Framing |
+| OpenClaw.Core | 已有引用 | 配置模型复用 |
 
 不引入额外的 SPARQL 或 JSON-LD 库。
 
@@ -395,15 +388,12 @@ Automation 集成（定时切片）：
 
 | 操作 | 文件 | 说明 |
 |------|------|------|
-| 新建 | `src/OpenClaw.GraphSlicer/OpenClaw.GraphSlicer.csproj` | 独立项目文件 |
-| 新建 | `src/OpenClaw.GraphSlicer/ISparqlSource.cs` | 数据源接口 |
-| 新建 | `src/OpenClaw.GraphSlicer/RemoteEndpointSource.cs` | 远程端点适配器 |
-| 新建 | `src/OpenClaw.GraphSlicer/LocalFilesSource.cs` | 本地文件适配器 |
-| 新建 | `src/OpenClaw.GraphSlicer/GraphSlicerEngine.cs` | 编排引擎 |
-| 新建 | `src/OpenClaw.GraphSlicer/GraphSliceCommands.cs` | CLI 命令 |
-| 新建 | `src/OpenClaw.GraphSlicer/GraphSliceProfile.cs` | 配置模型 |
-| 新建 | `src/OpenClaw.Tests/GraphSlicerTests.cs` | 单元测试 + 集成测试 |
+| 修改 | `src/OpenClaw.Cli/OpenClaw.Cli.csproj` | 新增 dotNetRDF 3.3.0 依赖 |
+| 新建 | `src/OpenClaw.Cli/GraphSliceCommands.cs` | CLI 命令入口 + 引擎 + 适配器（单文件） |
+| 新建 | `src/OpenClaw.Core/Models/GraphSliceProfile.cs` | 配置模型 |
+| 修改 | `src/OpenClaw.Core/Models/Session.cs` | 新增 GraphSliceProfile 等 JsonSerializable 声明 |
 | 修改 | `src/OpenClaw.Cli/Program.cs` | 注册 `graph` 顶层命令 |
+| 新建 | `src/OpenClaw.Tests/GraphSliceCommandsTests.cs` | 单元测试 + 集成测试 |
 | 修改 | `docs/zh-CN/meta-skill-harness-action-writeback-pipeline.md` | 补充外部切片器章节引用 |
 | 修改 | `docs/meta-skill-harness-action-writeback-pipeline.md` | 同上（英文版） |
 
@@ -415,8 +405,8 @@ Automation 集成（定时切片）：
    - 缓解：`MaxTriples` 截断 + 文档建议外部工具预过滤
 3. **风险：Ontop 版本与 SPARQL 端点兼容性**
    - 缓解：使用标准 SPARQL HTTP 协议，不依赖 Ontop 专有扩展
-4. **风险：dotNetRDF AOT 反射问题**
-   - 缓解：独立 CLI 项目，不影响 Gateway AOT；CLI 本身不需要 AOT
+4. **风险：dotNetRDF 反射路径与 AOT 不兼容**
+   - 缓解：dotNetRDF 只在 CLI 项目引用，CLI 不需要 AOT；不影响 Gateway AOT
 
 ## 13. 结论
 
