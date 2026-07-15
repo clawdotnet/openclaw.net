@@ -300,6 +300,36 @@ internal static class IntegrationEndpoints
             }
         });
 
+        group.MapPost("/connector-actions/execute", async (HttpContext ctx) =>
+        {
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.mutate", requireCsrf: true);
+            if (failure is not null)
+                return failure;
+
+            IntegrationConnectorActionExecuteRequest? request;
+            try
+            {
+                request = await JsonSerializer.DeserializeAsync(
+                    ctx.Request.Body,
+                    CoreJsonContext.Default.IntegrationConnectorActionExecuteRequest,
+                    ctx.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                return BadIntegrationRequest("Invalid JSON request body.");
+            }
+            catch (NotSupportedException)
+            {
+                return BadIntegrationRequest("Invalid JSON request body.");
+            }
+
+            if (request is null)
+                return BadIntegrationRequest("request body is required.");
+
+            var response = await facade.ExecuteConnectorActionAsync(request, ctx.RequestAborted);
+            return Results.Json(response, CoreJsonContext.Default.IntegrationConnectorActionExecuteResponse);
+        });
+
         group.MapGet("/tool-presets", (HttpContext ctx) =>
         {
             var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.read", requireCsrf: false);

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 
 namespace OpenClaw.Core.Models;
 
@@ -47,20 +48,96 @@ public sealed class ConnectorApprovalPayload
 
 public sealed class IntegrationConnectorActionExecuteRequest
 {
-    public required ActionProposal Proposal { get; init; }
-    public required string Decision { get; init; }
+    public ConnectorActionExecuteRequest? Request { get; init; }
+    public ActionProposal? Proposal { get; init; }
+    public string? Decision { get; init; }
     public string? RiskLevel { get; init; }
     public ConnectorApprovalPayload? Approval { get; init; }
+
+    public bool TryCreateExecutionRequest(out ConnectorActionExecuteRequest? request, out string? errorMessage)
+    {
+        if (Request is not null)
+        {
+            request = Request;
+            errorMessage = null;
+            return true;
+        }
+
+        if (Proposal is null)
+        {
+            request = null;
+            errorMessage = "Proposal is required.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(Decision))
+        {
+            request = null;
+            errorMessage = "Decision is required.";
+            return false;
+        }
+
+        request = new ConnectorActionExecuteRequest
+        {
+            Proposal = Proposal,
+            Decision = Decision,
+            RiskLevel = RiskLevel,
+            Approval = Approval
+        };
+        errorMessage = null;
+        return true;
+    }
+}
+
+public sealed class IntegrationConnectorActionGovernanceMapping
+{
+    public string? SessionMetaRunRecord { get; init; }
+    public string? HarnessContractId { get; init; }
+    public string? PevId { get; init; }
+    public string? EvidenceBundleId { get; init; }
 }
 
 public sealed class IntegrationConnectorActionExecuteResponse
 {
-    public bool Success { get; init; }
+    public string Status { get; init; } = "failed";
+    public string? FailureCode { get; init; }
+    public string? Message { get; init; }
     public string? Decision { get; init; }
     public string? RiskLevel { get; init; }
-    public ConnectorApprovalPayload? Approval { get; init; }
-    public string? ErrorCode { get; init; }
-    public string? ErrorMessage { get; init; }
+    public string[] ReasonCodes { get; init; } = [];
+    public string[] RequiredApprovals { get; init; } = [];
+    public string[] Constraints { get; init; } = [];
+    public IntegrationConnectorActionGovernanceMapping? GovernanceMapping { get; init; }
+
+    public static IntegrationConnectorActionExecuteResponse FromToolJson(string resultJson)
+    {
+        if (string.IsNullOrWhiteSpace(resultJson))
+        {
+            return new IntegrationConnectorActionExecuteResponse
+            {
+                FailureCode = "invalid_tool_response",
+                Message = "Action execute tool returned an empty response."
+            };
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize(resultJson, CoreJsonContext.Default.IntegrationConnectorActionExecuteResponse)
+                   ?? new IntegrationConnectorActionExecuteResponse
+                   {
+                       FailureCode = "invalid_tool_response",
+                       Message = "Action execute tool returned an empty response."
+                   };
+        }
+        catch (JsonException)
+        {
+            return new IntegrationConnectorActionExecuteResponse
+            {
+                FailureCode = "invalid_tool_response",
+                Message = "Action execute tool returned invalid JSON."
+            };
+        }
+    }
 }
 
 public static class ConnectorActionContractValidator

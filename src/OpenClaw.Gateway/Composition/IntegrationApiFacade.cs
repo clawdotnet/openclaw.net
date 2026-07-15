@@ -1,10 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Compatibility;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Workflows;
+using System.Text;
+using System.Text.Json;
 
 namespace OpenClaw.Gateway.Composition;
 
@@ -172,6 +175,44 @@ internal sealed class IntegrationApiFacade
             Events = _runtime.Operations.RuntimeEvents.Query(new RuntimeEventQuery { SessionId = id, Limit = limit }),
             ProviderTurns = _runtime.ProviderUsage.RecentTurns(id, limit)
         };
+    }
+
+    public async Task<IntegrationConnectorActionExecuteResponse> ExecuteConnectorActionAsync(
+        IntegrationConnectorActionExecuteRequest request,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!request.TryCreateExecutionRequest(out var executionRequest, out var errorMessage) || executionRequest is null)
+        {
+            return new IntegrationConnectorActionExecuteResponse
+            {
+                FailureCode = "invalid_request",
+                Message = errorMessage ?? "Request is required."
+            };
+        }
+
+        var validation = ConnectorActionContractValidator.ValidateForExecution(executionRequest);
+        if (!validation.Success)
+        {
+            return new IntegrationConnectorActionExecuteResponse
+            {
+                FailureCode = validation.ErrorCode,
+                Message = validation.ErrorMessage
+            };
+        }
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("proposal");
+            JsonSerializer.Serialize(writer, executionRequest.Proposal, CoreJsonContext.Default.ActionProposal);
+            writer.WriteEndObject();
+        }
+
+        var resultJson = await new ActionExecuteTool().ExecuteAsync(Encoding.UTF8.GetString(stream.ToArray()), ct);
+        return IntegrationConnectorActionExecuteResponse.FromToolJson(resultJson);
     }
 
     public IntegrationRuntimeEventsResponse QueryRuntimeEvents(RuntimeEventQuery query)

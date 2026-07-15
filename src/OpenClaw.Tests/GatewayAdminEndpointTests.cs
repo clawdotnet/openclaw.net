@@ -234,6 +234,34 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task Integration_ExecuteConnectorAction_UnknownConnector_ReturnsPolicyDenied()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
+
+        var response = await client.ExecuteConnectorActionAsync(
+            BuildConnectorActionExecuteRequest(targetSystem: "unknown_connector"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("failed", response.Status);
+        Assert.Equal("policy_denied", response.FailureCode);
+    }
+
+    [Fact]
+    public async Task Integration_ExecuteConnectorAction_RequireApprovalMissingFields_ReturnsApprovalDenied()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
+
+        var response = await client.ExecuteConnectorActionAsync(
+            BuildRequireApprovalMissingTicketRequest(),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("failed", response.Status);
+        Assert.Equal("approval_denied", response.FailureCode);
+    }
+
+    [Fact]
     public async Task AuthSession_AccountTokenFlow_ReportsIdentity()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -7487,6 +7515,91 @@ public sealed class GatewayAdminEndpointTests
 
         return JsonDocument.Parse(payload);
     }
+
+    private static IntegrationConnectorActionExecuteRequest BuildConnectorActionExecuteRequest(
+        string targetSystem = "crm",
+        string decision = "proceed")
+        => new()
+        {
+            Proposal = BuildConnectorActionProposal(targetSystem),
+            Decision = decision
+        };
+
+    private static IntegrationConnectorActionExecuteRequest BuildRequireApprovalMissingTicketRequest()
+        => new()
+        {
+            Proposal = BuildConnectorActionProposal(),
+            Decision = "require_approval",
+            Approval = new ConnectorApprovalPayload
+            {
+                Approver = "u_zhangsan",
+                DecisionAt = "2026-07-15T08:30:00Z",
+                DecisionReason = "ok",
+                TicketRef = ""
+            }
+        };
+
+    private static ActionProposal BuildConnectorActionProposal(string targetSystem = "crm")
+        => new()
+        {
+            ActionName = "sync_customer_tier",
+            Source = new ActionProposalSource
+            {
+                MetaSkill = "customer-risk-assistant",
+                RunId = "run_1",
+                StepId = "step_1"
+            },
+            Trigger = new ActionProposalTrigger
+            {
+                Condition = "riskLevel == medium",
+                EvidenceRefs = ["ev_001"]
+            },
+            Target = new ActionProposalTarget
+            {
+                System = targetSystem,
+                Operation = "updateCustomerTier"
+            },
+            PreChecks =
+            [
+                new ActionCall
+                {
+                    Call = "crm.getCustomer",
+                    Args = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                    {
+                        ["customerId"] = JsonSerializer.SerializeToElement("C123")
+                    }
+                }
+            ],
+            Execution =
+            [
+                new ActionCall
+                {
+                    Call = "crm.updateTier",
+                    Args = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                    {
+                        ["customerId"] = JsonSerializer.SerializeToElement("C123"),
+                        ["tier"] = JsonSerializer.SerializeToElement("B")
+                    }
+                }
+            ],
+            Rollback =
+            [
+                new ActionCall
+                {
+                    Call = "crm.updateTier",
+                    Args = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                    {
+                        ["customerId"] = JsonSerializer.SerializeToElement("C123"),
+                        ["tier"] = JsonSerializer.SerializeToElement("A")
+                    }
+                }
+            ],
+            IdempotencyKey = "proposal-C123-20260715-01",
+            Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["env"] = "prod"
+            }
+        };
 
     private static async Task<GatewayTestHarness> CreateHarnessAsync(
         bool nonLoopbackBind,

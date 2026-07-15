@@ -840,6 +840,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(ConnectorActionExecuteResponse))]
 [JsonSerializable(typeof(ConnectorApprovalPayload))]
 [JsonSerializable(typeof(IntegrationConnectorActionExecuteRequest))]
+[JsonSerializable(typeof(IntegrationConnectorActionGovernanceMapping))]
 [JsonSerializable(typeof(IntegrationConnectorActionExecuteResponse))]
 [JsonSerializable(typeof(SessionDelegationMetadata))]
 [JsonSerializable(typeof(SessionDelegationToolUsage))]

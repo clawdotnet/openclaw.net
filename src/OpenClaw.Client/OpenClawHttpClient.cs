@@ -17,6 +17,7 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _authSessionUri;
     private readonly Uri _integrationDashboardUri;
     private readonly Uri _integrationStatusUri;
+    private readonly Uri _integrationConnectorActionsExecuteUri;
     private readonly Uri _integrationApprovalsUri;
     private readonly Uri _integrationApprovalHistoryUri;
     private readonly Uri _integrationProvidersUri;
@@ -103,6 +104,7 @@ public sealed class OpenClawHttpClient : IDisposable
         _authSessionUri = new Uri(baseUri, "/auth/session");
         _integrationDashboardUri = new Uri(baseUri, "/api/integration/dashboard");
         _integrationStatusUri = new Uri(baseUri, "/api/integration/status");
+        _integrationConnectorActionsExecuteUri = new Uri(baseUri, "/api/integration/connector-actions/execute");
         _integrationApprovalsUri = new Uri(baseUri, "/api/integration/approvals");
         _integrationApprovalHistoryUri = new Uri(baseUri, "/api/integration/approval-history");
         _integrationProvidersUri = new Uri(baseUri, "/api/integration/providers");
@@ -324,6 +326,17 @@ public sealed class OpenClawHttpClient : IDisposable
 
     public Task<IntegrationStatusResponse> GetIntegrationStatusAsync(CancellationToken cancellationToken)
         => GetAsync(_integrationStatusUri, CoreJsonContext.Default.IntegrationStatusResponse, cancellationToken);
+
+    public async Task<IntegrationConnectorActionExecuteResponse> ExecuteConnectorActionAsync(
+        IntegrationConnectorActionExecuteRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _integrationConnectorActionsExecuteUri)
+        {
+            Content = BuildJsonContent(request, CoreJsonContext.Default.IntegrationConnectorActionExecuteRequest)
+        };
+        return await SendAsync(httpRequest, CoreJsonContext.Default.IntegrationConnectorActionExecuteResponse, cancellationToken);
+    }
 
     public Task<PaymentSetupStatus> GetPaymentSetupStatusAsync(string? provider, CancellationToken cancellationToken)
         => GetAsync(BuildPaymentUri(_integrationPaymentSetupUri, provider, environment: null, yes: false), PaymentJsonContext.Default.PaymentSetupStatus, cancellationToken);
