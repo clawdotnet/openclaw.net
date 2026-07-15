@@ -11,6 +11,7 @@ using Xunit;
 
 namespace OpenClaw.Tests;
 
+[Collection(ToolGovernanceCollection.Name)]
 public sealed class ToolGovernanceTests
 {
     [Fact]
