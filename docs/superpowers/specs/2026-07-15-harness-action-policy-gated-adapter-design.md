@@ -156,6 +156,16 @@
 2. 同 key 在窗口期内至多成功一次。
 3. rollback 也需支持幂等保护。
 
+### 6.5 审批执行语义
+
+1. 当 ActionPolicyEngine 判级结果为 require_approval 时，动作必须进入待审批门禁，不得直接进入 preCheck 或 execution。
+2. 系统应生成审批请求并记录 ticketRef，同时固化审批上下文快照（proposalId 或 idempotencyKey、actionName、target.operation、riskLevel、reasonCodes、evidenceRefs）。
+3. 待审批期间，PEV Run 状态应标记为 pending_approval，HarnessContract 与 EvidenceBundle 同步落证。
+4. 审批回写最小字段至少包括 approver、decisionAt、decisionReason、ticketRef；可选字段包括 decisionType（approve 或 reject）。
+5. 审批通过后，系统必须先执行恢复前校验（idempotencyKey 冲突检查、提案有效期检查、关键上下文漂移检查）；校验通过后方可进入 preCheck、execution 与 rollback 链路。
+6. 审批拒绝时，系统必须终止执行，写入 approval_denied，并将状态收敛为 closed。
+7. 审批超时或审批系统不可用时，系统应按保护性策略降级为 proposal_only 或 reject，不得自动放行执行。
+
 ## 7. 策略判级与决策矩阵
 
 ### 7.1 判级输入维度
@@ -202,7 +212,7 @@
 1. 新增受控工具入口 action_execute。
 2. MetaSkill 通过 tool_call 调 action_execute。
 3. action_execute 内部串联 PolicyEngine 与 ActionAdapter。
-4. 现有 ToolExecutor 的 PEV 机制继续生效。
+4. 现有 ToolExecutor 的 PEV 治理框架继续生效，审批触发由 ActionPolicyEngine 判级决定，并在 PEV Run 中记录与执行。
 
 ### 8.2 记录映射
 
@@ -210,12 +220,54 @@
 2. HarnessContract：行动意图、资源写集合、验证和回滚计划。
 3. PEV Run：决策、审批、验证状态。
 4. EvidenceBundle：执行和补偿细粒度证据。
+5. 审批记录最小字段规范：
+   - approver（审批人标识）
+   - decisionAt（审批时间，UTC）
+   - decisionReason（审批原因）
+   - ticketRef（外部工单或审批单号）
+   - 格式约束：decisionAt 统一使用 ISO 8601 UTC（示例：2026-07-15T08:30:00Z）；ticketRef 必须可追溯到外部审批或工单系统的唯一记录。
+   - 可选字段建议：decisionType（approve 或 reject），用于统计拒绝率、审批时长分布与审批 SLA 达成率。
+
+审批记录 JSON 示例（用于落库与埋点对照）：
+
+```json
+{
+   "approver": "u_zhangsan",
+   "decisionAt": "2026-07-15T08:30:00Z",
+   "decisionReason": "变更窗口已确认，风险可控",
+   "ticketRef": "ITSM-2026-0715-0042",
+   "decisionType": "approve"
+}
+```
 
 ### 8.3 向后兼容
 
 1. 未调用 action_execute 的旧技能行为不变。
 2. 可按环境与技能灰度启用。
 3. 未配置连接器时自动 proposal_only。
+
+### 8.4 MetaSkill 现状能力缺口与衔接路径
+
+#### 8.4.1 当前已具备能力
+
+1. MetaSkill DAG 已支持 tool_call、llm_chat、llm_classify、fan_out 等编排能力，可稳定产出结构化文本或 JSON。
+2. 步骤输出已支持 output_contract（json + required_properties）校验，可对 proposal 的关键顶层字段做最小约束。
+3. 现有 ToolExecutor 与 PEV 治理链路已可承载审计、状态记录与证据关联。
+
+#### 8.4.2 当前缺失能力
+
+1. 缺少 ActionProposal 一等领域模型与统一构建器（当前主要依赖步骤输出 JSON 约定）。
+2. 缺少受控执行入口 action_execute（尚未形成 proposal -> policy -> adapter 的单一通路）。
+3. 缺少 ActionPolicyEngine 与审批门禁的运行时落点（require_approval 的挂起、回写、恢复语义尚未工程化接线）。
+4. 缺少 ActionAdapter 与 BusinessApiConnector 的统一执行/补偿编排实现。
+
+#### 8.4.3 衔接实施（与第 11 节阶段对应）
+
+1. 先补“产出规范化”：在 MetaSkill 侧引入 ActionProposalBuilder，将 llm_chat 或 tool_call 输出归一为 ActionProposal 结构，并复用 output_contract 做字段门槛校验。
+2. 再补“执行入口化”：新增 action_execute 工具入口，统一接收 ActionProposal 并写入 SessionMetaRunRecord、HarnessContract、PEV Run、EvidenceBundle。
+3. 再补“策略门禁化”：在 action_execute 内串联 ActionPolicyEngine，落地 proceed_execute、require_approval、proposal_only 的状态机语义。
+4. 最后补“执行适配化”：接入 ActionAdapter + BusinessApiConnector，落地 preCheck、execution、rollback 与幂等控制。
+5. 整体采用“先 proposal-only，后审批执行，再低风险自动执行”的渐进启用策略，避免一次性切换导致治理风险。
 
 ## 9. 配置模型（建议）
 
@@ -242,6 +294,10 @@
 2. 治理：审批阻断、证据完整、合同关联、可解释决策。
 3. 安全：拦截数据库直写、拒绝未知连接器、参数越权防护。
 4. 回归：旧 MetaSkill 不受影响，双运行时语义一致。
+5. 负向：审批超时场景应触发保护性降级（proposal_only 或 reject），且不得进入 preCheck 或 execution。
+6. 负向：审批回写字段缺失（approver、decisionAt、decisionReason、ticketRef 任一缺失）应判定为无效审批并阻断执行，记录 invalid_proposal 或 approval_denied 证据。
+7. 衔接专项：ActionProposalBuilder 归一化测试，验证 llm_chat 或 tool_call 输出可稳定归一为 ActionProposal（字段完整性、默认值填充、非法字段拦截）。
+8. 衔接专项：action_execute 接线回归测试，验证 proposal -> policy -> adapter 主链可达，且审计映射（SessionMetaRunRecord、HarnessContract、PEV Run、EvidenceBundle）完整。
 
 ### 10.2 验收门槛
 
@@ -253,9 +309,9 @@
 
 ### 11.1 阶段化
 
-1. 阶段 0：影子模式，全量 proposal_only。
-2. 阶段 1：low 自动执行，medium 审批执行。
-3. 阶段 2：策略调优与覆盖面扩展。
+1. 阶段 0：影子模式，全量 proposal_only；完成 ActionProposalBuilder 与 action_execute 接线，先打通“提案生成 + 治理落证”。
+2. 阶段 1：启用审批执行（medium 审批执行，high/critical 维持 proposal_only）；完成 require_approval 的挂起、回写、恢复闭环。
+3. 阶段 2：启用 low 自动执行并扩展覆盖面；持续策略调优、连接器契约完善与补偿能力加固。
 
 ### 11.2 回退策略
 
