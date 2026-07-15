@@ -481,6 +481,8 @@ public sealed class HarnessConfig
     public string ExecutionMode { get; set; } = HarnessExecutionModes.Normal;
 
     public PlanExecuteVerifyOptions PlanExecuteVerify { get; set; } = new();
+
+    public ActionAdapterConfig ActionAdapter { get; set; } = new();
 }
 
 public sealed class PlanExecuteVerifyOptions
@@ -506,6 +508,35 @@ public sealed class PlanExecuteVerifyOptions
     public int MaxPlanActions { get; set; } = 20;
     public int MaxVerificationSteps { get; set; } = 20;
     public string[] RegressionCategories { get; set; } = [];
+}
+
+public sealed class ActionAdapterConfig
+{
+    public bool Enabled { get; set; }
+    public string DefaultDecisionMode { get; set; } = "risk-tiered";
+    public int IdempotencyWindowMinutes { get; set; } = 60;
+    public int MaxExecutionSteps { get; set; } = 10;
+    public int MaxRollbackSteps { get; set; } = 5;
+    public bool DenyUnknownConnector { get; set; } = true;
+    public bool RequireEvidence { get; set; } = true;
+    public Dictionary<string, ConnectorDefinition> Connectors { get; set; } = [];
+}
+
+public sealed class ConnectorDefinition
+{
+    public string BaseUrl { get; set; } = "";
+    public ConnectorAuthConfig Auth { get; set; } = new();
+    public int TimeoutSeconds { get; set; } = 30;
+    public string[] AllowedCalls { get; set; } = [];
+    public int RetryCount { get; set; } = 0;
+    public Dictionary<string, string> Headers { get; set; } = [];
+}
+
+public sealed class ConnectorAuthConfig
+{
+    public string Type { get; set; } = "Bearer";
+    public string TokenEnv { get; set; } = "";
+    public string HeaderName { get; set; } = "";
 }
 
 public sealed class PaymentConfig
