@@ -55,7 +55,7 @@ internal static class ConnectorCommands
             return 2;
         }
 
-        var decision = parsed.GetOption("--decision") ?? "proceed_execute";
+        var decision = parsed.GetOption("--decision") ?? "proceed";
         var jsonOutput = parsed.HasFlag("--json");
 
         string proposalJson;
@@ -142,7 +142,7 @@ internal static class ConnectorCommands
 
             Options:
               --proposal-file <path>  Path to a JSON file containing an ActionProposal (required)
-              --decision <value>      Decision override (default: proceed_execute)
+              --decision <value>      Decision override (default: proceed)
               --json                  Output raw JSON response
               --url <url>             Base URL (default: OPENCLAW_BASE_URL or http://127.0.0.1:18789)
               --token <token>         Auth token

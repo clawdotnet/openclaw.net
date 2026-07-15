@@ -192,6 +192,33 @@ public sealed class ConnectorCommandsTests
         var exit = await ConnectorCommands.RunAsync(["unknown"], output, error);
 
         Assert.Equal(2, exit);
+        var text = output.ToString();
+        Assert.Contains("connector execute", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RunAsync_Execute_InvalidProposalJson_ReturnsOne()
+    {
+        var proposalPath = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(proposalPath, "this is not valid json");
+
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+
+            var exit = await ConnectorCommands.RunAsync(
+                ["execute", "--proposal-file", proposalPath],
+                output,
+                error);
+
+            Assert.Equal(1, exit);
+            Assert.Contains("Failed to parse proposal file", error.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            File.Delete(proposalPath);
+        }
     }
 
     private static string ValidProposalJson()
