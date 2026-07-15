@@ -104,6 +104,26 @@ openclaw skills meta-runs reconstruct <sid> --run <id>
 运行时会在当前会话的 `SessionMetaRunRecord` 上保留这组映射字段，便于后续按会话追溯
 Harness Contract、PEV 和 Evidence Bundle。未使用 `action_execute` 的 MetaSkill 路径保持原有行为不变。
 
+### Connector Action 执行
+
+MetaSkill 通过 `action_execute` 工具调用 Connector Action。网关提供 CLI 和 MCP 两种
+接入方式，共享同一执行链路：
+
+**CLI 执行：**
+
+```sh
+openclaw connector execute --proposal-file ./proposal.json --decision proceed --json
+```
+
+**MCP 调用：**
+
+```json
+{"name":"openclaw.execute_connector_action","arguments":{"requestJson":"{...}"}}
+```
+
+两种方式均经过统一的策略校验（决策验证、必填字段检查、未知 connector 拒绝），
+并返回包含 `governanceMapping` 的完整执行结果。
+
 ### 有界执行
 
 四层超时保护：

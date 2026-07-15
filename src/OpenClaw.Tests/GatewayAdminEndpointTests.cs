@@ -336,6 +336,32 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task McpToolsList_ContainsExecuteConnectorAction()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
+
+        var tools = await client.ListMcpToolsAsync(TestContext.Current.CancellationToken);
+        Assert.Contains(tools.Tools, item => item.Name == "openclaw.execute_connector_action");
+    }
+
+    [Fact]
+    public async Task McpCall_ExecuteConnectorAction_UnknownConnector_ReturnsPolicyDenied()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
+
+        var request = BuildConnectorActionExecuteRequest(targetSystem: "unknown_connector");
+        var requestJson = JsonSerializer.Serialize(request, CoreJsonContext.Default.ConnectorActionExecuteRequest);
+        var argsJson = JsonSerializer.Serialize(new { requestJson });
+        using var args = JsonDocument.Parse(argsJson);
+
+        var result = await client.CallMcpToolAsync("openclaw.execute_connector_action", args.RootElement.Clone(), TestContext.Current.CancellationToken);
+        Assert.False(result.IsError);
+        Assert.Contains("policy_denied", result.Content[0].Text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task AuthSession_AccountTokenFlow_ReportsIdentity()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);

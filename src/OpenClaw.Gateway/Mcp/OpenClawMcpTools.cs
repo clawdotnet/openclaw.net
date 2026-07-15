@@ -278,6 +278,19 @@ internal sealed class OpenClawMcpTools
             }),
             CoreJsonContext.Default.IntegrationRuntimeEventsResponse);
 
+    [McpServerTool(Name = "openclaw.execute_connector_action"),
+     Description("Execute a connector action request through the unified integration facade.")]
+    public async Task<string> ExecuteConnectorAction(
+        [Description("Connector action execute request as JSON string.")] string requestJson,
+        CancellationToken ct = default)
+    {
+        var request = JsonSerializer.Deserialize(requestJson, CoreJsonContext.Default.ConnectorActionExecuteRequest)
+            ?? throw new ArgumentException("requestJson must be valid ConnectorActionExecuteRequest JSON.", nameof(requestJson));
+
+        var response = await _facade.ExecuteConnectorActionAsync(request, ct);
+        return JsonSerializer.Serialize(response, CoreJsonContext.Default.IntegrationConnectorActionExecuteResponse);
+    }
+
     [McpServerTool(Name = "openclaw.send_message"),
      Description("Queue a message into the OpenClaw inbound pipeline.")]
     public async Task<string> SendMessage(
