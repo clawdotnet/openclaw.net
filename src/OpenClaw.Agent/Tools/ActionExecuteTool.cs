@@ -8,15 +8,22 @@ namespace OpenClaw.Agent.Tools;
 public sealed class ActionExecuteTool : ITool
 {
     private readonly IActionPolicyEngine _policyEngine;
+    private readonly ActionAdapter? _adapter;
 
     public ActionExecuteTool()
-        : this(new ActionPolicyEngine())
+        : this(new ActionPolicyEngine(), null)
     {
     }
 
     internal ActionExecuteTool(IActionPolicyEngine policyEngine)
+        : this(policyEngine, null)
+    {
+    }
+
+    internal ActionExecuteTool(IActionPolicyEngine policyEngine, ActionAdapter? adapter)
     {
         _policyEngine = policyEngine ?? throw new ArgumentNullException(nameof(policyEngine));
+        _adapter = adapter;
     }
 
     public string Name => "action_execute";
@@ -78,12 +85,15 @@ public sealed class ActionExecuteTool : ITool
             if (decision.Decision.Equals("require_approval", StringComparison.OrdinalIgnoreCase))
                 return ValueTask.FromResult(BuildDecisionResult("pending_approval", decision, governanceMapping));
 
-            return contractOverride.Decision switch
+            if (contractOverride.Decision is "proceed" or "require_approval")
             {
-                "proceed" => ValueTask.FromResult(BuildDecisionResult("execution_started", callerDecision, governanceMapping)),
-                "require_approval" => ValueTask.FromResult(BuildDecisionResult("execution_started", callerDecision, governanceMapping)),
-                _ => ValueTask.FromResult(BuildFailure("unsupported_decision", $"Unsupported decision '{contractOverride.Decision}'.", governanceMapping: governanceMapping))
-            };
+                if (_adapter is not null)
+                    return ExecuteWithAdapterAsync(normalized.Proposal!, callerDecision, governanceMapping, ct);
+
+                return ValueTask.FromResult(BuildDecisionResult("execution_started", callerDecision, governanceMapping));
+            }
+
+            return ValueTask.FromResult(BuildFailure("unsupported_decision", $"Unsupported decision '{contractOverride.Decision}'.", governanceMapping: governanceMapping));
         }
 
         if (decision.Decision.Equals("require_approval", StringComparison.OrdinalIgnoreCase))
@@ -92,7 +102,21 @@ public sealed class ActionExecuteTool : ITool
         if (decision.Decision.Equals("proposal_only", StringComparison.OrdinalIgnoreCase))
             return ValueTask.FromResult(BuildDecisionResult("proposal_only", decision, governanceMapping));
 
+        // proceed_execute with adapter → execute action
+        if (_adapter is not null && decision.Decision.Equals("proceed_execute", StringComparison.OrdinalIgnoreCase))
+            return ExecuteWithAdapterAsync(normalized.Proposal!, decision, governanceMapping, ct);
+
         return ValueTask.FromResult(BuildDecisionResult("execution_started", decision, governanceMapping));
+    }
+
+    private async ValueTask<string> ExecuteWithAdapterAsync(
+        ActionProposal proposal,
+        ActionPolicyDecision decision,
+        ActionGovernanceMapping governanceMapping,
+        CancellationToken ct)
+    {
+        var adapterResult = await _adapter!.ExecuteAsync(proposal, ct).ConfigureAwait(false);
+        return BuildExecutionResult(adapterResult, decision, governanceMapping);
     }
 
     private static string BuildFailure(
@@ -128,6 +152,42 @@ public sealed class ActionExecuteTool : ITool
         writer.WriteString("status", status);
         WriteDecision(writer, decision);
         WriteGovernanceMapping(writer, governanceMapping);
+        writer.WriteEndObject();
+        writer.Flush();
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static string BuildExecutionResult(
+        ActionAdapterResult adapterResult,
+        ActionPolicyDecision decision,
+        ActionGovernanceMapping governanceMapping)
+    {
+        var status = adapterResult.Status switch
+        {
+            "succeeded" => "execution_completed",
+            "rolled_back" => "execution_rolled_back",
+            "rollback_failed" => "execution_failed",
+            _ => "execution_failed"
+        };
+
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream);
+        writer.WriteStartObject();
+        writer.WriteString("status", status);
+        WriteDecision(writer, decision);
+        WriteGovernanceMapping(writer, governanceMapping);
+
+        if (adapterResult.ResultCode is not null)
+            writer.WriteString("failureCode", adapterResult.ResultCode);
+
+        writer.WriteBoolean("rollbackTriggered", adapterResult.RollbackTriggered);
+
+        writer.WritePropertyName("statusHistory");
+        writer.WriteStartArray();
+        foreach (var item in adapterResult.StatusHistory)
+            writer.WriteStringValue(item);
+        writer.WriteEndArray();
+
         writer.WriteEndObject();
         writer.Flush();
         return System.Text.Encoding.UTF8.GetString(stream.ToArray());

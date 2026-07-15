@@ -1,4 +1,6 @@
+using OpenClaw.Agent.Actions;
 using OpenClaw.Agent.Tools;
+using OpenClaw.Core.Models;
 using Xunit;
 using System.Text.Json;
 
@@ -194,5 +196,103 @@ public sealed class ActionExecuteToolTests
                              "\"idempotencyKey\":\"proposal-C123-20260715-01\"," +
                              "\"metadata\":{" + metadataBody + "}" +
                              "}";
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AdapterInjected_ProceedDecision_ReturnsExecutionCompleted()
+    {
+        var fakeConnector = new FakeSuccessConnector();
+        var adapter = new ActionAdapter(fakeConnector, new InMemoryActionIdempotencyRegistry());
+        var tool = new ActionExecuteTool(new ActionPolicyEngine(), adapter);
+
+        var result = await tool.ExecuteAsync(
+            BuildArguments(BuildProposalJson(), decision: "proceed"),
+            TestContext.Current.CancellationToken);
+
+        using var document = JsonDocument.Parse(result);
+        Assert.Equal("execution_completed", document.RootElement.GetProperty("status").GetString());
+        Assert.True(fakeConnector.WasInvoked);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AdapterInjected_ProceedDecision_EmitsGovernanceMapping()
+    {
+        var fakeConnector = new FakeSuccessConnector();
+        var adapter = new ActionAdapter(fakeConnector, new InMemoryActionIdempotencyRegistry());
+        var tool = new ActionExecuteTool(new ActionPolicyEngine(), adapter);
+
+        var result = await tool.ExecuteAsync(
+            BuildArguments(BuildProposalJson(), decision: "proceed"),
+            TestContext.Current.CancellationToken);
+
+        using var document = JsonDocument.Parse(result);
+        Assert.True(document.RootElement.TryGetProperty("governanceMapping", out var mapping));
+        Assert.Equal("session_meta_run_record_pending",
+            mapping.GetProperty("sessionMetaRunRecord").GetString());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AdapterInjected_FailingConnector_ReturnsExecutionFailed()
+    {
+        var fakeConnector = new FakeFailureConnector("precheck_failed");
+        var adapter = new ActionAdapter(fakeConnector, new InMemoryActionIdempotencyRegistry());
+        var tool = new ActionExecuteTool(new ActionPolicyEngine(), adapter);
+
+        var result = await tool.ExecuteAsync(
+            BuildArguments(BuildProposalJson(), decision: "proceed"),
+            TestContext.Current.CancellationToken);
+
+        using var document = JsonDocument.Parse(result);
+        Assert.Equal("execution_failed", document.RootElement.GetProperty("status").GetString());
+        Assert.Equal("precheck_failed", document.RootElement.GetProperty("failureCode").GetString());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AdapterInjected_PolicyDeniedStillDenied()
+    {
+        var fakeConnector = new FakeSuccessConnector();
+        var adapter = new ActionAdapter(fakeConnector, new InMemoryActionIdempotencyRegistry());
+        var tool = new ActionExecuteTool(new ActionPolicyEngine(), adapter);
+
+        var proposal = BuildProposalJson(targetSystem: "unknown_connector", targetOperation: "write");
+        var result = await tool.ExecuteAsync(
+            BuildArguments(proposal, decision: "proceed"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains("policy_denied", result, StringComparison.OrdinalIgnoreCase);
+        Assert.False(fakeConnector.WasInvoked);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_NoAdapter_ProceedDecision_BehaviorUnchanged()
+    {
+        var tool = new ActionExecuteTool(); // no adapter
+        var result = await tool.ExecuteAsync(
+            BuildArguments(BuildProposalJson(), decision: "proceed"),
+            TestContext.Current.CancellationToken);
+
+        using var document = JsonDocument.Parse(result);
+        Assert.Equal("execution_started", document.RootElement.GetProperty("status").GetString());
+    }
+
+    private sealed class FakeSuccessConnector : IActionAdapterConnector
+    {
+        public bool WasInvoked { get; private set; }
+
+        public ValueTask<ActionAdapterStepResult> InvokeAsync(ActionCall step, CancellationToken ct)
+        {
+            WasInvoked = true;
+            return ValueTask.FromResult(ActionAdapterStepResult.Succeeded());
+        }
+    }
+
+    private sealed class FakeFailureConnector : IActionAdapterConnector
+    {
+        private readonly string _failureCode;
+
+        public FakeFailureConnector(string failureCode) => _failureCode = failureCode;
+
+        public ValueTask<ActionAdapterStepResult> InvokeAsync(ActionCall step, CancellationToken ct)
+            => ValueTask.FromResult(ActionAdapterStepResult.Failure(_failureCode));
     }
 }
