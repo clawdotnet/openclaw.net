@@ -124,6 +124,54 @@ openclaw connector execute --proposal-file ./proposal.json --decision proceed --
 两种方式均经过统一的策略校验（决策验证、必填字段检查、未知 connector 拒绝），
 并返回包含 `governanceMapping` 的完整执行结果。
 
+### 自动执行（low risk）
+
+当 `ActionPolicyEngine` 判级为 `proceed_execute`（低风险）且配置启用 `ActionAdapter` 时，
+`action_execute` 会自动执行 preCheck → execution 链路并通过 HTTP Connector 调用业务 API：
+
+```json
+{
+  "status": "execution_completed",
+  "decision": "proceed_execute",
+  "riskLevel": "low",
+  "governanceMapping": {
+    "sessionMetaRunRecord": "session_meta_run_record_pending",
+    "harnessContractId": "hctr_xxx",
+    "pevId": "pev_xxx",
+    "evidenceBundleId": "evb_xxx"
+  },
+  "rollbackTriggered": false,
+  "statusHistory": ["succeeded"]
+}
+```
+
+### 审批后执行（medium risk）
+
+`require_approval` 判级 + 带审批 payload 的调用将校验审批字段完整性后执行。
+无 adapter 注入时（默认配置）返回 `pending_approval` 状态。
+
+### HTTP Connector 配置
+
+```json
+{
+  "Harness": {
+    "ActionAdapter": {
+      "Enabled": true,
+      "DefaultDecisionMode": "risk-tiered",
+      "IdempotencyWindowMinutes": 60,
+      "Connectors": {
+        "crm": {
+          "BaseUrl": "https://crm.example.com/api/v1",
+          "Auth": { "Type": "Bearer", "TokenEnv": "CRM_API_TOKEN" },
+          "TimeoutSeconds": 30,
+          "AllowedCalls": ["updateCustomerTier", "createCase"]
+        }
+      }
+    }
+  }
+}
+```
+
 ### 有界执行
 
 四层超时保护：
