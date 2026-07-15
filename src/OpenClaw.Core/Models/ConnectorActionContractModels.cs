@@ -126,6 +126,9 @@ public static class ConnectorActionContractValidator
         if (!IsUtcIso8601(approval.DecisionAt))
             return (false, "approval_denied", "Approval decision time must be UTC ISO-8601.");
 
+        if (IsRejectedApprovalDecisionType(approval.DecisionType))
+            return (false, "approval_denied", "Approval was explicitly rejected.");
+
         return (true, null, null);
     }
 
@@ -145,4 +148,17 @@ public static class ConnectorActionContractValidator
                    || value.EndsWith("+00:00", StringComparison.Ordinal)
                    || value.EndsWith("-00:00", StringComparison.Ordinal));
     }
+
+    private static bool IsRejectedApprovalDecisionType(string? decisionType)
+        => !string.IsNullOrWhiteSpace(decisionType)
+           && decisionType.Trim() switch
+           {
+               var value when value.Equals("reject", StringComparison.OrdinalIgnoreCase) => true,
+               var value when value.Equals("rejected", StringComparison.OrdinalIgnoreCase) => true,
+               var value when value.Equals("deny", StringComparison.OrdinalIgnoreCase) => true,
+               var value when value.Equals("denied", StringComparison.OrdinalIgnoreCase) => true,
+               var value when value.Equals("decline", StringComparison.OrdinalIgnoreCase) => true,
+               var value when value.Equals("declined", StringComparison.OrdinalIgnoreCase) => true,
+               _ => false
+           };
 }

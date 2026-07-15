@@ -69,6 +69,56 @@ public sealed class ActionExecuteToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_CallerApprovalCannotOverrideRequireApprovalPolicyIntoExecution()
+    {
+        var tool = new ActionExecuteTool();
+
+        var result = await tool.ExecuteAsync(
+            BuildArguments(
+                BuildProposalJson(metadataFragment: "\"policyDecision\":\"require_approval\""),
+                decision: "require_approval",
+                approvalJson: """{"approver":"u_zhangsan","decisionAt":"2026-07-15T08:30:00Z","decisionReason":"approved","ticketRef":"TICKET-123","decisionType":"approve"}"""),
+            TestContext.Current.CancellationToken);
+
+        using var document = JsonDocument.Parse(result);
+        Assert.Equal("pending_approval", document.RootElement.GetProperty("status").GetString());
+        Assert.Equal("require_approval", document.RootElement.GetProperty("decision").GetString());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CallerProceedCannotOverrideProposalOnlyPolicyIntoExecution()
+    {
+        var tool = new ActionExecuteTool();
+
+        var result = await tool.ExecuteAsync(
+            BuildArguments(
+                BuildProposalJson(metadataFragment: "\"policyDecision\":\"proposal_only\""),
+                decision: "proceed"),
+            TestContext.Current.CancellationToken);
+
+        using var document = JsonDocument.Parse(result);
+        Assert.Equal("proposal_only", document.RootElement.GetProperty("status").GetString());
+        Assert.Equal("proposal_only", document.RootElement.GetProperty("decision").GetString());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RejectedApprovalPayload_ReturnsApprovalDenied()
+    {
+        var tool = new ActionExecuteTool();
+
+        var result = await tool.ExecuteAsync(
+            BuildArguments(
+                BuildProposalJson(),
+                decision: "require_approval",
+                approvalJson: """{"approver":"u_zhangsan","decisionAt":"2026-07-15T08:30:00Z","decisionReason":"rejected","ticketRef":"TICKET-123","decisionType":"reject"}"""),
+            TestContext.Current.CancellationToken);
+
+        using var document = JsonDocument.Parse(result);
+        Assert.Equal("failed", document.RootElement.GetProperty("status").GetString());
+        Assert.Equal("approval_denied", document.RootElement.GetProperty("failureCode").GetString());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ProducesGovernanceMappingPayload()
     {
         var tool = new ActionExecuteTool();

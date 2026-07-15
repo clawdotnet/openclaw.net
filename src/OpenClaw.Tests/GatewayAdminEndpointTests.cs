@@ -286,6 +286,56 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task Integration_ExecuteConnectorAction_ApprovalRejectPayload_ReturnsApprovalDenied()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
+
+        var response = await client.ExecuteConnectorActionAsync(
+            BuildConnectorActionExecuteRequest(
+                decision: "require_approval",
+                approval: new ConnectorApprovalPayload
+                {
+                    Approver = "u_zhangsan",
+                    DecisionAt = "2026-07-15T08:30:00Z",
+                    DecisionReason = "rejected by ops",
+                    TicketRef = "TICKET-123",
+                    DecisionType = "reject"
+                }),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("failed", response.Status);
+        Assert.Equal("approval_denied", response.FailureCode);
+    }
+
+    [Fact]
+    public async Task Integration_ExecuteConnectorAction_CallerApprovalCannotOverrideRequireApprovalPolicy()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
+
+        var response = await client.ExecuteConnectorActionAsync(
+            new ConnectorActionExecuteRequest
+            {
+                Proposal = BuildConnectorActionProposal(policyDecision: "require_approval"),
+                Decision = "require_approval",
+                Approval = new ConnectorApprovalPayload
+                {
+                    Approver = "u_zhangsan",
+                    DecisionAt = "2026-07-15T08:30:00Z",
+                    DecisionReason = "approved by ops",
+                    TicketRef = "TICKET-123",
+                    DecisionType = "approve"
+                }
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("pending_approval", response.Status);
+        Assert.Equal("require_approval", response.Decision);
+        Assert.Null(response.FailureCode);
+    }
+
+    [Fact]
     public async Task AuthSession_AccountTokenFlow_ReportsIdentity()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -7565,7 +7615,9 @@ public sealed class GatewayAdminEndpointTests
             }
         };
 
-    private static ActionProposal BuildConnectorActionProposal(string targetSystem = "crm")
+    private static ActionProposal BuildConnectorActionProposal(
+        string targetSystem = "crm",
+        string? policyDecision = null)
         => new()
         {
             ActionName = "sync_customer_tier",
@@ -7621,11 +7673,21 @@ public sealed class GatewayAdminEndpointTests
                 }
             ],
             IdempotencyKey = "proposal-C123-20260715-01",
-            Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["env"] = "prod"
-            }
+            Metadata = BuildConnectorActionMetadata(policyDecision)
         };
+
+    private static Dictionary<string, string> BuildConnectorActionMetadata(string? policyDecision)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["env"] = "prod"
+        };
+
+        if (!string.IsNullOrWhiteSpace(policyDecision))
+            metadata["policyDecision"] = policyDecision;
+
+        return metadata;
+    }
 
     private static async Task<GatewayTestHarness> CreateHarnessAsync(
         bool nonLoopbackBind,

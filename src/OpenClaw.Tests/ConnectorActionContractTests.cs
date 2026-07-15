@@ -46,6 +46,29 @@ public sealed class ConnectorActionContractTests
     }
 
     [Fact]
+    public void ValidateForExecution_RequireApprovalRejectedDecisionType_FailsClosed()
+    {
+        var request = new ConnectorActionExecuteRequest
+        {
+            Proposal = BuildValidProposal(),
+            Decision = "require_approval",
+            Approval = new ConnectorApprovalPayload
+            {
+                Approver = "u_zhangsan",
+                DecisionAt = "2026-07-15T08:30:00Z",
+                DecisionReason = "rejected by ops",
+                TicketRef = "TICKET-123",
+                DecisionType = "rejected"
+            }
+        };
+
+        var result = ConnectorActionContractValidator.ValidateForExecution(request);
+
+        Assert.False(result.Success);
+        Assert.Equal("approval_denied", result.ErrorCode);
+    }
+
+    [Fact]
     public void ValidateForExecution_CaseVariantDecision_Fails()
     {
         var request = new ConnectorActionExecuteRequest

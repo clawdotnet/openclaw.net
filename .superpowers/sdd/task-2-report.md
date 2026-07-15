@@ -129,3 +129,32 @@ Result:
 - The public request wire shape now matches schema-exported properties exactly: `proposal`, `decision`, optional `riskLevel`, optional `approval`.
 - AOT: safe. No reflection-only serializer path was added.
 - JIT: no behavior difference beyond the intended contract-semantic fixes.
+
+## Reviewer second-round fixes (2026-07-15)
+- Prevented caller-provided contract decisions from weakening policy outcomes in `ActionExecuteTool`.
+  - `policy_denied` still short-circuits unknown connectors.
+  - policy `proposal_only` now stays `proposal_only` even if caller sends `proceed`.
+  - policy `require_approval` now stays `pending_approval` even if caller sends validated approval.
+  - caller `reject` remains fail-closed and caller `escalate` can still further restrict to `proposal_only`.
+- Hardened contract validation so approval payloads with reject-style `decisionType` values (`reject`, `rejected`, `deny`, `denied`, `decline`, `declined`) return `approval_denied`.
+
+### Added / updated focused tests
+- `ActionExecuteToolTests.ExecuteAsync_CallerApprovalCannotOverrideRequireApprovalPolicyIntoExecution`
+- `ActionExecuteToolTests.ExecuteAsync_CallerProceedCannotOverrideProposalOnlyPolicyIntoExecution`
+- `ActionExecuteToolTests.ExecuteAsync_RejectedApprovalPayload_ReturnsApprovalDenied`
+- `ConnectorActionContractTests.ValidateForExecution_RequireApprovalRejectedDecisionType_FailsClosed`
+- `GatewayAdminEndpointTests.Integration_ExecuteConnectorAction_ApprovalRejectPayload_ReturnsApprovalDenied`
+- `GatewayAdminEndpointTests.Integration_ExecuteConnectorAction_CallerApprovalCannotOverrideRequireApprovalPolicy`
+
+### Focused verification after second-round fixes
+Command:
+```bash
+dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter "FullyQualifiedName~Integration_ExecuteConnectorAction|FullyQualifiedName~ActionExecuteToolTests|FullyQualifiedName~ConnectorActionContractTests" -v minimal
+```
+Result:
+- Before changes: Passed 16, Failed 0, Skipped 0
+- After changes: Passed 22, Failed 0, Skipped 0
+
+### AOT / JIT implications
+- AOT: safe. Changes stay within existing source-generated JSON and simple string-based policy/approval checks.
+- JIT: no special handling; behavior change is limited to stricter fail-closed execution semantics.

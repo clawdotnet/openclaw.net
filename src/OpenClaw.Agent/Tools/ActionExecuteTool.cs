@@ -66,12 +66,22 @@ public sealed class ActionExecuteTool : ITool
                 return ValueTask.FromResult(BuildFailure(validation.ErrorCode ?? "invalid_request", validation.ErrorMessage, governanceMapping: governanceMapping));
 
             var callerDecision = BuildCallerDecision(contractOverride.Decision, contractOverride.RiskLevel);
+            if (contractOverride.Decision.Equals("reject", StringComparison.Ordinal))
+                return ValueTask.FromResult(BuildFailure("policy_denied", "Execution rejected by caller contract.", callerDecision, governanceMapping));
+
+            if (decision.Decision.Equals("proposal_only", StringComparison.OrdinalIgnoreCase))
+                return ValueTask.FromResult(BuildDecisionResult("proposal_only", decision, governanceMapping));
+
+            if (contractOverride.Decision.Equals("escalate", StringComparison.Ordinal))
+                return ValueTask.FromResult(BuildDecisionResult("proposal_only", callerDecision, governanceMapping));
+
+            if (decision.Decision.Equals("require_approval", StringComparison.OrdinalIgnoreCase))
+                return ValueTask.FromResult(BuildDecisionResult("pending_approval", decision, governanceMapping));
+
             return contractOverride.Decision switch
             {
                 "proceed" => ValueTask.FromResult(BuildDecisionResult("execution_started", callerDecision, governanceMapping)),
                 "require_approval" => ValueTask.FromResult(BuildDecisionResult("execution_started", callerDecision, governanceMapping)),
-                "reject" => ValueTask.FromResult(BuildFailure("policy_denied", "Execution rejected by caller contract.", callerDecision, governanceMapping)),
-                "escalate" => ValueTask.FromResult(BuildDecisionResult("proposal_only", callerDecision, governanceMapping)),
                 _ => ValueTask.FromResult(BuildFailure("unsupported_decision", $"Unsupported decision '{contractOverride.Decision}'.", governanceMapping: governanceMapping))
             };
         }
