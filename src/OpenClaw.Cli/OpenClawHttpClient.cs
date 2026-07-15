@@ -179,5 +179,10 @@ internal sealed class OpenClawHttpClient : IDisposable
     public Task<SharedHarnessStateMutationResponse> DetectSharedHarnessStateConflictsAsync(string id, CancellationToken cancellationToken)
         => _inner.DetectSharedHarnessStateConflictsAsync(id, cancellationToken);
 
+    public Task<IntegrationConnectorActionExecuteResponse> ExecuteConnectorActionAsync(
+        ConnectorActionExecuteRequest request,
+        CancellationToken cancellationToken)
+        => _inner.ExecuteConnectorActionAsync(request, cancellationToken);
+
     public void Dispose() => _inner.Dispose();
 }

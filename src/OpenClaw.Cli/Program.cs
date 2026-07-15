@@ -36,6 +36,7 @@ internal static class Program
                 "payment" => await PaymentCommands.RunAsync(rest),
                 "external" => await ExternalCliCommands.RunAsync(rest),
                 "routing" => await RoutingCommands.RunAsync(rest),
+                "connector" => await ConnectorCommands.RunAsync(rest),
                 "memory" => await MemoryCommands.RunAsync(rest),
                 "test" => await TestingCommands.RunAsync(rest),
                 "harness" => await HarnessCommands.RunAsync(rest),
