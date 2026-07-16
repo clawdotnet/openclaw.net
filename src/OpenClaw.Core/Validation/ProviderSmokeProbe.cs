@@ -4,6 +4,7 @@ using System.Text;
 using OpenClaw.Core.Http;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
+using OpenClaw.Core.Setup;
 
 namespace OpenClaw.Core.Validation;
 
@@ -148,7 +149,7 @@ public static class ProviderSmokeProbe
     {
         return provider switch
         {
-            "openai" or "openai-compatible" or "aperture" or "groq" or "together" or "lmstudio" or "azure-openai"
+            "openai" or "openai-compatible" or "aperture" or "groq" or "together" or "lmstudio" or "deepseek" or "azure-openai"
                 => BuildOpenAiStyleRequest(
                     provider,
                     config,
@@ -175,6 +176,7 @@ public static class ProviderSmokeProbe
             "groq" => AppendPath(config.Endpoint, "https://api.groq.com/openai/v1", "chat/completions"),
             "together" => AppendPath(config.Endpoint, "https://api.together.xyz/v1", "chat/completions"),
             "lmstudio" => AppendPath(config.Endpoint, "http://127.0.0.1:1234/v1", "chat/completions"),
+            "deepseek" => AppendPath(config.Endpoint, DeepSeekProviderDefaults.OpenAiBaseUrl, "chat/completions"),
             "azure-openai" => AppendPath(config.Endpoint, null, "chat/completions"),
             "aperture" => AppendPath(config.Endpoint, null, "chat/completions"),
             _ => AppendPath(config.Endpoint, null, "chat/completions")

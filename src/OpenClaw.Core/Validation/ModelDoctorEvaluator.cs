@@ -209,6 +209,9 @@ public static class ModelDoctorEvaluator
             };
         }
 
+        if (provider == DeepSeekProviderDefaults.ProviderId)
+            return DeepSeekProviderDefaults.BuildCapabilities();
+
         var supportsTools = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai" or "groq" or "together" or "lmstudio" or "anthropic" or "claude" or "anthropic-vertex" or "amazon-bedrock" or "gemini" or "google";
         var supportsVision = provider is "openai" or "openai-compatible" or "aperture" or "azure-openai" or "gemini" or "google" or "ollama" or "amazon-bedrock";
         var supportsPromptCaching = provider is "openai" or "azure-openai" or "anthropic" or "claude" or "anthropic-vertex" or "gemini" or "google";
