@@ -17,6 +17,10 @@
 - 全链路可审计：proposal → 判级 → 执行 → 补偿均可追溯
 - 不改变未接入 Action 机制的旧 MetaSkill 行为
 
+> **外部切片器：** 临时图由 `openclaw graph slice` CLI 命令生成，基于 dotNetRDF 3.5.2，
+> 支持从 SPARQL 端点、本地 RDF 文件、关系数据库+R2RML 三种源执行 SPARQL CONSTRUCT +
+> JSON-LD Framing。详见 [图切片器设计说明](../superpowers/specs/2026-07-16-graph-slicer-sparql-construct-jsonld-design.md)。
+
 ## 2. 架构总览
 
 ```

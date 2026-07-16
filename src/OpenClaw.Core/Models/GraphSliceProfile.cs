@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace OpenClaw.Core.Models;
 
 public sealed class GraphSliceProfile
@@ -11,7 +9,7 @@ public sealed class SliceProfile
 {
     public List<SliceSourceConfig> Sources { get; set; } = [];
     public string Construct { get; set; } = "";
-    public JsonElement? Frame { get; set; }
+    public string? FrameJson { get; set; }
     public SliceOutputConfig Output { get; set; } = new();
 }
 
