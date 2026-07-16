@@ -39,6 +39,9 @@
   <Project Path="src/OpenClaw.Agent/OpenClaw.Agent.csproj" />
   <Project Path="src/OpenClaw.Channels/OpenClaw.Channels.csproj" />
   <Project Path="src/OpenClaw.Core/OpenClaw.Core.csproj" />
+  <Project Path="src/OpenClaw.GraphSlicer/OpenClaw.GraphSlicer.csproj" />
+  <Project Path="src/OpenClaw.Ontology/OpenClaw.Ontology.csproj" />
+  <Project Path="src/OpenClaw.StandardOntology/OpenClaw.StandardOntology.csproj" />
   <Project Path="src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" />
   <Project Path="src/OpenClaw.Tests/OpenClaw.Tests.csproj" />
 </Solution>

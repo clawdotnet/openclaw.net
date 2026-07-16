@@ -1054,6 +1054,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(SliceAuthConfig))]
 [JsonSerializable(typeof(SliceOutputConfig))]
 [JsonSerializable(typeof(List<SliceSourceConfig>))]
+[JsonSerializable(typeof(Dictionary<string, SliceProfile>))]
 [JsonSerializable(typeof(List<BackendEvent>))]
 [JsonSerializable(typeof(BackendAssistantMessageEvent))]
 [JsonSerializable(typeof(BackendStdoutOutputEvent))]

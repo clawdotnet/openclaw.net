@@ -19,7 +19,11 @@
     <ProjectReference Include="..\OpenClaw.Testing\OpenClaw.Testing.csproj" />
     <ProjectReference Include="..\OpenClaw.Tui\OpenClaw.Tui.csproj" />
     <ProjectReference Include="..\OpenClaw.GraphSlicer\OpenClaw.GraphSlicer.csproj" />
+    <ProjectReference Include="..\OpenClaw.Ontology\OpenClaw.Ontology.csproj" />
+    <ProjectReference Include="..\OpenClaw.StandardOntology\OpenClaw.StandardOntology.csproj" />
     <TrimmerRootAssembly Include="OpenClaw.GraphSlicer" />
+    <TrimmerRootAssembly Include="OpenClaw.Ontology" />
+    <TrimmerRootAssembly Include="OpenClaw.StandardOntology" />
   </ItemGroup>
 
 </Project>

@@ -192,6 +192,7 @@ internal static partial class RuntimeInitializationExtensions
             new MetaSkillRuntimeE2ERunTool(),
             new MetaSkillPersistProposalTool(),
             new LoadTemporaryGraphTool(config.Tooling),
+            new OpenClaw.Ontology.OntologyValidateTool(),
             ResolveActionExecuteTool(config, serviceProvider),
 
             // Goal system

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>OpenClaw.StandardOntology</RootNamespace>
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenClaw.Ontology\OpenClaw.Ontology.csproj" />
+  </ItemGroup>
+</Project>

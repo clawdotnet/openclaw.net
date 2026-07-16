@@ -14,6 +14,11 @@ public sealed record SliceResult(
 
 public sealed class GraphSlicerEngine
 {
+    private readonly JsonLdFramer _framer;
+
+    public GraphSlicerEngine(JsonLdFramer? framer = null)
+        => _framer = framer ?? new JsonLdFramer();
+
     public async Task<SliceResult> ExecuteAsync(SliceProfile profile, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(profile);
@@ -50,16 +55,17 @@ public sealed class GraphSlicerEngine
             jsonLdWriter.Save(store, sw);
             var jsonLd = sw.ToString();
 
-            // Apply simple framing if configured (best-effort)
-            if (profile.Frame is { ValueKind: JsonValueKind.Object })
+            // Apply JSON-LD framing if configured (delegates to dotNetRDF JsonLdProcessor.Frame)
+            if (!string.IsNullOrWhiteSpace(profile.FrameJson))
             {
                 try
                 {
-                    jsonLd = ApplySimpleFrame(jsonLd, profile.Frame.Value);
+                    jsonLd = _framer.Frame(jsonLd, profile.FrameJson);
                 }
-                catch
+                catch (Exception ex) when (ex is JsonException or Newtonsoft.Json.JsonException)
                 {
-                    // Framing is best-effort; keep unframed output
+                    return new SliceResult(false, ErrorMessage:
+                        $"JSON-LD framing failed: {ex.Message}");
                 }
             }
 
@@ -79,57 +85,6 @@ public sealed class GraphSlicerEngine
         {
             return new SliceResult(false, ErrorMessage: ex.Message);
         }
-    }
-
-    /// <summary>
-    /// Simple JSON-LD framing: extract and restructure input JSON-LD
-    /// using the frame's @context as the output context.
-    /// </summary>
-    private static string ApplySimpleFrame(string jsonLd, JsonElement frame)
-    {
-        using var inputDoc = JsonDocument.Parse(jsonLd);
-        using var outputStream = new MemoryStream();
-        using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions { Indented = false });
-
-        writer.WriteStartObject();
-
-        // Write @context from frame if present, otherwise from input
-        if (frame.TryGetProperty("@context", out var ctxEl))
-        {
-            writer.WritePropertyName("@context");
-            ctxEl.WriteTo(writer);
-        }
-        else if (inputDoc.RootElement.TryGetProperty("@context", out ctxEl))
-        {
-            writer.WritePropertyName("@context");
-            ctxEl.WriteTo(writer);
-        }
-
-        // Write @graph with all triples
-        writer.WritePropertyName("@graph");
-        inputDoc.RootElement.TryGetProperty("@graph", out var graph);
-        if (graph.ValueKind == JsonValueKind.Array)
-        {
-            graph.WriteTo(writer);
-        }
-        else
-        {
-            // Compact form — wrap non-@context properties in @graph
-            writer.WriteStartArray();
-            writer.WriteStartObject();
-            foreach (var prop in inputDoc.RootElement.EnumerateObject())
-            {
-                if (prop.NameEquals("@context"))
-                    continue;
-                prop.WriteTo(writer);
-            }
-            writer.WriteEndObject();
-            writer.WriteEndArray();
-        }
-
-        writer.WriteEndObject();
-        writer.Flush();
-        return Encoding.UTF8.GetString(outputStream.ToArray());
     }
 
     private static ISparqlSource BuildSource(SliceSourceConfig config)

@@ -1,16 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <RootNamespace>OpenClaw.GraphSlicer</RootNamespace>
+    <RootNamespace>OpenClaw.Ontology</RootNamespace>
     <PublishAot>false</PublishAot>
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="OpenClaw.Tests" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="dotNetRDF" Version="3.5.2" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
   </ItemGroup>
 </Project>
