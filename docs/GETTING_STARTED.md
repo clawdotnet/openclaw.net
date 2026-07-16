@@ -215,6 +215,13 @@ dotnet build
 dotnet run --project src/OpenClaw.Cli -c Release -- setup
 ```
 
+For DeepSeek, use `DEEPSEEK_API_KEY` and the named provider so setup writes the DeepSeek OpenAI-compatible endpoint automatically:
+
+```bash
+export DEEPSEEK_API_KEY="sk-..."
+dotnet run --project src/OpenClaw.Cli -c Release -- setup --non-interactive --profile local --workspace ./workspace --provider deepseek --api-key env:DEEPSEEK_API_KEY
+```
+
 What `setup` gives you:
 
 - an external config file, usually at `~/.openclaw/config/openclaw.settings.json`

@@ -160,6 +160,7 @@ internal static class Program
               openclaw start
               openclaw start --with-companion --open-browser
               openclaw start --non-interactive --profile local --workspace ./workspace --provider openai --model gpt-4o --api-key env:MODEL_PROVIDER_KEY
+              openclaw start --non-interactive --profile local --workspace ./workspace --provider deepseek --model deepseek-v4-flash --api-key env:DEEPSEEK_API_KEY
               openclaw start --non-interactive --profile local --workspace ./workspace --provider ollama --model llama3.2 --model-preset ollama-general
               openclaw run "summarize this README" --file ./README.md
               OPENCLAW_AUTH_TOKEN=... openclaw run "summarize this README" --file ./README.md
@@ -175,6 +176,7 @@ internal static class Program
               openclaw upgrade check --config ~/.openclaw/config/openclaw.settings.json --offline
               openclaw upgrade rollback --config ~/.openclaw/config/openclaw.settings.json --offline
               openclaw setup --non-interactive --profile local --workspace ./workspace --provider openai --model gpt-4o --api-key env:MODEL_PROVIDER_KEY
+              openclaw setup --non-interactive --profile local --workspace ./workspace --provider deepseek --model deepseek-v4-flash --api-key env:DEEPSEEK_API_KEY
               openclaw setup --non-interactive --profile local --workspace ./workspace --provider ollama --model llama3.2 --model-preset ollama-general
               openclaw setup provider aperture --endpoint https://YOUR_APERTURE_ENDPOINT --model YOUR_APERTURE_MODEL_ROUTE --auth-mode tailnet-identity
               openclaw setup verify --config ~/.openclaw/config/openclaw.settings.json
