@@ -18,6 +18,8 @@
     <ProjectReference Include="..\OpenClaw.SkillKit\OpenClaw.SkillKit.csproj" />
     <ProjectReference Include="..\OpenClaw.Testing\OpenClaw.Testing.csproj" />
     <ProjectReference Include="..\OpenClaw.Tui\OpenClaw.Tui.csproj" />
+    <ProjectReference Include="..\OpenClaw.GraphSlicer\OpenClaw.GraphSlicer.csproj" />
+    <TrimmerRootAssembly Include="OpenClaw.GraphSlicer" />
   </ItemGroup>
 
 </Project>

@@ -55,6 +55,7 @@ internal static class Program
                 "skill" => await SkillKitCommands.RunAsync(rest),
                 "skills" => await SkillCommands.RunAsync(rest),
                 "clawhub" => await ClawHubCommand.RunAsync(rest),
+                "graph" => await GraphSliceCommands.RunAsync(rest),
                 "version" or "--version" or "-v" => PrintVersion(),
                 _ => UnknownCommand(command)
             };

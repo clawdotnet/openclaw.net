@@ -91,6 +91,7 @@ internal sealed class CliArgs
             or "--anonymize"
             or "--test"
             or "--dry-run"
+            or "--info"
             or "--yes"
             or "--accept-license"
             or "--no-optional-files";
