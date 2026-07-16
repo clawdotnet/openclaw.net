@@ -41,6 +41,14 @@ export MODEL_PROVIDER_KEY="sk-..."
 dotnet run --project src/OpenClaw.Cli -c Release -- start
 ```
 
+For DeepSeek, use its own provider key variable and named provider:
+
+```bash
+export DEEPSEEK_API_KEY="sk-..."
+dotnet run --project src/OpenClaw.Cli -c Release -- setup --non-interactive --profile local --workspace ./workspace --provider deepseek --api-key env:DEEPSEEK_API_KEY
+dotnet run --project src/OpenClaw.Cli -c Release -- setup launch --config ~/.openclaw/config/openclaw.settings.json
+```
+
 Accept the defaults. If the config does not exist yet, `openclaw start` runs setup first, writes `~/.openclaw/config/openclaw.settings.json`, and then launches.
 
 **3. Open the browser UI.**
@@ -209,6 +217,22 @@ openclaw models doctor
 ```
 
 Plain `openclaw run "hello"` requests work as prompt-only chat with non-tool Ollama profiles when no explicit tool preset is requested. Tool-heavy routes and explicit presets still need a tool-capable model profile or configured fallback. The doctor now warns when an Ollama profile still points at `/v1` or when a local agentic profile is missing a deterministic fallback.
+
+For a DeepSeek hosted setup, use the named provider. It configures the OpenAI-compatible DeepSeek endpoint automatically and defaults to `deepseek-v4-flash`:
+
+```bash
+export DEEPSEEK_API_KEY="sk-..."
+openclaw setup --non-interactive \
+  --profile local \
+  --workspace ./workspace \
+  --provider deepseek \
+  --api-key env:DEEPSEEK_API_KEY
+
+openclaw setup verify --config ~/.openclaw/config/openclaw.settings.json --require-provider
+openclaw setup launch --config ~/.openclaw/config/openclaw.settings.json
+```
+
+Pass `--model deepseek-v4-pro` when you want the higher-capability hosted model.
 
 ## Optional Embedded Local Model
 

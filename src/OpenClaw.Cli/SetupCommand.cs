@@ -173,7 +173,7 @@ internal static class SetupCommand
             ?? GetDefaultModel(provider, discoveredOllama.Models);
         var model = Prompt(output, input, "Model", modelDefault);
         var apiKey = ProviderRequiresApiKey(provider)
-            ? Prompt(output, input, "API key or env: reference", parsed.GetOption("--api-key") ?? DefaultApiKeyRef)
+            ? Prompt(output, input, "API key or env: reference", parsed.GetOption("--api-key") ?? GetDefaultApiKeyRef(provider))
             : parsed.GetOption("--api-key");
 
         var bindDefault = parsed.GetOption("--bind") ?? GetDefaultBindAddress(profile);
@@ -244,7 +244,7 @@ internal static class SetupCommand
             ModelPresetId = GetDefaultModelPreset(parsed.GetOption("--provider") ?? DefaultProvider, parsed.GetOption("--model-preset")),
             Model = parsed.GetOption("--model") ?? GetDefaultModel(parsed.GetOption("--provider") ?? DefaultProvider, []),
             ApiKey = ProviderRequiresApiKey(parsed.GetOption("--provider"))
-                ? parsed.GetOption("--api-key") ?? DefaultApiKeyRef
+                ? parsed.GetOption("--api-key") ?? GetDefaultApiKeyRef(parsed.GetOption("--provider") ?? DefaultProvider)
                 : parsed.GetOption("--api-key"),
             BindAddress = parsed.GetOption("--bind") ?? GetDefaultBindAddress(profile),
             Port = ParsePort(parsed.GetOption("--port") ?? "18789"),
@@ -459,10 +459,16 @@ internal static class SetupCommand
     private static string GetDefaultModel(string? provider, IReadOnlyList<string> discoveredOllamaModels)
         => provider?.Trim().ToLowerInvariant() switch
         {
+            DeepSeekProviderDefaults.ProviderId => DeepSeekProviderDefaults.DefaultModel,
             "embedded" => DefaultEmbeddedModelId,
             "ollama" when discoveredOllamaModels.Count > 0 => discoveredOllamaModels[0],
             _ => new GatewayConfig().Llm.Model
         };
+
+    private static string GetDefaultApiKeyRef(string? provider)
+        => string.Equals(provider?.Trim(), DeepSeekProviderDefaults.ProviderId, StringComparison.OrdinalIgnoreCase)
+            ? DeepSeekProviderDefaults.DefaultApiKeyRef
+            : DefaultApiKeyRef;
 
     private static OllamaDiscoveryResult TryDiscoverOllamaModels()
     {

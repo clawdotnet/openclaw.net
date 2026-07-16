@@ -111,6 +111,12 @@ public static class GatewaySetupProfileFactory
                 return;
             }
 
+            if (provider.Equals(DeepSeekProviderDefaults.ProviderId, StringComparison.OrdinalIgnoreCase))
+            {
+                ConfigureDeepSeekModelProfile(config, model);
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(modelPresetId))
                 warnings?.Add($"Ignoring model preset '{modelPresetId}' because local presets currently apply only to Ollama or embedded providers.");
             return;
@@ -200,6 +206,24 @@ public static class GatewaySetupProfileFactory
                 Model = modelId,
                 Tags = package?.Tags?.ToArray() ?? ["local", "private", "offline", "cheap"],
                 Capabilities = CloneCapabilities(capabilities)
+            }
+        ];
+    }
+
+    private static void ConfigureDeepSeekModelProfile(GatewayConfig config, string model)
+    {
+        config.Llm.Endpoint = DeepSeekProviderDefaults.OpenAiBaseUrl;
+        config.Models.DefaultProfile = "deepseek-default";
+        config.Models.Profiles =
+        [
+            new ModelProfileConfig
+            {
+                Id = "deepseek-default",
+                Provider = DeepSeekProviderDefaults.ProviderId,
+                Model = model,
+                BaseUrl = DeepSeekProviderDefaults.OpenAiBaseUrl,
+                Tags = ["cloud", "openai-compatible", "deepseek"],
+                Capabilities = DeepSeekProviderDefaults.BuildCapabilities()
             }
         ];
     }

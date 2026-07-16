@@ -196,6 +196,62 @@ public sealed class SetupCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_NonInteractiveDeepSeekProvider_WritesNamedOpenAiCompatibleProfile()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var configPath = Path.Combine(root, "config", "openclaw.deepseek.json");
+            var workspace = Path.Combine(root, "workspace");
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+
+            var exitCode = await SetupCommand.RunAsync(
+                [
+                    "--non-interactive",
+                    "--profile", "local",
+                    "--config", configPath,
+                    "--workspace", workspace,
+                    "--provider", "deepseek"
+                ],
+                new StringReader(string.Empty),
+                output,
+                error,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(configPath));
+            var openClaw = document.RootElement.GetProperty("OpenClaw");
+            var llm = openClaw.GetProperty("llm");
+            Assert.Equal("deepseek", llm.GetProperty("provider").GetString());
+            Assert.Equal("deepseek-v4-flash", llm.GetProperty("model").GetString());
+            Assert.Equal("https://api.deepseek.com", llm.GetProperty("endpoint").GetString());
+            Assert.Equal("env:DEEPSEEK_API_KEY", llm.GetProperty("apiKey").GetString());
+
+            var models = openClaw.GetProperty("models");
+            Assert.Equal("deepseek-default", models.GetProperty("defaultProfile").GetString());
+            var profile = Assert.Single(models.GetProperty("profiles").EnumerateArray());
+            Assert.Equal("deepseek-default", profile.GetProperty("id").GetString());
+            Assert.Equal("deepseek", profile.GetProperty("provider").GetString());
+            Assert.Equal("deepseek-v4-flash", profile.GetProperty("model").GetString());
+            Assert.Equal("https://api.deepseek.com", profile.GetProperty("baseUrl").GetString());
+            Assert.True(profile.GetProperty("capabilities").GetProperty("supportsTools").GetBoolean());
+            Assert.True(profile.GetProperty("capabilities").GetProperty("supportsReasoningEffort").GetBoolean());
+
+            var envExample = await File.ReadAllTextAsync(Path.Combine(root, "config", "openclaw.deepseek.env.example"));
+            Assert.Contains("DEEPSEEK_API_KEY=replace-me", envExample, StringComparison.Ordinal);
+            Assert.DoesNotContain("MODEL_PROVIDER_KEY=replace-me", envExample, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_NonInteractiveEmbeddedPreset_WritesKeylessLocalInferenceProfile()
     {
         var root = CreateTempRoot();
