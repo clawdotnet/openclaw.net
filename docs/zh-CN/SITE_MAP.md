@@ -16,6 +16,7 @@
 | 指南 | Goal 自动继续机制 | [GOAL_TECHNICAL_ARCHITECTURE.md](GOAL_TECHNICAL_ARCHITECTURE.md) |
 | 指南 | Loop 定时循环提示词 | [LOOP_TECHNICAL_ARCHITECTURE.md](LOOP_TECHNICAL_ARCHITECTURE.md) |
 | 指南 | 嵌入式本地模型 | [LOCAL_MODELS.md](LOCAL_MODELS.md) |
+| 指南 | 图切片器与 MetaSkill 推理回写全链路技术文档 | [graph-slicer-metaskill-pipeline.md](graph-slicer-metaskill-pipeline.md) |
 | 指南 | MetaSkill 临时图推理→Harness Action→API 回写全链路 | [meta-skill-harness-action-writeback-pipeline.md](meta-skill-harness-action-writeback-pipeline.md) |
 | 指南 | MetaSkills（功能概览） | [meta-skills.md](meta-skills.md) |
 | 指南 | MetaSkill 编排架构 | [meta-skill-orchestration.md](meta-skill-orchestration.md) |
