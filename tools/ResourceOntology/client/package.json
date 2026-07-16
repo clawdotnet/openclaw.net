@@ -1,0 +1,30 @@
+{
+  "name": "client",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "gentypes": "openapi-typescript http://localhost:5174/swagger/v1/swagger.json -o src/lib/types.generated.ts"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@tailwindcss/vite": "^4.3.1",
+    "@tsconfig/svelte": "^5.0.8",
+    "@types/node": "^24.12.3",
+    "openapi-typescript": "^7.7.1",
+    "svelte": "^5.55.5",
+    "svelte-check": "^4.4.8",
+    "tailwindcss": "^4.3.1",
+    "typescript": "~5.9.2",
+    "vite": "^8.0.12"
+  },
+  "dependencies": {
+    "cytoscape": "^3.34.0",
+    "cytoscape-dagre": "^4.0.0",
+    "dagre": "^0.8.5"
+  }
+}

@@ -1,0 +1,237 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+         xmlns:owl="http://www.w3.org/2002/07/owl#"
+         xml:base="http://www.example.com/ManufacturingSupplyChain#">
+
+    <owl:Ontology rdf:about="http://www.example.com/ManufacturingSupplyChain"/>
+
+    <!-- ===================== -->
+    <!-- 1. 组织与人员体系 -->
+    <!-- ===================== -->
+
+    <owl:Class rdf:ID="员工"/>
+
+    <owl:Class rdf:ID="销售人员">
+        <rdfs:subClassOf rdf:resource="#员工"/>
+    </owl:Class>
+
+    <owl:Class rdf:ID="生产计划员">
+        <rdfs:subClassOf rdf:resource="#员工"/>
+    </owl:Class>
+
+    <owl:Class rdf:ID="采购员">
+        <rdfs:subClassOf rdf:resource="#员工"/>
+    </owl:Class>
+
+    <owl:Class rdf:ID="产线工人">
+        <rdfs:subClassOf rdf:resource="#员工"/>
+    </owl:Class>
+
+    <owl:Class rdf:ID="技术员">
+        <rdfs:subClassOf rdf:resource="#员工"/>
+    </owl:Class>
+
+
+    <!-- ===================== -->
+    <!-- 2. 部门体系 -->
+    <!-- ===================== -->
+
+    <owl:Class rdf:ID="部门"/>
+
+    <owl:Class rdf:ID="销售部门">
+        <rdfs:subClassOf rdf:resource="#部门"/>
+    </owl:Class>
+
+    <owl:Class rdf:ID="生产部门">
+        <rdfs:subClassOf rdf:resource="#部门"/>
+    </owl:Class>
+
+    <owl:Class rdf:ID="采购部门">
+        <rdfs:subClassOf rdf:resource="#部门"/>
+    </owl:Class>
+
+    <owl:Class rdf:ID="技术部门">
+        <rdfs:subClassOf rdf:resource="#部门"/>
+    </owl:Class>
+
+
+    <!-- ===================== -->
+    <!-- 3. 业务对象体系 -->
+    <!-- ===================== -->
+
+    <owl:Class rdf:ID="销售订单"/>
+
+    <owl:Class rdf:ID="生产订单"/>
+
+    <owl:Class rdf:ID="产品族"/>
+
+    <owl:Class rdf:ID="产品"/>
+
+    <owl:Class rdf:ID="供应商"/>
+
+    <owl:Class rdf:ID="供应商X">
+        <rdfs:subClassOf rdf:resource="#供应商"/>
+    </owl:Class>
+
+    <owl:Class rdf:ID="供应商Y">
+        <rdfs:subClassOf rdf:resource="#供应商"/>
+    </owl:Class>
+
+    <owl:Class rdf:ID="零部件"/>
+
+    <owl:Class rdf:ID="设备零部件">
+        <rdfs:subClassOf rdf:resource="#零部件"/>
+    </owl:Class>
+
+
+    <!-- ===================== -->
+    <!-- 4. 生产执行体系 -->
+    <!-- ===================== -->
+
+    <owl:Class rdf:ID="工序"/>
+
+    <owl:Class rdf:ID="工段"/>
+
+    <owl:Class rdf:ID="车间"/>
+
+    <owl:Class rdf:ID="工厂"/>
+
+    <owl:Class rdf:ID="仓库"/>
+
+    <owl:Class rdf:ID="加工设备"/>
+
+
+    <!-- ===================== -->
+    <!-- 5. 组织隶属关系 -->
+    <!-- ===================== -->
+
+    <owl:ObjectProperty rdf:ID="隶属于">
+        <rdfs:domain rdf:resource="#员工"/>
+        <rdfs:range rdf:resource="#部门"/>
+    </owl:ObjectProperty>
+
+
+    <!-- ===================== -->
+    <!-- 6. 业务流与责任关系 -->
+    <!-- ===================== -->
+
+    <!-- 销售人员履行销售订单 -->
+    <owl:ObjectProperty rdf:ID="履行销售订单">
+        <rdfs:domain rdf:resource="#销售人员"/>
+        <rdfs:range rdf:resource="#销售订单"/>
+    </owl:ObjectProperty>
+
+    <!-- 生产计划员制定生产订单 -->
+    <owl:ObjectProperty rdf:ID="制定生产订单">
+        <rdfs:domain rdf:resource="#生产计划员"/>
+        <rdfs:range rdf:resource="#生产订单"/>
+    </owl:ObjectProperty>
+
+    <!-- 销售订单驱动生产订单 -->
+    <owl:ObjectProperty rdf:ID="驱动">
+        <rdfs:domain rdf:resource="#销售订单"/>
+        <rdfs:range rdf:resource="#生产订单"/>
+    </owl:ObjectProperty>
+
+
+    <!-- ===================== -->
+    <!-- 7. 采购与供应关系 -->
+    <!-- ===================== -->
+
+    <owl:ObjectProperty rdf:ID="对接供应商">
+        <rdfs:domain rdf:resource="#采购员"/>
+        <rdfs:range rdf:resource="#供应商"/>
+    </owl:ObjectProperty>
+
+    <owl:ObjectProperty rdf:ID="提供零部件">
+        <rdfs:domain rdf:resource="#供应商"/>
+        <rdfs:range rdf:resource="#零部件"/>
+    </owl:ObjectProperty>
+
+
+    <!-- ===================== -->
+    <!-- 8. 产品构成关系 -->
+    <!-- ===================== -->
+
+    <owl:ObjectProperty rdf:ID="构成产品">
+        <rdfs:domain rdf:resource="#零部件"/>
+        <rdfs:range rdf:resource="#产品"/>
+    </owl:ObjectProperty>
+
+    <owl:ObjectProperty rdf:ID="产品族包含产品">
+        <rdfs:domain rdf:resource="#产品族"/>
+        <rdfs:range rdf:resource="#产品"/>
+    </owl:ObjectProperty>
+
+
+    <!-- ===================== -->
+    <!-- 9. 生产执行关系 -->
+    <!-- ===================== -->
+
+    <owl:ObjectProperty rdf:ID="组装形成">
+        <rdfs:domain rdf:resource="#产品"/>
+        <rdfs:range rdf:resource="#工序"/>
+    </owl:ObjectProperty>
+
+    <owl:ObjectProperty rdf:ID="执行工序">
+        <rdfs:domain rdf:resource="#工段"/>
+        <rdfs:range rdf:resource="#工序"/>
+    </owl:ObjectProperty>
+
+    <owl:ObjectProperty rdf:ID="作为资源使用">
+        <rdfs:domain rdf:resource="#工序"/>
+        <rdfs:range rdf:resource="#加工设备"/>
+    </owl:ObjectProperty>
+
+
+    <!-- ===================== -->
+    <!-- 10. 空间位置关系 -->
+    <!-- ===================== -->
+
+    <owl:ObjectProperty rdf:ID="位于">
+        <rdfs:domain rdf:resource="#加工设备"/>
+        <rdfs:range rdf:resource="#工段"/>
+    </owl:ObjectProperty>
+
+    <owl:ObjectProperty rdf:ID="位于车间">
+        <rdfs:domain rdf:resource="#工段"/>
+        <rdfs:range rdf:resource="#车间"/>
+    </owl:ObjectProperty>
+
+    <owl:ObjectProperty rdf:ID="位于工厂">
+        <rdfs:domain rdf:resource="#车间"/>
+        <rdfs:range rdf:resource="#工厂"/>
+    </owl:ObjectProperty>
+
+
+    <!-- ===================== -->
+    <!-- 11. 物流关系 -->
+    <!-- ===================== -->
+
+    <owl:ObjectProperty rdf:ID="原料流入">
+        <rdfs:domain rdf:resource="#仓库"/>
+        <rdfs:range rdf:resource="#工厂"/>
+    </owl:ObjectProperty>
+
+    <owl:ObjectProperty rdf:ID="成品流出">
+        <rdfs:domain rdf:resource="#工厂"/>
+        <rdfs:range rdf:resource="#仓库"/>
+    </owl:ObjectProperty>
+
+
+    <!-- ===================== -->
+    <!-- 12. 技术控制关系 -->
+    <!-- ===================== -->
+
+    <owl:ObjectProperty rdf:ID="定义工序">
+        <rdfs:domain rdf:resource="#技术员"/>
+        <rdfs:range rdf:resource="#工序"/>
+    </owl:ObjectProperty>
+
+    <owl:ObjectProperty rdf:ID="操控设备">
+        <rdfs:domain rdf:resource="#产线工人"/>
+        <rdfs:range rdf:resource="#加工设备"/>
+    </owl:ObjectProperty>
+
+</rdf:RDF>

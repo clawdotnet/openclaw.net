@@ -1,0 +1,58 @@
+@import 'tailwindcss';
+
+/* ---- Design tokens -------------------------------------------------------- */
+@theme {
+  --color-canvas: #0b0f1a;
+  --color-panel: #111726;
+  --color-panel2: #161d30;
+  --color-edge: #2a3550;
+  --color-ink: #e6ebf5;
+  --color-muted: #8a96b3;
+
+  /* Entity accent colours (shared with the Cytoscape stylesheet in graph.ts). */
+  --color-klass: #6ea8fe;
+  --color-individual: #4ade80;
+  --color-datatype: #fbbf24;
+  --color-objprop: #c084fc;
+  --color-restriction: #f472b6;
+  --color-disjoint: #f87171;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Thin, theme-matched scrollbars for the side panels. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3550 transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #2a3550;
+  border-radius: 6px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a466a;
+}
+
+/* Subtle dotted backdrop for the graph canvas. */
+.graph-grid {
+  background-color: var(--color-canvas);
+  background-image: radial-gradient(circle, #1b2438 1px, transparent 1px);
+  background-size: 26px 26px;
+}

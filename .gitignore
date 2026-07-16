@@ -53,3 +53,7 @@ docs/blog/2026-05-13-embedded-gemma-4-local-models.md
 
 # Local documentation packages
 openclaw-docs.zip
+
+# Node.js Tools for Visual Studio
+.ntvs_analysis.dat
+node_modules/

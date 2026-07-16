@@ -1,0 +1,1952 @@
+<?xml version="1.0"?>
+<rdf:RDF
+    xmlns:xsp="http://www.owl-ontologies.com/2005/08/07/xsp.owl#"
+    xmlns:protege="http://protege.stanford.edu/plugins/owl/protege#"
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+    xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+    xmlns:owl="http://www.w3.org/2002/07/owl#"
+    xmlns="http://www.owl-ontologies.com/2005/11/22/Ontology1132669534.owl#"
+    xmlns:daml="http://www.daml.org/2001/03/daml+oil#"
+    xmlns:p1="http://www.owl-ontologies.com/assert.owl#"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xml:base="http://www.owl-ontologies.com/2005/11/22/Ontology1132669534.owl">
+  <owl:Ontology rdf:about="">
+    <owl:imports rdf:resource="http://protege.stanford.edu/plugins/owl/protege"/>
+  </owl:Ontology>
+  <owl:Class rdf:ID="Themal_Sense">
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Proprioception_Sense"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Tactile_Sense"/>
+    </owl:disjointWith>
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="Somatic_Sense"/>
+    </rdfs:subClassOf>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Noiciception_Sense"/>
+    </owl:disjointWith>
+  </owl:Class>
+  <owl:Class rdf:ID="Property_Interface">
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="Software_Interface_Item"/>
+    </rdfs:subClassOf>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:someValuesFrom>
+          <owl:Class rdf:ID="Variable"/>
+        </owl:someValuesFrom>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="providesAccessTo"/>
+        </owl:onProperty>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Field_Interface"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Method_Interface"/>
+    </owl:disjointWith>
+  </owl:Class>
+  <owl:Class rdf:ID="Motion_Tracking_System">
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Data_Glove"/>
+    </owl:disjointWith>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="Hardware_Resource"/>
+    </rdfs:subClassOf>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Monitor"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Mouse"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Keyboard"/>
+    </owl:disjointWith>
+  </owl:Class>
+  <owl:Class rdf:ID="Visual_Sense">
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Auditory_Sense"/>
+    </owl:disjointWith>
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="Distal_Sense"/>
+    </rdfs:subClassOf>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Olfactory_Sense"/>
+    </owl:disjointWith>
+  </owl:Class>
+  <owl:Class rdf:about="#Data_Glove">
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Keyboard"/>
+    </owl:disjointWith>
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#Hardware_Resource"/>
+    </rdfs:subClassOf>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith rdf:resource="#Motion_Tracking_System"/>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Mouse"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Monitor"/>
+    </owl:disjointWith>
+  </owl:Class>
+  <owl:Class rdf:about="#Somatic_Sense">
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Taste_Sense"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Vestibular_Sense"/>
+    </owl:disjointWith>
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="Proximal_Sense"/>
+    </rdfs:subClassOf>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:about="#Distal_Sense">
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Proximal_Sense"/>
+    </owl:disjointWith>
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="Sensory_Experience"/>
+    </rdfs:subClassOf>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Vestibular_Sense"/>
+    </owl:disjointWith>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Taste_Sense"/>
+    </owl:disjointWith>
+  </owl:Class>
+  <owl:Class rdf:ID="Software_Interface">
+    <owl:disjointWith>
+      <owl:Class rdf:ID="User_Interaction"/>
+    </owl:disjointWith>
+    <rdfs:subClassOf rdf:resource="http://www.w3.org/2002/07/owl#Thing"/>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Hardware_Resource"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Sensory_Experience"/>
+    </owl:disjointWith>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="hasInterfaceItems"/>
+        </owl:onProperty>
+        <owl:someValuesFrom>
+          <owl:Class rdf:about="#Software_Interface_Item"/>
+        </owl:someValuesFrom>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Variable"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Software_Interface_Item"/>
+    </owl:disjointWith>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:ID="Movement_Interaction">
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Extremity_Interaction"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Vocal_Interaction"/>
+    </owl:disjointWith>
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#User_Interaction"/>
+    </rdfs:subClassOf>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:about="#Keyboard">
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Mouse"/>
+    </owl:disjointWith>
+    <owl:disjointWith rdf:resource="#Data_Glove"/>
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#Hardware_Resource"/>
+    </rdfs:subClassOf>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Monitor"/>
+    </owl:disjointWith>
+    <owl:disjointWith rdf:resource="#Motion_Tracking_System"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:ID="Integer">
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Floating_Point"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Short"/>
+    </owl:disjointWith>
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="Numeric_data"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:about="#Tactile_Sense">
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Proprioception_Sense"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Noiciception_Sense"/>
+    </owl:disjointWith>
+    <rdfs:subClassOf rdf:resource="#Somatic_Sense"/>
+    <owl:disjointWith rdf:resource="#Themal_Sense"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:ID="Implicit">
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="Enumeration"/>
+    </rdfs:subClassOf>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Explicit"/>
+    </owl:disjointWith>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:about="#Auditory_Sense">
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Olfactory_Sense"/>
+    </owl:disjointWith>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <rdfs:subClassOf rdf:resource="#Distal_Sense"/>
+    <owl:disjointWith rdf:resource="#Visual_Sense"/>
+  </owl:Class>
+  <owl:Class rdf:about="#Floating_Point">
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Short"/>
+    </owl:disjointWith>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith rdf:resource="#Integer"/>
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#Numeric_data"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:about="#Vocal_Interaction">
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#User_Interaction"/>
+    </rdfs:subClassOf>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Extremity_Interaction"/>
+    </owl:disjointWith>
+    <owl:disjointWith rdf:resource="#Movement_Interaction"/>
+  </owl:Class>
+  <owl:Class rdf:about="#Short">
+    <owl:disjointWith rdf:resource="#Integer"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#Numeric_data"/>
+    </rdfs:subClassOf>
+    <owl:disjointWith rdf:resource="#Floating_Point"/>
+  </owl:Class>
+  <owl:Class rdf:about="#Method_Interface">
+    <owl:disjointWith rdf:resource="#Property_Interface"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty>
+          <owl:FunctionalProperty rdf:ID="hasReturnValue"/>
+        </owl:onProperty>
+        <owl:someValuesFrom>
+          <owl:Class rdf:about="#Variable"/>
+        </owl:someValuesFrom>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Field_Interface"/>
+    </owl:disjointWith>
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#Software_Interface_Item"/>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:someValuesFrom>
+          <owl:Class rdf:about="#Variable"/>
+        </owl:someValuesFrom>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="hasParameter"/>
+        </owl:onProperty>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="Non-Numeric_data">
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Conditional_Variable"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Numeric_data"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Enumeration"/>
+    </owl:disjointWith>
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="Value"/>
+    </rdfs:subClassOf>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Value"/>
+    </owl:disjointWith>
+  </owl:Class>
+  <owl:Class rdf:about="#Enumeration">
+    <owl:disjointWith rdf:resource="#Non-Numeric_data"/>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Numeric_data"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Conditional_Variable"/>
+    </owl:disjointWith>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#Variable"/>
+    </rdfs:subClassOf>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Value"/>
+    </owl:disjointWith>
+  </owl:Class>
+  <owl:Class rdf:about="#Software_Interface_Item">
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Sensory_Experience"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Variable"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#User_Interaction"/>
+    </owl:disjointWith>
+    <owl:disjointWith rdf:resource="#Software_Interface"/>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Hardware_Resource"/>
+    </owl:disjointWith>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:about="#User_Interaction">
+    <owl:disjointWith rdf:resource="#Software_Interface"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <rdfs:comment rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >Interface for the requesting of information by the computer</rdfs:comment>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Sensory_Experience"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Hardware_Resource"/>
+    </owl:disjointWith>
+    <owl:disjointWith rdf:resource="#Software_Interface_Item"/>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Variable"/>
+    </owl:disjointWith>
+  </owl:Class>
+  <owl:Class rdf:ID="Object">
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Character"/>
+    </owl:disjointWith>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <rdfs:subClassOf rdf:resource="#Non-Numeric_data"/>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="Array"/>
+    </owl:disjointWith>
+  </owl:Class>
+  <owl:Class rdf:about="#Numeric_data">
+    <owl:disjointWith rdf:resource="#Enumeration"/>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Conditional_Variable"/>
+    </owl:disjointWith>
+    <owl:disjointWith rdf:resource="#Non-Numeric_data"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#Value"/>
+    </rdfs:subClassOf>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Value"/>
+    </owl:disjointWith>
+  </owl:Class>
+  <owl:Class rdf:about="#Proprioception_Sense">
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Noiciception_Sense"/>
+    </owl:disjointWith>
+    <rdfs:subClassOf rdf:resource="#Somatic_Sense"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith rdf:resource="#Tactile_Sense"/>
+    <owl:disjointWith rdf:resource="#Themal_Sense"/>
+  </owl:Class>
+  <owl:Class rdf:about="#Olfactory_Sense">
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <rdfs:subClassOf rdf:resource="#Distal_Sense"/>
+    <owl:disjointWith rdf:resource="#Visual_Sense"/>
+    <owl:disjointWith rdf:resource="#Auditory_Sense"/>
+  </owl:Class>
+  <owl:Class rdf:about="#Mouse">
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Monitor"/>
+    </owl:disjointWith>
+    <owl:disjointWith rdf:resource="#Data_Glove"/>
+    <owl:disjointWith rdf:resource="#Keyboard"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith rdf:resource="#Motion_Tracking_System"/>
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#Hardware_Resource"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:about="#Sensory_Experience">
+    <owl:disjointWith rdf:resource="#Software_Interface_Item"/>
+    <owl:disjointWith rdf:resource="#User_Interaction"/>
+    <rdfs:comment rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >Information provided by the computer telling the resource to stimulate a specified sensory experience for the user of the resource.</rdfs:comment>
+    <owl:disjointWith rdf:resource="#Software_Interface"/>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Hardware_Resource"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Variable"/>
+    </owl:disjointWith>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:about="#Extremity_Interaction">
+    <owl:disjointWith rdf:resource="#Vocal_Interaction"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith rdf:resource="#Movement_Interaction"/>
+    <rdfs:subClassOf rdf:resource="#User_Interaction"/>
+  </owl:Class>
+  <owl:Class rdf:about="#Noiciception_Sense">
+    <rdfs:subClassOf rdf:resource="#Somatic_Sense"/>
+    <owl:disjointWith rdf:resource="#Tactile_Sense"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith rdf:resource="#Proprioception_Sense"/>
+    <owl:disjointWith rdf:resource="#Themal_Sense"/>
+  </owl:Class>
+  <owl:Class rdf:about="#Conditional_Variable">
+    <owl:disjointWith rdf:resource="#Non-Numeric_data"/>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Value"/>
+    </owl:disjointWith>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith rdf:resource="#Enumeration"/>
+    <owl:disjointWith rdf:resource="#Numeric_data"/>
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#Variable"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:about="#Variable">
+    <rdfs:comment rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >Data type</rdfs:comment>
+    <owl:disjointWith rdf:resource="#Software_Interface_Item"/>
+    <owl:disjointWith rdf:resource="#Software_Interface"/>
+    <owl:disjointWith rdf:resource="#User_Interaction"/>
+    <owl:disjointWith rdf:resource="#Sensory_Experience"/>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Hardware_Resource"/>
+    </owl:disjointWith>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:about="#Field_Interface">
+    <owl:disjointWith rdf:resource="#Property_Interface"/>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty>
+          <owl:FunctionalProperty rdf:ID="isVariable"/>
+        </owl:onProperty>
+        <owl:someValuesFrom rdf:resource="#Variable"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf rdf:resource="#Software_Interface_Item"/>
+    <owl:disjointWith rdf:resource="#Method_Interface"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:ID="Gesture">
+    <rdfs:subClassOf rdf:resource="#Movement_Interaction"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:about="#Monitor">
+    <owl:disjointWith rdf:resource="#Data_Glove"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith rdf:resource="#Keyboard"/>
+    <owl:disjointWith rdf:resource="#Mouse"/>
+    <owl:disjointWith rdf:resource="#Motion_Tracking_System"/>
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#Hardware_Resource"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:about="#Taste_Sense">
+    <owl:disjointWith rdf:resource="#Somatic_Sense"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Vestibular_Sense"/>
+    </owl:disjointWith>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Proximal_Sense"/>
+    </owl:disjointWith>
+    <owl:disjointWith rdf:resource="#Distal_Sense"/>
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#Proximal_Sense"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:about="#Hardware_Resource">
+    <owl:disjointWith rdf:resource="#Software_Interface_Item"/>
+    <owl:disjointWith rdf:resource="#User_Interaction"/>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="capturesInteractions"/>
+        </owl:onProperty>
+        <owl:someValuesFrom rdf:resource="#User_Interaction"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <owl:disjointWith rdf:resource="#Sensory_Experience"/>
+    <rdfs:subClassOf rdf:resource="http://www.w3.org/2002/07/owl#Thing"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith rdf:resource="#Software_Interface"/>
+    <owl:disjointWith rdf:resource="#Variable"/>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="hasInterfaces"/>
+        </owl:onProperty>
+        <owl:someValuesFrom rdf:resource="#Software_Interface"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="providesExperience"/>
+        </owl:onProperty>
+        <owl:someValuesFrom rdf:resource="#Sensory_Experience"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:about="#Proximal_Sense">
+    <rdfs:subClassOf rdf:resource="#Sensory_Experience"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith rdf:resource="#Taste_Sense"/>
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Vestibular_Sense"/>
+    </owl:disjointWith>
+    <owl:disjointWith rdf:resource="#Distal_Sense"/>
+  </owl:Class>
+  <owl:Class rdf:about="#Vestibular_Sense">
+    <owl:disjointWith rdf:resource="#Taste_Sense"/>
+    <owl:disjointWith rdf:resource="#Distal_Sense"/>
+    <rdfs:subClassOf rdf:resource="#Proximal_Sense"/>
+    <owl:disjointWith rdf:resource="#Proximal_Sense"/>
+    <owl:disjointWith rdf:resource="#Somatic_Sense"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:about="#Character">
+    <owl:disjointWith>
+      <owl:Class rdf:about="#Array"/>
+    </owl:disjointWith>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <rdfs:subClassOf rdf:resource="#Non-Numeric_data"/>
+    <owl:disjointWith rdf:resource="#Object"/>
+  </owl:Class>
+  <owl:Class rdf:ID="String">
+    <rdfs:subClassOf rdf:resource="#Character"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:about="#Explicit">
+    <owl:disjointWith rdf:resource="#Implicit"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <rdfs:subClassOf rdf:resource="#Enumeration"/>
+  </owl:Class>
+  <owl:Class rdf:about="#Value">
+    <owl:disjointWith rdf:resource="#Numeric_data"/>
+    <rdfs:subClassOf rdf:resource="#Variable"/>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="representsInteraction"/>
+        </owl:onProperty>
+        <owl:someValuesFrom rdf:resource="#User_Interaction"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <owl:disjointWith rdf:resource="#Conditional_Variable"/>
+    <owl:disjointWith rdf:resource="#Non-Numeric_data"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+    <owl:disjointWith rdf:resource="#Enumeration"/>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:someValuesFrom rdf:resource="#Sensory_Experience"/>
+        <owl:onProperty>
+          <owl:FunctionalProperty rdf:ID="representsExperience"/>
+        </owl:onProperty>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:about="#Array">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:someValuesFrom rdf:resource="#Variable"/>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="containsVariables"/>
+        </owl:onProperty>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <owl:disjointWith rdf:resource="#Object"/>
+    <rdfs:subClassOf rdf:resource="#Non-Numeric_data"/>
+    <owl:disjointWith rdf:resource="#Character"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:Class rdf:ID="Vocal_Command">
+    <rdfs:subClassOf rdf:resource="#Vocal_Interaction"/>
+    <protege:subclassesDisjoint rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</protege:subclassesDisjoint>
+  </owl:Class>
+  <owl:ObjectProperty rdf:about="#hasInterfaces">
+    <rdfs:range rdf:resource="#Software_Interface"/>
+    <rdfs:domain rdf:resource="#Hardware_Resource"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#containsVariables">
+    <rdfs:range rdf:resource="#Variable"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#providesAccessTo">
+    <rdfs:range rdf:resource="#Variable"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#FunctionalProperty"/>
+    <rdfs:domain rdf:resource="#Property_Interface"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#hasInterfaceItems">
+    <rdfs:domain rdf:resource="#Software_Interface"/>
+    <rdfs:range rdf:resource="#Software_Interface_Item"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#capturesInteractions">
+    <rdfs:domain rdf:resource="#Hardware_Resource"/>
+    <rdfs:range rdf:resource="#User_Interaction"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="possibleResults">
+    <rdfs:domain rdf:resource="#Conditional_Variable"/>
+    <rdfs:range rdf:resource="#Value"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#providesExperience">
+    <rdfs:domain rdf:resource="#Hardware_Resource"/>
+    <rdfs:range rdf:resource="#Sensory_Experience"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#representsInteraction">
+    <rdfs:range rdf:resource="#User_Interaction"/>
+    <rdfs:domain rdf:resource="#Value"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#FunctionalProperty"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#hasParameter">
+    <rdfs:range rdf:resource="#Variable"/>
+    <rdfs:domain rdf:resource="#Method_Interface"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="representsExperiences">
+    <rdfs:domain rdf:resource="#Enumeration"/>
+    <rdfs:range rdf:resource="#Sensory_Experience"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="representsInteractions">
+    <rdfs:range rdf:resource="#User_Interaction"/>
+    <rdfs:domain rdf:resource="#Enumeration"/>
+  </owl:ObjectProperty>
+  <owl:DatatypeProperty rdf:ID="canBeNegative">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#FunctionalProperty"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#boolean"/>
+    <rdfs:domain rdf:resource="#Numeric_data"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="isMutator">
+    <rdfs:domain rdf:resource="#Property_Interface"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#boolean"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#FunctionalProperty"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="isAccessor">
+    <rdfs:domain rdf:resource="#Property_Interface"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#FunctionalProperty"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#boolean"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="hasVersion">
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <rdfs:domain rdf:resource="#Software_Interface"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#FunctionalProperty"/>
+  </owl:DatatypeProperty>
+  <owl:FunctionalProperty rdf:ID="hasObjectName">
+    <rdfs:domain rdf:resource="#Object"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/>
+  </owl:FunctionalProperty>
+  <owl:FunctionalProperty rdf:about="#representsExperience">
+    <rdfs:range rdf:resource="#Sensory_Experience"/>
+    <rdfs:domain rdf:resource="#Value"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+  </owl:FunctionalProperty>
+  <owl:FunctionalProperty rdf:ID="hasInterfaceName">
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <rdfs:domain rdf:resource="#Software_Interface_Item"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/>
+  </owl:FunctionalProperty>
+  <owl:FunctionalProperty rdf:ID="conditionVaraible">
+    <rdfs:range rdf:resource="#Variable"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="#Conditional_Variable"/>
+  </owl:FunctionalProperty>
+  <owl:FunctionalProperty rdf:ID="characterEncoding">
+    <rdfs:domain rdf:resource="#Character"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/>
+    <rdfs:range>
+      <owl:DataRange>
+        <owl:oneOf rdf:parseType="Resource">
+          <rdf:rest rdf:parseType="Resource">
+            <rdf:rest rdf:resource="http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"/>
+            <rdf:first rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+            >Unicode</rdf:first>
+          </rdf:rest>
+          <rdf:first rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+          >ASCII</rdf:first>
+        </owl:oneOf>
+      </owl:DataRange>
+    </rdfs:range>
+  </owl:FunctionalProperty>
+  <owl:FunctionalProperty rdf:about="#hasReturnValue">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:domain rdf:resource="#Method_Interface"/>
+    <rdfs:range rdf:resource="#Variable"/>
+  </owl:FunctionalProperty>
+  <owl:FunctionalProperty rdf:about="#isVariable">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:range rdf:resource="#Variable"/>
+    <rdfs:domain rdf:resource="#Field_Interface"/>
+  </owl:FunctionalProperty>
+  <owl:FunctionalProperty rdf:ID="hasEnumerationName">
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/>
+    <rdfs:domain rdf:resource="#Explicit"/>
+  </owl:FunctionalProperty>
+  <owl:AllDifferent>
+    <owl:distinctMembers rdf:parseType="Collection">
+      <Floating_Point rdf:ID="Thumb_flexure_lower_joint_Scaled_Float">
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >true</canBeNegative>
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Thumb_flexure_lower_joint"/>
+        </representsInteraction>
+      </Floating_Point>
+      <Floating_Point rdf:ID="Thumb_flexure_second_joint_Scaled_Float">
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Thumb_flexure_second_joint"/>
+        </representsInteraction>
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >true</canBeNegative>
+      </Floating_Point>
+      <Floating_Point rdf:ID="Thumb-index_finger_abduction_Scaled_Float">
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >true</canBeNegative>
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Thumb-index_finger_abduction"/>
+        </representsInteraction>
+      </Floating_Point>
+      <Floating_Point rdf:ID="Index_finger_flexure_at_knuckle_Scaled_Float">
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >true</canBeNegative>
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Index_finger_flexure_at_knuckle"/>
+        </representsInteraction>
+      </Floating_Point>
+      <Floating_Point rdf:ID="Index_finger_flexure_second_joint_Scaled_Float">
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >true</canBeNegative>
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Index_finger_flexure_second_joint"/>
+        </representsInteraction>
+      </Floating_Point>
+      <Floating_Point rdf:ID="Index-middle_finger_abduction_Scaled_Float">
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >true</canBeNegative>
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Index-middle_finger_abduction"/>
+        </representsInteraction>
+      </Floating_Point>
+      <Floating_Point rdf:ID="Middle_finger_flexure_at_knuckle_Scaled_Float">
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Middle_finger_flexure_at_knuckle"/>
+        </representsInteraction>
+      </Floating_Point>
+      <Floating_Point rdf:ID="Middle_finger_flexure_second_joint_Scaled_Float">
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >true</canBeNegative>
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Middle_finger_flexure_second_joint"/>
+        </representsInteraction>
+      </Floating_Point>
+      <Floating_Point rdf:ID="Middle-ring_finger_abduction_Scaled_Float">
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >true</canBeNegative>
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Middle-ring_finger_abduction"/>
+        </representsInteraction>
+      </Floating_Point>
+      <Floating_Point rdf:ID="Ring_finger_flexure_at_knuckle_Scaled_Float">
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >true</canBeNegative>
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Ring_finger_flexure_at_knuckle"/>
+        </representsInteraction>
+      </Floating_Point>
+      <Floating_Point rdf:ID="Ring_finger_flexure_second_joint_Scaled_Float">
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >true</canBeNegative>
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Ring_finger_flexure_second_joint"/>
+        </representsInteraction>
+      </Floating_Point>
+      <Floating_Point rdf:ID="Ring-little_finger_abduction_Scaled_Float">
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >true</canBeNegative>
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Ring_little_finger_abduction"/>
+        </representsInteraction>
+      </Floating_Point>
+      <Floating_Point rdf:ID="Little_finger_flexure_at_knuckle_Scaled_Float">
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >true</canBeNegative>
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Little_finger_flexure_at_knuckle"/>
+        </representsInteraction>
+      </Floating_Point>
+      <Floating_Point rdf:ID="Little_finger_flexure_second_joint_Scaled_Float">
+        <representsInteraction>
+          <Movement_Interaction rdf:ID="Little_finger_flexure_second_joint"/>
+        </representsInteraction>
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >true</canBeNegative>
+      </Floating_Point>
+    </owl:distinctMembers>
+  </owl:AllDifferent>
+  <Method_Interface rdf:ID="fdSetSensorRaw_5DT_Dataglove_16_Interface">
+    <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >fdSetSensorRaw</hasInterfaceName>
+    <hasParameter>
+      <Object rdf:ID="_5DT_Data_Glove_Object">
+        <hasObjectName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+        >fdGlove</hasObjectName>
+      </Object>
+    </hasParameter>
+    <hasParameter>
+      <Explicit rdf:ID="_5DT_dataglove_Sensors">
+        <hasEnumerationName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+        >EfdSensors</hasEnumerationName>
+      </Explicit>
+    </hasParameter>
+    <hasParameter>
+      <Conditional_Variable rdf:ID="_5DT_dataglove_Conditional_Raw_Sensor_data">
+        <possibleResults>
+          <Short rdf:ID="Index-middle_finger_abduction_Raw_Positive_Integer">
+            <representsInteraction rdf:resource="#Index-middle_finger_abduction"/>
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+          </Short>
+        </possibleResults>
+        <possibleResults>
+          <Short rdf:ID="Index_finger_flexure_at_knuckle_Raw_Positive_Integer">
+            <representsInteraction rdf:resource="#Index_finger_flexure_at_knuckle"/>
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+          </Short>
+        </possibleResults>
+        <possibleResults>
+          <Short rdf:ID="Middle_finger_flexure_at_knuckle_Raw_Positive_Integer">
+            <representsInteraction rdf:resource="#Middle_finger_flexure_at_knuckle"/>
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+          </Short>
+        </possibleResults>
+        <possibleResults>
+          <Short rdf:ID="Index_finger_flexure_second_joint_Raw_Positive_Integer">
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+            <representsInteraction rdf:resource="#Index_finger_flexure_second_joint"/>
+          </Short>
+        </possibleResults>
+        <possibleResults>
+          <Short rdf:ID="Thumb_flexure_second_joint_Raw_Positive_Integer">
+            <representsInteraction rdf:resource="#Thumb_flexure_second_joint"/>
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+          </Short>
+        </possibleResults>
+        <possibleResults>
+          <Short rdf:ID="Little_finger_flexure_at_knuckle_Raw_Positive_Integer">
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+            <representsInteraction rdf:resource="#Little_finger_flexure_at_knuckle"/>
+          </Short>
+        </possibleResults>
+        <possibleResults>
+          <Short rdf:ID="Middle_finger_flexure_second_joint_Raw_Positive_Integer">
+            <representsInteraction rdf:resource="#Middle_finger_flexure_second_joint"/>
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+          </Short>
+        </possibleResults>
+        <possibleResults>
+          <Short rdf:ID="Ring_finger_flexure_second_joint_Raw_Positive_Integer">
+            <representsInteraction rdf:resource="#Ring_finger_flexure_second_joint"/>
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+          </Short>
+        </possibleResults>
+        <conditionVaraible rdf:resource="#_5DT_dataglove_Sensors"/>
+        <possibleResults>
+          <Short rdf:ID="Thumb-index_finger_abduction_Raw_Positive_Integer">
+            <representsInteraction rdf:resource="#Thumb-index_finger_abduction"/>
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+          </Short>
+        </possibleResults>
+        <possibleResults>
+          <Short rdf:ID="Ring_finger_flexure_at_knuckle_Raw_Positive_Integer">
+            <representsInteraction rdf:resource="#Ring_finger_flexure_at_knuckle"/>
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+          </Short>
+        </possibleResults>
+        <possibleResults>
+          <Short rdf:ID="Ring-little_finger_abduction_Raw_Positive_Integer">
+            <representsInteraction rdf:resource="#Ring_little_finger_abduction"/>
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+          </Short>
+        </possibleResults>
+        <possibleResults>
+          <Short rdf:ID="Little_finger_flexure_second_joint_Raw_Positive_Integer">
+            <representsInteraction rdf:resource="#Little_finger_flexure_second_joint"/>
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+          </Short>
+        </possibleResults>
+        <possibleResults>
+          <Short rdf:ID="Thumb_flexure_lower_joint_Raw_Positive_Integer">
+            <representsInteraction rdf:resource="#Thumb_flexure_lower_joint"/>
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+          </Short>
+        </possibleResults>
+        <possibleResults>
+          <Short rdf:ID="Middle-ring_finger_abduction_Raw_Positive_Integer">
+            <representsInteraction rdf:resource="#Middle-ring_finger_abduction"/>
+            <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+            >false</canBeNegative>
+          </Short>
+        </possibleResults>
+      </Conditional_Variable>
+    </hasParameter>
+  </Method_Interface>
+  <Method_Interface rdf:ID="fdGetCalibrationAll_5DT_Dataglove_16_Interface">
+    <hasParameter>
+      <Array rdf:ID="Data_Glove_Minimum_Positive_Raw_Sensor_Data_Value_Collection">
+        <containsVariables>
+          <Short rdf:ID="Thumb-index_finger_abduction_Minimum_Raw_data_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Index_finger_flexure_at_knuckle_Minimum_Raw_data_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Little_finger_flexure_second_joint_Minimum_Raw_data_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Index-middle_finger_abduction_Minimum_Raw_data_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Index_finger_flexure_second_joint_Minimum_Raw_data_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Middle_finger_flexure_second_joint_Minimum_Raw_data_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Middle-ring_finger_abduction_Minimum_Raw_data_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Ring_finger_flexure_at_knuckle_Minimum_Raw_data_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Thumb_flexure_second_joint_Minimum_Raw_data_value"/>
+        </containsVariables>
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >false</canBeNegative>
+        <containsVariables>
+          <Short rdf:ID="Ring-little_finger_abduction_Minimum_Raw_data_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Middle_finger_flexure_at_knuckle_Minimum_Raw_data_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Ring_finger_flexure_second_joint_Minimum_Raw_data_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Thumb_flexure_lower_joint_Minimum_Raw_data_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Little_finger_flexure_at_knuckle_Minimum_Raw_data_value"/>
+        </containsVariables>
+      </Array>
+    </hasParameter>
+    <hasParameter>
+      <Array rdf:ID="Data_Glove_Maximum_Positive_Raw_Sensor_Data_Value_Collection">
+        <containsVariables>
+          <Short rdf:ID="Middle_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Index_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Thumb-index_finger_abduction_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Ring_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Middle-ring_finger_abduction_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Ring_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Index_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Middle_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Ring-little_finger_abduction_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Thumb_flexure_lower_joint_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Little_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Index-middle_finger_abduction_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+        <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+        >false</canBeNegative>
+        <containsVariables>
+          <Short rdf:ID="Little_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+        <containsVariables>
+          <Short rdf:ID="Thumb_flexure_second_joint_Maximum_Raw_Data_Value"/>
+        </containsVariables>
+      </Array>
+    </hasParameter>
+    <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >fdGetCalibrationAll</hasInterfaceName>
+    <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+  </Method_Interface>
+  <Explicit rdf:ID="_5DT_Dataglove_Type">
+    <hasEnumerationName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >EfdGloveTypes</hasEnumerationName>
+  </Explicit>
+  <Method_Interface rdf:ID="fdGetSensorMaxAll_5DT_Dataglove_16_Interface">
+    <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+    <hasParameter>
+      <Array rdf:ID="Data_Glove_Maximum_Scaled_Sensor_Data_Collection">
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Middle-ring_finger_abduction_Scaled_Sensor_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Thumb_flexure_lower_joint_Scaled_Sensor_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Ring-little_finger_abduction_Scaled_Sensor_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Thumb_flexure_second_joint_Scaled_Sensor_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Ring_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Ring_finger_flexure_second_joint_Scaled_Sensor_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Little_finger_flexure_second_joint_Scaled_Sensor_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Index-middle_finger_abduction_Scaled_Sensor_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Thumb-index_finger_abduction_Scaled_Sensor_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Index_finger_flexure_second_joint_Scaled_Sensor_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Little_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Middle_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Index_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+        </containsVariables>
+        <containsVariables>
+          <Floating_Point rdf:ID="Maximum_Middle_finger_flexure_second_joint_Scaled_Sensor_value"/>
+        </containsVariables>
+      </Array>
+    </hasParameter>
+    <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >fdGetSensorMaxAll</hasInterfaceName>
+  </Method_Interface>
+  <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Little_finger_flexure_second_joint_sensor"/>
+  <Gesture rdf:ID="Little_finger_point_gesture"/>
+  <Mouse rdf:ID="Logitech_Premium_optical_Wheel_Mouse_MBT-58"/>
+  <Gesture rdf:ID="Flat_hand_gesture"/>
+  <Conditional_Variable rdf:ID="_5DT_Dataglove_Conditional_Minimum_Raw_Sensor_Value">
+    <possibleResults rdf:resource="#Index-middle_finger_abduction_Minimum_Raw_data_value"/>
+    <possibleResults rdf:resource="#Middle_finger_flexure_second_joint_Minimum_Raw_data_value"/>
+    <possibleResults rdf:resource="#Thumb-index_finger_abduction_Minimum_Raw_data_value"/>
+    <possibleResults rdf:resource="#Ring-little_finger_abduction_Minimum_Raw_data_value"/>
+    <possibleResults rdf:resource="#Little_finger_flexure_at_knuckle_Minimum_Raw_data_value"/>
+    <possibleResults rdf:resource="#Thumb_flexure_lower_joint_Minimum_Raw_data_value"/>
+    <possibleResults rdf:resource="#Index_finger_flexure_at_knuckle_Minimum_Raw_data_value"/>
+    <possibleResults rdf:resource="#Thumb_flexure_second_joint_Minimum_Raw_data_value"/>
+    <possibleResults rdf:resource="#Little_finger_flexure_second_joint_Minimum_Raw_data_value"/>
+    <conditionVaraible rdf:resource="#_5DT_dataglove_Sensors"/>
+    <possibleResults rdf:resource="#Middle_finger_flexure_at_knuckle_Minimum_Raw_data_value"/>
+    <possibleResults rdf:resource="#Ring_finger_flexure_second_joint_Minimum_Raw_data_value"/>
+    <possibleResults rdf:resource="#Ring_finger_flexure_at_knuckle_Minimum_Raw_data_value"/>
+    <possibleResults rdf:resource="#Index_finger_flexure_second_joint_Minimum_Raw_data_value"/>
+    <possibleResults rdf:resource="#Middle-ring_finger_abduction_Minimum_Raw_data_value"/>
+  </Conditional_Variable>
+  <Explicit rdf:ID="left_or_Right_handed_5DT_Dataglove">
+    <hasEnumerationName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >EfdGloveHand</hasEnumerationName>
+  </Explicit>
+  <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Index_finger_flexure_second_joint_sensor"/>
+  <Method_Interface rdf:ID="fdGetGloveInfo_5DT_Dataglove_16_Interface">
+    <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >fdGetGloveInfo</hasInterfaceName>
+  </Method_Interface>
+  <owl:AllDifferent>
+    <owl:distinctMembers rdf:parseType="Collection">
+      <Floating_Point rdf:about="#Thumb_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Middle_finger_flexure_at_knuckle_Scaled_Float"/>
+      <Floating_Point rdf:about="#Thumb-index_finger_abduction_Scaled_Float"/>
+      <Floating_Point rdf:about="#Index_finger_flexure_at_knuckle_Scaled_Float"/>
+      <Floating_Point rdf:about="#Middle-ring_finger_abduction_Scaled_Float"/>
+      <Floating_Point rdf:about="#Ring_finger_flexure_at_knuckle_Scaled_Float"/>
+      <Floating_Point rdf:about="#Ring-little_finger_abduction_Scaled_Float"/>
+      <Floating_Point rdf:about="#Little_finger_flexure_at_knuckle_Scaled_Float"/>
+      <Floating_Point rdf:about="#Index-middle_finger_abduction_Scaled_Float"/>
+      <Floating_Point rdf:about="#Index_finger_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Thumb_flexure_lower_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Little_finger_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Middle_finger_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Ring_finger_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Maximum_Thumb_flexure_lower_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Thumb_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Thumb-index_finger_abduction_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Index_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Index_finger_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Index-middle_finger_abduction_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Middle_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Middle_finger_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Middle-ring_finger_abduction_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Ring_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Ring_finger_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Ring-little_finger_abduction_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Little_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Little_finger_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Thumb_flexure_lower_joint_sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Thumb_flexure_second_joint_sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Thumb-index_finger_abduction_sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Index_finger_flexure_at_knuckle_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Index_finger_flexure_second_joint_sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Index-middle_finger_abduction_sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Middle_finger_flexure_at_knuckle_sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Middle_finger_flexure_second_joint_sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Middle-ring_finger_abduction_sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Ring_finger_flexure_at_knuckle_sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Ring_finger_flexure_second_joint_sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Ring-little_finger_abduction_sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Maximum_Threshold_at_Little_finger_flexure_at_knuckle_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Little_finger_flexure_second_joint_sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Thumb_flexure_lower_joint_Sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Thumb_flexure_second_joint_Sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Thumb-index_finger_abduction_Sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Index_finger_flexure_at_knuckle_Sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Index_finger_flexure_second_joint_Sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Index-middle_finger_abduction_Sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Middle_finger_flexure_at_knuckle_Sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Middle_finger_flexure_second_joint_Sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Middle-ring_finger_abduction_Sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Ring_finger_flexure_at_knuckle_Sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Ring_finger_flexure_second_joint_Sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Ring-little_finger_abduction_Sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Little_finger_flexure_at_knuckle_Sensor"/>
+      <Floating_Point rdf:ID="Gesture_Recognition_Minimum_Threshold_at_Little_finger_flexure_second_joint_Sensor"/>
+    </owl:distinctMembers>
+  </owl:AllDifferent>
+  <Integer rdf:ID="number_of_Sensors">
+    <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</canBeNegative>
+  </Integer>
+  <Integer rdf:ID="Hand_Gesture_Being_Performed">
+    <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</canBeNegative>
+  </Integer>
+  <owl:AllDifferent>
+    <owl:distinctMembers rdf:parseType="Collection">
+      <Floating_Point rdf:about="#Thumb_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Middle_finger_flexure_at_knuckle_Scaled_Float"/>
+      <Floating_Point rdf:about="#Thumb-index_finger_abduction_Scaled_Float"/>
+      <Floating_Point rdf:about="#Index_finger_flexure_at_knuckle_Scaled_Float"/>
+      <Floating_Point rdf:about="#Middle-ring_finger_abduction_Scaled_Float"/>
+      <Floating_Point rdf:about="#Ring_finger_flexure_at_knuckle_Scaled_Float"/>
+      <Floating_Point rdf:about="#Ring-little_finger_abduction_Scaled_Float"/>
+      <Floating_Point rdf:about="#Little_finger_flexure_at_knuckle_Scaled_Float"/>
+      <Floating_Point rdf:about="#Index-middle_finger_abduction_Scaled_Float"/>
+      <Floating_Point rdf:about="#Index_finger_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Thumb_flexure_lower_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Little_finger_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Middle_finger_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Ring_finger_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Maximum_Thumb_flexure_lower_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Thumb_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Thumb-index_finger_abduction_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Index_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Index_finger_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Index-middle_finger_abduction_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Middle_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Middle_finger_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Middle-ring_finger_abduction_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Ring_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Ring_finger_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Ring-little_finger_abduction_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Little_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Little_finger_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Thumb_flexure_lower_joint_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Thumb_flexure_second_joint_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Thumb-index_finger_abduction_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Index_finger_flexure_at_knuckle_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Index_finger_flexure_second_joint_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Index-middle_finger_abduction_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Middle_finger_flexure_at_knuckle_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Middle_finger_flexure_second_joint_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Middle-ring_finger_abduction_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Ring_finger_flexure_at_knuckle_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Ring_finger_flexure_second_joint_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Ring-little_finger_abduction_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Little_finger_flexure_at_knuckle_sensor"/>
+      <Floating_Point rdf:about="#Gesture_Recognition_Maximum_Threshold_at_Little_finger_flexure_second_joint_sensor"/>
+    </owl:distinctMembers>
+  </owl:AllDifferent>
+  <Gesture rdf:ID="Little_middle_point_gesture"/>
+  <Gesture rdf:ID="Up_Yours_gesture"/>
+  <Gesture rdf:ID="Not_up_yours_gesture"/>
+  <Method_Interface rdf:ID="fdGetSensorMax_5DT_Dataglove_16_Interface">
+    <hasParameter rdf:resource="#_5DT_dataglove_Sensors"/>
+    <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+    <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >fdGetSensorMax</hasInterfaceName>
+    <hasReturnValue>
+      <Conditional_Variable rdf:ID="_5DT_DataGlove_Conditional_Maximum_Scaled_Sensor_Data">
+        <possibleResults rdf:resource="#Maximum_Little_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+        <possibleResults rdf:resource="#Maximum_Thumb-index_finger_abduction_Scaled_Sensor_value"/>
+        <possibleResults rdf:resource="#Maximum_Middle_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+        <possibleResults rdf:resource="#Maximum_Index_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+        <possibleResults rdf:resource="#Maximum_Middle-ring_finger_abduction_Scaled_Sensor_value"/>
+        <possibleResults rdf:resource="#Maximum_Little_finger_flexure_second_joint_Scaled_Sensor_value"/>
+        <possibleResults rdf:resource="#Maximum_Thumb_flexure_lower_joint_Scaled_Sensor_value"/>
+        <possibleResults rdf:resource="#Maximum_Ring_finger_flexure_second_joint_Scaled_Sensor_value"/>
+        <possibleResults rdf:resource="#Maximum_Index_finger_flexure_second_joint_Scaled_Sensor_value"/>
+        <possibleResults rdf:resource="#Maximum_Index-middle_finger_abduction_Scaled_Sensor_value"/>
+        <possibleResults rdf:resource="#Maximum_Ring_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+        <conditionVaraible rdf:resource="#_5DT_dataglove_Sensors"/>
+        <possibleResults rdf:resource="#Maximum_Middle_finger_flexure_second_joint_Scaled_Sensor_value"/>
+        <possibleResults rdf:resource="#Maximum_Thumb_flexure_second_joint_Scaled_Sensor_value"/>
+        <possibleResults rdf:resource="#Maximum_Ring-little_finger_abduction_Scaled_Sensor_value"/>
+      </Conditional_Variable>
+    </hasReturnValue>
+  </Method_Interface>
+  <Motion_Tracking_System rdf:ID="Vicon_Tracking_system"/>
+  <Gesture rdf:ID="Not_little_point_gesture"/>
+  <Method_Interface rdf:ID="fdSetThreshold_5DT_Dataglove_16_Interface">
+    <hasParameter rdf:resource="#_5DT_dataglove_Sensors"/>
+    <hasParameter>
+      <Conditional_Variable rdf:ID="_5DT_Dataglove_Conditional_Maximum_Gesture_Threshold_Value">
+        <conditionVaraible rdf:resource="#_5DT_dataglove_Sensors"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Index_finger_flexure_second_joint_sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Ring_finger_flexure_at_knuckle_sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Ring-little_finger_abduction_sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Thumb-index_finger_abduction_sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Little_finger_flexure_second_joint_sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Index_finger_flexure_at_knuckle_sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Middle_finger_flexure_at_knuckle_sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Index-middle_finger_abduction_sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Thumb_flexure_lower_joint_sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Ring_finger_flexure_second_joint_sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Little_finger_flexure_at_knuckle_sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Middle_finger_flexure_second_joint_sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Thumb_flexure_second_joint_sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Middle-ring_finger_abduction_sensor"/>
+      </Conditional_Variable>
+    </hasParameter>
+    <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+    <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >fdSetThreshold</hasInterfaceName>
+    <hasParameter>
+      <Conditional_Variable rdf:ID="_5DT_Dataglove_Conditional_Minimum_Gesture_Threshold_Value">
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Ring-little_finger_abduction_Sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Index-middle_finger_abduction_Sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Thumb-index_finger_abduction_Sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Ring_finger_flexure_at_knuckle_Sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Little_finger_flexure_second_joint_Sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Thumb_flexure_lower_joint_Sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Little_finger_flexure_at_knuckle_Sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Index_finger_flexure_at_knuckle_Sensor"/>
+        <conditionVaraible rdf:resource="#_5DT_dataglove_Sensors"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Middle_finger_flexure_second_joint_Sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Middle_finger_flexure_at_knuckle_Sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Thumb_flexure_second_joint_Sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Middle-ring_finger_abduction_Sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Index_finger_flexure_second_joint_Sensor"/>
+        <possibleResults rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Ring_finger_flexure_second_joint_Sensor"/>
+      </Conditional_Variable>
+    </hasParameter>
+  </Method_Interface>
+  <Conditional_Variable rdf:ID="_5DT_Dataglove_Conditional_Maximum_Raw_Sensor_Value">
+    <possibleResults rdf:resource="#Middle-ring_finger_abduction_Maximum_Raw_Data_Value"/>
+    <possibleResults rdf:resource="#Index-middle_finger_abduction_Maximum_Raw_Data_Value"/>
+    <possibleResults rdf:resource="#Middle_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+    <possibleResults rdf:resource="#Index_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+    <possibleResults rdf:resource="#Index_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+    <conditionVaraible rdf:resource="#_5DT_dataglove_Sensors"/>
+    <possibleResults rdf:resource="#Little_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+    <possibleResults rdf:resource="#Thumb-index_finger_abduction_Maximum_Raw_Data_Value"/>
+    <possibleResults rdf:resource="#Thumb_flexure_second_joint_Maximum_Raw_Data_Value"/>
+    <possibleResults rdf:resource="#Little_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+    <possibleResults rdf:resource="#Ring_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+    <possibleResults rdf:resource="#Middle_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+    <possibleResults rdf:resource="#Ring-little_finger_abduction_Maximum_Raw_Data_Value"/>
+    <possibleResults rdf:resource="#Thumb_flexure_lower_joint_Maximum_Raw_Data_Value"/>
+    <possibleResults rdf:resource="#Ring_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+  </Conditional_Variable>
+  <Method_Interface rdf:ID="fdGetSensorScaledAll_5DT_Dataglove_16_Interface">
+    <hasParameter>
+      <Array rdf:ID="Data_Glove_Scaled_Sensor_Data_Collection">
+        <containsVariables rdf:resource="#Index_finger_flexure_second_joint_Scaled_Float"/>
+        <containsVariables rdf:resource="#Index-middle_finger_abduction_Scaled_Float"/>
+        <containsVariables rdf:resource="#Thumb_flexure_second_joint_Scaled_Float"/>
+        <containsVariables rdf:resource="#Index_finger_flexure_at_knuckle_Scaled_Float"/>
+        <containsVariables rdf:resource="#Little_finger_flexure_at_knuckle_Scaled_Float"/>
+        <containsVariables rdf:resource="#Ring_finger_flexure_second_joint_Scaled_Float"/>
+        <containsVariables rdf:resource="#Little_finger_flexure_second_joint_Scaled_Float"/>
+        <containsVariables rdf:resource="#Middle-ring_finger_abduction_Scaled_Float"/>
+        <containsVariables rdf:resource="#Middle_finger_flexure_at_knuckle_Scaled_Float"/>
+        <containsVariables rdf:resource="#Ring_finger_flexure_at_knuckle_Scaled_Float"/>
+        <containsVariables rdf:resource="#Thumb_flexure_lower_joint_Scaled_Float"/>
+        <containsVariables rdf:resource="#Middle_finger_flexure_second_joint_Scaled_Float"/>
+        <containsVariables rdf:resource="#Ring-little_finger_abduction_Scaled_Float"/>
+        <containsVariables rdf:resource="#Thumb-index_finger_abduction_Scaled_Float"/>
+      </Array>
+    </hasParameter>
+    <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >fdGetSensorScaledAll</hasInterfaceName>
+    <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+  </Method_Interface>
+  <Method_Interface rdf:ID="fdOpen_5DT_Dataglove_16_Interface">
+    <hasReturnValue rdf:resource="#_5DT_Data_Glove_Object"/>
+    <hasParameter>
+      <String rdf:ID="Communication_Port_Identifier_String">
+        <characterEncoding rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+        >ASCII</characterEncoding>
+      </String>
+    </hasParameter>
+    <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >fdOpen</hasInterfaceName>
+  </Method_Interface>
+  <owl:AllDifferent>
+    <owl:distinctMembers rdf:parseType="Collection">
+      <Data_Glove rdf:ID="Data_Glove_5DT_16">
+        <capturesInteractions rdf:resource="#Index-middle_finger_abduction"/>
+        <capturesInteractions>
+          <Gesture rdf:ID="Ring_index_point_gesture"/>
+        </capturesInteractions>
+        <capturesInteractions rdf:resource="#Little_middle_point_gesture"/>
+        <capturesInteractions>
+          <Gesture rdf:ID="Little_ring_point_gesture"/>
+        </capturesInteractions>
+        <capturesInteractions>
+          <Gesture rdf:ID="Index_finger_point_gesture"/>
+        </capturesInteractions>
+        <capturesInteractions>
+          <Gesture rdf:ID="Howzit_gesture"/>
+        </capturesInteractions>
+        <capturesInteractions rdf:resource="#Ring_finger_flexure_at_knuckle"/>
+        <capturesInteractions>
+          <Gesture rdf:ID="Ring_finger_point_gesture"/>
+        </capturesInteractions>
+        <capturesInteractions rdf:resource="#Little_finger_flexure_at_knuckle"/>
+        <capturesInteractions rdf:resource="#Not_up_yours_gesture"/>
+        <capturesInteractions>
+          <Gesture rdf:ID="Not_ring_point_gesture"/>
+        </capturesInteractions>
+        <capturesInteractions>
+          <Gesture rdf:ID="Ring_middle_point_gesture"/>
+        </capturesInteractions>
+        <capturesInteractions rdf:resource="#Little_finger_point_gesture"/>
+        <capturesInteractions>
+          <Gesture rdf:ID="Not_Index_finger_point_gesture"/>
+        </capturesInteractions>
+        <capturesInteractions rdf:resource="#Thumb-index_finger_abduction"/>
+        <capturesInteractions rdf:resource="#Index_finger_flexure_at_knuckle"/>
+        <capturesInteractions>
+          <Gesture rdf:ID="Two_finger_point_gesture"/>
+        </capturesInteractions>
+        <hasInterfaces>
+          <Software_Interface rdf:ID="_5DT_Data_Glove_driver_Version_1.02">
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdGetGesture_5DT_Dataglove_16_Interface">
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdGetGesture</hasInterfaceName>
+                <hasReturnValue>
+                  <Implicit rdf:ID="_5DT_Dataglove_Recognisable_Gestsures">
+                    <representsInteractions rdf:resource="#Ring_middle_point_gesture"/>
+                    <representsInteractions rdf:resource="#Little_ring_point_gesture"/>
+                    <representsInteractions rdf:resource="#Flat_hand_gesture"/>
+                    <representsInteractions rdf:resource="#Howzit_gesture"/>
+                    <representsInteractions rdf:resource="#Two_finger_point_gesture"/>
+                    <representsInteractions rdf:resource="#Little_finger_point_gesture"/>
+                    <representsInteractions rdf:resource="#Not_Index_finger_point_gesture"/>
+                    <representsInteractions rdf:resource="#Not_little_point_gesture"/>
+                    <representsInteractions rdf:resource="#Not_up_yours_gesture"/>
+                    <representsInteractions rdf:resource="#Ring_index_point_gesture"/>
+                    <representsInteractions rdf:resource="#Not_ring_point_gesture"/>
+                    <representsInteractions>
+                      <Gesture rdf:ID="fist_gesture"/>
+                    </representsInteractions>
+                    <representsInteractions rdf:resource="#Ring_finger_point_gesture"/>
+                    <representsInteractions rdf:resource="#Index_finger_point_gesture"/>
+                    <representsInteractions rdf:resource="#Up_Yours_gesture"/>
+                    <representsInteractions rdf:resource="#Little_middle_point_gesture"/>
+                  </Implicit>
+                </hasReturnValue>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdGetCalibration_5DT_Dataglove_16_Interface">
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdGetCalibration</hasInterfaceName>
+                <hasParameter rdf:resource="#_5DT_dataglove_Sensors"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdSetSensorRawAll_5DT_Dataglove_16_Interface">
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdSetSensorRawAll</hasInterfaceName>
+                <hasParameter>
+                  <Array rdf:ID="Data_Glove_Raw_Sensor_Data_Collection">
+                    <containsVariables rdf:resource="#Middle_finger_flexure_second_joint_Raw_Positive_Integer"/>
+                    <containsVariables rdf:resource="#Thumb_flexure_second_joint_Raw_Positive_Integer"/>
+                    <containsVariables rdf:resource="#Index_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+                    <containsVariables rdf:resource="#Thumb-index_finger_abduction_Raw_Positive_Integer"/>
+                    <containsVariables rdf:resource="#Ring_finger_flexure_second_joint_Raw_Positive_Integer"/>
+                    <containsVariables rdf:resource="#Little_finger_flexure_second_joint_Raw_Positive_Integer"/>
+                    <containsVariables rdf:resource="#Little_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+                    <containsVariables rdf:resource="#Middle_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+                    <containsVariables rdf:resource="#Index_finger_flexure_second_joint_Raw_Positive_Integer"/>
+                    <containsVariables rdf:resource="#Index-middle_finger_abduction_Raw_Positive_Integer"/>
+                    <containsVariables rdf:resource="#Thumb_flexure_lower_joint_Raw_Positive_Integer"/>
+                    <containsVariables rdf:resource="#Ring-little_finger_abduction_Raw_Positive_Integer"/>
+                    <containsVariables rdf:resource="#Middle-ring_finger_abduction_Raw_Positive_Integer"/>
+                    <containsVariables rdf:resource="#Ring_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+                  </Array>
+                </hasParameter>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdGetThreshold_5DT_Dataglove_16_Interface">
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdGetThreshold</hasInterfaceName>
+                <hasParameter rdf:resource="#_5DT_Dataglove_Conditional_Minimum_Gesture_Threshold_Value"/>
+                <hasParameter rdf:resource="#_5DT_dataglove_Sensors"/>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+                <hasParameter rdf:resource="#_5DT_Dataglove_Conditional_Maximum_Gesture_Threshold_Value"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdGetSensorRawAll_5DT_Dataglove_16_Interface">
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdGetSensorRawAll</hasInterfaceName>
+                <hasParameter rdf:resource="#Data_Glove_Raw_Sensor_Data_Collection"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems rdf:resource="#fdGetGloveInfo_5DT_Dataglove_16_Interface"/>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdSetCalibrationAll_5DT_Dataglove_16_Interface">
+                <hasParameter rdf:resource="#Data_Glove_Minimum_Positive_Raw_Sensor_Data_Value_Collection"/>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdSetCalibrationAll</hasInterfaceName>
+                <hasParameter rdf:resource="#Data_Glove_Maximum_Positive_Raw_Sensor_Data_Value_Collection"/>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdSetSensorMaxAll_5DT_Dataglove_16_Interface">
+                <hasParameter rdf:resource="#Data_Glove_Maximum_Scaled_Sensor_Data_Collection"/>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdSetSensorMaxAll</hasInterfaceName>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdSetSensorMax_5DT_Dataglove_16_Interface">
+                <hasParameter rdf:resource="#_5DT_dataglove_Sensors"/>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdSetSensorMax</hasInterfaceName>
+                <hasParameter rdf:resource="#_5DT_DataGlove_Conditional_Maximum_Scaled_Sensor_Data"/>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems rdf:resource="#fdGetSensorMax_5DT_Dataglove_16_Interface"/>
+            <hasInterfaceItems rdf:resource="#fdGetCalibrationAll_5DT_Dataglove_16_Interface"/>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdSetCalibration_5DT_Dataglove_16_Interface">
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdSetCalibration</hasInterfaceName>
+                <hasParameter rdf:resource="#_5DT_dataglove_Sensors"/>
+                <hasParameter rdf:resource="#_5DT_Dataglove_Conditional_Minimum_Raw_Sensor_Value"/>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+                <hasParameter rdf:resource="#_5DT_Dataglove_Conditional_Maximum_Raw_Sensor_Value"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems rdf:resource="#fdGetSensorScaledAll_5DT_Dataglove_16_Interface"/>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdGetGloveHand_5DT_Dataglove_16_Interface">
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdGetGloveHand</hasInterfaceName>
+                <hasReturnValue rdf:resource="#left_or_Right_handed_5DT_Dataglove"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdClose_5DT_Dataglove_16_Interface">
+                <hasReturnValue>
+                  <Integer rdf:ID="non_negitive_Success_Identifier">
+                    <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+                    >true</canBeNegative>
+                  </Integer>
+                </hasReturnValue>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdClose</hasInterfaceName>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdGetDriverInfo_5DT_Dataglove_16_Interface">
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdGetDriverInfo</hasInterfaceName>
+                <hasParameter>
+                  <String rdf:ID="_5DT_DataGlove_Driver_Description">
+                    <characterEncoding rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                    >ASCII</characterEncoding>
+                  </String>
+                </hasParameter>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems rdf:resource="#fdSetSensorRaw_5DT_Dataglove_16_Interface"/>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdGetNumSensors_5DT_Dataglove_16_Interface">
+                <hasReturnValue rdf:resource="#number_of_Sensors"/>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdGetNumSensors</hasInterfaceName>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems rdf:resource="#fdGetSensorMaxAll_5DT_Dataglove_16_Interface"/>
+            <hasInterfaceItems rdf:resource="#fdSetThreshold_5DT_Dataglove_16_Interface"/>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdGetThresholdAll_5DT_Dataglove_16_Interface">
+                <hasParameter>
+                  <Array rdf:ID="Data_Glove_Minimum_Gesture_Recognition_Threshold_Collection">
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Middle_finger_flexure_second_joint_Sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Thumb_flexure_second_joint_Sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Thumb-index_finger_abduction_Sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Little_finger_flexure_second_joint_Sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Ring-little_finger_abduction_Sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Middle-ring_finger_abduction_Sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Middle_finger_flexure_at_knuckle_Sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Index_finger_flexure_at_knuckle_Sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Index_finger_flexure_second_joint_Sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Index-middle_finger_abduction_Sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Ring_finger_flexure_second_joint_Sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Ring_finger_flexure_at_knuckle_Sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Little_finger_flexure_at_knuckle_Sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Minimum_Threshold_at_Thumb_flexure_lower_joint_Sensor"/>
+                  </Array>
+                </hasParameter>
+                <hasParameter>
+                  <Array rdf:ID="Data_Glove_Maximum_Gesture_Recognition_Threshold_Collection">
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Ring-little_finger_abduction_sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Thumb-index_finger_abduction_sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Index_finger_flexure_at_knuckle_sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Middle-ring_finger_abduction_sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Little_finger_flexure_at_knuckle_sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Index-middle_finger_abduction_sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Little_finger_flexure_second_joint_sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Thumb_flexure_second_joint_sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Ring_finger_flexure_second_joint_sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Ring_finger_flexure_at_knuckle_sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Middle_finger_flexure_at_knuckle_sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Index_finger_flexure_second_joint_sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Middle_finger_flexure_second_joint_sensor"/>
+                    <containsVariables rdf:resource="#Gesture_Recognition_Maximum_Threshold_at_Thumb_flexure_lower_joint_sensor"/>
+                  </Array>
+                </hasParameter>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdGetThresholdAll</hasInterfaceName>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems rdf:resource="#fdOpen_5DT_Dataglove_16_Interface"/>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdResetCalibration_5DT_Dataglove_16_Interface">
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdResetCalibration</hasInterfaceName>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdGetGloveType_5DT_Dataglove_16_Interface">
+                <hasReturnValue rdf:resource="#_5DT_Dataglove_Type"/>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdGetGloveType</hasInterfaceName>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdGetSensorRaw_5DT_Dataglove_16_Interface">
+                <hasParameter rdf:resource="#_5DT_dataglove_Sensors"/>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdGetSensorRaw</hasInterfaceName>
+                <hasReturnValue rdf:resource="#_5DT_dataglove_Conditional_Raw_Sensor_data"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdGetNumGestures_5DT_Dataglove_16_Interface">
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+                <hasReturnValue>
+                  <Integer rdf:ID="number_of_identifiable_gestures">
+                    <canBeNegative rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+                    >true</canBeNegative>
+                  </Integer>
+                </hasReturnValue>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdGetNumGestures</hasInterfaceName>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdSetThresholdAll_5DT_Dataglove_16_Interface">
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+                <hasParameter rdf:resource="#Data_Glove_Minimum_Gesture_Recognition_Threshold_Collection"/>
+                <hasParameter rdf:resource="#Data_Glove_Maximum_Gesture_Recognition_Threshold_Collection"/>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdSetThresholdAll</hasInterfaceName>
+              </Method_Interface>
+            </hasInterfaceItems>
+            <hasVersion rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+            >1.02</hasVersion>
+            <hasInterfaceItems>
+              <Method_Interface rdf:ID="fdGetSensorScaled_5DT_Dataglove_16_Interface">
+                <hasReturnValue>
+                  <Conditional_Variable rdf:ID="_5DT_dataglove_Conditional_Scaled_Sensor_data">
+                    <possibleResults rdf:resource="#Thumb_flexure_second_joint_Scaled_Float"/>
+                    <possibleResults rdf:resource="#Middle_finger_flexure_at_knuckle_Scaled_Float"/>
+                    <possibleResults rdf:resource="#Thumb-index_finger_abduction_Scaled_Float"/>
+                    <possibleResults rdf:resource="#Index_finger_flexure_at_knuckle_Scaled_Float"/>
+                    <possibleResults rdf:resource="#Middle-ring_finger_abduction_Scaled_Float"/>
+                    <possibleResults rdf:resource="#Ring_finger_flexure_at_knuckle_Scaled_Float"/>
+                    <possibleResults rdf:resource="#Ring-little_finger_abduction_Scaled_Float"/>
+                    <possibleResults rdf:resource="#Little_finger_flexure_at_knuckle_Scaled_Float"/>
+                    <possibleResults rdf:resource="#Index-middle_finger_abduction_Scaled_Float"/>
+                    <possibleResults rdf:resource="#Index_finger_flexure_second_joint_Scaled_Float"/>
+                    <possibleResults rdf:resource="#Thumb_flexure_lower_joint_Scaled_Float"/>
+                    <possibleResults rdf:resource="#Little_finger_flexure_second_joint_Scaled_Float"/>
+                    <possibleResults rdf:resource="#Middle_finger_flexure_second_joint_Scaled_Float"/>
+                    <possibleResults rdf:resource="#Ring_finger_flexure_second_joint_Scaled_Float"/>
+                    <conditionVaraible rdf:resource="#_5DT_dataglove_Sensors"/>
+                  </Conditional_Variable>
+                </hasReturnValue>
+                <hasParameter rdf:resource="#_5DT_dataglove_Sensors"/>
+                <hasInterfaceName rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+                >fdGetSensorScaled</hasInterfaceName>
+                <hasParameter rdf:resource="#_5DT_Data_Glove_Object"/>
+              </Method_Interface>
+            </hasInterfaceItems>
+          </Software_Interface>
+        </hasInterfaces>
+        <capturesInteractions rdf:resource="#Middle_finger_flexure_at_knuckle"/>
+        <capturesInteractions rdf:resource="#fist_gesture"/>
+        <capturesInteractions rdf:resource="#Thumb_flexure_second_joint"/>
+        <capturesInteractions rdf:resource="#Index_finger_flexure_second_joint"/>
+        <capturesInteractions rdf:resource="#Not_little_point_gesture"/>
+        <capturesInteractions rdf:resource="#Flat_hand_gesture"/>
+        <capturesInteractions rdf:resource="#Middle_finger_flexure_second_joint"/>
+        <capturesInteractions rdf:resource="#Middle-ring_finger_abduction"/>
+        <capturesInteractions rdf:resource="#Up_Yours_gesture"/>
+        <capturesInteractions rdf:resource="#Thumb_flexure_lower_joint"/>
+        <capturesInteractions rdf:resource="#Ring_little_finger_abduction"/>
+        <capturesInteractions rdf:resource="#Ring_finger_flexure_second_joint"/>
+        <capturesInteractions rdf:resource="#Little_finger_flexure_second_joint"/>
+      </Data_Glove>
+      <Motion_Tracking_System rdf:about="#Vicon_Tracking_system"/>
+      <Mouse rdf:ID="Microsoft_Optical_Wheel_Mouse"/>
+      <Keyboard rdf:ID="Logitech_Internet_Office_Keyboard"/>
+    </owl:distinctMembers>
+  </owl:AllDifferent>
+  <owl:AllDifferent>
+    <owl:distinctMembers rdf:parseType="Collection">
+      <Floating_Point rdf:about="#Thumb_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Middle_finger_flexure_at_knuckle_Scaled_Float"/>
+      <Floating_Point rdf:about="#Thumb-index_finger_abduction_Scaled_Float"/>
+      <Floating_Point rdf:about="#Index_finger_flexure_at_knuckle_Scaled_Float"/>
+      <Floating_Point rdf:about="#Middle-ring_finger_abduction_Scaled_Float"/>
+      <Floating_Point rdf:about="#Ring_finger_flexure_at_knuckle_Scaled_Float"/>
+      <Floating_Point rdf:about="#Ring-little_finger_abduction_Scaled_Float"/>
+      <Floating_Point rdf:about="#Little_finger_flexure_at_knuckle_Scaled_Float"/>
+      <Floating_Point rdf:about="#Index-middle_finger_abduction_Scaled_Float"/>
+      <Floating_Point rdf:about="#Index_finger_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Thumb_flexure_lower_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Little_finger_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Middle_finger_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Ring_finger_flexure_second_joint_Scaled_Float"/>
+      <Floating_Point rdf:about="#Maximum_Thumb_flexure_lower_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Thumb_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Thumb-index_finger_abduction_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Index_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Index_finger_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Index-middle_finger_abduction_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Middle_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Middle_finger_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Middle-ring_finger_abduction_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Ring_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Ring_finger_flexure_second_joint_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Ring-little_finger_abduction_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Little_finger_flexure_at_knuckle_Scaled_Sensor_value"/>
+      <Floating_Point rdf:about="#Maximum_Little_finger_flexure_second_joint_Scaled_Sensor_value"/>
+    </owl:distinctMembers>
+  </owl:AllDifferent>
+  <owl:AllDifferent>
+    <owl:distinctMembers rdf:parseType="Collection">
+      <Gesture rdf:about="#fist_gesture"/>
+      <Gesture rdf:about="#Index_finger_point_gesture"/>
+      <Gesture rdf:about="#Up_Yours_gesture"/>
+      <Gesture rdf:about="#Two_finger_point_gesture"/>
+      <Gesture rdf:about="#Ring_finger_point_gesture"/>
+      <Gesture rdf:about="#Ring_index_point_gesture"/>
+      <Gesture rdf:about="#Ring_middle_point_gesture"/>
+      <Gesture rdf:about="#Not_little_point_gesture"/>
+      <Gesture rdf:about="#Little_finger_point_gesture"/>
+      <Gesture rdf:about="#Howzit_gesture"/>
+      <Gesture rdf:about="#Little_middle_point_gesture"/>
+      <Gesture rdf:about="#Not_ring_point_gesture"/>
+      <Gesture rdf:about="#Little_ring_point_gesture"/>
+      <Gesture rdf:about="#Not_up_yours_gesture"/>
+      <Gesture rdf:about="#Not_Index_finger_point_gesture"/>
+      <Gesture rdf:about="#Flat_hand_gesture"/>
+    </owl:distinctMembers>
+  </owl:AllDifferent>
+  <owl:AllDifferent>
+    <owl:distinctMembers rdf:parseType="Collection">
+      <Short rdf:about="#Index-middle_finger_abduction_Raw_Positive_Integer"/>
+      <Short rdf:about="#Index_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+      <Short rdf:about="#Middle_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+      <Short rdf:about="#Index_finger_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Thumb_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Little_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+      <Short rdf:about="#Middle_finger_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Ring_finger_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Ring_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+      <Short rdf:about="#Ring-little_finger_abduction_Raw_Positive_Integer"/>
+      <Short rdf:about="#Little_finger_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Thumb_flexure_lower_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Thumb-index_finger_abduction_Raw_Positive_Integer"/>
+      <Short rdf:about="#Middle-ring_finger_abduction_Raw_Positive_Integer"/>
+      <Short rdf:about="#Thumb_flexure_lower_joint_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Thumb_flexure_second_joint_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Thumb-index_finger_abduction_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Index_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Index_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Index-middle_finger_abduction_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Middle_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Middle_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Middle-ring_finger_abduction_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Ring_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Ring_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Ring-little_finger_abduction_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Little_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Little_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Thumb_flexure_lower_joint_Minimum_Raw_data_value"/>
+      <Short rdf:about="#Thumb_flexure_second_joint_Minimum_Raw_data_value"/>
+      <Short rdf:about="#Thumb-index_finger_abduction_Minimum_Raw_data_value"/>
+      <Short rdf:about="#Index_finger_flexure_at_knuckle_Minimum_Raw_data_value"/>
+      <Short rdf:about="#Index_finger_flexure_second_joint_Minimum_Raw_data_value"/>
+      <Short rdf:about="#Index-middle_finger_abduction_Minimum_Raw_data_value"/>
+      <Short rdf:about="#Middle_finger_flexure_at_knuckle_Minimum_Raw_data_value"/>
+      <Short rdf:about="#Middle_finger_flexure_second_joint_Minimum_Raw_data_value"/>
+      <Short rdf:about="#Middle-ring_finger_abduction_Minimum_Raw_data_value"/>
+      <Short rdf:about="#Ring_finger_flexure_at_knuckle_Minimum_Raw_data_value"/>
+      <Short rdf:about="#Ring_finger_flexure_second_joint_Minimum_Raw_data_value"/>
+      <Short rdf:about="#Ring-little_finger_abduction_Minimum_Raw_data_value"/>
+      <Short rdf:about="#Little_finger_flexure_at_knuckle_Minimum_Raw_data_value"/>
+      <Short rdf:about="#Little_finger_flexure_second_joint_Minimum_Raw_data_value"/>
+    </owl:distinctMembers>
+  </owl:AllDifferent>
+  <Monitor rdf:ID="CTX_EX701F_17inch_Monitor"/>
+  <owl:AllDifferent>
+    <owl:distinctMembers rdf:parseType="Collection">
+      <Movement_Interaction rdf:about="#Thumb_flexure_lower_joint"/>
+      <Movement_Interaction rdf:about="#Thumb_flexure_second_joint"/>
+      <Movement_Interaction rdf:about="#Thumb-index_finger_abduction"/>
+      <Movement_Interaction rdf:about="#Index_finger_flexure_at_knuckle"/>
+      <Movement_Interaction rdf:about="#Index_finger_flexure_second_joint"/>
+      <Movement_Interaction rdf:about="#Index-middle_finger_abduction"/>
+      <Movement_Interaction rdf:about="#Middle_finger_flexure_at_knuckle"/>
+      <Movement_Interaction rdf:about="#Middle_finger_flexure_second_joint"/>
+      <Movement_Interaction rdf:about="#Middle-ring_finger_abduction"/>
+      <Movement_Interaction rdf:about="#Ring_finger_flexure_at_knuckle"/>
+      <Movement_Interaction rdf:about="#Ring_finger_flexure_second_joint"/>
+      <Movement_Interaction rdf:about="#Ring_little_finger_abduction"/>
+      <Movement_Interaction rdf:about="#Little_finger_flexure_at_knuckle"/>
+      <Movement_Interaction rdf:about="#Little_finger_flexure_second_joint"/>
+    </owl:distinctMembers>
+  </owl:AllDifferent>
+  <Keyboard rdf:ID="Laptop_Keyboard"/>
+  <owl:AllDifferent>
+    <owl:distinctMembers rdf:parseType="Collection">
+      <Short rdf:about="#Thumb_flexure_lower_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Thumb_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Thumb-index_finger_abduction_Raw_Positive_Integer"/>
+      <Short rdf:about="#Index_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+      <Short rdf:about="#Index_finger_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Index-middle_finger_abduction_Raw_Positive_Integer"/>
+      <Short rdf:about="#Middle_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+      <Short rdf:about="#Middle_finger_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Middle-ring_finger_abduction_Raw_Positive_Integer"/>
+      <Short rdf:about="#Ring_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+      <Short rdf:about="#Ring_finger_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Ring-little_finger_abduction_Raw_Positive_Integer"/>
+      <Short rdf:about="#Little_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+      <Short rdf:about="#Little_finger_flexure_second_joint_Raw_Positive_Integer"/>
+    </owl:distinctMembers>
+  </owl:AllDifferent>
+  <owl:AllDifferent>
+    <owl:distinctMembers rdf:parseType="Collection">
+      <Short rdf:about="#Index-middle_finger_abduction_Raw_Positive_Integer"/>
+      <Short rdf:about="#Index_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+      <Short rdf:about="#Middle_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+      <Short rdf:about="#Index_finger_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Thumb_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Little_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+      <Short rdf:about="#Middle_finger_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Ring_finger_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Ring_finger_flexure_at_knuckle_Raw_Positive_Integer"/>
+      <Short rdf:about="#Ring-little_finger_abduction_Raw_Positive_Integer"/>
+      <Short rdf:about="#Little_finger_flexure_second_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Thumb_flexure_lower_joint_Raw_Positive_Integer"/>
+      <Short rdf:about="#Thumb-index_finger_abduction_Raw_Positive_Integer"/>
+      <Short rdf:about="#Middle-ring_finger_abduction_Raw_Positive_Integer"/>
+      <Short rdf:about="#Thumb_flexure_lower_joint_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Thumb_flexure_second_joint_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Thumb-index_finger_abduction_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Index_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Index_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Index-middle_finger_abduction_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Middle_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Middle_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Middle-ring_finger_abduction_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Ring_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Ring_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Ring-little_finger_abduction_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Little_finger_flexure_at_knuckle_Maximum_Raw_Data_Value"/>
+      <Short rdf:about="#Little_finger_flexure_second_joint_Maximum_Raw_Data_Value"/>
+    </owl:distinctMembers>
+  </owl:AllDifferent>
+  <owl:AllDifferent>
+    <owl:distinctMembers rdf:parseType="Collection">
+      <Method_Interface rdf:about="#fdOpen_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdClose_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetGloveHand_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetGloveType_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetNumSensors_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetSensorRawAll_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetSensorRaw_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdSetSensorRawAll_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdSetSensorRaw_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetSensorScaledAll_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetSensorScaled_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetNumGestures_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetGesture_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetCalibrationAll_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetCalibration_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdSetCalibrationAll_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdSetCalibration_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdResetCalibration_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetSensorMaxAll_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetSensorMax_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdSetSensorMaxAll_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdSetSensorMax_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetThresholdAll_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetThreshold_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdSetThresholdAll_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdSetThreshold_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetGloveInfo_5DT_Dataglove_16_Interface"/>
+      <Method_Interface rdf:about="#fdGetDriverInfo_5DT_Dataglove_16_Interface"/>
+    </owl:distinctMembers>
+  </owl:AllDifferent>
+</rdf:RDF>
+
+<!-- Created with Protege (with OWL Plugin 2.2 beta, Build 288)  http://protege.stanford.edu -->
