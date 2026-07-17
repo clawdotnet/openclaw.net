@@ -34,6 +34,7 @@ Start here:
 - [Architecture](https://agentqi.dev/docs/start-here)
 - [Security](https://agentqi.dev/docs/security)
 - [Roadmap](https://agentqi.dev/docs/roadmap)
+- [AgentQi Mobile companion](https://github.com/agentqi/agentqi-mobile) — open-source Android operator console with build-from-source instructions
 
 ## What Works Now
 
@@ -56,6 +57,7 @@ Start here:
 - **First-class optional Microsoft Agent Framework adapter** for `Runtime.Orchestrator=maf` without a special build
 - **Durable workflow delegation** through supported workflow backends such as `maf-durable-http`
 - **CLI and Companion** setup flows for source checkouts and desktop bundles
+- **AgentQi Mobile companion** for Android gateway health, approvals, session-backed work, chat, runtime events, and security posture ([source and build guide](https://github.com/agentqi/agentqi-mobile))
 - **/loop recurring-prompt command** with TickerQ-backed session-scoped timer injection, idempotent override, and dual-path semantic auto-termination for build health checks, log polling, and other periodic tasks
 - **80+ native and optional tool surfaces** covering file ops, sessions, memory, web, messaging, home automation, databases, email, MCP apps, and more
 - **9 channel adapters** (Telegram, SMS, WhatsApp, Teams, Slack, Discord, Signal, email, webhooks) with DM policy, allowlists, and signature validation

@@ -46,6 +46,7 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Reference | Glossary | [GLOSSARY.md](GLOSSARY.md) |
 | Integrations | Semantic Kernel | [SEMANTIC_KERNEL.md](SEMANTIC_KERNEL.md) |
 | Integrations | MCP Apps | [MCPAPP.md](MCPAPP.md) |
+| Integrations | AgentQi Mobile Companion | [agentqi/agentqi-mobile](https://github.com/agentqi/agentqi-mobile) |
 | Integrations | Microsoft Agent Framework | [integrations/microsoft-agent-framework.md](integrations/microsoft-agent-framework.md) |
 | Integrations | Workflow Backends | [workflow-backends.md](workflow-backends.md) |
 | Integrations | Enterprise Channels (Feishu/DingTalk/WeCom) | [ENTERPRISE_CHANNELS.md](ENTERPRISE_CHANNELS.md) |
@@ -132,6 +133,7 @@ Reference
 Integrations
   Semantic Kernel
   MCP Apps
+  AgentQi Mobile Companion
   Microsoft Agent Framework
   Workflow Backends
   Microsoft Teams
