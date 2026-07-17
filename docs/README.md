@@ -24,6 +24,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | --- | --- |
 | [USER_GUIDE.md](USER_GUIDE.md) | Providers, tools, skills, channels, and the day-to-day operator surface. |
 | [RELEASES.md](RELEASES.md) | Desktop download bundles, release assets, and signing/notarization status. |
+| [AgentQi Mobile](https://github.com/agentqi/agentqi-mobile) | Open-source .NET MAUI Android companion for monitoring and operating an OpenClaw.NET gateway; includes build-from-source instructions. |
 | [TOOLS_GUIDE.md](TOOLS_GUIDE.md) | Native and optional tool catalog, behavior, and configuration. |
 | [MCPAPP.md](MCPAPP.md) | MCP App manifest discovery, lifecycle management, tool bridging, resources, prompts, and UI bundles. |
 | [tokenjuice.md](tokenjuice.md) | Deterministic, rule-driven tool output reduction before tool results enter model context. |
