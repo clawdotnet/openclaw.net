@@ -510,7 +510,8 @@ public sealed class GatewayRuntimeLifecycleTests
             WhatsAppWorkerHost = null,
             ArtifactRuntime = new SkillArtifactRuntime(),
             RegisteredToolNames = FrozenSet<string>.Empty,
-            ChannelAuthEvents = new ChannelAuthEventStore()
+            ChannelAuthEvents = new ChannelAuthEventStore(),
+            AbortRegistry = new SessionAbortRegistry(),
         };
     }
 

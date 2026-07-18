@@ -119,6 +119,13 @@ public sealed class LlmProviderConfig
     public int MaxTokens { get; set; } = 4096;
     public float Temperature { get; set; } = 0.7f;
 
+    /// <summary>
+    /// When true, image-bearing user messages are forwarded as multi-modal content
+    /// parts and sent directly to the model (requires a vision-capable model such as gpt-4o).
+    /// When false, image analysis is delegated to the <c>image_analyze</c> tool (Layer 2).
+    /// </summary>
+    public bool SupportsVision { get; set; } = false;
+
     /// <summary>Per-call timeout in seconds for LLM requests. 0 = no timeout.</summary>
     public int TimeoutSeconds { get; set; } = 120;
 
@@ -132,6 +139,11 @@ public sealed class LlmProviderConfig
     public int CircuitBreakerCooldownSeconds { get; set; } = 30;
 
     public PromptCachingConfig PromptCaching { get; set; } = new();
+    /// <summary>
+    /// Controls thinking mode for DeepSeek models.
+    /// true (default) = enabled; false = disabled.
+    /// </summary>
+    public bool EnableThinking { get; set; } = true;
 }
 
 public sealed class LocalInferenceConfig
@@ -382,6 +394,55 @@ public sealed class SecurityConfig
 
     /// <summary>Lifetime (days) for persistent browser admin sessions created with "Remember me". Default 30 days.</summary>
     public int BrowserRememberDays { get; set; } = 30;
+
+    // ── Authentication Mode ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Authentication mode. "token" (default) = static AuthToken; "oidc" = OIDC/JWT Bearer (e.g. Keycloak).
+    /// </summary>
+    public string AuthMode { get; set; } = SecurityAuthModeNames.Token;
+
+    /// <summary>OIDC configuration. Only used when <see cref="AuthMode"/> is "oidc".</summary>
+    public OidcConfig Oidc { get; set; } = new();
+
+    /// <summary>
+    /// When true all requests to /api and /mcp must carry a valid token or OIDC JWT even
+    /// when the gateway is bound to a loopback address.
+    /// Has no effect when AuthMode is "oidc" (OIDC mode always enforces auth on all paths).
+    /// </summary>
+    public bool AlwaysRequireAuth { get; set; } = false;
+
+    /// <summary>Convenience: true when <see cref="AuthMode"/> is "oidc".</summary>
+    public bool IsOidcMode => string.Equals(AuthMode, SecurityAuthModeNames.Oidc, StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>Authentication mode names for <see cref="SecurityConfig.AuthMode"/>.</summary>
+public static class SecurityAuthModeNames
+{
+    public const string Token = "token";
+    public const string Oidc = "oidc";
+}
+
+/// <summary>OIDC / JWT Bearer configuration. Used when <see cref="SecurityConfig.AuthMode"/> is "oidc".</summary>
+public sealed class OidcConfig
+{
+    /// <summary>
+    /// OIDC Authority URL (e.g. Keycloak realm URL).
+    /// Example: https://auth.example.com/realms/myrealm
+    /// </summary>
+    public string? Authority { get; set; }
+
+    /// <summary>Expected audience claim. Leave empty to skip validation.</summary>
+    public string? Audience { get; set; }
+
+    /// <summary>Whether to require HTTPS for OIDC metadata discovery. Default true.</summary>
+    public bool RequireHttpsMetadata { get; set; } = true;
+
+    /// <summary>
+    /// JWT claim name to extract the operator role from. Default "roles".
+    /// The claim value is mapped to an <see cref="OpenClaw.Core.Models.OperatorRoleNames"/> value.
+    /// </summary>
+    public string RoleClaim { get; set; } = "roles";
 }
 
 public sealed class UrlSafetyConfig
@@ -462,10 +523,18 @@ public sealed class ToolingConfig
     /// <summary>Seconds to wait for a tool approval decision before denying. Default: 300 (5 minutes).</summary>
     public int ToolApprovalTimeoutSeconds { get; set; } = 300;
 
-    /// <summary>Enable the emit_artifact tool for multi-stage skill artifact publishing.</summary>
+    public bool EnableBrowserTool { get; set; } = true;
+
+    /// <summary>Enable the <c>todo</c> tool for session-scoped task tracking. Default: false.</summary>
+    public bool EnableTodoTool { get; set; } = false;
+
+
+    /// <summary>Enable the <c>publish_file</c> tool that publishes a local file as a downloadable attachment. Default: true.</summary>
+    public bool EnablePublishFile { get; set; } = true;
+
+    /// <summary>Enable the <c>emit_artifact</c> tool for pushing file/data artifacts to the frontend via WebSocket. Default: true.</summary>
     public bool EnableEmitArtifact { get; set; } = true;
 
-    public bool EnableBrowserTool { get; set; } = true;
     public bool AllowBrowserEvaluate { get; set; } = true;
     public bool BrowserHeadless { get; set; } = true;
     public int BrowserTimeoutSeconds { get; set; } = 30;

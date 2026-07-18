@@ -1,7 +1,7 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Security;
-using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 
 namespace OpenClaw.Gateway.Composition;
@@ -10,6 +10,22 @@ internal static class SecurityServicesExtensions
 {
     public static IServiceCollection AddOpenClawSecurityServices(this IServiceCollection services, GatewayStartupContext startup)
     {
+        // Register OIDC/JWT Bearer authentication when an OIDC Authority is configured,
+        // regardless of AuthMode. This allows JWT tokens (e.g. from the web chat's
+        // OIDC login) to be validated even when AuthMode is "token".
+        var hasOidcAuthority = !string.IsNullOrWhiteSpace(startup.Config.Security.Oidc.Authority);
+        if (startup.Config.Security.IsOidcMode || hasOidcAuthority)
+        {
+            services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                .AddJwtBearer(options =>
+                {
+                    options.Authority = startup.Config.Security.Oidc.Authority;
+                    options.Audience = startup.Config.Security.Oidc.Audience;
+                    options.RequireHttpsMetadata = startup.Config.Security.Oidc.RequireHttpsMetadata;
+                });
+            services.AddAuthorization();
+        }
+
         services.AddSingleton<ToolApprovalService>();
         services.AddSingleton(sp =>
             new PairingManager(

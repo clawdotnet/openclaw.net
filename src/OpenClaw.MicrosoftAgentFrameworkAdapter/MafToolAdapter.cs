@@ -30,7 +30,7 @@ public sealed class MafToolAdapter : AIFunction
 
     protected override async ValueTask<object?> InvokeCoreAsync(AIFunctionArguments arguments, CancellationToken cancellationToken)
     {
-        var executionContext = MafExecutionContextScope.Current;
+        var executionContext = AgentExecutionContextScope.Current;
         var argsJson = JsonSerializer.Serialize(
             arguments.ToDictionary(static entry => entry.Key, static entry => entry.Value),
             CoreJsonContext.Default.DictionaryStringObject);

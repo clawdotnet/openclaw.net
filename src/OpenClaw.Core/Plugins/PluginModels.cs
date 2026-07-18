@@ -243,7 +243,9 @@ public sealed class NativePluginsConfig
     public GitToolsConfig GitTools { get; set; } = new();
     public CodeExecConfig CodeExec { get; set; } = new();
     public ImageGenConfig ImageGen { get; set; } = new();
+    public ImageAnalyzeConfig ImageAnalyze { get; set; } = new();
     public PdfReadConfig PdfRead { get; set; } = new();
+    public MinerUPdfConfig MinerUPdf { get; set; } = new();
     public CalendarConfig Calendar { get; set; } = new();
     public EmailConfig Email { get; set; } = new();
     public DatabaseConfig Database { get; set; } = new();
@@ -462,13 +464,28 @@ public sealed class ImageGenConfig
 {
     public bool Enabled { get; set; } = false;
 
-    /// <summary>Provider: "openai" (DALL-E).</summary>
+    /// <summary>
+    /// Optional model profile id used to resolve provider/model/base-url/api-key for image generation.
+    /// When unset, falls back to the configured/default model profile if available.
+    /// </summary>
+    public string? ModelProfileId { get; set; }
+
+    /// <summary>
+    /// Provider: "openai" (OpenAI/Azure/OpenAI-compatible via the official SDK)
+    /// or "dashscope"/"qwen" (Alibaba Tongyi Qwen via the DashScope API).
+    /// </summary>
     public string Provider { get; set; } = "openai";
 
     /// <summary>API key (or env: / raw: secret ref).</summary>
     public string? ApiKey { get; set; }
 
-    /// <summary>API endpoint (optional, for compatible APIs).</summary>
+    /// <summary>
+    /// API endpoint.
+    /// For "openai": the base URL (e.g. https://api.openai.com/v1); the SDK appends the operation path.
+    /// For "dashscope"/"qwen": the FULL API path is used as-is (no path is appended), so a future
+    /// API/path change only requires a config update — e.g.
+    /// https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+    /// </summary>
     public string? Endpoint { get; set; }
 
     /// <summary>Model name (e.g. "dall-e-3").</summary>
@@ -479,6 +496,25 @@ public sealed class ImageGenConfig
 
     /// <summary>Default quality ("standard" or "hd" for DALL-E 3).</summary>
     public string Quality { get; set; } = "standard";
+
+    /// <summary>Per-call timeout in seconds. Set to 0 to disable the tool-level timeout.</summary>
+    public int TimeoutSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Negative prompt describing what should NOT appear in the image.
+    /// DashScope (Qwen) only; ignored by the OpenAI provider.
+    /// </summary>
+    public string? NegativePrompt { get; set; }
+
+    /// <summary>
+    /// Enable intelligent prompt rewriting/expansion. DashScope (Qwen) only.
+    /// </summary>
+    public bool PromptExtend { get; set; } = true;
+
+    /// <summary>
+    /// Whether to add a watermark to the generated image. DashScope (Qwen) only.
+    /// </summary>
+    public bool Watermark { get; set; } = false;
 }
 
 public sealed class PdfReadConfig

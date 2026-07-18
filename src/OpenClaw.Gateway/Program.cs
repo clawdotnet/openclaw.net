@@ -85,6 +85,28 @@ while (true)
         var runtime = await app.InitializeOpenClawRuntimeAsync(startup);
 
         app.InitializeMcpRuntime(runtime);
+
+        // Browser WebSocket API cannot set custom Authorization headers.
+        // Bridge /ws?token=... into Authorization: Bearer ... so standard auth can validate it.
+        app.Use(async (ctx, next) =>
+        {
+            if (ctx.Request.Path.StartsWithSegments("/ws", StringComparison.OrdinalIgnoreCase)
+                && !ctx.Request.Headers.ContainsKey("Authorization"))
+            {
+                var queryToken = ctx.Request.Query["token"].FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(queryToken))
+                    ctx.Request.Headers.Authorization = $"Bearer {queryToken}";
+            }
+
+            await next(ctx);
+        });
+
+        // Enable ASP.NET Core authentication middleware when OIDC mode is active
+        // OR when an OIDC Authority is configured (supports JWT tokens in token mode).
+        if (startup.Config.Security.IsOidcMode
+            || !string.IsNullOrWhiteSpace(startup.Config.Security.Oidc.Authority))
+            app.UseAuthentication();
+
         app.UseOpenClawMcpAuth(startup, runtime);
         app.UseOpenClawA2AAuth(startup, runtime);
 

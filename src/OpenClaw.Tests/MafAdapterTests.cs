@@ -3734,7 +3734,7 @@ public sealed class MafAdapterTests
         string input,
         CancellationToken ct)
     {
-        using var scope = MafExecutionContextScope.Push(new MafExecutionContext
+        using var scope = AgentExecutionContextScope.Push(new AgentExecutionContext
         {
             Session = session,
             TurnContext = new TurnContext

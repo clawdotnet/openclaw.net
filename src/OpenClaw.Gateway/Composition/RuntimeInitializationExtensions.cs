@@ -166,6 +166,13 @@ internal static partial class RuntimeInitializationExtensions
 
         var agentLogger = loggerFactory.CreateLogger("AgentRuntime");
         var orchestratorId = RuntimeOrchestrator.Normalize(config.Runtime.Orchestrator);
+        // Resolve workspace path: prefer the explicit env-var shortcut, fall back to the
+        // config-based WorkspaceRoot reference (e.g. "raw:/path" or a different env var).
+        // This ensures ReloadSkillsAsync finds workspace skills even when OPENCLAW_WORKSPACE
+        // is not set directly but the workspace is configured via Tooling.WorkspaceRoot.
+        var resolvedRuntimeWorkspacePath = startup.WorkspacePath
+            ?? SecretResolver.Resolve(startup.Config.Tooling.WorkspaceRoot);
+
         var agentRuntime = CreateAgentRuntime(
             app.Services,
             config,
@@ -180,7 +187,7 @@ internal static partial class RuntimeInitializationExtensions
             config.Skills,
             agentLogger,
             hooks,
-            startup.WorkspacePath,
+            resolvedRuntimeWorkspacePath,
             combinedPluginSkillRoots,
             effectiveRequireToolApproval,
             effectiveApprovalRequiredTools,

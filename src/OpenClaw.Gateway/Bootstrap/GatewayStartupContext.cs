@@ -11,4 +11,7 @@ internal sealed class GatewayStartupContext
     public ConfigSourceDiagnostics? ConfigSources { get; init; }
     public string? WorkspacePath { get; init; }
     public NativeDynamicPluginHost? NativeDynamicPluginHost { get; set; }
+
+    /// <summary>TokenHub thin-client config, bound from the <c>OpenClaw:TokenUsage</c> section.</summary>
+    public TokenUsageConfig TokenUsage { get; init; } = new();
 }

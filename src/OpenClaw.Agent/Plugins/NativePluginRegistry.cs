@@ -16,10 +16,16 @@ public sealed class NativePluginRegistry : IDisposable
     private readonly Dictionary<string, string> _nativeToolIds = new(StringComparer.Ordinal);
     private readonly List<IDisposable> _ownedResources = [];
     private readonly ILogger _logger;
+    private readonly IModelProfileRegistry? _modelProfiles;
 
-    public NativePluginRegistry(NativePluginsConfig config, ILogger logger, ToolingConfig? toolingConfig = null)
+    public NativePluginRegistry(
+        NativePluginsConfig config,
+        ILogger logger,
+        ToolingConfig? toolingConfig = null,
+        IModelProfileRegistry? modelProfiles = null)
     {
         _logger = logger;
+        _modelProfiles = modelProfiles;
 
         if (config.WebSearch.Enabled)
             RegisterTool(new WebSearchTool(config.WebSearch), "web-search", config.WebSearch.Provider);
@@ -34,10 +40,16 @@ public sealed class NativePluginRegistry : IDisposable
             RegisterTool(new CodeExecTool(config.CodeExec, toolingConfig), "code-exec", config.CodeExec.Backend);
 
         if (config.ImageGen.Enabled)
-            RegisterTool(new ImageGenTool(config.ImageGen), "image-gen", config.ImageGen.Provider);
+            RegisterTool(new ImageGenTool(config.ImageGen, toolingConfig, _modelProfiles), "image-gen", config.ImageGen.Provider);
+
+        if (config.ImageAnalyze.Enabled)
+            RegisterTool(new ImageAnalyzeTool(config.ImageAnalyze), "image-analyze", config.ImageAnalyze.Provider);
 
         if (config.PdfRead.Enabled)
             RegisterTool(new PdfReadTool(config.PdfRead, toolingConfig), "pdf-read");
+
+        if (config.MinerUPdf.Enabled)
+            RegisterTool(new MinerUPdfTool(config.MinerUPdf, toolingConfig), "mineru-pdf");
 
         if (config.Calendar.Enabled)
             RegisterTool(new CalendarTool(config.Calendar), "calendar", config.Calendar.Provider);

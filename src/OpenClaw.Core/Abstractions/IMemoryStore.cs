@@ -10,6 +10,7 @@ public interface IMemoryStore
 {
     ValueTask<Session?> GetSessionAsync(string sessionId, CancellationToken ct);
     ValueTask SaveSessionAsync(Session session, CancellationToken ct);
+    ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct);
     ValueTask<string?> LoadNoteAsync(string key, CancellationToken ct);
     ValueTask SaveNoteAsync(string key, string content, CancellationToken ct);
     ValueTask DeleteNoteAsync(string key, CancellationToken ct);

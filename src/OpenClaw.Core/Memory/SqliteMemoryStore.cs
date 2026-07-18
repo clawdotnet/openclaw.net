@@ -251,6 +251,19 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
             .Take(limit)
             .ToArray();
     }
+    
+    public async ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return;
+
+        await using var conn = new SqliteConnection(ConnectionString);
+        await conn.OpenAsync(ct);
+
+        var ids = new[] { sessionId };
+        await DeleteSessionSearchRowsAsync(conn, ids, ct);
+        await DeleteSessionsByIdAsync(conn, ids, ct);
+    }
 
     public async ValueTask<string?> LoadNoteAsync(string key, CancellationToken ct)
     {

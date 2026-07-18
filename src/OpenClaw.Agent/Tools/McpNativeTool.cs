@@ -37,28 +37,33 @@ public sealed class McpNativeTool(
             foreach (var prop in argsDoc.RootElement.EnumerateObject())
                 argsDict[prop.Name] = prop.Value.Clone();
 
+            // Reads the current user identity from the AsyncLocal execution context and injects it into the MCP protocol¡¯s _meta field.
+            // _meta is protocol-level metadata and does not pollute the tool's arguments.
+            // Prefer the stable user ID obtained through OIDC authentication; if authentication is unavailable, fall back to the route-level SenderId.
+            var session = context?.Session ?? AgentExecutionContextScope.TryGetCurrent()?.Session;
             JsonObject? meta = null;
-            if (context is not null)
+            if (session is not null)
             {
                 meta = new JsonObject
                 {
-                    ["userId"] = JsonValue.Create(context.Session.AuthenticatedUserId ?? context.Session.SenderId),
-                    ["sessionId"] = JsonValue.Create(context.Session.Id)
+                    ["userId"] = JsonValue.Create(session.AuthenticatedUserId ?? session.SenderId),
+                    ["sessionId"] = JsonValue.Create(session.Id),
                 };
             }
 
             var callParams = new CallToolRequestParams
             {
-                Name = remoteName,
+                Name      = remoteName,
                 Arguments = argsDict,
-                Meta = meta
+                Meta      = meta,
             };
 
             var response = await client.SendRequestAsync<CallToolRequestParams, CallToolResult>(
                 RequestMethods.ToolsCall,
                 callParams,
                 cancellationToken: ct);
-            var text = FormatResponseContent(response);
+
+            var text = FormatResponseContent(response, suppressStructuredContent);
             var isError = response.IsError ?? false;
             return isError ? $"Error: {text}" : text;
         }
@@ -76,7 +81,7 @@ public sealed class McpNativeTool(
         }
     }
 
-    private string FormatResponseContent(CallToolResult response)
+    private static string FormatResponseContent(CallToolResult response, bool suppressStructuredContent)
     {
         var parts = new List<string>();
 
