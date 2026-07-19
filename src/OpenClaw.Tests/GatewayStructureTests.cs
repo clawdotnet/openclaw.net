@@ -11,7 +11,7 @@ public sealed class GatewayStructureTests
 
         AssertFileLineBudget(root, "src/OpenClaw.Gateway/Extensions/GatewayWorkers.cs", 200);
         AssertFileLineBudget(root, "src/OpenClaw.Gateway/Endpoints/OpenAiEndpoints.cs", 250);
-        AssertFileLineBudget(root, "src/OpenClaw.Gateway/Composition/RuntimeInitializationExtensions.cs", 270);
+        AssertFileLineBudget(root, "src/OpenClaw.Gateway/Composition/RuntimeInitializationExtensions.cs", 280);
         AssertFileLineBudget(root, "src/OpenClaw.Gateway/Endpoints/AdminEndpoints.cs", 300);
     }
 

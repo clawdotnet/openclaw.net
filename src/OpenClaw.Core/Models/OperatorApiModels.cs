@@ -159,7 +159,10 @@ public sealed class SkillHealthSnapshot
 {
     public required string Name { get; init; }
     public string Description { get; init; } = "";
+    public string? Emoji { get; init; }
     public required string Source { get; init; }
+    /// <summary>True when the skill was installed by the user via the workspace (can be deleted).</summary>
+    public bool IsUserInstalled { get; init; }
     public required string Location { get; init; }
     public string TrustLevel { get; init; } = "untrusted";
     public string TrustReason { get; init; } = "";
@@ -180,7 +183,22 @@ public sealed class SkillHealthSnapshot
 
 public sealed class SkillListResponse
 {
+    [System.Text.Json.Serialization.JsonPropertyName("skills")]
     public IReadOnlyList<SkillHealthSnapshot> Items { get; init; } = [];
+}
+
+public sealed class SkillInstallRequest
+{
+    public string Name { get; init; } = "";
+    public string Content { get; init; } = "";
+}
+
+public sealed class SkillMutationResponse
+{
+    public bool Success { get; init; }
+    public string? Error { get; init; }
+    public int TotalLoaded { get; init; }
+    public IReadOnlyList<string> LoadedNames { get; init; } = [];
 }
 
 /// <summary>

@@ -63,7 +63,6 @@ internal static partial class RuntimeInitializationExtensions
                 "Requester-matched HTTP tool approvals are disabled on a non-loopback bind. Enable OpenClaw:Security:RequireRequesterMatchForHttpToolApproval for safer public deployments.");
         }
         var services = ResolveRuntimeServices(app);
-        RecordLegacyMafConfigNotice(app, services, startupLogger, startupNoticeSink);
         var providerSmokeRegistry = app.Services.GetRequiredService<ProviderSmokeRegistry>();
         var approvalService = app.Services.GetRequiredService<ToolApprovalService>();
         Telemetry.RegisterApprovalQueueGauge(() => approvalService.PendingCount);

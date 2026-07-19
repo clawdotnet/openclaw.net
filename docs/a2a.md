@@ -16,8 +16,6 @@ A2A support is available in normal gateway builds. At runtime, set:
 }
 ```
 
-The legacy `OpenClaw:Experimental:MicrosoftAgentFramework` section is still read for one release cycle. Startup records a warning when that legacy section is used.
-
 ## Discovery
 
 The standard A2A discovery endpoint is:

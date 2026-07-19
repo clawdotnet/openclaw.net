@@ -42,7 +42,9 @@ internal static class GatewayWorkers
         ContractGovernanceService? contractGovernance = null,
         GovernanceLedgerService? governanceLedger = null,
         AudioTranscriptionService? audioTranscriptionService = null,
-        Background.BackgroundExecutionLimiter? backgroundLimiter = null)
+        Background.BackgroundExecutionLimiter? backgroundLimiter = null,
+        MediaCacheStore? mediaCache = null,
+        SessionAbortRegistry? abortRegistry = null)
     {
         new GatewaySessionCleanupWorker().Start(lifetime, logger, sessionManager);
 
@@ -90,7 +92,9 @@ internal static class GatewayWorkers
             contractGovernance,
             governanceLedger,
             audioTranscriptionService,
-            backgroundLimiter);
+            backgroundLimiter,
+            mediaCache,
+            abortRegistry);
 
         new GatewayOutboundDeliveryWorker().Start(
             lifetime,

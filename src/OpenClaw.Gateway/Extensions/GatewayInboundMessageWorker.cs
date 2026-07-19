@@ -45,7 +45,9 @@ internal sealed class GatewayInboundMessageWorker
         ContractGovernanceService? contractGovernance,
         GovernanceLedgerService? governanceLedger,
         AudioTranscriptionService? audioTranscriptionService = null,
-        Background.BackgroundExecutionLimiter? backgroundLimiter = null)
+        Background.BackgroundExecutionLimiter? backgroundLimiter = null,
+        MediaCacheStore? mediaCache = null,
+        SessionAbortRegistry? abortRegistry = null)
     {
         _ = isNonLoopbackBind;
         _ = sessionLocks;
@@ -71,10 +73,10 @@ internal sealed class GatewayInboundMessageWorker
                         long initialInputTokens = 0;
                         long initialOutputTokens = 0;
                         var automationRetryAttempt = 0;
+                        var historyCountBefore = 0;
                         var conversationRecipientId = ResolveConversationRecipientId(msg);
-                        // Browser / WebSocket / Channel request cancellation must not cancel runtime execution.
-                        // Only gateway shutdown stops a running turn.
-                        var processingCt = lifetime.ApplicationStopping;
+                        using var processingCts = CreateProcessingCts(msg.RequestCancellation, lifetime.ApplicationStopping);
+                        var processingCt = processingCts?.Token ?? lifetime.ApplicationStopping;
 
                         async Task FinalizeAutomationRunAsync(AutomationRunCompletion completion, CancellationToken finalizeCt)
                         {
@@ -316,6 +318,26 @@ internal sealed class GatewayInboundMessageWorker
                             if (session is null)
                                 throw new InvalidOperationException("Session manager returned null session.");
 
+                            // Abort intercept: handle /stop, /cancel, /abort BEFORE acquiring the session lock
+                            // so the abort does not wait for the in-flight execution to release the lock.
+                            if (!msg.IsSystem && abortRegistry is not null && IsAbortCommand(msg.Text))
+                            {
+                                if (abortRegistry.TryAbort(session.Id))
+                                {
+                                    await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
+                                    {
+                                        ChannelId = msg.ChannelId,
+                                        RecipientId = conversationRecipientId,
+                                        AccountId = msg.AccountId,
+                                        Text = "Stopped.",
+                                        ReplyToMessageId = msg.MessageId
+                                    }, processingCt);
+                                    continue;
+                                }
+                                // No active execution — fall through to the command processor below
+                                // (which will return "There is no active execution to stop.").
+                            }
+
                             if (resolvedRoute is not null)
                             {
                                 session.ModelOverride = string.IsNullOrWhiteSpace(resolvedRoute.ModelOverride)
@@ -530,6 +552,13 @@ internal sealed class GatewayInboundMessageWorker
                             {
                                 messageText = string.IsNullOrWhiteSpace(messageText) ? mediaMarker : $"{mediaMarker}\n{messageText}";
                             }
+                            // Resolve [FILE_URL:/media/{id}] markers written into history by a previous
+                            // turn back to [FILE_PATH:{diskPath}] so the agent can use read_file directly.
+                            if (mediaCache is not null && messageText.Contains("[FILE_URL:/media/", StringComparison.Ordinal))
+                            {
+                                messageText = await ResolveFileUrlMarkersAsync(messageText, mediaCache, processingCt);
+                            }
+
                             var useStreaming = ShouldUseStreaming(msg, wsChannel);
 
                             var approvalCallback = ToolApprovalCallbackFactory.Create(
@@ -575,6 +604,10 @@ internal sealed class GatewayInboundMessageWorker
                                     }, ct);
                                 });
 
+                            // Register session cancellation source so /stop can abort in-flight execution.
+                            var abortCts = abortRegistry?.Register(session.Id, processingCt);
+                            var executionCt = abortCts?.Token ?? processingCt;
+
                             if (useStreaming)
                             {
                                 await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_start", "", msg.MessageId, processingCt);
@@ -585,6 +618,7 @@ internal sealed class GatewayInboundMessageWorker
                                 if (!string.IsNullOrWhiteSpace(effectiveResponseMode))
                                     session.ResponseMode = effectiveResponseMode!;
 
+                                var streamHistoryCountBefore = session.History.Count;
                                 try
                                 {
                                     var streamLimiterReleaser = backgroundLimiter is not null
@@ -610,7 +644,7 @@ internal sealed class GatewayInboundMessageWorker
                                     }
 
                                     await foreach (var evt in agentRuntime.RunStreamingAsync(
-                                        session, messageText, processingCt, approvalCallback: approvalCallback))
+                                        session, messageText, executionCt, approvalCallback: approvalCallback))
                                     {
                                         if (string.Equals(evt.EnvelopeType, "assistant_done", StringComparison.Ordinal))
                                         {
@@ -629,6 +663,35 @@ internal sealed class GatewayInboundMessageWorker
                                 {
                                     session.ResponseMode = originalResponseMode;
                                 }
+
+                                // Upload files written by write_file by scanning history (same as non-streaming path).
+                                var streamFileUploads = new List<StoredMediaAsset>();
+                                if (mediaCache is not null)
+                                {
+                                    for (var hi = streamHistoryCountBefore; hi < session.History.Count; hi++)
+                                    {
+                                        var hturn = session.History[hi];
+                                        if (hturn.ToolCalls is null) continue;
+                                        foreach (var call in hturn.ToolCalls)
+                                        {
+                                            if (call.Result is null || !call.Result.Contains("[FILE_PATH:", StringComparison.Ordinal))
+                                                continue;
+                                            var (fileMarkers, _) = MediaMarkerProtocol.Extract(call.Result);
+                                            foreach (var marker in fileMarkers.Where(m => m.Kind == MediaMarkerKind.FilePath))
+                                            {
+                                                var fileAsset = await TryUploadFilePathAsync(marker.Value, config, mediaCache, processingCt);
+                                                if (fileAsset is not null)
+                                                    streamFileUploads.Add(fileAsset);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Inject FILE_URL markers into the last assistant ChatTurn BEFORE persisting
+                                // so history replays show download links.
+                                if (streamFileUploads.Count > 0)
+                                    InjectFileUrlMarkersIntoHistory(session, streamFileUploads);
+
                                 await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
                                 if (learningService is not null)
                                     await learningService.ObserveSessionAsync(session, processingCt);
@@ -657,6 +720,21 @@ internal sealed class GatewayInboundMessageWorker
                                         completedEvent,
                                         msg.MessageId,
                                         processingCt);
+                                }
+
+                                // Deliver file_attachment envelopes for files uploaded during this streaming turn.
+                                foreach (var fileAsset in streamFileUploads)
+                                {
+                                    await wsChannel.SendEnvelopeAsync(msg.SenderId, new WsServerEnvelope
+                                    {
+                                        Type = "file_attachment",
+                                        Text = fileAsset.FileName,
+                                        FileUrl = $"/media/{fileAsset.Id}",
+                                        FileName = fileAsset.FileName,
+                                        MimeType = fileAsset.MediaType,
+                                        FileSizeBytes = fileAsset.SizeBytes,
+                                        InReplyToMessageId = msg.MessageId
+                                    }, processingCt);
                                 }
 
                                 await wsChannel.SendStreamEventAsync(msg.SenderId, "typing_stop", "", msg.MessageId, processingCt);
@@ -734,6 +812,39 @@ internal sealed class GatewayInboundMessageWorker
                                     session.ResponseMode = originalResponseMode;
                                 }
 
+                                // Upload files written by write_file tool results and build asset list
+                                // BEFORE persisting, so FILE_URL markers are injected into history for replay.
+                                var nonStreamFileUploads = new List<StoredMediaAsset>();
+                                if (mediaCache is not null)
+                                {
+                                    for (var hi = historyCountBefore; hi < session.History.Count; hi++)
+                                    {
+                                        var hturn = session.History[hi];
+                                        if (hturn.ToolCalls is null) continue;
+                                        foreach (var call in hturn.ToolCalls)
+                                        {
+                                            if (call.Result is null || !call.Result.Contains("[FILE_PATH:", StringComparison.Ordinal))
+                                                continue;
+                                            var (fileMarkers, _) = MediaMarkerProtocol.Extract(call.Result);
+                                            foreach (var marker in fileMarkers.Where(m => m.Kind == MediaMarkerKind.FilePath))
+                                            {
+                                                var fileAsset = await TryUploadFilePathAsync(marker.Value, config, mediaCache, processingCt);
+                                                if (fileAsset is not null)
+                                                    nonStreamFileUploads.Add(fileAsset);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Inject FILE_URL markers into history and append download links to responseText.
+                                if (nonStreamFileUploads.Count > 0)
+                                {
+                                    InjectFileUrlMarkersIntoHistory(session, nonStreamFileUploads);
+                                    // WebSocket envelope clients get a dedicated file_attachment envelope;
+                                    // appending FILE_URL to responseText would produce a duplicate link.
+                                    if (!(msg.ChannelId == "websocket" && wsChannel.IsClientUsingEnvelopes(msg.SenderId)))
+                                        responseText += BuildFileUrlSuffix(nonStreamFileUploads);
+                                }
                                 await sessionManager.PersistAsync(session, processingCt, sessionLockHeld: true);
 
                                 // Background continuation
@@ -857,6 +968,26 @@ internal sealed class GatewayInboundMessageWorker
 
                                 if (config.UsageFooter is "tokens")
                                     responseText += $"\n\n---\n↑ {session.TotalInputTokens} in / {session.TotalOutputTokens} out tokens";
+
+                                // Deliver file_attachment envelopes for WebSocket envelope clients.
+                                if (nonStreamFileUploads.Count > 0 &&
+                                    msg.ChannelId == "websocket" &&
+                                    wsChannel.IsClientUsingEnvelopes(msg.SenderId))
+                                {
+                                    foreach (var fileAsset in nonStreamFileUploads)
+                                    {
+                                        await wsChannel.SendEnvelopeAsync(msg.SenderId, new WsServerEnvelope
+                                        {
+                                            Type = "file_attachment",
+                                            Text = fileAsset.FileName,
+                                            FileUrl = $"/media/{fileAsset.Id}",
+                                            FileName = fileAsset.FileName,
+                                            MimeType = fileAsset.MediaType,
+                                            FileSizeBytes = fileAsset.SizeBytes,
+                                            InReplyToMessageId = msg.MessageId
+                                        }, processingCt);
+                                    }
+                                }
 
                                 if (!suppressHeartbeatDelivery)
                                 {
@@ -985,6 +1116,9 @@ internal sealed class GatewayInboundMessageWorker
                         }
                         finally
                         {
+                            if (session is not null)
+                                abortRegistry?.Unregister(session.Id);
+
                             if (bridgedAdapter is not null && bridgedTypingStarted)
                             {
                                 try
@@ -1007,6 +1141,23 @@ internal sealed class GatewayInboundMessageWorker
                 }
             }, lifetime.ApplicationStopping);
         }
+    }
+
+    private static CancellationTokenSource? CreateProcessingCts(CancellationToken requestCancellation, CancellationToken appStopping)
+    {
+        if (!requestCancellation.CanBeCanceled || requestCancellation == appStopping)
+            return null;
+
+        return CancellationTokenSource.CreateLinkedTokenSource(requestCancellation, appStopping);
+    }
+
+    private static bool IsAbortCommand(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        var t = text.Trim();
+        return string.Equals(t, "/stop", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(t, "/cancel", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(t, "/abort", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? ResolveOperationalResponseMode(Session session, AutomationDefinition? automation)
@@ -1242,5 +1393,170 @@ internal sealed class GatewayInboundMessageWorker
             Summary = summary,
             Metadata = metadata
         });
+    }
+
+    // Resolves [FILE_URL:/media/{id}] markers in an inbound message back to [FILE_PATH:{diskPath}]
+    // so the agent can read the file directly via the read_file tool instead of an HTTP path.
+    private static async Task<string> ResolveFileUrlMarkersAsync(string text, MediaCacheStore mediaCache, CancellationToken ct)
+    {
+        if (!text.Contains("[FILE_URL:/media/", StringComparison.Ordinal))
+            return text;
+
+        var result = new System.Text.StringBuilder(text.Length);
+        const string prefix = "[FILE_URL:/media/";
+        var searchFrom = 0;
+
+        while (true)
+        {
+            var startIdx = text.IndexOf(prefix, searchFrom, StringComparison.Ordinal);
+            if (startIdx < 0)
+            {
+                result.Append(text, searchFrom, text.Length - searchFrom);
+                break;
+            }
+
+            result.Append(text, searchFrom, startIdx - searchFrom);
+
+            var closeIdx = text.IndexOf(']', startIdx + prefix.Length);
+            if (closeIdx < 0)
+            {
+                result.Append(text, startIdx, text.Length - startIdx);
+                break;
+            }
+
+            // Extract just the ID portion (strip any |fileName suffix).
+            var rawId = text.Substring(startIdx + prefix.Length, closeIdx - (startIdx + prefix.Length));
+            var pipeIdx = rawId.IndexOf('|', StringComparison.Ordinal);
+            var mediaId = pipeIdx >= 0 ? rawId[..pipeIdx] : rawId;
+
+            // Only resolve IDs that look like our generated ones (no path separators or extensions).
+            if (!mediaId.Contains('/') && !mediaId.Contains('\\') && !mediaId.Contains('.'))
+            {
+                var asset = await mediaCache.GetAsync(mediaId, ct);
+                if (asset is not null && File.Exists(asset.Path))
+                {
+                    result.Append($"[FILE_PATH:{asset.Path}]");
+                    searchFrom = closeIdx + 1;
+                    continue;
+                }
+            }
+
+            // Leave unchanged if not resolvable.
+            result.Append(text, startIdx, closeIdx + 1 - startIdx);
+            searchFrom = closeIdx + 1;
+        }
+
+        return result.ToString();
+    }
+
+    // Reads a file from disk (validating it is within an allowed write root) and stores it
+    // in the media cache, returning the stored asset. Returns null if the file does not
+    // exist or the path is outside all allowed write roots.
+    private static async Task<StoredMediaAsset?> TryUploadFilePathAsync(
+        string filePath,
+        GatewayConfig config,
+        MediaCacheStore mediaCache,
+        CancellationToken ct)
+    {
+        try
+        {
+            var fullPath = Path.GetFullPath(filePath);
+
+            var roots = config.Tooling.AllowedWriteRoots;
+            if (roots.Length == 0)
+                return null;
+
+            var pathAllowed = false;
+            foreach (var root in roots)
+            {
+                if (root == "*")
+                {
+                    pathAllowed = true;
+                    break;
+                }
+
+                var fullRoot = Path.GetFullPath(root);
+                if (fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase) &&
+                    (fullPath.Length == fullRoot.Length ||
+                     fullPath[fullRoot.Length] == Path.DirectorySeparatorChar ||
+                     fullPath[fullRoot.Length] == Path.AltDirectorySeparatorChar))
+                {
+                    pathAllowed = true;
+                    break;
+                }
+            }
+
+            if (!pathAllowed || !File.Exists(fullPath))
+                return null;
+
+            var bytes = await File.ReadAllBytesAsync(fullPath, ct);
+            var fileName = Path.GetFileName(fullPath);
+            var mimeType = GuessMimeTypeFromExtension(Path.GetExtension(fullPath));
+            return await mediaCache.SaveAsync(bytes.AsMemory(), mimeType, fileName, ct);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string GuessMimeTypeFromExtension(string extension) =>
+        extension.ToLowerInvariant() switch
+        {
+            ".html" or ".htm" => "text/html",
+            ".css"            => "text/css",
+            ".js"             => "application/javascript",
+            ".json"           => "application/json",
+            ".xml"            => "application/xml",
+            ".txt"            => "text/plain",
+            ".md"             => "text/markdown",
+            ".csv"            => "text/csv",
+            ".py"             => "text/x-python",
+            ".sh"             => "text/x-sh",
+            ".zip"            => "application/zip",
+            ".tar"            => "application/x-tar",
+            ".gz"             => "application/gzip",
+            ".pdf"            => "application/pdf",
+            ".png"            => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".gif"            => "image/gif",
+            ".svg"            => "image/svg+xml",
+            ".webp"           => "image/webp",
+            ".mp3"            => "audio/mpeg",
+            ".wav"            => "audio/wav",
+            ".mp4"            => "video/mp4",
+            _                 => "application/octet-stream"
+        };
+
+    // Builds a newline-prefixed block of [FILE_URL:] markers to append to response text.
+    // Format: [FILE_URL:/media/{id}|{fileName}] so preprocessMediaMarkers can render a named link.
+    private static string BuildFileUrlSuffix(List<StoredMediaAsset> assets)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var a in assets)
+        {
+            var nameSuffix = string.IsNullOrWhiteSpace(a.FileName) ? "" : $"|{a.FileName}";
+            sb.Append($"\n[FILE_URL:/media/{a.Id}{nameSuffix}]");
+        }
+        return sb.ToString();
+    }
+
+    // Appends [FILE_URL:] markers to the last assistant ChatTurn in history so that
+    // history replays show download links via preprocessMediaMarkers on the front-end.
+    private static void InjectFileUrlMarkersIntoHistory(Session session, List<StoredMediaAsset> assets)
+    {
+        if (assets.Count == 0) return;
+        for (var i = session.History.Count - 1; i >= 0; i--)
+        {
+            var turn = session.History[i];
+            if (!string.Equals(turn.Role, "assistant", StringComparison.Ordinal))
+                continue;
+            // Skip the [tool_use] placeholder — target the text response turn.
+            if (string.Equals(turn.Content, "[tool_use]", StringComparison.Ordinal))
+                continue;
+
+            session.History[i] = turn with { Content = turn.Content + BuildFileUrlSuffix(assets) };
+            return;
+        }
     }
 }

@@ -110,7 +110,7 @@ internal static class EndpointHelpers
         }
 
         // OIDC/JWT: UseAuthentication() has already validated the JWT and populated ctx.User.
-        if (ctx.User.Identity?.IsAuthenticated == true)
+        if (useOidc && ctx.User.Identity?.IsAuthenticated == true)
         {
             var sub = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)
                       ?? ctx.User.FindFirstValue("sub");

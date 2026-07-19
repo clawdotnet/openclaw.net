@@ -47,8 +47,6 @@ The supported MAF configuration section is:
 }
 ```
 
-`OpenClaw:Experimental:MicrosoftAgentFramework` is still read for one release cycle for migration. When the legacy section is used, startup emits a warning and records a `configuration/deprecated_maf_section` runtime event.
-
 ## A2A
 
 A2A endpoints are opt-in even when the MAF adapter is present:
@@ -83,11 +81,11 @@ See [../a2a.md](../a2a.md) for endpoint behavior, auth, and current streaming no
 
 ## Migration
 
-Replace old experimental config paths:
+Experimental migration settings are removed. Use the current equivalents below.
 
-| Old | New |
+| Previous setting | Current status |
 | --- | --- |
-| `OpenClaw:Experimental:MicrosoftAgentFramework` | `OpenClaw:MicrosoftAgentFramework` |
+| `OpenClaw:Experimental:MicrosoftAgentFramework` | Removed. Use `OpenClaw:MicrosoftAgentFramework`. |
 | `OpenClawEnableMafExperiment=true` | No longer needed |
 | `OPENCLAW_ENABLE_MAF_EXPERIMENT` | No longer used |
 | `gateway-maf-enabled-*` artifacts | normal gateway artifacts |

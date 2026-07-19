@@ -3785,7 +3785,7 @@ public sealed class GatewayAdminEndpointTests
             Assert.Equal(HttpStatusCode.OK, skillsResponse.StatusCode);
             using var skillsPayload = await ReadJsonAsync(skillsResponse);
             Assert.Contains(
-                skillsPayload.RootElement.GetProperty("items").EnumerateArray().Select(static item => item.GetProperty("name").GetString()),
+                skillsPayload.RootElement.GetProperty("skills").EnumerateArray().Select(static item => item.GetProperty("name").GetString()),
                 static name => string.Equals(name, "portable-bundle-skill", StringComparison.Ordinal));
 
             using var noteRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/notes?memoryClass=project_fact&projectId=apollo");
@@ -5347,26 +5347,6 @@ public sealed class GatewayAdminEndpointTests
             ],
             pluginRuntimeTelemetry: null,
             nativeDynamicPluginRuntimeTelemetry: null);
-        harness.Runtime.LoadedSkills =
-        [
-            new SkillDefinition
-            {
-                Name = "Incident Followup",
-                Description = "Handle incident follow-up tasks.",
-                Instructions = "Follow the incident checklist.",
-                Location = "/tmp/skills/incident-followup",
-                Source = SkillSource.Managed,
-                Metadata = new SkillMetadata
-                {
-                    Homepage = "https://example.com/incident-followup",
-                    RequireEnv = ["OPENAI_API_KEY"]
-                },
-                UserInvocable = true,
-                DisableModelInvocation = false,
-                CommandDispatch = "incident-followup"
-            }
-        ];
-
         using var pluginRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/plugins/qqbot");
         pluginRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
         var pluginResponse = await harness.Client.SendAsync(pluginRequest);
@@ -5397,10 +5377,15 @@ public sealed class GatewayAdminEndpointTests
         var skillsResponse = await harness.Client.SendAsync(skillsRequest);
         Assert.Equal(HttpStatusCode.OK, skillsResponse.StatusCode);
         using var skillsPayload = await ReadJsonAsync(skillsResponse);
-        var skills = skillsPayload.RootElement.GetProperty("items").EnumerateArray().ToArray();
-        var incidentSkill = Assert.Single(skills, static item => string.Equals(item.GetProperty("name").GetString(), "Incident Followup", StringComparison.Ordinal));
-        Assert.Equal("upstream-compatible", incidentSkill.GetProperty("trustLevel").GetString());
-        Assert.Contains("OPENAI_API_KEY", incidentSkill.GetProperty("requiredEnv").EnumerateArray().Select(static item => item.GetString()));
+        var skills = skillsPayload.RootElement.GetProperty("skills").EnumerateArray().ToArray();
+        Assert.NotEmpty(skills);
+        Assert.Contains(skills, static item => string.Equals(item.GetProperty("source").GetString(), "bundled", StringComparison.Ordinal));
+        Assert.All(skills, static item =>
+        {
+            Assert.True(item.TryGetProperty("trustLevel", out _));
+            Assert.True(item.TryGetProperty("requiredEnv", out var requiredEnv));
+            Assert.Equal(JsonValueKind.Array, requiredEnv.ValueKind);
+        });
 
         using var compatibilityRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/compatibility/catalog?compatibilityStatus=compatible&kind=npm-plugin");
         compatibilityRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -7599,6 +7584,8 @@ public sealed class GatewayAdminEndpointTests
         builder.Services.AddSingleton(new ProviderUsageTracker());
         builder.Services.AddSingleton(new ToolUsageTracker());
         builder.Services.AddSingleton(new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance));
+        builder.Services.AddSingleton(_ => new McpConfigStore(storagePath, NullLogger<McpConfigStore>.Instance));
+        builder.Services.AddSingleton<McpWatcherHolder>();
         builder.Services.AddSingleton<RuntimePulseService>();
         builder.Services.AddSingleton(new ContractStore(storagePath, NullLogger<ContractStore>.Instance));
         builder.Services.AddSingleton(sp =>

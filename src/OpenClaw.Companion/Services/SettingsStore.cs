@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using OpenClaw.Companion.Models;
 
 namespace OpenClaw.Companion.Services;
@@ -43,7 +44,7 @@ public sealed class SettingsStore
                 return new CompanionSettings();
 
             var json = File.ReadAllText(SettingsPath);
-            var settings = JsonSerializer.Deserialize<CompanionSettings>(json, JsonOptions) ?? new CompanionSettings();
+            var settings = JsonSerializer.Deserialize(json, CompanionJsonContext.Default.CompanionSettings) ?? new CompanionSettings();
             settings.AuthToken = _tokenStore.LoadToken(settings.AllowPlaintextTokenFallback)
                 ?? TryReadLegacyAuthToken(json, settings.RememberToken);
             LastWarning = _tokenStore.LastWarning;

@@ -16,8 +16,6 @@ A2A 支持在常规网关构建中可用。运行时设置：
 }
 ```
 
-旧版 `OpenClaw:Experimental:MicrosoftAgentFramework` 配置节仍会在一个发布周期内被读取。使用该旧版配置节时启动会记录一条警告。
-
 ## 服务发现
 
 标准 A2A 发现端点为：
