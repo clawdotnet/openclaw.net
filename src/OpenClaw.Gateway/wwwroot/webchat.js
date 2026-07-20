@@ -2524,7 +2524,14 @@ function connect() {
                     const _faMime     = env.mimeType || env.MimeType || '';
                     const _faSize     = env.fileSizeBytes ?? env.FileSizeBytes ?? null;
                     a.textContent = '\uD83D\uDCCE ' + _faFileName;
-                    var _faSafeUrl = _faFileUrl && (_faFileUrl.startsWith('http://') || _faFileUrl.startsWith('https://') || _faFileUrl.startsWith('/media/')) ? _faFileUrl : '#';
+                    var _faSafeUrl = '#';
+                    if (_faFileUrl) {
+                        if (_faFileUrl.startsWith('/media/')) {
+                            if (!/\.\./.test(_faFileUrl)) _faSafeUrl = _faFileUrl;
+                        } else if (_faFileUrl.startsWith('http://') || _faFileUrl.startsWith('https://')) {
+                            _faSafeUrl = _faFileUrl;
+                        }
+                    }
                     a.href = _faSafeUrl;
                     a.setAttribute('data-media-url', _faSafeUrl);
                     if (_faSize !== null) {
@@ -3204,12 +3211,23 @@ function appendArtifactCard(env) {
         dlBtn.type = 'button';
         dlBtn.setAttribute('data-media-url', env.url);
         dlBtn.addEventListener('click', async () => {
-            if (!env.url || !(env.url.startsWith('http://') || env.url.startsWith('https://') || env.url.startsWith('/media/'))) {
+            var dlUrl = env.url;
+            // Only allow absolute http/https URLs or /media/ paths without traversal.
+            if (!dlUrl) {
+                appendSystem('Download failed: missing URL', true);
+                return;
+            }
+            if (dlUrl.startsWith('/media/')) {
+                if (/\.\./.test(dlUrl)) {
+                    appendSystem('Download failed: unsafe URL path', true);
+                    return;
+                }
+            } else if (!/^https?:\/\//i.test(dlUrl)) {
                 appendSystem('Download failed: unsafe URL', true);
                 return;
             }
             const headers = await getAuthHeaders();
-            const resp = await fetch(env.url, { headers });
+            const resp = await fetch(dlUrl, { headers });
             if (!resp.ok) { appendSystem('Download failed: ' + resp.status, true); return; }
             const blob = await resp.blob();
             const objUrl = URL.createObjectURL(blob);
