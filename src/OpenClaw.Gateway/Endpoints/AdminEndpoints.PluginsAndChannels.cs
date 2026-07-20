@@ -284,7 +284,9 @@ internal static partial class AdminEndpoints
                     var rel = zipPrefix.Length > 0 && entry.FullName.StartsWith(zipPrefix, StringComparison.OrdinalIgnoreCase)
                         ? entry.FullName[zipPrefix.Length..] : entry.FullName;
                     if (string.IsNullOrEmpty(rel) || rel.EndsWith('/') || rel.EndsWith('\\')) continue;
-                    var destPath = Path.Combine(skillDir, rel);
+                    var destPath = Path.GetFullPath(Path.Combine(skillDir, rel));
+                    if (!destPath.StartsWith(skillDirPrefix, StringComparison.OrdinalIgnoreCase))
+                        continue; // defense-in-depth: skip traversal entries (Phase 2 already validates)
                     Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
                     using var entryStream = entry.Open();
                     using var fs = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true);
