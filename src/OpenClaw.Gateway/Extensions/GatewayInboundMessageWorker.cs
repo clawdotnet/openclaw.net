@@ -808,7 +808,9 @@ internal sealed class GatewayInboundMessageWorker
                                         continue;
                                     }
 
-                                    turnResult = await agentRuntime.RunTurnAsync(session, messageText, processingCt, approvalCallback: approvalCallback);
+                                    historyCountBefore = session.History.Count;
+
+                                    turnResult = await agentRuntime.RunTurnAsync(session, messageText, executionCt, approvalCallback: approvalCallback);
                                     responseText = turnResult.Text;
                                 }
                                 finally

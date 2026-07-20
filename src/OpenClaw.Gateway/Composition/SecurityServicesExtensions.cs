@@ -13,8 +13,9 @@ internal static class SecurityServicesExtensions
         // Register OIDC/JWT Bearer authentication when an OIDC Authority is configured,
         // regardless of AuthMode. This allows JWT tokens (e.g. from the web chat's
         // OIDC login) to be validated even when AuthMode is "token".
+        // Require non-blank Authority even when IsOidcMode is true; fail fast otherwise.
         var hasOidcAuthority = !string.IsNullOrWhiteSpace(startup.Config.Security.Oidc.Authority);
-        if (startup.Config.Security.IsOidcMode || hasOidcAuthority)
+        if (hasOidcAuthority)
         {
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>

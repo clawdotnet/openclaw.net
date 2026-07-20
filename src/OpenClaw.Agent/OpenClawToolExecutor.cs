@@ -202,11 +202,9 @@ public sealed class OpenClawToolExecutor
         var persistedArgsJson = _redaction.Redact(argsJson);
 
         ITool? tool;
-        string[] toolNamesSnapshot;
         lock (_toolsMutationLock)
         {
             _toolsByName.TryGetValue(toolName, out tool);
-            toolNamesSnapshot = _toolsByName.Keys.ToArray();
         }
 
         if (tool is null)
@@ -335,11 +333,9 @@ public sealed class OpenClawToolExecutor
         if (governanceDecision.Action != GovernanceAction.RequireApproval && !governanceDecision.Allowed)
         {
             var deniedByGovernance = governanceDecision.Reason ?? "Tool invocation denied by governance policy.";
-            var governanceFailureCode = governanceDecision.Action == GovernanceAction.Deny && !governanceDecision.IsUnavailable
-                ? ToolFailureCodes.GovernanceDenied
-                : governanceDecision.IsUnavailable
-                    ? ToolFailureCodes.GovernanceUnavailable
-                    : ToolFailureCodes.GovernanceDenied;
+            var governanceFailureCode = governanceDecision.IsUnavailable
+                ? ToolFailureCodes.GovernanceUnavailable
+                : ToolFailureCodes.GovernanceDenied;
             _logger?.LogWarning(
                 "[{CorrelationId}] Tool invocation denied by governance. Tool={Tool}, Reason={Reason}",
                 turnCtx.CorrelationId,
@@ -909,11 +905,11 @@ public sealed class OpenClawToolExecutor
 
     private static bool IsToolAllowedForSession(Session session, string toolName, ResolvedToolPreset? preset)
     {
-        if (preset is not null && !preset.AllowedTools.Contains(toolName))
+        // DisableTools routing decisions intentionally expose no tools to the model.
+        if (session.RouteToolsDisabled)
             return false;
 
-        // DisableTools routing decisions intentionally expose no tools to the model.
-        if (session.RouteToolsDisabled && session.RouteAllowedTools is not { Length: > 0 })
+        if (preset is not null && !preset.AllowedTools.Contains(toolName))
             return false;
 
         if (session.RouteAllowedTools is { Length: > 0 })

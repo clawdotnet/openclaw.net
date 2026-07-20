@@ -260,9 +260,11 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         await using var conn = new SqliteConnection(ConnectionString);
         await conn.OpenAsync(ct);
 
+        await using var tx = await conn.BeginTransactionAsync(ct);
         var ids = new[] { sessionId };
         await DeleteSessionSearchRowsAsync(conn, ids, ct);
         await DeleteSessionsByIdAsync(conn, ids, ct);
+        await tx.CommitAsync(ct);
     }
 
     public async ValueTask<string?> LoadNoteAsync(string key, CancellationToken ct)

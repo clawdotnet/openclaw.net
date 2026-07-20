@@ -3,6 +3,7 @@ using OpenClaw.Core.Http;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Plugins;
 using System.Buffers;
+using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -337,11 +338,9 @@ public sealed partial class WebFetchTool : ITool, IDisposable
         try
         {
             var addresses = await Dns.GetHostAddressesAsync(uri.Host);
-            foreach (var ip in addresses)
-            {
-                if (IsBlockedIp(ip))
-                    return $"Error: URL blocked by safety policy - resolved address ({ip}) is blocked for security reasons.";
-            }
+            var blockedIp = addresses.FirstOrDefault(IsBlockedIp);
+            if (blockedIp is not null)
+                return $"Error: URL blocked by safety policy - resolved address ({blockedIp}) is blocked for security reasons.";
             return null;
         }
         catch (Exception ex)

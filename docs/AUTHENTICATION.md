@@ -46,7 +46,7 @@ Authentication configuration lives under the `OpenClaw.Security` node in `appset
       "Oidc": {
         "Authority": "https://passport.ai4c.cn/realms/ai4c-saas",
         "Audience": "account",
-        "RequireHttpsMetadata": false,
+        "RequireHttpsMetadata": true,
         "RoleClaim": "roles"
       }
     }
@@ -210,7 +210,8 @@ Authentication middleware is registered in `Program.cs` in the following order:
 // Program.cs lines 89–99
 app.Use(async (ctx, next) =>
 {
-    if (ctx.Request.Path.StartsWithSegments("/ws", StringComparison.OrdinalIgnoreCase)
+    if (startup.Config.Security.AllowQueryStringToken
+        && ctx.Request.Path.StartsWithSegments("/ws", StringComparison.OrdinalIgnoreCase)
         && !ctx.Request.Headers.ContainsKey("Authorization"))
     {
         var queryToken = ctx.Request.Query["token"].FirstOrDefault();
@@ -221,7 +222,7 @@ app.Use(async (ctx, next) =>
 });
 ```
 
-**Purpose**: The browser WebSocket API does not support custom headers. The frontend passes tokens via `?token=<jwt>`. This middleware copies the query string token into the standard `Authorization: Bearer` header so the JWT authentication middleware can process it.
+**Purpose**: The browser WebSocket API does not support custom headers. When `AllowQueryStringToken` is enabled, the frontend can pass tokens via `?token=<jwt>`. This middleware copies the query string token into the standard `Authorization: Bearer` header so the JWT authentication middleware can process it. When `AllowQueryStringToken` is `false` (default), query-string tokens are rejected and only the `Authorization` header is accepted.
 
 ### 4.2 Authentication Middleware
 
@@ -398,7 +399,7 @@ In this mode, `AuthMode` is `"token"` but `Oidc.Authority` is set, so the JWT au
 
 1. **Constant-time comparison**: `AuthToken` validation uses `CryptographicOperations.FixedTimeEquals` to prevent timing side-channel attacks
 2. **PBKDF2 hashing**: Operator account tokens are stored as PBKDF2 hashes (120,000 iterations), protecting against plaintext exposure if the storage file is compromised
-3. **CSRF protection**: Browser sessions require CSRF token validation on API endpoints; WebSocket endpoints are exempt because cookies are not automatically attached to WebSocket upgrades
+3. **CSRF protection**: Browser sessions require CSRF token validation on API endpoints; WebSocket endpoints are exempt because browsers do send cookies during WebSocket handshakes, so WebSocket security relies on strict `Origin` header validation (see item 6) rather than cookie-based CSRF tokens
 4. **JWT validation**: Full signature, issuer, audience, and expiration validation is provided by the ASP.NET Core JWT Bearer middleware
 5. **Rate limiting**: All authenticated endpoints are subject to rate limiting, keyed by IP, operator account, and browser session
 6. **Origin checking**: WebSocket endpoints validate the `Origin` header to prevent cross-site WebSocket hijacking

@@ -276,19 +276,26 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNo
             throw;
         }
     }
-    public ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct)
+    public async ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
-            return ValueTask.CompletedTask;
+            return;
 
-        var encodedId = EncodeKey(sessionId);
-        var filePath = Path.Combine(_sessionsPath, $"{encodedId}.json");
+        var loadGate = ResolveSessionLoadStripe(sessionId);
+        await loadGate.WaitAsync(ct);
+        try
+        {
+            _sessionCache.Remove(sessionId);
 
-        _sessionCache.Remove(sessionId);
-        if (File.Exists(filePath))
-            File.Delete(filePath);
-
-        return ValueTask.CompletedTask;
+            var encodedId = EncodeKey(sessionId);
+            var filePath = Path.Combine(_sessionsPath, $"{encodedId}.json");
+            if (File.Exists(filePath))
+                File.Delete(filePath);
+        }
+        finally
+        {
+            loadGate.Release();
+        }
     }
 
     public async ValueTask<string?> LoadNoteAsync(string key, CancellationToken ct)

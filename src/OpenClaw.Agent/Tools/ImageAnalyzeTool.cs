@@ -84,7 +84,11 @@ public sealed class ImageAnalyzeTool : ITool
         };
 
         foreach (var url in imageUrls)
-            parts.Add(ChatMessageContentPart.CreateImagePart(new Uri(url)));
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return $"Error: Invalid image URL: {url}";
+            parts.Add(ChatMessageContentPart.CreateImagePart(uri));
+        }
 
         foreach (var path in imagePaths)
         {

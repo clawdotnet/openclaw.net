@@ -88,9 +88,11 @@ while (true)
 
         // Browser WebSocket API cannot set custom Authorization headers.
         // Bridge /ws?token=... into Authorization: Bearer ... so standard auth can validate it.
+        // Only active when AllowQueryStringToken is enabled.
         app.Use(async (ctx, next) =>
         {
-            if (ctx.Request.Path.StartsWithSegments("/ws", StringComparison.OrdinalIgnoreCase)
+            if (startup.Config.Security.AllowQueryStringToken
+                && ctx.Request.Path.StartsWithSegments("/ws", StringComparison.OrdinalIgnoreCase)
                 && !ctx.Request.Headers.ContainsKey("Authorization"))
             {
                 var queryToken = ctx.Request.Query["token"].FirstOrDefault();

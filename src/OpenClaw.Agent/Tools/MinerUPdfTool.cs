@@ -36,7 +36,9 @@ public sealed class MinerUPdfTool : ITool, IDisposable
         _config = config;
         _toolingConfig = toolingConfig ?? new ToolingConfig();
         _http = HttpClientFactory.Create();
-        _http.Timeout = TimeSpan.FromSeconds(_config.TimeoutSeconds);
+        _http.Timeout = _config.TimeoutSeconds > 0
+            ? TimeSpan.FromSeconds(_config.TimeoutSeconds)
+            : System.Threading.Timeout.InfiniteTimeSpan;
     }
 
     public string Name => "pdf_parse";

@@ -139,9 +139,10 @@ public sealed class ImageGenTool : ITool, IDisposable
             // No URL: fall back to raw bytes (base64) by saving them locally and emitting
             // an [IMAGE_PATH:] marker for the media pipeline to pick up.
             var bytes = image.ImageBytes;
-            if (bytes is not null && bytes.ToArray().Length > 0)
+            var imageData = bytes?.ToArray();
+            if (imageData is not null && imageData.Length > 0)
             {
-                var savedPath = await SaveImageBytesAsync(bytes.ToArray(), "image/png", ct);
+                var savedPath = await SaveImageBytesAsync(imageData, "image/png", ct);
                 if (savedPath is null)
                     return "Error: image data was returned but could not be saved. Ensure Tooling.WorkspaceRoot or an AllowedWriteRoot is configured.";
                 return FormatImagePathResult(savedPath);

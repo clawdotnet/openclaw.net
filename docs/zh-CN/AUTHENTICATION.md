@@ -46,7 +46,7 @@ OpenClaw.NET Gateway 支持多层认证体系，涵盖静态令牌、OIDC/JWT Be
       "Oidc": {
         "Authority": "https://passport.ai4c.cn/realms/ai4c-saas",
         "Audience": "account",
-        "RequireHttpsMetadata": false,
+        "RequireHttpsMetadata": true,
         "RoleClaim": "roles"
       }
     }
@@ -210,7 +210,8 @@ return false;  // 401 Unauthorized
 // Program.cs 第 89-99 行
 app.Use(async (ctx, next) =>
 {
-    if (ctx.Request.Path.StartsWithSegments("/ws", StringComparison.OrdinalIgnoreCase)
+    if (startup.Config.Security.AllowQueryStringToken
+        && ctx.Request.Path.StartsWithSegments("/ws", StringComparison.OrdinalIgnoreCase)
         && !ctx.Request.Headers.ContainsKey("Authorization"))
     {
         var queryToken = ctx.Request.Query["token"].FirstOrDefault();
@@ -221,7 +222,7 @@ app.Use(async (ctx, next) =>
 });
 ```
 
-**目的**：浏览器 WebSocket API 不支持自定义请求头，因此前端通过 `?token=<jwt>` 传递令牌。此中间件将其转换为标准的 `Authorization: Bearer` 头，使 JWT 认证中间件能够正确处理。
+**目的**：浏览器 WebSocket API 不支持自定义请求头。当 `AllowQueryStringToken` 启用时，前端可以通过 `?token=<jwt>` 传递令牌，此中间件将其转换为标准的 `Authorization: Bearer` 头，使 JWT 认证中间件能够正确处理。当 `AllowQueryStringToken` 为 `false`（默认值）时，查询字符串令牌将被拒绝，仅接受 `Authorization` 头。
 
 ### 4.2 认证中间件
 
@@ -398,7 +399,7 @@ if (!resp.ok) {
 
 1. **恒定时间比较**：`AuthToken` 使用 `CryptographicOperations.FixedTimeEquals` 进行恒定时间比较，防止时序攻击
 2. **PBKDF2 哈希**：操作员令牌使用 PBKDF2（120,000 次迭代）进行哈希存储，防止令牌泄露后的明文暴露
-3. **CSRF 保护**：浏览器会话在 API 端点上要求 CSRF 令牌验证；WebSocket 端点因无 Cookie 自动携带特性而豁免
+3. **CSRF 保护**：浏览器会话在 API 端点上要求 CSRF 令牌验证；WebSocket 端点在握手阶段浏览器会携带 Cookie，因此依赖严格的 `Origin` 头校验（参见第 6 条）来防止跨域攻击，而非基于 Cookie 的 CSRF 令牌
 4. **JWT 验证**：由 ASP.NET Core JWT Bearer 中间件提供完整的签名、签发者、受众和过期时间验证
 5. **速率限制**：所有认证端点均受速率限制保护，以 IP、操作员账户和浏览器会话为维度
 6. **Origin 检查**：WebSocket 端点验证 `Origin` 头，防止跨域 WebSocket 攻击

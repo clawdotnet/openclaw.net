@@ -438,13 +438,13 @@ internal static partial class AdminEndpoints
             }, CoreJsonContext.Default.SessionExportResponse);
         });
 
-        app.MapGet("/admin/sessions/active", (HttpContext ctx) =>
+        app.MapGet("/admin/sessions/active", async (HttpContext ctx) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.sessions");
             if (authResult.Failure is not null)
                 return authResult.Failure;
 
-            var ids = runtime.SessionManager.ListActiveAsync(CancellationToken.None).GetAwaiter().GetResult()
+            var ids = (await runtime.SessionManager.ListActiveAsync(ctx.RequestAborted))
                 .Select(s => s.Id)
                 .ToList();
 

@@ -51,7 +51,14 @@ public sealed class SessionAbortRegistry
     {
         if (_active.TryGetValue(sessionId, out var cts))
         {
-            cts.Cancel();
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Already disposed by a concurrent Unregister; treat as no-op.
+            }
             return true;
         }
         return false;

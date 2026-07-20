@@ -557,8 +557,16 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
             disposable.Dispose();
     }
 
-    private sealed class RemoveCharsetDelegatingHandler() : DelegatingHandler(new HttpClientHandler())
+    private sealed class RemoveCharsetDelegatingHandler : DelegatingHandler
     {
+        private readonly HttpClientHandler _httpClientHandler;
+
+        public RemoveCharsetDelegatingHandler()
+            : base(new HttpClientHandler())
+        {
+            _httpClientHandler = (HttpClientHandler)InnerHandler!;
+        }
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
@@ -566,6 +574,15 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
             if (request.Content?.Headers?.ContentType is { CharSet: not null } contentType)
                 contentType.CharSet = null;
             return base.SendAsync(request, cancellationToken);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _httpClientHandler.Dispose();
+            }
+            base.Dispose(disposing);
         }
     }
 

@@ -119,9 +119,10 @@ internal static partial class AdminEndpoints
 
         app.MapPost("/admin/skills", async (HttpContext ctx) =>
         {
-            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: true);
-            if (!auth.IsAuthorized)
-                return Results.Unauthorized();
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.skills");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
             if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, "admin.control", out var blockedByPolicyId))
                 return Results.Json(new SkillMutationResponse { Success = false, Error = $"Rate limit exceeded by policy '{blockedByPolicyId}'." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status429TooManyRequests);
 
@@ -149,9 +150,10 @@ internal static partial class AdminEndpoints
 
         app.MapDelete("/admin/skills/{name}", async (HttpContext ctx, string name) =>
         {
-            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: true);
-            if (!auth.IsAuthorized)
-                return Results.Unauthorized();
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.skills");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
             if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, "admin.control", out var blockedByPolicyId))
                 return Results.Json(new SkillMutationResponse { Success = false, Error = $"Rate limit exceeded by policy '{blockedByPolicyId}'." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status429TooManyRequests);
 
@@ -184,9 +186,10 @@ internal static partial class AdminEndpoints
 
         app.MapPost("/admin/skills/upload", async (HttpContext ctx) =>
         {
-            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: true);
-            if (!auth.IsAuthorized)
-                return Results.Unauthorized();
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.skills");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
             if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, "admin.control", out var blockedByPolicyId))
                 return Results.Json(new SkillMutationResponse { Success = false, Error = $"Rate limit exceeded by policy '{blockedByPolicyId}'." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status429TooManyRequests);
 
@@ -210,12 +213,13 @@ internal static partial class AdminEndpoints
                 using var stream1 = upload.OpenReadStream();
                 using var zip1 = new System.IO.Compression.ZipArchive(stream1, System.IO.Compression.ZipArchiveMode.Read);
                 skillMdEntry = zip1.Entries.FirstOrDefault(e =>
-                    e.FullName.EndsWith("SKILL.md", StringComparison.OrdinalIgnoreCase) &&
-                    (e.FullName.Equals("SKILL.md", StringComparison.OrdinalIgnoreCase) || e.FullName.Contains('/')));
+                    e.FullName.Equals("SKILL.md", StringComparison.OrdinalIgnoreCase) ||
+                    e.FullName.EndsWith("/SKILL.md", StringComparison.OrdinalIgnoreCase));
                 if (skillMdEntry is null)
                     return Results.Json(new SkillMutationResponse { Success = false, Error = "ZIP must contain a SKILL.md file." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status400BadRequest);
                 using var mdStream = skillMdEntry.Open();
-                skillMdContent = await new StreamReader(mdStream).ReadToEndAsync(ctx.RequestAborted);
+                using var reader = new StreamReader(mdStream);
+                skillMdContent = await reader.ReadToEndAsync(ctx.RequestAborted);
             }
             catch (InvalidDataException)
             {

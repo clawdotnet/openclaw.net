@@ -123,7 +123,7 @@ internal static class PipelineExtensions
                 {
                     ctx.Response.Headers["Access-Control-Allow-Origin"] = originStr;
                     ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
-                    ctx.Response.Headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-CSRF-Token";
+                    ctx.Response.Headers["Access-Control-Allow-Headers"] = CorsAllowHeaders;
                     ctx.Response.Headers["Access-Control-Max-Age"] = "3600";
                     ctx.Response.Headers.Vary = "Origin";
                 }

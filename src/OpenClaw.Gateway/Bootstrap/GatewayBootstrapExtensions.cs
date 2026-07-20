@@ -19,7 +19,7 @@ internal static class GatewayBootstrapExtensions
 
         builder.Services.ConfigureHttpJsonOptions(opts =>
         {
-            opts.SerializerOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+            opts.SerializerOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All);
             var a2aResolver = A2AJsonUtilities.DefaultOptions.TypeInfoResolver;
             if (a2aResolver is not null)
                 opts.SerializerOptions.TypeInfoResolverChain.Add(a2aResolver);

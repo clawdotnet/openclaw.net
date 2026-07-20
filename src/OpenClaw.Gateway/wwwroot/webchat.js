@@ -2524,8 +2524,9 @@ function connect() {
                     const _faMime     = env.mimeType || env.MimeType || '';
                     const _faSize     = env.fileSizeBytes ?? env.FileSizeBytes ?? null;
                     a.textContent = '\uD83D\uDCCE ' + _faFileName;
-                    a.href = _faFileUrl || '#';
-                    a.setAttribute('data-media-url', _faFileUrl);
+                    var _faSafeUrl = _faFileUrl && (_faFileUrl.startsWith('http://') || _faFileUrl.startsWith('https://') || _faFileUrl.startsWith('/media/')) ? _faFileUrl : '#';
+                    a.href = _faSafeUrl;
+                    a.setAttribute('data-media-url', _faSafeUrl);
                     if (_faSize !== null) {
                         const _faSizeLabel = _faSize < 1024 ? _faSize + ' B'
                             : _faSize < 1048576 ? (_faSize / 1024).toFixed(1) + ' KB'
@@ -3201,6 +3202,10 @@ function appendArtifactCard(env) {
         dlBtn.type = 'button';
         dlBtn.setAttribute('data-media-url', env.url);
         dlBtn.addEventListener('click', async () => {
+            if (!env.url || !(env.url.startsWith('http://') || env.url.startsWith('https://') || env.url.startsWith('/media/'))) {
+                appendSystem('Download failed: unsafe URL', true);
+                return;
+            }
             const headers = await getAuthHeaders();
             const resp = await fetch(env.url, { headers });
             if (!resp.ok) { appendSystem('Download failed: ' + resp.status, true); return; }
