@@ -2527,9 +2527,9 @@ function connect() {
                     var _faSafeUrl = '#';
                     if (_faFileUrl) {
                         if (_faFileUrl.startsWith('/media/')) {
-                            if (!/\.\./.test(_faFileUrl)) _faSafeUrl = _faFileUrl;
+                            if (!/\.\./.test(_faFileUrl)) _faSafeUrl = encodeURI(_faFileUrl);
                         } else if (_faFileUrl.startsWith('http://') || _faFileUrl.startsWith('https://')) {
-                            _faSafeUrl = _faFileUrl;
+                            _faSafeUrl = encodeURI(_faFileUrl);
                         }
                     }
                     a.href = _faSafeUrl;
@@ -3212,22 +3212,21 @@ function appendArtifactCard(env) {
         dlBtn.setAttribute('data-media-url', env.url);
         dlBtn.addEventListener('click', async () => {
             var dlUrl = env.url;
-            // Only allow absolute http/https URLs or /media/ paths without traversal.
+            // Only allow /media/ paths without traversal or external http/https URLs.
             if (!dlUrl) {
                 appendSystem('Download failed: missing URL', true);
                 return;
             }
-            if (dlUrl.startsWith('/media/')) {
-                if (/\.\./.test(dlUrl)) {
-                    appendSystem('Download failed: unsafe URL path', true);
-                    return;
-                }
-            } else if (!/^https?:\/\//i.test(dlUrl)) {
+            var isSameOrigin = dlUrl.startsWith('/media/') && !/\.\./.test(dlUrl);
+            var isExternal = /^https?:\/\//i.test(dlUrl);
+            if (!isSameOrigin && !isExternal) {
                 appendSystem('Download failed: unsafe URL', true);
                 return;
             }
-            const headers = await getAuthHeaders();
-            const resp = await fetch(dlUrl, { headers });
+            // Only attach auth headers for same-origin /media/ requests to avoid
+            // leaking bearer tokens to external hosts.
+            const fetchOpts = isSameOrigin ? { headers: await getAuthHeaders() } : {};
+            const resp = await fetch(dlUrl, fetchOpts);
             if (!resp.ok) { appendSystem('Download failed: ' + resp.status, true); return; }
             const blob = await resp.blob();
             const objUrl = URL.createObjectURL(blob);
