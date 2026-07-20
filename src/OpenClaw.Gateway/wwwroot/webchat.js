@@ -3084,11 +3084,17 @@ chatContainer.addEventListener('click', async (e) => {
     const a = e.target.closest('[data-media-url], a[href]');
     if (!a) return;
     const url = (a.getAttribute('data-media-url') || a.getAttribute('href') || '').trim();
-    if (!url.startsWith('/media/')) return;
+    if (!url.startsWith('/media/') || /\.\./.test(url)) return;
     e.preventDefault();
     try {
+        // Normalize via URL constructor with a trusted base to prevent request forgery.
+        const safeUrl = new URL(url, window.location.origin);
+        if (safeUrl.origin !== window.location.origin || !safeUrl.pathname.startsWith('/media/')) {
+            appendSystem('Download failed: URL must be a /media/ path.', true);
+            return;
+        }
         const headers = await getAuthHeaders();
-        const resp = await fetch(url, { headers });
+        const resp = await fetch(safeUrl.href, { headers });
         if (!resp.ok) { appendSystem('Download failed: ' + resp.status, true); return; }
         const blob = await resp.blob();
         const objUrl = URL.createObjectURL(blob);
@@ -3098,7 +3104,7 @@ chatContainer.addEventListener('click', async (e) => {
         const match = disp.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
         const rawName = match ? match[1].replace(/['"]/g, '').trim() : '';
         // Decode URI-encoded filename (server uses Uri.EscapeDataString); fall back to URL segment.
-        link.download = rawName ? decodeURIComponent(rawName) : (url.split('/').pop() || 'download');
+        link.download = rawName ? decodeURIComponent(rawName) : (safeUrl.pathname.split('/').pop() || 'download');
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -3217,8 +3223,14 @@ function appendArtifactCard(env) {
                 appendSystem('Download failed: URL must be a /media/ path.', true);
                 return;
             }
+            // Normalize via URL constructor with a trusted base to prevent request forgery.
+            const safeUrl = new URL(dlUrl, window.location.origin);
+            if (safeUrl.origin !== window.location.origin || !safeUrl.pathname.startsWith('/media/')) {
+                appendSystem('Download failed: URL must be a /media/ path.', true);
+                return;
+            }
             const headers = await getAuthHeaders();
-            const resp = await fetch(dlUrl, { headers });
+            const resp = await fetch(safeUrl.href, { headers });
             if (!resp.ok) { appendSystem('Download failed: ' + resp.status, true); return; }
             const blob = await resp.blob();
             const objUrl = URL.createObjectURL(blob);
