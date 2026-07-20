@@ -409,7 +409,11 @@ internal sealed class GatewayInboundMessageWorker
                                 }
                             }
 
-                            var (handled, cmdResponse) = await commandProcessor.TryProcessCommandAsync(session, msg.Text, processingCt);
+                            var (handled, cmdResponse) = await commandProcessor.TryProcessCommandAsync(
+                                session,
+                                msg.Text,
+                                processingCt,
+                                sessionLockHeld: true);
                             if (handled)
                             {
                                 if (cmdResponse is not null)

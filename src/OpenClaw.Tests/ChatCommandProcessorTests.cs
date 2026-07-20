@@ -91,6 +91,53 @@ public sealed class ChatCommandProcessorTests
         Assert.Contains("Prompt Cache: 512 read / 0 write", response, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("/new")]
+    [InlineData("/reset")]
+    [InlineData("/model deepseek-v4-flash")]
+    [InlineData("/model reset")]
+    [InlineData("/think low")]
+    [InlineData("/think off")]
+    [InlineData("/compact")]
+    [InlineData("/verbose on")]
+    [InlineData("/verbose off")]
+    [InlineData("/concise on")]
+    [InlineData("/concise off")]
+    [InlineData("/concise auto")]
+    public async Task PersistentCommand_WhenSessionLockAlreadyHeld_DoesNotReenterSessionLock(string commandText)
+    {
+        var store = new FileMemoryStore(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "openclaw-command-tests", Guid.NewGuid().ToString("N")), 4);
+        var sessionManager = new SessionManager(store, new GatewayConfig(), NullLogger.Instance);
+        var processor = new ChatCommandProcessor(sessionManager);
+        var session = new Session
+        {
+            Id = "sess-held-lock-command",
+            ChannelId = "websocket",
+            SenderId = "user1",
+            ModelOverride = "previous-model",
+            VerboseMode = true
+        };
+        session.History.AddRange(
+        [
+            new ChatTurn { Role = "user", Content = "u1" },
+            new ChatTurn { Role = "assistant", Content = "a1" },
+            new ChatTurn { Role = "user", Content = "u2" },
+            new ChatTurn { Role = "assistant", Content = "a2" }
+        ]);
+
+        await using var sessionLock = await sessionManager.AcquireSessionLockAsync(session.Id, TestContext.Current.CancellationToken);
+
+        var commandTask = processor.TryProcessCommandAsync(
+            session,
+            commandText,
+            TestContext.Current.CancellationToken,
+            sessionLockHeld: true);
+        var (handled, response) = await commandTask.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+        Assert.True(handled);
+        Assert.False(string.IsNullOrWhiteSpace(response));
+    }
+
     [Fact]
     public async Task Concise_Command_TogglesSessionResponseMode()
     {
