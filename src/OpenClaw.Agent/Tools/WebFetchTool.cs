@@ -5,6 +5,7 @@ using OpenClaw.Core.Plugins;
 using System.Buffers;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -29,7 +30,46 @@ public sealed partial class WebFetchTool : ITool, IDisposable
     public WebFetchTool(WebFetchConfig config, HttpClient? httpClient = null, UrlSafetyConfig? urlSafety = null)
     {
         _config = config;
-        _http = httpClient ?? HttpClientFactory.Create(allowAutoRedirect: false);
+        if (httpClient is not null)
+        {
+            _http = httpClient;
+        }
+        else
+        {
+            var handler = new SocketsHttpHandler
+            {
+                PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+                AllowAutoRedirect = false,
+                ConnectCallback = async (ctx, ct) =>
+                {
+                    // DNS rebinding guard: validate the resolved endpoint at connect time.
+                    // SocketsHttpHandler resolves DNS before calling this callback, so
+                    // ctx.DnsEndPoint.Host may be the resolved IP or the original hostname.
+                    var host = ctx.DnsEndPoint.Host;
+                    if (IPAddress.TryParse(host, out var parsedIp) && IsBlockedIp(parsedIp))
+                        throw new HttpRequestException($"URL blocked by safety policy — resolved address ({parsedIp}) is blocked for security reasons.");
+                    // If the host is a hostname (not an IP), re-resolve to check all addresses.
+                    if (!IPAddress.TryParse(host, out _))
+                    {
+                        var addresses = await Dns.GetHostAddressesAsync(host, ct);
+                        if (addresses.Any(IsBlockedIp))
+                            throw new HttpRequestException("URL blocked by safety policy — resolved address is blocked for security reasons.");
+                    }
+                    var socket = new Socket(ctx.DnsEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                    try
+                    {
+                        await socket.ConnectAsync(ctx.DnsEndPoint, ct);
+                    }
+                    catch
+                    {
+                        socket.Dispose();
+                        throw;
+                    }
+                    return new NetworkStream(socket, ownsSocket: true);
+                }
+            };
+            _http = new HttpClient(handler);
+        }
         // UA is set per-request to allow Cloudflare fallback; do not set on client defaults.
     }
 

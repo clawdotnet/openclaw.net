@@ -2694,8 +2694,9 @@ async function sendMessage() {
             const a = document.createElement('a');
             a.className = 'file-attachment-msg';
             a.textContent = '📎 ' + f.name;
-            a.href = f.url;
-            a.setAttribute('data-media-url', f.url);
+            var safeUrl = f.url && /^(https?:|\/media\/)/i.test(f.url) ? f.url : '#';
+            a.href = safeUrl;
+            a.setAttribute('data-media-url', safeUrl);
             div.appendChild(a);
         }
     }
@@ -3149,8 +3150,9 @@ async function uploadFilesToMedia(files) {
                 continue;
             }
             const data = await resp.json().catch(() => null);
-            const url = data?.url || data?.mediaUrl || ('/media/' + (data?.id || data?.mediaId || ''));
-            results.push({ name: file.name, url });
+            var rawUrl = data?.url || data?.mediaUrl || ('/media/' + (data?.id || data?.mediaId || ''));
+            if (rawUrl && !/^(https?:|\/media\/)/i.test(rawUrl)) rawUrl = '#';
+            results.push({ name: file.name, url: rawUrl });
         } catch (err) {
             appendSystem('File upload error: ' + err.message, true);
         }
