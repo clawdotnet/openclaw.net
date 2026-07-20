@@ -90,7 +90,7 @@ internal static class EndpointHelpers
         var operatorAccounts = ctx.RequestServices.GetService<OperatorAccountService>();
         var policy = organizationPolicy?.GetSnapshot() ?? new OrganizationPolicySnapshot();
 
-        var useOidc = startup.Config.Security.IsOidcMode;
+        var useOidc = !string.IsNullOrWhiteSpace(startup.Config.Security.Oidc.Authority);
 
         // Loopback bypass: skip auth only when neither AlwaysRequireAuth nor OIDC is active.
         if (!startup.IsNonLoopbackBind
