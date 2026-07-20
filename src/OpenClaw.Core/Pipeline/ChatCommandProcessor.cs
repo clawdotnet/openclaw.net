@@ -35,6 +35,9 @@ public sealed class ChatCommandProcessor
         "/verbose",
         "/goal",
         "/loop",
+        "/stop",
+        "/cancel",
+        "/abort",
         "/help"
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -224,6 +227,11 @@ public sealed class ChatCommandProcessor
 
             case "/goal":
                 return (true, await HandleGoalCommandAsync(session, args, ct));
+
+            case "/stop":
+            case "/cancel":
+            case "/abort":
+                return (true, "There is no active execution to stop.");
 
             default:
                 if (_dynamicCommands.TryGetValue(command, out var dynamicHandler))
