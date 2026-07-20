@@ -2697,7 +2697,7 @@ public class AgentRuntimeTests
         Directory.CreateDirectory(scriptsDir);
 
         var scriptPath = Path.Combine(scriptsDir, "echo-stdin.ps1");
-        await File.WriteAllTextAsync(scriptPath, "$inputText = [Console]::In.ReadToEnd()\nWrite-Output \"stdin:$inputText\"\n");
+        await File.WriteAllTextAsync(scriptPath, "$inputText = [System.IO.StreamReader]::new([Console]::OpenStandardInput()).ReadToEnd()\nWrite-Output \"stdin:$inputText\"\n");
 
         try
         {
