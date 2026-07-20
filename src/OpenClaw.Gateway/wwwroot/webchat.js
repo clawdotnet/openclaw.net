@@ -3212,21 +3212,13 @@ function appendArtifactCard(env) {
         dlBtn.setAttribute('data-media-url', env.url);
         dlBtn.addEventListener('click', async () => {
             var dlUrl = env.url;
-            // Only allow /media/ paths without traversal or external http/https URLs.
-            if (!dlUrl) {
-                appendSystem('Download failed: missing URL', true);
+            // Restrict to same-origin /media/ paths only (no external hosts, no traversal).
+            if (!dlUrl || !dlUrl.startsWith('/media/') || /\.\./.test(dlUrl)) {
+                appendSystem('Download failed: URL must be a /media/ path.', true);
                 return;
             }
-            var isSameOrigin = dlUrl.startsWith('/media/') && !/\.\./.test(dlUrl);
-            var isExternal = /^https?:\/\//i.test(dlUrl);
-            if (!isSameOrigin && !isExternal) {
-                appendSystem('Download failed: unsafe URL', true);
-                return;
-            }
-            // Only attach auth headers for same-origin /media/ requests to avoid
-            // leaking bearer tokens to external hosts.
-            const fetchOpts = isSameOrigin ? { headers: await getAuthHeaders() } : {};
-            const resp = await fetch(dlUrl, fetchOpts);
+            const headers = await getAuthHeaders();
+            const resp = await fetch(dlUrl, { headers });
             if (!resp.ok) { appendSystem('Download failed: ' + resp.status, true); return; }
             const blob = await resp.blob();
             const objUrl = URL.createObjectURL(blob);
