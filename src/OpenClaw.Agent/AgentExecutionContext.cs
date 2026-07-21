@@ -1,11 +1,10 @@
-using OpenClaw.Agent;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 
-namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
+namespace OpenClaw.Agent;
 
-internal sealed class MafExecutionContext
+internal sealed class AgentExecutionContext
 {
     public required Session Session { get; init; }
     public required TurnContext TurnContext { get; init; }
@@ -19,23 +18,29 @@ internal sealed class MafExecutionContext
     public Func<AgentStreamEvent, CancellationToken, ValueTask>? StreamEventWriter { get; init; }
 }
 
-internal static class MafExecutionContextScope
+internal static class AgentExecutionContextScope
 {
-    private static readonly AsyncLocal<MafExecutionContext?> CurrentValue = new();
+    private static readonly AsyncLocal<AgentExecutionContext?> CurrentValue = new();
 
-    public static MafExecutionContext Current
+    public static AgentExecutionContext Current
         => CurrentValue.Value
             ?? throw new InvalidOperationException(
                 "Microsoft Agent Framework execution was invoked outside an OpenClaw runtime context.");
 
-    public static IDisposable Push(MafExecutionContext context)
+    /// <summary>
+    /// Returns the current execution context, or null if not running inside the OpenClaw runtime (without throwing an exception).
+    /// Suitable for scenarios such as tool execution where the presence of a context cannot be guaranteed.
+    /// </summary>
+    public static AgentExecutionContext? TryGetCurrent() => CurrentValue.Value;
+
+    public static IDisposable Push(AgentExecutionContext context)
     {
         var prior = CurrentValue.Value;
         CurrentValue.Value = context;
         return new RestoreScope(prior);
     }
 
-    private sealed class RestoreScope(MafExecutionContext? prior) : IDisposable
+    private sealed class RestoreScope(AgentExecutionContext? prior) : IDisposable
     {
         public void Dispose() => CurrentValue.Value = prior;
     }

@@ -3,7 +3,6 @@ namespace OpenClaw.MicrosoftAgentFrameworkAdapter;
 public sealed class MafOptions
 {
     public const string SectionName = "OpenClaw:MicrosoftAgentFramework";
-    public const string LegacySectionName = "OpenClaw:Experimental:MicrosoftAgentFramework";
     public const string DefaultSessionSidecarPath = "maf/sessions";
 
     public string AgentName { get; set; } = "OpenClaw";
@@ -30,8 +29,6 @@ public sealed class MafOptions
     public string? A2APublicBaseUrl { get; set; }
 
     public List<A2ASkillConfig> A2ASkills { get; set; } = [];
-
-    public bool LegacySectionUsed { get; set; }
 }
 
 public sealed class A2ASkillConfig

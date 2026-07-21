@@ -18,22 +18,18 @@ internal static class WebSocketEndpoints
     {
         app.Map("/ws", async (HttpContext ctx) =>
         {
-            if (!TryValidateWebSocketRequest(ctx, startup, runtime, bucket: "websocket", out var authenticatedUserId))
+            if (!TryValidateWebSocketRequest(ctx, startup, runtime, bucket: "websocket"))
                 return;
 
             var ws = await ctx.WebSockets.AcceptWebSocketAsync();
             var clientId = ctx.Connection.Id;
-            await runtime.WebSocketChannel.HandleConnectionAsync(
-                ws,
-                clientId,
-                ctx.Connection.RemoteIpAddress,
-                ctx.RequestAborted,
-                authenticatedUserId: authenticatedUserId);
+            TryResolveAuthorizedUserIdForWebSocket(ctx, startup, out var userId);
+            await runtime.WebSocketChannel.HandleConnectionAsync(ws, clientId, ctx.Connection.RemoteIpAddress, ctx.RequestAborted, userId);
         });
 
         app.Map("/ws/live", async (HttpContext ctx) =>
         {
-            if (!TryValidateWebSocketRequest(ctx, startup, runtime, bucket: "websocket_live", out _))
+            if (!TryValidateWebSocketRequest(ctx, startup, runtime, bucket: "websocket_live"))
                 return;
 
             var ws = await ctx.WebSockets.AcceptWebSocketAsync();
@@ -70,11 +66,8 @@ internal static class WebSocketEndpoints
         HttpContext ctx,
         GatewayStartupContext startup,
         GatewayAppRuntime runtime,
-        string bucket,
-        out string? authenticatedUserId)
+        string bucket)
     {
-        authenticatedUserId = null;
-
         if (!ctx.WebSockets.IsWebSocketRequest)
         {
             ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
@@ -87,7 +80,7 @@ internal static class WebSocketEndpoints
             return false;
         }
 
-        if (startup.IsNonLoopbackBind && !TryResolveAuthorizedUserIdForWebSocket(ctx, startup, out authenticatedUserId))
+        if (!EndpointHelpers.IsAuthorizedRequest(ctx, startup.Config, startup.IsNonLoopbackBind))
         {
             ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return false;

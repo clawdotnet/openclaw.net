@@ -862,6 +862,9 @@ public sealed class AgentRuntimeComponentTests
 
         public ValueTask DeleteBranchAsync(string branchId, CancellationToken ct)
             => ValueTask.CompletedTask;
+
+        public ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct)
+            => ValueTask.CompletedTask;
     }
 
     private sealed class AlwaysFailCheckpointMemoryStore : IMemoryStore
@@ -899,6 +902,9 @@ public sealed class AgentRuntimeComponentTests
             => ValueTask.FromResult<IReadOnlyList<SessionBranch>>([]);
 
         public ValueTask DeleteBranchAsync(string branchId, CancellationToken ct)
+            => ValueTask.CompletedTask;
+
+        public ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct)
             => ValueTask.CompletedTask;
     }
 

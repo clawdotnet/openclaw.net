@@ -93,6 +93,24 @@ internal abstract class ProcessExecutionBackendBase : IExecutionBackend, IExecut
             process.StandardInput.Close();
         }
 
+        // Ensure the spawned process is killed when user-cancellation fires
+        // (/stop, /cancel, /abort). Without this the OS process becomes an orphan
+        // and continues consuming resources in the container — particularly harmful
+        // in low-memory (500 MB) environments where every MB counts.
+        using var cancelProcessReg = cancellationToken.Register(() =>
+        {
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+                // The process may already have exited between the HasExited check
+                // and Kill; swallow the InvalidOperationException.
+            }
+        });
+
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         if (timeoutSeconds > 0)
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));

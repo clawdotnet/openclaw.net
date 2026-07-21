@@ -106,22 +106,45 @@ public sealed class OpenClawToolExecutor
         _interceptors = interceptors;
     }
 
-    public IList<AITool> ToolDeclarations => _toolDeclarations;
+    public IList<AITool> ToolDeclarations
+    {
+        get
+        {
+            lock (_toolsMutationLock)
+            {
+                return _toolDeclarations.ToArray();
+            }
+        }
+    }
 
     public IList<AITool> GetToolDeclarations(Session session)
     {
-        if (session.RouteToolsDisabled)
-            return [];
+        AITool[] declarations;
+        string[] toolNames;
+        lock (_toolsMutationLock)
+        {
+            declarations = _toolDeclarations.ToArray();
+            toolNames = _toolsByName.Keys.ToArray();
+        }
 
-        var preset = _toolPresetResolver?.Resolve(session, _toolsByName.Keys);
-        return _toolDeclarations
+        var preset = _toolPresetResolver?.Resolve(session, toolNames);
+        return declarations
             .Where(item => IsToolAllowedForSession(session, item.Name, preset))
             .ToArray();
     }
 
     public bool SupportsStreaming(string toolName)
-        => _toolsByName.TryGetValue(toolName, out var tool) && tool is IStreamingTool;
+    {
+        lock (_toolsMutationLock)
+        {
+            return _toolsByName.TryGetValue(toolName, out var tool) && tool is IStreamingTool;
+        }
+    }
 
+    /// <summary>
+    /// Atomically replaces the workspace MCP tools in the dispatch table.
+    /// Called during hot-reload; safe to call while requests are in-flight.
+    /// </summary>
     public void ReplaceMcpTools(IReadOnlyList<ITool> toAdd, IReadOnlyList<string> toRemove)
     {
         ArgumentNullException.ThrowIfNull(toAdd);
@@ -178,7 +201,13 @@ public sealed class OpenClawToolExecutor
         activity?.SetTag("tool.name", toolName);
         var persistedArgsJson = _redaction.Redact(argsJson);
 
-        if (!_toolsByName.TryGetValue(toolName, out var tool))
+        ITool? tool;
+        lock (_toolsMutationLock)
+        {
+            _toolsByName.TryGetValue(toolName, out tool);
+        }
+
+        if (tool is null)
         {
             return CreateImmediateResult(
                 toolName,
@@ -327,7 +356,7 @@ public sealed class OpenClawToolExecutor
                 resultStatus: ToolResultStatuses.Blocked,
                 failureCode: governanceFailureCode,
                 failureMessage: deniedByGovernance,
-                nextStep: governanceDecision.IsUnavailable
+                nextStep: governanceFailureCode == ToolFailureCodes.GovernanceUnavailable
                     ? "Check governance sidecar availability or adjust fail-open/fail-closed policy before retrying."
                     : "Adjust the request or governance policy before retrying.",
                 governanceDecision: governanceDecision);
@@ -376,7 +405,8 @@ public sealed class OpenClawToolExecutor
         var explicitlyConfiguredApproval = _config.Tooling.ApprovalRequiredTools
             .Any(item => string.Equals(NormalizeApprovalToolName(item), normalizedToolName, StringComparison.Ordinal));
         var presetRequiresApproval = preset?.ApprovalRequiredTools.Contains(tool.Name) == true;
-        var defaultActionAwareApproval = ToolActionPolicyResolver.SupportsActionAwareApproval(tool.Name)
+        var defaultActionAwareApproval = _requireToolApproval
+            && ToolActionPolicyResolver.SupportsActionAwareApproval(tool.Name)
             && (approvalDescriptor.IsMutation || approvalDescriptor.RequiresApproval);
         var listedApproval = _requireToolApproval && (_approvalRequiredTools.Contains(normalizedToolName) || presetRequiresApproval);
         var governanceRequiresApproval = governanceDecision.Action == GovernanceAction.RequireApproval;
@@ -875,6 +905,10 @@ public sealed class OpenClawToolExecutor
 
     private static bool IsToolAllowedForSession(Session session, string toolName, ResolvedToolPreset? preset)
     {
+        // DisableTools routing decisions intentionally expose no tools to the model.
+        if (session.RouteToolsDisabled)
+            return false;
+
         if (preset is not null && !preset.AllowedTools.Contains(toolName))
             return false;
 

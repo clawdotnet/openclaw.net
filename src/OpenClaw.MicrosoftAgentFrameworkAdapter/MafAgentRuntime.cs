@@ -312,7 +312,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             // Goal-aware iteration loop (mirrors AgentRuntime pattern)
             for (var i = 0; i < _maxIterations; i++)
             {
-                using var scope = MafExecutionContextScope.Push(new MafExecutionContext
+                using var scope = AgentExecutionContextScope.Push(new AgentExecutionContext
                 {
                     Session = session,
                     TurnContext = turnCtx,
@@ -658,7 +658,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
 
         try
         {
-            using var scope = MafExecutionContextScope.Push(new MafExecutionContext
+            using var scope = AgentExecutionContextScope.Push(new AgentExecutionContext
             {
                 Session = session,
                 TurnContext = turnCtx,

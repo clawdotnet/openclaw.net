@@ -47,8 +47,6 @@ OpenClaw.NET 在常规网关构建中包含一个受支持的 Microsoft Agent Fr
 }
 ```
 
-`OpenClaw:Experimental:MicrosoftAgentFramework` 仍会在一个发布周期内被读取以实现平滑迁移。当使用旧版配置节时，启动会发出警告并记录一条 `configuration/deprecated_maf_section` 运行时事件。
-
 ## A2A
 
 A2A 端点即使在 MAF 适配器存在时也是按需启用的：
@@ -74,20 +72,13 @@ A2A 端点即使在 MAF 适配器存在时也是按需启用的：
 
 关于端点的行为、认证和当前的流式传输说明，请参阅 [../a2a.md](../a2a.md)。
 
-## 限制
-
-- `native` 在所有构建产物中仍然是默认的编排器。
-- MAF 已包含在常规网关构建中，因此即使选择 `native`，网关依赖图也会包含 MAF 和 A2A 包。
-- A2A 执行端点默认禁用，除非设置 `OpenClaw:MicrosoftAgentFramework:EnableA2A=true`。
-- 持久化工作流编排通过工作流后端暴露，而非将每次 Agent 推理轮次都持久化。
-
 ## 迁移
 
-替换旧版实验性配置路径：
+实验阶段迁移开关已移除，请使用当前等价配置：
 
-| 旧 | 新 |
+| 旧设置 | 当前状态 |
 | --- | --- |
-| `OpenClaw:Experimental:MicrosoftAgentFramework` | `OpenClaw:MicrosoftAgentFramework` |
+| `OpenClaw:Experimental:MicrosoftAgentFramework` | 已移除。请使用 `OpenClaw:MicrosoftAgentFramework`。 |
 | `OpenClawEnableMafExperiment=true` | 不再需要 |
 | `OPENCLAW_ENABLE_MAF_EXPERIMENT` | 不再使用 |
 | `gateway-maf-enabled-*` 构建产物 | 常规网关构建产物 |

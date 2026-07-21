@@ -73,7 +73,7 @@ internal static partial class AdminEndpoints
 
         app.MapGet("/admin/skills/cost-estimate", (HttpContext ctx) =>
         {
-            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.skills");
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.skills.cost-estimate");
             if (authResult.Failure is not null)
                 return authResult.Failure;
 
@@ -115,6 +115,197 @@ internal static partial class AdminEndpoints
             };
 
             return Results.Json(response, CoreJsonContext.Default.SkillCostEstimateResponse);
+        });
+
+        app.MapPost("/admin/skills", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.skills");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+            if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, "admin.control", out var blockedByPolicyId))
+                return Results.Json(new SkillMutationResponse { Success = false, Error = $"Rate limit exceeded by policy '{blockedByPolicyId}'." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status429TooManyRequests);
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.SkillInstallRequest);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+            var request = requestPayload.Value;
+            if (request is null || string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Content))
+                return Results.Json(new SkillMutationResponse { Success = false, Error = "name and content are required." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status400BadRequest);
+            if (!System.Text.RegularExpressions.Regex.IsMatch(request.Name, @"^[a-zA-Z0-9][a-zA-Z0-9_\-]{0,63}$"))
+                return Results.Json(new SkillMutationResponse { Success = false, Error = "name must be 1-64 alphanumeric/hyphen/underscore characters starting with alphanumeric." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status400BadRequest);
+
+            var workspacePath = startup.WorkspacePath ?? OpenClaw.Core.Security.SecretResolver.Resolve(startup.Config.Tooling.WorkspaceRoot);
+            if (string.IsNullOrWhiteSpace(workspacePath))
+                return Results.Json(new SkillMutationResponse { Success = false, Error = "Workspace path is not configured (OPENCLAW_WORKSPACE not set)." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status501NotImplemented);
+
+            var skillDir = Path.Combine(workspacePath, "skills", request.Name);
+            Directory.CreateDirectory(skillDir);
+            await File.WriteAllTextAsync(Path.Combine(skillDir, "SKILL.md"), request.Content, ctx.RequestAborted);
+
+            var reloaded = await runtime.AgentRuntime.ReloadSkillsAsync(ctx.RequestAborted);
+            RecordOperatorAudit(ctx, operations, auth, "skill_install", request.Name, $"Installed skill '{request.Name}'. Total: {reloaded.Count}.", true, before: null, after: null);
+            return Results.Json(new SkillMutationResponse { Success = true, TotalLoaded = reloaded.Count, LoadedNames = reloaded }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status201Created);
+        });
+
+        app.MapDelete("/admin/skills/{name}", async (HttpContext ctx, string name) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.skills");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+            if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, "admin.control", out var blockedByPolicyId))
+                return Results.Json(new SkillMutationResponse { Success = false, Error = $"Rate limit exceeded by policy '{blockedByPolicyId}'." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status429TooManyRequests);
+
+            name = name.Trim().Trim('"').Trim('\'');
+            if (!System.Text.RegularExpressions.Regex.IsMatch(name, @"^[a-zA-Z0-9][a-zA-Z0-9_\-]{0,63}$"))
+                return Results.Json(new SkillMutationResponse { Success = false, Error = "Invalid skill name." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status400BadRequest);
+
+            var wsPath = startup.WorkspacePath ?? OpenClaw.Core.Security.SecretResolver.Resolve(startup.Config.Tooling.WorkspaceRoot);
+            if (string.IsNullOrWhiteSpace(wsPath))
+                return Results.Json(new SkillMutationResponse { Success = false, Error = "Workspace path is not configured." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status501NotImplemented);
+
+            // Only allow deleting workspace-sourced skills.
+            // Use the resolved wsPath (not startup.WorkspacePath which may be null when
+            // workspace is configured via Tooling.WorkspaceRoot rather than the env var).
+            var logger = ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("SkillLoader");
+            var allSkills = OpenClaw.Core.Skills.SkillLoader.LoadAll(startup.Config.Skills, wsPath, logger);
+            var target = allSkills.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (target is not null && target.Source != OpenClaw.Core.Skills.SkillSource.Workspace)
+                return Results.Json(new SkillMutationResponse { Success = false, Error = $"Skill '{name}' is a built-in skill and cannot be deleted." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status403Forbidden);
+
+            var skillDir = Path.Combine(wsPath, "skills", name);
+            if (!Directory.Exists(skillDir))
+                return Results.Json(new SkillMutationResponse { Success = false, Error = $"User-installed skill '{name}' not found in workspace." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status404NotFound);
+
+            Directory.Delete(skillDir, recursive: true);
+            var reloaded = await runtime.AgentRuntime.ReloadSkillsAsync(ctx.RequestAborted);
+            RecordOperatorAudit(ctx, operations, auth, "skill_remove", name, $"Removed skill '{name}'. Total: {reloaded.Count}.", true, before: null, after: null);
+            return Results.Json(new SkillMutationResponse { Success = true, TotalLoaded = reloaded.Count, LoadedNames = reloaded }, CoreJsonContext.Default.SkillMutationResponse);
+        });
+
+        app.MapPost("/admin/skills/upload", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.skills");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+            if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, "admin.control", out var blockedByPolicyId))
+                return Results.Json(new SkillMutationResponse { Success = false, Error = $"Rate limit exceeded by policy '{blockedByPolicyId}'." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status429TooManyRequests);
+
+            var wsPath = startup.WorkspacePath ?? OpenClaw.Core.Security.SecretResolver.Resolve(startup.Config.Tooling.WorkspaceRoot);
+            if (string.IsNullOrWhiteSpace(wsPath))
+                return Results.Json(new SkillMutationResponse { Success = false, Error = "Workspace path is not configured (OPENCLAW_WORKSPACE not set)." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status501NotImplemented);
+
+            if (!ctx.Request.HasFormContentType || ctx.Request.Form.Files.Count == 0)
+                return Results.Json(new SkillMutationResponse { Success = false, Error = "No file uploaded. Send multipart/form-data with field 'file'." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status400BadRequest);
+
+            var upload = ctx.Request.Form.Files[0];
+            const long MaxZipBytes = 10 * 1024 * 1024;
+            if (upload.Length > MaxZipBytes)
+                return Results.Json(new SkillMutationResponse { Success = false, Error = "ZIP file too large (max 10 MB)." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status400BadRequest);
+
+            // Phase 1: parse SKILL.md from ZIP to extract skill name
+            System.IO.Compression.ZipArchiveEntry? skillMdEntry;
+            string skillMdContent;
+            try
+            {
+                using var stream1 = upload.OpenReadStream();
+                using var zip1 = new System.IO.Compression.ZipArchive(stream1, System.IO.Compression.ZipArchiveMode.Read);
+                skillMdEntry = zip1.Entries.FirstOrDefault(e =>
+                    e.FullName.Equals("SKILL.md", StringComparison.OrdinalIgnoreCase) ||
+                    e.FullName.EndsWith("/SKILL.md", StringComparison.OrdinalIgnoreCase));
+                if (skillMdEntry is null)
+                    return Results.Json(new SkillMutationResponse { Success = false, Error = "ZIP must contain a SKILL.md file." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status400BadRequest);
+                using var mdStream = skillMdEntry.Open();
+                using var reader = new StreamReader(mdStream);
+                skillMdContent = await reader.ReadToEndAsync(ctx.RequestAborted);
+            }
+            catch (InvalidDataException)
+            {
+                return Results.Json(new SkillMutationResponse { Success = false, Error = "Invalid or corrupted ZIP file." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            // Extract skill name from SKILL.md frontmatter
+            string? skillName = null;
+            {
+                var inFm = false;
+                foreach (var rawLine in skillMdContent.Split('\n'))
+                {
+                    var line = rawLine.Trim();
+                    if (line == "---") { if (!inFm) { inFm = true; continue; } else break; }
+                    if (!inFm) continue;
+                    var ci = line.IndexOf(':');
+                    if (ci < 0) continue;
+                    if (line[..ci].Trim().Equals("name", StringComparison.OrdinalIgnoreCase))
+                    { skillName = line[(ci + 1)..].Trim().Trim('"').Trim('\''); break; }
+                }
+            }
+            if (string.IsNullOrWhiteSpace(skillName))
+                return Results.Json(new SkillMutationResponse { Success = false, Error = "SKILL.md is missing a valid 'name:' frontmatter field." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status400BadRequest);
+            if (!System.Text.RegularExpressions.Regex.IsMatch(skillName, @"^[a-zA-Z0-9][a-zA-Z0-9_\-.]{0,63}$"))
+                return Results.Json(new SkillMutationResponse { Success = false, Error = $"Skill name '{skillName}' contains invalid characters." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status400BadRequest);
+
+            var skillDir = Path.GetFullPath(Path.Combine(wsPath, "skills", skillName));
+            var skillDirPrefix = skillDir + Path.DirectorySeparatorChar;
+
+            // Determine the prefix inside the ZIP to strip (= parent directory of SKILL.md,
+            // matching the old ControlEndpoints approach which is more precise than using the
+            // first-entry top-level folder).
+            var lastSlashIdx = skillMdEntry.FullName.LastIndexOf('/');
+            var zipPrefix = lastSlashIdx >= 0 ? skillMdEntry.FullName[..(lastSlashIdx + 1)] : "";
+
+            // Phase 2: ZIP slip validation — reject any entry that would escape skillDir
+            try
+            {
+                using var stream2 = upload.OpenReadStream();
+                using var zip2 = new System.IO.Compression.ZipArchive(stream2, System.IO.Compression.ZipArchiveMode.Read);
+                foreach (var entry in zip2.Entries)
+                {
+                    var rel = zipPrefix.Length > 0 && entry.FullName.StartsWith(zipPrefix, StringComparison.OrdinalIgnoreCase)
+                        ? entry.FullName[zipPrefix.Length..] : entry.FullName;
+                    if (string.IsNullOrEmpty(rel)) continue;
+                    var destFull = Path.GetFullPath(Path.Combine(skillDir, rel));
+                    if (!destFull.StartsWith(skillDirPrefix, StringComparison.OrdinalIgnoreCase))
+                        return Results.Json(new SkillMutationResponse { Success = false, Error = "ZIP contains a path traversal entry and was rejected." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status400BadRequest);
+                }
+            }
+            catch (InvalidDataException)
+            {
+                return Results.Json(new SkillMutationResponse { Success = false, Error = "Invalid or corrupted ZIP file." }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            // Phase 3: extract to workspace
+            if (Directory.Exists(skillDir))
+                Directory.Delete(skillDir, recursive: true);
+            Directory.CreateDirectory(skillDir);
+            try
+            {
+                using var stream3 = upload.OpenReadStream();
+                using var zip3 = new System.IO.Compression.ZipArchive(stream3, System.IO.Compression.ZipArchiveMode.Read);
+                foreach (var entry in zip3.Entries)
+                {
+                    var rel = zipPrefix.Length > 0 && entry.FullName.StartsWith(zipPrefix, StringComparison.OrdinalIgnoreCase)
+                        ? entry.FullName[zipPrefix.Length..] : entry.FullName;
+                    if (string.IsNullOrEmpty(rel) || rel.EndsWith('/') || rel.EndsWith('\\')) continue;
+                    var destPath = Path.GetFullPath(Path.Combine(skillDir, rel));
+                    if (!destPath.StartsWith(skillDirPrefix, StringComparison.OrdinalIgnoreCase))
+                        continue; // defense-in-depth: skip traversal entries (Phase 2 already validates)
+                    Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+                    using var entryStream = entry.Open();
+                    using var fs = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true);
+                    await entryStream.CopyToAsync(fs, ctx.RequestAborted);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (Directory.Exists(skillDir)) Directory.Delete(skillDir, recursive: true);
+                return Results.Json(new SkillMutationResponse { Success = false, Error = $"Extraction failed: {ex.Message}" }, CoreJsonContext.Default.SkillMutationResponse, statusCode: StatusCodes.Status500InternalServerError);
+            }
+
+            var reloaded = await runtime.AgentRuntime.ReloadSkillsAsync(ctx.RequestAborted);
+            RecordOperatorAudit(ctx, operations, auth, "skill_install_zip", skillName, $"Installed skill '{skillName}' via ZIP. Total: {reloaded.Count}.", true, before: null, after: null);
+            return Results.Json(new SkillMutationResponse { Success = true, TotalLoaded = reloaded.Count, LoadedNames = reloaded }, CoreJsonContext.Default.SkillMutationResponse);
         });
 
         app.MapGet("/admin/compatibility/catalog", (HttpContext ctx) =>

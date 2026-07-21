@@ -234,6 +234,7 @@ public sealed class AppsEndpointsTests : IAsyncDisposable
             ChannelAuthEvents = null!,
             ArtifactRuntime = null!,
             RegisteredToolNames = FrozenSet.ToFrozenSet<string>([]),
+            AbortRegistry = null!,
         };
     }
 
@@ -296,6 +297,12 @@ public sealed class AppsEndpointsTests : IAsyncDisposable
         public ValueTask SaveSessionAsync(Session session, CancellationToken ct)
         {
             _sessions[session.Id] = session;
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct)
+        {
+            _sessions.TryRemove(sessionId, out _);
             return ValueTask.CompletedTask;
         }
 

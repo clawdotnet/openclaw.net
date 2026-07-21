@@ -146,11 +146,37 @@ public sealed class ProcessTool : IToolWithContext
         if (processId is null)
             return "Error: process_id is required.";
 
-        var status = await _processes.WaitAsync(processId, context.Session.Id, ct);
-        if (status is null)
-            return $"Error: process '{processId}' was not found.";
+        var timeoutSeconds = GetInt(root, "timeout_seconds");
 
-        return $"{status.ProcessId} completed with state={status.State} exit={status.ExitCode?.ToString() ?? "-"}";
+        try
+        {
+            ExecutionProcessStatus? status;
+            if (timeoutSeconds is > 0)
+            {
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds.Value));
+                status = await _processes.WaitAsync(processId, context.Session.Id, timeoutCts.Token);
+            }
+            else
+            {
+                status = await _processes.WaitAsync(processId, context.Session.Id, ct);
+            }
+
+            if (status is null)
+                return $"Error: process '{processId}' was not found.";
+
+            return $"{status.ProcessId} completed with state={status.State} exit={status.ExitCode?.ToString() ?? "-"}";
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            var status = _processes.GetStatus(processId, context.Session.Id);
+            if (status is null)
+                return $"Error: process '{processId}' was not found.";
+
+            return status.State == ExecutionProcessState.Running
+                ? $"{status.ProcessId} still running state={status.State} exit={status.ExitCode?.ToString() ?? "-"}"
+                : $"{status.ProcessId} completed with state={status.State} exit={status.ExitCode?.ToString() ?? "-"}";
+        }
     }
 
     private async Task<string> WriteAsync(JsonElement root, ToolExecutionContext context, CancellationToken ct)

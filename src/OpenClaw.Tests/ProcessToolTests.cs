@@ -46,18 +46,18 @@ public sealed class ProcessToolTests
         var start = await tool.ExecuteAsync(
             $$"""{"action":"start","command":"{{CreateCommand()}}","timeout_seconds":30}""",
             context,
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
         var match = Regex.Match(start, @"Started process (?<id>\S+)");
         Assert.True(match.Success);
         var processId = match.Groups["id"].Value;
 
-        var list = await tool.ExecuteAsync("""{"action":"list"}""", context, TestContext.Current.CancellationToken);
+        var list = await tool.ExecuteAsync("""{"action":"list"}""", context, CancellationToken.None);
         Assert.Contains(processId, list, StringComparison.Ordinal);
 
-        var wait = await tool.ExecuteAsync($$"""{"action":"wait","process_id":"{{processId}}"}""", context, TestContext.Current.CancellationToken);
+        var wait = await tool.ExecuteAsync($$"""{"action":"wait","process_id":"{{processId}}"}""", context, CancellationToken.None);
         Assert.Contains("completed", wait, StringComparison.OrdinalIgnoreCase);
 
-        var log = await tool.ExecuteAsync($$"""{"action":"log","process_id":"{{processId}}"}""", context, TestContext.Current.CancellationToken);
+        var log = await tool.ExecuteAsync($$"""{"action":"log","process_id":"{{processId}}"}""", context, CancellationToken.None);
         Assert.Contains("hello", log, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("done", log, StringComparison.OrdinalIgnoreCase);
     }
@@ -111,10 +111,10 @@ public sealed class ProcessToolTests
         var start = await tool.ExecuteAsync(
             $$"""{"action":"start","command":"{{CreateCommand()}}","timeout_seconds":30}""",
             ownerContext,
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
         var processId = Regex.Match(start, @"Started process (?<id>\S+)").Groups["id"].Value;
 
-        var poll = await tool.ExecuteAsync($$"""{"action":"poll","process_id":"{{processId}}"}""", attackerContext, TestContext.Current.CancellationToken);
+        var poll = await tool.ExecuteAsync($$"""{"action":"poll","process_id":"{{processId}}"}""", attackerContext, CancellationToken.None);
         Assert.Contains("was not found", poll, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -236,7 +236,7 @@ public sealed class ProcessToolTests
             WorkingDirectory = workspace,
             TimeoutSeconds = 10,
             RequireWorkspace = true
-        }, TestContext.Current.CancellationToken));
+        }, CancellationToken.None));
 
         Assert.Contains("does not support long-running background processes", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -271,8 +271,8 @@ public sealed class ProcessToolTests
                 WorkingDirectory = workspace,
                 TimeoutSeconds = 10,
                 RequireWorkspace = true
-            }, TestContext.Current.CancellationToken);
-            await processes.WaitAsync(handle.ProcessId, "sess_owner", TestContext.Current.CancellationToken);
+            }, CancellationToken.None);
+            await processes.WaitAsync(handle.ProcessId, "sess_owner", CancellationToken.None);
         }
 
         var retained = processes.List("sess_owner");
@@ -280,6 +280,51 @@ public sealed class ProcessToolTests
         Assert.True(retained.Count <= 64, $"Expected retained process history to be capped, but found {retained.Count} entries.");
         Assert.True(metrics.ProcessHistoryEvictions > 0);
         Assert.True(metrics.RetainedProcesses <= 64);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WaitWithShortTimeout_ReturnsStillRunningInsteadOfBlocking()
+    {
+        var workspace = Path.Combine(Path.GetTempPath(), "openclaw-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workspace);
+
+        var config = new GatewayConfig();
+        config.Tooling.WorkspaceRoot = workspace;
+
+        var router = new ToolExecutionRouter(
+            config,
+            toolSandbox: null,
+            NullLoggerFactory.Instance.CreateLogger<ToolExecutionRouter>());
+        await using var processes = new ExecutionProcessService(router, NullLogger<ExecutionProcessService>.Instance);
+        var tool = new ProcessTool(processes, config.Tooling);
+        var context = new ToolExecutionContext
+        {
+            Session = new Session { Id = "sess_wait_timeout", ChannelId = "websocket", SenderId = "user1" },
+            TurnContext = new TurnContext { SessionId = "sess_wait_timeout", ChannelId = "websocket" }
+        };
+
+        // Start a long-running command (30 s sleep)
+        var longCommand = OperatingSystem.IsWindows()
+            ? "ping 127.0.0.1 -n 30 > nul"
+            : "sleep 30";
+        var start = await tool.ExecuteAsync(
+            $$"""{"action":"start","command":"{{longCommand}}","timeout_seconds":60}""",
+            context, CancellationToken.None);
+        var processId = Regex.Match(start, @"Started process (?<id>\S+)").Groups["id"].Value;
+        Assert.False(string.IsNullOrEmpty(processId), "Process should have started.");
+
+        // Wait with a 1-second timeout ¡ª should return quickly with "still running" message
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var wait = await tool.ExecuteAsync(
+            $$"""{"action":"wait","process_id":"{{processId}}","timeout_seconds":1}""",
+            context, CancellationToken.None);
+        sw.Stop();
+
+        Assert.Contains("still running", wait, StringComparison.OrdinalIgnoreCase);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5), $"wait should return within ~1 s but took {sw.Elapsed.TotalSeconds:F1} s");
+
+        // Clean up
+        await tool.ExecuteAsync($$"""{"action":"kill","process_id":"{{processId}}"}""", context, CancellationToken.None);
     }
 
     private static string CreateCommand()

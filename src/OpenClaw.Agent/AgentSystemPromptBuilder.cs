@@ -96,6 +96,12 @@ internal static class AgentSystemPromptBuilder
         var soulFile = Path.Combine(workspacePath, "SOUL.md");
         AppendOptionalPromptFile(ref basePrompt, "Agent Personality (SOUL.md)", soulFile, PromptFileMaxChars);
 
+        var identityFile = Path.Combine(workspacePath, "IDENTITY.md");
+        AppendOptionalPromptFile(ref basePrompt, "Agent Identity (IDENTITY.md)", identityFile, PromptFileMaxChars);
+
+        var memoryFile = Path.Combine(workspacePath, "MEMORY.md");
+        AppendOptionalPromptFile(ref basePrompt, "Agent Memory Schema (MEMORY.md)", memoryFile, PromptFileMaxChars);
+
         return basePrompt;
     }
 

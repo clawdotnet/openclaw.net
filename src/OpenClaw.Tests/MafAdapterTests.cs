@@ -1743,7 +1743,7 @@ public sealed class MafAdapterTests
         Directory.CreateDirectory(scriptsDir);
 
         var scriptPath = Path.Combine(scriptsDir, "echo-stdin.ps1");
-        await File.WriteAllTextAsync(scriptPath, "$inputText = [Console]::In.ReadToEnd()\nWrite-Output \"stdin:$inputText\"\n");
+        await File.WriteAllTextAsync(scriptPath, "$inputText = [System.IO.StreamReader]::new([Console]::OpenStandardInput()).ReadToEnd()\nWrite-Output \"stdin:$inputText\"\n");
 
         try
         {
@@ -3734,7 +3734,7 @@ public sealed class MafAdapterTests
         string input,
         CancellationToken ct)
     {
-        using var scope = MafExecutionContextScope.Push(new MafExecutionContext
+        using var scope = AgentExecutionContextScope.Push(new AgentExecutionContext
         {
             Session = session,
             TurnContext = new TurnContext

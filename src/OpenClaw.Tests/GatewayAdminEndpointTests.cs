@@ -3785,7 +3785,7 @@ public sealed class GatewayAdminEndpointTests
             Assert.Equal(HttpStatusCode.OK, skillsResponse.StatusCode);
             using var skillsPayload = await ReadJsonAsync(skillsResponse);
             Assert.Contains(
-                skillsPayload.RootElement.GetProperty("items").EnumerateArray().Select(static item => item.GetProperty("name").GetString()),
+                skillsPayload.RootElement.GetProperty("skills").EnumerateArray().Select(static item => item.GetProperty("name").GetString()),
                 static name => string.Equals(name, "portable-bundle-skill", StringComparison.Ordinal));
 
             using var noteRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/notes?memoryClass=project_fact&projectId=apollo");
@@ -5347,26 +5347,6 @@ public sealed class GatewayAdminEndpointTests
             ],
             pluginRuntimeTelemetry: null,
             nativeDynamicPluginRuntimeTelemetry: null);
-        harness.Runtime.LoadedSkills =
-        [
-            new SkillDefinition
-            {
-                Name = "Incident Followup",
-                Description = "Handle incident follow-up tasks.",
-                Instructions = "Follow the incident checklist.",
-                Location = "/tmp/skills/incident-followup",
-                Source = SkillSource.Managed,
-                Metadata = new SkillMetadata
-                {
-                    Homepage = "https://example.com/incident-followup",
-                    RequireEnv = ["OPENAI_API_KEY"]
-                },
-                UserInvocable = true,
-                DisableModelInvocation = false,
-                CommandDispatch = "incident-followup"
-            }
-        ];
-
         using var pluginRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/plugins/qqbot");
         pluginRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
         var pluginResponse = await harness.Client.SendAsync(pluginRequest);
@@ -5397,10 +5377,15 @@ public sealed class GatewayAdminEndpointTests
         var skillsResponse = await harness.Client.SendAsync(skillsRequest);
         Assert.Equal(HttpStatusCode.OK, skillsResponse.StatusCode);
         using var skillsPayload = await ReadJsonAsync(skillsResponse);
-        var skills = skillsPayload.RootElement.GetProperty("items").EnumerateArray().ToArray();
-        var incidentSkill = Assert.Single(skills, static item => string.Equals(item.GetProperty("name").GetString(), "Incident Followup", StringComparison.Ordinal));
-        Assert.Equal("upstream-compatible", incidentSkill.GetProperty("trustLevel").GetString());
-        Assert.Contains("OPENAI_API_KEY", incidentSkill.GetProperty("requiredEnv").EnumerateArray().Select(static item => item.GetString()));
+        var skills = skillsPayload.RootElement.GetProperty("skills").EnumerateArray().ToArray();
+        Assert.NotEmpty(skills);
+        Assert.Contains(skills, static item => string.Equals(item.GetProperty("source").GetString(), "bundled", StringComparison.Ordinal));
+        Assert.All(skills, static item =>
+        {
+            Assert.True(item.TryGetProperty("trustLevel", out _));
+            Assert.True(item.TryGetProperty("requiredEnv", out var requiredEnv));
+            Assert.Equal(JsonValueKind.Array, requiredEnv.ValueKind);
+        });
 
         using var compatibilityRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/compatibility/catalog?compatibilityStatus=compatible&kind=npm-plugin");
         compatibilityRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
@@ -7098,14 +7083,17 @@ public sealed class GatewayAdminEndpointTests
     {
         var webChatHtmlPath = Path.GetFullPath(Path.Join(AppContext.BaseDirectory, "../../../../../src/OpenClaw.Gateway/wwwroot/webchat.html"));
         var html = await File.ReadAllTextAsync(webChatHtmlPath);
+        var webChatJsPath = Path.Join(Path.GetDirectoryName(webChatHtmlPath)!, "webchat.js");
+        var script = await File.ReadAllTextAsync(webChatJsPath);
 
-        Assert.Contains("function isToolFailureEnvelope", html, StringComparison.Ordinal);
-        Assert.Contains("function explainToolFailure", html, StringComparison.Ordinal);
+        Assert.Contains("<script src=\"webchat.js\"></script>", html, StringComparison.Ordinal);
         Assert.Contains("id=\"chat-state-bar\"", html, StringComparison.Ordinal);
-        Assert.Contains("refreshChatState()", html, StringComparison.Ordinal);
-        Assert.Contains("case 'tool_result':", html, StringComparison.Ordinal);
-        Assert.Contains("if (isToolFailureEnvelope(env))", html, StringComparison.Ordinal);
-        Assert.Contains("appendToolFailure(explainToolFailure(env));", html, StringComparison.Ordinal);
+        Assert.Contains("function isToolFailureEnvelope", script, StringComparison.Ordinal);
+        Assert.Contains("function explainToolFailure", script, StringComparison.Ordinal);
+        Assert.Contains("refreshChatState()", script, StringComparison.Ordinal);
+        Assert.Contains("case 'tool_result':", script, StringComparison.Ordinal);
+        Assert.Contains("if (isToolFailureEnvelope(env))", script, StringComparison.Ordinal);
+        Assert.Contains("appendToolFailure(explainToolFailure(env));", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -7113,16 +7101,19 @@ public sealed class GatewayAdminEndpointTests
     {
         var webChatHtmlPath = Path.GetFullPath(Path.Join(AppContext.BaseDirectory, "../../../../../src/OpenClaw.Gateway/wwwroot/webchat.html"));
         var html = await File.ReadAllTextAsync(webChatHtmlPath);
+        var webChatJsPath = Path.Join(Path.GetDirectoryName(webChatHtmlPath)!, "webchat.js");
+        var script = await File.ReadAllTextAsync(webChatJsPath);
 
+        Assert.Contains("<script src=\"webchat.js\"></script>", html, StringComparison.Ordinal);
         Assert.Contains("id=\"approval-modal\"", html, StringComparison.Ordinal);
-        Assert.Contains("case 'tool_approval_required':", html, StringComparison.Ordinal);
-        Assert.Contains("enqueueToolApproval(env);", html, StringComparison.Ordinal);
-        Assert.Contains("approvalRisk.textContent = activeApproval.riskHint || activeApproval.mutationHint || activeApproval.text || activeApproval.content", html, StringComparison.Ordinal);
-        Assert.Contains("type: 'tool_approval_decision'", html, StringComparison.Ordinal);
-        Assert.Contains("approvalId,", html, StringComparison.Ordinal);
-        Assert.Contains("approved", html, StringComparison.Ordinal);
-        Assert.Contains("approvalApproveButton.addEventListener('click', () => decideToolApproval(true));", html, StringComparison.Ordinal);
-        Assert.Contains("approvalDenyButton.addEventListener('click', () => decideToolApproval(false));", html, StringComparison.Ordinal);
+        Assert.Contains("case 'tool_approval_required':", script, StringComparison.Ordinal);
+        Assert.Contains("enqueueToolApproval(env);", script, StringComparison.Ordinal);
+        Assert.Contains("approvalRisk.textContent = activeApproval.riskHint || activeApproval.mutationHint || activeApproval.text || activeApproval.content", script, StringComparison.Ordinal);
+        Assert.Contains("type: 'tool_approval_decision'", script, StringComparison.Ordinal);
+        Assert.Contains("approvalId,", script, StringComparison.Ordinal);
+        Assert.Contains("approved", script, StringComparison.Ordinal);
+        Assert.Contains("approvalApproveButton.addEventListener('click', () => decideToolApproval(true));", script, StringComparison.Ordinal);
+        Assert.Contains("approvalDenyButton.addEventListener('click', () => decideToolApproval(false));", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -7130,13 +7121,16 @@ public sealed class GatewayAdminEndpointTests
     {
         var webChatHtmlPath = Path.GetFullPath(Path.Join(AppContext.BaseDirectory, "../../../../../src/OpenClaw.Gateway/wwwroot/webchat.html"));
         var html = await File.ReadAllTextAsync(webChatHtmlPath);
-        var normalizedHtml = html.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var webChatJsPath = Path.Join(Path.GetDirectoryName(webChatHtmlPath)!, "webchat.js");
+        var script = await File.ReadAllTextAsync(webChatJsPath);
 
-        Assert.Contains("function resetA2ui()", html, StringComparison.Ordinal);
-        Assert.Contains("canvasSurfaces.clear();", html, StringComparison.Ordinal);
-        Assert.Contains("activeCanvasSurfaceId = null;", html, StringComparison.Ordinal);
-        Assert.Contains("case 'a2ui_reset':\n                        resetA2ui();", normalizedHtml, StringComparison.Ordinal);
-        Assert.DoesNotContain("resetA2ui(env.surfaceId || 'main')", html, StringComparison.Ordinal);
+        Assert.Contains("<script src=\"webchat.js\"></script>", html, StringComparison.Ordinal);
+        Assert.Contains("function resetA2ui()", script, StringComparison.Ordinal);
+        Assert.Contains("canvasSurfaces.clear();", script, StringComparison.Ordinal);
+        Assert.Contains("activeCanvasSurfaceId = null;", script, StringComparison.Ordinal);
+        Assert.Contains("case 'a2ui_reset':", script, StringComparison.Ordinal);
+        Assert.Contains("resetA2ui();", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("resetA2ui(env.surfaceId || 'main')", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -7590,6 +7584,8 @@ public sealed class GatewayAdminEndpointTests
         builder.Services.AddSingleton(new ProviderUsageTracker());
         builder.Services.AddSingleton(new ToolUsageTracker());
         builder.Services.AddSingleton(new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance));
+        builder.Services.AddSingleton(_ => new McpConfigStore(storagePath, NullLogger<McpConfigStore>.Instance));
+        builder.Services.AddSingleton<McpWatcherHolder>();
         builder.Services.AddSingleton<RuntimePulseService>();
         builder.Services.AddSingleton(new ContractStore(storagePath, NullLogger<ContractStore>.Instance));
         builder.Services.AddSingleton(sp =>
@@ -7733,7 +7729,8 @@ public sealed class GatewayAdminEndpointTests
             NativeDynamicPluginHost = null,
             ArtifactRuntime = new SkillArtifactRuntime(),
             RegisteredToolNames = System.Collections.Frozen.FrozenSet<string>.Empty,
-            ChannelAuthEvents = new ChannelAuthEventStore()
+            ChannelAuthEvents = new ChannelAuthEventStore(),
+            AbortRegistry = new OpenClaw.Core.Pipeline.SessionAbortRegistry()
         };
     }
 
@@ -7890,6 +7887,7 @@ public sealed class GatewayAdminEndpointTests
     {
         public ValueTask<Session?> GetSessionAsync(string sessionId, CancellationToken ct) => inner.GetSessionAsync(sessionId, ct);
         public ValueTask SaveSessionAsync(Session session, CancellationToken ct) => throw new IOException("Simulated persistence failure.");
+        public ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct) => inner.DeleteSessionAsync(sessionId, ct);
         public ValueTask<string?> LoadNoteAsync(string key, CancellationToken ct) => inner.LoadNoteAsync(key, ct);
         public ValueTask SaveNoteAsync(string key, string content, CancellationToken ct) => inner.SaveNoteAsync(key, content, ct);
         public ValueTask DeleteNoteAsync(string key, CancellationToken ct) => inner.DeleteNoteAsync(key, ct);

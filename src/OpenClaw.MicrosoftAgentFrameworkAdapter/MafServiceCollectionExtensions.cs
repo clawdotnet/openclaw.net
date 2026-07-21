@@ -23,15 +23,7 @@ public static class MafServiceCollectionExtensions
     private static MafOptions CreateOptions(IConfiguration configuration)
     {
         var section = configuration.GetSection(MafOptions.SectionName);
-        var legacySection = configuration.GetSection(MafOptions.LegacySectionName);
-        var legacySectionUsed = !section.Exists() && legacySection.Exists();
-        if (legacySectionUsed)
-            section = legacySection;
-
-        var options = new MafOptions
-        {
-            LegacySectionUsed = legacySectionUsed
-        };
+        var options = new MafOptions();
 
         var agentName = section["AgentName"];
         if (!string.IsNullOrWhiteSpace(agentName))

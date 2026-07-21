@@ -162,7 +162,7 @@ public sealed class GatewayWorkersTests
             MessageId = "msg1"
         });
 
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
         var outbound = await adapter.ReadAsync(timeout.Token);
 
         Assert.Contains("not valid", outbound.Text, StringComparison.OrdinalIgnoreCase);

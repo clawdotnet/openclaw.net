@@ -74,6 +74,7 @@ internal static partial class RuntimeInitializationExtensions
             ExternalCliRunner = app.Services.GetRequiredService<IExternalCliRunner>(),
             ExternalCliAudit = app.Services.GetRequiredService<IExternalCliAuditSink>(),
             ExternalCliEvents = app.Services.GetRequiredService<IExternalCliEventSink>(),
+            AbortRegistry = app.Services.GetRequiredService<SessionAbortRegistry>(),
             GoalService = app.Services.GetRequiredService<IGoalService>()
         };
 
@@ -94,6 +95,34 @@ internal static partial class RuntimeInitializationExtensions
         {
             ["websocket"] = services.WebSocketChannel
         };
+
+        // Restore persisted channel configs from volume storage (survives container restarts).
+        // This must happen before channels are added to adapters and before StartAsync is called.
+        var channelStore = app.Services.GetRequiredService<OpenClaw.Gateway.Channels.ChannelConfigStore>();
+
+        var persistedFeishu = channelStore.TryLoad("feishu", CoreJsonContext.Default.FeishuChannelConfig);
+        if (persistedFeishu is not null)
+        {
+            app.Services.GetRequiredService<FeishuChannel>().SetRuntimeConfig(persistedFeishu);
+            app.Logger.LogInformation("Restored persisted Feishu config from volume storage.");
+        }
+        channelAdapters["feishu"] = app.Services.GetRequiredService<FeishuChannel>();
+
+        var persistedDingTalk = channelStore.TryLoad("dingtalk", CoreJsonContext.Default.DingTalkChannelConfig);
+        if (persistedDingTalk is not null)
+        {
+            app.Services.GetRequiredService<DingTalkChannel>().SetRuntimeConfig(persistedDingTalk);
+            app.Logger.LogInformation("Restored persisted DingTalk config from volume storage.");
+        }
+        channelAdapters["dingtalk"] = app.Services.GetRequiredService<DingTalkChannel>();
+
+        var persistedWeCom = channelStore.TryLoad("wecom", CoreJsonContext.Default.WeComChannelConfig);
+        if (persistedWeCom is not null)
+        {
+            app.Services.GetRequiredService<WeComChannel>().SetRuntimeConfig(persistedWeCom);
+            app.Logger.LogInformation("Restored persisted WeCom config from volume storage.");
+        }
+        channelAdapters["wecom"] = app.Services.GetRequiredService<WeComChannel>();
 
         if (smsChannel is not null)
             channelAdapters["sms"] = smsChannel;
@@ -594,6 +623,7 @@ internal static partial class RuntimeInitializationExtensions
         public required IExternalCliRunner ExternalCliRunner { get; init; }
         public required IExternalCliAuditSink ExternalCliAudit { get; init; }
         public required IExternalCliEventSink ExternalCliEvents { get; init; }
+        public required SessionAbortRegistry AbortRegistry { get; init; }
         public required IGoalService GoalService { get; init; }
     }
 

@@ -20,8 +20,12 @@ public sealed class Session
     private long _totalCacheWriteTokens;
 
     public required string Id { get; init; }
-    public required string ChannelId { get; init; }
-    public required string SenderId { get; init; }
+    // ChannelId / SenderId describe the *current* routing identity of the conversation party.
+    // They must be mutable because a persisted session can be reactivated by a fresh connection
+    // (e.g. a WebSocket reconnect produces a new Connection.Id) and mid-turn envelope routing
+    // (artifact, stage gate) consults Session.SenderId to look up the live socket.
+    public required string ChannelId { get; set; }
+    public required string SenderId { get; set; }
 
     /// <summary>
     /// Authenticated user identity from the identity provider when the channel can establish one.
@@ -922,6 +926,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(StructuredMemoryContextResult))]
 [JsonSerializable(typeof(StructuredMemoryPathRequest))]
 [JsonSerializable(typeof(SecurityConfig))]
+[JsonSerializable(typeof(OidcConfig))]
 [JsonSerializable(typeof(UrlSafetyConfig))]
 [JsonSerializable(typeof(WebSocketConfig))]
 [JsonSerializable(typeof(ToolingConfig))]
@@ -1499,6 +1504,10 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(SkillHealthSnapshot))]
 [JsonSerializable(typeof(List<SkillHealthSnapshot>))]
 [JsonSerializable(typeof(SkillListResponse))]
+[JsonSerializable(typeof(SkillInstallRequest))]
+[JsonSerializable(typeof(SkillMutationResponse))]
+[JsonSerializable(typeof(WorkspaceBrowseEntry))]
+[JsonSerializable(typeof(WorkspaceBrowseResponse))]
 [JsonSerializable(typeof(SkillCostBreakdown))]
 [JsonSerializable(typeof(List<SkillCostBreakdown>))]
 [JsonSerializable(typeof(SkillCostEstimateResponse))]
@@ -1660,6 +1669,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(DingTalkChannelConfig))]
 [JsonSerializable(typeof(WeComChannelConfig))]
 [JsonSerializable(typeof(RoutingConfig))]
+[JsonSerializable(typeof(TokenUsageConfig))]
 [JsonSerializable(typeof(DigitalEmployeeUploadResponse))]
 [JsonSerializable(typeof(WorkspaceUploadResponse))]
 [JsonSerializable(typeof(WorkspaceTreeEntry))]
