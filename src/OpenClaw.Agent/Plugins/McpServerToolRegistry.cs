@@ -562,10 +562,13 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
         private readonly HttpClientHandler _httpClientHandler;
 
         public RemoveCharsetDelegatingHandler()
-            : base(new HttpClientHandler())
+            : base(CreateHttpClientHandler())
         {
             _httpClientHandler = (HttpClientHandler)InnerHandler!;
         }
+
+        private static HttpClientHandler CreateHttpClientHandler()
+            => new();
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,

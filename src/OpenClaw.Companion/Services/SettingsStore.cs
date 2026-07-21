@@ -1,16 +1,11 @@
 using System.Diagnostics;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using OpenClaw.Companion.Models;
 
 namespace OpenClaw.Companion.Services;
 
 public sealed class SettingsStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true
-    };
     private readonly ProtectedTokenStore _tokenStore;
     private readonly ProtectedTokenStore _providerKeyStore;
     private readonly string _providerKeyMarkerPath;
@@ -100,7 +95,7 @@ public sealed class SettingsStore
             SetupLocalModelPath = settings.SetupLocalModelPath
         };
 
-        var json = JsonSerializer.Serialize(toSave, JsonOptions);
+        var json = JsonSerializer.Serialize(toSave, CompanionJsonContext.Default.CompanionSettings);
         var tmp = SettingsPath + ".tmp";
         File.WriteAllText(tmp, json);
         File.Move(tmp, SettingsPath, overwrite: true);
