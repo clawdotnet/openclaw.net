@@ -28,7 +28,7 @@ internal sealed class MediaCacheStore
         {
             Id = id,
             MediaType = mediaType,
-            FileName = Path.GetFileName(assetPath),
+            FileName = !string.IsNullOrWhiteSpace(fileName) ? fileName : Path.GetFileName(assetPath),
             Path = assetPath,
             SizeBytes = data.Length,
             CreatedAtUtc = DateTimeOffset.UtcNow
@@ -61,6 +61,19 @@ internal sealed class MediaCacheStore
             "audio/mpeg" => ".mp3",
             "image/png" => ".png",
             "image/jpeg" => ".jpg",
+            "image/gif" => ".gif",
+            "image/webp" => ".webp",
+            "image/svg+xml" => ".svg",
+            "application/pdf" => ".pdf",
+            "application/zip" or "application/x-zip-compressed" => ".zip",
+            "application/json" => ".json",
+            "text/plain" => ".txt",
+            "text/csv" => ".csv",
+            "text/html" => ".html",
+            "application/msword" => ".doc",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => ".docx",
+            "application/vnd.ms-excel" => ".xls",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => ".xlsx",
             _ => ".bin"
         };
     }

@@ -34,6 +34,7 @@ Start here:
 - [Architecture](https://agentqi.dev/docs/start-here)
 - [Security](https://agentqi.dev/docs/security)
 - [Roadmap](https://agentqi.dev/docs/roadmap)
+- [AgentQi Mobile companion](https://github.com/agentqi/agentqi-mobile) — open-source Android operator console with build-from-source instructions
 
 ## What Works Now
 
@@ -56,10 +57,11 @@ Start here:
 - **First-class optional Microsoft Agent Framework adapter** for `Runtime.Orchestrator=maf` without a special build
 - **Durable workflow delegation** through supported workflow backends such as `maf-durable-http`
 - **CLI and Companion** setup flows for source checkouts and desktop bundles
+- **AgentQi Mobile companion** for Android gateway health, approvals, session-backed work, chat, runtime events, and security posture ([source and build guide](https://github.com/agentqi/agentqi-mobile))
 - **/loop recurring-prompt command** with TickerQ-backed session-scoped timer injection, idempotent override, and dual-path semantic auto-termination for build health checks, log polling, and other periodic tasks
 - **80+ native and optional tool surfaces** covering file ops, sessions, memory, web, messaging, home automation, databases, email, MCP apps, and more
 - **9 channel adapters** (Telegram, SMS, WhatsApp, Teams, Slack, Discord, Signal, email, webhooks) with DM policy, allowlists, and signature validation
-- **Native LLM providers** for OpenAI, Claude, Gemini, Azure OpenAI, Ollama, and OpenAI-compatible endpoints
+- **Native LLM providers** for OpenAI, Claude, Gemini, Azure OpenAI, DeepSeek, Ollama, and OpenAI-compatible endpoints
 - **Optional embedded local models** with Gemma 4 GGUF packages, package install/verify CLI commands, supervised sidecar inference, and frame-based video understanding
 - **Practical reuse** of existing OpenClaw TS/JS plugins and `SKILL.md` packages
 
@@ -82,7 +84,7 @@ Each desktop bundle includes Companion, the NativeAOT gateway, and the NativeAOT
 1. Extract the archive.
 2. Launch Companion from the `companion` folder.
 3. Open the **Setup** tab.
-4. Choose a provider/model and enter the provider key, choose Ollama for a local model server, or choose Embedded for an OpenClaw-managed local model such as Gemma 4.
+4. Choose a provider/model and enter the provider key, choose DeepSeek for the hosted OpenAI-compatible DeepSeek API, choose Ollama for a local model server, or choose Embedded for an OpenClaw-managed local model such as Gemma 4.
 5. Click **Set Up and Start**.
 
 Companion writes a local config, starts the bundled gateway on `127.0.0.1`, and connects to it. The current Windows and macOS release archives are unsigned, so first-run OS warnings are expected. See [docs/RELEASES.md](docs/RELEASES.md) for checksums, standalone CLI/gateway archives, signing status, and maintainer release flow.
@@ -164,6 +166,14 @@ openclaw setup --non-interactive --profile local --workspace ./workspace --provi
 ```
 
 OpenClaw.NET now treats Ollama as a first-class native provider at `http://127.0.0.1:11434`. Older `/v1` endpoints still work for one compatibility cycle, but `openclaw models doctor` will flag them so you can migrate cleanly.
+
+For DeepSeek, use the named provider instead of the generic OpenAI-compatible provider. Setup writes the current DeepSeek API endpoint, defaults to `deepseek-v4-flash`, and uses `DEEPSEEK_API_KEY` in the generated env example:
+
+```bash
+openclaw setup --non-interactive --profile local --workspace ./workspace --provider deepseek --api-key env:DEEPSEEK_API_KEY
+```
+
+Use `--model deepseek-v4-pro` when you want the higher-capability DeepSeek model.
 
 For OpenClaw-managed local inference, use provider `embedded` with an installable package. Gemma 4 is now the main embedded local model path:
 

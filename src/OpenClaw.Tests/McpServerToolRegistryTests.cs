@@ -42,14 +42,14 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
             TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(initial.AddedTools);
-        Assert.Contains(initial.AddedTools, tool => tool.Name == "alpha.echo");
+        Assert.Contains(initial.AddedTools, tool => tool.Name == "alpha_echo");
 
         var second = await registry.ReloadWorkspaceServersAsync(
             new Dictionary<string, McpServerConfig>(StringComparer.Ordinal),
             TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(second.RemovedToolNames);
-        Assert.Contains("alpha.echo", second.RemovedToolNames);
+        Assert.Contains("alpha_echo", second.RemovedToolNames);
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
             },
             TestContext.Current.CancellationToken);
 
-        Assert.Contains(reload.AddedTools, tool => tool.Name == "alpha.echo");
+        Assert.Contains(reload.AddedTools, tool => tool.Name == "alpha_echo");
         Assert.NotNull(registry.GetClientByServerId("alpha"));
         Assert.Null(registry.GetClientByServerId("broken"));
     }
@@ -204,7 +204,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
         await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(nativeRegistry.Tools);
-        Assert.Equal("demo.echo", tool.Name);
+        Assert.Equal("demo_echo", tool.Name);
         Assert.Contains("Demo echo tool", tool.Description, StringComparison.Ordinal);
         using (var schemaDocument = JsonDocument.Parse(tool.ParameterSchema))
         {
@@ -336,8 +336,8 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
 
         await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
 
-        Assert.Contains(nativeRegistry.Tools, tool => tool.Name == "demo.visible_tool");
-        Assert.DoesNotContain(nativeRegistry.Tools, tool => tool.Name == "demo.app_only_tool");
+        Assert.Contains(nativeRegistry.Tools, tool => tool.Name == "demo_visible_tool");
+        Assert.DoesNotContain(nativeRegistry.Tools, tool => tool.Name == "demo_app_only_tool");
     }
 
     [Fact]
@@ -566,8 +566,8 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
 
         await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
 
-        Assert.Contains(nativeRegistry.Tools, tool => tool.Name == "demo.first_tool");
-        Assert.Contains(nativeRegistry.Tools, tool => tool.Name == "demo.second_tool");
+        Assert.Contains(nativeRegistry.Tools, tool => tool.Name == "demo_first_tool");
+        Assert.Contains(nativeRegistry.Tools, tool => tool.Name == "demo_second_tool");
     }
 
     [Fact]
@@ -692,7 +692,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
         Assert.Single(clientsAfterSuccess);
 
         var tool = Assert.Single(nativeRegistry.Tools);
-        Assert.Equal("demo.echo", tool.Name);
+        Assert.Equal("demo_echo", tool.Name);
     }
 
     [Fact]
@@ -720,7 +720,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
         await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
 
         var tool = Assert.Single(nativeRegistry.Tools);
-        Assert.Equal("demo.echo", tool.Name);
+        Assert.Equal("demo_echo", tool.Name);
     }
 
     [Fact]

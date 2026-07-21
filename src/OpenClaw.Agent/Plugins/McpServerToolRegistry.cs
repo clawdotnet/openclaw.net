@@ -1,13 +1,14 @@
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Security;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace OpenClaw.Agent.Plugins;
 
@@ -22,14 +23,17 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
     private readonly object _disposeGate = new();
     private readonly List<DiscoveredMcpTool> _tools = [];
     private readonly List<McpClient> _clients = [];
-    private readonly Dictionary<string, (McpClient Client, List<DiscoveredMcpTool> Tools, McpServerConfig Config)> _workspaceServers
-        = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, McpClient> _clientsByServerId = new(StringComparer.Ordinal);
     private Task? _disposeTask;
     private bool _loaded;
     private bool _registered;
     private bool _disposed;
 
+    private readonly Dictionary<string, (McpClient Client, List<DiscoveredMcpTool> Tools, McpServerConfig Config)> _workspaceServers
+        = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, McpClient> _clientsByServerId = new(StringComparer.Ordinal);
+    
+    
+    
     /// <summary>
     /// Creates a registry for configured MCP servers.
     /// </summary>
@@ -256,16 +260,26 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(config.RequestTimeoutSeconds));
-        var response = await client.ListToolsAsync(cancellationToken: timeoutCts.Token);
 
+        var allTools = new List<Tool>();
+        var listParams = new ListToolsRequestParams();
+        do
+        {
+            var page = await client.ListToolsAsync(listParams, cancellationToken: timeoutCts.Token);
+            allTools.AddRange(page.Tools);
+            var next = page.NextCursor;
+            listParams = new ListToolsRequestParams { Cursor = string.IsNullOrEmpty(next) ? null : next };
+        }
+        while (listParams.Cursor is not null);
         var tools = new List<McpToolDescriptor>();
-        foreach (var tool in response)
+
+        foreach (var tool in allTools)
         {
             var remoteName = tool.Name;
             if (string.IsNullOrWhiteSpace(remoteName))
                 throw new InvalidOperationException($"MCP server '{displayName}' returned a tool entry with an empty name.");
 
-            var meta = tool.ProtocolTool.Meta;
+            var meta = tool.Meta;
             if (!IsToolModelVisible(meta))
             {
                 _logger.LogInformation(
@@ -279,7 +293,7 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
             var description = !string.IsNullOrWhiteSpace(tool.Description)
                 ? $"{tool.Description} (from MCP server '{displayName}')"
                 : $"MCP tool '{remoteName}' from server '{displayName}'.";
-            var inputSchema = ResolveInputSchemaText(tool.JsonSchema);
+            var inputSchema = ResolveInputSchemaText(tool.InputSchema);
             var hasUi = ToolHasUi(meta);
             tools.Add(new McpToolDescriptor(localName, remoteName, description, inputSchema, hasUi));
         }
@@ -295,7 +309,11 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
         if (prefix is null)
             prefix = $"{SanitizePrefixPart(serverId)}.";
 
-        return string.IsNullOrEmpty(prefix) ? remoteName : prefix + remoteName;
+        var sanitizedRemoteName = SanitizeLlmToolNamePart(remoteName);
+        // Dots are not allowed by OpenAI-compatible APIs (^[a-zA-Z0-9_-]+$).
+        // Replace any dot in the final assembled name with underscore.
+        var name = string.IsNullOrEmpty(prefix) ? sanitizedRemoteName : prefix + sanitizedRemoteName;
+        return name.Replace('.', '_');
     }
 
     private static string SanitizePrefixPart(string value)
@@ -306,14 +324,44 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
         var sb = new StringBuilder(value.Length);
         foreach (var ch in value)
         {
-            if (char.IsLetterOrDigit(ch) || ch is '_' or '-' or '.')
+            if (IsLlmToolNameChar(ch))
                 sb.Append(char.ToLowerInvariant(ch));
+            else if (ch > 0x7F)
+                sb.Append($"_u{(int)ch:x4}");
             else
                 sb.Append('_');
         }
 
         return sb.Length == 0 ? "mcp" : sb.ToString();
     }
+
+    /// <summary>
+    /// Sanitizes a string so every character satisfies the LLM tool-name pattern <c>^[a-zA-Z0-9_-]+$</c>.
+    /// Dots are replaced with <c>_</c>; other non-conforming ASCII characters are also replaced with <c>_</c>;
+    /// non-ASCII characters are replaced with <c>_uXXXX</c> (lowercase hex code point).
+    /// </summary>
+    private static string SanitizeLlmToolNamePart(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return value;
+
+        var sb = new StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            if (IsLlmToolNameChar(ch))
+                sb.Append(ch);
+            else if (ch > 0x7F)
+                sb.Append($"_u{(int)ch:x4}");
+            else
+                sb.Append('_');
+        }
+
+        return sb.Length == 0 ? "_" : sb.ToString();
+    }
+
+    private static bool IsLlmToolNameChar(char ch)
+        => (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')
+           || ch is '_' or '-';
 
     private static string ResolveInputSchemaText(JsonElement inputSchema)
     {
@@ -394,14 +442,23 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
                 EnvironmentVariables = ResolveEnv(config.Environment),
                 Name = serverId,
             }),
-            "http" => new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(config.Url!),
-                AdditionalHeaders = ResolveHeaders(config.Headers),
-                Name = serverId,
-            }),
+            "http" => CreateHttpTransport(serverId, config, HttpTransportMode.StreamableHttp),
+            "sse"  => CreateHttpTransport(serverId, config, HttpTransportMode.Sse),
             _ => throw new InvalidOperationException($"Unsupported MCP transport '{config.Transport}' for server '{serverId}'.")
         };
+    }
+
+    private static HttpClientTransport CreateHttpTransport(string serverId, McpServerConfig config, HttpTransportMode mode)
+    {
+        var options = new HttpClientTransportOptions
+        {
+            Endpoint = new Uri(config.Url!),
+            AdditionalHeaders = ResolveHeaders(config.Headers),
+            TransportMode = mode,
+            Name = serverId,
+        };
+        var httpClient = new HttpClient(new RemoveCharsetDelegatingHandler());
+        return new HttpClientTransport(options, httpClient, ownsHttpClient: true);
     }
 
     private static Dictionary<string, string?>? ResolveEnv(Dictionary<string, string>? environment)
@@ -498,6 +555,38 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
 
         if (client is IDisposable disposable)
             disposable.Dispose();
+    }
+
+    private sealed class RemoveCharsetDelegatingHandler : DelegatingHandler
+    {
+        private readonly HttpClientHandler _httpClientHandler;
+
+        public RemoveCharsetDelegatingHandler()
+            : base(CreateHttpClientHandler())
+        {
+            _httpClientHandler = (HttpClientHandler)InnerHandler!;
+        }
+
+        private static HttpClientHandler CreateHttpClientHandler()
+            => new();
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (request.Content?.Headers?.ContentType is { CharSet: not null } contentType)
+                contentType.CharSet = null;
+            return base.SendAsync(request, cancellationToken);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _httpClientHandler.Dispose();
+            }
+            base.Dispose(disposing);
+        }
     }
 
     internal sealed record DiscoveredMcpTool(string PluginId, ITool Tool, string Detail);

@@ -22,6 +22,7 @@ internal static class ConfigurationSourceDiagnosticsBuilder
             BuildPlainItem(configuration, "Provider", "OpenClaw:Llm:Provider", config.Llm.Provider),
             BuildProviderModelItem(configuration, config),
             BuildPlainItem(configuration, "Provider endpoint", "OpenClaw:Llm:Endpoint", config.Llm.Endpoint),
+            BuildPlainItem(configuration, "Thinking enabled", "OpenClaw:Llm:EnableThinking", config.Llm.EnableThinking.ToString()),
             BuildApiKeyItem(configuration, config)
         };
 

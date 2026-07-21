@@ -64,4 +64,7 @@ internal sealed class GatewayAppRuntime
 
     /// <summary>Names of all registered tools (built-in + native plugins + bridge plugins).</summary>
     public required FrozenSet<string> RegisteredToolNames { get; init; }
+
+    /// <summary>Session abort registry for cancelling in-flight agent execution.</summary>
+    public required SessionAbortRegistry AbortRegistry { get; init; }
 }

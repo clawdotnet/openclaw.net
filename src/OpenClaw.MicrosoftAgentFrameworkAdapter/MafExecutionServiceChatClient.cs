@@ -37,7 +37,7 @@ internal sealed class MafExecutionServiceChatClient : IChatClient
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        var executionContext = MafExecutionContextScope.Current;
+        var executionContext = AgentExecutionContextScope.Current;
         var messageList = messages as IReadOnlyList<ChatMessage> ?? [.. messages];
         options ??= new ChatOptions();
         var estimate = LlmExecutionEstimateBuilder.Create(
@@ -72,7 +72,7 @@ internal sealed class MafExecutionServiceChatClient : IChatClient
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var executionContext = MafExecutionContextScope.Current;
+        var executionContext = AgentExecutionContextScope.Current;
         var messageList = messages as IReadOnlyList<ChatMessage> ?? [.. messages];
         options ??= new ChatOptions();
         var estimate = LlmExecutionEstimateBuilder.Create(
@@ -135,7 +135,7 @@ internal sealed class MafExecutionServiceChatClient : IChatClient
     }
 
     private void RecordUsage(
-        MafExecutionContext executionContext,
+        AgentExecutionContext executionContext,
         IReadOnlyList<ChatMessage> messages,
         TimeSpan elapsed,
         string providerId,

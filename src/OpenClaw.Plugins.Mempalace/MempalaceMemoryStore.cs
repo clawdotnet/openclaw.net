@@ -64,6 +64,9 @@ internal sealed class MempalaceMemoryStore :
     public ValueTask SaveSessionAsync(Session session, CancellationToken ct)
         => _sessionStore.SaveSessionAsync(session, ct);
 
+    public ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct)
+      => _sessionStore.DeleteSessionAsync(sessionId, ct);
+
     public async ValueTask<string?> LoadNoteAsync(string key, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(key))

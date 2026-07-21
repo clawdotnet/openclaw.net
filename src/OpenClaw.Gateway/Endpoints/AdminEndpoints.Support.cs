@@ -1053,20 +1053,35 @@ internal static partial class AdminEndpoints
         GatewayStartupContext startup,
         GatewayAppRuntime runtime)
     {
-        var pluginSkillDirs = runtime.LoadedSkills
+        // Use the live agent runtime's skill list — it is updated by ReloadSkillsAsync on every
+        // install/delete, so plugin-dir discovery is always based on fresh data.
+        var liveSkills = runtime.AgentRuntime.LoadedSkills;
+
+        var pluginSkillDirs = liveSkills
             .Where(static skill => skill.Source == SkillSource.Plugin && !string.IsNullOrWhiteSpace(skill.Location))
             .Select(static skill => skill.Location)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+        // Resolve workspace path: fall back to the config-based WorkspaceRoot reference so
+        // the disk scan includes workspace skills even when OPENCLAW_WORKSPACE env var is not set.
+        var workspacePath = startup.WorkspacePath
+            ?? SecretResolver.Resolve(startup.Config.Tooling.WorkspaceRoot);
+
         var loaded = SkillLoader.LoadAll(
             startup.Config.Skills,
-            startup.WorkspacePath,
+            workspacePath,
             NullLogger.Instance,
             pluginSkillDirs);
 
         var byName = loaded.ToDictionary(static skill => skill.Name, StringComparer.OrdinalIgnoreCase);
-        foreach (var skill in runtime.LoadedSkills)
+
+        // Supplement the disk scan with any skills the live runtime has that are not
+        // on disk in the standard locations (e.g. plugin-packaged skills loaded from
+        // non-standard directories).  Using liveSkills (AgentRuntime.LoadedSkills) instead
+        // of the stale GatewayAppRuntime.LoadedSkills ensures that a skill deleted via
+        // DELETE /admin/skills/{name} (which calls ReloadSkillsAsync) does not reappear here.
+        foreach (var skill in liveSkills)
         {
             if (!byName.ContainsKey(skill.Name))
                 byName[skill.Name] = skill;

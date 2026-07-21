@@ -287,5 +287,58 @@ internal static partial class AdminEndpoints
                 CoreJsonContext.Default.MutationResponse,
                 statusCode: result.Success ? StatusCodes.Status200OK : StatusCodes.Status404NotFound);
         });
+
+        app.MapPost("/admin/automations", async (HttpContext ctx) =>
+        {
+            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.automations.mutate");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            var auth = authResult.Authorization!;
+            if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, "admin.control", out var blockedByPolicyId))
+                return Results.Json(new MutationResponse { Success = false, Error = $"Rate limit exceeded by policy '{blockedByPolicyId}'." }, CoreJsonContext.Default.MutationResponse, statusCode: StatusCodes.Status429TooManyRequests);
+
+            var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.AutomationDefinition);
+            if (requestPayload.Failure is not null)
+                return requestPayload.Failure;
+
+            var automation = requestPayload.Value;
+            if (automation is null || string.IsNullOrWhiteSpace(automation.Name))
+                return Results.BadRequest(new MutationResponse { Success = false, Error = "Automation name is required." });
+
+            var newId = Guid.NewGuid().ToString("N")[..16];
+            var saved = await automationService.SaveAsync(new AutomationDefinition
+            {
+                Id = newId,
+                Name = automation.Name,
+                Enabled = automation.Enabled,
+                Schedule = automation.Schedule,
+                Timezone = automation.Timezone,
+                Prompt = automation.Prompt,
+                ModelId = automation.ModelId,
+                RunOnStartup = automation.RunOnStartup,
+                SessionId = automation.SessionId,
+                DeliveryChannelId = automation.DeliveryChannelId,
+                DeliveryRecipientId = automation.DeliveryRecipientId,
+                DeliverySubject = automation.DeliverySubject,
+                Tags = automation.Tags,
+                IsDraft = automation.IsDraft,
+                Source = automation.Source,
+                TemplateKey = automation.TemplateKey,
+                Verification = automation.Verification,
+                RetryPolicy = automation.RetryPolicy,
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            }, ctx.RequestAborted);
+
+            RecordOperatorAudit(ctx, operations, auth, "automation_create", saved.Id, $"Created automation '{saved.Name}' ({saved.Id}).", true, before: null, after: null);
+            return Results.Json(
+                new IntegrationAutomationDetailResponse
+                {
+                    Automation = saved,
+                    RunState = await automationService.GetRunStateAsync(saved.Id, ctx.RequestAborted)
+                },
+                CoreJsonContext.Default.IntegrationAutomationDetailResponse,
+                statusCode: StatusCodes.Status201Created);
+        });
     }
 }

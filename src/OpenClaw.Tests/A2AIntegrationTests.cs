@@ -276,13 +276,13 @@ public sealed class A2AIntegrationTests
     }
 
     [Fact]
-    public void MafServiceCollectionExtensions_Parses_Legacy_Config_With_Migration_Flag()
+    public void MafServiceCollectionExtensions_Ignores_Legacy_Config_Section()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                [$"{MafOptions.LegacySectionName}:EnableA2A"] = "true",
-                [$"{MafOptions.LegacySectionName}:A2APathPrefix"] = "/legacy/a2a"
+                ["OpenClaw:Experimental:MicrosoftAgentFramework:EnableA2A"] = "true",
+                ["OpenClaw:Experimental:MicrosoftAgentFramework:A2APathPrefix"] = "/legacy/a2a"
             })
             .Build();
 
@@ -293,19 +293,18 @@ public sealed class A2AIntegrationTests
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MafOptions>>().Value;
 
-        Assert.True(options.EnableA2A);
-        Assert.Equal("/legacy/a2a", options.A2APathPrefix);
-        Assert.True(options.LegacySectionUsed);
+        Assert.False(options.EnableA2A);
+        Assert.Equal("/a2a", options.A2APathPrefix);
     }
 
     [Fact]
-    public void MafServiceCollectionExtensions_Prefers_New_Config_Over_Legacy_Config()
+    public void MafServiceCollectionExtensions_Uses_Supported_Config_When_Both_Sections_Are_Present()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                [$"{MafOptions.LegacySectionName}:EnableA2A"] = "true",
-                [$"{MafOptions.LegacySectionName}:A2APathPrefix"] = "/legacy/a2a",
+                ["OpenClaw:Experimental:MicrosoftAgentFramework:EnableA2A"] = "true",
+                ["OpenClaw:Experimental:MicrosoftAgentFramework:A2APathPrefix"] = "/legacy/a2a",
                 [$"{MafOptions.SectionName}:EnableA2A"] = "false",
                 [$"{MafOptions.SectionName}:A2APathPrefix"] = "/supported/a2a"
             })
@@ -320,7 +319,6 @@ public sealed class A2AIntegrationTests
 
         Assert.False(options.EnableA2A);
         Assert.Equal("/supported/a2a", options.A2APathPrefix);
-        Assert.False(options.LegacySectionUsed);
     }
 
     [Fact]

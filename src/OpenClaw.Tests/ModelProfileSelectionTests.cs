@@ -739,6 +739,31 @@ public sealed class ModelProfileSelectionTests
     }
 
     [Fact]
+    public void ModelDoctor_DeepSeekProfile_UsesNamedProviderCapabilities()
+    {
+        var config = new GatewayConfig
+        {
+            Llm = new LlmProviderConfig
+            {
+                Provider = "deepseek",
+                Model = "deepseek-v4-flash",
+                ApiKey = "env:DEEPSEEK_API_KEY"
+            }
+        };
+
+        var doctor = ModelDoctorEvaluator.Build(config);
+        var profile = Assert.Single(doctor.Profiles);
+
+        Assert.Empty(profile.ValidationIssues);
+        Assert.Equal("deepseek", profile.ProviderId);
+        Assert.Equal("deepseek-v4-flash", profile.ModelId);
+        Assert.True(profile.Capabilities.SupportsTools);
+        Assert.True(profile.Capabilities.SupportsStructuredOutputs);
+        Assert.True(profile.Capabilities.SupportsReasoningEffort);
+        Assert.False(profile.Capabilities.SupportsVision);
+    }
+
+    [Fact]
     public void Registry_ApertureProfileFailure_IsolatedFromDefaultProvider()
     {
         LlmClientFactory.ResetDynamicProviders();

@@ -120,7 +120,8 @@ internal static partial class RuntimeInitializationExtensions
             WhatsAppWorkerHost = channelComposition.WhatsAppWorkerHost,
             RegisteredToolNames = tools.Select(t => t.Name).ToFrozenSet(StringComparer.Ordinal),
             ArtifactRuntime = artifactRuntime,
-            ChannelAuthEvents = WireChannelAuthEvents(channelComposition.ChannelAdapters)
+            ChannelAuthEvents = WireChannelAuthEvents(channelComposition.ChannelAdapters),
+            AbortRegistry = services.AbortRegistry
         };
     }
 
@@ -149,7 +150,6 @@ internal static partial class RuntimeInitializationExtensions
             new SessionsTool(services.SessionManager, services.Pipeline.InboundWriter),
             new SessionSearchTool(services.SessionSearchStore),
             new ProfileReadTool(services.UserProfileStore),
-            new TodoTool(services.SessionMetadataStore),
             new AutomationTool(services.AutomationService, services.Pipeline),
             new VisionAnalyzeTool(services.GeminiMultimodalService),
             new TextToSpeechTool(services.TextToSpeechService),
@@ -204,6 +204,13 @@ internal static partial class RuntimeInitializationExtensions
         if (browserAvailability.Registered)
             tools.Add(new BrowserTool(config.Tooling, services.RuntimeMetrics, browserAvailability.LocalExecutionSupported));
 
+        if (config.Tooling.EnableTodoTool)
+            tools.Add(new TodoTool(services.SessionMetadataStore));
+
+
+        if (config.Tooling.EnableEmitArtifact)
+            tools.Add(new EmitArtifactTool(services.MediaCache, services.WebSocketChannel, config, artifactRuntime));
+
         if (config.ExternalCli.Enabled)
             tools.Add(new ExternalCliTool(
                 services.ExternalCliRegistry,
@@ -230,11 +237,11 @@ internal static partial class RuntimeInitializationExtensions
         if (config.Payments.Enabled && config.Payments.ToolEnabled)
             tools.Add(PaymentPluginRegistration.CreateTool(services.PaymentRuntime, config.Payments.Provider, config.Payments.Environment));
 
+        if (config.Tooling.EnablePublishFile)
+            tools.Add(new PublishFileTool(config.Tooling));
+
         if (string.Equals(Environment.GetEnvironmentVariable("OPENCLAW_ENABLE_STREAMING_SMOKE_TOOL"), "1", StringComparison.Ordinal))
             tools.Add(new StreamingSmokeEchoTool());
-
-        if (config.Tooling.EnableEmitArtifact)
-            tools.Add(new EmitArtifactTool(services.MediaCache, services.WebSocketChannel, config, artifactRuntime));
 
         return tools;
     }

@@ -2759,7 +2759,7 @@ public class AgentRuntimeTests
         Directory.CreateDirectory(scriptsDir);
 
         var scriptPath = Path.Combine(scriptsDir, "echo-stdin.ps1");
-        await File.WriteAllTextAsync(scriptPath, "$inputText = [Console]::In.ReadToEnd()\nWrite-Output \"stdin:$inputText\"\n");
+        await File.WriteAllTextAsync(scriptPath, "$inputText = [System.IO.StreamReader]::new([Console]::OpenStandardInput()).ReadToEnd()\nWrite-Output \"stdin:$inputText\"\n");
 
         try
         {
@@ -3252,6 +3252,9 @@ public class AgentRuntimeTests
                 SavedCheckpoints.Add(Clone(session.ExecutionCheckpoint));
             return ValueTask.CompletedTask;
         }
+
+        public ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct)
+            => ValueTask.CompletedTask;
 
         public ValueTask<string?> LoadNoteAsync(string key, CancellationToken ct)
             => ValueTask.FromResult<string?>(null);

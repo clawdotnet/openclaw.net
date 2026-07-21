@@ -842,6 +842,9 @@ public sealed class BeyondBaseTests
             => ValueTask.FromResult<Session?>(null);
         public ValueTask SaveSessionAsync(Session session, CancellationToken ct)
             => ValueTask.CompletedTask;
+
+        public ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct) 
+            => ValueTask.CompletedTask;
         public ValueTask<string?> LoadNoteAsync(string key, CancellationToken ct)
             => ValueTask.FromResult<string?>(null);
         public ValueTask SaveNoteAsync(string key, string content, CancellationToken ct)

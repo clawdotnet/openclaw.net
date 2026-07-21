@@ -35,6 +35,9 @@ public sealed class ChatCommandProcessor
         "/verbose",
         "/goal",
         "/loop",
+        "/stop",
+        "/cancel",
+        "/abort",
         "/help"
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -84,7 +87,7 @@ public sealed class ChatCommandProcessor
     /// Returns true if a command was handled (and thus the pipeline should short-circuit the LLM).
     /// </summary>
     public async Task<(bool Handled, string? Response)> TryProcessCommandAsync(
-        Session session, string text, CancellationToken ct)
+        Session session, string text, CancellationToken ct, bool sessionLockHeld = false)
     {
         if (string.IsNullOrWhiteSpace(text) || !text.StartsWith('/'))
             return (false, null);
@@ -106,7 +109,7 @@ public sealed class ChatCommandProcessor
                 session.TotalInputTokens = 0;
                 session.TotalOutputTokens = 0;
                 _goalService?.ClearGoal(session.Id);
-                await _sessionManager.PersistAsync(session, ct);
+                await _sessionManager.PersistAsync(session, ct, sessionLockHeld);
                 return (true, "Session history has been reset. Starting fresh!");
 
             case "/model":
@@ -116,12 +119,12 @@ public sealed class ChatCommandProcessor
                 if (args.Equals("reset", StringComparison.OrdinalIgnoreCase) || args.Equals("clear", StringComparison.OrdinalIgnoreCase))
                 {
                     session.ModelOverride = null;
-                    await _sessionManager.PersistAsync(session, ct);
+                    await _sessionManager.PersistAsync(session, ct, sessionLockHeld);
                     return (true, "Model override cleared. Back to default.");
                 }
 
                 session.ModelOverride = args;
-                await _sessionManager.PersistAsync(session, ct);
+                await _sessionManager.PersistAsync(session, ct, sessionLockHeld);
                 return (true, $"Model override set to: {args}");
 
             case "/usage":
@@ -136,7 +139,7 @@ public sealed class ChatCommandProcessor
                 if (level is "off" or "low" or "medium" or "high")
                 {
                     session.ReasoningEffort = level == "off" ? null : level;
-                    await _sessionManager.PersistAsync(session, ct);
+                    await _sessionManager.PersistAsync(session, ct, sessionLockHeld);
                     return (true, level == "off"
                         ? "Extended thinking disabled."
                         : $"Reasoning effort set to: {level}");
@@ -151,7 +154,7 @@ public sealed class ChatCommandProcessor
                 if (_compactCallback is not null)
                 {
                     var remainingTurns = await _compactCallback(session, ct);
-                    await _sessionManager.PersistAsync(session, ct);
+                    await _sessionManager.PersistAsync(session, ct, sessionLockHeld);
                     return (true, $"Compacted: {turnsBefore} turns → {remainingTurns} turns remaining.");
                 }
 
@@ -160,7 +163,7 @@ public sealed class ChatCommandProcessor
                 var removeCount = session.History.Count - keepRecent;
                 if (removeCount > 0)
                     session.History.RemoveRange(0, removeCount);
-                await _sessionManager.PersistAsync(session, ct);
+                await _sessionManager.PersistAsync(session, ct, sessionLockHeld);
                 return (true, $"Trimmed: {turnsBefore} turns → {session.History.Count} turns (kept last {keepRecent}).");
 
             case "/verbose":
@@ -170,13 +173,13 @@ public sealed class ChatCommandProcessor
                 if (args.Equals("on", StringComparison.OrdinalIgnoreCase))
                 {
                     session.VerboseMode = true;
-                    await _sessionManager.PersistAsync(session, ct);
+                    await _sessionManager.PersistAsync(session, ct, sessionLockHeld);
                     return (true, "Verbose mode enabled. Tool calls and token counts will be shown.");
                 }
                 if (args.Equals("off", StringComparison.OrdinalIgnoreCase))
                 {
                     session.VerboseMode = false;
-                    await _sessionManager.PersistAsync(session, ct);
+                    await _sessionManager.PersistAsync(session, ct, sessionLockHeld);
                     return (true, "Verbose mode disabled.");
                 }
                 return (true, "Usage: /verbose on|off");
@@ -196,19 +199,19 @@ public sealed class ChatCommandProcessor
                 if (args.Equals("on", StringComparison.OrdinalIgnoreCase))
                 {
                     session.ResponseMode = SessionResponseModes.ConciseOps;
-                    await _sessionManager.PersistAsync(session, ct);
+                    await _sessionManager.PersistAsync(session, ct, sessionLockHeld);
                     return (true, "Concise operational mode enabled.");
                 }
                 if (args.Equals("off", StringComparison.OrdinalIgnoreCase))
                 {
                     session.ResponseMode = SessionResponseModes.Full;
-                    await _sessionManager.PersistAsync(session, ct);
+                    await _sessionManager.PersistAsync(session, ct, sessionLockHeld);
                     return (true, "Concise operational mode disabled for this session.");
                 }
                 if (args.Equals("auto", StringComparison.OrdinalIgnoreCase))
                 {
                     session.ResponseMode = SessionResponseModes.Default;
-                    await _sessionManager.PersistAsync(session, ct);
+                    await _sessionManager.PersistAsync(session, ct, sessionLockHeld);
                     return (true, "Concise mode reset to automatic behavior.");
                 }
                 return (true, "Usage: /concise on|off|auto");
@@ -224,6 +227,11 @@ public sealed class ChatCommandProcessor
 
             case "/goal":
                 return (true, await HandleGoalCommandAsync(session, args, ct));
+
+            case "/stop":
+            case "/cancel":
+            case "/abort":
+                return (true, "There is no active execution to stop.");
 
             default:
                 if (_dynamicCommands.TryGetValue(command, out var dynamicHandler))

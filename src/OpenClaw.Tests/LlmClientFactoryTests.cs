@@ -149,6 +149,27 @@ public sealed class LlmClientFactoryTests
     }
 
     [Fact]
+    public async Task DeepSeekProvider_UsesOpenAiCompatibleTransport()
+    {
+        await using var server = await StartOpenAiCompatibleServerAsync();
+        var client = LlmClientFactory.CreateChatClient(new LlmProviderConfig
+        {
+            Provider = "deepseek",
+            Endpoint = server.BaseUrl,
+            Model = "deepseek-v4-flash",
+            ApiKey = "test-deepseek-key"
+        });
+
+        var response = await client.GetResponseAsync(
+            [new ChatMessage(ChatRole.User, "ready?")],
+            new ChatOptions { ModelId = "deepseek-v4-flash" },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("READY", response.Text);
+        Assert.Equal("Bearer test-deepseek-key", server.Headers["Authorization"]);
+    }
+
+    [Fact]
     public void ApertureTailnetIdentity_EmbeddingsFailFastWithoutApiKey()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
@@ -205,13 +226,32 @@ public sealed class LlmClientFactoryTests
         Assert.Equal("Bearer provider-token", server.Headers["Authorization"]);
     }
 
+    [Fact]
+    public async Task DeepSeekProvider_SmokeProbeUsesOpenAiCompatibleEndpoint()
+    {
+        await using var server = await StartOpenAiCompatibleServerAsync();
+
+        var result = await ProviderSmokeProbe.ProbeAsync(
+            new LlmProviderConfig
+            {
+                Provider = "deepseek",
+                Endpoint = server.BaseUrl,
+                Model = "deepseek-v4-flash",
+                ApiKey = "deepseek-token"
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(SetupCheckStates.Pass, result.Status);
+        Assert.Equal("Bearer deepseek-token", server.Headers["Authorization"]);
+    }
+
     private static async Task<OpenAiCompatibleTestServer> StartOpenAiCompatibleServerAsync()
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         var app = builder.Build();
-        app.MapPost("/v1/chat/completions", (HttpContext ctx) =>
+        IResult HandleChatCompletions(HttpContext ctx)
         {
             headers.Clear();
             foreach (var header in ctx.Request.Headers)
@@ -233,7 +273,10 @@ public sealed class LlmClientFactoryTests
                     }
                 }
             });
-        });
+        }
+
+        app.MapPost("/v1/chat/completions", HandleChatCompletions);
+        app.MapPost("/chat/completions", HandleChatCompletions);
 
         await app.StartAsync();
         var address = app.Services

@@ -63,7 +63,6 @@ internal static partial class RuntimeInitializationExtensions
                 "Requester-matched HTTP tool approvals are disabled on a non-loopback bind. Enable OpenClaw:Security:RequireRequesterMatchForHttpToolApproval for safer public deployments.");
         }
         var services = ResolveRuntimeServices(app);
-        RecordLegacyMafConfigNotice(app, services, startupLogger, startupNoticeSink);
         var providerSmokeRegistry = app.Services.GetRequiredService<ProviderSmokeRegistry>();
         var approvalService = app.Services.GetRequiredService<ToolApprovalService>();
         Telemetry.RegisterApprovalQueueGauge(() => approvalService.PendingCount);
@@ -71,11 +70,14 @@ internal static partial class RuntimeInitializationExtensions
         var channelComposition = await BuildChannelCompositionAsync(app, startup, services, loggerFactory);
 
         var artifactRuntime = new SkillArtifactRuntime();
+        // Resolve workspace path once so tool creation, skill load, reload, and watching use the same source.
+        var resolvedRuntimeWorkspacePath = startup.WorkspacePath
+            ?? SecretResolver.Resolve(startup.Config.Tooling.WorkspaceRoot);
 
         var builtInTools = CreateBuiltInTools(
             config,
             services,
-            startup.WorkspacePath,
+            resolvedRuntimeWorkspacePath,
             startup.RuntimeState,
             artifactRuntime,
             app.Services);
@@ -136,7 +138,7 @@ internal static partial class RuntimeInitializationExtensions
         var combinedPluginSkillRoots = CollectPluginSkillRoots(pluginComposition);
 
         var skillLogger = loggerFactory.CreateLogger("SkillLoader");
-        var skills = SkillLoader.LoadAll(config.Skills, startup.WorkspacePath, skillLogger, combinedPluginSkillRoots);
+        var skills = SkillLoader.LoadAll(config.Skills, resolvedRuntimeWorkspacePath, skillLogger, combinedPluginSkillRoots);
         if (skills.Count > 0)
             skillLogger.LogInformation("{Summary}", SkillPromptBuilder.BuildSummary(skills));
         artifactRuntime.ReplaceSkills(skills);
@@ -181,7 +183,7 @@ internal static partial class RuntimeInitializationExtensions
             config.Skills,
             agentLogger,
             hooks,
-            startup.WorkspacePath,
+            resolvedRuntimeWorkspacePath,
             combinedPluginSkillRoots,
             effectiveRequireToolApproval,
             effectiveApprovalRequiredTools,
@@ -202,7 +204,7 @@ internal static partial class RuntimeInitializationExtensions
         var middlewarePipeline = CreateMiddlewarePipeline(config, loggerFactory, services.ContractGovernance, services.SessionManager);
         var skillWatcher = new SkillWatcherService(
             config.Skills,
-            startup.WorkspacePath,
+            resolvedRuntimeWorkspacePath,
             combinedPluginSkillRoots,
             agentRuntime,
             app.Services.GetRequiredService<ILogger<SkillWatcherService>>(),
