@@ -239,6 +239,27 @@ public sealed class WebSocketChannelTests
     }
 
     [Fact]
+    public async Task HandleConnectionAsync_IgnoresHeartbeatEnvelopeWithoutUserMessage()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });
+        var ws = new TestWebSocket();
+
+        ws.QueueReceiveText("""{"type":"heartbeat"}""");
+        ws.QueueClose();
+
+        var messageObserved = false;
+        channel.OnMessageReceived += (_, _) =>
+        {
+            messageObserved = true;
+            return ValueTask.CompletedTask;
+        };
+
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken);
+
+        Assert.False(messageObserved);
+    }
+
+    [Fact]
     public async Task HandleConnectionAsync_RoutesCanvasAckAndResultsWithoutUserMessage()
     {
         var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 2048 });
