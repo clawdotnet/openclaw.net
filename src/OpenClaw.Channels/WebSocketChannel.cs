@@ -130,6 +130,7 @@ public sealed class WebSocketChannel : IChannelAdapter
                 {
                     ChannelId = ChannelId,
                     SenderId = clientId,
+                    RequestCancellation = ct,
                     AuthenticatedUserId = authenticatedUserId,
                     SessionId = parsed.SessionId,
                     Type = parsed.Type,

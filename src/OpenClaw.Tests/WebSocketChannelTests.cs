@@ -209,6 +209,35 @@ public sealed class WebSocketChannelTests
     }
 
     [Fact]
+    public async Task HandleConnectionAsync_ForwardsRequestCancellationToken()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });
+        var ws = new TestWebSocket();
+
+        ws.QueueReceiveText("hello");
+        ws.QueueClose();
+
+        InboundMessage? received = null;
+        channel.OnMessageReceived += (msg, _) =>
+        {
+            received = msg;
+            return ValueTask.CompletedTask;
+        };
+
+        using var requestCts = new CancellationTokenSource();
+        await channel.HandleConnectionAsync(
+            ws,
+            "client",
+            IPAddress.Loopback,
+            requestCts.Token,
+            authenticatedUserId: null);
+
+        Assert.NotNull(received);
+        Assert.Equal(requestCts.Token, received!.RequestCancellation);
+        Assert.True(received.RequestCancellation.CanBeCanceled);
+    }
+
+    [Fact]
     public async Task HandleConnectionAsync_RoutesCanvasReadyWithoutUserMessage()
     {
         var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });
