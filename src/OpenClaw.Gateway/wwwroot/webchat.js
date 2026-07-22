@@ -173,7 +173,11 @@ let pendingFileUrls = []; // non-image files queued for upload
 
 const WEBCHAT_CONFIG = {
     streamRenderDebounceMs: Math.max(20, Number(window.OPENCLAW_WEBCHAT_CONFIG?.streamRenderDebounceMs ?? 120)),
-    heartbeatIntervalMs: Math.max(1000, Number(window.OPENCLAW_WEBCHAT_CONFIG?.heartbeatIntervalMs ?? 45000)),
+    heartbeatIntervalMs: (() => {
+        const raw = Number(window.OPENCLAW_WEBCHAT_CONFIG?.heartbeatIntervalMs ?? 45000);
+        const safe = Number.isFinite(raw) ? raw : 45000;
+        return Math.min(2147483647, Math.max(1000, safe));
+    })(),
     initialReconnectDelayMs: Math.max(250, Number(window.OPENCLAW_WEBCHAT_CONFIG?.initialReconnectDelayMs ?? 1000)),
     maxReconnectDelayMs: Math.max(1000, Number(window.OPENCLAW_WEBCHAT_CONFIG?.maxReconnectDelayMs ?? 30000)),
     reconnectBackoffFactor: Math.max(1.1, Number(window.OPENCLAW_WEBCHAT_CONFIG?.reconnectBackoffFactor ?? 2)),
