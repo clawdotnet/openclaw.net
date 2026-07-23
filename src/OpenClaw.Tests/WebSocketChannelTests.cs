@@ -209,6 +209,35 @@ public sealed class WebSocketChannelTests
     }
 
     [Fact]
+    public async Task HandleConnectionAsync_ForwardsRequestCancellationToken()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });
+        var ws = new TestWebSocket();
+
+        ws.QueueReceiveText("hello");
+        ws.QueueClose();
+
+        InboundMessage? received = null;
+        channel.OnMessageReceived += (msg, _) =>
+        {
+            received = msg;
+            return ValueTask.CompletedTask;
+        };
+
+        using var requestCts = new CancellationTokenSource();
+        await channel.HandleConnectionAsync(
+            ws,
+            "client",
+            IPAddress.Loopback,
+            requestCts.Token,
+            authenticatedUserId: null);
+
+        Assert.NotNull(received);
+        Assert.Equal(requestCts.Token, received!.RequestCancellation);
+        Assert.True(received.RequestCancellation.CanBeCanceled);
+    }
+
+    [Fact]
     public async Task HandleConnectionAsync_RoutesCanvasReadyWithoutUserMessage()
     {
         var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });
@@ -235,6 +264,27 @@ public sealed class WebSocketChannelTests
         Assert.NotNull(canvasEnvelope);
         Assert.Equal("canvas_ready", canvasEnvelope!.Type);
         Assert.Contains("a2ui.v0_8", canvasEnvelope.Capabilities ?? [], StringComparer.Ordinal);
+        Assert.False(messageObserved);
+    }
+
+    [Fact]
+    public async Task HandleConnectionAsync_IgnoresHeartbeatEnvelopeWithoutUserMessage()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });
+        var ws = new TestWebSocket();
+
+        ws.QueueReceiveText("""{"type":"heartbeat"}""");
+        ws.QueueClose();
+
+        var messageObserved = false;
+        channel.OnMessageReceived += (_, _) =>
+        {
+            messageObserved = true;
+            return ValueTask.CompletedTask;
+        };
+
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken);
+
         Assert.False(messageObserved);
     }
 
