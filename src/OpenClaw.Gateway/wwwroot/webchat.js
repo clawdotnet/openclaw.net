@@ -145,6 +145,7 @@ let activeRawContent = "";
 let isAwaitingResponse = false;
 let reconnectAttempts = 0;
 let reconnectTimer = null;
+let heartbeatTimer = null;
 let streamRenderTimer = null;
 let liveResponseHasAudio = false;
 let liveAudioQueue = [];
@@ -172,6 +173,11 @@ let pendingFileUrls = []; // non-image files queued for upload
 
 const WEBCHAT_CONFIG = {
     streamRenderDebounceMs: Math.max(20, Number(window.OPENCLAW_WEBCHAT_CONFIG?.streamRenderDebounceMs ?? 120)),
+    heartbeatIntervalMs: (() => {
+        const raw = Number(window.OPENCLAW_WEBCHAT_CONFIG?.heartbeatIntervalMs ?? 45000);
+        const safe = Number.isFinite(raw) ? raw : 45000;
+        return Math.min(2147483647, Math.max(1000, safe));
+    })(),
     initialReconnectDelayMs: Math.max(250, Number(window.OPENCLAW_WEBCHAT_CONFIG?.initialReconnectDelayMs ?? 1000)),
     maxReconnectDelayMs: Math.max(1000, Number(window.OPENCLAW_WEBCHAT_CONFIG?.maxReconnectDelayMs ?? 30000)),
     reconnectBackoffFactor: Math.max(1.1, Number(window.OPENCLAW_WEBCHAT_CONFIG?.reconnectBackoffFactor ?? 2)),
@@ -944,6 +950,31 @@ function resetActiveResponse() {
     }
     activeResponseDiv = null;
     activeRawContent = '';
+}
+
+function clearHeartbeatTimer() {
+    if (!heartbeatTimer) {
+        return;
+    }
+
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+}
+
+function startHeartbeatLoop() {
+    clearHeartbeatTimer();
+
+    heartbeatTimer = setInterval(() => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        try {
+            ws.send(JSON.stringify({ type: 'heartbeat' }));
+        } catch (_) {
+            clearHeartbeatTimer();
+        }
+    }, WEBCHAT_CONFIG.heartbeatIntervalMs);
 }
 
 function createRow(type) {
@@ -2406,6 +2437,7 @@ async function openDoctorDiagnostics(addToChat = false) {
 }
 
 function connect() {
+    clearHeartbeatTimer();
     setConnectionState(reconnectAttempts > 0 ? 'reconnecting' : 'connecting');
     appendSystem('Connecting to OpenClaw.NET Gateway...');
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -2427,6 +2459,7 @@ function connect() {
             reconnectTimer = null;
         }
         dismissFirstRunCard();
+        startHeartbeatLoop();
         refreshChatState();
         appendSystem('Connected successfully.');
         sendCanvasReady();
@@ -2566,6 +2599,7 @@ function connect() {
     };
 
     ws.onclose = (event) => {
+        clearHeartbeatTimer();
         updateComposerAvailability();
         resetActiveResponse();
 

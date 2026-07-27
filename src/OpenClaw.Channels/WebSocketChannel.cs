@@ -123,10 +123,14 @@ public sealed class WebSocketChannel : IChannelAdapter
                         continue;
                 }
 
+                if (IsIgnorableClientEnvelope(parsed.Type))
+                    continue;
+
                 var msg = new InboundMessage
                 {
                     ChannelId = ChannelId,
                     SenderId = clientId,
+                    RequestCancellation = ct,
                     AuthenticatedUserId = authenticatedUserId,
                     SessionId = parsed.SessionId,
                     Type = parsed.Type,
@@ -142,8 +146,7 @@ public sealed class WebSocketChannel : IChannelAdapter
                     ValueJson = parsed.CanvasEnvelope?.ValueJson,
                     Sequence = parsed.CanvasEnvelope?.Sequence,
                     ApprovalId = parsed.ApprovalId,
-                    Approved = parsed.Approved,
-                    RequestCancellation = ct
+                    Approved = parsed.Approved
                 };
 
                 if (OnMessageReceived is not null)
@@ -558,6 +561,11 @@ public sealed class WebSocketChannel : IChannelAdapter
                 return new ParsedWsInbound(true, env.Type, "", env.SessionId, env.MessageId, env.ReplyToMessageId, env.ApprovalId, env.Approved);
             }
 
+            if (env is not null && IsIgnorableClientEnvelope(env.Type))
+            {
+                return new ParsedWsInbound(true, env.Type, "", env.SessionId, env.MessageId, env.ReplyToMessageId, null, null);
+            }
+
             if (env is not null && IsCanvasClientEnvelope(env.Type))
             {
                 var text = env.Type switch
@@ -585,6 +593,9 @@ public sealed class WebSocketChannel : IChannelAdapter
 
         return new ParsedWsInbound(false, null, payload, null, null, null, null, null, null);
     }
+
+    private static bool IsIgnorableClientEnvelope(string? type)
+        => type is "heartbeat";
 
     private async ValueTask HandleCanvasClientEnvelopeAsync(string clientId, WsClientEnvelope envelope, CancellationToken ct)
     {
