@@ -34,10 +34,60 @@ internal sealed class ActionPolicyEngine : IActionPolicyEngine
         if (proposal.Metadata.TryGetValue("policyDecision", out var configuredDecision)
             && TryNormalizeDecision(configuredDecision, out var normalizedDecision))
         {
-            return ActionPolicyDecision.ForDecision(normalizedDecision);
+            return ActionPolicyDecision.ForDecision(
+                normalizedDecision,
+                proposal.Metadata.TryGetValue("riskLevel", out var metadataRiskLevel)
+                    && TryNormalizeRiskLevel(metadataRiskLevel, out var normalizedMetadataRiskLevel)
+                    ? normalizedMetadataRiskLevel
+                    : null);
         }
 
-        return ActionPolicyDecision.ForDecision("proceed_execute");
+        if (proposal.Metadata.TryGetValue("riskLevel", out var explicitRiskLevel)
+            && !TryNormalizeRiskLevel(explicitRiskLevel, out _))
+        {
+            return new ActionPolicyDecision
+            {
+                Decision = "proposal_only",
+                RiskLevel = "high",
+                ReasonCodes = ["unknown_risk"],
+                RequiredApprovals = [],
+                Constraints = ["no_execution"]
+            };
+        }
+
+        var riskLevel = ClassifyRiskLevel(proposal);
+        return riskLevel switch
+        {
+            "low" => ActionPolicyDecision.ForDecision("proceed_execute", riskLevel),
+            "medium" => ActionPolicyDecision.ForDecision("require_approval", riskLevel),
+            "high" or "critical" => ActionPolicyDecision.ForDecision("proposal_only", riskLevel),
+            _ => new ActionPolicyDecision
+            {
+                Decision = "proposal_only",
+                RiskLevel = "high",
+                ReasonCodes = ["unknown_risk"],
+                RequiredApprovals = [],
+                Constraints = ["no_execution"]
+            }
+        };
+    }
+
+    private static string ClassifyRiskLevel(ActionProposal proposal)
+    {
+        if (proposal.Metadata.TryGetValue("riskLevel", out var riskLevel)
+            && TryNormalizeRiskLevel(riskLevel, out var normalizedRiskLevel))
+        {
+            return normalizedRiskLevel;
+        }
+
+        var environment = proposal.Metadata.TryGetValue("env", out var envValue) ? envValue : "dev";
+        var isProd = string.Equals(environment, "prod", StringComparison.OrdinalIgnoreCase);
+        var hasDestructiveOperation = proposal.Execution.Any(step =>
+            step.Call.Contains("delete", StringComparison.OrdinalIgnoreCase)
+            || step.Call.Contains("drop", StringComparison.OrdinalIgnoreCase)
+            || step.Call.Contains("remove", StringComparison.OrdinalIgnoreCase));
+
+        return isProd && hasDestructiveOperation ? "high" : "low";
     }
 
     private static bool TryNormalizeDecision(string? decision, out string normalizedDecision)
@@ -56,6 +106,22 @@ internal sealed class ActionPolicyEngine : IActionPolicyEngine
 
         return false;
     }
+
+    private static bool TryNormalizeRiskLevel(string? riskLevel, out string normalizedRiskLevel)
+    {
+        normalizedRiskLevel = string.Empty;
+        if (string.IsNullOrWhiteSpace(riskLevel))
+            return false;
+
+        var normalized = riskLevel.Trim().ToLowerInvariant();
+        if (normalized is "low" or "medium" or "high" or "critical")
+        {
+            normalizedRiskLevel = normalized;
+            return true;
+        }
+
+        return false;
+    }
 }
 
 internal sealed class ActionPolicyDecision
@@ -66,13 +132,13 @@ internal sealed class ActionPolicyDecision
     public IReadOnlyList<string> RequiredApprovals { get; init; } = [];
     public IReadOnlyList<string> Constraints { get; init; } = [];
 
-    public static ActionPolicyDecision ForDecision(string decision)
+    public static ActionPolicyDecision ForDecision(string decision, string? riskLevel = null)
         => decision switch
         {
             "require_approval" => new ActionPolicyDecision
             {
                 Decision = "require_approval",
-                RiskLevel = "medium",
+                RiskLevel = riskLevel ?? "medium",
                 ReasonCodes = ["approval_required"],
                 RequiredApprovals = ["operator"],
                 Constraints = []
@@ -80,7 +146,7 @@ internal sealed class ActionPolicyDecision
             "proposal_only" => new ActionPolicyDecision
             {
                 Decision = "proposal_only",
-                RiskLevel = "low",
+                RiskLevel = riskLevel ?? "high",
                 ReasonCodes = ["proposal_only_mode"],
                 RequiredApprovals = [],
                 Constraints = ["no_execution"]
@@ -88,7 +154,7 @@ internal sealed class ActionPolicyDecision
             _ => new ActionPolicyDecision
             {
                 Decision = "proceed_execute",
-                RiskLevel = "low",
+                RiskLevel = riskLevel ?? "low",
                 ReasonCodes = ["policy_passed"],
                 RequiredApprovals = [],
                 Constraints = []

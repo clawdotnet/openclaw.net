@@ -181,15 +181,21 @@
 1. low
    - decision: proceed_execute
    - approval: false
+   - riskLevel: low
 2. medium
    - decision: require_approval
    - approval: true
+   - riskLevel: medium
 3. high
    - decision: proposal_only
    - approval: true（仅用于人工升级执行）
+   - riskLevel: high
 4. critical
    - decision: proposal_only
    - approval: true（强约束）
+   - riskLevel: critical
+
+补充说明：实现层会先检查 connector 白名单与未知系统拒绝；随后优先尊重显式 `policyDecision` 覆盖；若未提供有效 `riskLevel`，则按保守默认降级为 `proposal_only`，并将风险标记为 `high`。无效或不支持的风险值也会被视为高风险并触发保护性降级。
 
 ### 7.3 判级结果结构
 

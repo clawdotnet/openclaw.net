@@ -30,6 +30,17 @@ public sealed class ActionExecuteToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_EngineRequireApprovalDecision_ReturnsPendingApproval()
+    {
+        var tool = new ActionExecuteTool(new ActionPolicyEngine(), null);
+        var proposal = BuildProposalJson("crm", "updateCustomerTier", metadataFragment: "\"riskLevel\":\"medium\"");
+
+        var result = await tool.ExecuteAsync(BuildArguments(proposal), TestContext.Current.CancellationToken);
+
+        Assert.Contains("pending_approval", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ProposalOnlyDecision_ReturnsProposalOnlyStatus()
     {
         var tool = new ActionExecuteTool();

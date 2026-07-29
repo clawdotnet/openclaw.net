@@ -55,6 +55,23 @@ public sealed class ActionPolicyEngineTests
     }
 
     [Fact]
+    public void Evaluate_PolicyDecisionOverride_PreservesRiskLevelMetadata()
+    {
+        var engine = new ActionPolicyEngine();
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["policyDecision"] = "require_approval",
+            ["riskLevel"] = "critical"
+        };
+        var proposal = BuildProposal("crm", metadata);
+
+        var decision = engine.Evaluate(proposal);
+
+        Assert.Equal("require_approval", decision.Decision);
+        Assert.Equal("critical", decision.RiskLevel);
+    }
+
+    [Fact]
     public void Evaluate_UnknownSystem_ReturnsPolicyDenied()
     {
         var engine = new ActionPolicyEngine();
@@ -65,6 +82,41 @@ public sealed class ActionPolicyEngineTests
         Assert.Equal("policy_denied", decision.Decision);
         Assert.Equal("high", decision.RiskLevel);
         Assert.Contains("unknown_connector", decision.ReasonCodes);
+    }
+
+    [Theory]
+    [InlineData("low", "proceed_execute")]
+    [InlineData("medium", "require_approval")]
+    [InlineData("high", "proposal_only")]
+    [InlineData("critical", "proposal_only")]
+    public void Evaluate_RiskTier_ReturnsExpectedDecision(string riskLevel, string expectedDecision)
+    {
+        var engine = new ActionPolicyEngine();
+        var proposal = BuildProposal("crm", new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["riskLevel"] = riskLevel
+        });
+
+        var decision = engine.Evaluate(proposal);
+
+        Assert.Equal(expectedDecision, decision.Decision);
+        Assert.Equal(riskLevel, decision.RiskLevel);
+    }
+
+    [Fact]
+    public void Evaluate_InvalidRiskLevel_FallsBackToProposalOnlyWithHighRisk()
+    {
+        var engine = new ActionPolicyEngine();
+        var proposal = BuildProposal("crm", new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["riskLevel"] = "mysterious"
+        });
+
+        var decision = engine.Evaluate(proposal);
+
+        Assert.Equal("proposal_only", decision.Decision);
+        Assert.Equal("high", decision.RiskLevel);
+        Assert.Contains("unknown_risk", decision.ReasonCodes);
     }
 
     [Fact]

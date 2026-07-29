@@ -112,6 +112,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [project/branch-protection.md](project/branch-protection.md) | Recommended `main` branch protection, required checks, and CODEOWNERS relationship. |
 | [maintainers/review-checklist.md](maintainers/review-checklist.md) | Maintainer checklist for runtime, gateway, extension, industrial, documentation, security, AOT, and commercial review. |
 | [ai-contributor-guide.md](ai-contributor-guide.md) | Guidance for AI-assisted contribution workflows. |
+| [authoring/digital-employee-package-best-practices.md](authoring/digital-employee-package-best-practices.md) | Best practices for authoring digital employee packages, including config role-splitting, MetaSkill entrypoints, field-level skill contracts, and documentation consistency. |
 | [architecture-startup-refactor.md](architecture-startup-refactor.md) | Current gateway startup layout and composition seams. |
 | [architecture/optional-dependency-split.md](architecture/optional-dependency-split.md) | Optional dependency split guidance and follow-up seams. |
 | [proposals/industrial-pack-preview.md](proposals/industrial-pack-preview.md) | Proposal for a reusable, vendor-neutral Industrial Pack preview. |
