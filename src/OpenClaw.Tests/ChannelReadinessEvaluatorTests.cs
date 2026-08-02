@@ -67,6 +67,39 @@ public sealed class ChannelReadinessEvaluatorTests
     }
 
     [Fact]
+    public void Evaluate_TelegramLongPollingWithoutWebhookSignature_ReturnsReady()
+    {
+        var previous = Environment.GetEnvironmentVariable("TELEGRAM_BOT_TOKEN");
+        try
+        {
+            Environment.SetEnvironmentVariable("TELEGRAM_BOT_TOKEN", "test-token");
+            var config = new GatewayConfig
+            {
+                Channels = new ChannelsConfig
+                {
+                    Telegram = new TelegramChannelConfig
+                    {
+                        Enabled = true,
+                        UpdateMode = "long-polling",
+                        ValidateSignature = false
+                    }
+                }
+            };
+
+            var telegram = ChannelReadinessEvaluator.Evaluate(config, isNonLoopbackBind: true)
+                .Single(item => item.ChannelId == "telegram");
+
+            Assert.Equal("ready", telegram.Status);
+            Assert.Empty(telegram.MissingRequirements);
+            Assert.Empty(telegram.Warnings);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TELEGRAM_BOT_TOKEN", previous);
+        }
+    }
+
+    [Fact]
     public void Evaluate_WhatsAppBridgePublicWithoutToken_ReturnsMisconfigured()
     {
         var config = new GatewayConfig

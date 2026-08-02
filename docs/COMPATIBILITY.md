@@ -14,6 +14,26 @@ This is the canonical compatibility matrix for OpenClaw.NET. It covers runtime m
 - `OpenClaw:Runtime:Mode=aot` forces the strict trim-safe lane even on a JIT-capable build.
 - `OpenClaw:Runtime:Mode=jit` enables the expanded plugin and dynamic-native lane.
 
+## MCP v2 Compatibility (C# SDK 2.0.0)
+
+OpenClaw.NET now targets `ModelContextProtocol` / `ModelContextProtocol.AspNetCore` `2.0.0` and enables the Tasks extension on the gateway MCP server.
+
+| Surface | Status | Notes |
+| --- | --- | --- |
+| Gateway `/mcp` on MCP v2 SDK | Supported | Gateway MCP services run on `ModelContextProtocol.AspNetCore` `2.0.0` with stateless transport by default. |
+| MCP Tasks extension | Supported | Registered via `ModelContextProtocol.Extensions.Tasks` with in-memory task store for async task operations. |
+| Discover-first negotiation | Supported with caveats | Default path is discover-first; legacy clients can still initialize through compatibility handling. |
+| Required `inputSchema` handling | Supported with caveats | Tool schema validation is strict by default; missing/defaulted schema is skipped on MCP App enumeration. |
+
+Compatibility switches (Gateway config):
+
+- `OpenClaw:McpCompatibility:ForceLegacyInitialize=true`
+  - Forces legacy initialize-first behavior (disables stateless discover-first mode).
+- `OpenClaw:McpCompatibility:AllowRelaxedInputSchemaValidation=true`
+  - Reserved flag only. It is not currently wired into MCP App enumeration; with the current SDK, omitted `inputSchema` may still surface as synthesized `{"type":"object"}` on that path.
+- `OpenClaw:McpCompatibility:EnableDiscoveryFirst=true`
+  - Keeps discover-first path enabled (default).
+
 ## Upstream Skill Compatibility
 
 | Surface | Status | Notes |

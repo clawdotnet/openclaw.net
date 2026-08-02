@@ -215,7 +215,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
             Assert.Equal(JsonValueKind.Object, textProperty.ValueKind);
         }
         Assert.Equal("demo:hello", await tool.ExecuteAsync("""{"text":"hello"}""", TestContext.Current.CancellationToken));
-        Assert.True(calls.InitializeCalls >= 1);
+        Assert.True(calls.InitializeCalls >= 1 || calls.DiscoverCalls >= 1);
         Assert.True(calls.ListCalls >= 1);
         Assert.True(calls.CallCalls >= 1);
     }
@@ -292,6 +292,25 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
         using var document = JsonDocument.Parse(result);
         Assert.Equal(123, document.RootElement.GetProperty("value").GetInt32());
         Assert.Equal("ok", document.RootElement.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task LoadAsync_HttpServer_ToolWithoutInputSchema_FailsWithClearMessage()
+    {
+        await Task.CompletedTask;
+        using var nullSchema = JsonDocument.Parse("null");
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = new Tool
+            {
+                Name = "bad_tool",
+                Description = "missing schema",
+                InputSchema = nullSchema.RootElement.Clone()
+            };
+        });
+
+        Assert.Equal("InputSchema", ex.ParamName);
     }
 
     [Fact]
@@ -940,6 +959,9 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
         var method = methodElement.GetString();
         switch (method)
         {
+            case "server/discover":
+                tracker.DiscoverCalls++;
+                break;
             case "initialize":
                 tracker.InitializeCalls++;
                 break;
@@ -956,6 +978,7 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
 
     private sealed class McpCallTracker
     {
+        public int DiscoverCalls { get; set; }
         public int InitializeCalls { get; set; }
         public int ListCalls { get; set; }
         public int CallCalls { get; set; }

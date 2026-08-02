@@ -134,7 +134,7 @@ internal static class AppsEndpoints
         var builder = new StringBuilder();
         if (appEvents is { Count: > 0 })
         {
-            builder.Append("[界面事件] User just completed operations in the interface (these tool calls bypassed you, syncing results — they are final):\n");
+            builder.Append("[UI event] User just completed operations in the interface (these tool calls bypassed you, syncing results — they are final):\n");
             foreach (var entry in appEvents)
             {
                 var tool = AsString(entry?["tool"]) ?? "?";

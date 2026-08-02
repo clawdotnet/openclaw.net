@@ -258,17 +258,17 @@ public sealed class McpAppTests : IAsyncDisposable
         {
             new McpAppToolDescriptor
             {
-                RemoteName = "get_stores", LocalName = "grocery.get_stores",
+                RemoteName = "get_stores", LocalName = "grocery_get_stores",
                 Description = "Get stores", InputSchemaText = "{}"
             },
             new McpAppToolDescriptor
             {
-                RemoteName = "get_products", LocalName = "grocery.get_products",
+                RemoteName = "get_products", LocalName = "grocery_get_products",
                 Description = "Get products", InputSchemaText = "{}"
             },
             new McpAppToolDescriptor
             {
-                RemoteName = "show_dashboard", LocalName = "grocery.show_dashboard",
+                RemoteName = "show_dashboard", LocalName = "grocery_show_dashboard",
                 Description = "Show dashboard", InputSchemaText = "{}",
                 UiResourceUri = "ui://grocery/store-dashboard.html"
             },
@@ -903,6 +903,105 @@ public sealed class McpAppTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Server_ConnectAsync_SanitizesLlmToolNames()
+    {
+        var (serverUrl, _) = await StartMcpServerAsync<GroceryMcpTools>();
+        var manifest = new McpAppManifest
+        {
+            Id = "test-grocery",
+            Name = "Test Grocery",
+            Version = "1.0",
+            Transport = "http",
+            Url = serverUrl,
+            ToolNamePrefix = "grocery.",
+        };
+        var state = new McpAppInstallState
+        {
+            Manifest = manifest,
+            ManifestPath = "/f/openclaw.mcpapp.json",
+            RootPath = "/f",
+        };
+        var server = new McpAppServer(state, null, NullLogger<McpAppServer>.Instance);
+        try
+        {
+            var infoProvider = await server.ConnectAsync(TestContext.Current.CancellationToken);
+            var tool = Assert.Single(infoProvider.GetToolDescriptors(), t => t.RemoteName == "get_stores");
+
+            Assert.DoesNotContain('.', tool.LocalName);
+            Assert.Matches("^[a-zA-Z0-9_-]+$", tool.LocalName);
+            Assert.Equal("grocery_get_stores", tool.LocalName);
+        }
+        finally
+        {
+            await server.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Server_ConnectAsync_ToolMissingInputSchema_IsNormalizedAndRetained()
+    {
+        var serverUrl = await StartMcpServerWithMissingToolInputSchemaAsync();
+        var manifest = new McpAppManifest
+        {
+            Id = "ui-app",
+            Name = "UI App",
+            Version = "1.0",
+            Transport = "http",
+            Url = serverUrl,
+        };
+        var state = new McpAppInstallState
+        {
+            Manifest = manifest,
+            ManifestPath = "/f/openclaw.mcpapp.json",
+            RootPath = "/f",
+        };
+        var server = new McpAppServer(state, null, NullLogger<McpAppServer>.Instance);
+        try
+        {
+            var infoProvider = await server.ConnectAsync(TestContext.Current.CancellationToken);
+
+            Assert.Contains(infoProvider.GetToolDescriptors(), t => t.RemoteName == "ok_tool");
+            var retained = Assert.Single(infoProvider.GetToolDescriptors(), t => t.RemoteName == "bad_tool");
+            Assert.Equal("{\"type\":\"object\"}", retained.InputSchemaText);
+        }
+        finally
+        {
+            await server.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Server_ConnectAsync_ToolWithNonObjectSchema_IsSkipped()
+    {
+        var serverUrl = await StartMcpServerWithMixedInputSchemasAsync();
+        var manifest = new McpAppManifest
+        {
+            Id = "mixed-schema-app",
+            Name = "Mixed Schema App",
+            Version = "1.0",
+            Transport = "http",
+            Url = serverUrl,
+        };
+        var state = new McpAppInstallState
+        {
+            Manifest = manifest,
+            ManifestPath = "/f/openclaw.mcpapp.json",
+            RootPath = "/f",
+        };
+        var server = new McpAppServer(state, null, NullLogger<McpAppServer>.Instance);
+        try
+        {
+            var infoProvider = await server.ConnectAsync(TestContext.Current.CancellationToken);
+
+            Assert.DoesNotContain(infoProvider.GetToolDescriptors(), t => t.RemoteName == "string_schema_tool");
+        }
+        finally
+        {
+            await server.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task RegisterMcpAppToolsAsync_SkipsAppOnlyTools()
     {
         var dir = CreateTempManifestDir("ui-app", new McpAppManifest
@@ -929,8 +1028,8 @@ public sealed class McpAppTests : IAsyncDisposable
 
             await registry.RegisterMcpAppToolsAsync(nativeRegistry, config, TestContext.Current.CancellationToken);
 
-            Assert.Contains(nativeRegistry.Tools, t => t.Name == "uiapp.show_dashboard");
-            Assert.DoesNotContain(nativeRegistry.Tools, t => t.Name == "uiapp.app_only_tool");
+            Assert.Contains(nativeRegistry.Tools, t => t.Name == "uiapp_show_dashboard");
+            Assert.DoesNotContain(nativeRegistry.Tools, t => t.Name == "uiapp_app_only_tool");
         }
         finally
         {
@@ -965,7 +1064,7 @@ public sealed class McpAppTests : IAsyncDisposable
 
             await registry.RegisterMcpAppToolsAsync(nativeRegistry, config, TestContext.Current.CancellationToken);
 
-            var uiTool = Assert.Single(nativeRegistry.Tools, t => t.Name == "uiapp.show_dashboard");
+            var uiTool = Assert.Single(nativeRegistry.Tools, t => t.Name == "uiapp_show_dashboard");
             var result = await uiTool.ExecuteAsync("{}", TestContext.Current.CancellationToken);
 
             Assert.Contains("called:show_dashboard", result, StringComparison.Ordinal);
@@ -1161,7 +1260,7 @@ public sealed class McpAppTests : IAsyncDisposable
             var infoProvider = await server.ConnectAsync(TestContext.Current.CancellationToken);
 
             Assert.All(infoProvider.GetToolDescriptors(), t =>
-                Assert.StartsWith("grocery.", t.LocalName, StringComparison.Ordinal));
+                Assert.StartsWith("grocery_", t.LocalName, StringComparison.Ordinal));
         }
         finally
         {
@@ -1195,7 +1294,7 @@ public sealed class McpAppTests : IAsyncDisposable
             var infoProvider = await server.ConnectAsync(TestContext.Current.CancellationToken);
 
             Assert.All(infoProvider.GetToolDescriptors(), t =>
-                Assert.StartsWith("config-prefix.", t.LocalName, StringComparison.Ordinal));
+                Assert.StartsWith("config-prefix_", t.LocalName, StringComparison.Ordinal));
         }
         finally
         {
@@ -1383,7 +1482,7 @@ public sealed class McpAppTests : IAsyncDisposable
         var descriptor = new McpAppToolDescriptor
         {
             RemoteName = "test_tool",
-            LocalName = "prefix.test_tool",
+            LocalName = "prefix_test_tool",
             Description = "A test tool",
         };
 
@@ -1563,6 +1662,85 @@ public sealed class McpAppTests : IAsyncDisposable
             {
                 Content = [new TextContentBlock { Text = $"called:{ctx.Params?.Name}" }],
                 StructuredContent = JsonSerializer.SerializeToElement(new { ok = true, name = ctx.Params?.Name })
+            }));
+
+        var app = builder.Build();
+        app.MapMcp("/mcp");
+
+        await app.StartAsync();
+        _apps.Add(app);
+        return app.Urls.Single().TrimEnd('/') + "/mcp";
+    }
+
+    private async Task<string> StartMcpServerWithMissingToolInputSchemaAsync()
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddMcpServer(options =>
+            {
+                options.ServerInfo = new Implementation
+                {
+                    Name = "missing-schema-mcp-app",
+                    Version = "1.0.0"
+                };
+            })
+            .WithHttpTransport(options => { options.Stateless = true; })
+            .WithListToolsHandler((_, _) => ValueTask.FromResult(new ListToolsResult
+            {
+                Tools =
+                [
+                    new Tool
+                    {
+                        Name = "ok_tool",
+                        Description = "Tool with valid schema",
+                        InputSchema = JsonSerializer.SerializeToElement(new { type = "object", properties = new { } })
+                    },
+                    new Tool
+                    {
+                        Name = "bad_tool",
+                        Description = "Tool without input schema"
+                    }
+                ]
+            }));
+
+        var app = builder.Build();
+        app.MapMcp("/mcp");
+
+        await app.StartAsync();
+        _apps.Add(app);
+        return app.Urls.Single().TrimEnd('/') + "/mcp";
+    }
+
+    private async Task<string> StartMcpServerWithMixedInputSchemasAsync()
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddMcpServer(options =>
+            {
+                options.ServerInfo = new Implementation
+                {
+                    Name = "mixed-schema-mcp-app",
+                    Version = "1.0.0"
+                };
+            })
+            .WithHttpTransport(options => { options.Stateless = true; })
+            .WithListToolsHandler((_, _) => ValueTask.FromResult(new ListToolsResult
+            {
+                Tools =
+                [
+                    new Tool
+                    {
+                        Name = "type_only_object_tool",
+                        Description = "Tool with explicit type-only object schema",
+                        InputSchema = JsonSerializer.SerializeToElement(new { type = "object" })
+                    },
+                    new Tool
+                    {
+                        Name = "string_schema_tool",
+                        Description = "Tool with invalid non-object schema",
+                        InputSchema = JsonSerializer.SerializeToElement(new { type = "string" })
+                    }
+                ]
             }));
 
         var app = builder.Build();

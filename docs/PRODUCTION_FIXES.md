@@ -6,6 +6,35 @@ All identified production issues have been resolved. The codebase is now product
 
 ---
 
+## MCP v2 Migration Guardrails
+
+**Status**: ✅ **AVAILABLE**
+
+### Scope
+
+Gateway and MCP App paths now run on MCP C# SDK `2.0.0` with stricter schema behavior and discover-first transport defaults.
+
+### Operator Fallback Switches
+
+- `OpenClaw:McpCompatibility:ForceLegacyInitialize=true`
+	- Use when a client cannot negotiate discover-first/stateless flow.
+- `OpenClaw:McpCompatibility:AllowRelaxedInputSchemaValidation=true`
+	- Reserved flag only. It is not currently wired into MCP App enumeration; with the current SDK, omitted `inputSchema` may still surface as synthesized `{"type":"object"}` on that path.
+
+### Suggested Incident Procedure
+
+1. Detect: watch MCP errors for schema/revision negotiation failures.
+2. Contain: enable only the minimum fallback switch needed.
+3. Verify: run MCP smoke (`initialize`, `tools/list`, `tools/call`) against `/mcp` and `/apps/mcp/{appId}`.
+4. Recover: remove fallback switches after upstream/client fix lands.
+
+### Safety Notes
+
+- Keep fallback windows short and auditable.
+- Do not broaden relaxed schema behavior globally without explicit incident justification.
+
+---
+
 ## Critical Fix: Missing FileMemoryStore Implementation
 
 **Status**: ✅ **RESOLVED**

@@ -2,7 +2,7 @@
 
 MCP App is the module that treats third-party MCP applications as first-class citizens in OpenClaw.NET. It provides manifest-based automatic discovery, lifecycle and process management, and tool bridging — letting MCP applications be installed, discovered, and used much like VS Code extensions.
 
-OpenClaw integrates with the MCP App ecosystem MCP-first, compatible with the [Model Context Protocol](https://modelcontextprotocol.io/) 2025-03-26 spec and the `text/html;profile=mcp-app` interactive UI specification.
+OpenClaw integrates with the MCP App ecosystem MCP-first, compatible with the [Model Context Protocol](https://modelcontextprotocol.io/) and the `text/html;profile=mcp-app` interactive UI specification. The runtime now uses MCP C# SDK `2.0.0` on gateway and MCP App surfaces.
 
 ## How It Differs from Existing MCP Integrations
 
@@ -28,6 +28,7 @@ MCP App is designed for MCP applications that need to be **packaged and distribu
 - Six-stage lifecycle tracking (Discovered → Validated → Loaded → Running → Stopped → Failed)
 - Seamless integration with `NativePluginRegistry` — discovered tools become immediately available to the Agent
 - Browser host endpoints that let an MCP App UI reuse the same connected upstream MCP session as the Agent
+- MCP v2-compatible schema handling: tools missing a usable `inputSchema` are skipped during MCP App enumeration
 
 ## Browser Host Endpoints
 
@@ -60,6 +61,13 @@ This is the bridge that lets a rich MCP App UI and the Agent collaborate against
 - Model visibility filtering happens later, when OpenClaw registers App tools into `NativePluginRegistry` for Agent use.
 - UI tools with `_meta.ui.resourceUri` suppress `structuredContent` when results flow back into the model, but the browser-side MCP proxy still forwards normal MCP responses unchanged.
 - For cross-origin browser MCP clients, OpenClaw allows the MCP Streamable HTTP headers `mcp-protocol-version` and `Mcp-Session-Id` in CORS.
+
+### MCP v2 Behavior Notes
+
+- Gateway MCP server runs on `ModelContextProtocol.AspNetCore` `2.0.0` and enables the MCP Tasks extension.
+- The default transport posture is stateless/discover-first, with compatibility switches in `OpenClaw:McpCompatibility`.
+- `server/discover` availability can vary by negotiated protocol revision; OpenClaw client integrations use protocol-aware fallback behavior to remain compatible with initialize-first servers.
+- For MCP App tool onboarding, schema validation is strict by default: if a tool has no usable `inputSchema`, it is not registered into the model-visible tool set.
 
 ## Architecture
 
@@ -214,6 +222,18 @@ Add to `appsettings.json`:
 | `Deny` | `[]` | Denylist, deny takes precedence over allow |
 | `Entries` | `{}` | Per-App fine-grained overrides |
 
+### MCP Compatibility Switches (Gateway)
+
+These settings live under `OpenClaw:McpCompatibility` and affect gateway MCP behavior (not per-app manifest parsing):
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `EnableDiscoveryFirst` | `true` | Enables discover-first negotiation for MCP v2 clients. |
+| `ForceLegacyInitialize` | `false` | Forces initialize-first behavior for legacy compatibility. |
+| `RequireOAuthIssuerValidation` | `true` | Enforces strict OAuth issuer checks for secured deployments. |
+| `RequirePkceS256` | `true` | Requires PKCE S256 where OAuth flows are used. |
+| `AllowRelaxedInputSchemaValidation` | `false` | Reserved flag only; MCP App enumeration does not currently consult it, and SDK-normalized omitted schemas may still appear as `{"type":"object"}`. |
+
 ### Entries Overrides
 
 `Entries` can override these manifest fields per App ID:
@@ -253,6 +273,7 @@ Every tool discovered from an MCP App is registered into the `NativePluginRegist
 - **Tool name prefix**: automatically applied from the manifest's `toolNamePrefix`
 - **Visibility handling**: tools marked with MCP App visibility metadata such as `"ui": { "visibility": ["app"] }` stay available to the browser host but are not registered as model-visible Agent tools
 - **Error handling**: invalid JSON arguments and remote execution errors return result text prefixed with `Error:`
+- **Schema strictness**: tools with missing/defaulted `inputSchema` are skipped at enumeration time instead of silently normalized
 - **Structured output**: supports both text content and structured content from MCP tools, except that UI tools suppress `structuredContent` when OpenClaw feeds results back into the model
 
 ```csharp

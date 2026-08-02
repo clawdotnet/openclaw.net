@@ -8,6 +8,50 @@ namespace OpenClaw.Tests;
 public sealed class ConfigValidatorTests
 {
     [Fact]
+    public void ConfigValidator_RejectsInvalidTelegramLongPollingSettings()
+    {
+        var config = new GatewayConfig
+        {
+            Channels = new ChannelsConfig
+            {
+                Telegram = new TelegramChannelConfig
+                {
+                    UpdateMode = "poll",
+                    PollingTimeoutSeconds = 0,
+                    PollingRetryDelaySeconds = 301
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("Channels.Telegram.UpdateMode", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("Channels.Telegram.PollingTimeoutSeconds", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("Channels.Telegram.PollingRetryDelaySeconds", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ConfigValidator_AcceptsCaseInsensitiveTelegramUpdateMode()
+    {
+        var config = new GatewayConfig
+        {
+            Channels = new ChannelsConfig
+            {
+                Telegram = new TelegramChannelConfig
+                {
+                    UpdateMode = " Long-Polling "
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(
+            errors,
+            error => error.Contains("Channels.Telegram.UpdateMode", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ConfigValidator_RejectsDynamicTurnRoutingTierWithUnknownProfile()
     {
         var config = new GatewayConfig

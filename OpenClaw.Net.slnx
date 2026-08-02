@@ -4,6 +4,13 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Folder Name="/mcpapp/">
+    <Project Path="src/mcpapp/OpenClaw.McpApp/OpenClaw.McpApp.csproj" />
+  </Folder>
+  <Folder Name="/mcpapp/test-apps/" />
+  <Folder Name="/mcpapp/test-apps/GroceryInventory/">
+    <File Path="src/mcpapp/test-apps/GroceryInventory/openclaw.mcpapp.json" />
+  </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/OpenClaw.DurableAgentReview/OpenClaw.DurableAgentReview.csproj" />
     <Project Path="samples/OpenClaw.HelloAgent/OpenClaw.HelloAgent.csproj" />
@@ -11,30 +18,30 @@
     <Project Path="samples/OpenClaw.SemanticKernelInteropHost/OpenClaw.SemanticKernelInteropHost.csproj" />
   </Folder>
   <Folder Name="/src/">
-    <Project Path="src/OpenClaw.Client/OpenClaw.Client.csproj" />
     <Project Path="src/OpenClaw.Cli/OpenClaw.Cli.csproj" />
+    <Project Path="src/OpenClaw.Client/OpenClaw.Client.csproj" />
     <Project Path="src/OpenClaw.Companion/OpenClaw.Companion.csproj" />
+    <Project Path="src/OpenClaw.Dashboard/OpenClaw.Dashboard.csproj" />
+    <Project Path="src/OpenClaw.MicrosoftAgentFrameworkAdapter/OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
     <Project Path="src/OpenClaw.Payments.Abstractions/OpenClaw.Payments.Abstractions.csproj" />
     <Project Path="src/OpenClaw.Payments.Core/OpenClaw.Payments.Core.csproj" />
     <Project Path="src/OpenClaw.Payments.StripeLink/OpenClaw.Payments.StripeLink.csproj" />
-    <Project Path="src/OpenClaw.Providers.MicrosoftExtensionsAI/OpenClaw.Providers.MicrosoftExtensionsAI.csproj" />
+    <Project Path="src/OpenClaw.PluginKit/OpenClaw.PluginKit.csproj" />
+    <Project Path="src/OpenClaw.Plugins.Mempalace/OpenClaw.Plugins.Mempalace.csproj" />
+    <Project Path="src/OpenClaw.Plugins.Payment/OpenClaw.Plugins.Payment.csproj" />
     <Project Path="src/OpenClaw.Plugins.TokenJuice/OpenClaw.Plugins.TokenJuice.csproj" />
     <Project Path="src/OpenClaw.Protocols.Browser/OpenClaw.Protocols.Browser.csproj" />
     <Project Path="src/OpenClaw.Protocols.Mqtt/OpenClaw.Protocols.Mqtt.csproj" />
-    <Project Path="src/OpenClaw.Plugins.Payment/OpenClaw.Plugins.Payment.csproj" />
-    <Project Path="src/OpenClaw.Plugins.Mempalace/OpenClaw.Plugins.Mempalace.csproj" />
-    <Project Path="src/OpenClaw.Dashboard/OpenClaw.Dashboard.csproj" />
-    <Project Path="src/OpenClaw.MicrosoftAgentFrameworkAdapter/OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
+    <Project Path="src/OpenClaw.Providers.MicrosoftExtensionsAI/OpenClaw.Providers.MicrosoftExtensionsAI.csproj" />
+    <Project Path="src/OpenClaw.Routing.Onnx/OpenClaw.Routing.Onnx.csproj" />
+    <Project Path="src/OpenClaw.SemanticKernelAdapter/OpenClaw.SemanticKernelAdapter.csproj" />
     <Project Path="src/OpenClaw.SkillKit.Abstractions/OpenClaw.SkillKit.Abstractions.csproj" />
     <Project Path="src/OpenClaw.SkillKit/OpenClaw.SkillKit.csproj" />
-    <Project Path="src/OpenClaw.Routing.Onnx/OpenClaw.Routing.Onnx.csproj" />
-    <Project Path="src/OpenClawNet.Sandbox.OpenSandbox/OpenClawNet.Sandbox.OpenSandbox.csproj" />
-    <Project Path="src/OpenClaw.PluginKit/OpenClaw.PluginKit.csproj" />
-    <Project Path="src/OpenClaw.SemanticKernelAdapter/OpenClaw.SemanticKernelAdapter.csproj" />
-    <Project Path="src/OpenClaw.Tui/OpenClaw.Tui.csproj" />
     <Project Path="src/OpenClaw.Testing/OpenClaw.Testing.csproj" />
     <Project Path="src/OpenClaw.TestPluginFixtures/OpenClaw.TestPluginFixtures.csproj" />
+    <Project Path="src/OpenClaw.Tui/OpenClaw.Tui.csproj" />
     <Project Path="src/OpenClaw.WhatsApp.BaileysWorker/OpenClaw.WhatsApp.BaileysWorker.csproj" />
+    <Project Path="src/OpenClawNet.Sandbox.OpenSandbox/OpenClawNet.Sandbox.OpenSandbox.csproj" />
   </Folder>
   <Project Path="src/OpenClaw.Agent/OpenClaw.Agent.csproj" />
   <Project Path="src/OpenClaw.Channels/OpenClaw.Channels.csproj" />

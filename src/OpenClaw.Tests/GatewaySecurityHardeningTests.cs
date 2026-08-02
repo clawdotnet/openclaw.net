@@ -200,6 +200,17 @@ public sealed class GatewaySecurityHardeningTests
     }
 
     [Fact]
+    public void EnforcePublicBindHardening_TelegramLongPollingWithoutSignatureValidation_DoesNotThrow()
+    {
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Channels.Telegram.Enabled = true;
+        config.Channels.Telegram.UpdateMode = "long-polling";
+        config.Channels.Telegram.ValidateSignature = false;
+
+        GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true);
+    }
+
+    [Fact]
     public void EnforcePublicBindHardening_TeamsWithoutTokenValidation_Throws()
     {
         var config = CreatePublicBindSafeBaseConfig();
