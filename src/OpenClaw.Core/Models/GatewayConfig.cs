@@ -42,6 +42,7 @@ public sealed class GatewayConfig
     public DynamicTurnRoutingConfig DynamicTurnRouting { get; set; } = new();
     public RoutingConfig Routing { get; set; } = new();
     public McpAppsConfig McpApps { get; set; } = new();
+    public McpCompatibilityConfig McpCompatibility { get; set; } = new();
     public DeploymentConfig Deployment { get; set; } = new();
     public TailscaleConfig Tailscale { get; set; } = new();
     public GmailPubSubConfig GmailPubSub { get; set; } = new();
@@ -79,6 +80,12 @@ public sealed class GatewayConfig
     /// Used when providers have asymmetric input/output pricing.
     /// </summary>
     public Dictionary<string, TokenCostRateConfig> TokenCostRateDetails { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+public sealed class McpCompatibilityConfig
+{
+    public bool EnableDiscoveryFirst { get; set; } = true;
+    public bool ForceLegacyInitialize { get; set; } = false;
 }
 
 public sealed class TokenCostRateConfig
@@ -835,6 +842,16 @@ public sealed class TelegramChannelConfig
     public string DmPolicy { get; set; } = "pairing"; // open, pairing, closed
     public string? BotToken { get; set; }
     public string BotTokenRef { get; set; } = "env:TELEGRAM_BOT_TOKEN";
+    /// <summary>Inbound delivery mode: "webhook" or "long-polling".</summary>
+    public string UpdateMode { get; set; } = "webhook";
+    public bool UsesWebhook() => MatchesUpdateMode("webhook");
+    public bool UsesLongPolling() => MatchesUpdateMode("long-polling");
+    /// <summary>Telegram getUpdates long-poll timeout in seconds.</summary>
+    public int PollingTimeoutSeconds { get; set; } = 30;
+    /// <summary>Delay before retrying a failed long-poll request.</summary>
+    public int PollingRetryDelaySeconds { get; set; } = 5;
+    /// <summary>Discard updates queued by Telegram when long polling starts.</summary>
+    public bool DropPendingUpdatesOnStart { get; set; } = false;
     public string WebhookPath { get; set; } = "/telegram/inbound";
     public string? WebhookPublicBaseUrl { get; set; }
     public string[] AllowedFromUserIds { get; set; } = [];
@@ -849,6 +866,9 @@ public sealed class TelegramChannelConfig
 
     /// <summary>Secret token reference (env: or raw:). Used when WebhookSecretToken is null.</summary>
     public string WebhookSecretTokenRef { get; set; } = "env:TELEGRAM_WEBHOOK_SECRET";
+
+    private bool MatchesUpdateMode(string expected)
+        => string.Equals(UpdateMode?.Trim(), expected, StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class SlackChannelConfig

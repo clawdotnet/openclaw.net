@@ -108,6 +108,7 @@ internal static class ChannelReadinessEvaluator
         var missing = new List<string>();
         var warnings = new List<string>();
         var guidance = new List<ChannelFixGuidance>();
+        var usesWebhook = telegram.UsesWebhook();
 
         if (string.IsNullOrWhiteSpace(ResolveTelegramToken(telegram)))
         {
@@ -119,7 +120,7 @@ internal static class ChannelReadinessEvaluator
                 Reference = "OpenClaw:Channels:Telegram:BotTokenRef = env:TELEGRAM_BOT_TOKEN"
             });
         }
-        if (telegram.ValidateSignature && string.IsNullOrWhiteSpace(ResolveTelegramSecret(telegram)))
+        if (usesWebhook && telegram.ValidateSignature && string.IsNullOrWhiteSpace(ResolveTelegramSecret(telegram)))
         {
             missing.Add("Telegram WebhookSecretToken or WebhookSecretTokenRef");
             guidance.Add(new ChannelFixGuidance
@@ -129,7 +130,7 @@ internal static class ChannelReadinessEvaluator
                 Reference = "OpenClaw:Channels:Telegram:WebhookSecretTokenRef = env:TELEGRAM_WEBHOOK_SECRET"
             });
         }
-        if (!telegram.ValidateSignature)
+        if (usesWebhook && !telegram.ValidateSignature)
         {
             warnings.Add(isNonLoopbackBind
                 ? "Telegram webhook secret validation is disabled on a public bind."

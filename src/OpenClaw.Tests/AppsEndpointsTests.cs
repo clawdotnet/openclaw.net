@@ -98,7 +98,7 @@ public sealed class AppsEndpointsTests : IAsyncDisposable
         Assert.Contains(events, evt => evt.GetProperty("type").GetString() == "done");
 
         Assert.NotNull(capturedPrompt);
-        Assert.Contains("[界面事件]", capturedPrompt, StringComparison.Ordinal);
+        Assert.Contains("[UI event]", capturedPrompt, StringComparison.Ordinal);
         Assert.Contains("inventory.sync", capturedPrompt, StringComparison.Ordinal);
         Assert.Contains("库存已同步到 42", capturedPrompt, StringComparison.Ordinal);
         Assert.Contains("继续处理库存差异", capturedPrompt, StringComparison.Ordinal);

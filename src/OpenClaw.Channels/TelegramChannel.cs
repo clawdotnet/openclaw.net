@@ -11,33 +11,62 @@ using OpenClaw.Core.Security;
 
 namespace OpenClaw.Channels;
 
+public delegate ValueTask TelegramUpdateProcessor(
+    string payload,
+    Func<InboundMessage, CancellationToken, ValueTask> enqueue,
+    CancellationToken ct);
+
 /// <summary>
-/// A channel adapter for the Telegram Bot API using raw HTTP webhooks.
-/// Inbound traffic is handled by Program.cs (POST /telegram/inbound) which calls this adapter.
+/// A channel adapter for the Telegram Bot API using webhooks or long polling.
 /// </summary>
 public sealed class TelegramChannel : IChannelAdapter
 {
     private const int MaxMessageChars = 4096;
     private const int MaxCaptionChars = 1024;
+    private const int MaxPollingBackoffSeconds = 60;
+    private const int ConflictRetryFloorSeconds = 30;
 
     private readonly TelegramChannelConfig _config;
     private readonly HttpClient _http;
     private readonly ILogger<TelegramChannel> _logger;
     private readonly string _botToken;
     private readonly bool _ownsHttp;
+    private readonly TelegramUpdateProcessor? _updateProcessor;
+    private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
 
     public TelegramChannel(TelegramChannelConfig config, ILogger<TelegramChannel> logger)
-        : this(config, logger, http: null)
+        : this(config, logger, http: null, updateProcessor: null)
     {
     }
 
     public TelegramChannel(TelegramChannelConfig config, ILogger<TelegramChannel> logger, HttpClient? http)
+        : this(config, logger, http, updateProcessor: null)
+    {
+    }
+
+    public TelegramChannel(
+        TelegramChannelConfig config,
+        ILogger<TelegramChannel> logger,
+        HttpClient? http,
+        TelegramUpdateProcessor? updateProcessor)
+        : this(config, logger, http, updateProcessor, static (delay, ct) => Task.Delay(delay, ct))
+    {
+    }
+
+    internal TelegramChannel(
+        TelegramChannelConfig config,
+        ILogger<TelegramChannel> logger,
+        HttpClient? http,
+        TelegramUpdateProcessor? updateProcessor,
+        Func<TimeSpan, CancellationToken, Task> delayAsync)
     {
         _config = config;
         _logger = logger;
         _http = http ?? HttpClientFactory.Create();
         _ownsHttp = http is null;
-        
+        _updateProcessor = updateProcessor;
+        _delayAsync = delayAsync;
+
         var tokenSource = SecretResolver.Resolve(config.BotTokenRef) ?? config.BotToken;
 
         _botToken = tokenSource ?? throw new InvalidOperationException("Telegram bot token not configured or missing from environment.");
@@ -45,11 +74,81 @@ public sealed class TelegramChannel : IChannelAdapter
 
     public string ChannelType => "telegram";
     public string ChannelId => "telegram";
-#pragma warning disable CS0067 // Event is never used
     public event Func<InboundMessage, CancellationToken, ValueTask>? OnMessageReceived;
-#pragma warning restore CS0067
 
-    public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
+    public async Task StartAsync(CancellationToken ct)
+    {
+        if (!_config.UsesLongPolling())
+            return;
+
+        if (_updateProcessor is null)
+            throw new InvalidOperationException("Telegram long polling requires an inbound update processor.");
+
+        var retryDelay = TimeSpan.FromSeconds(_config.PollingRetryDelaySeconds);
+        var maxRetryDelay = TimeSpan.FromSeconds(Math.Max(MaxPollingBackoffSeconds, _config.PollingRetryDelaySeconds));
+        var webhookRemoved = false;
+        long? offset = null;
+        while (!ct.IsCancellationRequested)
+        {
+            TimeSpan delay;
+            try
+            {
+                if (!webhookRemoved)
+                {
+                    await DeleteWebhookAsync(ct);
+                    webhookRemoved = true;
+                    _logger.LogInformation("Telegram long polling started.");
+                }
+
+                using var response = await GetUpdatesAsync(offset, ct);
+                foreach (var update in response.RootElement.GetProperty("result").EnumerateArray())
+                {
+                    var updateId = update.GetProperty("update_id").GetInt64();
+                    await _updateProcessor(update.GetRawText(), EnqueueInboundAsync, ct);
+                    offset = checked(updateId + 1);
+                }
+
+                retryDelay = TimeSpan.FromSeconds(_config.PollingRetryDelaySeconds);
+                continue;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (TelegramBotApiException ex) when (!IsRetryable(ex.ErrorCode))
+            {
+                _logger.LogError(
+                    ex,
+                    "Telegram long polling stopped after a permanent Bot API error ({ErrorCode}). Check the bot token and channel configuration.",
+                    ex.ErrorCode);
+                throw;
+            }
+            catch (TelegramBotApiException ex)
+            {
+                delay = GetTelegramRetryDelay(ex, retryDelay);
+                LogTelegramRetry(ex, delay);
+            }
+            catch (Exception ex)
+            {
+                delay = retryDelay;
+                _logger.LogWarning(
+                    ex,
+                    "Telegram long polling cycle failed; retrying in {DelaySeconds} seconds.",
+                    delay.TotalSeconds);
+            }
+
+            try
+            {
+                await _delayAsync(delay, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+
+            retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, maxRetryDelay.TotalSeconds));
+        }
+    }
 
     public async ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
     {
@@ -137,6 +236,120 @@ public sealed class TelegramChannel : IChannelAdapter
         _logger.LogInformation("Sent Telegram message to {ChatId}", chatId);
     }
 
+    private async Task DeleteWebhookAsync(CancellationToken ct)
+    {
+        var dropPendingUpdates = _config.DropPendingUpdatesOnStart ? "true" : "false";
+        var url = $"https://api.telegram.org/bot{_botToken}/deleteWebhook?drop_pending_updates={dropPendingUpdates}";
+        using var response = await _http.GetAsync(url, ct);
+        using var document = await EnsureBotApiSuccessAsync(response, ct);
+    }
+
+    private async Task<JsonDocument> GetUpdatesAsync(long? offset, CancellationToken ct)
+    {
+        var query = $"limit=100&timeout={_config.PollingTimeoutSeconds}" +
+            "&allowed_updates=%5B%22message%22%2C%22channel_post%22%2C%22edited_message%22%2C%22edited_channel_post%22%5D";
+        if (offset is not null)
+            query = $"offset={offset.Value}&{query}";
+
+        var url = $"https://api.telegram.org/bot{_botToken}/getUpdates?{query}";
+        using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        return await EnsureBotApiSuccessAsync(response, ct);
+    }
+
+    private static async Task<JsonDocument> EnsureBotApiSuccessAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        JsonDocument document;
+        try
+        {
+            document = await JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(ct),
+                cancellationToken: ct);
+        }
+        catch (JsonException ex)
+        {
+            var statusCode = (int)response.StatusCode;
+            throw new TelegramBotApiException(
+                statusCode,
+                $"HTTP {statusCode} ({response.ReasonPhrase ?? "unknown status"}) returned an invalid JSON response.",
+                retryAfter: null,
+                ex);
+        }
+
+        if (response.IsSuccessStatusCode &&
+            document.RootElement.TryGetProperty("ok", out var ok) &&
+            ok.ValueKind == JsonValueKind.True)
+        {
+            return document;
+        }
+
+        var root = document.RootElement;
+        var errorCode = root.TryGetProperty("error_code", out var errorCodeNode) &&
+            errorCodeNode.TryGetInt32(out var parsedErrorCode)
+                ? parsedErrorCode
+                : (int)response.StatusCode;
+        var description = root.TryGetProperty("description", out var descriptionNode)
+            ? descriptionNode.GetString()
+            : null;
+        TimeSpan? retryAfter = null;
+        if (root.TryGetProperty("parameters", out var parameters) &&
+            parameters.ValueKind == JsonValueKind.Object &&
+            parameters.TryGetProperty("retry_after", out var retryAfterNode) &&
+            retryAfterNode.TryGetInt32(out var retryAfterSeconds) &&
+            retryAfterSeconds > 0)
+        {
+            retryAfter = TimeSpan.FromSeconds(retryAfterSeconds);
+        }
+
+        document.Dispose();
+        throw new TelegramBotApiException(errorCode, description ?? "unknown error", retryAfter);
+    }
+
+    private static bool IsRetryable(int errorCode)
+        => errorCode is < 400 or 408 or 409 or 429 or >= 500;
+
+    private static TimeSpan GetTelegramRetryDelay(TelegramBotApiException exception, TimeSpan backoff)
+    {
+        if (exception.RetryAfter is { } retryAfter)
+            return retryAfter;
+
+        if (exception.ErrorCode == 409)
+            return TimeSpan.FromSeconds(Math.Max(backoff.TotalSeconds, ConflictRetryFloorSeconds));
+
+        return backoff;
+    }
+
+    private void LogTelegramRetry(TelegramBotApiException exception, TimeSpan delay)
+    {
+        if (exception.ErrorCode == 429)
+        {
+            _logger.LogWarning(
+                "Telegram Bot API rate limit reached; retrying in {DelaySeconds} seconds.",
+                delay.TotalSeconds);
+            return;
+        }
+
+        if (exception.ErrorCode == 409)
+        {
+            _logger.LogWarning(
+                "Telegram long polling conflict: another getUpdates consumer may be using this bot token. " +
+                "Ensure only one poller is active; retrying in {DelaySeconds} seconds.",
+                delay.TotalSeconds);
+            return;
+        }
+
+        _logger.LogWarning(
+            exception,
+            "Telegram Bot API returned a temporary error ({ErrorCode}); retrying in {DelaySeconds} seconds.",
+            exception.ErrorCode,
+            delay.TotalSeconds);
+    }
+
+    private ValueTask EnqueueInboundAsync(InboundMessage message, CancellationToken ct)
+    {
+        var handler = OnMessageReceived;
+        return handler is null ? ValueTask.CompletedTask : handler(message, ct);
+    }
+
     private async Task SendMediaAsync(
         TelegramChatId chatId,
         TelegramMediaRequest request,
@@ -186,6 +399,23 @@ public sealed class TelegramChannel : IChannelAdapter
         for (var i = 0; i < text.Length; i += limit)
             yield return text.Substring(i, Math.Min(limit, text.Length - i));
     }
+}
+
+internal sealed class TelegramBotApiException : Exception
+{
+    public TelegramBotApiException(
+        int errorCode,
+        string description,
+        TimeSpan? retryAfter,
+        Exception? innerException = null)
+        : base($"Telegram Bot API request failed ({errorCode}): {description}", innerException)
+    {
+        ErrorCode = errorCode;
+        RetryAfter = retryAfter;
+    }
+
+    public int ErrorCode { get; }
+    public TimeSpan? RetryAfter { get; }
 }
 
 public sealed class TelegramMessagePayload

@@ -366,7 +366,7 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
     private static string ResolveInputSchemaText(JsonElement inputSchema)
     {
         if (inputSchema.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
-            return "{}";
+            throw new JsonException("MCP tool payload is missing required inputSchema.");
 
         return inputSchema.GetRawText();
     }

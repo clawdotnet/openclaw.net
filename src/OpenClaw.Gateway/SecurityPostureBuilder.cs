@@ -72,7 +72,10 @@ internal static class SecurityPostureBuilder
             recommendations.Add("Enable Twilio SMS signature validation before exposing a public bind.");
         }
 
-        if (publicBind && config.Channels.Telegram.Enabled && !config.Channels.Telegram.ValidateSignature)
+        if (publicBind &&
+            config.Channels.Telegram.Enabled &&
+            config.Channels.Telegram.UsesWebhook() &&
+            !config.Channels.Telegram.ValidateSignature)
         {
             riskFlags.Add("public_bind_unsigned_telegram_webhooks");
             recommendations.Add("Enable Telegram webhook secret validation before exposing a public bind.");
@@ -141,7 +144,9 @@ internal static class SecurityPostureBuilder
     private static bool HasSignedWebhookValidationReadiness(GatewayConfig config)
     {
         return (!config.Channels.Sms.Twilio.Enabled || config.Channels.Sms.Twilio.ValidateSignature)
-            && (!config.Channels.Telegram.Enabled || config.Channels.Telegram.ValidateSignature)
+            && (!config.Channels.Telegram.Enabled ||
+                !config.Channels.Telegram.UsesWebhook() ||
+                config.Channels.Telegram.ValidateSignature)
             && (!config.Channels.WhatsApp.Enabled || !string.Equals(config.Channels.WhatsApp.Type, "official", StringComparison.OrdinalIgnoreCase) || config.Channels.WhatsApp.ValidateSignature)
             && (!config.Channels.Teams.Enabled || config.Channels.Teams.ValidateToken)
             && (!config.Channels.Slack.Enabled || config.Channels.Slack.ValidateSignature)

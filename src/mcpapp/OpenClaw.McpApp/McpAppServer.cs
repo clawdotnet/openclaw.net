@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -158,10 +159,18 @@ public sealed class McpAppServer : IAsyncDisposable
                 if (string.IsNullOrWhiteSpace(remoteName))
                     continue;
 
+                if (!TryGetSupportedInputSchema(tool.ProtocolTool.InputSchema, out var publishedSchema, out var schemaFailureReason))
+                {
+                    _logger.LogWarning(
+                        "McpApp '{AppId}' tool '{ToolName}' {Reason} and will be skipped.",
+                        _state.Manifest.Id,
+                        remoteName,
+                        schemaFailureReason);
+                    continue;
+                }
+
                 var localName = ResolveToolName(remoteName);
-                var inputSchema = tool.JsonSchema.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
-                    ? "{}"
-                    : tool.JsonSchema.GetRawText();
+                var inputSchema = publishedSchema.GetRawText();
                 var meta = SerializeMeta(tool.ProtocolTool.Meta);
 
                 descriptors.Add(new McpAppToolDescriptor
@@ -253,10 +262,58 @@ public sealed class McpAppServer : IAsyncDisposable
     {
         var prefix = _entryConfig?.ToolNamePrefix ?? _state.Manifest.ToolNamePrefix;
         if (string.IsNullOrWhiteSpace(prefix))
-            return remoteName;
+            return SanitizeLlmToolNamePart(remoteName);
 
-        return prefix + remoteName;
+        var name = SanitizeLlmToolNamePrefixPart(prefix) + SanitizeLlmToolNamePart(remoteName);
+        return name.Replace('.', '_');
     }
+
+    private static string SanitizeLlmToolNamePrefixPart(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "mcp";
+
+        var sb = new StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            if (IsLlmToolNameChar(ch))
+                sb.Append(char.ToLowerInvariant(ch));
+            else if (ch > 0x7F)
+                sb.Append($"_u{(int)ch:x4}");
+            else
+                sb.Append('_');
+        }
+
+        return sb.Length == 0 ? "mcp" : sb.ToString();
+    }
+
+    /// <summary>
+    /// Sanitizes a string so every character satisfies the LLM tool-name pattern <c>^[a-zA-Z0-9_-]+$</c>.
+    /// Dots are replaced with <c>_</c>; other non-conforming ASCII characters are also replaced with <c>_</c>;
+    /// non-ASCII characters are replaced with <c>_uXXXX</c> (lowercase hex code point).
+    /// </summary>
+    private static string SanitizeLlmToolNamePart(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return value;
+
+        var sb = new StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            if (IsLlmToolNameChar(ch))
+                sb.Append(ch);
+            else if (ch > 0x7F)
+                sb.Append($"_u{(int)ch:x4}");
+            else
+                sb.Append('_');
+        }
+
+        return sb.Length == 0 ? "_" : sb.ToString();
+    }
+
+    private static bool IsLlmToolNameChar(char ch)
+        => (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')
+           || ch is '_' or '-';
 
     private string ResolveTransport()
     {
@@ -326,6 +383,36 @@ public sealed class McpAppServer : IAsyncDisposable
             return null;
 
         return new Dictionary<string, string>(_state.Manifest.Headers, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool TryGetSupportedInputSchema(JsonElement schema, out JsonElement supportedSchema, out string failureReason)
+    {
+        if (schema.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            supportedSchema = default;
+            failureReason = "is missing required inputSchema";
+            return false;
+        }
+
+        if (schema.ValueKind != JsonValueKind.Object)
+        {
+            supportedSchema = default;
+            failureReason = "published a non-object inputSchema";
+            return false;
+        }
+
+        if (schema.TryGetProperty("type", out var typeProperty)
+            && typeProperty.ValueKind == JsonValueKind.String
+            && !string.Equals(typeProperty.GetString(), "object", StringComparison.OrdinalIgnoreCase))
+        {
+            supportedSchema = default;
+            failureReason = "published a non-object inputSchema";
+            return false;
+        }
+
+        supportedSchema = schema;
+        failureReason = string.Empty;
+        return true;
     }
 
     private void ThrowIfDisposed()

@@ -349,8 +349,8 @@ async function fetchOidcDiscovery(authority) {
 
 async function initiateOidcLogin() {
     const cfg = getOidcConfig();
-    if (!cfg.authority) { appendSystem('先在 Connection 设置里填写 OIDC Authority URL。', true); return; }
-    if (!cfg.clientId)  { appendSystem('先在 Connection 设置里填写 OIDC Client ID。', true); return; }
+    if (!cfg.authority) { appendSystem('Enter the OIDC authority URL in Connection settings first.', true); return; }
+    if (!cfg.clientId)  { appendSystem('Enter the OIDC client ID in Connection settings first.', true); return; }
     try {
         const { verifier, challenge } = await generatePkce();
         const state = base64urlEncode(crypto.getRandomValues(new Uint8Array(16)));
@@ -366,7 +366,7 @@ async function initiateOidcLogin() {
             code_challenge: challenge, code_challenge_method: 'S256', state
         });
         window.location.assign(authEndpoint + '?' + params);
-    } catch (err) { appendSystem('OIDC 登录失败: ' + err.message, true); }
+    } catch (err) { appendSystem('OIDC sign-in failed: ' + err.message, true); }
 }
 
 async function handleOidcCallback() {
@@ -377,12 +377,12 @@ async function handleOidcCallback() {
     const verifier   = sessionStorage.getItem(OIDC_VERIFIER_KEY);
     window.history.replaceState({}, document.title, window.location.pathname);
     if (returnedState !== storedState || !verifier) {
-        appendSystem('OIDC 回调被拒绝：state 不匹配。', true); return;
+        appendSystem('OIDC callback rejected: state does not match.', true); return;
     }
     sessionStorage.removeItem(OIDC_STATE_KEY);
     sessionStorage.removeItem(OIDC_VERIFIER_KEY);
     const cfg = getOidcConfig();
-    appendSystem('正在完成 OIDC 登录…');
+    appendSystem('Completing OIDC sign-in…');
     try {
         let tokenEndpoint;
         try { tokenEndpoint = (await fetchOidcDiscovery(cfg.authority)).token_endpoint; }
@@ -401,12 +401,12 @@ async function handleOidcCallback() {
         if (!tokens.access_token) throw new Error('No access_token in response');
         sessionStorage.setItem(OIDC_TOKEN_KEY, tokens.access_token);
         setClientAuthMode('oidc'); // persist the mode switch after a successful login
-        appendSystem('OIDC 登录成功，正在重新连接…');
+        appendSystem('OIDC sign-in succeeded. Reconnecting…');
         if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
         reconnectAttempts = 0;
         if (ws && ws.readyState !== WebSocket.CLOSED) { try { ws.close(); } catch (_) {} }
         connect();
-    } catch (err) { appendSystem('OIDC token 交换失败: ' + err.message, true); }
+    } catch (err) { appendSystem('OIDC token exchange failed: ' + err.message, true); }
 }
 
 /* ---------- Theme ---------- */
@@ -3007,7 +3007,7 @@ document.querySelectorAll('input[name="client-auth-mode"]').forEach(radio => {
 oidcConfigSave?.addEventListener('click', () => {
     const authority = (oidcAuthorityInput?.value || '').trim();
     const clientId  = (oidcClientIdInput?.value  || '').trim();
-    if (!authority || !clientId) { appendSystem('请填写 OIDC Authority URL 和 Client ID。', true); return; }
+    if (!authority || !clientId) { appendSystem('Enter the OIDC authority URL and client ID.', true); return; }
     saveOidcConfig({ authority, clientId });
     sessionStorage.removeItem(OIDC_TOKEN_KEY);
     void initiateOidcLogin();
@@ -3016,7 +3016,7 @@ oidcConfigClear?.addEventListener('click', () => {
     clearOidcConfig();
     if (oidcAuthorityInput) oidcAuthorityInput.value = '';
     if (oidcClientIdInput)  oidcClientIdInput.value  = '';
-    appendSystem('已退出 OIDC 登录，切换回 Token 模式。');
+    appendSystem('Signed out of OIDC and switched back to token mode.');
     setClientAuthMode('token');
     applyAuthMode('token');
     refreshChatStateAndReconnectIfAuthRequired();
@@ -3172,7 +3172,7 @@ function renderFileChips() {
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.className = 'file-chip__remove';
-        removeBtn.title = '移除';
+        removeBtn.title = 'Remove';
         removeBtn.innerHTML = '&#x2715;';
         const idx = i;
         removeBtn.addEventListener('click', () => {
@@ -3212,12 +3212,12 @@ if (attachFileBtn && fileInput) {
     fileInput.addEventListener('change', async () => {
         const files = Array.from(fileInput.files || []);
         if (!files.length) return;
-        appendSystem('上传文件中...');
+        appendSystem('Uploading files...');
         const uploaded = await uploadFilesToMedia(files);
         pendingFileUrls.push(...uploaded);
         renderFileChips();
         fileInput.value = '';
-        if (uploaded.length) appendSystem(`已上传 ${uploaded.length} 个文件`);
+        if (uploaded.length) appendSystem(`Files uploaded: ${uploaded.length}`);
     });
 }
 
@@ -3247,7 +3247,7 @@ function appendArtifactCard(env) {
     if (env.url) {
         const dlBtn = document.createElement('button');
         dlBtn.className = 'artifact-download';
-        dlBtn.textContent = '下载';
+        dlBtn.textContent = 'Download';
         dlBtn.type = 'button';
         dlBtn.setAttribute('data-media-url', env.url);
         dlBtn.addEventListener('click', async () => {
@@ -3349,7 +3349,7 @@ function renderSessionList(sessions) {
     if (!filtered.length) {
         const empty = document.createElement('div');
         empty.className = 'session-empty';
-        empty.textContent = query ? '没有匹配的会话' : '暂无历史会话';
+        empty.textContent = query ? 'No matching sessions' : 'No session history';
         sessionList.appendChild(empty);
         return;
     }
@@ -3367,7 +3367,7 @@ function renderSessionList(sessions) {
         titleEl.className = 'session-item__title';
         // API has no title field; derive a readable label from the id
         const label = session.title
-            || (session.id === 'main' ? '主会话' : null)
+            || (session.id === 'main' ? 'Main session' : null)
             || (() => {
                 // "websocket:0HNM53UGROGO0" → show channel + short id
                 const parts = session.id.split(':');
@@ -3382,10 +3382,10 @@ function renderSessionList(sessions) {
         const ts = session.lastActiveAt || session.updatedAt || session.createdAt;
         if (ts) {
             const d = new Date(ts);
-            meta.textContent = d.toLocaleDateString('zh-CN') + ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+            meta.textContent = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
         if (session.historyTurns != null) {
-            meta.textContent += (meta.textContent ? ' · ' : '') + session.historyTurns + ' 轮';
+            meta.textContent += (meta.textContent ? ' · ' : '') + 'Turns: ' + session.historyTurns;
         }
 
         body.appendChild(titleEl);
@@ -3394,11 +3394,11 @@ function renderSessionList(sessions) {
         const delBtn = document.createElement('button');
         delBtn.className = 'session-item__del';
         delBtn.type = 'button';
-        delBtn.title = '删除会话';
+        delBtn.title = 'Delete session';
         delBtn.innerHTML = '&#x2715;';
         delBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
-            if (!confirm('确定删除此会话？')) return;
+            if (!confirm('Delete this session?')) return;
             await deleteSession(session.id);
         });
 
@@ -3459,7 +3459,7 @@ async function switchToSession(sessionId, title) {
         isViewingHistory = true;
         setCurrentSessionId(sessionId);
         historyBanner.hidden = false;
-        historyBannerText.textContent = '正在查看历史会话：' + (title || sessionId);
+        historyBannerText.textContent = 'Viewing previous session: ' + (title || sessionId);
         updateEmptyState();
         scrollToBottom();
 
@@ -3487,7 +3487,7 @@ function returnToCurrentSession() {
     if (emptyEl) chatContainer.appendChild(emptyEl);
     chatContainer.appendChild(typingRow);
     updateEmptyState();
-    appendSystem('已返回当前会话。');
+    appendSystem('Returned to the current session.');
     document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
 }
 
@@ -3499,7 +3499,7 @@ async function startNewChatSession() {
     const emptyEl = document.getElementById('empty-state');
     if (emptyEl) chatContainer.appendChild(emptyEl);
     chatContainer.appendChild(typingRow);
-    appendSystem('新对话已开始。');
+    appendSystem('Started a new chat.');
     updateEmptyState();
     if (sessionSidebar && !sessionSidebar.hidden) {
         await loadSessions();
@@ -3512,15 +3512,15 @@ async function deleteSession(sessionId) {
         const resp = await fetch(getBasePath() + '/admin/sessions/' + encodeURIComponent(sessionId), {
             method: 'DELETE', headers
         });
-        if (!resp.ok) { appendSystem('删除失败: ' + resp.status, true); return; }
+        if (!resp.ok) { appendSystem('Delete failed: ' + resp.status, true); return; }
         allSessions = allSessions.filter(s => s.id !== sessionId);
         if (currentSessionId === sessionId) {
             returnToCurrentSession();
         }
         renderSessionList(allSessions);
-        appendSystem('会话已删除');
+        appendSystem('Session deleted');
     } catch (err) {
-        appendSystem('删除失败: ' + err.message, true);
+        appendSystem('Delete failed: ' + err.message, true);
     }
 }
 
@@ -3547,7 +3547,7 @@ if (sessionSearchInput) {
 }
 if (clearAllSessionsBtn) {
     clearAllSessionsBtn.addEventListener('click', async () => {
-        if (!confirm('确定清空所有历史会话？此操作不可撤销。')) return;
+        if (!confirm('Clear all session history? This action cannot be undone.')) return;
         for (const s of [...allSessions]) {
             await deleteSession(s.id);
         }
@@ -3927,42 +3927,42 @@ if (clearAllSessionsBtn) {
 
     async function loadChannel() {
         formError.hidden = true;
-        showStatus('加载中...', false);
+        showStatus('Loading...', false);
         try {
             const headers = await getAuthHeaders();
             const resp = await fetch(getBasePath() + '/admin/channels/' + activeChannel, { headers });
-            if (!resp.ok) { showStatus('加载失败 (' + resp.status + ')', true); return; }
+            if (!resp.ok) { showStatus('Load failed (' + resp.status + ')', true); return; }
             const cfg = await resp.json();
             if (activeChannel === 'feishu') populateFeishu(cfg);
             if (activeChannel === 'dingtalk') populateDingTalk(cfg);
             if (activeChannel === 'wecom') populateWeCom(cfg);
-            showStatus('已加载当前配置', false);
-        } catch (e) { showStatus('加载失败: ' + e.message, true); }
+            showStatus('Current configuration loaded', false);
+        } catch (e) { showStatus('Load failed: ' + e.message, true); }
     }
 
     async function saveChannel() {
         formError.hidden = true;
         let body = activeChannel === 'feishu' ? buildFeishu() : activeChannel === 'dingtalk' ? buildDingTalk() : buildWeCom();
-        showStatus('保存中...', false);
+        showStatus('Saving...', false);
         try {
             const headers = { 'Content-Type': 'application/json', ...(await getAuthHeaders()) };
             const resp = await fetch(getBasePath() + '/admin/channels/' + activeChannel + '/update', { method: 'POST', headers, body: JSON.stringify(body) });
             const data = await resp.json().catch(() => null);
-            if (resp.ok) showStatus('已保存并重连渠道 ✓', false);
-            else showStatus('保存失败: ' + (data?.error ?? resp.status), true);
-        } catch (e) { showStatus('保存失败: ' + e.message, true); }
+            if (resp.ok) showStatus('Saved and reconnected channel ✓', false);
+            else showStatus('Save failed: ' + (data?.error ?? resp.status), true);
+        } catch (e) { showStatus('Save failed: ' + e.message, true); }
     }
 
     async function revertChannel() {
-        if (!confirm('确定恢复默认配置？这将清除所有 API 保存的覆盖。')) return;
-        showStatus('恢复中...', false);
+        if (!confirm('Restore the default configuration? This clears all overrides saved through the API.')) return;
+        showStatus('Restoring...', false);
         try {
             const headers = await getAuthHeaders();
             const resp = await fetch(getBasePath() + '/admin/channels/' + activeChannel + '/override', { method: 'DELETE', headers });
             const data = await resp.json().catch(() => null);
-            if (resp.ok) { showStatus('已恢复默认配置 ✓', false); await loadChannel(); }
-            else showStatus('恢复失败: ' + (data?.error ?? resp.status), true);
-        } catch (e) { showStatus('恢复失败: ' + e.message, true); }
+            if (resp.ok) { showStatus('Default configuration restored ✓', false); await loadChannel(); }
+            else showStatus('Restore failed: ' + (data?.error ?? resp.status), true);
+        } catch (e) { showStatus('Restore failed: ' + e.message, true); }
     }
 
     openBtn.addEventListener('click', async () => { overlay.hidden = false; statusBar.hidden = true; formError.hidden = true; setVis(); await loadChannel(); });
@@ -4032,40 +4032,40 @@ if (clearAllSessionsBtn) {
     }
 
     async function loadSkills() {
-        skillListEl.innerHTML = '<div class="panel-hint">加载中…</div>';
+        skillListEl.innerHTML = '<div class="panel-hint">Loading…</div>';
         try {
             const headers = await getAuthHeaders();
             const resp = await fetch(getBasePath() + '/admin/skills', { headers });
-            if (!resp.ok) { skillListEl.innerHTML = '<div class="panel-hint">加载失败 (HTTP ' + resp.status + ')</div>'; return; }
+            if (!resp.ok) { skillListEl.innerHTML = '<div class="panel-hint">Load failed (HTTP ' + resp.status + ')</div>'; return; }
             const data = await resp.json();
             renderSkillList(data.skills || []);
-        } catch (e) { skillListEl.innerHTML = '<div class="panel-hint">加载失败: ' + esc(e.message) + '</div>'; }
+        } catch (e) { skillListEl.innerHTML = '<div class="panel-hint">Load failed: ' + esc(e.message) + '</div>'; }
     }
 
     function renderSkillList(skills) {
-        if (!skills.length) { skillListEl.innerHTML = '<div class="panel-hint">暂无已安装的技能</div>'; return; }
+        if (!skills.length) { skillListEl.innerHTML = '<div class="panel-hint">No installed skills</div>'; return; }
         skillListEl.innerHTML = '';
         for (const s of skills) {
             const card = document.createElement('div');
             card.className = 'de-skill-card';
             card.innerHTML = `<div class="de-skill-emoji">${s.emoji || '🔧'}</div>
                 <div class="de-skill-info"><div class="de-skill-name">${esc(s.name)}</div>${s.description ? `<div class="de-skill-desc">${esc(s.description)}</div>` : ''}</div>
-                <span class="de-skill-badge ${s.source || 'builtin'}">${s.source === 'workspace' ? '用户安装' : s.source === 'plugin' ? '插件' : '内置'}</span>`;
+                <span class="de-skill-badge ${s.source || 'builtin'}">${s.source === 'workspace' ? 'User-installed' : s.source === 'plugin' ? 'Plugin' : 'Built-in'}</span>`;
             if (s.isUserInstalled) {
                 const delBtn = document.createElement('button');
                 delBtn.className = 'panel-icon-btn danger';
-                delBtn.title = '删除';
+                delBtn.title = 'Delete';
                 delBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>';
                 delBtn.addEventListener('click', async () => {
-                    if (!confirm('确定删除技能 "' + s.name + '"？')) return;
+                    if (!confirm('Delete skill "' + s.name + '"?')) return;
                     delBtn.disabled = true;
                     try {
                         const h = await getAuthHeaders();
                         const r = await fetch(getBasePath() + '/admin/skills/' + encodeURIComponent(s.name), { method: 'DELETE', headers: h });
                         const d = await r.json().catch(() => null);
-                        if (r.ok && d?.success) { showStatus('已删除', false); await loadSkills(); }
-                        else { showStatus('删除失败: ' + (d?.error || r.status), true); delBtn.disabled = false; }
-                    } catch (e) { showStatus('删除失败: ' + e.message, true); delBtn.disabled = false; }
+                        if (r.ok && d?.success) { showStatus('Deleted', false); await loadSkills(); }
+                        else { showStatus('Delete failed: ' + (d?.error || r.status), true); delBtn.disabled = false; }
+                    } catch (e) { showStatus('Delete failed: ' + e.message, true); delBtn.disabled = false; }
                 });
                 card.appendChild(delBtn);
             }
@@ -4106,52 +4106,52 @@ if (clearAllSessionsBtn) {
 
     if (skillPkgUploadBtn) skillPkgUploadBtn.addEventListener('click', async () => {
         if (!skillPkgFile) return;
-        skillPkgUploadBtn.disabled = true; skillPkgUploadBtn.textContent = '上传中…';
+        skillPkgUploadBtn.disabled = true; skillPkgUploadBtn.textContent = 'Uploading…';
         skillPkgResult.hidden = true;
         try {
             const h = await getAuthHeaders(); const fd = new FormData(); fd.append('file', skillPkgFile);
             const resp = await fetch(getBasePath() + '/admin/skills/upload', { method: 'POST', headers: h, body: fd });
             const data = await resp.json().catch(() => null);
             if (resp.ok && data?.success) {
-                skillPkgResult.innerHTML = '<strong>技能安装成功</strong><br>当前技能总数：' + (data.totalLoaded ?? 0);
+                skillPkgResult.innerHTML = '<strong>Skill installed successfully</strong><br>Total skills: ' + (data.totalLoaded ?? 0);
                 skillPkgResult.className = 'panel-result ok'; skillPkgResult.hidden = false;
-                showStatus('✅ 技能安装成功', false);
+                showStatus('✅ Skill installed successfully', false);
             } else {
-                skillPkgResult.textContent = '安装失败: ' + (data?.error || resp.status);
+                skillPkgResult.textContent = 'Installation failed: ' + (data?.error || resp.status);
                 skillPkgResult.className = 'panel-result err'; skillPkgResult.hidden = false;
-                showStatus('❌ 安装失败', true);
+                showStatus('❌ Installation failed', true);
             }
         } catch (e) {
-            skillPkgResult.textContent = '上传失败: ' + e.message;
+            skillPkgResult.textContent = 'Upload failed: ' + e.message;
             skillPkgResult.className = 'panel-result err'; skillPkgResult.hidden = false;
-            showStatus('❌ 上传失败', true);
+            showStatus('❌ Upload failed', true);
         }
-        skillPkgUploadBtn.disabled = false; skillPkgUploadBtn.textContent = '上传安装';
+        skillPkgUploadBtn.disabled = false; skillPkgUploadBtn.textContent = 'Upload and install';
     });
 
     if (pkgUploadBtn) pkgUploadBtn.addEventListener('click', async () => {
         if (!pkgFile) return;
-        pkgUploadBtn.disabled = true; pkgUploadBtn.textContent = '上传中…';
+        pkgUploadBtn.disabled = true; pkgUploadBtn.textContent = 'Uploading…';
         pkgResult.hidden = true;
         try {
             const h = await getAuthHeaders(); const fd = new FormData(); fd.append('file', pkgFile);
             const resp = await fetch(getBasePath() + '/admin/digital-employee/upload', { method: 'POST', headers: h, body: fd });
             const data = await resp.json().catch(() => null);
             if (resp.ok && (data?.success !== false)) {
-                pkgResult.innerHTML = '<strong>数字员工包安装成功</strong>';
+                pkgResult.innerHTML = '<strong>Digital employee package installed successfully</strong>';
                 pkgResult.className = 'panel-result ok'; pkgResult.hidden = false;
-                showStatus('✅ 安装成功', false);
+                showStatus('✅ Installed successfully', false);
             } else {
-                pkgResult.textContent = '安装失败: ' + (data?.error || resp.status);
+                pkgResult.textContent = 'Installation failed: ' + (data?.error || resp.status);
                 pkgResult.className = 'panel-result err'; pkgResult.hidden = false;
-                showStatus('❌ 安装失败', true);
+                showStatus('❌ Installation failed', true);
             }
         } catch (e) {
-            pkgResult.textContent = '上传失败: ' + e.message;
+            pkgResult.textContent = 'Upload failed: ' + e.message;
             pkgResult.className = 'panel-result err'; pkgResult.hidden = false;
-            showStatus('❌ 上传失败', true);
+            showStatus('❌ Upload failed', true);
         }
-        pkgUploadBtn.disabled = false; pkgUploadBtn.textContent = '上传安装';
+        pkgUploadBtn.disabled = false; pkgUploadBtn.textContent = 'Upload and install';
     });
 
     if (tabList) tabList.addEventListener('click', () => switchTab('list'));
@@ -4271,19 +4271,19 @@ if (clearAllSessionsBtn) {
             const resp = await fetch(url, { headers });
             const data = await resp.json().catch(() => null);
             if (resp.ok && data && data.success !== false) {
-                const rootLabel = data.root || '（工作区根目录）';
+                const rootLabel = data.root || '(workspace root)';
                 const treeHtml  = renderTree(data.entries || [], 0);
                 if (browseResult) {
                     browseResult.innerHTML = '<div style="color:var(--success,#2e7d32);margin-bottom:6px">\uD83D\uDCC2 ' + escHtml(rootLabel) + '</div>'
-                        + (treeHtml || '<div style="opacity:0.5">（空目录）</div>');
+                        + (treeHtml || '<div style="opacity:0.5">(empty directory)</div>');
                     browseResult.hidden = false;
                 }
                 const cnt = countEntries(data.entries || []);
-                showStatus('✅ ' + cnt.dirs + ' 个目录，' + cnt.files + ' 个文件', false);
+                showStatus('✅ Directories: ' + cnt.dirs + ' · Files: ' + cnt.files, false);
             } else {
                 // Fallback: try /admin/workspace/browse (flat list)
                 const resp2 = await fetch(getBasePath() + '/admin/workspace/browse' + (path ? '?path=' + encodeURIComponent(path) : ''), { headers });
-                if (!resp2.ok) { showStatus('查询失败 (' + resp2.status + ')', true); return; }
+                if (!resp2.ok) { showStatus('Browse failed (' + resp2.status + ')', true); return; }
                 const data2 = await resp2.json();
                 const files = data2.files || data2.items || [];
                 const treeHtml2 = files.map(f => {
@@ -4292,17 +4292,17 @@ if (clearAllSessionsBtn) {
                     return `<div style="white-space:nowrap">${icon} ${escHtml(f.name || f.path || '')}${sz}</div>`;
                 }).join('');
                 if (browseResult) {
-                    browseResult.innerHTML = treeHtml2 || '<div style="opacity:0.5">（空目录）</div>';
+                    browseResult.innerHTML = treeHtml2 || '<div style="opacity:0.5">(empty directory)</div>';
                     browseResult.hidden = false;
                 }
-                showStatus('✅ 共 ' + files.length + ' 项', false);
+                showStatus('✅ Items: ' + files.length, false);
             }
         } catch (e) {
             if (browseResult) {
                 browseResult.innerHTML = '<span style="color:var(--danger,#c00)">❌ ' + escHtml(e.message) + '</span>';
                 browseResult.hidden = false;
             }
-            showStatus('❌ 查询失败：' + e.message, true);
+            showStatus('❌ Browse failed: ' + e.message, true);
         } finally {
             if (browseBtn) browseBtn.disabled = false;
         }
@@ -4323,9 +4323,9 @@ if (clearAllSessionsBtn) {
             if (!resp.ok) {
                 const data = await resp.json().catch(() => null);
                 const msg = (data && data.error) || 'HTTP ' + resp.status;
-                downloadResult.innerHTML = '<strong>❌ 下载失败</strong><br>' + escHtml(msg);
+                downloadResult.innerHTML = '<strong>❌ Download failed</strong><br>' + escHtml(msg);
                 downloadResult.className = 'panel-result err'; downloadResult.hidden = false;
-                showStatus('❌ 下载失败：' + msg, true);
+                showStatus('❌ Download failed: ' + msg, true);
                 return;
             }
             const cd = resp.headers.get('Content-Disposition') || '';
@@ -4338,13 +4338,13 @@ if (clearAllSessionsBtn) {
             a.href = objUrl; a.download = filename;
             document.body.appendChild(a); a.click(); a.remove();
             setTimeout(() => URL.revokeObjectURL(objUrl), 10000);
-            downloadResult.innerHTML = '✅ 已触发下载：<code>' + escHtml(filename) + '</code>（' + formatSize(blob.size) + '）';
+            downloadResult.innerHTML = '✅ Download started: <code>' + escHtml(filename) + '</code> (' + formatSize(blob.size) + ')';
             downloadResult.className = 'panel-result ok'; downloadResult.hidden = false;
-            showStatus('✅ 下载完成：' + filename, false);
+            showStatus('✅ Download complete: ' + filename, false);
         } catch (e) {
-            downloadResult.innerHTML = '<strong>❌ 网络错误</strong><br>' + escHtml(e.message);
+            downloadResult.innerHTML = '<strong>❌ Network error</strong><br>' + escHtml(e.message);
             downloadResult.className = 'panel-result err'; downloadResult.hidden = false;
-            showStatus('❌ 网络错误：' + e.message, true);
+            showStatus('❌ Network error: ' + e.message, true);
         } finally {
             downloadBtn.disabled = false;
         }
@@ -4371,7 +4371,7 @@ if (clearAllSessionsBtn) {
 
     if (uploadBtn) uploadBtn.addEventListener('click', async () => {
         if (!uploadFiles.length) return;
-        uploadBtn.disabled = true; uploadBtn.textContent = '上传中…';
+        uploadBtn.disabled = true; uploadBtn.textContent = 'Uploading…';
         uploadResult.hidden = true;
         const dir = uploadDirInput ? uploadDirInput.value.trim() : '';
         const url = getBasePath() + '/admin/workspace/upload' + (dir ? '?dir=' + encodeURIComponent(dir) : '');
@@ -4383,26 +4383,26 @@ if (clearAllSessionsBtn) {
             const data = await resp.json().catch(() => null);
             if (resp.ok && data && data.success !== false) {
                 const paths = (data.files || []).map(p => escHtml(p));
-                uploadResult.innerHTML = '<strong>✅ 上传成功</strong>'
+                uploadResult.innerHTML = '<strong>✅ Upload succeeded</strong>'
                     + (paths.length ? '<ul style="margin:6px 0 0 0;padding-left:18px">' + paths.map(p => `<li>${p}</li>`).join('') + '</ul>' : '');
                 uploadResult.className = 'panel-result ok'; uploadResult.hidden = false;
-                showStatus('✅ 上传成功，写入 ' + (data.files || uploadFiles).length + ' 个文件', false);
+                showStatus('✅ Upload succeeded · Files written: ' + (data.files || uploadFiles).length, false);
                 setUploadFiles([]);
                 if (uploadFileInput) uploadFileInput.value = '';
             } else {
                 const msg = (data && data.error) || 'HTTP ' + resp.status;
-                uploadResult.innerHTML = '<strong>❌ 上传失败</strong><br>' + escHtml(msg);
+                uploadResult.innerHTML = '<strong>❌ Upload failed</strong><br>' + escHtml(msg);
                 uploadResult.className = 'panel-result err'; uploadResult.hidden = false;
-                showStatus('❌ 上传失败：' + msg, true);
+                showStatus('❌ Upload failed: ' + msg, true);
                 uploadBtn.disabled = false;
             }
         } catch (e) {
-            uploadResult.innerHTML = '<strong>❌ 网络错误</strong><br>' + escHtml(e.message);
+            uploadResult.innerHTML = '<strong>❌ Network error</strong><br>' + escHtml(e.message);
             uploadResult.className = 'panel-result err'; uploadResult.hidden = false;
-            showStatus('❌ 网络错误：' + e.message, true);
+            showStatus('❌ Network error: ' + e.message, true);
             uploadBtn.disabled = false;
         } finally {
-            if (uploadBtn) uploadBtn.textContent = '上传';
+            if (uploadBtn) uploadBtn.textContent = 'Upload';
         }
     });
 
@@ -4518,13 +4518,13 @@ if (clearAllSessionsBtn) {
     function relTime(iso) {
         if (!iso) return '—';
         const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-        if (sec < 60) return '刚刚';
-        if (sec < 3600) return Math.floor(sec/60) + ' 分钟前';
-        if (sec < 86400) return Math.floor(sec/3600) + ' 小时前';
-        return new Date(iso).toLocaleString('zh-CN');
+        if (sec < 60) return 'just now';
+        if (sec < 3600) return Math.floor(sec/60) + ' min ago';
+        if (sec < 86400) return Math.floor(sec/3600) + ' hr ago';
+        return new Date(iso).toLocaleString();
     }
 
-    function srcLabel(s) { return s === 'legacy-cron' ? '内置' : s === 'agent' ? 'Agent' : 'Web'; }
+    function srcLabel(s) { return s === 'legacy-cron' ? 'Built-in' : s === 'agent' ? 'Agent' : 'Web'; }
     function srcCls(s) { return s === 'legacy-cron' ? 'source-legacy' : s === 'agent' ? 'source-agent' : 'source-webchat'; }
 
     function buildCard(job) {
@@ -4544,12 +4544,12 @@ if (clearAllSessionsBtn) {
         const actions = document.createElement('div'); actions.className = 'cron-job-actions';
 
         const runBtn = document.createElement('button');
-        runBtn.className = 'panel-icon-btn'; runBtn.title = '立即执行';
+        runBtn.className = 'panel-icon-btn'; runBtn.title = 'Run now';
         runBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
         runBtn.addEventListener('click', () => void runJob(job.id));
 
         const histBtn = document.createElement('button');
-        histBtn.className = 'panel-icon-btn'; histBtn.title = '执行历史';
+        histBtn.className = 'panel-icon-btn'; histBtn.title = 'Execution history';
         histBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
         histBtn.addEventListener('click', () => void loadHistory(job));
 
@@ -4557,12 +4557,12 @@ if (clearAllSessionsBtn) {
 
         if (!isStatic) {
             const editBtn = document.createElement('button');
-            editBtn.className = 'panel-icon-btn'; editBtn.title = '编辑';
+            editBtn.className = 'panel-icon-btn'; editBtn.title = 'Edit';
             editBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
             editBtn.addEventListener('click', () => openForm(job));
 
             const delBtn = document.createElement('button');
-            delBtn.className = 'panel-icon-btn danger'; delBtn.title = '删除';
+            delBtn.className = 'panel-icon-btn danger'; delBtn.title = 'Delete';
             delBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>';
             delBtn.addEventListener('click', () => void deleteJob(job.id, job.name || job.id));
             actions.append(editBtn, delBtn);
@@ -4574,10 +4574,10 @@ if (clearAllSessionsBtn) {
 
     function renderJobs(items) {
         jobList.innerHTML = '';
-        if (!items?.length) { const e = document.createElement('div'); e.className = 'panel-hint'; e.textContent = '暂无定时任务'; jobList.appendChild(e); return; }
+        if (!items?.length) { const e = document.createElement('div'); e.className = 'panel-hint'; e.textContent = 'No scheduled tasks'; jobList.appendChild(e); return; }
         const sorted = [...items].sort((a, b) => {
             const as = a.source === 'legacy-cron' ? 0 : 1, bs = b.source === 'legacy-cron' ? 0 : 1;
-            return as - bs || (a.name || a.id).localeCompare(b.name || b.id, 'zh-CN');
+            return as - bs || (a.name || a.id).localeCompare(b.name || b.id);
         });
         sorted.forEach(j => jobList.appendChild(buildCard(j)));
     }
@@ -4587,37 +4587,37 @@ if (clearAllSessionsBtn) {
             const h = await getAuthHeaders();
             const r = await fetch(getBasePath() + '/admin/automations', { headers: h });
             if (r.ok) { const d = await r.json(); renderJobs(d.items || []); }
-            else showStatus('加载失败 (' + r.status + ')', true);
-        } catch (e) { showStatus('加载失败: ' + e.message, true); }
+            else showStatus('Load failed (' + r.status + ')', true);
+        } catch (e) { showStatus('Load failed: ' + e.message, true); }
     }
 
     async function loadHistory(job) {
         currentHistJob = job;
-        histTitle.textContent = (job.name || job.id) + ' · 执行历史';
-        histList.innerHTML = '<div class="panel-hint">加载中…</div>';
+        histTitle.textContent = (job.name || job.id) + ' · Execution history';
+        histList.innerHTML = '<div class="panel-hint">Loading…</div>';
         formSection.hidden = true; sessSection.hidden = true; histSection.hidden = false;
         sessViewBtn.hidden = false;
         try {
             const h = await getAuthHeaders();
             const r = await fetch(getBasePath() + '/admin/automations/' + encodeURIComponent(job.id), { headers: h });
-            if (!r.ok) { histList.innerHTML = '<div class="panel-hint">加载失败 (' + r.status + ')</div>'; return; }
+            if (!r.ok) { histList.innerHTML = '<div class="panel-hint">Load failed (' + r.status + ')</div>'; return; }
             const d = await r.json();
             renderHistory(d.runState);
-        } catch (e) { histList.innerHTML = '<div class="panel-hint">加载失败: ' + e.message + '</div>'; }
+        } catch (e) { histList.innerHTML = '<div class="panel-hint">Load failed: ' + e.message + '</div>'; }
     }
 
     function renderHistory(runState) {
         histList.innerHTML = '';
-        if (!runState) { histList.innerHTML = '<div class="panel-hint">无历史记录</div>'; return; }
+        if (!runState) { histList.innerHTML = '<div class="panel-hint">No history</div>'; return; }
         if (runState.lastRunAtUtc) {
             const s = document.createElement('div');
             s.className = 'panel-hint';
-            const o = runState.outcome === 'success' ? '✅ 成功' : runState.outcome === 'failure' ? '❌ 失败' : runState.outcome || '—';
-            s.textContent = '上次执行: ' + relTime(runState.lastRunAtUtc) + ' · ' + o;
+            const o = runState.outcome === 'success' ? '✅ Success' : runState.outcome === 'failure' ? '❌ Failed' : runState.outcome || '—';
+            s.textContent = 'Last run: ' + relTime(runState.lastRunAtUtc) + ' · ' + o;
             histList.appendChild(s);
         }
         const runs = runState.recentRuns || [];
-        if (!runs.length) { const e = document.createElement('div'); e.className = 'panel-hint'; e.textContent = '暂无详细记录'; histList.appendChild(e); return; }
+        if (!runs.length) { const e = document.createElement('div'); e.className = 'panel-hint'; e.textContent = 'No run history'; histList.appendChild(e); return; }
         for (const run of runs) {
             const row = document.createElement('div'); row.className = 'cron-history-row';
             const dotEl = document.createElement('div'); dotEl.className = 'cron-history-dot ' + (run.outcome === 'success' ? 'ok' : run.outcome === 'failure' ? 'error' : '');
@@ -4626,11 +4626,11 @@ if (clearAllSessionsBtn) {
             meta.textContent = relTime(run.ranAtUtc) + tk;
             const prev = document.createElement('div'); prev.className = 'cron-history-preview'; prev.textContent = run.messagePreview || '—';
             const detail = document.createElement('div'); detail.className = 'cron-history-detail'; detail.hidden = true;
-            const o = run.outcome === 'success' ? '✅ 成功' : run.outcome === 'failure' ? '❌ 失败' : run.outcome || '—';
-            detail.innerHTML = `<div class="cron-history-detail-row"><span>执行时间</span><span>${run.ranAtUtc ? new Date(run.ranAtUtc).toLocaleString() : '—'}</span></div>
-                <div class="cron-history-detail-row"><span>结果</span><span>${o}</span></div>
-                <div class="cron-history-detail-row"><span>输入 tokens</span><span>${run.inputTokens ?? 0}</span></div>
-                <div class="cron-history-detail-row"><span>输出 tokens</span><span>${run.outputTokens ?? 0}</span></div>
+            const o = run.outcome === 'success' ? '✅ Success' : run.outcome === 'failure' ? '❌ Failed' : run.outcome || '—';
+            detail.innerHTML = `<div class="cron-history-detail-row"><span>Execution time</span><span>${run.ranAtUtc ? new Date(run.ranAtUtc).toLocaleString() : '—'}</span></div>
+                <div class="cron-history-detail-row"><span>Result</span><span>${o}</span></div>
+                <div class="cron-history-detail-row"><span>Input tokens</span><span>${run.inputTokens ?? 0}</span></div>
+                <div class="cron-history-detail-row"><span>Output tokens</span><span>${run.outputTokens ?? 0}</span></div>
                 ${run.messagePreview ? `<div class="cron-history-detail-preview">${run.messagePreview.replace(/</g,'&lt;')}</div>` : ''}`;
             row.addEventListener('click', () => { detail.hidden = !detail.hidden; row.classList.toggle('cron-history-row-open', !detail.hidden); });
             row.append(dotEl, meta, prev);
@@ -4640,7 +4640,7 @@ if (clearAllSessionsBtn) {
 
     function openForm(job) {
         editingId = job ? job.id : null;
-        formTitle.textContent = job ? '编辑定时任务' : '新建定时任务';
+        formTitle.textContent = job ? 'Edit scheduled task' : 'New scheduled task';
         formError.hidden = true; histSection.hidden = true;
         if (job) {
             fName.value = job.name || ''; fPrompt.value = job.prompt || '';
@@ -4649,7 +4649,7 @@ if (clearAllSessionsBtn) {
             fEnabled.checked = job.enabled !== false;
             applyScheduleToPreset(job.schedule || '');
         } else {
-            fName.value = ''; fPrompt.value = ''; fTimezone.value = 'Asia/Shanghai'; fModel.value = '';
+            fName.value = ''; fPrompt.value = ''; fTimezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; fModel.value = '';
             fChannel.value = ''; fRecipient.value = ''; fEnabled.checked = true;
             dailyTime.value = '09:00'; dailyWeekday.checked = false;
             intervalVal.value = '1'; intervalUnit.value = 'hour'; fScheduleRaw.value = '';
@@ -4663,9 +4663,9 @@ if (clearAllSessionsBtn) {
 
     async function saveJob() {
         const name = fName.value.trim(), schedule = buildSchedule(), prompt = fPrompt.value.trim();
-        if (!name) { formError.textContent = '请填写任务名称'; formError.hidden = false; return; }
-        if (!schedule) { formError.textContent = '请设置执行计划'; formError.hidden = false; return; }
-        if (!prompt) { formError.textContent = '请填写提示词'; formError.hidden = false; return; }
+        if (!name) { formError.textContent = 'Enter a task name'; formError.hidden = false; return; }
+        if (!schedule) { formError.textContent = 'Set an execution schedule'; formError.hidden = false; return; }
+        if (!prompt) { formError.textContent = 'Enter a prompt'; formError.hidden = false; return; }
         formError.hidden = true;
         const payload = { id: editingId || '', name, schedule, prompt,
             timezone: fTimezone.value.trim() || null, modelId: fModel.value.trim() || null,
@@ -4676,57 +4676,57 @@ if (clearAllSessionsBtn) {
             const url = getBasePath() + '/admin/automations' + (editingId ? '/' + encodeURIComponent(editingId) : '');
             const resp = await fetch(url, { method: editingId ? 'PUT' : 'POST', headers: h, body: JSON.stringify(payload) });
             if (!resp.ok) {
-                const e = await resp.json().catch(() => ({ error: '保存失败 (' + resp.status + ')' }));
-                formError.textContent = e.error || '保存失败 (' + resp.status + ')'; formError.hidden = false; return;
+                const e = await resp.json().catch(() => ({ error: 'Save failed (' + resp.status + ')' }));
+                formError.textContent = e.error || 'Save failed (' + resp.status + ')'; formError.hidden = false; return;
             }
-            closeForm(); showStatus('保存成功！', false); await loadJobs();
-        } catch (e) { formError.textContent = '保存失败: ' + e.message; formError.hidden = false; }
+            closeForm(); showStatus('Saved successfully!', false); await loadJobs();
+        } catch (e) { formError.textContent = 'Save failed: ' + e.message; formError.hidden = false; }
     }
 
     async function deleteJob(id, name) {
-        if (!confirm(`确定删除 "${name}"？`)) return;
+        if (!confirm(`Delete "${name}"?`)) return;
         try {
             const h = await getAuthHeaders();
             const r = await fetch(getBasePath() + '/admin/automations/' + encodeURIComponent(id), { method: 'DELETE', headers: h });
-            if (r.ok) { showStatus('已删除', false); await loadJobs(); }
-            else { const e = await r.json().catch(() => ({ error: '删除失败' })); showStatus(e.error || '删除失败', true); }
-        } catch (e) { showStatus('删除失败: ' + e.message, true); }
+            if (r.ok) { showStatus('Deleted', false); await loadJobs(); }
+            else { const e = await r.json().catch(() => ({ error: 'Delete failed' })); showStatus(e.error || 'Delete failed', true); }
+        } catch (e) { showStatus('Delete failed: ' + e.message, true); }
     }
 
     async function runJob(id) {
         try {
             const h = { 'Content-Type': 'application/json', ...(await getAuthHeaders()) };
             const r = await fetch(getBasePath() + '/admin/automations/' + encodeURIComponent(id) + '/run', { method: 'POST', headers: h });
-            if (r.ok) showStatus('已触发执行！', false);
-            else { const e = await r.json().catch(() => ({ error: '执行失败' })); showStatus(e.error || '执行失败', true); }
-        } catch (e) { showStatus('执行失败: ' + e.message, true); }
+            if (r.ok) showStatus('Execution triggered!', false);
+            else { const e = await r.json().catch(() => ({ error: 'Execution failed' })); showStatus(e.error || 'Execution failed', true); }
+        } catch (e) { showStatus('Execution failed: ' + e.message, true); }
     }
 
     async function loadSession() {
         if (!currentHistJob) return;
         const sessionId = currentHistJob.sessionId || ('automation:' + currentHistJob.id);
-        sessTitle.textContent = (currentHistJob.name || currentHistJob.id) + ' · 完整会话';
-        sessList.innerHTML = '<div class="panel-hint">加载中…</div>';
+        sessTitle.textContent = (currentHistJob.name || currentHistJob.id) + ' · Full session';
+        sessList.innerHTML = '<div class="panel-hint">Loading…</div>';
         histSection.hidden = true; sessSection.hidden = false;
         try {
             const h = await getAuthHeaders();
             const r = await fetch(getBasePath() + '/admin/sessions/' + encodeURIComponent(sessionId), { headers: h });
-            if (r.status === 404) { sessList.innerHTML = '<div class="panel-hint">暂无会话记录</div>'; return; }
-            if (!r.ok) { sessList.innerHTML = '<div class="panel-hint">加载失败 (' + r.status + ')</div>'; return; }
+            if (r.status === 404) { sessList.innerHTML = '<div class="panel-hint">No session records</div>'; return; }
+            if (!r.ok) { sessList.innerHTML = '<div class="panel-hint">Load failed (' + r.status + ')</div>'; return; }
             const d = await r.json();
             renderCronSession(d.session?.history || []);
-        } catch (e) { sessList.innerHTML = '<div class="panel-hint">加载失败: ' + e.message + '</div>'; }
+        } catch (e) { sessList.innerHTML = '<div class="panel-hint">Load failed: ' + e.message + '</div>'; }
     }
 
     function renderCronSession(history) {
         sessList.innerHTML = '';
-        if (!history?.length) { sessList.innerHTML = '<div class="panel-hint">暂无对话记录</div>'; return; }
+        if (!history?.length) { sessList.innerHTML = '<div class="panel-hint">No conversation records</div>'; return; }
         for (const turn of history) {
             if (!turn.content && !turn.toolCalls?.length) continue;
             const wrap = document.createElement('div');
             wrap.className = 'cron-sess-turn cron-sess-turn-' + (turn.role === 'user' ? 'user' : 'assistant');
             const hdr = document.createElement('div'); hdr.className = 'cron-sess-turn-header';
-            hdr.textContent = (turn.role === 'user' ? '指令' : 'AI 回复') + (turn.timestamp ? '  ' + new Date(turn.timestamp).toLocaleString('zh-CN') : '');
+            hdr.textContent = (turn.role === 'user' ? 'Instruction' : 'AI response') + (turn.timestamp ? '  ' + new Date(turn.timestamp).toLocaleString() : '');
             const body = document.createElement('div'); body.className = 'cron-sess-turn-body'; body.textContent = turn.content || '';
             wrap.appendChild(hdr); wrap.appendChild(body);
             if (turn.toolCalls?.length) {

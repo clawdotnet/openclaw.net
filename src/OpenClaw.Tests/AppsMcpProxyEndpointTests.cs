@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
+using ModelContextProtocol.Extensions.Tasks;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using OpenClaw.Core.Models;
@@ -20,6 +21,14 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
 {
     private readonly List<WebApplication> _apps = [];
     private readonly List<string> _tempDirs = [];
+
+    [Fact]
+    public void GatewayConfig_McpCompatibility_Defaults_AreStrictAndDiscoveryFirst()
+    {
+        var cfg = new GatewayConfig();
+        Assert.True(cfg.McpCompatibility.EnableDiscoveryFirst);
+        Assert.False(cfg.McpCompatibility.ForceLegacyInitialize);
+    }
 
     [Fact]
     public async Task ToolsList_PassesThroughAllTools_NoVisibilityFiltering()
@@ -56,7 +65,7 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task CallTool_UnknownAppId_DoesNotThrowOrCrashGateway()
+    public async Task CallTool_UnknownAppId_ReturnsActionableErrorPayload()
     {
         var upstreamUrl = await StartFakeUpstreamAsync();
         await using var gateway = await StartGatewayWithProxyAsync("inventory-app", upstreamUrl);
@@ -65,8 +74,11 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
             new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri($"{gateway.BaseAddress}apps/mcp/nonexistent") }),
             cancellationToken: CancellationToken.None);
 
-        await Assert.ThrowsAnyAsync<Exception>(
-            () => mcpClient.CallToolAsync("echo_session", cancellationToken: CancellationToken.None).AsTask());
+        var result = await mcpClient.CallToolAsync("echo_session", cancellationToken: CancellationToken.None);
+
+        Assert.Equal(true, result.IsError);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content)).Text;
+        Assert.Contains("nonexistent", text, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -90,6 +102,41 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
 
         Assert.Contains(proxiedTools, tool => tool.Name == "echo_session");
         Assert.DoesNotContain(proxiedTools, tool => tool.Name == "default_gateway_tool");
+    }
+
+    [Fact]
+    public async Task GatewayMcpServer_AdvertisesTasksExtension_WhenEnabled()
+    {
+        var upstreamUrl = await StartFakeUpstreamAsync();
+        await using var gateway = await StartGatewayWithProxyAndDefaultMcpAsync("inventory-app", upstreamUrl);
+
+        using var httpClient = new HttpClient { BaseAddress = new Uri(gateway.BaseAddress) };
+        using var request = new HttpRequestMessage(HttpMethod.Post, "mcp");
+        request.Headers.TryAddWithoutValidation("mcp-protocol-version", "2025-03-26");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+        request.Content = new StringContent(
+            "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0.0\"}}}",
+            System.Text.Encoding.UTF8,
+            "application/json");
+
+        using var response = await httpClient.SendAsync(request, CancellationToken.None);
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+
+        Assert.True(response.IsSuccessStatusCode, body);
+        var json = body.TrimStart();
+        if (!json.StartsWith("{", StringComparison.Ordinal))
+        {
+            var dataLine = json.Split('\n').FirstOrDefault(static line => line.StartsWith("data:", StringComparison.Ordinal));
+            Assert.False(string.IsNullOrWhiteSpace(dataLine), body);
+            json = dataLine!["data:".Length..].TrimStart();
+        }
+
+        using var document = JsonDocument.Parse(json);
+        var capabilities = document.RootElement.GetProperty("result").GetProperty("capabilities");
+        Assert.True(capabilities.TryGetProperty("extensions", out var extensions), body);
+        Assert.True(extensions.TryGetProperty("io.modelcontextprotocol/tasks", out var tasksCapability), body);
+        Assert.Equal(JsonValueKind.Object, tasksCapability.ValueKind);
     }
 
     private async Task<string> StartFakeUpstreamAsync()
@@ -237,6 +284,7 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
                 options.Stateless = true;
                 options.ConfigureSessionOptions = AppsMcpProxyEndpoint.ConfigureSessionOptionsAsync;
             })
+            .WithTasks(new InMemoryMcpTaskStore())
             .WithListToolsHandler((_, _) => ValueTask.FromResult(new ListToolsResult
             {
                 Tools =

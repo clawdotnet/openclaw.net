@@ -236,6 +236,7 @@ The public documentation site is **[AgentQi.dev](https://agentqi.dev)**. The sou
 | [docs/mempalace-memory.md](docs/mempalace-memory.md) | Optional MemPalace.NET memory provider and temporal knowledge graph |
 | [docs/CANVAS_A2UI.md](docs/CANVAS_A2UI.md) | Supported Canvas and A2UI visual workspace behavior |
 | [docs/MODEL_PROFILES.md](docs/MODEL_PROFILES.md) | Provider-agnostic named model profiles (including Gemma) |
+| [docs/TELEGRAM.md](docs/TELEGRAM.md) | Telegram webhook and long-polling channel setup |
 | [docs/deployment/TAILSCALE.md](docs/deployment/TAILSCALE.md) | Optional Tailscale Serve private access |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Supported upstream skill, plugin, and channel surface |
 | [docs/zh-CN/START_HERE.md](docs/zh-CN/START_HERE.md) | Simplified Chinese first-run orientation |

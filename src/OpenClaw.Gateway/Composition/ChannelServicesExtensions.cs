@@ -55,7 +55,6 @@ internal static class ChannelServicesExtensions
         if (config.Channels.Telegram.Enabled)
         {
             services.AddSingleton(config.Channels.Telegram);
-            services.AddSingleton<TelegramChannel>();
             services.AddSingleton<TelegramWebhookHandler>(sp =>
                 new TelegramWebhookHandler(
                     config.Channels.Telegram,
@@ -63,6 +62,21 @@ internal static class ChannelServicesExtensions
                     sp.GetRequiredService<OpenClaw.Core.Pipeline.RecentSendersStore>(),
                     sp.GetRequiredService<OpenClaw.Core.Security.AllowlistSemantics>(),
                     sp.GetRequiredService<ILogger<TelegramWebhookHandler>>()));
+            services.AddSingleton<TelegramChannel>(sp =>
+            {
+                var handler = sp.GetRequiredService<TelegramWebhookHandler>();
+                var logger = sp.GetRequiredService<ILogger<TelegramChannel>>();
+                return new TelegramChannel(
+                    config.Channels.Telegram,
+                    logger,
+                    http: null,
+                    updateProcessor: async (payload, enqueue, ct) =>
+                    {
+                        var result = await handler.HandleAsync(payload, enqueue, ct);
+                        if (result.StatusCode >= StatusCodes.Status400BadRequest)
+                            logger.LogWarning("Telegram update was rejected with status {StatusCode}.", result.StatusCode);
+                    });
+            });
         }
 
         if (config.Channels.Teams.Enabled)

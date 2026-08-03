@@ -51,6 +51,47 @@ public sealed class ChannelSetupCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_ChannelTelegramLongPolling_DoesNotRequirePublicEndpoint()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            var configPath = await CreateBaseConfigAsync(root);
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+
+            var exitCode = await SetupCommand.RunAsync(
+                [
+                    "channel",
+                    "telegram",
+                    "--config", configPath,
+                    "--non-interactive",
+                    "--bot-token-ref", "env:TELEGRAM_BOT_TOKEN",
+                    "--update-mode", "long-polling"
+                ],
+                new StringReader(string.Empty),
+                output,
+                error,
+                root,
+                canPrompt: false);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(configPath));
+            var telegram = document.RootElement.GetProperty("OpenClaw").GetProperty("channels").GetProperty("telegram");
+            Assert.True(telegram.GetProperty("enabled").GetBoolean());
+            Assert.Equal("long-polling", telegram.GetProperty("updateMode").GetString());
+            Assert.Contains("outbound HTTPS only", output.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("Register Telegram webhook", output.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_ChannelWhatsAppBridge_UpdatesExistingConfig()
     {
         var root = CreateTempRoot();

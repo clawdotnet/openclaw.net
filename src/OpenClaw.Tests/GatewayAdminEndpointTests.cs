@@ -6322,6 +6322,147 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task OpenClawHttpClient_McpDiscover_Works()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        using var client = new OpenClawHttpClient(harness.Client.BaseAddress!.ToString(), harness.AuthToken, harness.Client);
+
+        var discover = await client.DiscoverMcpAsync(TestContext.Current.CancellationToken);
+
+        Assert.NotNull(discover);
+        Assert.True(
+            !string.IsNullOrWhiteSpace(discover.ProtocolVersion) || discover.SupportedVersions.Count > 0,
+            "discover response should contain protocolVersion or supportedVersions");
+    }
+
+    [Fact]
+    public async Task OpenClawHttpClient_McpDiscover_SendsMetaAndRequiredHeaders()
+    {
+        HttpRequestMessage? discoverRequest = null;
+        HttpRequestMessage? toolRequest = null;
+
+        using var http = new HttpClient(new RecordingHttpMessageHandler(async request =>
+        {
+            if (request.Headers.TryGetValues("Mcp-Method", out var methods)
+                && string.Equals(methods.Single(), "server/discover", StringComparison.Ordinal))
+            {
+                discoverRequest = await CloneRequestAsync(request);
+                return CreateJsonResponse("""
+                {"jsonrpc":"2.0","id":"1","result":{"supportedVersions":["2025-11-25","2026-07-28"],"capabilities":{}}}
+                """);
+            }
+
+            toolRequest = await CloneRequestAsync(request);
+            return CreateJsonResponse("""
+            {"jsonrpc":"2.0","id":"2","result":{"content":[{"type":"text","text":"ok"}],"structuredContent":{"ok":true},"isError":false}}
+            """);
+        }))
+        {
+            BaseAddress = new Uri("http://localhost/")
+        };
+
+        using var client = new OpenClawHttpClient("http://localhost/", authToken: null, httpClient: http);
+
+        var discover = await client.DiscoverMcpAsync(TestContext.Current.CancellationToken);
+        using var emptyArguments = JsonDocument.Parse("{}");
+        _ = await client.CallMcpToolAsync("demo_tool", emptyArguments.RootElement.Clone(), TestContext.Current.CancellationToken);
+
+        Assert.NotNull(discoverRequest);
+        Assert.NotNull(toolRequest);
+
+        var discoverJson = JsonDocument.Parse(await discoverRequest!.Content!.ReadAsStringAsync());
+        var discoverParams = discoverJson.RootElement.GetProperty("params");
+        var discoverMeta = discoverParams.GetProperty("_meta");
+        Assert.Equal("2026-07-28", discoverMeta.GetProperty("io.modelcontextprotocol/protocolVersion").GetString());
+        Assert.Equal("openclaw-client", discoverMeta.GetProperty("io.modelcontextprotocol/clientInfo").GetProperty("name").GetString());
+        Assert.Equal(JsonValueKind.Object, discoverMeta.GetProperty("io.modelcontextprotocol/clientCapabilities").ValueKind);
+        Assert.Equal("server/discover", discoverRequest.Headers.GetValues("Mcp-Method").Single());
+        Assert.Equal("2026-07-28", discoverRequest.Headers.GetValues("mcp-protocol-version").Single());
+
+        Assert.Equal("tools/call", toolRequest!.Headers.GetValues("Mcp-Method").Single());
+        Assert.Equal("demo_tool", toolRequest.Headers.GetValues("Mcp-Name").Single());
+        Assert.Equal("2026-07-28", toolRequest.Headers.GetValues("mcp-protocol-version").Single());
+        var toolJson = JsonDocument.Parse(await toolRequest.Content!.ReadAsStringAsync());
+        var toolMeta = toolJson.RootElement.GetProperty("params").GetProperty("_meta");
+        Assert.Equal("2026-07-28", toolMeta.GetProperty("io.modelcontextprotocol/protocolVersion").GetString());
+    }
+
+    [Fact]
+    public async Task OpenClawHttpClient_McpDiscover_FallsBackOnMissingMethod_AndReusesNegotiatedVersion()
+    {
+        var seenMethods = new List<string>();
+        string? toolProtocolVersion = null;
+
+        using var http = new HttpClient(new RecordingHttpMessageHandler(async request =>
+        {
+            var method = request.Headers.GetValues("Mcp-Method").Single();
+            seenMethods.Add(method);
+
+            return method switch
+            {
+                "server/discover" => CreateJsonResponse("""
+                {"jsonrpc":"2.0","id":"1","error":{"code":-32601,"message":"Method not found"}}
+                """),
+                "initialize" => CreateJsonResponse("""
+                {"jsonrpc":"2.0","id":"2","result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{"listChanged":false},"resources":{"listChanged":false,"supportsTemplates":false},"prompts":{"listChanged":false}},"serverInfo":{"name":"legacy","version":"1.0.0"}}}
+                """),
+                "tools/call" => await CaptureToolCallAsync(request),
+                _ => throw new InvalidOperationException($"Unexpected MCP method {method}")
+            };
+
+            Task<HttpResponseMessage> CaptureToolCallAsync(HttpRequestMessage req)
+            {
+                toolProtocolVersion = req.Headers.GetValues("mcp-protocol-version").Single();
+                return Task.FromResult(CreateJsonResponse("""
+                {"jsonrpc":"2.0","id":"3","result":{"content":[{"type":"text","text":"ok"}],"structuredContent":{"ok":true},"isError":false}}
+                """));
+            }
+        }))
+        {
+            BaseAddress = new Uri("http://localhost/")
+        };
+
+        using var client = new OpenClawHttpClient("http://localhost/", authToken: null, httpClient: http);
+
+        var discover = await client.DiscoverMcpAsync(TestContext.Current.CancellationToken);
+        using var emptyArguments = JsonDocument.Parse("{}");
+        _ = await client.CallMcpToolAsync("demo_tool", emptyArguments.RootElement.Clone(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(["server/discover", "initialize", "tools/call"], seenMethods);
+        Assert.Equal("2025-03-26", discover.ProtocolVersion);
+        Assert.Equal("2025-03-26", toolProtocolVersion);
+    }
+
+    [Fact]
+    public async Task OpenClawHttpClient_McpDiscover_FallsBackOnHttpNotFound()
+    {
+        var seenMethods = new List<string>();
+        using var http = new HttpClient(new RecordingHttpMessageHandler(request =>
+        {
+            var method = request.Headers.GetValues("Mcp-Method").Single();
+            seenMethods.Add(method);
+            return Task.FromResult(method switch
+            {
+                "server/discover" => CreateJsonResponse("{}", HttpStatusCode.NotFound),
+                "initialize" => CreateJsonResponse("""
+                {"jsonrpc":"2.0","id":"2","result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{"listChanged":false},"resources":{"listChanged":false,"supportsTemplates":false},"prompts":{"listChanged":false}},"serverInfo":{"name":"legacy","version":"1.0.0"}}}
+                """),
+                _ => throw new InvalidOperationException($"Unexpected MCP method {method}")
+            });
+        }))
+        {
+            BaseAddress = new Uri("http://localhost/")
+        };
+
+        using var client = new OpenClawHttpClient("http://localhost/", authToken: null, httpClient: http);
+
+        var discover = await client.DiscoverMcpAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(["server/discover", "initialize"], seenMethods);
+        Assert.Equal("2025-11-25", discover.ProtocolVersion);
+    }
+
+    [Fact]
     public async Task OpenClawHttpClient_AutomationAndLearningSurface_Works()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -7970,6 +8111,32 @@ public sealed class GatewayAdminEndpointTests
         return registry;
     }
 
+    private static HttpResponseMessage CreateJsonResponse(string json, HttpStatusCode statusCode = HttpStatusCode.OK)
+        => new(statusCode)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+
+    private static async Task<HttpRequestMessage> CloneRequestAsync(HttpRequestMessage request)
+    {
+        var clone = new HttpRequestMessage(request.Method, request.RequestUri);
+        foreach (var header in request.Headers)
+            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+
+        if (request.Content is not null)
+        {
+            var body = await request.Content.ReadAsStringAsync();
+            clone.Content = new StringContent(body, Encoding.UTF8, request.Content.Headers.ContentType?.MediaType ?? "application/json");
+            foreach (var header in request.Content.Headers)
+            {
+                clone.Content.Headers.Remove(header.Key);
+                clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+        }
+
+        return clone;
+    }
+
     private sealed record GatewayTestHarness(
         WebApplication App,
         HttpClient Client,
@@ -7983,6 +8150,12 @@ public sealed class GatewayAdminEndpointTests
             Client.Dispose();
             await App.DisposeAsync();
         }
+    }
+
+    private sealed class RecordingHttpMessageHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => handler(request);
     }
 
     private sealed class StaticSessionSearchStore(IReadOnlyList<SessionSearchHit> items) : ISessionSearchStore

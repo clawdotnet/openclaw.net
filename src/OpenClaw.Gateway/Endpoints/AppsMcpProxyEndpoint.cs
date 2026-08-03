@@ -24,7 +24,34 @@ internal static class AppsMcpProxyEndpoint
         var registry = httpContext.RequestServices.GetRequiredService<McpAppRegistry>();
         var upstream = registry.GetApp(serverId)?.Client;
         if (upstream is null)
+        {
+            sessionOptions.Handlers.ListToolsHandler = (_, _) =>
+                ValueTask.FromResult(new ListToolsResult
+                {
+                    Tools = []
+                });
+
+            sessionOptions.Handlers.ListResourcesHandler = (_, _) =>
+                ValueTask.FromResult(new ListResourcesResult
+                {
+                    Resources = []
+                });
+
+            sessionOptions.Handlers.ReadResourceHandler = (_, _) =>
+                ValueTask.FromResult(new ReadResourceResult
+                {
+                    Contents = []
+                });
+
+            sessionOptions.Handlers.CallToolHandler = (_, _) =>
+                ValueTask.FromResult(new CallToolResult
+                {
+                    IsError = true,
+                    Content = [new TextContentBlock { Text = $"MCP app '{serverId}' is not loaded." }]
+                });
+
             return;
+        }
 
         sessionOptions.Handlers.ListToolsHandler = async (ctx, ct2) =>
             await upstream.ListToolsAsync(ctx.Params ?? new ListToolsRequestParams(), ct2);

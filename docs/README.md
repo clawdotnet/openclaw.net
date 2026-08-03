@@ -26,7 +26,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [RELEASES.md](RELEASES.md) | Desktop download bundles, release assets, and signing/notarization status. |
 | [AgentQi Mobile](https://github.com/agentqi/agentqi-mobile) | Open-source .NET MAUI Android companion for monitoring and operating an OpenClaw.NET gateway; includes build-from-source instructions. |
 | [TOOLS_GUIDE.md](TOOLS_GUIDE.md) | Native and optional tool catalog, behavior, and configuration. |
-| [MCPAPP.md](MCPAPP.md) | MCP App manifest discovery, lifecycle management, tool bridging, resources, prompts, and UI bundles. |
+| [MCPAPP.md](MCPAPP.md) | MCP App manifest discovery, lifecycle management, tool bridging, MCP v2 compatibility (discover/tasks/schema), resources, prompts, and UI bundles. |
 | [tokenjuice.md](tokenjuice.md) | Deterministic, rule-driven tool output reduction before tool results enter model context. |
 | [GOAL_TECHNICAL_ARCHITECTURE.md](GOAL_TECHNICAL_ARCHITECTURE.md) | Session-scoped `/goal` auto-continuation architecture, states, tools, budget limits, and runtime integration. |
 | [LOOP_TECHNICAL_ARCHITECTURE.md](LOOP_TECHNICAL_ARCHITECTURE.md) | `/loop` recurring-prompt command architecture, scheduler behavior, control tool, and termination model. |

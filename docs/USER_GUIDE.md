@@ -733,14 +733,14 @@ openclaw migrate upstream \
 
 Dry-run is the default. `--apply` writes the translated config, imports managed `SKILL.md` packages, and writes the plugin review plan next to the target config.
 
-### Webhook Channels
+### Channel Setup
 You can configure OpenClaw to listen to messages in the background natively.
 Enable them under the `Channels` block in your config.
 
-- **Telegram**: Basic bot API support.
+- **Telegram**: Bot API support through a public HTTPS webhook or outbound-only long polling. See [TELEGRAM.md](TELEGRAM.md).
 - **Twilio SMS**: SMS support via Twilio.
 - **WhatsApp**: Official Cloud API or custom bridge support.
-- Setup walkthroughs: `../README.md#telegram-webhook-channel` and `../README.md#twilio-sms-channel`.
+- Setup walkthroughs: [Telegram](TELEGRAM.md) and the channel configuration in `appsettings.json`.
 
 ### Recipient IDs (Telegram / SMS / Email)
 Scheduled jobs (Cron) and outbound delivery require a `RecipientId` that is specific to each channel:

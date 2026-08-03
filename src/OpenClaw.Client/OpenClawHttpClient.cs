@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +10,11 @@ namespace OpenClaw.Client;
 
 public sealed class OpenClawHttpClient : IDisposable
 {
+    private const string LatestMcpProtocolVersion = "2026-07-28";
+    private const string LatestLegacyMcpProtocolVersion = "2025-11-25";
+    private const string McpProtocolVersionMetaKey = "io.modelcontextprotocol/protocolVersion";
+    private const string McpClientInfoMetaKey = "io.modelcontextprotocol/clientInfo";
+    private const string McpClientCapabilitiesMetaKey = "io.modelcontextprotocol/clientCapabilities";
     private readonly Uri _baseUri;
     private readonly HttpClient _http;
     private readonly bool _ownsHttpClient;
@@ -88,6 +94,7 @@ public sealed class OpenClawHttpClient : IDisposable
     private readonly Uri _adminWhatsAppSetupUri;
     private readonly Uri _adminWhatsAppRestartUri;
     private long _mcpRequestId;
+    private string? _negotiatedMcpProtocolVersion;
 
     public OpenClawHttpClient(string baseUrl, string? authToken, HttpClient? httpClient = null)
     {
@@ -261,8 +268,50 @@ public sealed class OpenClawHttpClient : IDisposable
         return fullText.ToString();
     }
 
-    public Task<McpInitializeResult> InitializeMcpAsync(McpInitializeRequest request, CancellationToken cancellationToken)
-        => SendMcpAsync("initialize", request, McpJsonContext.Default.McpInitializeRequest, McpJsonContext.Default.McpInitializeResult, cancellationToken);
+    public async Task<McpInitializeResult> InitializeMcpAsync(McpInitializeRequest request, CancellationToken cancellationToken)
+    {
+        var result = await SendMcpAsync("initialize", request, McpJsonContext.Default.McpInitializeRequest, McpJsonContext.Default.McpInitializeResult, cancellationToken);
+        RememberNegotiatedProtocolVersion(result.ProtocolVersion);
+        return result;
+    }
+
+    public async Task<McpDiscoverResult> DiscoverMcpAsync(CancellationToken cancellationToken)
+    {
+        var request = new McpDiscoverRequest();
+        try
+        {
+            var result = await SendMcpAsync(
+                "server/discover",
+                request,
+                McpJsonContext.Default.McpDiscoverRequest,
+                McpJsonContext.Default.McpDiscoverResult,
+                cancellationToken);
+            RememberNegotiatedProtocolVersion(ResolveNegotiatedProtocolVersion(result));
+            return result;
+        }
+        catch (McpProtocolException ex) when (ex.StatusCode == HttpStatusCode.NotFound || ex.RpcCode == -32601)
+        {
+            return await DiscoverLegacyMcpAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            return await DiscoverLegacyMcpAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<McpDiscoverResult> DiscoverLegacyMcpAsync(CancellationToken cancellationToken)
+    {
+        var initialize = await InitializeMcpAsync(
+            new McpInitializeRequest { ProtocolVersion = LatestLegacyMcpProtocolVersion },
+            cancellationToken).ConfigureAwait(false);
+        return new McpDiscoverResult
+        {
+            ProtocolVersion = initialize.ProtocolVersion,
+            SupportedVersions = [initialize.ProtocolVersion],
+            Capabilities = JsonSerializer.SerializeToElement(initialize.Capabilities, McpJsonContext.Default.McpCapabilities),
+            ServerInfo = initialize.ServerInfo
+        };
+    }
 
     public Task<McpToolListResult> ListMcpToolsAsync(CancellationToken cancellationToken)
         => SendMcpWithoutParamsAsync("tools/list", McpJsonContext.Default.McpToolListResult, cancellationToken);
@@ -1270,6 +1319,7 @@ public sealed class OpenClawHttpClient : IDisposable
         JsonTypeInfo<TResult> resultTypeInfo,
         CancellationToken cancellationToken)
     {
+        var protocolVersion = ResolveMcpProtocolVersion(method, parameters);
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
         {
@@ -1278,15 +1328,7 @@ public sealed class OpenClawHttpClient : IDisposable
             writer.WriteString("id", Interlocked.Increment(ref _mcpRequestId).ToString());
             writer.WriteString("method", method);
             writer.WritePropertyName("params");
-            if (parameters is null || jsonTypeInfo is null)
-            {
-                writer.WriteStartObject();
-                writer.WriteEndObject();
-            }
-            else
-            {
-                JsonSerializer.Serialize(writer, parameters, jsonTypeInfo);
-            }
+            WriteMcpParams(writer, parameters, jsonTypeInfo, protocolVersion);
             writer.WriteEndObject();
         }
 
@@ -1298,6 +1340,10 @@ public sealed class OpenClawHttpClient : IDisposable
         req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        req.Headers.TryAddWithoutValidation("mcp-protocol-version", protocolVersion);
+        req.Headers.TryAddWithoutValidation("Mcp-Method", method);
+        if (TryResolveMcpName(method, parameters, out var mcpName))
+            req.Headers.TryAddWithoutValidation("Mcp-Name", mcpName);
 
         using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!resp.IsSuccessStatusCode)
@@ -1309,7 +1355,7 @@ public sealed class OpenClawHttpClient : IDisposable
         if (envelope is null)
             throw new InvalidOperationException("Empty MCP response body.");
         if (envelope.Error is not null)
-            throw new InvalidOperationException($"MCP {envelope.Error.Code}: {envelope.Error.Message}");
+            throw new McpProtocolException(resp.StatusCode, envelope.Error.Code, envelope.Error.Message);
 
         var result = envelope.Result.Deserialize(resultTypeInfo);
         if (result is null)
@@ -1317,6 +1363,125 @@ public sealed class OpenClawHttpClient : IDisposable
 
         return result;
     }
+
+    private string ResolveMcpProtocolVersion<TParams>(string method, TParams? parameters)
+    {
+        return parameters switch
+        {
+            McpInitializeRequest { ProtocolVersion: { Length: > 0 } protocolVersion } => protocolVersion,
+            _ when !string.IsNullOrWhiteSpace(_negotiatedMcpProtocolVersion) => _negotiatedMcpProtocolVersion!,
+            _ when string.Equals(method, "server/discover", StringComparison.Ordinal) => LatestMcpProtocolVersion,
+            _ => LatestLegacyMcpProtocolVersion
+        };
+    }
+
+    private static void WriteMcpParams<TParams>(
+        Utf8JsonWriter writer,
+        TParams? parameters,
+        JsonTypeInfo<TParams>? jsonTypeInfo,
+        string protocolVersion)
+    {
+        if (StringComparer.Ordinal.Compare(protocolVersion, LatestMcpProtocolVersion) < 0)
+        {
+            if (parameters is null || jsonTypeInfo is null)
+            {
+                writer.WriteStartObject();
+                writer.WriteEndObject();
+            }
+            else
+            {
+                JsonSerializer.Serialize(writer, parameters, jsonTypeInfo);
+            }
+
+            return;
+        }
+
+        var serializedParams = parameters is null || jsonTypeInfo is null
+            ? default
+            : JsonSerializer.SerializeToElement(parameters, jsonTypeInfo);
+        if (serializedParams.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Object))
+            throw new InvalidOperationException("MCP request parameters must serialize as a JSON object.");
+
+        JsonElement existingMeta = default;
+        writer.WriteStartObject();
+        if (serializedParams.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in serializedParams.EnumerateObject())
+            {
+                if (property.NameEquals("_meta"))
+                {
+                    existingMeta = property.Value;
+                    continue;
+                }
+
+                property.WriteTo(writer);
+            }
+        }
+
+        writer.WritePropertyName("_meta");
+        writer.WriteStartObject();
+        if (existingMeta.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in existingMeta.EnumerateObject())
+            {
+                if (property.NameEquals(McpProtocolVersionMetaKey) ||
+                    property.NameEquals(McpClientInfoMetaKey) ||
+                    property.NameEquals(McpClientCapabilitiesMetaKey))
+                {
+                    continue;
+                }
+
+                property.WriteTo(writer);
+            }
+        }
+
+        writer.WriteString(McpProtocolVersionMetaKey, protocolVersion);
+        writer.WritePropertyName(McpClientInfoMetaKey);
+        JsonSerializer.Serialize(
+            writer,
+            new McpClientInfo { Name = "openclaw-client", Version = "1.0.0" },
+            McpJsonContext.Default.McpClientInfo);
+        writer.WritePropertyName(McpClientCapabilitiesMetaKey);
+        JsonSerializer.Serialize(writer, new McpClientCapabilities(), McpJsonContext.Default.McpClientCapabilities);
+        writer.WriteEndObject();
+        writer.WriteEndObject();
+    }
+
+    private static bool TryResolveMcpName<TParams>(string method, TParams? parameters, out string name)
+    {
+        switch (method)
+        {
+            case "tools/call" when parameters is McpCallToolRequest toolRequest && !string.IsNullOrWhiteSpace(toolRequest.Name):
+                name = toolRequest.Name;
+                return true;
+            case "resources/read" when parameters is McpReadResourceRequest resourceRequest && !string.IsNullOrWhiteSpace(resourceRequest.Uri):
+                name = resourceRequest.Uri;
+                return true;
+            case "prompts/get" when parameters is McpGetPromptRequest promptRequest && !string.IsNullOrWhiteSpace(promptRequest.Name):
+                name = promptRequest.Name;
+                return true;
+            default:
+                name = string.Empty;
+                return false;
+        }
+    }
+
+    private void RememberNegotiatedProtocolVersion(string? protocolVersion)
+    {
+        if (!string.IsNullOrWhiteSpace(protocolVersion))
+            _negotiatedMcpProtocolVersion = protocolVersion;
+    }
+
+    private static string ResolveNegotiatedProtocolVersion(McpDiscoverResult result)
+        => !string.IsNullOrWhiteSpace(result.ProtocolVersion)
+            ? result.ProtocolVersion
+            : result.SupportedVersions.Contains(LatestMcpProtocolVersion, StringComparer.Ordinal)
+                ? LatestMcpProtocolVersion
+                : result.SupportedVersions
+                    .Where(static version => !string.IsNullOrWhiteSpace(version))
+                    .OrderDescending(StringComparer.Ordinal)
+                    .FirstOrDefault()
+                  ?? LatestLegacyMcpProtocolVersion;
 
     private static async Task<string> ExtractMcpResponseJsonAsync(HttpResponseMessage resp, CancellationToken cancellationToken)
     {
@@ -1953,13 +2118,51 @@ public sealed class OpenClawHttpClient : IDisposable
 
         var status = $"{(int)resp.StatusCode} {resp.ReasonPhrase}".Trim();
         if (string.IsNullOrWhiteSpace(body))
-            return new HttpRequestException($"HTTP {status}");
+            return new HttpRequestException($"HTTP {status}", inner: null, resp.StatusCode);
 
         body = body.Trim();
+        if (TryParseMcpError(body, out var rpcCode, out var rpcMessage))
+            return new McpProtocolException(resp.StatusCode, rpcCode, rpcMessage);
+
         if (body.Length > 8000)
             body = body[..8000] + "…";
 
-        return new HttpRequestException($"HTTP {status}\n{body}");
+        return new HttpRequestException($"HTTP {status}\n{body}", inner: null, resp.StatusCode);
+    }
+
+    private static bool TryParseMcpError(string body, out int rpcCode, out string rpcMessage)
+    {
+        rpcCode = 0;
+        rpcMessage = string.Empty;
+
+        try
+        {
+            var envelope = JsonSerializer.Deserialize(body, McpJsonContext.Default.McpJsonRpcResponse);
+            if (envelope?.Error is null)
+                return false;
+
+            rpcCode = envelope.Error.Code;
+            rpcMessage = envelope.Error.Message;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private sealed class McpProtocolException : HttpRequestException
+    {
+        public McpProtocolException(HttpStatusCode statusCode, int? rpcCode, string message)
+            : base($"HTTP {(int)statusCode} ({(rpcCode.HasValue ? $"MCP {rpcCode.Value}" : "MCP")}): {message}", null, statusCode)
+        {
+            StatusCode = statusCode;
+            RpcCode = rpcCode;
+        }
+
+        public new HttpStatusCode StatusCode { get; }
+
+        public int? RpcCode { get; }
     }
 
     public void Dispose()

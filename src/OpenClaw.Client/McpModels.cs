@@ -45,6 +45,16 @@ public sealed class McpInitializeResult
     public required McpCapabilities Capabilities { get; init; }
     public required McpServerInfo ServerInfo { get; init; }
 }
+
+public sealed class McpDiscoverRequest;
+
+public sealed class McpDiscoverResult
+{
+    public string ProtocolVersion { get; init; } = string.Empty;
+    public IReadOnlyList<string> SupportedVersions { get; init; } = [];
+    public JsonElement Capabilities { get; init; }
+    public McpServerInfo? ServerInfo { get; init; }
+}
  
 public sealed class McpCapabilities
 {
@@ -102,6 +112,7 @@ public sealed class McpTextContent
 public sealed class McpCallToolResult
 {
     public IReadOnlyList<McpTextContent> Content { get; init; } = [];
+    public JsonElement StructuredContent { get; init; }
     public bool IsError { get; init; }
 }
  

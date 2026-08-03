@@ -6,6 +6,7 @@
     <PackageId>OpenClaw.McpApp</PackageId>
     <Description>MCP App support for OpenClaw.NET — discover, host, and manage MCP Applications as first-class citizens.</Description>
     <PackageTags>openclaw;mcp;mcp-app;ai;agent;dotnet</PackageTags>
+    <NoWarn>$(NoWarn);MCP9005</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,6 +15,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\OpenClaw.Core\OpenClaw.Core.csproj" />
-    <PackageReference Include="ModelContextProtocol" Version="1.4.0" />
+    <PackageReference Include="ModelContextProtocol" Version="2.0.0" />
   </ItemGroup>
 </Project>

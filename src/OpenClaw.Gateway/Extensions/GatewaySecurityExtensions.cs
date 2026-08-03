@@ -125,7 +125,7 @@ public static class GatewaySecurityExtensions
             }
         }
 
-        if (config.Channels.Telegram.Enabled)
+        if (config.Channels.Telegram.Enabled && config.Channels.Telegram.UsesWebhook())
         {
             if (!config.Channels.Telegram.ValidateSignature)
             {

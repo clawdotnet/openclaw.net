@@ -2,7 +2,7 @@
 
 MCP App 是 OpenClaw.NET 中将第三方 MCP 应用程序作为一等公民管理的模块。它提供基于清单（manifest）的自动发现、生命周期和进程管理以及工具桥接能力，让 MCP 应用像 VS Code 扩展一样被安装、发现和使用。
 
-OpenClaw 以 MCP 优先方式集成 MCP App 生态，兼容 [Model Context Protocol](https://modelcontextprotocol.io/) 2025-03-26 协议版本和 `text/html;profile=mcp-app` 交互式 UI 规范。
+OpenClaw 以 MCP 优先方式集成 MCP App 生态，兼容 [Model Context Protocol](https://modelcontextprotocol.io/) 和 `text/html;profile=mcp-app` 交互式 UI 规范。当前 gateway 与 MCP App 相关路径基于 MCP C# SDK `2.0.0` 运行。
 
 ## 与现有 MCP 集成的区别
 
@@ -28,6 +28,7 @@ MCP App 专为**需要打包分发**的 MCP 应用设计——每个 App 有自�
 - 六阶段生命周期跟踪（Discovered → Validated → Loaded → Running → Stopped → Failed）
 - 与 `NativePluginRegistry` 无缝集成——发现工具自动变为 Agent 可用工具
 - 浏览器 host 端点，让 MCP App UI 复用 Agent 当前使用的同一条上游 MCP 会话
+- MCP v2 兼容的 schema 处理：缺失可用 `inputSchema` 的工具会在 MCP App 枚举阶段被跳过
 
 ## 浏览器 Host 端点
 
@@ -60,6 +61,13 @@ OpenClaw.NET 为浏览器侧 MCP App UI 暴露了一组面向 gateway 的 host �
 - 面向模型的可见性过滤发生在 OpenClaw 把工具注册进 `NativePluginRegistry` 时，而不是发生在浏览器 host 代理层。
 - 带 `_meta.ui.resourceUri` 的 UI 工具在结果回流给模型时会抑制 `structuredContent`，但浏览器侧 MCP 代理仍然按正常 MCP 响应透传。
 - 为支持跨源浏览器 MCP 客户端，OpenClaw 在 CORS 中放行了 `mcp-protocol-version` 和 `Mcp-Session-Id` 这两个 MCP Streamable HTTP 头。
+
+### MCP v2 行为说明
+
+- Gateway MCP 服务器运行在 `ModelContextProtocol.AspNetCore` `2.0.0`，并启用了 MCP Tasks 扩展。
+- 默认传输姿态为 stateless/discover-first，可通过 `OpenClaw:McpCompatibility` 中的兼容开关回退。
+- `server/discover` 的可用性可能受协商协议修订版本影响；OpenClaw 客户端集成使用“协议感知回退”策略以兼容 initialize-first 服务器。
+- MCP App 工具接入默认采用严格 schema 校验：缺少可用 `inputSchema` 的工具不会注册到模型可见工具集中。
 
 ## 架构
 
@@ -202,6 +210,18 @@ src/mcpapp/
 | `Deny` | `[]` | 拒绝列表，拒绝优先于允许 |
 | `Entries` | `{}` | 按 App ID 的细粒度覆盖 |
 
+### MCP 兼容开关（Gateway）
+
+以下设置位于 `OpenClaw:McpCompatibility`，作用于 gateway MCP 行为（不是每个 App 的 manifest 字段）：
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| `EnableDiscoveryFirst` | `true` | 启用 MCP v2 的 discover-first 协商路径。 |
+| `ForceLegacyInitialize` | `false` | 强制使用 initialize-first 兼容模式。 |
+| `RequireOAuthIssuerValidation` | `true` | 在安全部署中启用严格 OAuth issuer 校验。 |
+| `RequirePkceS256` | `true` | 在使用 OAuth 流程时要求 PKCE S256。 |
+| `AllowRelaxedInputSchemaValidation` | `false` | 目前仅为预留开关；MCP App 枚举路径不会读取它，且在当前 SDK 下缺失 `inputSchema` 仍可能被归一化为 `{"type":"object"}`。 |
+
 ### Entries 覆盖
 
 `Entries` 中可覆盖清单中的以下字段：
@@ -240,6 +260,7 @@ Discovered ──→ Validated ──→ Loaded ──→ Running
 - **工具名前缀**：由 manifest 的 `toolNamePrefix` 自动应用
 - **可见性处理**：带有 `"ui": { "visibility": ["app"] }` 这类 MCP App metadata 的工具仍会提供给浏览器 host，但不会作为模型可见工具注册给 Agent
 - **错误处理**：无效 JSON 参数和远程执行错误均返回以 `Error:` 开头的结果文本
+- **Schema 严格性**：缺失/默认化 `inputSchema` 的工具会在枚举阶段被跳过，而不是静默归一化
 - **结构化输出**：支持 MCP 工具的文本内容和结构化内容；但带 UI 的工具在结果回流给模型时会抑制 `structuredContent`
 
 ```csharp

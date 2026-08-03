@@ -109,9 +109,24 @@ internal static class ChannelSetupCommand
         channel.Enabled = true;
         channel.DmPolicy = GetValue(parsed, input, output, "--dm-policy", "DM policy", channel.DmPolicy, nonInteractive);
         channel.BotTokenRef = GetRequiredValue(parsed, input, output, "--bot-token-ref", "Telegram bot token ref", channel.BotTokenRef, nonInteractive);
-        channel.WebhookPublicBaseUrl = GetRequiredValue(parsed, input, output, "--public-base-url", "Telegram webhook public base URL", channel.WebhookPublicBaseUrl, nonInteractive);
-        channel.ValidateSignature = true;
-        channel.WebhookSecretTokenRef = GetRequiredValue(parsed, input, output, "--webhook-secret-ref", "Telegram webhook secret ref", channel.WebhookSecretTokenRef, nonInteractive);
+        var updateMode = GetValue(
+            parsed,
+            input,
+            output,
+            "--update-mode",
+            "Telegram update mode (webhook|long-polling)",
+            channel.UpdateMode,
+            nonInteractive).Trim().ToLowerInvariant();
+        if (updateMode is not ("webhook" or "long-polling"))
+            throw new ArgumentException("Telegram update mode must be 'webhook' or 'long-polling'.");
+
+        channel.UpdateMode = updateMode;
+        if (updateMode == "webhook")
+        {
+            channel.WebhookPublicBaseUrl = GetRequiredValue(parsed, input, output, "--public-base-url", "Telegram webhook public base URL", channel.WebhookPublicBaseUrl, nonInteractive);
+            channel.ValidateSignature = true;
+            channel.WebhookSecretTokenRef = GetRequiredValue(parsed, input, output, "--webhook-secret-ref", "Telegram webhook secret ref", channel.WebhookSecretTokenRef, nonInteractive);
+        }
     }
 
     private static void ConfigureSlack(GatewayConfig config, CliArgs parsed, TextReader input, TextWriter output, bool nonInteractive)
@@ -208,6 +223,8 @@ internal static class ChannelSetupCommand
     {
         return channelId switch
         {
+            "telegram" when config.Channels.Telegram.UsesLongPolling() =>
+                ["Telegram long polling uses outbound HTTPS only; any existing webhook is removed on startup."],
             "telegram" => [$"Register Telegram webhook: {TrimTrailingSlash(config.Channels.Telegram.WebhookPublicBaseUrl) + config.Channels.Telegram.WebhookPath}"],
             "slack" => [
                 $"Slack events URL: {BuildRouteHint(config.BindAddress, config.Port, config.Channels.Slack.WebhookPath)}",
@@ -258,8 +275,9 @@ internal static class ChannelSetupCommand
 
             Telegram options:
               --bot-token-ref <ref>
-              --public-base-url <url>
-              --webhook-secret-ref <ref>
+              --update-mode <webhook|long-polling>
+              --public-base-url <url>       Required for webhook mode
+              --webhook-secret-ref <ref>    Required for webhook mode
 
             Slack options:
               --bot-token-ref <ref>

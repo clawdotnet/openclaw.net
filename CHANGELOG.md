@@ -2,7 +2,17 @@
 
 All notable changes to this project are tracked in this file.
 
-## [Unreleased] - 2026-03-04
+## [Unreleased]
+
+### MCP v2 Upgrade
+
+- Upgraded MCP integration surfaces to C# SDK `2.0.0` behavior across gateway, MCP App, and client-facing SDK helpers.
+- Enforced stricter MCP App tool schema handling: tools with missing/defaulted `inputSchema` are skipped during enumeration instead of silently normalizing to `{}`.
+- Added MCP App regression coverage for missing schema tool descriptors and preserved structured-content suppression behavior.
+- Added `OpenClawHttpClient.DiscoverMcpAsync` and MCP discover models with protocol-aware fallback to initialize-first servers.
+- Added `McpCallToolResult.StructuredContent` to `OpenClaw.Client` models for v2 response parity.
+- Registered MCP Tasks extension on gateway MCP server via `ModelContextProtocol.Extensions.Tasks` with in-memory task store.
+- Added gateway MCP proxy regression test to validate MCP server availability after Tasks extension enablement.
 
 ### Integration API, MCP, and SDK
 
