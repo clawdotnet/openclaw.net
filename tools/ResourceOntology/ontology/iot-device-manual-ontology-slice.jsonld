@@ -1,0 +1,682 @@
+{
+  "@context": {
+    "@base": "https://openclaw.net/ontology/iot-manual/",
+    "@vocab": "https://openclaw.net/ontology/iot-manual#",
+    "iot": "https://openclaw.net/ontology/iot-manual#",
+    "irdi": "https://openclaw.net/ontology/irdi#",
+    "wot": "https://www.w3.org/2019/wot/td#",
+    "mcp": "https://modelcontextprotocol.io/specification/2025-06-18/server/tools#",
+    "mqtt": "https://mqtt.org/specification#",
+    "sparkplug": "https://sparkplug.eclipse.org/specification#",
+    "schema": "https://schema.org/",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "owl": "http://www.w3.org/2002/07/owl#",
+    "skos": "http://www.w3.org/2004/02/skos/core#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#"
+  },
+  "@graph": [
+    {
+      "@id": "iot:DeviceManualOntology",
+      "@type": "owl:Ontology",
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "Agentic IoT 设备说明书本体切片"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "从 Visoar《每台 IoT 设备都需要「说明书」》抽取的本体切片。区分「设备说明书（事实/能力）」与「Skill（方法/处置）」两层，支撑 Agentic IoT 中设备能力的机器可读描述与 Skill 的复用。"
+      },
+      "owl:versionInfo": "0.1.0-20260803",
+      "owl:imports": [
+        {
+          "@id": "https://www.w3.org/2019/wot/td"
+        },
+        {
+          "@id": "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+        }
+      ]
+    },
+    {
+      "@id": "iot:Device",
+      "@type": "owl:Class",
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "设备"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "物理或逻辑上的 IoT 设备实例，如冷柜、门锁、摄像头、充电桩等。"
+      },
+      "owl:equivalentClass": {
+        "@id": "wot:Thing"
+      },
+      "rdfs:subClassOf": {
+        "@id": "schema:Product"
+      }
+    },
+    {
+      "@id": "iot:DeviceType",
+      "@type": "owl:Class",
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "设备类型"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "设备的分类，如冷柜、智能门锁、摄像头、充电桩、网关、PLC、传感器等。Skill 按 DeviceType 复用，而非按 Device 实例。"
+      },
+      "rdfs:subClassOf": {
+        "@id": "skos:Concept"
+      }
+    },
+    {
+      "@id": "iot:DeviceManual",
+      "@type": "owl:Class",
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "设备说明书"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "描述设备事实与能力的机器可读文档。回答「它是什么、在哪里、能读什么、能做什么、有什么限制」。区别于用户手册（写给人类），这是写给系统看的。"
+      },
+      "owl:equivalentClass": {
+        "@id": "wot:ThingDescription"
+      }
+    },
+    {
+      "@id": "iot:Skill",
+      "@type": "owl:Class",
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "处置 Skill"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "描述「遇到某类问题时，应该怎么判断、怎么处置、怎么升级、怎么复盘」的方法层。Skill 引用设备说明书，不复制说明书内容。"
+      },
+      "owl:disjointWith": {
+        "@id": "iot:DeviceManual"
+      }
+    },
+    {
+      "@id": "iot:DeviceState",
+      "@type": "owl:Class",
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "可读状态"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "设备可上报的状态或属性，如温度、湿度、门磁、压缩机状态、在线状态、故障码、功率等。"
+      },
+      "owl:equivalentClass": {
+        "@id": "wot:PropertyAffordance"
+      }
+    },
+    {
+      "@id": "iot:DeviceAction",
+      "@type": "owl:Class",
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "可执行动作"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "设备可接收并执行的命令或操作，如调温、重启、开关、锁定、解锁、切换模式、蜂鸣、上报诊断等。"
+      },
+      "owl:equivalentClass": {
+        "@id": "wot:ActionAffordance"
+      }
+    },
+    {
+      "@id": "iot:Restriction",
+      "@type": "owl:Class",
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "限制与约束"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "设备动作的业务边界与安全约束。在 Agentic IoT 中，「限制往往比能力更重要」。"
+      }
+    },
+    {
+      "@id": "iot:Location",
+      "@type": "owl:Class",
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "位置"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "设备的物理或逻辑位置，如 A区2号仓、3楼东侧走廊、冷链车、家庭厨房等。"
+      },
+      "rdfs:subClassOf": {
+        "@id": "schema:Place"
+      }
+    },
+    {
+      "@id": "iot:McpTool",
+      "@type": "owl:Class",
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "MCP 工具"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "通过 MCP 协议将设备能力封装为 Agent 可调用的工具，如查询工具、控制工具、配置工具、通知工具。"
+      },
+      "rdfs:subClassOf": {
+        "@id": "mcp:Tool"
+      }
+    },
+    {
+      "@id": "iot:MqttTopic",
+      "@type": "owl:Class",
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "MQTT Topic"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "MQTT 消息主题，用于设备事件上报与命令下发。对工程师像门牌号，对 Agent 需通过说明书翻译为语义。"
+      }
+    },
+    {
+      "@id": "iot:Stakeholder",
+      "@type": "owl:Class",
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "利益相关方"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "参与设备说明书共建的角色：厂商（基础能力）、平台（统一模型）、集成商（现场关系）、使用者（业务边界）。"
+      }
+    },
+    {
+      "@id": "iot:hasManual",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": {
+        "@id": "iot:Device"
+      },
+      "rdfs:range": {
+        "@id": "iot:DeviceManual"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "拥有说明书"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "每台设备实例拥有独立的说明书，描述其特定事实（位置、ID、温度范围、权限等）。"
+      }
+    },
+    {
+      "@id": "iot:hasDeviceType",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": {
+        "@id": "iot:Device"
+      },
+      "rdfs:range": {
+        "@id": "iot:DeviceType"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "属于设备类型"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "Skill 按设备类型复用，同一类型的设备共用一套处置方法。"
+      }
+    },
+    {
+      "@id": "iot:describesState",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": {
+        "@id": "iot:DeviceManual"
+      },
+      "rdfs:range": {
+        "@id": "iot:DeviceState"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "描述可读状态"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "说明书声明设备可读取的状态项。"
+      }
+    },
+    {
+      "@id": "iot:describesAction",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": {
+        "@id": "iot:DeviceManual"
+      },
+      "rdfs:range": {
+        "@id": "iot:DeviceAction"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "描述可执行动作"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "说明书声明设备可执行的动作。"
+      }
+    },
+    {
+      "@id": "iot:hasRestriction",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": {
+        "@id": "iot:DeviceAction"
+      },
+      "rdfs:range": {
+        "@id": "iot:Restriction"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "受限于"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "动作受业务边界、安全策略、速率限制等约束。"
+      }
+    },
+    {
+      "@id": "iot:locatedAt",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": {
+        "@id": "iot:Device"
+      },
+      "rdfs:range": {
+        "@id": "iot:Location"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "位于"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "设备的物理或逻辑位置。"
+      }
+    },
+    {
+      "@id": "iot:appliesTo",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": {
+        "@id": "iot:Skill"
+      },
+      "rdfs:range": {
+        "@id": "iot:DeviceType"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "适用于"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "Skill 适用于某类设备，而非某个设备实例。这是 Skill 可复用的关键。"
+      }
+    },
+    {
+      "@id": "iot:referencesManual",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": {
+        "@id": "iot:Skill"
+      },
+      "rdfs:range": {
+        "@id": "iot:DeviceManual"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "引用说明书"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "Skill 引用设备说明书获取具体 topic、字段、单位、权限，不将说明书内容硬编码进 Skill。"
+      }
+    },
+    {
+      "@id": "iot:encapsulatesAsTool",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": {
+        "@id": "iot:DeviceManual"
+      },
+      "rdfs:range": {
+        "@id": "iot:McpTool"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "封装为 MCP 工具"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "设备说明书中的能力通过 MCP 封装为 Agent 可调用的工具。"
+      }
+    },
+    {
+      "@id": "iot:usesTopic",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": {
+        "@id": "iot:DeviceState"
+      },
+      "rdfs:range": {
+        "@id": "iot:MqttTopic"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "使用 MQTT Topic"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "状态通过 MQTT Topic 上报。"
+      }
+    },
+    {
+      "@id": "iot:commandTopic",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": {
+        "@id": "iot:DeviceAction"
+      },
+      "rdfs:range": {
+        "@id": "iot:MqttTopic"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "命令 Topic"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "动作通过 MQTT Topic 下发命令。"
+      }
+    },
+    {
+      "@id": "iot:maintainedBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": {
+        "@id": "iot:DeviceManual"
+      },
+      "rdfs:range": {
+        "@id": "iot:Stakeholder"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "由...维护"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "说明书由多方共同维护：厂商提供基础能力、平台统一模型、集成商补充现场关系、使用者定义业务边界。"
+      }
+    },
+    {
+      "@id": "iot:irdi",
+      "@type": "owl:DatatypeProperty",
+      "rdfs:domain": {
+        "@id": "iot:Device"
+      },
+      "rdfs:range": {
+        "@id": "xsd:string"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "IRDI 标识符"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "国际注册数据标识符（International Registration Data Identifier），作为设备本体实体的全局键。领域对象投影到 JSON-LD 后，用 IRDI 做 @id。"
+      },
+      "owl:sameAs": {
+        "@id": "irdi:identifier"
+      }
+    },
+    {
+      "@id": "iot:normalRange",
+      "@type": "owl:DatatypeProperty",
+      "rdfs:domain": {
+        "@id": "iot:DeviceState"
+      },
+      "rdfs:range": {
+        "@id": "xsd:string"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "正常范围"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "状态的正常取值范围，如温度 2-8℃、-18~-22℃ 等。"
+      }
+    },
+    {
+      "@id": "iot:fieldMapping",
+      "@type": "owl:DatatypeProperty",
+      "rdfs:domain": {
+        "@id": "iot:DeviceState"
+      },
+      "rdfs:range": {
+        "@id": "xsd:string"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "字段映射"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "厂商原始字段名到平台统一字段名的映射，如 temp/temperature/t1 → temperature_celsius。"
+      }
+    },
+    {
+      "@id": "iot:unit",
+      "@type": "owl:DatatypeProperty",
+      "rdfs:domain": {
+        "@id": "iot:DeviceState"
+      },
+      "rdfs:range": {
+        "@id": "xsd:string"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "单位"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "状态值的计量单位，需统一归一化。"
+      }
+    },
+    {
+      "@id": "iot:actionResultPath",
+      "@type": "owl:DatatypeProperty",
+      "rdfs:domain": {
+        "@id": "iot:DeviceAction"
+      },
+      "rdfs:range": {
+        "@id": "xsd:string"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "动作结果确认路径"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "动作执行后如何确认结果：命令是否送达、设备是否执行、状态是否变化、失败时返回什么。"
+      }
+    },
+    {
+      "@id": "iot:riskLevel",
+      "@type": "owl:DatatypeProperty",
+      "rdfs:domain": {
+        "@id": "iot:DeviceAction"
+      },
+      "rdfs:range": {
+        "@id": "xsd:string"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "风险等级"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "动作的风险等级：低风险（可自动执行）、中风险（建议后执行）、高风险（必须人工确认）。"
+      }
+    },
+    {
+      "@id": "iot:requiresApproval",
+      "@type": "owl:DatatypeProperty",
+      "rdfs:domain": {
+        "@id": "iot:Restriction"
+      },
+      "rdfs:range": {
+        "@id": "xsd:boolean"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "需要审批"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "该动作是否需要人工审批后方可执行。"
+      }
+    },
+    {
+      "@id": "iot:responsiblePerson",
+      "@type": "owl:DatatypeProperty",
+      "rdfs:domain": {
+        "@id": "iot:DeviceManual"
+      },
+      "rdfs:range": {
+        "@id": "xsd:string"
+      },
+      "rdfs:label": {
+        "@language": "zh",
+        "@value": "责任人"
+      },
+      "rdfs:comment": {
+        "@language": "zh",
+        "@value": "设备的责任人或运维角色，如冷链值班员。"
+      }
+    },
+    {
+      "@id": "irdi:1234-5678-9012-3456",
+      "@type": "iot:Device",
+      "iot:irdi": "1234-5678-9012-3456",
+      "schema:name": "冷柜 A01",
+      "iot:hasDeviceType": {
+        "@id": "iot:Refrigerator"
+      },
+      "iot:locatedAt": {
+        "@id": "irdi:loc-warehouse-a-zone-1",
+        "@type": "iot:Location",
+        "schema:name": "冷库 1 区"
+      },
+      "iot:hasManual": {
+        "@id": "irdi:manual-fridge-a01",
+        "@type": "iot:DeviceManual",
+        "schema:name": "冷柜 A01 说明书",
+        "iot:responsiblePerson": "冷链值班员",
+        "iot:describesState": [
+          {
+            "@id": "irdi:state-fridge-a01-temp",
+            "@type": "iot:DeviceState",
+            "schema:name": "温度",
+            "iot:fieldMapping": "temp → temperature_celsius",
+            "iot:unit": "℃",
+            "iot:normalRange": "-18 ~ -22",
+            "iot:usesTopic": {
+              "@id": "irdi:topic-fridge-a01-temp",
+              "@type": "iot:MqttTopic",
+              "schema:name": "warehouse/a/fridge-2/temperature"
+            }
+          },
+          {
+            "@id": "irdi:state-fridge-a01-door",
+            "@type": "iot:DeviceState",
+            "schema:name": "门磁状态",
+            "iot:fieldMapping": "door_status → door_magnet",
+            "iot:usesTopic": {
+              "@id": "irdi:topic-fridge-a01-door",
+              "@type": "iot:MqttTopic",
+              "schema:name": "warehouse/a/fridge-2/door"
+            }
+          },
+          {
+            "@id": "irdi:state-fridge-a01-compressor",
+            "@type": "iot:DeviceState",
+            "schema:name": "压缩机状态",
+            "iot:usesTopic": {
+              "@id": "irdi:topic-fridge-a01-compressor",
+              "@type": "iot:MqttTopic",
+              "schema:name": "warehouse/a/fridge-2/compressor"
+            }
+          }
+        ],
+        "iot:describesAction": [
+          {
+            "@id": "irdi:action-fridge-a01-adjust-temp",
+            "@type": "iot:DeviceAction",
+            "schema:name": "调温",
+            "iot:commandTopic": {
+              "@id": "irdi:topic-cmd-fridge-a01-temp",
+              "@type": "iot:MqttTopic",
+              "schema:name": "warehouse/a/fridge-2/cmd/adjust-temp"
+            },
+            "iot:actionResultPath": "读取 temperature 确认是否回落到目标范围",
+            "iot:hasRestriction": {
+              "@id": "irdi:restriction-fridge-a01-temp",
+              "@type": "iot:Restriction",
+              "schema:name": "调温限制",
+              "iot:requiresApproval": true,
+              "schema:description": "调整目标温度前，需要人工确认"
+            }
+          },
+          {
+            "@id": "irdi:action-fridge-a01-reboot",
+            "@type": "iot:DeviceAction",
+            "schema:name": "重启",
+            "iot:riskLevel": "high",
+            "iot:hasRestriction": {
+              "@id": "irdi:restriction-fridge-a01-reboot",
+              "@type": "iot:Restriction",
+              "schema:description": "强制停机为高风险动作，必须人工确认"
+            }
+          }
+        ],
+        "iot:encapsulatesAsTool": [
+          {
+            "@id": "irdi:tool-query-fridge-a01",
+            "@type": "iot:McpTool",
+            "schema:name": "查询冷柜 A01 状态"
+          },
+          {
+            "@id": "irdi:tool-control-fridge-a01",
+            "@type": "iot:McpTool",
+            "schema:name": "控制冷柜 A01 调温"
+          }
+        ]
+      }
+    },
+    {
+      "@id": "iot:Refrigerator",
+      "@type": "iot:DeviceType",
+      "skos:prefLabel": {
+        "@language": "zh",
+        "@value": "冷柜"
+      },
+      "skos:definition": {
+        "@language": "zh",
+        "@value": "用于冷链仓储的制冷设备"
+      }
+    },
+    {
+      "@id": "irdi:skill-cold-chain-temp-abnormal",
+      "@type": "iot:Skill",
+      "schema:name": "冷链温度异常处置 Skill",
+      "iot:appliesTo": {
+        "@id": "iot:Refrigerator"
+      },
+      "schema:description": "面对冷柜温度异常时的判断与处置流程：检测告警 → 原因分析（门磁、压缩机、附近探头） → 处置指引 → 工单联动 → 跟踪复盘。Skill 不硬编码设备 topic，运行时通过 iot:referencesManual 动态获取。"
+    }
+  ]
+}

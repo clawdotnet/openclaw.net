@@ -3,17 +3,22 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <PublishReadyToRun>true</PublishReadyToRun>
-    <PublishTrimmed>true</PublishTrimmed>
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
+    <!-- Publish-only: keep framework-dependent for local build/test so RID/obj does not collide. -->
+    <PublishReadyToRun Condition="'$(PublishReadyToRun)' == '' and '$(PublishDir)' != ''">true</PublishReadyToRun>
+    <PublishTrimmed Condition="'$(PublishTrimmed)' == '' and '$(PublishDir)' != ''">true</PublishTrimmed>
+    <PublishSingleFile Condition="'$(PublishSingleFile)' == '' and '$(PublishDir)' != ''">true</PublishSingleFile>
+    <SelfContained Condition="'$(SelfContained)' == '' and '$(PublishDir)' != ''">true</SelfContained>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>ResourceOntology.Api</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="dotNetRDF" Version="3.3.1" />
+    <PackageReference Include="dotNetRDF" Version="3.5.2" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ResourceOntology.Tests" />
   </ItemGroup>
 
 </Project>

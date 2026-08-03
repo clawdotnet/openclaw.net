@@ -43,6 +43,12 @@
     <Project Path="src/OpenClaw.WhatsApp.BaileysWorker/OpenClaw.WhatsApp.BaileysWorker.csproj" />
     <Project Path="src/OpenClawNet.Sandbox.OpenSandbox/OpenClawNet.Sandbox.OpenSandbox.csproj" />
   </Folder>
+  <Folder Name="/tools/" />
+  <Folder Name="/tools/ResourceOntology/" />
+  <Folder Name="/tools/ResourceOntology/server/">
+    <Project Path="tools/ResourceOntology/server/ResourceOntology.Api.csproj" />
+    <Project Path="tools/ResourceOntology/tests/ResourceOntology.Tests.csproj" />
+  </Folder>
   <Project Path="src/OpenClaw.Agent/OpenClaw.Agent.csproj" />
   <Project Path="src/OpenClaw.Channels/OpenClaw.Channels.csproj" />
   <Project Path="src/OpenClaw.Core/OpenClaw.Core.csproj" />

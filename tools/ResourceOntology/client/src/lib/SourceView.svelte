@@ -39,7 +39,7 @@
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${store.rawOwlFileName?.replace(/\.owl$/i, '') ?? 'ontology'}.jsonld`
+      a.download = `${store.rawOwlFileName?.replace(/\.(owl|rdf|xml|jsonld|json)$/i, '') ?? 'ontology'}.jsonld`
       a.click()
       URL.revokeObjectURL(url)
     }

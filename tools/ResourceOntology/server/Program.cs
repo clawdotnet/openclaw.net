@@ -1,7 +1,5 @@
 using ResourceOntology.Api.Models;
 using ResourceOntology.Api.Services;
-using VDS.RDF.JsonLd;
-using VDS.RDF.Parsing;
 using VDS.RDF.Writing;
 using Newtonsoft.Json.Linq;
 
@@ -102,14 +100,25 @@ app.MapGet("/api/ontology/files", () =>
     if (dir == null)
         return Results.Ok(new OntologyFileList());
 
+    static IEnumerable<string> EnumerateOntologyFiles(string ontologyDir)
+    {
+        foreach (var pattern in new[] { "*.owl", "*.jsonld" })
+        {
+            foreach (var f in Directory.GetFiles(ontologyDir, pattern))
+                yield return f;
+        }
+    }
+
     var list = new OntologyFileList();
-    list.Files = Directory.GetFiles(dir, "*.owl")
+    list.Files = EnumerateOntologyFiles(dir)
         .Select(f => new OntologyFileEntry
         {
             Name = Path.GetFileName(f),
             DisplayName = Path.GetFileNameWithoutExtension(f)
         })
-        .OrderBy(f => f.DisplayName)
+        .GroupBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+        .Select(g => g.First())
+        .OrderBy(f => f.DisplayName, StringComparer.OrdinalIgnoreCase)
         .ToList();
 
     return Results.Ok(list);
@@ -170,13 +179,8 @@ app.MapGet("/api/ontology/export-jsonld", (string file, string format, bool down
     {
         logger.LogInformation("Exporting JSON-LD ({Format}): {Path}", format, path);
 
-        // Load RDF/XML into a Graph
-        var graph = new VDS.RDF.Graph();
-        var parser = new RdfXmlParser();
-        using (var reader = new StreamReader(File.OpenRead(path)))
-        {
-            parser.Load(graph, reader);
-        }
+        // Load RDF/XML or JSON-LD into a Graph via shared dispatcher
+        var graph = parser.LoadGraph(path);
 
         // Create a TripleStore with the loaded graph
         var store = new VDS.RDF.TripleStore();
@@ -264,13 +268,9 @@ app.MapPost("/api/ontology/export-jsonld", async (HttpRequest request, string fo
         await File.WriteAllTextAsync(savePath, owlText);
         logger.LogInformation("Saved uploaded ontology: {Path}", savePath);
 
-        // Convert to JSON-LD using same approach as GET endpoint
-        var graph = new VDS.RDF.Graph();
-        var rdfParser = new RdfXmlParser();
-        using (var sr = new StringReader(owlText))
-        {
-            rdfParser.Load(graph, sr);
-        }
+        // Convert to JSON-LD using shared load dispatcher (RDF/XML or JSON-LD)
+        using var sr = new StringReader(owlText);
+        var graph = parser.LoadGraph(sr, fileName);
 
         // Create a TripleStore with the loaded graph
         var store = new VDS.RDF.TripleStore();

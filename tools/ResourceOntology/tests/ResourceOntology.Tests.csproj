@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ResourceOntology.Tests</RootNamespace>
+    <AssemblyName>ResourceOntology.Tests</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="dotNetRDF" Version="3.5.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\server\ResourceOntology.Api.csproj" />
+  </ItemGroup>
+
+</Project>

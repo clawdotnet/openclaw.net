@@ -158,13 +158,13 @@ graph, so you can isolate, say, just the disjointness network or just the proper
 ┌──────────────────────────┐        HTTP / JSON        ┌───────────────────────────┐
 │  Svelte 5 + Vite SPA      │  ───────────────────────▶ │  ASP.NET Core (.NET 10)    │
 │  Tailwind v4 + Cytoscape  │  ◀───────────────────────  │  Minimal API + dotNetRDF   │
-│  (graph, tree, inspector) │     OntologyDto (JSON)     │  (RDF/XML → model)         │
+│  (graph, tree, inspector) │     OntologyDto (JSON)     │  (RDF/XML or JSON-LD → model) │
 └──────────────────────────┘                            └───────────────────────────┘
 ```
 
-- **Backend** (`server/`) — an ASP.NET Core minimal API. `OntologyParser` loads the
-  RDF/XML with dotNetRDF and lifts classes, properties, individuals, restrictions,
-  disjointness and domain/range axioms into a clean JSON model
+- **Backend** (`server/`) — an ASP.NET Core minimal API. `OntologyParser` loads
+  RDF/XML or OWL-as-JSON-LD with dotNetRDF and lifts classes, properties, individuals,
+  restrictions, disjointness and domain/range axioms into a clean JSON model
   (`OntologyDto`). In production it also serves the built SPA, so the whole app runs on a
   single port.
 - **Frontend** (`client/`) — a Svelte 5 single-page app. [Cytoscape.js](https://js.cytoscape.org/)
@@ -219,13 +219,23 @@ dotnet run --urls http://localhost:5174
 
 ## Loading other ontologies
 
-The app can visualise any OWL ontology serialised as **RDF/XML**:
+The app can visualise OWL ontologies serialised as:
 
-- Click **“Open OWL file…”** in the header, or
-- **drag and drop** a `.owl` / `.rdf` / `.xml` file anywhere onto the window.
+- **RDF/XML** — `.owl`, `.rdf`, `.xml`
+- **JSON-LD** — `.jsonld` (OWL-as-JSON-LD; same axioms, different serialisation)
 
-The file is parsed by the same server-side pipeline and never leaves your machine. Click
-**“Load bundled ontology”** to return to `Resource.owl`.
+Use **Open ontology file…** or drag-and-drop. Parsing is server-side; files stay on your machine.
+
+### JSON-LD scope (v1)
+
+**Supported:** OWL ontologies encoded as JSON-LD (shape A), including files produced by this app’s **Export JSON-LD**.
+
+**Not supported in v1:**
+
+- Arbitrary JSON-LD knowledge graphs without OWL vocabulary (no full OWL-browser fidelity)
+- Guaranteed bit-exact JSON-LD round-trip formatting
+- Remote `@context` resolution as a supported offline/CI feature
+- Turtle / N-Triples as first-class upload formats
 
 ---
 
@@ -233,9 +243,11 @@ The file is parsed by the same server-side pipeline and never leaves your machin
 
 | Method | Route | Description |
 | --- | --- | --- |
-| `GET` | `/api/ontology/default` | Parsed model of the bundled `Resource.owl` (cached) |
-| `GET` | `/api/ontology/source` | Raw RDF/XML source of the bundled ontology |
-| `POST` | `/api/ontology/parse?name=<file>` | Parse an uploaded ontology (raw body or multipart) → model |
+| `POST` | `/api/ontology/parse?name=<file>` | Upload RDF/XML or JSON-LD → `OntologyDto` |
+| `GET` | `/api/ontology/files` | List `.owl` and `.jsonld` under `ontology/` |
+| `GET` | `/api/ontology/load?file=` | Load and parse a file from `ontology/` |
+| `GET` | `/api/ontology/export-jsonld?file=&format=` | Export JSON-LD (`compact` / `expanded`) |
+| `POST` | `/api/ontology/export-jsonld?fileName=&format=` | Upload then export JSON-LD |
 | `GET` | `/api/health` | Liveness check |
 
 ---
@@ -248,9 +260,10 @@ ResourceOntology/
 │   └── Resource.owl              # the PhD ontology (read-only research data)
 ├── server/                       # ASP.NET Core API + SPA host
 │   ├── Models/OntologyDtos.cs    # JSON contract
-│   ├── Services/OntologyParser.cs# RDF/XML → model (dotNetRDF)
+│   ├── Services/OntologyParser.cs# RDF/XML or JSON-LD → model (dotNetRDF)
 │   ├── Program.cs                # endpoints, CORS, static SPA
 │   └── wwwroot/                  # built SPA (generated; git-ignored)
+├── tests/                        # xunit.v3 parser tests (aligned with main repo)
 ├── client/                       # Svelte 5 + Vite + Tailwind + Cytoscape
 │   └── src/
 │       ├── App.svelte            # shell: header, panes, file loading

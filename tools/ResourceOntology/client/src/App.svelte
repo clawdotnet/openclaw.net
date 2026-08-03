@@ -40,13 +40,31 @@
     }
   }
 
+  function isSupportedOntologyFile(file: File): boolean {
+    const name = file.name.toLowerCase()
+    return (
+      name.endsWith('.owl') ||
+      name.endsWith('.rdf') ||
+      name.endsWith('.xml') ||
+      name.endsWith('.jsonld') ||
+      name.endsWith('.json')
+    )
+  }
+
   async function loadFile(file: File) {
+    if (!isSupportedOntologyFile(file)) {
+      store.error = `Unsupported file type: ${file.name}. Use .owl, .rdf, .xml, .jsonld, or .json.`
+      return
+    }
+
     store.jsonldSource = null
     store.jsonldCompact = null
     store.jsonldExpanded = null
     store.activeTab = 'graph'
     store.loading = true
     store.error = null
+    // Local upload is not a server-side catalog entry.
+    store.currentFile = null
     try {
       const text = await file.text()
       store.rawOwlText = text
@@ -61,8 +79,11 @@
   }
 
   function onPick(e: Event) {
-    const f = (e.target as HTMLInputElement).files?.[0]
+    const input = e.target as HTMLInputElement
+    const f = input.files?.[0]
     if (f) loadFile(f)
+    // Allow re-selecting the same file later.
+    input.value = ''
   }
   function onDrop(e: DragEvent) {
     e.preventDefault()
@@ -190,6 +211,7 @@
       {/if}
       <button
         class="rounded-md bg-klass px-3 py-1.5 text-xs font-medium text-canvas hover:opacity-90"
+        title=".owl, .rdf, .xml, .jsonld, .json"
         onclick={() => fileInput.click()}>{t('app.openFile')}</button
       >
       <button
@@ -198,7 +220,13 @@
         onclick={handleExport}
       >Export JSON-LD</button
       >
-      <input bind:this={fileInput} type="file" accept=".owl,.rdf,.xml" class="hidden" onchange={onPick} />
+      <input
+        bind:this={fileInput}
+        type="file"
+        accept=".owl,.rdf,.xml,.jsonld,.json,application/rdf+xml,application/ld+json,application/json,text/xml"
+        class="hidden"
+        onchange={onPick}
+      />
     </div>
   </header>
 

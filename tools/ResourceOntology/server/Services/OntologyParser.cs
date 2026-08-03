@@ -5,8 +5,8 @@ using VDS.RDF.Parsing;
 namespace ResourceOntology.Api.Services;
 
 /// <summary>
-/// Parses an OWL ontology serialised as RDF/XML into a UI-friendly JSON model.
-/// Uses dotNetRDF for robust RDF/XML handling (blank nodes, collections, rdf:ID/about resolution),
+/// Parses an OWL ontology serialised as RDF/XML or JSON-LD into a UI-friendly JSON model.
+/// Uses dotNetRDF for robust RDF handling (blank nodes, collections, rdf:ID/about resolution),
 /// then lifts the relevant OWL axioms (sub-class, disjointness, restrictions, property
 /// domains/ranges, individuals and assertions) out of the resulting triple store.
 /// </summary>
@@ -20,16 +20,85 @@ public class OntologyParser
 
     public OntologyDto Parse(TextReader reader, string sourceName)
     {
+        var text = reader.ReadToEnd();
         IGraph g = new Graph();
-        new RdfXmlParser().Load(g, reader);
+        LoadGraphFromText(g, text, sourceName);
         return BuildModel(g, sourceName);
     }
 
     public OntologyDto ParseFile(string path)
     {
         IGraph g = new Graph();
-        new RdfXmlParser().Load(g, path);
+        LoadGraphFromFile(g, path);
         return BuildModel(g, Path.GetFileName(path));
+    }
+
+    /// <summary>Load an ontology file into an RDF graph (RDF/XML or JSON-LD by extension/sniff).</summary>
+    public IGraph LoadGraph(string path)
+    {
+        var g = new Graph();
+        LoadGraphFromFile(g, path);
+        return g;
+    }
+
+    /// <summary>Load ontology text into an RDF graph using <paramref name="sourceName"/> for format hints.</summary>
+    public IGraph LoadGraph(TextReader reader, string sourceName)
+    {
+        var text = reader.ReadToEnd();
+        var g = new Graph();
+        LoadGraphFromText(g, text, sourceName);
+        return g;
+    }
+
+    internal static void LoadGraphFromFile(IGraph g, string path)
+    {
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        if (ext is ".jsonld" or ".json")
+        {
+            // JsonLdParser is store-oriented in dotNetRDF 3.5.x; FileLoader dispatches by extension.
+            FileLoader.Load(g, path);
+            return;
+        }
+
+        if (ext is ".owl" or ".rdf" or ".xml" or "")
+        {
+            new RdfXmlParser().Load(g, path);
+            return;
+        }
+
+        var text = File.ReadAllText(path);
+        LoadGraphFromText(g, text, path);
+    }
+
+    internal static void LoadGraphFromText(IGraph g, string text, string sourceName)
+    {
+        var ext = Path.GetExtension(sourceName).ToLowerInvariant();
+        var trimmed = text.TrimStart();
+        var preferJsonLd =
+            ext is ".jsonld" or ".json"
+            || trimmed.StartsWith('{')
+            || trimmed.StartsWith('[');
+
+        if (preferJsonLd)
+        {
+            using var sr = new StringReader(text);
+            LoadJsonLdIntoGraph(g, sr);
+            return;
+        }
+
+        using var srXml = new StringReader(text);
+        new RdfXmlParser().Load(g, srXml);
+    }
+
+    /// <summary>
+    /// JSON-LD loads into a triple store (named graphs possible); merge all into the target graph.
+    /// </summary>
+    internal static void LoadJsonLdIntoGraph(IGraph g, TextReader reader)
+    {
+        var store = new TripleStore();
+        new JsonLdParser().Load(store, reader);
+        foreach (IGraph named in store.Graphs)
+            g.Merge(named);
     }
 
     private OntologyDto BuildModel(IGraph g, string sourceName)

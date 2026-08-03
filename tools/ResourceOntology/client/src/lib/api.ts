@@ -19,12 +19,18 @@ export function loadDefaultOntology(): Promise<Ontology> {
   return fetch('/api/ontology/default').then((r) => asJson<Ontology>(r))
 }
 
-/** Parse an OWL/RDF-XML file chosen by the user. */
+function contentTypeForOntologyFile(file: File): string {
+  const name = file.name.toLowerCase()
+  if (name.endsWith('.jsonld') || name.endsWith('.json')) return 'application/ld+json'
+  return 'application/rdf+xml'
+}
+
+/** Parse an ontology file (RDF/XML or OWL-as-JSON-LD) chosen by the user. */
 export function parseOntologyFile(file: File): Promise<Ontology> {
   const url = `/api/ontology/parse?name=${encodeURIComponent(file.name)}`
   return fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/rdf+xml' },
+    headers: { 'Content-Type': contentTypeForOntologyFile(file) },
     body: file,
   }).then((r) => asJson<Ontology>(r))
 }
@@ -40,7 +46,7 @@ export interface OntologyFileEntry {
   displayName: string
 }
 
-/** List all .owl files in the server's ontology directory. */
+/** List ontology files (.owl / .jsonld) in the server's ontology directory. */
 export function listOntologyFiles(): Promise<{ files: OntologyFileEntry[] }> {
   return fetch('/api/ontology/files').then((r) => asJson<{ files: OntologyFileEntry[] }>(r))
 }
