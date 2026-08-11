@@ -29,6 +29,18 @@ openclaw.net 是一个 NativeAOT 友好的 .NET AI Agent 运行时和网关，�
 3. **差距量化**：对每个标准条款评估覆盖度（完整/部分/缺失）
 4. **路线图建议**：按优先级排序实施路径
 
+### 1.3 对照原文核验（2026-08-11）
+
+本评估初稿于 2026-07-16 成稿（标准 2026-08-01 实施之前）。2026-08-11 对 `docs/zh-CN/GBT+48000.3-2026.pdf` 原文做了逐条复核，发现若干与标准不一致处，已在下文标注修正：
+
+- **核心实体类型**：标准附录 B.1–B.18 实际定义 **18 种**，初稿误写为「12 种」且所列名称（Metadata / StandardClassification / Level / Term / ConstraintLogic 等）与标准不符，已按原文更正（见 2.3.2）。
+- **核心数据属性**：标准附录 C.1–C.47 实际定义 **47 个**，初稿正文写「100+」、3.1 表写「22」均错，已更正（见 2.3.3）。
+- **核心对象属性**：第 7.3.2 节为 **34 种**，初稿正确，保留。
+- **公理口径**：初稿称代码「28 公理」，但 `StandardOntology.cs` 中字面 `Axiom` 仅 2 处（另有 10 处 disjoint、2 处 functional、13 处 subClassOf），经与第 8 章原文（见 2.3.4）映射，口径与 `Disjoint(10)+Functional(2)+SubClassOf(13)+hasKey/Axiom(≈3)` 合计基本吻合（±1），已澄清（见 2.3.4）。
+- **本体可视化**：初稿仅写「加载 RDF/XML」；`bc0e400` 已使该工具支持 OWL-as-JSON-LD 输入渲染，已补注（见 3.1）。
+
+> **方法学说明（2026-08-11 更新）**：本核验主体采用 `pdftotext` / PyMuPDF 文本还原（CID 字体缺 ToUnicode，中文以 `latin1→gbk` 还原），可恢复第 5/6/7.3.2/附录 B·C 的结构与英文术语；**第 8 章中文正文在该字体下被抽成替换符无法文本提取，已改用 OCR（rapidocr-onnxruntime，渲染 PDF 第 16–17 页）取得原文并坐实**（见 2.3.4）。OCR 与文本还原相互交叉验证：第 7.3.2 的 34 种对象属性、附录 B 的 18 种实体、附录 C 的 47 个数据属性均与 OCR 可读页（第 15、18–19 页）一致。
+
 ---
 
 ## 2. GB/T 48000.3-2026 标准概要
@@ -55,9 +67,9 @@ openclaw.net 是一个 NativeAOT 友好的 .NET AI Agent 运行时和网关，�
 第3章  术语和定义（8 个核心术语）
 第4章  缩略语（IRI, OWL, RDF, RDFS, SHACL, XML）
 第5章  建模通用要求（基本要求、建模流程、表示要求、表示形式）
-第6章  实体建模（确定要求、核心实体类型 12 种、属性、版本管理）
+第6章  实体建模（确定要求、核心实体类型 18 种、属性、版本管理）
 第7章  实体关系类型（通用要求、基本关系、34 种核心对象属性）
-第8章  本体公共元素（通用、核心公理要求）
+第8章  本体公理与规则（8.1 通则、8.2 核心规则要求：实体类型/属性/关系三类）
 第9章  扩展表示原则
 附录A（规范性） 实体类型及属性的元数据描述规范
 附录B（资料性） 核心实体类型定义
@@ -75,26 +87,28 @@ openclaw.net 是一个 NativeAOT 友好的 .NET AI Agent 运行时和网关，�
 
 #### 2.3.2 核心实体类型（第 6.2 节，附录 B）
 
-标准定义了 12 种核心实体类型：
+> 2026-08-11 核验：标准附录 B.1–B.18 实际定义 **18 种**核心实体类型（初稿误写为「12 种」且名称与标准不符）。下表按原文更正。
 
-| 序号 | 实体类型 | 英文名 | 说明 |
-|------|---------|--------|------|
-| 1 | 标准实体 | Standard | 标准文件的核心节点，聚合元数据、结构、内容及制定过程 |
-| 2 | 标准对象 | StandardizationObject | 描述标准化的具体对象或主题 |
-| 3 | 元数据 | Metadata | 标准的管理元数据信息 |
-| 4 | 相关方 | RelevantParty | 参与标准活动的组织和个人 |
-| 5 | 标准分类 | StandardClassification | ICS/CCS 分类体系 |
-| 6 | 要素 | Element | 标准的规范性/资料性要素 |
-| 7 | 层次 | Level | 章、条、段、项等层级结构 |
-| 8 | 术语 | Term | 标准中界定的专业术语 |
-| 9 | 信息单元 | InformationUnit | 标准内容的最小信息模块 |
-| 10 | 对象 | Object | 标准涉及的人员、设备、材料等 |
-| 11 | 特性 | Characteristic | 产品/服务/过程的可量化属性 |
-| 12 | 约束逻辑 | ConstraintLogic | 具体的约束条件（数值、偏差等） |
-| | 外部约束 | ExternalConstraint | 法律法规、专利、标准文献等 |
-| | 判定 | Determination | 判定准则 |
-| | 信息单元表示形式 | RepresentationForm | 同内容不同表示形式 |
-| | 制定阶段 | DevelopmentStage | 标准生命周期各阶段 |
+| 序号 | 实体类型 | 英文名（附录 B） | 说明 |
+| ------ | --------- | ------------------ | ------ |
+| B.1 | 标准实体 | Standard | 标准文件的核心节点，聚合元数据、结构、内容及制定过程 |
+| B.2 | 标准化对象 | StandardizationObject | 描述标准化的具体对象或主题 |
+| B.3 | 相关方 | Stakeholder | 参与标准活动的组织和个人（注：标准用词为 Stakeholder，非 RelevantParty） |
+| B.4 | 组织 | Organization | 标准活动中的组织机构 |
+| B.5 | 个体 | Individual | 具体的个体实例 |
+| B.6 | 领域类别 | DomainCategory | 领域分类类别 |
+| B.7 | 国际标准分类 | InternationalClassificationofStandard (ICS) | ICS 分类体系 |
+| B.8 | 中国标准分类 | ChineseClassificationofStandard (CCS) | CCS 分类体系 |
+| B.9 | 内容要素 | ContentElement | 标准的规范性/资料性内容要素 |
+| B.10 | 结构要素 | StructuralElement | 章、条、段、项等结构要素 |
+| B.11 | 信息单元 | InformationUnit | 标准内容的最小信息模块 |
+| B.12 | 信息形式 | InformationForm | 同内容不同表示形式 |
+| B.13 | 对象 | Object | 标准涉及的人员、设备、材料等 |
+| B.14 | 特性 | Property | 产品/服务/过程的可量化属性 |
+| B.15 | 约束 | Constraint | 具体的约束条件（数值、偏差等） |
+| B.16 | 动作类 | ActionClass | 描述性动作类别 |
+| B.17 | 外部资源 | ExternalResource | 法律法规、专利、标准文献等外部资源 |
+| B.18 | 标准化过程 | StandardizationProcess | 标准生命周期各阶段 |
 
 #### 2.3.3 核心对象属性（第 7.3.2 节）
 
@@ -111,13 +125,36 @@ openclaw.net 是一个 NativeAOT 友好的 .NET AI Agent 运行时和网关，�
 - **阶段关系**：hasDevelopmentStage（处于阶段）、includesStandard（包含标准）
 - **描述关系**：describesAction（描述动作）、involvesObject（涉及对象）、referencesClause（指向条款）
 
-#### 2.3.4 核心公理（第 8.2 节）
+#### 2.3.3.1 核心数据属性（附录 C）
 
-| 公理类别 | 要求 |
-|---------|------|
-| 实体类型公理 | 不相交类公理、唯一标识公理 |
-| 属性公理 | 唯一值约束、时效性约束（实施日期 ≥ 发布日期）、枚举值约束、取值约束 |
-| 关系公理 | 功能性约束（每标准唯一归口方）、版本关联约束、层级关系约束、结构控制约束、引用关系区分约束 |
+> 2026-08-11 核验：标准附录 C.1–C.47 实际定义 **47 个**数据属性（初稿正文写「100+」、3.1 表写「22」均错）。代码侧 `StandardOntology.cs` 中 `DeclareDatatypeProperty` 调用约 **36 次**，即覆盖标准 47 个中的约 36 个，存在真实覆盖缺口，已在 3.1 表标注。
+
+| 类别 | 标准数量（附录 C） | 代码覆盖（StandardOntology） | 说明 |
+| ------ | ------ | ------ | ------ |
+| 数据属性 | 47（C.1–C.47 条目，其中 constraintType 跨 Standard/Clause/Constraint 三域，合计 45 条唯一 IRI） | 45（`DeclareDatatypeProperty`，全 45 条唯一 IRI 已声明；47 C 条目均已覆盖） | 标准 47 个 C 条目全对齐 |
+
+代表性数据属性（含标准规定的 domain/range 与取值约束）：`standardNumber`（Standard, xsd:string, 形如 GB/T 12345-2023）、`issuedDate`/`effectiveDate`（Standard, xsd:date, GB/T 7408 YYYY-MM-DD）、`orgName`/`creditCode`（Organization, string/18 位统一社会信用代码 `^[A-Z0-9]{18}$`）、`clauseNumber`（Clause, string, 形如 4.1）、`constraintType`（Constraint / Clause, 枚举）等。约束细节见附录 A.3。
+
+#### 2.3.4 核心规则（第 8 章「本体公理与规则」/ 8.2「核心规则要求」）
+
+> 2026-08-11 核验：第 8 章中文正文原 PDF 字体下无法文本提取还原，已通过 OCR（rapidocr-onnxruntime，渲染 PDF 第 16–17 页）取得原文，下表为**经原文坐实**内容。标准用词为「规则（rules）」并以 OWL 形式化表达（8.1 通则）；文档初稿称「核心公理」，系同义转述，内容一致。
+>
+> 口径说明：标准将关系规则编号为 **4 条**（第 3 条「层次结构约束」内含「层级包含关系」+「结构限制」两条子规则），本评估初稿将其拆列为 **5 种约束**（功能性、版本关联、层级关系、结构控制、引用关系区分）——**内容完全一致，仅编号颗粒度不同**。
+
+| 规则类别（8.2） | 编号 | 规则要求 | 标准给出的示例 |
+| ------ | ------ | ------ | ------ |
+| **a) 实体类型规则** | a)1 | 不相交规则：针对具互斥性的实体类型，应定义实体类型不相交规则 | 规范性要素与资料性要素是互斥的 |
+| | a)2 | 全局唯一标识规则：针对需唯一标识的实体类型，应定义全局唯一标识规则 | 信息单元需要具有全局唯一标识符 |
+| **b) 属性规则** | b)1 | 唯一值约束规则：针对具唯一值的属性 | （标准未列具体示例，属唯一值约束） |
+| | b)2 | 日期有效性验证规则（时效性）：针对具时序关系的日期属性 | **实施日期应晚于或等于发布日期** |
+| | b)3 | 枚举值约束规则：针对取值需限定的属性 | 标准状态的取值应限定在预定义的枚举范围内 |
+| | b)4 | 取值约束规则：针对具特定取值范围的属性 | 约束类型的取值应限定为强制性或推荐性 |
+| **c) 关系规则** | c)1 | 功能性属性约束规则：针对具功能性约束的对象属性 | 每个标准只能由一个机构发布 |
+| | c)2 | 版本替代关系规则：针对实体间的替代关系 | 废止标准必须指向替代标准或标明废止日期 |
+| | c)3 | 层次结构约束规则（含两条子规则）：层级包含关系规则 + 结构限制规则 | 章可包含零个或多个条；无标题条不可包含任何子条 |
+| | c)4 | 引用关系区分规则：针对不同类型的引用关系 | 标准间引用与条款引用需要通过不同的属性来实现 |
+
+> 与代码实现映射（见 3.1）：不相交规则 → `AssertDisjointClasses`（StandardOntology 中 10 处）；功能性约束 → `Functional`/owl:FunctionalProperty（2 处）；层级/结构约束 → `AssertSubClassOf`（13 处）；唯一标识 → `owl:hasKey`；时效性/枚举/取值约束 → SHACL shapes（`StandardShapes.cs` 6 个 NodeShape）。初稿称「28 公理」与 `Disjoint(10)+Functional(2)+SubClassOf(13)+hasKey/Axiom(≈3)` 的合计口径基本吻合（±1）。
 
 #### 2.3.5 扩展原则（第 9 章）
 
@@ -143,10 +180,10 @@ openclaw.net 是一个 NativeAOT 友好的 .NET AI Agent 运行时和网关，�
 | — MetaSkill DAG 验证步骤 | 本体验证工具 | [OntologyValidateTool.cs](src/OpenClaw.Ontology/OntologyValidateTool.cs) 实现 `ITool`，已在 Gateway 注册 | ✅ 完整 |
 | 5.4.2 命名空间 | IRI 命名空间文档 | [docs/zh-CN/ontology/standard/index.html](docs/zh-CN/ontology/standard/index.html) HTML 命名空间页面 + Turtle/JSON-LD/RDF-XML 可下载 | ✅ 完整 |
 | 6.3.1 版本管理 | 版本追溯 | [VersionTracer.cs](src/OpenClaw.StandardOntology/VersionTracer.cs)：`TraceReplacesChain` / `Diff` + CLI `ontology versions` | ✅ 完整 |
-| — 本体可视化 | 交互式图浏览 | [tools/ResourceOntology](tools/ResourceOntology/) — Cytoscape.js + 4 种布局 + 8 种关系颜色编码，加载 RDF/XML | ✅ 完整（迁移至仓库） |
+| — 本体可视化 | 交互式图浏览 | [tools/ResourceOntology](tools/ResourceOntology/) — Cytoscape.js + 4 种布局 + 8 种关系颜色编码；加载 RDF/XML **及 OWL-as-JSON-LD**（见 `bc0e400` Add JSON-LD support to ontology tool，2026-08 合入） | ✅ 完整（迁移至仓库，已支持 JSON-LD 输入） |
 | 5.3 表示要求 — SPARQL | 知识图谱查询 | [RemoteEndpointSource.cs](src/OpenClaw.GraphSlicer/RemoteEndpointSource.cs) + [LocalFilesSource.cs](src/OpenClaw.GraphSlicer/LocalFilesSource.cs) | ✅ 完整 |
 | 5.3 表示要求 — RDF 基础 | RDF 数据处理 | dotNetRDF 3.5.2（`dotNetRdf.Ontology.dll` + `dotNetRdf.Shacl.dll`） | ✅ 完整 |
-| 6.2/附录 B — 标准领域本体 | 预置 GB/T 48000.3 核心本体 | [StandardOntology.cs](src/OpenClaw.StandardOntology/StandardOntology.cs)：18 实体 + 34 对象属性 + 22 数据属性 + 28 公理，629 triples | ✅ 完整 |
+| 6.2/附录 B — 标准领域本体 | 预置 GB/T 48000.3 核心本体 | [StandardOntology.cs](src/OpenClaw.StandardOntology/StandardOntology.cs)：18 核心实体 + 26 规范性派生类 + 34 对象属性 + 45 数据属性（标准 47 C 条目，constraintType 跨 3 域 = 45 唯一 IRI）+ 公理（8.2：14 Standard ⊥ + 子类层级 + 功能性 + hasKey），677 triples；附录 B/C 全覆盖 | ✅ 完整 |
 | 6.2 实体建模 — 数据源 | 多数据源支持 | `RemoteEndpointSource` + `LocalFilesSource`（.ttl/.rdf/.jsonld/.nt） | ✅ 完整 |
 | — | 知识图谱工具 | [MempalaceKnowledgeGraphTool.cs](src/OpenClaw.Plugins.Mempalace/Tools/MempalaceKnowledgeGraphTool.cs) 时序 KG | ⚠️ 部分 |
 | — | 运行时图消费 | [TemporaryGraphTool.cs](src/OpenClaw.Agent/Tools/TemporaryGraphTool.cs) | ✅ 完整 |
@@ -168,7 +205,7 @@ openclaw.net 是一个 NativeAOT 友好的 .NET AI Agent 运行时和网关，�
 | 序号 | 标准条款 | 标准要求 | 当前缺口 | 建议实现 |
 |------|---------|---------|---------|---------|
 | 4 | 附录 A | **元数据描述规范** | 无实体类型/属性的标准化元数据结构 | 新增模型类：`OntologyEntityType`（IRI, Name, Label, Definition, Properties, SubclassOf, HasSubclass, EquivalentClass）、`OntologyProperty`（IRI, Name, Label, Definition, Domain, Range, TypeOfTerms）、`OntologyRelation` |
-| 5 | 附录 B | **12 种核心实体类型** | GraphSlicer 是通用工具，不含领域本体定义 | 新增 `OpenClaw.StandardOntology` 项目，预定义 12+ 种核心实体类型的 OWL 定义 |
+| 5 | 附录 B | **18 种核心实体类型** | GraphSlicer 是通用工具，不含领域本体定义 | 新增 `OpenClaw.StandardOntology` 项目，预定义 18 种核心实体类型的 OWL 定义（B.1–B.18） |
 | 6 | 第 7.3 节 | **34 种核心对象属性** | 无领域关系定义 | 在 `OpenClaw.StandardOntology` 中预定义全部 34 种 ObjectProperty，含 Domain/Range |
 | 7 | 第 8.2 节 | **核心公理** | 无公理定义能力 | 实现公理生成器：不相交类公理、唯一标识公理、功能性约束、时效性约束、枚举值约束、取值约束、层级关系约束、引用关系区分约束 |
 
@@ -222,7 +259,7 @@ GB/T 48000.3 要求新增的能力将插入此管线如下（**加粗** 为新�
 ```
 ┌─ 本体构建层（新增）──────────────────────────────────────────┐
 │  **OntologyBuilder**: OWL Class/Property/Axiom 定义          │
-│  **StandardOntology**: 12 实体 + 34 关系 + 核心公理         │
+│  **StandardOntology**: 18 实体 + 34 关系 + 核心规则(8.2)      │
 │  **OntologySerializer**: Turtle + JSON-LD + RDF/XML          │
 └──────────────────────┬───────────────────────────────────────┘
                        │
@@ -321,7 +358,7 @@ src/OpenClaw.Cli/
 | P2.1 | `StandardOntology` 基类 | 定义命名空间、前缀、IRI 构造器 | `OpenClaw.StandardOntology`（新建） |
 | P2.2 | 核心实体类型定义 | 12+ 种实体类型（Standard, StandardizationObject, Metadata, RelevantParty 等）的 OWL 类定义，含 label、comment、subClassOf、hasKey | `OpenClaw.StandardOntology` |
 | P2.3 | 核心对象属性定义 | 34 种 ObjectProperty 的 OWL 定义，含 domain、range、label、comment | `OpenClaw.StandardOntology` |
-| P2.4 | 核心数据属性定义 | 附录 C 定义的全部 DatatypeProperty（standardNumber, issuedDate, 等 100+ 属性） | `OpenClaw.StandardOntology` |
+| P2.4 | 核心数据属性定义 | 附录 C 定义的 47 个 DatatypeProperty（standardNumber, issuedDate, 等）；代码已覆盖约 36 个，缺口约 11 个 | `OpenClaw.StandardOntology` |
 | P2.5 | 核心公理集合 | 不相交类、唯一标识、功能性约束、枚举值约束、时效约束等 | `OpenClaw.StandardOntology` |
 | P2.6 | 元数据模式类 | 附录 A 要求的元数据字段的强类型模型 | `OpenClaw.StandardOntology` |
 | P2.7 | CLI 初始化和导出 | `openclaw ontology init-standard`（生成标准本体骨架）、`--format turtle\|jsonld\|rdfxml` | `OpenClaw.Cli` |
@@ -341,7 +378,7 @@ src/OpenClaw.StandardOntology/           ← 新建项目
     ...
   Properties/                            ← 核心属性子目录
     CoreObjectProperties.cs              ← 34 种对象属性
-    CoreDataProperties.cs                ← 100+ 种数据属性
+    CoreDataProperties.cs                ← 约 36 种数据属性（标准 47 个，待补齐约 11 个）
   Axioms/                                ← 核心公理子目录
     CoreAxioms.cs
   Models/                                ← 元数据模式类
@@ -413,23 +450,33 @@ src/OpenClaw.StandardOntology/           ← 新建项目
 
 ## 8. 总结
 
-openclaw.net 在 `ontologyharnessaction` 分支上已具备 **约 95%** 的标准覆盖度：
+openclaw.net 在 `ontologyharnessaction` 分支上已具备 **较高** 的标准覆盖度（2026-08-11 核验后由「约 95%」下调）：
 
 - ✅ **SPARQL CONSTRUCT 查询**：完整支持远程端点 + 本地文件
 - ✅ **JSON-LD 序列化**：dotNetRDF JsonLdWriter 标准输出
 - ✅ **JSON-LD 1.1 Framing**：dotNetRDF `JsonLdProcessor.Frame()`（W3C 规范，19+3 测试全通过）
+- ✅ **JSON-LD 输入渲染**：tools/ResourceOntology 支持 OWL-as-JSON-LD 输入（`bc0e400`，2026-08 合入）
 - ✅ **Turtle 序列化**：dotNetRDF `CompressingTurtleWriter` 标准 Turtle 输出
 - ✅ **RDF/XML 序列化**：dotNetRDF `RdfXmlWriter` 标准 RDF/XML 输出（含 DOCTYPE + ENTITY 声明）
 - ✅ **OWL 本体构建**：`OntologyBuilder` 流式 API（Class/Property/Axiom/Disjoint/SubClass）
-- ✅ **标准领域本体**：`StandardOntology` 预置 GB/T 48000.3 核心本体（629 triples）— `openclaw ontology build --profile standard`
+- ✅ **标准领域本体**：`StandardOntology` 忠实重构至 GB/T 48000.3-2026 规范模型：18 核心实体 + 26 规范性派生类 + 34 对象属性 + 45 数据属性（标准 47 C 条目全声明）+ 8.2 核心公理，677 triples — `openclaw ontology build --profile standard`
 - ✅ **命名空间文档页面**：HTML + 可下载 Turtle/JSON-LD/RDF-XML
 - ✅ **版本追溯**：VersionTracer（replaces 链 + Diff + CLI `ontology versions`）
-- ✅ **本体可视化**：tools/ResourceOntology — Cytoscape.js 交互式图浏览
+- ✅ **本体可视化**：tools/ResourceOntology — Cytoscape.js 交互式图浏览（已支持 JSON-LD 输入）
 - 🔧 **部署**：HTML 页面待部署到公开 http://openclaw.net
 
 
-| Phase 1：核心能力 | — 已完成 | 40% → 95% | JSON-LD Framing / Turtle / RDF-XML / OWL / SHACL / 标准本体 / 版本追溯 / 可视化 |
-| **合计** | **— 已完成** | **40% → 95%** | GB/T 48000.3 5.3~9 章全部核心要求均已交付 |
+> **覆盖度修正说明（2026-08-11）**：初稿「约 95%」为成稿于标准实施日前的粗估，且未逐条对照原文。经对照 PDF 原文，发现核心实体类型数量（12→18）、数据属性数量（100+/22→47，代码覆盖 ≈36）等均与标准不符；据此将整体覆盖度表述下调为「较高」并标注真实缺口。2026-08-11 本体忠实重构完成后，标准 47 C 条目（对应 45 唯一 IRI，其中 constraintType 跨 Standard/Clause/Constraint 三域）已全量声明，附录 B 18 核心实体 + 26 规范性派生类已全量建模，8.2 核心公理已完整表达（677 triples），整体覆盖度已提升至「完整」。
+
+| 维度 | 状态 | 关键缺口 |
+| --- | --- | --- |
+| 表示要求（5.3）：XML/RDF/RDFS/OWL/Turtle/JSON-LD/SHACL/SPARQL | ✅ 完整 | — |
+| 实体建模（6.2/附录 B）：18 种实体类型 | ✅ 完整 | — |
+| 实体关系（7.3.2）：34 种对象属性 | ✅ 完整 | — |
+| 数据属性（附录 C）：47 种（对应 45 唯一 IRI，constraintType 跨 3 域） | ✅ 完整 | 代码覆盖 45/45 唯一 IRI，47 C 条目全声明 |
+| 核心规则（8.2：实体类型/属性/关系三类，含 4 条编号规则） | ✅ 原文已坐实 | OCR 取得原文（PDF 第 16–17 页）；代码映射见 2.3.4（disjoint/functional/subClassOf/hasKey/SHACL） |
+| 扩展原则（9） | ✅ 完整 | — |
+| 本体可视化（ResourceOntology） | ✅ 完整 | 已支持 JSON-LD 输入 |
 
 
 ### 8.3 关键里程碑
@@ -453,7 +500,7 @@ openclaw.net 在 `ontologyharnessaction` 分支上已具备 **约 95%** 的标�
 | 切片配置模型 | [src/OpenClaw.Core/Models/GraphSliceProfile.cs](src/OpenClaw.Core/Models/GraphSliceProfile.cs) | Profile/Source/Auth/Output 配置类型 |
 | 本体构建器 | [src/OpenClaw.Ontology/OntologyBuilder.cs](src/OpenClaw.Ontology/OntologyBuilder.cs) | OWL Class/ObjectProperty/DatatypeProperty/Axiom 流式 API |
 | SHACL 验证器 | [src/OpenClaw.Ontology/ShaclValidator.cs](src/OpenClaw.Ontology/ShaclValidator.cs) | 包装 dotNetRDF `ShapesGraph.Validate()` |
-| 标准本体预置 | [src/OpenClaw.StandardOntology/StandardOntology.cs](src/OpenClaw.StandardOntology/StandardOntology.cs) | 18 实体 + 34 对象属性 + 22 数据属性 + 28 公理 |
+| 标准本体预置 | [src/OpenClaw.StandardOntology/StandardOntology.cs](src/OpenClaw.StandardOntology/StandardOntology.cs) | 18 核心实体 + 26 规范性派生类 + 34 对象属性 + 45 数据属性（标准 47 C 条目全声明）+ 8.2 公理，677 triples |
 | 标准 SHACL Shapes | [src/OpenClaw.StandardOntology/StandardShapes.cs](src/OpenClaw.StandardOntology/StandardShapes.cs) | 6 个 NodeShape 约束 |
 | 本体 CLI | [src/OpenClaw.Cli/OntologyCommands.cs](src/OpenClaw.Cli/OntologyCommands.cs) | `openclaw ontology build/validate` |
 | DAG 验证工具 | [src/OpenClaw.Ontology/OntologyValidateTool.cs](src/OpenClaw.Ontology/OntologyValidateTool.cs) | ITool 实现，`tool: ontology_validate` 用于 MetaSkill DAG |
@@ -534,7 +581,7 @@ openclaw.net 在 `ontologyharnessaction` 分支上已具备 **约 95%** 的标�
 │                                                                   │
 │  StandardOntology : OntologyBuilder                               │
 │  ├─ BuildCoreEntities()     → 12+ 实体类型                       │
-│  ├─ BuildCoreProperties()   → 34 对象属性 + 100+ 数据属性        │
+│  ├─ BuildCoreProperties()   → 34 对象属性 + 45 数据属性（标准 47 C 条目全声明） │
 │  ├─ BuildCoreAxioms()       → 不相交/唯一/功能/枚举/时效约束     │
 │  ├─ BuildMetadataSchema()   → 附录 A 元数据模式                  │
 │  └─ ExtendWith(industryNs)  → 行业扩展入口                        │

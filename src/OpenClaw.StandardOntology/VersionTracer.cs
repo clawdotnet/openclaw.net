@@ -24,7 +24,7 @@ public static class VersionTracer
 
         var replaceProp = graph.CreateUriNode(new Uri("http://openclaw.net/ontology/standard#replaces"));
         var versionProp = graph.CreateUriNode(new Uri("http://openclaw.net/ontology/standard#versionNumber"));
-        var nameProp = graph.CreateUriNode(new Uri("http://openclaw.net/ontology/standard#standardName"));
+        var nameProp = graph.CreateUriNode(new Uri("http://openclaw.net/ontology/standard#documentName"));
         var numberProp = graph.CreateUriNode(new Uri("http://openclaw.net/ontology/standard#standardNumber"));
 
         var entries = new List<VersionEntry>();

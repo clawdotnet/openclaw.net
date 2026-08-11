@@ -4,11 +4,19 @@ namespace OpenClaw.StandardOntology;
 
 /// <summary>
 /// GB/T 48000.3-2026 Standard Digitalization Ontology.
-/// Provides the 16 core entity types, 34 core object properties,
-/// and structural axioms defined by the standard.
+///
+/// Faithful implementation of the standard's normative model:
+///   - Appendix B core entity types B.1–B.18
+///   - §6.2.4 hierarchy levels (章/条/段/项 → Level + subclasses)
+///   - §6.2.5 content elements (规范性要素/资料性要素)
+///   - §7.3.2 — 34 core object properties (with their standard domains/ranges)
+///   - §8.2 — core rules (disjointness, subclass, functional, key)
+///   - Appendix C — 47 core data properties (C.1–C.47)
 ///
 /// Namespace: http://openclaw.net/ontology/standard#
 /// Prefix:    std
+///
+/// Source of truth: docs/zh-CN/GBT+48000.3-2026.pdf (OCR-verified).
 /// </summary>
 public sealed class StandardOntology
 {
@@ -16,7 +24,7 @@ public sealed class StandardOntology
     public const string Prefix = "std";
 
     /// <summary>
-    /// Build the complete GB/T 48000.3 standard ontology.
+    /// Build the complete GB/T 48000.3-2026 standard ontology.
     /// </summary>
     public OntologyBuilder Build()
     {
@@ -24,7 +32,8 @@ public sealed class StandardOntology
             .WithPrefix(Prefix, Namespace)
             .WithHeader(Namespace,
                 "GB/T 48000.3-2026 标准数字化本体",
-                "基于 GB/T 48000.3-2026《标准数字化 第3部分：本体建模要求》定义的标准数字化核心本体。包含 16 种核心实体类型、34 种核心对象属性和 8 类结构性公理。");
+                "基于 GB/T 48000.3-2026《标准数字化 第3部分：本体建模要求》定义的标准数字化核心本体，" +
+                "包含 18 种核心实体类型（附录 B）、34 种核心对象属性（7.3.2）与 47 种核心数据属性（附录 C）。");
 
         BuildCoreEntities(ob);
         BuildCoreObjectProperties(ob);
@@ -34,87 +43,72 @@ public sealed class StandardOntology
         return ob;
     }
 
-    // ── 附录 B：核心实体类型（16 种）──────────────────────────────────────
+    // ── 附录 B：核心实体类型（B.1–B.18）+ 规范性派生类 ──────────────────────
 
     private static void BuildCoreEntities(OntologyBuilder ob)
     {
-        // Shorthands
         var C = Prefix;
 
-        // B.1 标准实体
+        // B.1 标准实体（hasKey = standardNumber）
         ob.DeclareClass($"{C}:Standard", "标准实体",
             "标准文件的核心根节点，用于表示具有唯一标识的标准文件实例，聚合元数据、结构和内容及制定过程。",
             hasKey: [$"{C}:standardNumber"]);
 
-        // B.2 标准对象
-        ob.DeclareClass($"{C}:StandardizationObject", "标准对象",
-            "描述标准化的具体对象或主题。",
-            subClassOf: [$"{C}:Entity"]);
+        // B.2 标准化对象
+        ob.DeclareClass($"{C}:StandardizationObject", "标准化对象",
+            "描述标准化的具体对象或主题。");
 
-        // B.3 元数据
-        ob.DeclareClass($"{C}:Metadata", "元数据",
-            "标准的管理元数据信息。");
+        // B.3 相关方（组织与个人的共同基类）
+        ob.DeclareClass($"{C}:Stakeholder", "相关方",
+            "参与标准活动的组织和个人（B.3）。");
 
-        // B.4 相关方
-        ob.DeclareClass($"{C}:RelevantParty", "相关方",
-            "参与标准相关活动的角色。",
-            subClassOf: [$"{C}:Entity"]);
+        // B.4 组织
         ob.DeclareClass($"{C}:Organization", "组织",
-            "代表标准活动中企业、协会、委员会等组织实体。",
-            subClassOf: [$"{C}:RelevantParty"]);
-        ob.DeclareClass($"{C}:Person", "个人",
-            "代表标准活动中的个人实体。",
-            subClassOf: [$"{C}:RelevantParty"]);
+            "代表企业、协会、委员会等组织实体。",
+            subClassOf: [$"{C}:Stakeholder"]);
 
-        // B.5 标准分类
-        ob.DeclareClass($"{C}:StandardClassification", "标准分类",
-            "根据标准领域对标准的分类，如 ICS、CCS 分类。");
-        ob.DeclareClass($"{C}:IcsClassification", "国际标准分类",
+        // B.5 个体
+        ob.DeclareClass($"{C}:Individual", "个体",
+            "代表个人实体。",
+            subClassOf: [$"{C}:Stakeholder"]);
+
+        // B.6 领域类别
+        ob.DeclareClass($"{C}:DomainCategory", "领域类别",
+            "根据标准领域对标准的分类（如 ICS、CCS）。");
+
+        // B.7 国际标准分类（ICS）
+        ob.DeclareClass($"{C}:InternationalClassificationofStandard", "国际标准分类",
             "ICS 国际标准分类。",
-            subClassOf: [$"{C}:StandardClassification"]);
-        ob.DeclareClass($"{C}:CcsClassification", "中国标准分类",
-            "CCS 中国标准文献分类。",
-            subClassOf: [$"{C}:StandardClassification"]);
+            subClassOf: [$"{C}:DomainCategory"]);
 
-        // B.6 要素
-        ob.DeclareClass($"{C}:Element", "要素",
-            "标准中的要素信息，包含规范性要素和资料性要素。",
-            subClassOf: [$"{C}:Entity"]);
+        // B.8 中国标准分类（CCS）
+        ob.DeclareClass($"{C}:ChineseClassificationofStandard", "中国标准分类",
+            "CCS 中国标准文献分类。",
+            subClassOf: [$"{C}:DomainCategory"]);
+
+        // B.9 内容要素（+ 规范性要素 / 资料性要素）
+        ob.DeclareClass($"{C}:ContentElement", "内容要素",
+            "标准的规范性/资料性内容要素。");
         ob.DeclareClass($"{C}:NormativeElement", "规范性要素",
             "标准的规范性要素（范围、术语和定义、符号和缩略语、核心技术要素、管理技术要素等）。",
-            subClassOf: [$"{C}:Element"]);
+            subClassOf: [$"{C}:ContentElement"]);
         ob.DeclareClass($"{C}:InformativeElement", "资料性要素",
             "标准的资料性要素（规范性引用文件、参考文献、索引等）。",
-            subClassOf: [$"{C}:Element"]);
+            subClassOf: [$"{C}:ContentElement"]);
 
-        // B.7 层次
-        ob.DeclareClass($"{C}:Level", "层次",
-            "标准结构中的层级概念，用于表示标准内容的组织层次。");
-        ob.DeclareClass($"{C}:Chapter", "章",
-            "标准中编号为章的逻辑单元。",
-            subClassOf: [$"{C}:Level"]);
-        ob.DeclareClass($"{C}:Section", "条",
-            "章下属的编号为条的单元。",
-            subClassOf: [$"{C}:Level"]);
-        ob.DeclareClass($"{C}:Paragraph", "段",
-            "不带编号的文本段落实体。",
-            subClassOf: [$"{C}:Level"]);
-        ob.DeclareClass($"{C}:Item", "项",
-            "列表中的编号或未编号项。",
-            subClassOf: [$"{C}:Level"]);
+        // B.10 结构要素
+        ob.DeclareClass($"{C}:StructuralElement", "结构要素",
+            "标准的章、条、段、项等结构要素。");
 
-        // B.8 术语
-        ob.DeclareClass($"{C}:Term", "术语",
-            "标准中界定的具有特定含义的专业词语。",
-            subClassOf: [$"{C}:Entity"]);
-
-        // B.9 信息单元
+        // B.11 信息单元（+ 条款 / 示例 / 注 / 列表）
         ob.DeclareClass($"{C}:InformationUnit", "信息单元",
-            "标准内容的最小信息模块。",
-            subClassOf: [$"{C}:Entity"]);
+            "标准内容的最小信息模块（条款、示例、注、列表等）。");
         ob.DeclareClass($"{C}:Clause", "条款",
             "信息单元的一种，代表条文性约束。",
             subClassOf: [$"{C}:InformationUnit"]);
+        ob.DeclareClass($"{C}:TitledClause", "有标题条",
+            "带有标题的条款。",
+            subClassOf: [$"{C}:Clause"]);
         ob.DeclareClass($"{C}:Example", "示例",
             "信息单元的一种，代表示例说明。",
             subClassOf: [$"{C}:InformationUnit"]);
@@ -125,354 +119,406 @@ public sealed class StandardOntology
             "信息单元的一种，代表枚举或列表。",
             subClassOf: [$"{C}:InformationUnit"]);
 
-        // B.10 信息单元表示形式
-        ob.DeclareClass($"{C}:RepresentationForm", "信息单元表示形式",
+        // B.12 信息单元表示形式
+        ob.DeclareClass($"{C}:InformationForm", "信息单元表示形式",
             "信息单元的不同表现形式（文本、图表、公式、代码等）。");
         ob.DeclareClass($"{C}:TextForm", "文本形式", "以纯文本表示。",
-            subClassOf: [$"{C}:RepresentationForm"]);
+            subClassOf: [$"{C}:InformationForm"]);
         ob.DeclareClass($"{C}:FigureForm", "图表形式", "以图形、图像或图表表示。",
-            subClassOf: [$"{C}:RepresentationForm"]);
+            subClassOf: [$"{C}:InformationForm"]);
         ob.DeclareClass($"{C}:TableForm", "表格形式", "以表格表示。",
-            subClassOf: [$"{C}:RepresentationForm"]);
+            subClassOf: [$"{C}:InformationForm"]);
         ob.DeclareClass($"{C}:FormulaForm", "公式形式", "以数学公式表示。",
-            subClassOf: [$"{C}:RepresentationForm"]);
+            subClassOf: [$"{C}:InformationForm"]);
         ob.DeclareClass($"{C}:CodeForm", "代码形式", "以程序代码或伪代码表示。",
-            subClassOf: [$"{C}:RepresentationForm"]);
+            subClassOf: [$"{C}:InformationForm"]);
 
-        // B.11 对象
+        // B.13 对象
         ob.DeclareClass($"{C}:Object", "对象",
-            "标准涉及的人员、设备、材料、软件等实体。",
-            subClassOf: [$"{C}:Entity"]);
+            "标准涉及的人员、设备、材料、软件等实体。");
 
-        // B.12 特性
-        ob.DeclareClass($"{C}:Characteristic", "特性",
-            "产品/服务/过程的量化属性。",
-            subClassOf: [$"{C}:Entity"]);
-        ob.DeclareClass($"{C}:StaticCharacteristic", "静态特性",
-            "描述对象的静态属性（如尺寸、颜色）。",
-            subClassOf: [$"{C}:Characteristic"]);
-        ob.DeclareClass($"{C}:FunctionalCharacteristic", "功能特性",
-            "描述对象的功能或性能指标（如转换效率、灵敏度）。",
-            subClassOf: [$"{C}:Characteristic"]);
-        ob.DeclareClass($"{C}:ConstraintCharacteristic", "约束特性",
-            "描述对象的约束条件或限定条件（如工作温度、安全等级）。",
-            subClassOf: [$"{C}:Characteristic"]);
+        // B.14 特性（Property）
+        ob.DeclareClass($"{C}:Property", "特性",
+            "产品/服务/过程的量化或描述属性。");
+        ob.DeclareClass($"{C}:DescriptiveProperty", "描述型特性", "描述型特性。",
+            subClassOf: [$"{C}:Property"]);
+        ob.DeclareClass($"{C}:CapabilityProperty", "能力型特性", "能力型特性。",
+            subClassOf: [$"{C}:Property"]);
+        ob.DeclareClass($"{C}:ConstraintProperty", "约束型特性", "约束型特性。",
+            subClassOf: [$"{C}:Property"]);
 
-        // B.13 约束逻辑
-        ob.DeclareClass($"{C}:ConstraintLogic", "约束逻辑",
-            "具体的数值约束或逻辑约束条件。",
-            subClassOf: [$"{C}:Entity"]);
+        // B.15 约束逻辑（Constraint）
+        ob.DeclareClass($"{C}:Constraint", "约束逻辑",
+            "具体的数值约束或逻辑约束条件。");
 
-        // B.14 判定
-        ob.DeclareClass($"{C}:Determination", "判定",
-            "最小可执行规则的抽象。分为合规判定和路径判定。",
-            subClassOf: [$"{C}:Entity"]);
+        // B.16 动作类（ActionClass）
+        ob.DeclareClass($"{C}:ActionClass", "动作类",
+            "描述性动作类别（如测试方法、操作步骤）。");
+        ob.DeclareClass($"{C}:Determination", "判定", "最小可执行规则（合规判定/路径判定）。",
+            subClassOf: [$"{C}:ActionClass"]);
 
-        // B.15 外部约束
-        ob.DeclareClass($"{C}:ExternalConstraint", "外部约束",
+        // B.17 外部约束（外部资源）
+        ob.DeclareClass($"{C}:ExternalResource", "外部约束",
             "与标准相关的外部文件，如法律法规、专利、标准文献、行业数据库等。");
         ob.DeclareClass($"{C}:LawRegulation", "法律法规", "法律或行政法规。",
-            subClassOf: [$"{C}:ExternalConstraint"]);
+            subClassOf: [$"{C}:ExternalResource"]);
         ob.DeclareClass($"{C}:Patent", "专利", "专利文献。",
-            subClassOf: [$"{C}:ExternalConstraint"]);
+            subClassOf: [$"{C}:ExternalResource"]);
         ob.DeclareClass($"{C}:ReferenceDocument", "参考文献", "标准中引用的其他标准或文献。",
-            subClassOf: [$"{C}:ExternalConstraint"]);
+            subClassOf: [$"{C}:ExternalResource"]);
 
-        // B.16 制定阶段
-        ob.DeclareClass($"{C}:DevelopmentStage", "制定阶段",
-            "标准生命周期中的各个阶段。",
-            subClassOf: [$"{C}:Entity"]);
+        // B.18 制定程序
+        ob.DeclareClass($"{C}:StandardizationProcess", "制定程序",
+            "标准生命周期中的各个阶段（预备、立项、起草、征求意见、技术审查、批准发布、出版、复审、废止）。");
 
-        // B.17 版本
+        // §6.2.4 层次（章、条、段、项）
+        ob.DeclareClass($"{C}:Level", "层次",
+            "标准结构中的层级概念，用于表示标准内容的组织层次。");
+        ob.DeclareClass($"{C}:Section", "章", "标准中编号为章的逻辑单元。",
+            subClassOf: [$"{C}:Level"]);
+        ob.DeclareClass($"{C}:Paragraph", "段", "不带编号的文本段落实体。",
+            subClassOf: [$"{C}:Level"]);
+        ob.DeclareClass($"{C}:Item", "项", "列表中的编号或未编号项。",
+            subClassOf: [$"{C}:Level"]);
+
+        // §7.3.2 术语（defines/usesTerm/hasExample/hasNote/isRelatedToPatent 的域/范围）
+        ob.DeclareClass($"{C}:Term", "术语",
+            "标准中界定的具有特定含义的专业词语。");
+
+        // §6.3 可选扩展类（标准明确允许）
         ob.DeclareClass($"{C}:Version", "版本",
-            "标准的特定发布版本，支持版本追溯和差异对比。",
-            subClassOf: [$"{C}:Entity"]);
-
-        // B.18 文件编号
+            "标准的特定发布版本，支持版本追溯和差异对比（§6.3.1）。");
         ob.DeclareClass($"{C}:DocumentNumber", "文件编号",
-            "标准文件编号，用于支持版本追溯。",
-            subClassOf: [$"{C}:Entity"]);
-
-        // 顶层抽象
-        ob.DeclareClass($"{C}:Entity", "实体",
-            "标准数字化本体的顶层抽象类，所有核心实体类型的基类。");
+            "标准文件编号，用于支持版本追溯（§6.3.2）。");
     }
 
-    // ── 第 7.3.2 节：核心对象属性（34 种）────────────────────────────────
+    // ── 第 7.3.2 节：核心对象属性（34 种，域/范围按标准表）──────────────────
 
     private static void BuildCoreObjectProperties(OntologyBuilder ob)
     {
         var C = Prefix;
         var Std = $"{C}:Standard";
         var Org = $"{C}:Organization";
-        var Cls = $"{C}:StandardClassification";
-        var Elem = $"{C}:Element";
+        var Stkh = $"{C}:Stakeholder";
+        var DomCat = $"{C}:DomainCategory";
+        var StdObj = $"{C}:StandardizationObject";
+        var ContEl = $"{C}:ContentElement";
         var Lvl = $"{C}:Level";
+        var InfoU = $"{C}:InformationUnit";
+        var InfoForm = $"{C}:InformationForm";
         var Term = $"{C}:Term";
-        var IU = $"{C}:InformationUnit";
-        var RF = $"{C}:RepresentationForm";
+        var Clause = $"{C}:Clause";
         var Obj = $"{C}:Object";
-        var Charac = $"{C}:Characteristic";
-        var ConLog = $"{C}:ConstraintLogic";
-        var Det = $"{C}:Determination";
-        var ExtCon = $"{C}:ExternalConstraint";
-        var DevStage = $"{C}:DevelopmentStage";
-        var Pers = $"{C}:Person";
-        var RelParty = $"{C}:RelevantParty";
+        var Prop = $"{C}:Property";
+        var Con = $"{C}:Constraint";
+        var Action = $"{C}:ActionClass";
+        var Ext = $"{C}:ExternalResource";
+        var Patent = $"{C}:Patent";
+        var Proc = $"{C}:StandardizationProcess";
+        var Ver = $"{C}:Version";
+        var DocNum = $"{C}:DocumentNumber";
 
-        // 1-2: 替代关系
-        ob.DeclareObjectProperty($"{C}:adopts", "采用", "当前标准采用（等同/修改）另一标准。",
-            Std, Std);
-        ob.DeclareObjectProperty($"{C}:replaces", "代替", "新版本标准代替旧版本标准。",
-            Std, Std);
+        // 替代关系（1-2）
+        ob.DeclareObjectProperty($"{C}:adopts", "采用", "当前标准采用（等同/修改）另一标准。", Std, Std);
+        ob.DeclareObjectProperty($"{C}:replaces", "代替", "新版本标准代替旧版本标准（逆属性为 isReplacedBy）。", Std, Std);
 
-        // 3-4: 引用关系
-        ob.DeclareObjectProperty($"{C}:cites", "引用（标准）", "标准规范性引用另一标准。",
-            Std, Std);
-        ob.DeclareObjectProperty($"{C}:references", "参考", "标准资料性参考另一标准。",
-            Std, Std);
+        // 引用关系（3-4）
+        ob.DeclareObjectProperty($"{C}:cites", "引用（标准）", "标准规范性引用另一标准。", Std, Std);
+        ob.DeclareObjectProperty($"{C}:references", "参考", "标准资料性参考另一标准（通常在参考文献中列出）。", Std, Std);
 
-        // 5: 部分关系
-        ob.DeclareObjectProperty($"{C}:hasPart", "有部分", "标准由多个分部分标准组成。",
-            Std, Std);
+        // 部分关系（5）
+        ob.DeclareObjectProperty($"{C}:hasPart", "有部分", "本标准由多个部分系列标准组成，当前标准是其中一个部分。", Std, Std);
 
-        // 6-10: 组织关系
-        ob.DeclareObjectProperty($"{C}:issuedBy", "发布方", "标准的发布组织。",
-            Std, Org, functional: true);
-        ob.DeclareObjectProperty($"{C}:proposedBy", "提出方", "标准的提出组织。",
-            Std, Org);
-        ob.DeclareObjectProperty($"{C}:administeredBy", "归口方", "标准的归口管理组织。",
-            Std, Org, functional: true);
-        ob.DeclareObjectProperty($"{C}:draftedBy", "起草方", "标准的起草单位或个人。",
-            Std, RelParty);
-        ob.DeclareObjectProperty($"{C}:publishedBy", "出版方", "标准的出版发行组织。",
-            Std, Org);
+        // 组织关系（6-10）
+        ob.DeclareObjectProperty($"{C}:issuedBy", "发布于", "标准由某机构正式发布。", Std, Org, functional: true);
+        ob.DeclareObjectProperty($"{C}:proposedBy", "提出于", "标准由某单位提出。", Std, Org);
+        ob.DeclareObjectProperty($"{C}:administeredBy", "归口于", "标准由某单位归口管理。", Std, Org, functional: true);
+        ob.DeclareObjectProperty($"{C}:draftedBy", "起草于", "标准由某起草单位或起草人起草。", Std, Stkh);
+        ob.DeclareObjectProperty($"{C}:publishedBy", "出版于", "标准由某出版机构出版。", Std, Org);
 
-        // 11: 分类
-        ob.DeclareObjectProperty($"{C}:classifiedUnder", "属于分类", "标准归属的分类体系。",
-            Std, Cls);
+        // 分类关系（11）
+        ob.DeclareObjectProperty($"{C}:classifiedUnder", "属于领域", "标准按领域分类（如 ICS、CCS）。", Std, DomCat);
 
-        // 12: 规范对象
-        ob.DeclareObjectProperty($"{C}:standardizes", "规范对象", "标准规范的具体对象/主题。",
-            Std, $"{C}:StandardizationObject");
+        // 规范对象（12）
+        ob.DeclareObjectProperty($"{C}:standardizes", "规范对象", "本标准所规范的主题对象。", Std, StdObj);
 
-        // 13-14: 要素关系
-        ob.DeclareObjectProperty($"{C}:hasNormativeElement", "有规范性要素",
-            "标准包含的规范性要素。", Std, $"{C}:NormativeElement");
-        ob.DeclareObjectProperty($"{C}:hasStructuralElement", "有结构要素",
-            "标准包含的结构层次。", Elem, Lvl);
+        // 要素关系（13-14）
+        ob.DeclareObjectProperty($"{C}:hasNormativeElement", "包含要素", "标准包含规范性/资料性要素（如术语、范围）。", Std, ContEl);
+        ob.DeclareObjectProperty($"{C}:hasStructuralElement", "包含层次", "标准或其内部结构包含章、条、段等层级结构。", Std, Lvl);
 
-        // 15-16: 层级
-        ob.DeclareObjectProperty($"{C}:hasClause", "有条款",
-            "要素或结构层次包含的条款。", Elem, $"{C}:Clause");
-        ob.DeclareObjectProperty($"{C}:hasSubClause", "有子条款",
-            "条款下包含的子条款（构建树形结构）。", $"{C}:Clause", $"{C}:Clause",
-            transitive: true);
+        // 层次关系（15-16）
+        ob.DeclareObjectProperty($"{C}:hasClause", "包含条款", "要素或结构层次包含了一个具体的条款。", ContEl, Clause);
+        ob.DeclareObjectProperty($"{C}:hasSubClause", "包含子条", "表示条包含子条，用于构建层次结构。", Clause, Clause, transitive: true);
 
-        // 17-21: 内容关系
-        ob.DeclareObjectProperty($"{C}:defines", "界定",
-            "标准或要素界定某个术语。", Std, Term);
-        ob.DeclareObjectProperty($"{C}:usesTerm", "使用术语",
-            "信息单元中提及某个术语。", IU, Term);
-        ob.DeclareObjectProperty($"{C}:hasRepresentationForm", "有表示形式",
-            "信息单元的表现形式。", IU, RF);
-        ob.DeclareObjectProperty($"{C}:hasExample", "有示例",
-            "术语或概念具有的示例说明。", Term, $"{C}:Example");
-        ob.DeclareObjectProperty($"{C}:hasNote", "有注",
-            "术语或条文具有的注释说明。", Term, $"{C}:Note");
+        // 内容关系（17-21）
+        ob.DeclareObjectProperty($"{C}:defines", "界定", "标准或要素界定了某个术语。", Std, Term);
+        ob.DeclareObjectProperty($"{C}:usesTerm", "提及术语", "信息单元提及了某个术语。", InfoU, Term);
+        ob.DeclareObjectProperty($"{C}:hasRepresentationForm", "具有表述形式", "信息单元（条款等）有内容形式（条文、图、表等）。", InfoU, InfoForm);
+        ob.DeclareObjectProperty($"{C}:hasExample", "有示例", "条款关联示例。", Clause, $"{C}:Example");
+        ob.DeclareObjectProperty($"{C}:hasNote", "有注", "条款关联注。", Clause, $"{C}:Note");
 
-        // 22-23: 交叉引用
-        ob.DeclareObjectProperty($"{C}:citesStandard", "引用标准",
-            "术语或条文引用具体标准。", Term, Std);
-        ob.DeclareObjectProperty($"{C}:referencesClause", "指向条款",
-            "信息单元指向标准内的章、条、段、项。", IU, Lvl);
+        // 交叉引用（22-23）
+        ob.DeclareObjectProperty($"{C}:citesStandard", "引用标准（条款）", "条款内容中引用了某个标准。", Clause, Std);
+        ob.DeclareObjectProperty($"{C}:referencesClause", "引用章条", "信息单元引用本标准内的章、条、段、项。", InfoU, Lvl);
 
-        // 24-26: 对象和特性
-        ob.DeclareObjectProperty($"{C}:involvesObject", "涉及对象",
-            "术语或条文提到的人、设备、材料等。", Term, Obj);
-        ob.DeclareObjectProperty($"{C}:specifiesCharacteristic", "规定特性",
-            "术语或条文对某特性做出规定。", Term, Charac);
-        ob.DeclareObjectProperty($"{C}:hasCharacteristic", "具有特性",
-            "对象具有某种可量化的特性或属性。", Obj, Charac);
+        // 对象与特性（24-26）
+        ob.DeclareObjectProperty($"{C}:involvesObject", "涉及对象", "条款提及了人、设备、材料等对象。", Clause, Obj);
+        ob.DeclareObjectProperty($"{C}:specifiesCharacteristic", "规定特性", "条款对某个特性的参数/指标做出了规定。", Clause, Prop);
+        ob.DeclareObjectProperty($"{C}:hasCharacteristic", "具有特性", "对象具有某种可量化或描述的特性。", Obj, Prop);
 
-        // 27-29: 约束
-        ob.DeclareObjectProperty($"{C}:imposesConstraint", "施加约束",
-            "信息单元或对象附带具体约束条件。", IU, ConLog);
-        ob.DeclareObjectProperty($"{C}:constrainsObject", "约束对象",
-            "约束逻辑适用的具体对象。", ConLog, Obj);
-        ob.DeclareObjectProperty($"{C}:constrainsCharacteristic", "约束特性",
-            "约束逻辑适用的特性。", ConLog, Charac);
+        // 约束（27-29）
+        ob.DeclareObjectProperty($"{C}:imposesConstraint", "施加约束", "信息单元或特性包含具体的约束条件（如阈值）。", InfoU, Con);
+        ob.DeclareObjectProperty($"{C}:constrainsObject", "约束对象", "约束条件应用于某个具体对象。", Con, Obj);
+        ob.DeclareObjectProperty($"{C}:constrainsCharacteristic", "约束特性", "约束条件应用于对象的某个特性。", Con, Prop);
 
-        // 30-31: 动作和外部
-        ob.DeclareObjectProperty($"{C}:describesAction", "描述动作",
-            "信息单元规定的执行动作或操作。", IU, Det);
-        ob.DeclareObjectProperty($"{C}:referencesExternalResource", "引用外部资源",
-            "标准或术语引用的法规、专利、标准文献等。", Std, ExtCon);
+        // 动作与外部（30-32）
+        ob.DeclareObjectProperty($"{C}:describesAction", "描述动作", "信息单元规定的执行动作或操作步骤。", InfoU, Action);
+        ob.DeclareObjectProperty($"{C}:referencesExternalResource", "引用外部资源", "标准或条款引用了法规、专利、标准文献等。", Std, Ext);
+        ob.DeclareObjectProperty($"{C}:isRelatedToPatent", "与专利有关", "条款的技术内容与某项专利有关。", Clause, Patent);
 
-        // 32-34: 专利、阶段、包含
-        ob.DeclareObjectProperty($"{C}:isRelatedToPatent", "与专利有关",
-            "术语或条文与某专利相关的说明。", Term, $"{C}:Patent");
-        ob.DeclareObjectProperty($"{C}:hasDevelopmentStage", "处于阶段",
-            "标准当前的制定生命周期阶段。", Std, DevStage);
-        ob.DeclareObjectProperty($"{C}:includesStandard", "包含标准",
-            "制定阶段所包含的标准。", DevStage, Std);
+        // 阶段关系（33-34）
+        ob.DeclareObjectProperty($"{C}:hasDevelopmentStage", "处于阶段", "标准当前所处的生命周期阶段。", Std, Proc);
+        ob.DeclareObjectProperty($"{C}:includesStandard", "包含标准", "制定程序阶段所包含的标准（处于阶段属性的逆向属性）。", Proc, Std);
 
-        // Additional: version and document number
-        ob.DeclareObjectProperty($"{C}:hasVersion", "有版本",
-            "标准具有的发布版本。", Std, $"{C}:Version");
-        ob.DeclareObjectProperty($"{C}:hasDocumentNumber", "有文件编号",
-            "标准通识的文件编号（用于版本管理）。", Std, $"{C}:DocumentNumber");
+        // 可选扩展（§6.3）：版本与文件编号
+        ob.DeclareObjectProperty($"{C}:hasVersion", "有版本", "标准具有的发布版本。", Std, Ver);
+        ob.DeclareObjectProperty($"{C}:hasDocumentNumber", "有文件编号", "标准通识的文件编号（用于版本管理）。", Std, DocNum);
     }
 
-    // ── 附录 C：核心数据属性 ─────────────────────────────────────────────
+    // ── 附录 C：核心数据属性（C.1–C.47，域/范围/枚举按标准）─────────────────
 
     private static void BuildCoreDataProperties(OntologyBuilder ob)
     {
         var C = Prefix;
         var Std = $"{C}:Standard";
-        var T = $"{C}:Term";
-        var Charac = $"{C}:Characteristic";
-        var ConLog = $"{C}:ConstraintLogic";
-        var ExtCon = $"{C}:ExternalConstraint";
-        var Lvl = $"{C}:Level";
-        var DevStage = $"{C}:DevelopmentStage";
-        var Pers = $"{C}:Person";
+        var StdObj = $"{C}:StandardizationObject";
+        var Org = $"{C}:Organization";
+        var Ind = $"{C}:Individual";
+        var ICS = $"{C}:InternationalClassificationofStandard";
+        var CCS = $"{C}:ChineseClassificationofStandard";
+        var ContEl = $"{C}:ContentElement";
+        var Sec = $"{C}:Section";
+        var Clause = $"{C}:Clause";
+        var Titled = $"{C}:TitledClause";
+        var InfoU = $"{C}:InformationUnit";
+        var Obj = $"{C}:Object";
+        var Prop = $"{C}:Property";
+        var Con = $"{C}:Constraint";
+        var Ext = $"{C}:ExternalResource";
+        var Proc = $"{C}:StandardizationProcess";
 
-        // 标准实体核心
+        // C.1–C.8 标准实体
+        ob.DeclareDatatypeProperty($"{C}:purpose", "编制目的",
+            "说明该标准的制定目标，如“促进技术统一”“保障安全性”等。", Std, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:languageVersion", "语言版本",
+            "标准发布的语言版本（枚举：中文版本、英文版本、多语种）。", Std, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:status", "标准状态",
+            "标识标准的状态（枚举：草案、现行、废止、修订中）。", Std, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:constraintType", "约束类型",
+            "规定标准的约束级别（枚举：强制性、推荐性）。", Std, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:documentName", "文件名称",
+            "标准的完整名称，如“电动自行车安全技术规范”。", Std, "xsd:string");
         ob.DeclareDatatypeProperty($"{C}:standardNumber", "文件编号",
-            "标准的文件编号，符合 GB/T 1.1 规定的编号格式。", Std, "xsd:string", functional: true);
-        ob.DeclareDatatypeProperty($"{C}:standardName", "文件名称",
-            "标准的文件名称。", Std, "xsd:string");
+            "符合 GB/T 1.1 的编号格式，如“GB/T 12345—2023”（格式：标准代号+顺序号+发布年份）。",
+            Std, "xsd:string", functional: true);
         ob.DeclareDatatypeProperty($"{C}:issuedDate", "发布日期",
-            "标准的发布日期。", Std, "xsd:date");
+            "标准的官方发布日期（GB/T 7408，格式 YYYY-MM-DD）。", Std, "xsd:date");
         ob.DeclareDatatypeProperty($"{C}:effectiveDate", "实施日期",
-            "标准的实施日期。", Std, "xsd:date");
-        ob.DeclareDatatypeProperty($"{C}:purpose", "制定目的",
-            "标准的制定目的和范围。", Std, "xsd:string");
-        ob.DeclareDatatypeProperty($"{C}:languageEdition", "语言版本",
-            "标准的语种版本。", Std, "xsd:string");
-        ob.DeclareDatatypeProperty($"{C}:standardStatus", "标准状态",
-            "标准的生命周期状态（制定中/已发布/已实施/废止/已替代/终止）。", Std, "xsd:string");
-        ob.DeclareDatatypeProperty($"{C}:obligationType", "约束类型",
-            "标准的约束力类型（强制性/推荐性）。", Std, "xsd:string");
+            "标准开始实施的日期，可能与发布日期不同（格式 YYYY-MM-DD）。", Std, "xsd:date");
 
-        // 相关方
-        ob.DeclareDatatypeProperty($"{C}:partyName", "名称",
-            "组织或个人的名称。", $"{C}:RelevantParty", "xsd:string", functional: true);
-        ob.DeclareDatatypeProperty($"{C}:unifiedSocialCreditCode", "统一社会信用代码",
-            "组织的统一社会信用代码。", $"{C}:Organization", "xsd:string", functional: true);
-        ob.DeclareDatatypeProperty($"{C}:location", "所在地",
-            "组织所在地或注册地。", $"{C}:Organization", "xsd:string");
-        ob.DeclareDatatypeProperty($"{C}:contactInfo", "联系方式",
-            "个人的联系方式。", Pers, "xsd:string");
+        // C.9–C.10 标准化对象
+        ob.DeclareDatatypeProperty($"{C}:subjectName", "主题名称",
+            "标识并描述被标准化的事物的主题名称。", StdObj, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:industrialSector", "所属行业",
+            "指明标准化对象所服务的特定行业分类或领域（行业分类见 GB/T 4754）。", StdObj, "xsd:string");
 
-        // 分类
-        ob.DeclareDatatypeProperty($"{C}:icsCode", "ICS 代码",
-            "国际标准分类代码。", $"{C}:IcsClassification", "xsd:string", functional: true);
-        ob.DeclareDatatypeProperty($"{C}:icsName", "ICS 名称",
-            "国际标准分类名称。", $"{C}:IcsClassification", "xsd:string");
-        ob.DeclareDatatypeProperty($"{C}:ccsCode", "CCS 代码",
-            "中国标准文献分类代码。", $"{C}:CcsClassification", "xsd:string", functional: true);
-        ob.DeclareDatatypeProperty($"{C}:ccsName", "CCS 名称",
-            "中国标准文献分类名称。", $"{C}:CcsClassification", "xsd:string");
+        // C.11–C.13 组织
+        ob.DeclareDatatypeProperty($"{C}:orgName", "名称",
+            "标识机构的法定或通用名称。", Org, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:creditCode", "统一信用代码",
+            "由 18 位数字/字母组成的唯一标识符（正则 ^[A-Z0-9]{18}$）。", Org, "xsd:string", functional: true);
+        ob.DeclareDatatypeProperty($"{C}:orgLocation", "所在地",
+            "机构的实际办公或注册地址（格式：省/市）。", Org, "xsd:string");
 
-        // 术语
-        ob.DeclareDatatypeProperty($"{C}:termName", "术语名称",
-            "术语的标准名称。", T, "xsd:string", functional: true);
-        ob.DeclareDatatypeProperty($"{C}:termDefinition", "术语定义",
-            "术语的正式定义文本。", T, "xsd:string");
+        // C.14–C.17 个体
+        ob.DeclareDatatypeProperty($"{C}:personName", "姓名",
+            "个人法定姓名。", Ind, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:affiliation", "所属单位",
+            "个人所属的机构或组织名称。", Ind, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:phone", "联系电话",
+            "个人的联系电话号码（格式：+86-区号-号码）。", Ind, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:address", "联系地址",
+            "个人的联系地址。", Ind, "xsd:string");
 
-        // 特性
-        ob.DeclareDatatypeProperty($"{C}:characteristicName", "特性名称",
-            "特性的标准名称。", Charac, "xsd:string");
-        ob.DeclareDatatypeProperty($"{C}:characteristicValue", "特性值",
-            "特性的取值。", Charac, "xsd:string");
-        ob.DeclareDatatypeProperty($"{C}:valueType", "值类型",
-            "特性的取值类型（数值型、枚举型、布尔型等）。", Charac, "xsd:string");
+        // C.18–C.19 ICS
+        ob.DeclareDatatypeProperty($"{C}:ICS_code", "ICS分类代码",
+            "国际标准分类（ICS）代码。", ICS, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:ICS_name", "ICS分类名称",
+            "国际标准分类（ICS）名称。", ICS, "xsd:string");
 
-        // 约束逻辑
-        ob.DeclareDatatypeProperty($"{C}:constraintLogicType", "约束逻辑类型",
-            "约束的类型（等值约束、范围约束、偏差约束等）。", ConLog, "xsd:string");
+        // C.20–C.21 CCS
+        ob.DeclareDatatypeProperty($"{C}:CCS_code", "CCS分类代码",
+            "中国标准文献分类（CCS）代码。", CCS, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:CCS_name", "CCS分类名称",
+            "中国标准文献分类（CCS）名称。", CCS, "xsd:string");
+
+        // C.22–C.23 内容要素
+        ob.DeclareDatatypeProperty($"{C}:elementStatus", "要素状态",
+            "标识要素的存在状态（枚举：必备、可选）。", ContEl, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:scopeOfEffect", "作用范围",
+            "规定要素的适用范围。", ContEl, "xsd:string");
+
+        // C.24–C.25 章（Section）
+        ob.DeclareDatatypeProperty($"{C}:sectionNumber", "章编号",
+            "章的层级编号（如“4”）。", Sec, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:sectionTitle", "章标题",
+            "章的标题（如“质量管理体系”）。", Sec, "xsd:string");
+
+        // C.26–C.27 条（Clause）/ 有标题条
+        ob.DeclareDatatypeProperty($"{C}:clauseNumber", "条编号",
+            "条的层级编号（如“4.1”）。", Clause, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:clauseTitle", "条标题",
+            "有标题条的标题。", Titled, "xsd:string");
+
+        // C.28–C.29 信息单元
+        // 注：标准原文标识符拼写为 uniqueldentifier（疑似笔误），保留以保与标准发布 IRI 的互操作性。
+        ob.DeclareDatatypeProperty($"{C}:uniqueldentifier", "唯一标识符",
+            "信息单元的唯一编码（如“IU-001”）。", InfoU, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:contentDescription", "内容描述",
+            "信息单元的详细描述文本。", InfoU, "xsd:string");
+
+        // C.30–C.31 条款（Clause）
+        ob.DeclareDatatypeProperty($"{C}:clauseType", "条款类型",
+            "标识条款类型（枚举：要求型、推荐型、指示型、允许型、陈述型）。", Clause, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:constraintType", "约束类型",
+            "规定条款的约束级别（枚举：强制、推荐、描述）。", Clause, "xsd:string");
+
+        // C.32–C.33 对象
+        ob.DeclareDatatypeProperty($"{C}:objectName", "对象名称",
+            "对象的名称（如“锂电池”“电机控制器”）。", Obj, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:objectCategory", "对象类别",
+            "标识对象类别（如“设备”“材料”）。", Obj, "xsd:string");
+
+        // C.34–C.36 特性（Property）
+        ob.DeclareDatatypeProperty($"{C}:propertyName", "特性名称",
+            "特性的名称（如“电压”“功率”）。", Prop, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:propertyValue", "特性值",
+            "特性的具体值（如“48V”“500W”）。", Prop, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:propertyType", "特性类型",
+            "标识特性类型（枚举：描述型、能力型、约束型）。", Prop, "xsd:string");
+
+        // C.37–C.41 约束逻辑（Constraint）
+        ob.DeclareDatatypeProperty($"{C}:constraintType", "约束类型",
+            "约束的形式（枚举：数值区间、枚举值、逻辑表达式）。", Con, "xsd:string");
         ob.DeclareDatatypeProperty($"{C}:maxValue", "最大值",
-            "约束的最大值。", ConLog, "xsd:decimal");
+            "数值约束的最大允许值（如“100W”）。", Con, "xsd:decimal");
         ob.DeclareDatatypeProperty($"{C}:minValue", "最小值",
-            "约束的最小值。", ConLog, "xsd:decimal");
-        ob.DeclareDatatypeProperty($"{C}:nominalValue", "标称值",
-            "约束的标称值。", ConLog, "xsd:decimal");
-        ob.DeclareDatatypeProperty($"{C}:toleranceValue", "偏差值",
-            "约束的允许偏差值。", ConLog, "xsd:decimal");
-        ob.DeclareDatatypeProperty($"{C}:unitOfMeasure", "计量单位",
-            "约束的计量单位。", ConLog, "xsd:string");
+            "数值约束的最小允许值（如“80W”）。", Con, "xsd:decimal");
+        ob.DeclareDatatypeProperty($"{C}:thresholdRange", "阈值范围",
+            "数值的有效范围（如“80-100W”，格式：最小值-最大值）。", Con, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:unit", "测量单位",
+            "数值的单位（如“V”“W”）。", Con, "xsd:string");
 
-        // 外部约束
-        ob.DeclareDatatypeProperty($"{C}:documentType", "文件类型",
-            "外部约束文件的类型。", ExtCon, "xsd:string");
-        ob.DeclareDatatypeProperty($"{C}:effectivePeriod", "有效期",
-            "外部约束文件的有效期。", ExtCon, "xsd:string");
+        // C.42–C.44 外部约束（外部资源）
+        ob.DeclareDatatypeProperty($"{C}:fileType", "文件类型",
+            "外部文件的分类（枚举：法规、专利、文献、公共数据库）。", Ext, "xsd:string");
+        ob.DeclareDatatypeProperty($"{C}:effectiveTime", "生效时间",
+            "文件的生效日期（格式 YYYY-MM-DD）。", Ext, "xsd:date");
+        ob.DeclareDatatypeProperty($"{C}:responsibleParty", "责任主体",
+            "文件的责任主体（如“国家标准化管理委员会”）。", Ext, "xsd:string");
 
-        // 层次
-        ob.DeclareDatatypeProperty($"{C}:levelCode", "层次编号",
-            "章、条、段、项的结构化编号。", Lvl, "xsd:string");
-        ob.DeclareDatatypeProperty($"{C}:levelTitle", "层次标题",
-            "章、条等层次的标题。", Lvl, "xsd:string");
-
-        // 版本
-        ob.DeclareDatatypeProperty($"{C}:versionNumber", "版本号",
-            "标准的版本号。", $"{C}:Version", "xsd:string", functional: true);
-        ob.DeclareDatatypeProperty($"{C}:versionStatus", "版本状态",
-            "版本的当前状态。", $"{C}:Version", "xsd:string");
-
-        // 阶段
+        // C.45–C.47 制定程序
         ob.DeclareDatatypeProperty($"{C}:stageCode", "阶段代码",
-            "制定阶段的唯一代码。", DevStage, "xsd:string", functional: true);
-        ob.DeclareDatatypeProperty($"{C}:stageStartDate", "阶段开始日期",
-            "制定阶段的开始日期。", DevStage, "xsd:date");
-        ob.DeclareDatatypeProperty($"{C}:stageEndDate", "阶段结束日期",
-            "制定阶段的结束日期。", DevStage, "xsd:date");
+            "用于唯一标识和区分标准制定过程中的不同阶段。", Proc, "xsd:string", functional: true);
+        ob.DeclareDatatypeProperty($"{C}:startDate", "开始日期",
+            "某个阶段活动开始的具体时间点（格式 YYYY-MM-DD）。", Proc, "xsd:date");
+        ob.DeclareDatatypeProperty($"{C}:endDate", "结束日期",
+            "某个阶段活动完成的具体时间点（格式 YYYY-MM-DD）。", Proc, "xsd:date");
     }
 
-    // ── 第 8.2 节：核心公理 ──────────────────────────────────────────────
+    // ── 第 8.2 节：核心规则 ──────────────────────────────────────────────
 
     private static void BuildCoreAxioms(OntologyBuilder ob)
     {
         var C = Prefix;
         var Std = $"{C}:Standard";
-        var Charac = $"{C}:Characteristic";
+        var Stkh = $"{C}:Stakeholder";
+        var DomCat = $"{C}:DomainCategory";
+        var ContEl = $"{C}:ContentElement";
+        var StructEl = $"{C}:StructuralElement";
+        var InfoU = $"{C}:InformationUnit";
+        var Obj = $"{C}:Object";
+        var Prop = $"{C}:Property";
+        var Con = $"{C}:Constraint";
+        var Action = $"{C}:ActionClass";
+        var Ext = $"{C}:ExternalResource";
+        var Proc = $"{C}:StandardizationProcess";
         var Lvl = $"{C}:Level";
-        var IU = $"{C}:InformationUnit";
-        var Elem = $"{C}:Element";
+        var Term = $"{C}:Term";
+        var StdObj = $"{C}:StandardizationObject";
 
-        // 1) 实体类型公理 — 顶级实体不相交
-        ob.AssertDisjointClasses(Std, $"{C}:RelevantParty");
-        ob.AssertDisjointClasses(Std, Elem);
-        ob.AssertDisjointClasses(Std, Lvl);
-        ob.AssertDisjointClasses(Std, $"{C}:Term");
-        ob.AssertDisjointClasses(Std, IU);
-        ob.AssertDisjointClasses(Std, $"{C}:Object");
-        ob.AssertDisjointClasses(Std, Charac);
-        ob.AssertDisjointClasses(Std, $"{C}:ConstraintLogic");
-        ob.AssertDisjointClasses(Std, $"{C}:ExternalConstraint");
-        ob.AssertDisjointClasses(Std, $"{C}:DevelopmentStage");
+        // 8.2 a) 实体类型不相交规则：标准实体与主要实体类型互斥
+        foreach (var other in new[]
+        {
+            Stkh, DomCat, ContEl, StructEl, InfoU, Obj, Prop, Con, Action, Ext, Proc, Lvl, Term, StdObj
+        })
+        {
+            ob.AssertDisjointClasses(Std, other);
+        }
 
-        // 2) 子类层级 — Chapter/Section/Paragraph/Item ⊂ Level
-        ob.AssertSubClassOf($"{C}:Chapter", Lvl);
+        // 8.2 a) 示例：规范性要素与资料性要素互斥
+        ob.AssertDisjointClasses($"{C}:NormativeElement", $"{C}:InformativeElement");
+
+        // 8.2 a) 组织与个体互斥（8.2 示例“规范性要素与资料性要素互斥”同属互斥规则）
+        ob.AssertDisjointClasses($"{C}:Organization", $"{C}:Individual");
+
+        // 8.2 c) 层级结构约束：章/段/项 ⊂ 层次
         ob.AssertSubClassOf($"{C}:Section", Lvl);
         ob.AssertSubClassOf($"{C}:Paragraph", Lvl);
         ob.AssertSubClassOf($"{C}:Item", Lvl);
 
-        // 3) 子类层级 — Clause/Example/Note/List ⊂ InformationUnit
-        ob.AssertSubClassOf($"{C}:Clause", IU);
-        ob.AssertSubClassOf($"{C}:Example", IU);
-        ob.AssertSubClassOf($"{C}:Note", IU);
-        ob.AssertSubClassOf($"{C}:List", IU);
+        // 8.2 子类层级：条款/示例/注/列表 ⊂ 信息单元
+        ob.AssertSubClassOf($"{C}:Clause", InfoU);
+        ob.AssertSubClassOf($"{C}:TitledClause", $"{C}:Clause");
+        ob.AssertSubClassOf($"{C}:Example", InfoU);
+        ob.AssertSubClassOf($"{C}:Note", InfoU);
+        ob.AssertSubClassOf($"{C}:List", InfoU);
 
-        // 4) 子类层级 — 特性三分
-        ob.AssertSubClassOf($"{C}:StaticCharacteristic", Charac);
-        ob.AssertSubClassOf($"{C}:FunctionalCharacteristic", Charac);
-        ob.AssertSubClassOf($"{C}:ConstraintCharacteristic", Charac);
+        // 规范性要素/资料性要素 ⊂ 内容要素
+        ob.AssertSubClassOf($"{C}:NormativeElement", ContEl);
+        ob.AssertSubClassOf($"{C}:InformativeElement", ContEl);
 
-        // 5) 子类层级 — 要素二分
-        ob.AssertSubClassOf($"{C}:NormativeElement", Elem);
-        ob.AssertSubClassOf($"{C}:InformativeElement", Elem);
+        // 特性三分 ⊂ 特性
+        ob.AssertSubClassOf($"{C}:DescriptiveProperty", Prop);
+        ob.AssertSubClassOf($"{C}:CapabilityProperty", Prop);
+        ob.AssertSubClassOf($"{C}:ConstraintProperty", Prop);
+
+        // ICS / CCS ⊂ 领域类别
+        ob.AssertSubClassOf($"{C}:InternationalClassificationofStandard", DomCat);
+        ob.AssertSubClassOf($"{C}:ChineseClassificationofStandard", DomCat);
+
+        // 组织 / 个体 ⊂ 相关方
+        ob.AssertSubClassOf($"{C}:Organization", Stkh);
+        ob.AssertSubClassOf($"{C}:Individual", Stkh);
+
+        // 外部资源子类
+        ob.AssertSubClassOf($"{C}:LawRegulation", Ext);
+        ob.AssertSubClassOf($"{C}:Patent", Ext);
+        ob.AssertSubClassOf($"{C}:ReferenceDocument", Ext);
+
+        // 动作类子类
+        ob.AssertSubClassOf($"{C}:Determination", Action);
+
+        // 信息单元表示形式子类
+        ob.AssertSubClassOf($"{C}:TextForm", $"{C}:InformationForm");
+        ob.AssertSubClassOf($"{C}:FigureForm", $"{C}:InformationForm");
+        ob.AssertSubClassOf($"{C}:TableForm", $"{C}:InformationForm");
+        ob.AssertSubClassOf($"{C}:FormulaForm", $"{C}:InformationForm");
+        ob.AssertSubClassOf($"{C}:CodeForm", $"{C}:InformationForm");
+
+        // 8.2 b) 唯一值约束 / 8.2 a) 全局唯一标识：已由实体类型 hasKey 与 functional 属性表达
+        //   - Standard.hasKey = standardNumber（见 BuildCoreEntities）
+        //   - issuedBy / administeredBy / creditCode / stageCode 已声明为 functional
+        // 8.2 b) 日期有效性（实施日期 ≥ 发布日期）：属数据层规则，由 SHACL/应用层校验，不在 OWL 公理层表达。
     }
 }

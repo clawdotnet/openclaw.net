@@ -13,7 +13,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "基于 GB/T 48000.3-2026《标准数字化 第3部分：本体建模要求》定义的标准数字化核心本体。包含 16 种核心实体类型、34 种核心对象属性和 8 类结构性公理。"
+        "@value": "基于 GB/T 48000.3-2026《标准数字化 第3部分：本体建模要求》定义的标准数字化核心本体，包含 18 种核心实体类型（附录 B）、34 种核心对象属性（7.3.2）与 47 种核心数据属性（附录 C）。"
       },
       {
         "@language": "zh",
@@ -49,16 +49,16 @@
     ],
     "http://www.w3.org/2002/07/owl#disjointWith": [
       {
-        "@id": "http://openclaw.net/ontology/standard#RelevantParty"
+        "@id": "http://openclaw.net/ontology/standard#Stakeholder"
       },
       {
-        "@id": "http://openclaw.net/ontology/standard#Element"
+        "@id": "http://openclaw.net/ontology/standard#DomainCategory"
       },
       {
-        "@id": "http://openclaw.net/ontology/standard#Level"
+        "@id": "http://openclaw.net/ontology/standard#ContentElement"
       },
       {
-        "@id": "http://openclaw.net/ontology/standard#Term"
+        "@id": "http://openclaw.net/ontology/standard#StructuralElement"
       },
       {
         "@id": "http://openclaw.net/ontology/standard#InformationUnit"
@@ -67,16 +67,28 @@
         "@id": "http://openclaw.net/ontology/standard#Object"
       },
       {
-        "@id": "http://openclaw.net/ontology/standard#Characteristic"
+        "@id": "http://openclaw.net/ontology/standard#Property"
       },
       {
-        "@id": "http://openclaw.net/ontology/standard#ConstraintLogic"
+        "@id": "http://openclaw.net/ontology/standard#Constraint"
       },
       {
-        "@id": "http://openclaw.net/ontology/standard#ExternalConstraint"
+        "@id": "http://openclaw.net/ontology/standard#ActionClass"
       },
       {
-        "@id": "http://openclaw.net/ontology/standard#DevelopmentStage"
+        "@id": "http://openclaw.net/ontology/standard#ExternalResource"
+      },
+      {
+        "@id": "http://openclaw.net/ontology/standard#StandardizationProcess"
+      },
+      {
+        "@id": "http://openclaw.net/ontology/standard#Level"
+      },
+      {
+        "@id": "http://openclaw.net/ontology/standard#Term"
+      },
+      {
+        "@id": "http://openclaw.net/ontology/standard#StandardizationObject"
       }
     ]
   },
@@ -96,7 +108,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准的文件编号，符合 GB/T 1.1 规定的编号格式。"
+        "@value": "符合 GB/T 1.1 的编号格式，如“GB/T 12345—2023”（格式：标准代号+顺序号+发布年份）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -118,7 +130,7 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "标准对象"
+        "@value": "标准化对象"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
@@ -126,51 +138,10 @@
         "@language": "zh",
         "@value": "描述标准化的具体对象或主题。"
       }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Entity"
-      }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#Entity",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#Class"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "实体"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "标准数字化本体的顶层抽象类，所有核心实体类型的基类。"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#Metadata",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#Class"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "元数据"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "标准的管理元数据信息。"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#RelevantParty",
+    "@id": "http://openclaw.net/ontology/standard#Stakeholder",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
@@ -183,12 +154,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "参与标准相关活动的角色。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Entity"
+        "@value": "参与标准活动的组织和个人（B.3）。"
       }
     ]
   },
@@ -206,58 +172,63 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "代表标准活动中企业、协会、委员会等组织实体。"
+        "@value": "代表企业、协会、委员会等组织实体。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#RelevantParty"
+        "@id": "http://openclaw.net/ontology/standard#Stakeholder"
+      }
+    ],
+    "http://www.w3.org/2002/07/owl#disjointWith": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Individual"
       }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#Person",
+    "@id": "http://openclaw.net/ontology/standard#Individual",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "个人"
+        "@value": "个体"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "代表标准活动中的个人实体。"
+        "@value": "代表个人实体。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#RelevantParty"
+        "@id": "http://openclaw.net/ontology/standard#Stakeholder"
       }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#StandardClassification",
+    "@id": "http://openclaw.net/ontology/standard#DomainCategory",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "标准分类"
+        "@value": "领域类别"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "根据标准领域对标准的分类，如 ICS、CCS 分类。"
+        "@value": "根据标准领域对标准的分类（如 ICS、CCS）。"
       }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#IcsClassification",
+    "@id": "http://openclaw.net/ontology/standard#InternationalClassificationofStandard",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
@@ -275,12 +246,12 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#StandardClassification"
+        "@id": "http://openclaw.net/ontology/standard#DomainCategory"
       }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#CcsClassification",
+    "@id": "http://openclaw.net/ontology/standard#ChineseClassificationofStandard",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
@@ -298,30 +269,25 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#StandardClassification"
+        "@id": "http://openclaw.net/ontology/standard#DomainCategory"
       }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#Element",
+    "@id": "http://openclaw.net/ontology/standard#ContentElement",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "要素"
+        "@value": "内容要素"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准中的要素信息，包含规范性要素和资料性要素。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Entity"
+        "@value": "标准的规范性/资料性内容要素。"
       }
     ]
   },
@@ -344,7 +310,12 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Element"
+        "@id": "http://openclaw.net/ontology/standard#ContentElement"
+      }
+    ],
+    "http://www.w3.org/2002/07/owl#disjointWith": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#InformativeElement"
       }
     ]
   },
@@ -367,140 +338,25 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Element"
+        "@id": "http://openclaw.net/ontology/standard#ContentElement"
       }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#Level",
+    "@id": "http://openclaw.net/ontology/standard#StructuralElement",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "层次"
+        "@value": "结构要素"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准结构中的层级概念，用于表示标准内容的组织层次。"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#Chapter",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#Class"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "章"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "标准中编号为章的逻辑单元。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Level"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#Section",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#Class"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "条"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "章下属的编号为条的单元。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Level"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#Paragraph",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#Class"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "段"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "不带编号的文本段落实体。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Level"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#Item",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#Class"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "项"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "列表中的编号或未编号项。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Level"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#Term",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#Class"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "术语"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "标准中界定的具有特定含义的专业词语。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Entity"
+        "@value": "标准的章、条、段、项等结构要素。"
       }
     ]
   },
@@ -518,12 +374,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准内容的最小信息模块。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Entity"
+        "@value": "标准内容的最小信息模块（条款、示例、注、列表等）。"
       }
     ]
   },
@@ -547,6 +398,29 @@
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
         "@id": "http://openclaw.net/ontology/standard#InformationUnit"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#TitledClause",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#Class"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "有标题条"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "带有标题的条款。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Clause"
       }
     ]
   },
@@ -620,7 +494,7 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#RepresentationForm",
+    "@id": "http://openclaw.net/ontology/standard#InformationForm",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
@@ -656,7 +530,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#RepresentationForm"
+        "@id": "http://openclaw.net/ontology/standard#InformationForm"
       }
     ]
   },
@@ -679,7 +553,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#RepresentationForm"
+        "@id": "http://openclaw.net/ontology/standard#InformationForm"
       }
     ]
   },
@@ -702,7 +576,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#RepresentationForm"
+        "@id": "http://openclaw.net/ontology/standard#InformationForm"
       }
     ]
   },
@@ -725,7 +599,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#RepresentationForm"
+        "@id": "http://openclaw.net/ontology/standard#InformationForm"
       }
     ]
   },
@@ -748,7 +622,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#RepresentationForm"
+        "@id": "http://openclaw.net/ontology/standard#InformationForm"
       }
     ]
   },
@@ -768,15 +642,10 @@
         "@language": "zh",
         "@value": "标准涉及的人员、设备、材料、软件等实体。"
       }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Entity"
-      }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#Characteristic",
+    "@id": "http://openclaw.net/ontology/standard#Property",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
@@ -789,86 +658,81 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "产品/服务/过程的量化属性。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Entity"
+        "@value": "产品/服务/过程的量化或描述属性。"
       }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#StaticCharacteristic",
+    "@id": "http://openclaw.net/ontology/standard#DescriptiveProperty",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "静态特性"
+        "@value": "描述型特性"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "描述对象的静态属性（如尺寸、颜色）。"
+        "@value": "描述型特性。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Characteristic"
+        "@id": "http://openclaw.net/ontology/standard#Property"
       }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#FunctionalCharacteristic",
+    "@id": "http://openclaw.net/ontology/standard#CapabilityProperty",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "功能特性"
+        "@value": "能力型特性"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "描述对象的功能或性能指标（如转换效率、灵敏度）。"
+        "@value": "能力型特性。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Characteristic"
+        "@id": "http://openclaw.net/ontology/standard#Property"
       }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#ConstraintCharacteristic",
+    "@id": "http://openclaw.net/ontology/standard#ConstraintProperty",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "约束特性"
+        "@value": "约束型特性"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "描述对象的约束条件或限定条件（如工作温度、安全等级）。"
+        "@value": "约束型特性。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Characteristic"
+        "@id": "http://openclaw.net/ontology/standard#Property"
       }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#ConstraintLogic",
+    "@id": "http://openclaw.net/ontology/standard#Constraint",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
@@ -883,10 +747,23 @@
         "@language": "zh",
         "@value": "具体的数值约束或逻辑约束条件。"
       }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#ActionClass",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#Class"
     ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
+    "http://www.w3.org/2000/01/rdf-schema#label": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Entity"
+        "@language": "zh",
+        "@value": "动作类"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "描述性动作类别（如测试方法、操作步骤）。"
       }
     ]
   },
@@ -904,17 +781,17 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "最小可执行规则的抽象。分为合规判定和路径判定。"
+        "@value": "最小可执行规则（合规判定/路径判定）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Entity"
+        "@id": "http://openclaw.net/ontology/standard#ActionClass"
       }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#ExternalConstraint",
+    "@id": "http://openclaw.net/ontology/standard#ExternalResource",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
@@ -950,7 +827,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#ExternalConstraint"
+        "@id": "http://openclaw.net/ontology/standard#ExternalResource"
       }
     ]
   },
@@ -973,7 +850,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#ExternalConstraint"
+        "@id": "http://openclaw.net/ontology/standard#ExternalResource"
       }
     ]
   },
@@ -996,30 +873,130 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#ExternalConstraint"
+        "@id": "http://openclaw.net/ontology/standard#ExternalResource"
       }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#DevelopmentStage",
+    "@id": "http://openclaw.net/ontology/standard#StandardizationProcess",
     "@type": [
       "http://www.w3.org/2002/07/owl#Class"
     ],
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "制定阶段"
+        "@value": "制定程序"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准生命周期中的各个阶段。"
+        "@value": "标准生命周期中的各个阶段（预备、立项、起草、征求意见、技术审查、批准发布、出版、复审、废止）。"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#Level",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#Class"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "层次"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "标准结构中的层级概念，用于表示标准内容的组织层次。"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#Section",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#Class"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "章"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "标准中编号为章的逻辑单元。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Entity"
+        "@id": "http://openclaw.net/ontology/standard#Level"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#Paragraph",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#Class"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "段"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "不带编号的文本段落实体。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Level"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#Item",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#Class"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "项"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "列表中的编号或未编号项。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Level"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#Term",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#Class"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "术语"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "标准中界定的具有特定含义的专业词语。"
       }
     ]
   },
@@ -1037,12 +1014,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准的特定发布版本，支持版本追溯和差异对比。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Entity"
+        "@value": "标准的特定发布版本，支持版本追溯和差异对比（§6.3.1）。"
       }
     ]
   },
@@ -1060,12 +1032,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准文件编号，用于支持版本追溯。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Entity"
+        "@value": "标准文件编号，用于支持版本追溯（§6.3.2）。"
       }
     ]
   },
@@ -1113,7 +1080,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "新版本标准代替旧版本标准。"
+        "@value": "新版本标准代替旧版本标准（逆属性为 isReplacedBy）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1171,7 +1138,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准资料性参考另一标准。"
+        "@value": "标准资料性参考另一标准（通常在参考文献中列出）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1200,7 +1167,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准由多个分部分标准组成。"
+        "@value": "本标准由多个部分系列标准组成，当前标准是其中一个部分。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1224,13 +1191,13 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "发布方"
+        "@value": "发布于"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准的发布组织。"
+        "@value": "标准由某机构正式发布。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1253,13 +1220,13 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "提出方"
+        "@value": "提出于"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准的提出组织。"
+        "@value": "标准由某单位提出。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1283,13 +1250,13 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "归口方"
+        "@value": "归口于"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准的归口管理组织。"
+        "@value": "标准由某单位归口管理。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1312,13 +1279,13 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "起草方"
+        "@value": "起草于"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准的起草单位或个人。"
+        "@value": "标准由某起草单位或起草人起草。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1328,7 +1295,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
       {
-        "@id": "http://openclaw.net/ontology/standard#RelevantParty"
+        "@id": "http://openclaw.net/ontology/standard#Stakeholder"
       }
     ]
   },
@@ -1341,13 +1308,13 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "出版方"
+        "@value": "出版于"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准的出版发行组织。"
+        "@value": "标准由某出版机构出版。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1370,13 +1337,13 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "属于分类"
+        "@value": "属于领域"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准归属的分类体系。"
+        "@value": "标准按领域分类（如 ICS、CCS）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1386,7 +1353,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
       {
-        "@id": "http://openclaw.net/ontology/standard#StandardClassification"
+        "@id": "http://openclaw.net/ontology/standard#DomainCategory"
       }
     ]
   },
@@ -1405,7 +1372,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准规范的具体对象/主题。"
+        "@value": "本标准所规范的主题对象。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1428,13 +1395,13 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "有规范性要素"
+        "@value": "包含要素"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准包含的规范性要素。"
+        "@value": "标准包含规范性/资料性要素（如术语、范围）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1444,7 +1411,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
       {
-        "@id": "http://openclaw.net/ontology/standard#NormativeElement"
+        "@id": "http://openclaw.net/ontology/standard#ContentElement"
       }
     ]
   },
@@ -1457,18 +1424,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "有结构要素"
+        "@value": "包含层次"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准包含的结构层次。"
+        "@value": "标准或其内部结构包含章、条、段等层级结构。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Element"
+        "@id": "http://openclaw.net/ontology/standard#Standard"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -1486,18 +1453,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "有条款"
+        "@value": "包含条款"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "要素或结构层次包含的条款。"
+        "@value": "要素或结构层次包含了一个具体的条款。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Element"
+        "@id": "http://openclaw.net/ontology/standard#ContentElement"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -1516,13 +1483,13 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "有子条款"
+        "@value": "包含子条"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "条款下包含的子条款（构建树形结构）。"
+        "@value": "表示条包含子条，用于构建层次结构。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1551,7 +1518,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准或要素界定某个术语。"
+        "@value": "标准或要素界定了某个术语。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1574,13 +1541,13 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "使用术语"
+        "@value": "提及术语"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "信息单元中提及某个术语。"
+        "@value": "信息单元提及了某个术语。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1603,13 +1570,13 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "有表示形式"
+        "@value": "具有表述形式"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "信息单元的表现形式。"
+        "@value": "信息单元（条款等）有内容形式（条文、图、表等）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1619,7 +1586,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
       {
-        "@id": "http://openclaw.net/ontology/standard#RepresentationForm"
+        "@id": "http://openclaw.net/ontology/standard#InformationForm"
       }
     ]
   },
@@ -1638,12 +1605,12 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "术语或概念具有的示例说明。"
+        "@value": "条款关联示例。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Term"
+        "@id": "http://openclaw.net/ontology/standard#Clause"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -1667,12 +1634,12 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "术语或条文具有的注释说明。"
+        "@value": "条款关联注。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Term"
+        "@id": "http://openclaw.net/ontology/standard#Clause"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -1690,18 +1657,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "引用标准"
+        "@value": "引用标准（条款）"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "术语或条文引用具体标准。"
+        "@value": "条款内容中引用了某个标准。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Term"
+        "@id": "http://openclaw.net/ontology/standard#Clause"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -1719,13 +1686,13 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "指向条款"
+        "@value": "引用章条"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "信息单元指向标准内的章、条、段、项。"
+        "@value": "信息单元引用本标准内的章、条、段、项。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1754,12 +1721,12 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "术语或条文提到的人、设备、材料等。"
+        "@value": "条款提及了人、设备、材料等对象。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Term"
+        "@id": "http://openclaw.net/ontology/standard#Clause"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -1783,17 +1750,17 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "术语或条文对某特性做出规定。"
+        "@value": "条款对某个特性的参数/指标做出了规定。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Term"
+        "@id": "http://openclaw.net/ontology/standard#Clause"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Characteristic"
+        "@id": "http://openclaw.net/ontology/standard#Property"
       }
     ]
   },
@@ -1812,7 +1779,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "对象具有某种可量化的特性或属性。"
+        "@value": "对象具有某种可量化或描述的特性。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1822,7 +1789,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Characteristic"
+        "@id": "http://openclaw.net/ontology/standard#Property"
       }
     ]
   },
@@ -1841,7 +1808,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "信息单元或对象附带具体约束条件。"
+        "@value": "信息单元或特性包含具体的约束条件（如阈值）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1851,7 +1818,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
       {
-        "@id": "http://openclaw.net/ontology/standard#ConstraintLogic"
+        "@id": "http://openclaw.net/ontology/standard#Constraint"
       }
     ]
   },
@@ -1870,12 +1837,12 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "约束逻辑适用的具体对象。"
+        "@value": "约束条件应用于某个具体对象。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#ConstraintLogic"
+        "@id": "http://openclaw.net/ontology/standard#Constraint"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -1899,17 +1866,17 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "约束逻辑适用的特性。"
+        "@value": "约束条件应用于对象的某个特性。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#ConstraintLogic"
+        "@id": "http://openclaw.net/ontology/standard#Constraint"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Characteristic"
+        "@id": "http://openclaw.net/ontology/standard#Property"
       }
     ]
   },
@@ -1928,7 +1895,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "信息单元规定的执行动作或操作。"
+        "@value": "信息单元规定的执行动作或操作步骤。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1938,7 +1905,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Determination"
+        "@id": "http://openclaw.net/ontology/standard#ActionClass"
       }
     ]
   },
@@ -1957,7 +1924,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准或术语引用的法规、专利、标准文献等。"
+        "@value": "标准或条款引用了法规、专利、标准文献等。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -1967,7 +1934,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
       {
-        "@id": "http://openclaw.net/ontology/standard#ExternalConstraint"
+        "@id": "http://openclaw.net/ontology/standard#ExternalResource"
       }
     ]
   },
@@ -1986,12 +1953,12 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "术语或条文与某专利相关的说明。"
+        "@value": "条款的技术内容与某项专利有关。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Term"
+        "@id": "http://openclaw.net/ontology/standard#Clause"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2015,7 +1982,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准当前的制定生命周期阶段。"
+        "@value": "标准当前所处的生命周期阶段。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -2025,7 +1992,7 @@
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
       {
-        "@id": "http://openclaw.net/ontology/standard#DevelopmentStage"
+        "@id": "http://openclaw.net/ontology/standard#StandardizationProcess"
       }
     ]
   },
@@ -2044,12 +2011,12 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "制定阶段所包含的标准。"
+        "@value": "制定程序阶段所包含的标准（处于阶段属性的逆向属性）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#DevelopmentStage"
+        "@id": "http://openclaw.net/ontology/standard#StandardizationProcess"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2117,7 +2084,137 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#standardName",
+    "@id": "http://openclaw.net/ontology/standard#purpose",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "编制目的"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "说明该标准的制定目标，如“促进技术统一”“保障安全性”等。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Standard"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#languageVersion",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "语言版本"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "标准发布的语言版本（枚举：中文版本、英文版本、多语种）。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Standard"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#status",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "标准状态"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "标识标准的状态（枚举：草案、现行、废止、修订中）。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Standard"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#constraintType",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "约束类型"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "规定标准的约束级别（枚举：强制性、推荐性）。"
+      },
+      {
+        "@language": "zh",
+        "@value": "规定条款的约束级别（枚举：强制、推荐、描述）。"
+      },
+      {
+        "@language": "zh",
+        "@value": "约束的形式（枚举：数值区间、枚举值、逻辑表达式）。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Standard"
+      },
+      {
+        "@id": "http://openclaw.net/ontology/standard#Clause"
+      },
+      {
+        "@id": "http://openclaw.net/ontology/standard#Constraint"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#documentName",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2131,7 +2228,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准的文件名称。"
+        "@value": "标准的完整名称，如“电动自行车安全技术规范”。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -2160,7 +2257,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准的发布日期。"
+        "@value": "标准的官方发布日期（GB/T 7408，格式 YYYY-MM-DD）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -2189,7 +2286,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准的实施日期。"
+        "@value": "标准开始实施的日期，可能与发布日期不同（格式 YYYY-MM-DD）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -2204,7 +2301,7 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#purpose",
+    "@id": "http://openclaw.net/ontology/standard#subjectName",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2212,18 +2309,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "制定目的"
+        "@value": "主题名称"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准的制定目的和范围。"
+        "@value": "标识并描述被标准化的事物的主题名称。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Standard"
+        "@id": "http://openclaw.net/ontology/standard#StandardizationObject"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2233,7 +2330,7 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#languageEdition",
+    "@id": "http://openclaw.net/ontology/standard#industrialSector",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2241,18 +2338,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "语言版本"
+        "@value": "所属行业"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "标准的语种版本。"
+        "@value": "指明标准化对象所服务的特定行业分类或领域（行业分类见 GB/T 4754）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Standard"
+        "@id": "http://openclaw.net/ontology/standard#StandardizationObject"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2262,69 +2359,10 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#standardStatus",
+    "@id": "http://openclaw.net/ontology/standard#orgName",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "标准状态"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "标准的生命周期状态（制定中/已发布/已实施/废止/已替代/终止）。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#domain": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Standard"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#range": [
-      {
-        "@id": "http://www.w3.org/2001/XMLSchema#string"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#obligationType",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#DatatypeProperty",
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "约束类型"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "标准的约束力类型（强制性/推荐性）。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#domain": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Standard"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#range": [
-      {
-        "@id": "http://www.w3.org/2001/XMLSchema#string"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#partyName",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#DatatypeProperty",
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property",
-      "http://www.w3.org/2002/07/owl#FunctionalProperty"
     ],
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
@@ -2335,37 +2373,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "组织或个人的名称。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#domain": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#RelevantParty"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#range": [
-      {
-        "@id": "http://www.w3.org/2001/XMLSchema#string"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#unifiedSocialCreditCode",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#DatatypeProperty",
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property",
-      "http://www.w3.org/2002/07/owl#FunctionalProperty"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "统一社会信用代码"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "组织的统一社会信用代码。"
+        "@value": "标识机构的法定或通用名称。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -2380,7 +2388,37 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#location",
+    "@id": "http://openclaw.net/ontology/standard#creditCode",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property",
+      "http://www.w3.org/2002/07/owl#FunctionalProperty"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "统一信用代码"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "由 18 位数字/字母组成的唯一标识符（正则 ^[A-Z0-9]{18}$）。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Organization"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#orgLocation",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2394,7 +2432,7 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "组织所在地或注册地。"
+        "@value": "机构的实际办公或注册地址（格式：省/市）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
@@ -2409,7 +2447,7 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#contactInfo",
+    "@id": "http://openclaw.net/ontology/standard#personName",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2417,18 +2455,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "联系方式"
+        "@value": "姓名"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "个人的联系方式。"
+        "@value": "个人法定姓名。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Person"
+        "@id": "http://openclaw.net/ontology/standard#Individual"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2438,37 +2476,7 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#icsCode",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#DatatypeProperty",
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property",
-      "http://www.w3.org/2002/07/owl#FunctionalProperty"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "ICS 代码"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "国际标准分类代码。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#domain": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#IcsClassification"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#range": [
-      {
-        "@id": "http://www.w3.org/2001/XMLSchema#string"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#icsName",
+    "@id": "http://openclaw.net/ontology/standard#affiliation",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2476,18 +2484,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "ICS 名称"
+        "@value": "所属单位"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "国际标准分类名称。"
+        "@value": "个人所属的机构或组织名称。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#IcsClassification"
+        "@id": "http://openclaw.net/ontology/standard#Individual"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2497,37 +2505,7 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#ccsCode",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#DatatypeProperty",
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property",
-      "http://www.w3.org/2002/07/owl#FunctionalProperty"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "CCS 代码"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "中国标准文献分类代码。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#domain": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#CcsClassification"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#range": [
-      {
-        "@id": "http://www.w3.org/2001/XMLSchema#string"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#ccsName",
+    "@id": "http://openclaw.net/ontology/standard#phone",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2535,18 +2513,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "CCS 名称"
+        "@value": "联系电话"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "中国标准文献分类名称。"
+        "@value": "个人的联系电话号码（格式：+86-区号-号码）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#CcsClassification"
+        "@id": "http://openclaw.net/ontology/standard#Individual"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2556,37 +2534,7 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#termName",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#DatatypeProperty",
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property",
-      "http://www.w3.org/2002/07/owl#FunctionalProperty"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "术语名称"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "术语的标准名称。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#domain": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Term"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#range": [
-      {
-        "@id": "http://www.w3.org/2001/XMLSchema#string"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#termDefinition",
+    "@id": "http://openclaw.net/ontology/standard#address",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2594,18 +2542,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "术语定义"
+        "@value": "联系地址"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "术语的正式定义文本。"
+        "@value": "个人的联系地址。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Term"
+        "@id": "http://openclaw.net/ontology/standard#Individual"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2615,7 +2563,442 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#characteristicName",
+    "@id": "http://openclaw.net/ontology/standard#ICS_code",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "ICS分类代码"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "国际标准分类（ICS）代码。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#InternationalClassificationofStandard"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#ICS_name",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "ICS分类名称"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "国际标准分类（ICS）名称。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#InternationalClassificationofStandard"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#CCS_code",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "CCS分类代码"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "中国标准文献分类（CCS）代码。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#ChineseClassificationofStandard"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#CCS_name",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "CCS分类名称"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "中国标准文献分类（CCS）名称。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#ChineseClassificationofStandard"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#elementStatus",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "要素状态"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "标识要素的存在状态（枚举：必备、可选）。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#ContentElement"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#scopeOfEffect",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "作用范围"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "规定要素的适用范围。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#ContentElement"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#sectionNumber",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "章编号"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "章的层级编号（如“4”）。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Section"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#sectionTitle",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "章标题"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "章的标题（如“质量管理体系”）。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Section"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#clauseNumber",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "条编号"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "条的层级编号（如“4.1”）。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Clause"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#clauseTitle",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "条标题"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "有标题条的标题。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#TitledClause"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#uniqueldentifier",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "唯一标识符"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "信息单元的唯一编码（如“IU-001”）。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#InformationUnit"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#contentDescription",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "内容描述"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "信息单元的详细描述文本。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#InformationUnit"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#clauseType",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "条款类型"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "标识条款类型（枚举：要求型、推荐型、指示型、允许型、陈述型）。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Clause"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#objectName",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "对象名称"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "对象的名称（如“锂电池”“电机控制器”）。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Object"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#objectCategory",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "对象类别"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "标识对象类别（如“设备”“材料”）。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Object"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#propertyName",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2629,12 +3012,12 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "特性的标准名称。"
+        "@value": "特性的名称（如“电压”“功率”）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Characteristic"
+        "@id": "http://openclaw.net/ontology/standard#Property"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2644,7 +3027,7 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#characteristicValue",
+    "@id": "http://openclaw.net/ontology/standard#propertyValue",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2658,12 +3041,12 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "特性的取值。"
+        "@value": "特性的具体值（如“48V”“500W”）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Characteristic"
+        "@id": "http://openclaw.net/ontology/standard#Property"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2673,7 +3056,7 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#valueType",
+    "@id": "http://openclaw.net/ontology/standard#propertyType",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2681,47 +3064,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "值类型"
+        "@value": "特性类型"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "特性的取值类型（数值型、枚举型、布尔型等）。"
+        "@value": "标识特性类型（枚举：描述型、能力型、约束型）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Characteristic"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#range": [
-      {
-        "@id": "http://www.w3.org/2001/XMLSchema#string"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#constraintLogicType",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#DatatypeProperty",
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "约束逻辑类型"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "约束的类型（等值约束、范围约束、偏差约束等）。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#domain": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#ConstraintLogic"
+        "@id": "http://openclaw.net/ontology/standard#Property"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2745,12 +3099,12 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "约束的最大值。"
+        "@value": "数值约束的最大允许值（如“100W”）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#ConstraintLogic"
+        "@id": "http://openclaw.net/ontology/standard#Constraint"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2774,12 +3128,12 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "约束的最小值。"
+        "@value": "数值约束的最小允许值（如“80W”）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#ConstraintLogic"
+        "@id": "http://openclaw.net/ontology/standard#Constraint"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2789,7 +3143,7 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#nominalValue",
+    "@id": "http://openclaw.net/ontology/standard#thresholdRange",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2797,76 +3151,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "标称值"
+        "@value": "阈值范围"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "约束的标称值。"
+        "@value": "数值的有效范围（如“80-100W”，格式：最小值-最大值）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#ConstraintLogic"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#range": [
-      {
-        "@id": "http://www.w3.org/2001/XMLSchema#decimal"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#toleranceValue",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#DatatypeProperty",
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "偏差值"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "约束的允许偏差值。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#domain": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#ConstraintLogic"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#range": [
-      {
-        "@id": "http://www.w3.org/2001/XMLSchema#decimal"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#unitOfMeasure",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#DatatypeProperty",
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "计量单位"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "约束的计量单位。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#domain": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#ConstraintLogic"
+        "@id": "http://openclaw.net/ontology/standard#Constraint"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2876,7 +3172,36 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#documentType",
+    "@id": "http://openclaw.net/ontology/standard#unit",
+    "@type": [
+      "http://www.w3.org/2002/07/owl#DatatypeProperty",
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#label": [
+      {
+        "@language": "zh",
+        "@value": "测量单位"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#comment": [
+      {
+        "@language": "zh",
+        "@value": "数值的单位（如“V”“W”）。"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#domain": [
+      {
+        "@id": "http://openclaw.net/ontology/standard#Constraint"
+      }
+    ],
+    "http://www.w3.org/2000/01/rdf-schema#range": [
+      {
+        "@id": "http://www.w3.org/2001/XMLSchema#string"
+      }
+    ]
+  },
+  {
+    "@id": "http://openclaw.net/ontology/standard#fileType",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2890,12 +3215,12 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "外部约束文件的类型。"
+        "@value": "外部文件的分类（枚举：法规、专利、文献、公共数据库）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#ExternalConstraint"
+        "@id": "http://openclaw.net/ontology/standard#ExternalResource"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -2905,7 +3230,7 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#effectivePeriod",
+    "@id": "http://openclaw.net/ontology/standard#effectiveTime",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2913,28 +3238,28 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "有效期"
+        "@value": "生效时间"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "外部约束文件的有效期。"
+        "@value": "文件的生效日期（格式 YYYY-MM-DD）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#ExternalConstraint"
+        "@id": "http://openclaw.net/ontology/standard#ExternalResource"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
       {
-        "@id": "http://www.w3.org/2001/XMLSchema#string"
+        "@id": "http://www.w3.org/2001/XMLSchema#date"
       }
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#levelCode",
+    "@id": "http://openclaw.net/ontology/standard#responsibleParty",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -2942,106 +3267,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "层次编号"
+        "@value": "责任主体"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "章、条、段、项的结构化编号。"
+        "@value": "文件的责任主体（如“国家标准化管理委员会”）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#Level"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#range": [
-      {
-        "@id": "http://www.w3.org/2001/XMLSchema#string"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#levelTitle",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#DatatypeProperty",
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "层次标题"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "章、条等层次的标题。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#domain": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Level"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#range": [
-      {
-        "@id": "http://www.w3.org/2001/XMLSchema#string"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#versionNumber",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#DatatypeProperty",
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property",
-      "http://www.w3.org/2002/07/owl#FunctionalProperty"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "版本号"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "标准的版本号。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#domain": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Version"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#range": [
-      {
-        "@id": "http://www.w3.org/2001/XMLSchema#string"
-      }
-    ]
-  },
-  {
-    "@id": "http://openclaw.net/ontology/standard#versionStatus",
-    "@type": [
-      "http://www.w3.org/2002/07/owl#DatatypeProperty",
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#label": [
-      {
-        "@language": "zh",
-        "@value": "版本状态"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#comment": [
-      {
-        "@language": "zh",
-        "@value": "版本的当前状态。"
-      }
-    ],
-    "http://www.w3.org/2000/01/rdf-schema#domain": [
-      {
-        "@id": "http://openclaw.net/ontology/standard#Version"
+        "@id": "http://openclaw.net/ontology/standard#ExternalResource"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -3066,12 +3303,12 @@
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "制定阶段的唯一代码。"
+        "@value": "用于唯一标识和区分标准制定过程中的不同阶段。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#DevelopmentStage"
+        "@id": "http://openclaw.net/ontology/standard#StandardizationProcess"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -3081,7 +3318,7 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#stageStartDate",
+    "@id": "http://openclaw.net/ontology/standard#startDate",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -3089,18 +3326,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "阶段开始日期"
+        "@value": "开始日期"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "制定阶段的开始日期。"
+        "@value": "某个阶段活动开始的具体时间点（格式 YYYY-MM-DD）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#DevelopmentStage"
+        "@id": "http://openclaw.net/ontology/standard#StandardizationProcess"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [
@@ -3110,7 +3347,7 @@
     ]
   },
   {
-    "@id": "http://openclaw.net/ontology/standard#stageEndDate",
+    "@id": "http://openclaw.net/ontology/standard#endDate",
     "@type": [
       "http://www.w3.org/2002/07/owl#DatatypeProperty",
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
@@ -3118,18 +3355,18 @@
     "http://www.w3.org/2000/01/rdf-schema#label": [
       {
         "@language": "zh",
-        "@value": "阶段结束日期"
+        "@value": "结束日期"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#comment": [
       {
         "@language": "zh",
-        "@value": "制定阶段的结束日期。"
+        "@value": "某个阶段活动完成的具体时间点（格式 YYYY-MM-DD）。"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#domain": [
       {
-        "@id": "http://openclaw.net/ontology/standard#DevelopmentStage"
+        "@id": "http://openclaw.net/ontology/standard#StandardizationProcess"
       }
     ],
     "http://www.w3.org/2000/01/rdf-schema#range": [

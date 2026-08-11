@@ -7,21 +7,32 @@
 @prefix std: <http://openclaw.net/ontology/standard#>.
 
 std: a owl:Ontology;
-     rdfs:comment "基于 GB/T 48000.3-2026《标准数字化 第3部分：本体建模要求》定义的标准数字化核心本体。包含 16 种核心实体类型、34 种核心对象属性和 8 类结构性公理。"@zh,
+     rdfs:comment "基于 GB/T 48000.3-2026《标准数字化 第3部分：本体建模要求》定义的标准数字化核心本体，包含 18 种核心实体类型（附录 B）、34 种核心对象属性（7.3.2）与 47 种核心数据属性（附录 C）。"@zh,
                   "GB/T 48000.3-2026 标准数字化核心本体"@zh;
      rdfs:label "GB/T 48000.3-2026 标准数字化本体"@zh.
-std:CcsClassification a owl:Class;
-                      rdfs:comment "CCS 中国标准文献分类。"@zh;
-                      rdfs:label "中国标准分类"@zh;
-                      rdfs:subClassOf std:StandardClassification.
-std:Chapter a owl:Class;
-            rdfs:comment "标准中编号为章的逻辑单元。"@zh;
-            rdfs:label "章"@zh;
-            rdfs:subClassOf std:Level.
-std:Characteristic a owl:Class;
-                   rdfs:comment "产品/服务/过程的量化属性。"@zh;
-                   rdfs:label "特性"@zh;
-                   rdfs:subClassOf std:Entity.
+std:ActionClass a owl:Class;
+                rdfs:comment "描述性动作类别（如测试方法、操作步骤）。"@zh;
+                rdfs:label "动作类"@zh.
+std:CCS_code a owl:DatatypeProperty,
+               rdf:Property;
+             rdfs:comment "中国标准文献分类（CCS）代码。"@zh;
+             rdfs:domain std:ChineseClassificationofStandard;
+             rdfs:label "CCS分类代码"@zh;
+             rdfs:range xsd:string.
+std:CCS_name a owl:DatatypeProperty,
+               rdf:Property;
+             rdfs:comment "中国标准文献分类（CCS）名称。"@zh;
+             rdfs:domain std:ChineseClassificationofStandard;
+             rdfs:label "CCS分类名称"@zh;
+             rdfs:range xsd:string.
+std:CapabilityProperty a owl:Class;
+                       rdfs:comment "能力型特性。"@zh;
+                       rdfs:label "能力型特性"@zh;
+                       rdfs:subClassOf std:Property.
+std:ChineseClassificationofStandard a owl:Class;
+                                    rdfs:comment "CCS 中国标准文献分类。"@zh;
+                                    rdfs:label "中国标准分类"@zh;
+                                    rdfs:subClassOf std:DomainCategory.
 std:Clause a owl:Class;
            rdfs:comment "信息单元的一种，代表条文性约束。"@zh;
            rdfs:label "条款"@zh;
@@ -29,65 +40,76 @@ std:Clause a owl:Class;
 std:CodeForm a owl:Class;
              rdfs:comment "以程序代码或伪代码表示。"@zh;
              rdfs:label "代码形式"@zh;
-             rdfs:subClassOf std:RepresentationForm.
-std:ConstraintCharacteristic a owl:Class;
-                             rdfs:comment "描述对象的约束条件或限定条件（如工作温度、安全等级）。"@zh;
-                             rdfs:label "约束特性"@zh;
-                             rdfs:subClassOf std:Characteristic.
-std:ConstraintLogic a owl:Class;
-                    rdfs:comment "具体的数值约束或逻辑约束条件。"@zh;
-                    rdfs:label "约束逻辑"@zh;
-                    rdfs:subClassOf std:Entity.
+             rdfs:subClassOf std:InformationForm.
+std:Constraint a owl:Class;
+               rdfs:comment "具体的数值约束或逻辑约束条件。"@zh;
+               rdfs:label "约束逻辑"@zh.
+std:ConstraintProperty a owl:Class;
+                       rdfs:comment "约束型特性。"@zh;
+                       rdfs:label "约束型特性"@zh;
+                       rdfs:subClassOf std:Property.
+std:ContentElement a owl:Class;
+                   rdfs:comment "标准的规范性/资料性内容要素。"@zh;
+                   rdfs:label "内容要素"@zh.
+std:DescriptiveProperty a owl:Class;
+                        rdfs:comment "描述型特性。"@zh;
+                        rdfs:label "描述型特性"@zh;
+                        rdfs:subClassOf std:Property.
 std:Determination a owl:Class;
-                  rdfs:comment "最小可执行规则的抽象。分为合规判定和路径判定。"@zh;
+                  rdfs:comment "最小可执行规则（合规判定/路径判定）。"@zh;
                   rdfs:label "判定"@zh;
-                  rdfs:subClassOf std:Entity.
-std:DevelopmentStage a owl:Class;
-                     rdfs:comment "标准生命周期中的各个阶段。"@zh;
-                     rdfs:label "制定阶段"@zh;
-                     rdfs:subClassOf std:Entity.
+                  rdfs:subClassOf std:ActionClass.
 std:DocumentNumber a owl:Class;
-                   rdfs:comment "标准文件编号，用于支持版本追溯。"@zh;
-                   rdfs:label "文件编号"@zh;
-                   rdfs:subClassOf std:Entity.
-std:Element a owl:Class;
-            rdfs:comment "标准中的要素信息，包含规范性要素和资料性要素。"@zh;
-            rdfs:label "要素"@zh;
-            rdfs:subClassOf std:Entity.
-std:Entity a owl:Class;
-           rdfs:comment "标准数字化本体的顶层抽象类，所有核心实体类型的基类。"@zh;
-           rdfs:label "实体"@zh.
+                   rdfs:comment "标准文件编号，用于支持版本追溯（§6.3.2）。"@zh;
+                   rdfs:label "文件编号"@zh.
+std:DomainCategory a owl:Class;
+                   rdfs:comment "根据标准领域对标准的分类（如 ICS、CCS）。"@zh;
+                   rdfs:label "领域类别"@zh.
 std:Example a owl:Class;
             rdfs:comment "信息单元的一种，代表示例说明。"@zh;
             rdfs:label "示例"@zh;
             rdfs:subClassOf std:InformationUnit.
-std:ExternalConstraint a owl:Class;
-                       rdfs:comment "与标准相关的外部文件，如法律法规、专利、标准文献、行业数据库等。"@zh;
-                       rdfs:label "外部约束"@zh.
+std:ExternalResource a owl:Class;
+                     rdfs:comment "与标准相关的外部文件，如法律法规、专利、标准文献、行业数据库等。"@zh;
+                     rdfs:label "外部约束"@zh.
 std:FigureForm a owl:Class;
                rdfs:comment "以图形、图像或图表表示。"@zh;
                rdfs:label "图表形式"@zh;
-               rdfs:subClassOf std:RepresentationForm.
+               rdfs:subClassOf std:InformationForm.
 std:FormulaForm a owl:Class;
                 rdfs:comment "以数学公式表示。"@zh;
                 rdfs:label "公式形式"@zh;
-                rdfs:subClassOf std:RepresentationForm.
-std:FunctionalCharacteristic a owl:Class;
-                             rdfs:comment "描述对象的功能或性能指标（如转换效率、灵敏度）。"@zh;
-                             rdfs:label "功能特性"@zh;
-                             rdfs:subClassOf std:Characteristic.
-std:IcsClassification a owl:Class;
-                      rdfs:comment "ICS 国际标准分类。"@zh;
-                      rdfs:label "国际标准分类"@zh;
-                      rdfs:subClassOf std:StandardClassification.
+                rdfs:subClassOf std:InformationForm.
+std:ICS_code a owl:DatatypeProperty,
+               rdf:Property;
+             rdfs:comment "国际标准分类（ICS）代码。"@zh;
+             rdfs:domain std:InternationalClassificationofStandard;
+             rdfs:label "ICS分类代码"@zh;
+             rdfs:range xsd:string.
+std:ICS_name a owl:DatatypeProperty,
+               rdf:Property;
+             rdfs:comment "国际标准分类（ICS）名称。"@zh;
+             rdfs:domain std:InternationalClassificationofStandard;
+             rdfs:label "ICS分类名称"@zh;
+             rdfs:range xsd:string.
+std:Individual a owl:Class;
+               rdfs:comment "代表个人实体。"@zh;
+               rdfs:label "个体"@zh;
+               rdfs:subClassOf std:Stakeholder.
+std:InformationForm a owl:Class;
+                    rdfs:comment "信息单元的不同表现形式（文本、图表、公式、代码等）。"@zh;
+                    rdfs:label "信息单元表示形式"@zh.
 std:InformationUnit a owl:Class;
-                    rdfs:comment "标准内容的最小信息模块。"@zh;
-                    rdfs:label "信息单元"@zh;
-                    rdfs:subClassOf std:Entity.
+                    rdfs:comment "标准内容的最小信息模块（条款、示例、注、列表等）。"@zh;
+                    rdfs:label "信息单元"@zh.
 std:InformativeElement a owl:Class;
                        rdfs:comment "标准的资料性要素（规范性引用文件、参考文献、索引等）。"@zh;
                        rdfs:label "资料性要素"@zh;
-                       rdfs:subClassOf std:Element.
+                       rdfs:subClassOf std:ContentElement.
+std:InternationalClassificationofStandard a owl:Class;
+                                          rdfs:comment "ICS 国际标准分类。"@zh;
+                                          rdfs:label "国际标准分类"@zh;
+                                          rdfs:subClassOf std:DomainCategory.
 std:Item a owl:Class;
          rdfs:comment "列表中的编号或未编号项。"@zh;
          rdfs:label "项"@zh;
@@ -95,7 +117,7 @@ std:Item a owl:Class;
 std:LawRegulation a owl:Class;
                   rdfs:comment "法律或行政法规。"@zh;
                   rdfs:label "法律法规"@zh;
-                  rdfs:subClassOf std:ExternalConstraint.
+                  rdfs:subClassOf std:ExternalResource.
 std:Level a owl:Class;
           rdfs:comment "标准结构中的层级概念，用于表示标准内容的组织层次。"@zh;
           rdfs:label "层次"@zh.
@@ -103,25 +125,23 @@ std:List a owl:Class;
          rdfs:comment "信息单元的一种，代表枚举或列表。"@zh;
          rdfs:label "列表"@zh;
          rdfs:subClassOf std:InformationUnit.
-std:Metadata a owl:Class;
-             rdfs:comment "标准的管理元数据信息。"@zh;
-             rdfs:label "元数据"@zh.
 std:NormativeElement a owl:Class;
                      rdfs:comment "标准的规范性要素（范围、术语和定义、符号和缩略语、核心技术要素、管理技术要素等）。"@zh;
                      rdfs:label "规范性要素"@zh;
-                     rdfs:subClassOf std:Element.
+                     rdfs:subClassOf std:ContentElement;
+                     owl:disjointWith std:InformativeElement.
 std:Note a owl:Class;
          rdfs:comment "信息单元的一种，代表注释说明。"@zh;
          rdfs:label "注"@zh;
          rdfs:subClassOf std:InformationUnit.
 std:Object a owl:Class;
            rdfs:comment "标准涉及的人员、设备、材料、软件等实体。"@zh;
-           rdfs:label "对象"@zh;
-           rdfs:subClassOf std:Entity.
+           rdfs:label "对象"@zh.
 std:Organization a owl:Class;
-                 rdfs:comment "代表标准活动中企业、协会、委员会等组织实体。"@zh;
+                 rdfs:comment "代表企业、协会、委员会等组织实体。"@zh;
                  rdfs:label "组织"@zh;
-                 rdfs:subClassOf std:RelevantParty.
+                 rdfs:subClassOf std:Stakeholder;
+                 owl:disjointWith std:Individual.
 std:Paragraph a owl:Class;
               rdfs:comment "不带编号的文本段落实体。"@zh;
               rdfs:label "段"@zh;
@@ -129,73 +149,78 @@ std:Paragraph a owl:Class;
 std:Patent a owl:Class;
            rdfs:comment "专利文献。"@zh;
            rdfs:label "专利"@zh;
-           rdfs:subClassOf std:ExternalConstraint.
-std:Person a owl:Class;
-           rdfs:comment "代表标准活动中的个人实体。"@zh;
-           rdfs:label "个人"@zh;
-           rdfs:subClassOf std:RelevantParty.
+           rdfs:subClassOf std:ExternalResource.
+std:Property a owl:Class;
+             rdfs:comment "产品/服务/过程的量化或描述属性。"@zh;
+             rdfs:label "特性"@zh.
 std:ReferenceDocument a owl:Class;
                       rdfs:comment "标准中引用的其他标准或文献。"@zh;
                       rdfs:label "参考文献"@zh;
-                      rdfs:subClassOf std:ExternalConstraint.
-std:RelevantParty a owl:Class;
-                  rdfs:comment "参与标准相关活动的角色。"@zh;
-                  rdfs:label "相关方"@zh;
-                  rdfs:subClassOf std:Entity.
-std:RepresentationForm a owl:Class;
-                       rdfs:comment "信息单元的不同表现形式（文本、图表、公式、代码等）。"@zh;
-                       rdfs:label "信息单元表示形式"@zh.
+                      rdfs:subClassOf std:ExternalResource.
 std:Section a owl:Class;
-            rdfs:comment "章下属的编号为条的单元。"@zh;
-            rdfs:label "条"@zh;
+            rdfs:comment "标准中编号为章的逻辑单元。"@zh;
+            rdfs:label "章"@zh;
             rdfs:subClassOf std:Level.
+std:Stakeholder a owl:Class;
+                rdfs:comment "参与标准活动的组织和个人（B.3）。"@zh;
+                rdfs:label "相关方"@zh.
 std:Standard a owl:Class;
              rdfs:comment "标准文件的核心根节点，用于表示具有唯一标识的标准文件实例，聚合元数据、结构和内容及制定过程。"@zh;
              rdfs:label "标准实体"@zh;
-             owl:disjointWith std:RelevantParty,
-                              std:Element,
-                              std:Level,
-                              std:Term,
+             owl:disjointWith std:Stakeholder,
+                              std:DomainCategory,
+                              std:ContentElement,
+                              std:StructuralElement,
                               std:InformationUnit,
                               std:Object,
-                              std:Characteristic,
-                              std:ConstraintLogic,
-                              std:ExternalConstraint,
-                              std:DevelopmentStage;
+                              std:Property,
+                              std:Constraint,
+                              std:ActionClass,
+                              std:ExternalResource,
+                              std:StandardizationProcess,
+                              std:Level,
+                              std:Term,
+                              std:StandardizationObject;
              owl:hasKey (std:standardNumber).
-std:StandardClassification a owl:Class;
-                           rdfs:comment "根据标准领域对标准的分类，如 ICS、CCS 分类。"@zh;
-                           rdfs:label "标准分类"@zh.
 std:StandardizationObject a owl:Class;
                           rdfs:comment "描述标准化的具体对象或主题。"@zh;
-                          rdfs:label "标准对象"@zh;
-                          rdfs:subClassOf std:Entity.
-std:StaticCharacteristic a owl:Class;
-                         rdfs:comment "描述对象的静态属性（如尺寸、颜色）。"@zh;
-                         rdfs:label "静态特性"@zh;
-                         rdfs:subClassOf std:Characteristic.
+                          rdfs:label "标准化对象"@zh.
+std:StandardizationProcess a owl:Class;
+                           rdfs:comment "标准生命周期中的各个阶段（预备、立项、起草、征求意见、技术审查、批准发布、出版、复审、废止）。"@zh;
+                           rdfs:label "制定程序"@zh.
+std:StructuralElement a owl:Class;
+                      rdfs:comment "标准的章、条、段、项等结构要素。"@zh;
+                      rdfs:label "结构要素"@zh.
 std:TableForm a owl:Class;
               rdfs:comment "以表格表示。"@zh;
               rdfs:label "表格形式"@zh;
-              rdfs:subClassOf std:RepresentationForm.
+              rdfs:subClassOf std:InformationForm.
 std:Term a owl:Class;
          rdfs:comment "标准中界定的具有特定含义的专业词语。"@zh;
-         rdfs:label "术语"@zh;
-         rdfs:subClassOf std:Entity.
+         rdfs:label "术语"@zh.
 std:TextForm a owl:Class;
              rdfs:comment "以纯文本表示。"@zh;
              rdfs:label "文本形式"@zh;
-             rdfs:subClassOf std:RepresentationForm.
+             rdfs:subClassOf std:InformationForm.
+std:TitledClause a owl:Class;
+                 rdfs:comment "带有标题的条款。"@zh;
+                 rdfs:label "有标题条"@zh;
+                 rdfs:subClassOf std:Clause.
 std:Version a owl:Class;
-            rdfs:comment "标准的特定发布版本，支持版本追溯和差异对比。"@zh;
-            rdfs:label "版本"@zh;
-            rdfs:subClassOf std:Entity.
+            rdfs:comment "标准的特定发布版本，支持版本追溯和差异对比（§6.3.1）。"@zh;
+            rdfs:label "版本"@zh.
+std:address a owl:DatatypeProperty,
+              rdf:Property;
+            rdfs:comment "个人的联系地址。"@zh;
+            rdfs:domain std:Individual;
+            rdfs:label "联系地址"@zh;
+            rdfs:range xsd:string.
 std:administeredBy a owl:ObjectProperty,
                      rdf:Property,
                      owl:FunctionalProperty;
-                   rdfs:comment "标准的归口管理组织。"@zh;
+                   rdfs:comment "标准由某单位归口管理。"@zh;
                    rdfs:domain std:Standard;
-                   rdfs:label "归口方"@zh;
+                   rdfs:label "归口于"@zh;
                    rdfs:range std:Organization.
 std:adopts a owl:ObjectProperty,
              rdf:Property;
@@ -203,31 +228,12 @@ std:adopts a owl:ObjectProperty,
            rdfs:domain std:Standard;
            rdfs:label "采用"@zh;
            rdfs:range std:Standard.
-std:ccsCode a owl:DatatypeProperty,
-              rdf:Property,
-              owl:FunctionalProperty;
-            rdfs:comment "中国标准文献分类代码。"@zh;
-            rdfs:domain std:CcsClassification;
-            rdfs:label "CCS 代码"@zh;
-            rdfs:range xsd:string.
-std:ccsName a owl:DatatypeProperty,
-              rdf:Property;
-            rdfs:comment "中国标准文献分类名称。"@zh;
-            rdfs:domain std:CcsClassification;
-            rdfs:label "CCS 名称"@zh;
-            rdfs:range xsd:string.
-std:characteristicName a owl:DatatypeProperty,
-                         rdf:Property;
-                       rdfs:comment "特性的标准名称。"@zh;
-                       rdfs:domain std:Characteristic;
-                       rdfs:label "特性名称"@zh;
-                       rdfs:range xsd:string.
-std:characteristicValue a owl:DatatypeProperty,
-                          rdf:Property;
-                        rdfs:comment "特性的取值。"@zh;
-                        rdfs:domain std:Characteristic;
-                        rdfs:label "特性值"@zh;
-                        rdfs:range xsd:string.
+std:affiliation a owl:DatatypeProperty,
+                  rdf:Property;
+                rdfs:comment "个人所属的机构或组织名称。"@zh;
+                rdfs:domain std:Individual;
+                rdfs:label "所属单位"@zh;
+                rdfs:range xsd:string.
 std:cites a owl:ObjectProperty,
             rdf:Property;
           rdfs:comment "标准规范性引用另一标准。"@zh;
@@ -236,94 +242,141 @@ std:cites a owl:ObjectProperty,
           rdfs:range std:Standard.
 std:citesStandard a owl:ObjectProperty,
                     rdf:Property;
-                  rdfs:comment "术语或条文引用具体标准。"@zh;
-                  rdfs:domain std:Term;
-                  rdfs:label "引用标准"@zh;
+                  rdfs:comment "条款内容中引用了某个标准。"@zh;
+                  rdfs:domain std:Clause;
+                  rdfs:label "引用标准（条款）"@zh;
                   rdfs:range std:Standard.
 std:classifiedUnder a owl:ObjectProperty,
                       rdf:Property;
-                    rdfs:comment "标准归属的分类体系。"@zh;
+                    rdfs:comment "标准按领域分类（如 ICS、CCS）。"@zh;
                     rdfs:domain std:Standard;
-                    rdfs:label "属于分类"@zh;
-                    rdfs:range std:StandardClassification.
+                    rdfs:label "属于领域"@zh;
+                    rdfs:range std:DomainCategory.
+std:clauseNumber a owl:DatatypeProperty,
+                   rdf:Property;
+                 rdfs:comment "条的层级编号（如“4.1”）。"@zh;
+                 rdfs:domain std:Clause;
+                 rdfs:label "条编号"@zh;
+                 rdfs:range xsd:string.
+std:clauseTitle a owl:DatatypeProperty,
+                  rdf:Property;
+                rdfs:comment "有标题条的标题。"@zh;
+                rdfs:domain std:TitledClause;
+                rdfs:label "条标题"@zh;
+                rdfs:range xsd:string.
+std:clauseType a owl:DatatypeProperty,
+                 rdf:Property;
+               rdfs:comment "标识条款类型（枚举：要求型、推荐型、指示型、允许型、陈述型）。"@zh;
+               rdfs:domain std:Clause;
+               rdfs:label "条款类型"@zh;
+               rdfs:range xsd:string.
 std:constrainsCharacteristic a owl:ObjectProperty,
                                rdf:Property;
-                             rdfs:comment "约束逻辑适用的特性。"@zh;
-                             rdfs:domain std:ConstraintLogic;
+                             rdfs:comment "约束条件应用于对象的某个特性。"@zh;
+                             rdfs:domain std:Constraint;
                              rdfs:label "约束特性"@zh;
-                             rdfs:range std:Characteristic.
+                             rdfs:range std:Property.
 std:constrainsObject a owl:ObjectProperty,
                        rdf:Property;
-                     rdfs:comment "约束逻辑适用的具体对象。"@zh;
-                     rdfs:domain std:ConstraintLogic;
+                     rdfs:comment "约束条件应用于某个具体对象。"@zh;
+                     rdfs:domain std:Constraint;
                      rdfs:label "约束对象"@zh;
                      rdfs:range std:Object.
-std:constraintLogicType a owl:DatatypeProperty,
-                          rdf:Property;
-                        rdfs:comment "约束的类型（等值约束、范围约束、偏差约束等）。"@zh;
-                        rdfs:domain std:ConstraintLogic;
-                        rdfs:label "约束逻辑类型"@zh;
-                        rdfs:range xsd:string.
-std:contactInfo a owl:DatatypeProperty,
-                  rdf:Property;
-                rdfs:comment "个人的联系方式。"@zh;
-                rdfs:domain std:Person;
-                rdfs:label "联系方式"@zh;
-                rdfs:range xsd:string.
+std:constraintType a owl:DatatypeProperty,
+                     rdf:Property;
+                   rdfs:comment "规定标准的约束级别（枚举：强制性、推荐性）。"@zh,
+                                "规定条款的约束级别（枚举：强制、推荐、描述）。"@zh,
+                                "约束的形式（枚举：数值区间、枚举值、逻辑表达式）。"@zh;
+                   rdfs:domain std:Standard,
+                               std:Clause,
+                               std:Constraint;
+                   rdfs:label "约束类型"@zh;
+                   rdfs:range xsd:string.
+std:contentDescription a owl:DatatypeProperty,
+                         rdf:Property;
+                       rdfs:comment "信息单元的详细描述文本。"@zh;
+                       rdfs:domain std:InformationUnit;
+                       rdfs:label "内容描述"@zh;
+                       rdfs:range xsd:string.
+std:creditCode a owl:DatatypeProperty,
+                 rdf:Property,
+                 owl:FunctionalProperty;
+               rdfs:comment "由 18 位数字/字母组成的唯一标识符（正则 ^[A-Z0-9]{18}$）。"@zh;
+               rdfs:domain std:Organization;
+               rdfs:label "统一信用代码"@zh;
+               rdfs:range xsd:string.
 std:defines a owl:ObjectProperty,
               rdf:Property;
-            rdfs:comment "标准或要素界定某个术语。"@zh;
+            rdfs:comment "标准或要素界定了某个术语。"@zh;
             rdfs:domain std:Standard;
             rdfs:label "界定"@zh;
             rdfs:range std:Term.
 std:describesAction a owl:ObjectProperty,
                       rdf:Property;
-                    rdfs:comment "信息单元规定的执行动作或操作。"@zh;
+                    rdfs:comment "信息单元规定的执行动作或操作步骤。"@zh;
                     rdfs:domain std:InformationUnit;
                     rdfs:label "描述动作"@zh;
-                    rdfs:range std:Determination.
-std:documentType a owl:DatatypeProperty,
+                    rdfs:range std:ActionClass.
+std:documentName a owl:DatatypeProperty,
                    rdf:Property;
-                 rdfs:comment "外部约束文件的类型。"@zh;
-                 rdfs:domain std:ExternalConstraint;
-                 rdfs:label "文件类型"@zh;
+                 rdfs:comment "标准的完整名称，如“电动自行车安全技术规范”。"@zh;
+                 rdfs:domain std:Standard;
+                 rdfs:label "文件名称"@zh;
                  rdfs:range xsd:string.
 std:draftedBy a owl:ObjectProperty,
                 rdf:Property;
-              rdfs:comment "标准的起草单位或个人。"@zh;
+              rdfs:comment "标准由某起草单位或起草人起草。"@zh;
               rdfs:domain std:Standard;
-              rdfs:label "起草方"@zh;
-              rdfs:range std:RelevantParty.
+              rdfs:label "起草于"@zh;
+              rdfs:range std:Stakeholder.
 std:effectiveDate a owl:DatatypeProperty,
                     rdf:Property;
-                  rdfs:comment "标准的实施日期。"@zh;
+                  rdfs:comment "标准开始实施的日期，可能与发布日期不同（格式 YYYY-MM-DD）。"@zh;
                   rdfs:domain std:Standard;
                   rdfs:label "实施日期"@zh;
                   rdfs:range xsd:date.
-std:effectivePeriod a owl:DatatypeProperty,
-                      rdf:Property;
-                    rdfs:comment "外部约束文件的有效期。"@zh;
-                    rdfs:domain std:ExternalConstraint;
-                    rdfs:label "有效期"@zh;
-                    rdfs:range xsd:string.
+std:effectiveTime a owl:DatatypeProperty,
+                    rdf:Property;
+                  rdfs:comment "文件的生效日期（格式 YYYY-MM-DD）。"@zh;
+                  rdfs:domain std:ExternalResource;
+                  rdfs:label "生效时间"@zh;
+                  rdfs:range xsd:date.
+std:elementStatus a owl:DatatypeProperty,
+                    rdf:Property;
+                  rdfs:comment "标识要素的存在状态（枚举：必备、可选）。"@zh;
+                  rdfs:domain std:ContentElement;
+                  rdfs:label "要素状态"@zh;
+                  rdfs:range xsd:string.
+std:endDate a owl:DatatypeProperty,
+              rdf:Property;
+            rdfs:comment "某个阶段活动完成的具体时间点（格式 YYYY-MM-DD）。"@zh;
+            rdfs:domain std:StandardizationProcess;
+            rdfs:label "结束日期"@zh;
+            rdfs:range xsd:date.
+std:fileType a owl:DatatypeProperty,
+               rdf:Property;
+             rdfs:comment "外部文件的分类（枚举：法规、专利、文献、公共数据库）。"@zh;
+             rdfs:domain std:ExternalResource;
+             rdfs:label "文件类型"@zh;
+             rdfs:range xsd:string.
 std:hasCharacteristic a owl:ObjectProperty,
                         rdf:Property;
-                      rdfs:comment "对象具有某种可量化的特性或属性。"@zh;
+                      rdfs:comment "对象具有某种可量化或描述的特性。"@zh;
                       rdfs:domain std:Object;
                       rdfs:label "具有特性"@zh;
-                      rdfs:range std:Characteristic.
+                      rdfs:range std:Property.
 std:hasClause a owl:ObjectProperty,
                 rdf:Property;
-              rdfs:comment "要素或结构层次包含的条款。"@zh;
-              rdfs:domain std:Element;
-              rdfs:label "有条款"@zh;
+              rdfs:comment "要素或结构层次包含了一个具体的条款。"@zh;
+              rdfs:domain std:ContentElement;
+              rdfs:label "包含条款"@zh;
               rdfs:range std:Clause.
 std:hasDevelopmentStage a owl:ObjectProperty,
                           rdf:Property;
-                        rdfs:comment "标准当前的制定生命周期阶段。"@zh;
+                        rdfs:comment "标准当前所处的生命周期阶段。"@zh;
                         rdfs:domain std:Standard;
                         rdfs:label "处于阶段"@zh;
-                        rdfs:range std:DevelopmentStage.
+                        rdfs:range std:StandardizationProcess.
 std:hasDocumentNumber a owl:ObjectProperty,
                         rdf:Property;
                       rdfs:comment "标准通识的文件编号（用于版本管理）。"@zh;
@@ -332,46 +385,46 @@ std:hasDocumentNumber a owl:ObjectProperty,
                       rdfs:range std:DocumentNumber.
 std:hasExample a owl:ObjectProperty,
                  rdf:Property;
-               rdfs:comment "术语或概念具有的示例说明。"@zh;
-               rdfs:domain std:Term;
+               rdfs:comment "条款关联示例。"@zh;
+               rdfs:domain std:Clause;
                rdfs:label "有示例"@zh;
                rdfs:range std:Example.
 std:hasNormativeElement a owl:ObjectProperty,
                           rdf:Property;
-                        rdfs:comment "标准包含的规范性要素。"@zh;
+                        rdfs:comment "标准包含规范性/资料性要素（如术语、范围）。"@zh;
                         rdfs:domain std:Standard;
-                        rdfs:label "有规范性要素"@zh;
-                        rdfs:range std:NormativeElement.
+                        rdfs:label "包含要素"@zh;
+                        rdfs:range std:ContentElement.
 std:hasNote a owl:ObjectProperty,
               rdf:Property;
-            rdfs:comment "术语或条文具有的注释说明。"@zh;
-            rdfs:domain std:Term;
+            rdfs:comment "条款关联注。"@zh;
+            rdfs:domain std:Clause;
             rdfs:label "有注"@zh;
             rdfs:range std:Note.
 std:hasPart a owl:ObjectProperty,
               rdf:Property;
-            rdfs:comment "标准由多个分部分标准组成。"@zh;
+            rdfs:comment "本标准由多个部分系列标准组成，当前标准是其中一个部分。"@zh;
             rdfs:domain std:Standard;
             rdfs:label "有部分"@zh;
             rdfs:range std:Standard.
 std:hasRepresentationForm a owl:ObjectProperty,
                             rdf:Property;
-                          rdfs:comment "信息单元的表现形式。"@zh;
+                          rdfs:comment "信息单元（条款等）有内容形式（条文、图、表等）。"@zh;
                           rdfs:domain std:InformationUnit;
-                          rdfs:label "有表示形式"@zh;
-                          rdfs:range std:RepresentationForm.
+                          rdfs:label "具有表述形式"@zh;
+                          rdfs:range std:InformationForm.
 std:hasStructuralElement a owl:ObjectProperty,
                            rdf:Property;
-                         rdfs:comment "标准包含的结构层次。"@zh;
-                         rdfs:domain std:Element;
-                         rdfs:label "有结构要素"@zh;
+                         rdfs:comment "标准或其内部结构包含章、条、段等层级结构。"@zh;
+                         rdfs:domain std:Standard;
+                         rdfs:label "包含层次"@zh;
                          rdfs:range std:Level.
 std:hasSubClause a owl:ObjectProperty,
                    rdf:Property,
                    owl:TransitiveProperty;
-                 rdfs:comment "条款下包含的子条款（构建树形结构）。"@zh;
+                 rdfs:comment "表示条包含子条，用于构建层次结构。"@zh;
                  rdfs:domain std:Clause;
-                 rdfs:label "有子条款"@zh;
+                 rdfs:label "包含子条"@zh;
                  rdfs:range std:Clause.
 std:hasVersion a owl:ObjectProperty,
                  rdf:Property;
@@ -379,257 +432,252 @@ std:hasVersion a owl:ObjectProperty,
                rdfs:domain std:Standard;
                rdfs:label "有版本"@zh;
                rdfs:range std:Version.
-std:icsCode a owl:DatatypeProperty,
-              rdf:Property,
-              owl:FunctionalProperty;
-            rdfs:comment "国际标准分类代码。"@zh;
-            rdfs:domain std:IcsClassification;
-            rdfs:label "ICS 代码"@zh;
-            rdfs:range xsd:string.
-std:icsName a owl:DatatypeProperty,
-              rdf:Property;
-            rdfs:comment "国际标准分类名称。"@zh;
-            rdfs:domain std:IcsClassification;
-            rdfs:label "ICS 名称"@zh;
-            rdfs:range xsd:string.
 std:imposesConstraint a owl:ObjectProperty,
                         rdf:Property;
-                      rdfs:comment "信息单元或对象附带具体约束条件。"@zh;
+                      rdfs:comment "信息单元或特性包含具体的约束条件（如阈值）。"@zh;
                       rdfs:domain std:InformationUnit;
                       rdfs:label "施加约束"@zh;
-                      rdfs:range std:ConstraintLogic.
+                      rdfs:range std:Constraint.
 std:includesStandard a owl:ObjectProperty,
                        rdf:Property;
-                     rdfs:comment "制定阶段所包含的标准。"@zh;
-                     rdfs:domain std:DevelopmentStage;
+                     rdfs:comment "制定程序阶段所包含的标准（处于阶段属性的逆向属性）。"@zh;
+                     rdfs:domain std:StandardizationProcess;
                      rdfs:label "包含标准"@zh;
                      rdfs:range std:Standard.
+std:industrialSector a owl:DatatypeProperty,
+                       rdf:Property;
+                     rdfs:comment "指明标准化对象所服务的特定行业分类或领域（行业分类见 GB/T 4754）。"@zh;
+                     rdfs:domain std:StandardizationObject;
+                     rdfs:label "所属行业"@zh;
+                     rdfs:range xsd:string.
 std:involvesObject a owl:ObjectProperty,
                      rdf:Property;
-                   rdfs:comment "术语或条文提到的人、设备、材料等。"@zh;
-                   rdfs:domain std:Term;
+                   rdfs:comment "条款提及了人、设备、材料等对象。"@zh;
+                   rdfs:domain std:Clause;
                    rdfs:label "涉及对象"@zh;
                    rdfs:range std:Object.
 std:isRelatedToPatent a owl:ObjectProperty,
                         rdf:Property;
-                      rdfs:comment "术语或条文与某专利相关的说明。"@zh;
-                      rdfs:domain std:Term;
+                      rdfs:comment "条款的技术内容与某项专利有关。"@zh;
+                      rdfs:domain std:Clause;
                       rdfs:label "与专利有关"@zh;
                       rdfs:range std:Patent.
 std:issuedBy a owl:ObjectProperty,
                rdf:Property,
                owl:FunctionalProperty;
-             rdfs:comment "标准的发布组织。"@zh;
+             rdfs:comment "标准由某机构正式发布。"@zh;
              rdfs:domain std:Standard;
-             rdfs:label "发布方"@zh;
+             rdfs:label "发布于"@zh;
              rdfs:range std:Organization.
 std:issuedDate a owl:DatatypeProperty,
                  rdf:Property;
-               rdfs:comment "标准的发布日期。"@zh;
+               rdfs:comment "标准的官方发布日期（GB/T 7408，格式 YYYY-MM-DD）。"@zh;
                rdfs:domain std:Standard;
                rdfs:label "发布日期"@zh;
                rdfs:range xsd:date.
-std:languageEdition a owl:DatatypeProperty,
+std:languageVersion a owl:DatatypeProperty,
                       rdf:Property;
-                    rdfs:comment "标准的语种版本。"@zh;
+                    rdfs:comment "标准发布的语言版本（枚举：中文版本、英文版本、多语种）。"@zh;
                     rdfs:domain std:Standard;
                     rdfs:label "语言版本"@zh;
                     rdfs:range xsd:string.
-std:levelCode a owl:DatatypeProperty,
-                rdf:Property;
-              rdfs:comment "章、条、段、项的结构化编号。"@zh;
-              rdfs:domain std:Level;
-              rdfs:label "层次编号"@zh;
-              rdfs:range xsd:string.
-std:levelTitle a owl:DatatypeProperty,
-                 rdf:Property;
-               rdfs:comment "章、条等层次的标题。"@zh;
-               rdfs:domain std:Level;
-               rdfs:label "层次标题"@zh;
-               rdfs:range xsd:string.
-std:location a owl:DatatypeProperty,
-               rdf:Property;
-             rdfs:comment "组织所在地或注册地。"@zh;
-             rdfs:domain std:Organization;
-             rdfs:label "所在地"@zh;
-             rdfs:range xsd:string.
 std:maxValue a owl:DatatypeProperty,
                rdf:Property;
-             rdfs:comment "约束的最大值。"@zh;
-             rdfs:domain std:ConstraintLogic;
+             rdfs:comment "数值约束的最大允许值（如“100W”）。"@zh;
+             rdfs:domain std:Constraint;
              rdfs:label "最大值"@zh;
              rdfs:range xsd:decimal.
 std:minValue a owl:DatatypeProperty,
                rdf:Property;
-             rdfs:comment "约束的最小值。"@zh;
-             rdfs:domain std:ConstraintLogic;
+             rdfs:comment "数值约束的最小允许值（如“80W”）。"@zh;
+             rdfs:domain std:Constraint;
              rdfs:label "最小值"@zh;
              rdfs:range xsd:decimal.
-std:nominalValue a owl:DatatypeProperty,
-                   rdf:Property;
-                 rdfs:comment "约束的标称值。"@zh;
-                 rdfs:domain std:ConstraintLogic;
-                 rdfs:label "标称值"@zh;
-                 rdfs:range xsd:decimal.
-std:obligationType a owl:DatatypeProperty,
+std:objectCategory a owl:DatatypeProperty,
                      rdf:Property;
-                   rdfs:comment "标准的约束力类型（强制性/推荐性）。"@zh;
-                   rdfs:domain std:Standard;
-                   rdfs:label "约束类型"@zh;
+                   rdfs:comment "标识对象类别（如“设备”“材料”）。"@zh;
+                   rdfs:domain std:Object;
+                   rdfs:label "对象类别"@zh;
                    rdfs:range xsd:string.
-std:partyName a owl:DatatypeProperty,
-                rdf:Property,
-                owl:FunctionalProperty;
-              rdfs:comment "组织或个人的名称。"@zh;
-              rdfs:domain std:RelevantParty;
-              rdfs:label "名称"@zh;
-              rdfs:range xsd:string.
+std:objectName a owl:DatatypeProperty,
+                 rdf:Property;
+               rdfs:comment "对象的名称（如“锂电池”“电机控制器”）。"@zh;
+               rdfs:domain std:Object;
+               rdfs:label "对象名称"@zh;
+               rdfs:range xsd:string.
+std:orgLocation a owl:DatatypeProperty,
+                  rdf:Property;
+                rdfs:comment "机构的实际办公或注册地址（格式：省/市）。"@zh;
+                rdfs:domain std:Organization;
+                rdfs:label "所在地"@zh;
+                rdfs:range xsd:string.
+std:orgName a owl:DatatypeProperty,
+              rdf:Property;
+            rdfs:comment "标识机构的法定或通用名称。"@zh;
+            rdfs:domain std:Organization;
+            rdfs:label "名称"@zh;
+            rdfs:range xsd:string.
+std:personName a owl:DatatypeProperty,
+                 rdf:Property;
+               rdfs:comment "个人法定姓名。"@zh;
+               rdfs:domain std:Individual;
+               rdfs:label "姓名"@zh;
+               rdfs:range xsd:string.
+std:phone a owl:DatatypeProperty,
+            rdf:Property;
+          rdfs:comment "个人的联系电话号码（格式：+86-区号-号码）。"@zh;
+          rdfs:domain std:Individual;
+          rdfs:label "联系电话"@zh;
+          rdfs:range xsd:string.
+std:propertyName a owl:DatatypeProperty,
+                   rdf:Property;
+                 rdfs:comment "特性的名称（如“电压”“功率”）。"@zh;
+                 rdfs:domain std:Property;
+                 rdfs:label "特性名称"@zh;
+                 rdfs:range xsd:string.
+std:propertyType a owl:DatatypeProperty,
+                   rdf:Property;
+                 rdfs:comment "标识特性类型（枚举：描述型、能力型、约束型）。"@zh;
+                 rdfs:domain std:Property;
+                 rdfs:label "特性类型"@zh;
+                 rdfs:range xsd:string.
+std:propertyValue a owl:DatatypeProperty,
+                    rdf:Property;
+                  rdfs:comment "特性的具体值（如“48V”“500W”）。"@zh;
+                  rdfs:domain std:Property;
+                  rdfs:label "特性值"@zh;
+                  rdfs:range xsd:string.
 std:proposedBy a owl:ObjectProperty,
                  rdf:Property;
-               rdfs:comment "标准的提出组织。"@zh;
+               rdfs:comment "标准由某单位提出。"@zh;
                rdfs:domain std:Standard;
-               rdfs:label "提出方"@zh;
+               rdfs:label "提出于"@zh;
                rdfs:range std:Organization.
 std:publishedBy a owl:ObjectProperty,
                   rdf:Property;
-                rdfs:comment "标准的出版发行组织。"@zh;
+                rdfs:comment "标准由某出版机构出版。"@zh;
                 rdfs:domain std:Standard;
-                rdfs:label "出版方"@zh;
+                rdfs:label "出版于"@zh;
                 rdfs:range std:Organization.
 std:purpose a owl:DatatypeProperty,
               rdf:Property;
-            rdfs:comment "标准的制定目的和范围。"@zh;
+            rdfs:comment "说明该标准的制定目标，如“促进技术统一”“保障安全性”等。"@zh;
             rdfs:domain std:Standard;
-            rdfs:label "制定目的"@zh;
+            rdfs:label "编制目的"@zh;
             rdfs:range xsd:string.
 std:references a owl:ObjectProperty,
                  rdf:Property;
-               rdfs:comment "标准资料性参考另一标准。"@zh;
+               rdfs:comment "标准资料性参考另一标准（通常在参考文献中列出）。"@zh;
                rdfs:domain std:Standard;
                rdfs:label "参考"@zh;
                rdfs:range std:Standard.
 std:referencesClause a owl:ObjectProperty,
                        rdf:Property;
-                     rdfs:comment "信息单元指向标准内的章、条、段、项。"@zh;
+                     rdfs:comment "信息单元引用本标准内的章、条、段、项。"@zh;
                      rdfs:domain std:InformationUnit;
-                     rdfs:label "指向条款"@zh;
+                     rdfs:label "引用章条"@zh;
                      rdfs:range std:Level.
 std:referencesExternalResource a owl:ObjectProperty,
                                  rdf:Property;
-                               rdfs:comment "标准或术语引用的法规、专利、标准文献等。"@zh;
+                               rdfs:comment "标准或条款引用了法规、专利、标准文献等。"@zh;
                                rdfs:domain std:Standard;
                                rdfs:label "引用外部资源"@zh;
-                               rdfs:range std:ExternalConstraint.
+                               rdfs:range std:ExternalResource.
 std:replaces a owl:ObjectProperty,
                rdf:Property;
-             rdfs:comment "新版本标准代替旧版本标准。"@zh;
+             rdfs:comment "新版本标准代替旧版本标准（逆属性为 isReplacedBy）。"@zh;
              rdfs:domain std:Standard;
              rdfs:label "代替"@zh;
              rdfs:range std:Standard.
+std:responsibleParty a owl:DatatypeProperty,
+                       rdf:Property;
+                     rdfs:comment "文件的责任主体（如“国家标准化管理委员会”）。"@zh;
+                     rdfs:domain std:ExternalResource;
+                     rdfs:label "责任主体"@zh;
+                     rdfs:range xsd:string.
+std:scopeOfEffect a owl:DatatypeProperty,
+                    rdf:Property;
+                  rdfs:comment "规定要素的适用范围。"@zh;
+                  rdfs:domain std:ContentElement;
+                  rdfs:label "作用范围"@zh;
+                  rdfs:range xsd:string.
+std:sectionNumber a owl:DatatypeProperty,
+                    rdf:Property;
+                  rdfs:comment "章的层级编号（如“4”）。"@zh;
+                  rdfs:domain std:Section;
+                  rdfs:label "章编号"@zh;
+                  rdfs:range xsd:string.
+std:sectionTitle a owl:DatatypeProperty,
+                   rdf:Property;
+                 rdfs:comment "章的标题（如“质量管理体系”）。"@zh;
+                 rdfs:domain std:Section;
+                 rdfs:label "章标题"@zh;
+                 rdfs:range xsd:string.
 std:specifiesCharacteristic a owl:ObjectProperty,
                               rdf:Property;
-                            rdfs:comment "术语或条文对某特性做出规定。"@zh;
-                            rdfs:domain std:Term;
+                            rdfs:comment "条款对某个特性的参数/指标做出了规定。"@zh;
+                            rdfs:domain std:Clause;
                             rdfs:label "规定特性"@zh;
-                            rdfs:range std:Characteristic.
+                            rdfs:range std:Property.
 std:stageCode a owl:DatatypeProperty,
                 rdf:Property,
                 owl:FunctionalProperty;
-              rdfs:comment "制定阶段的唯一代码。"@zh;
-              rdfs:domain std:DevelopmentStage;
+              rdfs:comment "用于唯一标识和区分标准制定过程中的不同阶段。"@zh;
+              rdfs:domain std:StandardizationProcess;
               rdfs:label "阶段代码"@zh;
               rdfs:range xsd:string.
-std:stageEndDate a owl:DatatypeProperty,
-                   rdf:Property;
-                 rdfs:comment "制定阶段的结束日期。"@zh;
-                 rdfs:domain std:DevelopmentStage;
-                 rdfs:label "阶段结束日期"@zh;
-                 rdfs:range xsd:date.
-std:stageStartDate a owl:DatatypeProperty,
-                     rdf:Property;
-                   rdfs:comment "制定阶段的开始日期。"@zh;
-                   rdfs:domain std:DevelopmentStage;
-                   rdfs:label "阶段开始日期"@zh;
-                   rdfs:range xsd:date.
-std:standardName a owl:DatatypeProperty,
-                   rdf:Property;
-                 rdfs:comment "标准的文件名称。"@zh;
-                 rdfs:domain std:Standard;
-                 rdfs:label "文件名称"@zh;
-                 rdfs:range xsd:string.
 std:standardNumber a owl:DatatypeProperty,
                      rdf:Property,
                      owl:FunctionalProperty;
-                   rdfs:comment "标准的文件编号，符合 GB/T 1.1 规定的编号格式。"@zh;
+                   rdfs:comment "符合 GB/T 1.1 的编号格式，如“GB/T 12345—2023”（格式：标准代号+顺序号+发布年份）。"@zh;
                    rdfs:domain std:Standard;
                    rdfs:label "文件编号"@zh;
                    rdfs:range xsd:string.
-std:standardStatus a owl:DatatypeProperty,
-                     rdf:Property;
-                   rdfs:comment "标准的生命周期状态（制定中/已发布/已实施/废止/已替代/终止）。"@zh;
-                   rdfs:domain std:Standard;
-                   rdfs:label "标准状态"@zh;
-                   rdfs:range xsd:string.
 std:standardizes a owl:ObjectProperty,
                    rdf:Property;
-                 rdfs:comment "标准规范的具体对象/主题。"@zh;
+                 rdfs:comment "本标准所规范的主题对象。"@zh;
                  rdfs:domain std:Standard;
                  rdfs:label "规范对象"@zh;
                  rdfs:range std:StandardizationObject.
-std:termDefinition a owl:DatatypeProperty,
+std:startDate a owl:DatatypeProperty,
+                rdf:Property;
+              rdfs:comment "某个阶段活动开始的具体时间点（格式 YYYY-MM-DD）。"@zh;
+              rdfs:domain std:StandardizationProcess;
+              rdfs:label "开始日期"@zh;
+              rdfs:range xsd:date.
+std:status a owl:DatatypeProperty,
+             rdf:Property;
+           rdfs:comment "标识标准的状态（枚举：草案、现行、废止、修订中）。"@zh;
+           rdfs:domain std:Standard;
+           rdfs:label "标准状态"@zh;
+           rdfs:range xsd:string.
+std:subjectName a owl:DatatypeProperty,
+                  rdf:Property;
+                rdfs:comment "标识并描述被标准化的事物的主题名称。"@zh;
+                rdfs:domain std:StandardizationObject;
+                rdfs:label "主题名称"@zh;
+                rdfs:range xsd:string.
+std:thresholdRange a owl:DatatypeProperty,
                      rdf:Property;
-                   rdfs:comment "术语的正式定义文本。"@zh;
-                   rdfs:domain std:Term;
-                   rdfs:label "术语定义"@zh;
+                   rdfs:comment "数值的有效范围（如“80-100W”，格式：最小值-最大值）。"@zh;
+                   rdfs:domain std:Constraint;
+                   rdfs:label "阈值范围"@zh;
                    rdfs:range xsd:string.
-std:termName a owl:DatatypeProperty,
-               rdf:Property,
-               owl:FunctionalProperty;
-             rdfs:comment "术语的标准名称。"@zh;
-             rdfs:domain std:Term;
-             rdfs:label "术语名称"@zh;
-             rdfs:range xsd:string.
-std:toleranceValue a owl:DatatypeProperty,
-                     rdf:Property;
-                   rdfs:comment "约束的允许偏差值。"@zh;
-                   rdfs:domain std:ConstraintLogic;
-                   rdfs:label "偏差值"@zh;
-                   rdfs:range xsd:decimal.
-std:unifiedSocialCreditCode a owl:DatatypeProperty,
-                              rdf:Property,
-                              owl:FunctionalProperty;
-                            rdfs:comment "组织的统一社会信用代码。"@zh;
-                            rdfs:domain std:Organization;
-                            rdfs:label "统一社会信用代码"@zh;
-                            rdfs:range xsd:string.
-std:unitOfMeasure a owl:DatatypeProperty,
-                    rdf:Property;
-                  rdfs:comment "约束的计量单位。"@zh;
-                  rdfs:domain std:ConstraintLogic;
-                  rdfs:label "计量单位"@zh;
-                  rdfs:range xsd:string.
+std:uniqueldentifier a owl:DatatypeProperty,
+                       rdf:Property;
+                     rdfs:comment "信息单元的唯一编码（如“IU-001”）。"@zh;
+                     rdfs:domain std:InformationUnit;
+                     rdfs:label "唯一标识符"@zh;
+                     rdfs:range xsd:string.
+std:unit a owl:DatatypeProperty,
+           rdf:Property;
+         rdfs:comment "数值的单位（如“V”“W”）。"@zh;
+         rdfs:domain std:Constraint;
+         rdfs:label "测量单位"@zh;
+         rdfs:range xsd:string.
 std:usesTerm a owl:ObjectProperty,
                rdf:Property;
-             rdfs:comment "信息单元中提及某个术语。"@zh;
+             rdfs:comment "信息单元提及了某个术语。"@zh;
              rdfs:domain std:InformationUnit;
-             rdfs:label "使用术语"@zh;
+             rdfs:label "提及术语"@zh;
              rdfs:range std:Term.
-std:valueType a owl:DatatypeProperty,
-                rdf:Property;
-              rdfs:comment "特性的取值类型（数值型、枚举型、布尔型等）。"@zh;
-              rdfs:domain std:Characteristic;
-              rdfs:label "值类型"@zh;
-              rdfs:range xsd:string.
-std:versionNumber a owl:DatatypeProperty,
-                    rdf:Property,
-                    owl:FunctionalProperty;
-                  rdfs:comment "标准的版本号。"@zh;
-                  rdfs:domain std:Version;
-                  rdfs:label "版本号"@zh;
-                  rdfs:range xsd:string.
-std:versionStatus a owl:DatatypeProperty,
-                    rdf:Property;
-                  rdfs:comment "版本的当前状态。"@zh;
-                  rdfs:domain std:Version;
-                  rdfs:label "版本状态"@zh;
-                  rdfs:range xsd:string.

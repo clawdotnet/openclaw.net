@@ -44,8 +44,8 @@
 <p class="meta">GB/T 48000.3-2026「标准数字化 第3部分：本体建模要求」— 核心本体定义</p>
 
 <p>本命名空间定义了基于 <strong>GB/T 48000.3-2026</strong> 国家标准的标准数字化核心本体。
-包含 <strong>18 种实体类型</strong>、<strong>34 种核心对象属性</strong>、<strong>22 种数据属性</strong>
-和 <strong>28 条结构性公理</strong>，覆盖标准文件的结构、内容、组织、分类、特性、约束和生命周期。</p>
+包含 <strong>18 种核心实体类型（附录 B）</strong>、<strong>34 种核心对象属性（§7.3.2）</strong>、<strong>47 种核心数据属性（附录 C）</strong>
+以及 <strong>18 种规范性派生类</strong>（层次、条款、术语、要素、特性、约束等，见 §6.2.4/§6.2.5/§7.3.2），并落实第 8.2 节核心规则（不相交、子类层级、功能性、唯一标识）。</p>
 
 <p>
   <strong>序列化下载：</strong>
@@ -57,10 +57,11 @@
 <h2>目录</h2>
 <ul class="toc">
   <li><a href="#prefixes">前缀与命名空间</a></li>
-  <li><a href="#entities">核心实体类型（18 种）</a></li>
-  <li><a href="#object-properties">核心对象属性（34 种）</a></li>
-  <li><a href="#data-properties">核心数据属性（22 种）</a></li>
-  <li><a href="#axioms">核心公理</a></li>
+  <li><a href="#entities">核心实体类型（附录 B，18 种）</a></li>
+  <li><a href="#derived-entities">规范性派生类</a></li>
+  <li><a href="#object-properties">核心对象属性（§7.3.2，34 种）</a></li>
+  <li><a href="#data-properties">核心数据属性（附录 C，47 种）</a></li>
+  <li><a href="#axioms">核心规则（第 8.2 节）</a></li>
   <li><a href="#shapes">SHACL 验证形状</a></li>
   <li><a href="#references">参考标准</a></li>
 </ul>
@@ -76,125 +77,172 @@
   <tr><td><code>sh</code></td><td><code>http://www.w3.org/ns/shacl#</code></td></tr>
 </table>
 
-<h2 id="entities">核心实体类型（18 种）</h2>
+<h2 id="entities">核心实体类型（附录 B，18 种）</h2>
 <table>
   <tr><th>IRI</th><th>中文名称</th><th>父类</th><th>说明</th></tr>
-  <tr><td><code>std:Entity</code></td><td>实体</td><td>—</td><td>顶层抽象类，所有核心实体类型的基类</td></tr>
   <tr><td><code>std:Standard</code></td><td>标准实体</td><td>—</td><td>标准文件核心节点，hasKey: standardNumber</td></tr>
-  <tr><td><code>std:StandardizationObject</code></td><td>标准对象</td><td>Entity</td><td>描述标准化的具体对象或主题</td></tr>
-  <tr><td><code>std:RelevantParty</code></td><td>相关方</td><td>Entity</td><td>参与标准活动的角色（组织/个人）</td></tr>
-  <tr><td><code>std:Organization</code></td><td>组织</td><td>RelevantParty</td><td>企业、协会、委员会等组织实体</td></tr>
-  <tr><td><code>std:Person</code></td><td>个人</td><td>RelevantParty</td><td>标准活动中的个人实体</td></tr>
-  <tr><td><code>std:StandardClassification</code></td><td>标准分类</td><td>—</td><td>ICS/CCS 分类体系</td></tr>
-  <tr><td><code>std:IcsClassification</code></td><td>国际标准分类</td><td>StandardClassification</td><td>ICS 国际标准分类</td></tr>
-  <tr><td><code>std:CcsClassification</code></td><td>中国标准分类</td><td>StandardClassification</td><td>CCS 中国标准文献分类</td></tr>
-  <tr><td><code>std:Element</code></td><td>要素</td><td>Entity</td><td>规范性/资料性要素</td></tr>
-  <tr><td><code>std:Level</code></td><td>层次</td><td>—</td><td>章/条/段/项层级结构</td></tr>
-  <tr><td><code>std:Term</code></td><td>术语</td><td>Entity</td><td>标准中界定的专业词语</td></tr>
-  <tr><td><code>std:InformationUnit</code></td><td>信息单元</td><td>Entity</td><td>标准内容的最小信息模块</td></tr>
-  <tr><td><code>std:RepresentationForm</code></td><td>表示形式</td><td>—</td><td>信息单元的不同表现形式</td></tr>
-  <tr><td><code>std:Object</code></td><td>对象</td><td>Entity</td><td>标准涉及的人员、设备、材料等</td></tr>
-  <tr><td><code>std:Characteristic</code></td><td>特性</td><td>Entity</td><td>产品/服务/过程的量化属性</td></tr>
-  <tr><td><code>std:ConstraintLogic</code></td><td>约束逻辑</td><td>Entity</td><td>数值或逻辑约束条件</td></tr>
-  <tr><td><code>std:DevelopmentStage</code></td><td>制定阶段</td><td>Entity</td><td>标准生命周期的各阶段</td></tr>
+  <tr><td><code>std:StandardizationObject</code></td><td>标准化对象</td><td>—</td><td>描述标准化的具体对象或主题（B.2）</td></tr>
+  <tr><td><code>std:Stakeholder</code></td><td>相关方</td><td>—</td><td>参与标准活动的组织和个人（B.3）</td></tr>
+  <tr><td><code>std:Organization</code></td><td>组织</td><td>相关方</td><td>企业、协会、委员会等组织实体（B.4）</td></tr>
+  <tr><td><code>std:Individual</code></td><td>个体</td><td>相关方</td><td>标准活动中的个人实体（B.5）</td></tr>
+  <tr><td><code>std:DomainCategory</code></td><td>领域类别</td><td>—</td><td>根据标准领域对标准的分类（B.6）</td></tr>
+  <tr><td><code>std:InternationalClassificationofStandard</code></td><td>国际标准分类</td><td>领域类别</td><td>ICS 国际标准分类（B.7）</td></tr>
+  <tr><td><code>std:ChineseClassificationofStandard</code></td><td>中国标准分类</td><td>领域类别</td><td>CCS 中国标准文献分类（B.8）</td></tr>
+  <tr><td><code>std:ContentElement</code></td><td>内容要素</td><td>—</td><td>标准的规范性/资料性内容要素（B.9）</td></tr>
+  <tr><td><code>std:StructuralElement</code></td><td>结构要素</td><td>—</td><td>标准的章、条、段、项等结构要素（B.10）</td></tr>
+  <tr><td><code>std:InformationUnit</code></td><td>信息单元</td><td>—</td><td>标准内容的最小信息模块（B.11）</td></tr>
+  <tr><td><code>std:InformationForm</code></td><td>信息单元表示形式</td><td>—</td><td>文本/图表/公式/代码等（B.12）</td></tr>
+  <tr><td><code>std:Object</code></td><td>对象</td><td>—</td><td>标准涉及的人员、设备、材料等（B.13）</td></tr>
+  <tr><td><code>std:Property</code></td><td>特性</td><td>—</td><td>产品/服务/过程的量化或描述属性（B.14）</td></tr>
+  <tr><td><code>std:Constraint</code></td><td>约束逻辑</td><td>—</td><td>具体的数值约束或逻辑约束条件（B.15）</td></tr>
+  <tr><td><code>std:ActionClass</code></td><td>动作类</td><td>—</td><td>描述性动作类别（B.16）</td></tr>
+  <tr><td><code>std:ExternalResource</code></td><td>外部约束</td><td>—</td><td>法规、专利、标准文献、数据库等（B.17）</td></tr>
+  <tr><td><code>std:StandardizationProcess</code></td><td>制定程序</td><td>—</td><td>标准生命周期各阶段（B.18）</td></tr>
 </table>
 
-<h2 id="object-properties">核心对象属性（34 种）</h2>
+<h2 id="derived-entities">规范性派生类（§6.2.4 / §6.2.5 / §7.3.2）</h2>
+<table>
+  <tr><th>IRI</th><th>中文名称</th><th>父类</th><th>说明</th></tr>
+  <tr><td><code>std:Level</code></td><td>层次</td><td>—</td><td>章/条/段/项的超类（§6.2.4）</td></tr>
+  <tr><td><code>std:Section</code></td><td>章</td><td>层次</td><td>编号为章的逻辑单元</td></tr>
+  <tr><td><code>std:Paragraph</code></td><td>段</td><td>层次</td><td>不带编号的文本段落</td></tr>
+  <tr><td><code>std:Item</code></td><td>项</td><td>层次</td><td>列表中的编号/未编号项</td></tr>
+  <tr><td><code>std:Clause</code></td><td>条款</td><td>信息单元</td><td>条文性约束（§7.3.2）</td></tr>
+  <tr><td><code>std:TitledClause</code></td><td>有标题条</td><td>条款</td><td>带有标题的条款</td></tr>
+  <tr><td><code>std:Example</code></td><td>示例</td><td>信息单元</td><td>示例说明</td></tr>
+  <tr><td><code>std:Note</code></td><td>注</td><td>信息单元</td><td>注释说明</td></tr>
+  <tr><td><code>std:List</code></td><td>列表</td><td>信息单元</td><td>枚举或列表</td></tr>
+  <tr><td><code>std:NormativeElement</code></td><td>规范性要素</td><td>内容要素</td><td>范围/术语/技术要素等（§6.2.5）</td></tr>
+  <tr><td><code>std:InformativeElement</code></td><td>资料性要素</td><td>内容要素</td><td>引用文件/参考文献/索引等</td></tr>
+  <tr><td><code>std:DescriptiveProperty</code></td><td>描述型特性</td><td>特性</td><td>特性三分之一</td></tr>
+  <tr><td><code>std:CapabilityProperty</code></td><td>能力型特性</td><td>特性</td><td>特性三分之一</td></tr>
+  <tr><td><code>std:ConstraintProperty</code></td><td>约束型特性</td><td>特性</td><td>特性三分之一</td></tr>
+  <tr><td><code>std:TextForm</code></td><td>文本形式</td><td>信息单元表示形式</td><td>—</td></tr>
+  <tr><td><code>std:FigureForm</code></td><td>图表形式</td><td>信息单元表示形式</td><td>—</td></tr>
+  <tr><td><code>std:TableForm</code></td><td>表格形式</td><td>信息单元表示形式</td><td>—</td></tr>
+  <tr><td><code>std:FormulaForm</code></td><td>公式形式</td><td>信息单元表示形式</td><td>—</td></tr>
+  <tr><td><code>std:CodeForm</code></td><td>代码形式</td><td>信息单元表示形式</td><td>—</td></tr>
+  <tr><td><code>std:LawRegulation</code></td><td>法律法规</td><td>外部约束</td><td>法律或行政法规</td></tr>
+  <tr><td><code>std:Patent</code></td><td>专利</td><td>外部约束</td><td>专利文献</td></tr>
+  <tr><td><code>std:ReferenceDocument</code></td><td>参考文献</td><td>外部约束</td><td>其他标准或文献</td></tr>
+  <tr><td><code>std:Determination</code></td><td>判定</td><td>动作类</td><td>最小可执行规则</td></tr>
+  <tr><td><code>std:Term</code></td><td>术语</td><td>—</td><td>标准中界定的专业词语（§7.3.2）</td></tr>
+  <tr><td><code>std:Version</code></td><td>版本</td><td>—</td><td>特定发布版本（§6.3.1 可选）</td></tr>
+  <tr><td><code>std:DocumentNumber</code></td><td>文件编号</td><td>—</td><td>版本追溯用（§6.3.2 可选）</td></tr>
+</table>
+
+<h2 id="object-properties">核心对象属性（§7.3.2，34 种）</h2>
 <table>
   <tr><th>IRI</th><th>中文</th><th>Domain</th><th>Range</th><th>特征</th></tr>
-  <tr><td><code>std:adopts</code></td><td>采用</td><td>Standard</td><td>Standard</td><td>—</td></tr>
-  <tr><td><code>std:replaces</code></td><td>代替</td><td>Standard</td><td>Standard</td><td>—</td></tr>
-  <tr><td><code>std:cites</code></td><td>引用（标准）</td><td>Standard</td><td>Standard</td><td>—</td></tr>
-  <tr><td><code>std:references</code></td><td>参考</td><td>Standard</td><td>Standard</td><td>—</td></tr>
-  <tr><td><code>std:hasPart</code></td><td>有部分</td><td>Standard</td><td>Standard</td><td>—</td></tr>
-  <tr><td><code>std:issuedBy</code></td><td>发布方</td><td>Standard</td><td>Organization</td><td>functional</td></tr>
-  <tr><td><code>std:proposedBy</code></td><td>提出方</td><td>Standard</td><td>Organization</td><td>—</td></tr>
-  <tr><td><code>std:administeredBy</code></td><td>归口方</td><td>Standard</td><td>Organization</td><td>functional</td></tr>
-  <tr><td><code>std:draftedBy</code></td><td>起草方</td><td>Standard</td><td>RelevantParty</td><td>—</td></tr>
-  <tr><td><code>std:publishedBy</code></td><td>出版方</td><td>Standard</td><td>Organization</td><td>—</td></tr>
-  <tr><td><code>std:classifiedUnder</code></td><td>属于分类</td><td>Standard</td><td>StandardClassification</td><td>—</td></tr>
-  <tr><td><code>std:standardizes</code></td><td>规范对象</td><td>Standard</td><td>StandardizationObject</td><td>—</td></tr>
-  <tr><td><code>std:hasNormativeElement</code></td><td>有规范性要素</td><td>Standard</td><td>NormativeElement</td><td>—</td></tr>
-  <tr><td><code>std:hasStructuralElement</code></td><td>有结构要素</td><td>Element</td><td>Level</td><td>—</td></tr>
-  <tr><td><code>std:hasClause</code></td><td>有条款</td><td>Element</td><td>Clause</td><td>—</td></tr>
-  <tr><td><code>std:hasSubClause</code></td><td>有子条款</td><td>Clause</td><td>Clause</td><td>transitive</td></tr>
-  <tr><td><code>std:defines</code></td><td>界定</td><td>Standard</td><td>Term</td><td>—</td></tr>
-  <tr><td><code>std:usesTerm</code></td><td>使用术语</td><td>InformationUnit</td><td>Term</td><td>—</td></tr>
-  <tr><td><code>std:hasRepresentationForm</code></td><td>有表示形式</td><td>InformationUnit</td><td>RepresentationForm</td><td>—</td></tr>
-  <tr><td><code>std:hasExample</code></td><td>有示例</td><td>Term</td><td>Example</td><td>—</td></tr>
-  <tr><td><code>std:hasNote</code></td><td>有注</td><td>Term</td><td>Note</td><td>—</td></tr>
-  <tr><td><code>std:citesStandard</code></td><td>引用标准</td><td>Term</td><td>Standard</td><td>—</td></tr>
-  <tr><td><code>std:referencesClause</code></td><td>指向条款</td><td>InformationUnit</td><td>Level</td><td>—</td></tr>
-  <tr><td><code>std:involvesObject</code></td><td>涉及对象</td><td>Term</td><td>Object</td><td>—</td></tr>
-  <tr><td><code>std:specifiesCharacteristic</code></td><td>规定特性</td><td>Term</td><td>Characteristic</td><td>—</td></tr>
-  <tr><td><code>std:hasCharacteristic</code></td><td>具有特性</td><td>Object</td><td>Characteristic</td><td>—</td></tr>
-  <tr><td><code>std:imposesConstraint</code></td><td>施加约束</td><td>InformationUnit</td><td>ConstraintLogic</td><td>—</td></tr>
-  <tr><td><code>std:constrainsObject</code></td><td>约束对象</td><td>ConstraintLogic</td><td>Object</td><td>—</td></tr>
-  <tr><td><code>std:constrainsCharacteristic</code></td><td>约束特性</td><td>ConstraintLogic</td><td>Characteristic</td><td>—</td></tr>
-  <tr><td><code>std:describesAction</code></td><td>描述动作</td><td>InformationUnit</td><td>Determination</td><td>—</td></tr>
-  <tr><td><code>std:referencesExternalResource</code></td><td>引用外部资源</td><td>Standard</td><td>ExternalConstraint</td><td>—</td></tr>
-  <tr><td><code>std:isRelatedToPatent</code></td><td>与专利有关</td><td>Term</td><td>Patent</td><td>—</td></tr>
-  <tr><td><code>std:hasDevelopmentStage</code></td><td>处于阶段</td><td>Standard</td><td>DevelopmentStage</td><td>—</td></tr>
-  <tr><td><code>std:includesStandard</code></td><td>包含标准</td><td>DevelopmentStage</td><td>Standard</td><td>—</td></tr>
-  <tr><td><code>std:hasVersion</code></td><td>有版本</td><td>Standard</td><td>Version</td><td>—</td></tr>
-  <tr><td><code>std:hasDocumentNumber</code></td><td>有文件编号</td><td>Standard</td><td>DocumentNumber</td><td>—</td></tr>
+  <tr><td><code>std:adopts</code></td><td>采用</td><td>标准实体</td><td>标准实体</td><td>—</td></tr>
+  <tr><td><code>std:replaces</code></td><td>代替</td><td>标准实体</td><td>标准实体</td><td>—</td></tr>
+  <tr><td><code>std:cites</code></td><td>引用（标准）</td><td>标准实体</td><td>标准实体</td><td>—</td></tr>
+  <tr><td><code>std:references</code></td><td>参考</td><td>标准实体</td><td>标准实体</td><td>—</td></tr>
+  <tr><td><code>std:hasPart</code></td><td>有部分</td><td>标准实体</td><td>标准实体</td><td>—</td></tr>
+  <tr><td><code>std:issuedBy</code></td><td>发布于</td><td>标准实体</td><td>组织</td><td>functional</td></tr>
+  <tr><td><code>std:proposedBy</code></td><td>提出于</td><td>标准实体</td><td>组织</td><td>—</td></tr>
+  <tr><td><code>std:administeredBy</code></td><td>归口于</td><td>标准实体</td><td>组织</td><td>functional</td></tr>
+  <tr><td><code>std:draftedBy</code></td><td>起草于</td><td>标准实体</td><td>相关方</td><td>—</td></tr>
+  <tr><td><code>std:publishedBy</code></td><td>出版于</td><td>标准实体</td><td>组织</td><td>—</td></tr>
+  <tr><td><code>std:classifiedUnder</code></td><td>属于领域</td><td>标准实体</td><td>领域类别</td><td>—</td></tr>
+  <tr><td><code>std:standardizes</code></td><td>规范对象</td><td>标准实体</td><td>标准化对象</td><td>—</td></tr>
+  <tr><td><code>std:hasNormativeElement</code></td><td>包含要素</td><td>标准实体</td><td>内容要素</td><td>—</td></tr>
+  <tr><td><code>std:hasStructuralElement</code></td><td>包含层次</td><td>标准实体</td><td>层次</td><td>—</td></tr>
+  <tr><td><code>std:hasClause</code></td><td>包含条款</td><td>内容要素</td><td>条款</td><td>—</td></tr>
+  <tr><td><code>std:hasSubClause</code></td><td>包含子条</td><td>条款</td><td>条款</td><td>transitive</td></tr>
+  <tr><td><code>std:defines</code></td><td>界定</td><td>标准实体</td><td>术语</td><td>—</td></tr>
+  <tr><td><code>std:usesTerm</code></td><td>提及术语</td><td>信息单元</td><td>术语</td><td>—</td></tr>
+  <tr><td><code>std:hasRepresentationForm</code></td><td>具有表述形式</td><td>信息单元</td><td>信息单元表示形式</td><td>—</td></tr>
+  <tr><td><code>std:hasExample</code></td><td>有示例</td><td>条款</td><td>示例</td><td>—</td></tr>
+  <tr><td><code>std:hasNote</code></td><td>有注</td><td>条款</td><td>注</td><td>—</td></tr>
+  <tr><td><code>std:citesStandard</code></td><td>引用标准（条款）</td><td>条款</td><td>标准实体</td><td>—</td></tr>
+  <tr><td><code>std:referencesClause</code></td><td>引用章条</td><td>信息单元</td><td>层次</td><td>—</td></tr>
+  <tr><td><code>std:involvesObject</code></td><td>涉及对象</td><td>条款</td><td>对象</td><td>—</td></tr>
+  <tr><td><code>std:specifiesCharacteristic</code></td><td>规定特性</td><td>条款</td><td>特性</td><td>—</td></tr>
+  <tr><td><code>std:hasCharacteristic</code></td><td>具有特性</td><td>对象</td><td>特性</td><td>—</td></tr>
+  <tr><td><code>std:imposesConstraint</code></td><td>施加约束</td><td>信息单元</td><td>约束逻辑</td><td>—</td></tr>
+  <tr><td><code>std:constrainsObject</code></td><td>约束对象</td><td>约束逻辑</td><td>对象</td><td>—</td></tr>
+  <tr><td><code>std:constrainsCharacteristic</code></td><td>约束特性</td><td>约束逻辑</td><td>特性</td><td>—</td></tr>
+  <tr><td><code>std:describesAction</code></td><td>描述动作</td><td>信息单元</td><td>动作类</td><td>—</td></tr>
+  <tr><td><code>std:referencesExternalResource</code></td><td>引用外部资源</td><td>标准实体</td><td>外部约束</td><td>—</td></tr>
+  <tr><td><code>std:isRelatedToPatent</code></td><td>与专利有关</td><td>条款</td><td>专利</td><td>—</td></tr>
+  <tr><td><code>std:hasDevelopmentStage</code></td><td>处于阶段</td><td>标准实体</td><td>制定程序</td><td>—</td></tr>
+  <tr><td><code>std:includesStandard</code></td><td>包含标准</td><td>制定程序</td><td>标准实体</td><td>—</td></tr>
+  <tr><td><code>std:hasVersion</code></td><td>有版本</td><td>标准实体</td><td>版本</td><td>（§6.3 可选）</td></tr>
+  <tr><td><code>std:hasDocumentNumber</code></td><td>有文件编号</td><td>标准实体</td><td>文件编号</td><td>（§6.3 可选）</td></tr>
 </table>
 
-<h2 id="data-properties">核心数据属性（22 种）</h2>
+<h2 id="data-properties">核心数据属性（附录 C，47 种）</h2>
 <table>
   <tr><th>IRI</th><th>中文</th><th>Domain</th><th>Range</th></tr>
-  <tr><td><code>std:standardNumber</code></td><td>文件编号</td><td>Standard</td><td>xsd:string</td></tr>
-  <tr><td><code>std:standardName</code></td><td>文件名称</td><td>Standard</td><td>xsd:string</td></tr>
-  <tr><td><code>std:issuedDate</code></td><td>发布日期</td><td>Standard</td><td>xsd:date</td></tr>
-  <tr><td><code>std:effectiveDate</code></td><td>实施日期</td><td>Standard</td><td>xsd:date</td></tr>
-  <tr><td><code>std:standardStatus</code></td><td>标准状态</td><td>Standard</td><td>xsd:string</td></tr>
-  <tr><td><code>std:obligationType</code></td><td>约束类型</td><td>Standard</td><td>xsd:string</td></tr>
-  <tr><td><code>std:partyName</code></td><td>名称</td><td>RelevantParty</td><td>xsd:string</td></tr>
-  <tr><td><code>std:termName</code></td><td>术语名称</td><td>Term</td><td>xsd:string</td></tr>
-  <tr><td><code>std:termDefinition</code></td><td>术语定义</td><td>Term</td><td>xsd:string</td></tr>
-  <tr><td><code>std:characteristicName</code></td><td>特性名称</td><td>Characteristic</td><td>xsd:string</td></tr>
-  <tr><td><code>std:characteristicValue</code></td><td>特性值</td><td>Characteristic</td><td>xsd:string</td></tr>
-  <tr><td><code>std:maxValue</code></td><td>最大值</td><td>ConstraintLogic</td><td>xsd:decimal</td></tr>
-  <tr><td><code>std:minValue</code></td><td>最小值</td><td>ConstraintLogic</td><td>xsd:decimal</td></tr>
-  <tr><td><code>std:nominalValue</code></td><td>标称值</td><td>ConstraintLogic</td><td>xsd:decimal</td></tr>
-  <tr><td><code>std:toleranceValue</code></td><td>偏差值</td><td>ConstraintLogic</td><td>xsd:decimal</td></tr>
-  <tr><td><code>std:unitOfMeasure</code></td><td>计量单位</td><td>ConstraintLogic</td><td>xsd:string</td></tr>
-  <tr><td><code>std:levelCode</code></td><td>层次编号</td><td>Level</td><td>xsd:string</td></tr>
-  <tr><td><code>std:levelTitle</code></td><td>层次标题</td><td>Level</td><td>xsd:string</td></tr>
-  <tr><td><code>std:versionNumber</code></td><td>版本号</td><td>Version</td><td>xsd:string</td></tr>
-  <tr><td><code>std:versionStatus</code></td><td>版本状态</td><td>Version</td><td>xsd:string</td></tr>
-  <tr><td><code>std:stageCode</code></td><td>阶段代码</td><td>DevelopmentStage</td><td>xsd:string</td></tr>
-  <tr><td><code>std:stageStartDate</code></td><td>阶段开始日期</td><td>DevelopmentStage</td><td>xsd:date</td></tr>
+  <tr><td><code>std:standardNumber</code></td><td>文件编号</td><td>标准实体</td><td>xsd:string</td></tr>
+  <tr><td><code>std:documentName</code></td><td>文件名称</td><td>标准实体</td><td>xsd:string</td></tr>
+  <tr><td><code>std:issuedDate</code></td><td>发布日期</td><td>标准实体</td><td>xsd:date</td></tr>
+  <tr><td><code>std:effectiveDate</code></td><td>实施日期</td><td>标准实体</td><td>xsd:date</td></tr>
+  <tr><td><code>std:status</code></td><td>标准状态</td><td>标准实体</td><td>xsd:string</td></tr>
+  <tr><td><code>std:constraintType</code></td><td>约束类型</td><td>标准实体/条款/约束逻辑</td><td>xsd:string</td></tr>
+  <tr><td><code>std:purpose</code></td><td>编制目的</td><td>标准实体</td><td>xsd:string</td></tr>
+  <tr><td><code>std:languageVersion</code></td><td>语言版本</td><td>标准实体</td><td>xsd:string</td></tr>
+  <tr><td><code>std:subjectName</code></td><td>主题名称</td><td>标准化对象</td><td>xsd:string</td></tr>
+  <tr><td><code>std:industrialSector</code></td><td>所属行业</td><td>标准化对象</td><td>xsd:string</td></tr>
+  <tr><td><code>std:orgName</code></td><td>名称</td><td>组织</td><td>xsd:string</td></tr>
+  <tr><td><code>std:creditCode</code></td><td>统一信用代码</td><td>组织</td><td>xsd:string</td></tr>
+  <tr><td><code>std:orgLocation</code></td><td>所在地</td><td>组织</td><td>xsd:string</td></tr>
+  <tr><td><code>std:personName</code></td><td>姓名</td><td>个体</td><td>xsd:string</td></tr>
+  <tr><td><code>std:affiliation</code></td><td>所属单位</td><td>个体</td><td>xsd:string</td></tr>
+  <tr><td><code>std:phone</code></td><td>联系电话</td><td>个体</td><td>xsd:string</td></tr>
+  <tr><td><code>std:address</code></td><td>联系地址</td><td>个体</td><td>xsd:string</td></tr>
+  <tr><td><code>std:ICS_code</code></td><td>ICS分类代码</td><td>国际标准分类</td><td>xsd:string</td></tr>
+  <tr><td><code>std:ICS_name</code></td><td>ICS分类名称</td><td>国际标准分类</td><td>xsd:string</td></tr>
+  <tr><td><code>std:CCS_code</code></td><td>CCS分类代码</td><td>中国标准分类</td><td>xsd:string</td></tr>
+  <tr><td><code>std:CCS_name</code></td><td>CCS分类名称</td><td>中国标准分类</td><td>xsd:string</td></tr>
+  <tr><td><code>std:elementStatus</code></td><td>要素状态</td><td>内容要素</td><td>xsd:string</td></tr>
+  <tr><td><code>std:scopeOfEffect</code></td><td>作用范围</td><td>内容要素</td><td>xsd:string</td></tr>
+  <tr><td><code>std:sectionNumber</code></td><td>章编号</td><td>章</td><td>xsd:string</td></tr>
+  <tr><td><code>std:sectionTitle</code></td><td>章标题</td><td>章</td><td>xsd:string</td></tr>
+  <tr><td><code>std:clauseNumber</code></td><td>条编号</td><td>条款</td><td>xsd:string</td></tr>
+  <tr><td><code>std:clauseTitle</code></td><td>条标题</td><td>有标题条</td><td>xsd:string</td></tr>
+  <tr><td><code>std:uniqueldentifier</code></td><td>唯一标识符</td><td>信息单元</td><td>xsd:string</td></tr>
+  <tr><td><code>std:contentDescription</code></td><td>内容描述</td><td>信息单元</td><td>xsd:string</td></tr>
+  <tr><td><code>std:clauseType</code></td><td>条款类型</td><td>条款</td><td>xsd:string</td></tr>
+  <tr><td><code>std:objectName</code></td><td>对象名称</td><td>对象</td><td>xsd:string</td></tr>
+  <tr><td><code>std:objectCategory</code></td><td>对象类别</td><td>对象</td><td>xsd:string</td></tr>
+  <tr><td><code>std:propertyName</code></td><td>特性名称</td><td>特性</td><td>xsd:string</td></tr>
+  <tr><td><code>std:propertyValue</code></td><td>特性值</td><td>特性</td><td>xsd:string</td></tr>
+  <tr><td><code>std:propertyType</code></td><td>特性类型</td><td>特性</td><td>xsd:string</td></tr>
+  <tr><td><code>std:maxValue</code></td><td>最大值</td><td>约束逻辑</td><td>xsd:decimal</td></tr>
+  <tr><td><code>std:minValue</code></td><td>最小值</td><td>约束逻辑</td><td>xsd:decimal</td></tr>
+  <tr><td><code>std:thresholdRange</code></td><td>阈值范围</td><td>约束逻辑</td><td>xsd:string</td></tr>
+  <tr><td><code>std:unit</code></td><td>测量单位</td><td>约束逻辑</td><td>xsd:string</td></tr>
+  <tr><td><code>std:fileType</code></td><td>文件类型</td><td>外部约束</td><td>xsd:string</td></tr>
+  <tr><td><code>std:effectiveTime</code></td><td>生效时间</td><td>外部约束</td><td>xsd:date</td></tr>
+  <tr><td><code>std:responsibleParty</code></td><td>责任主体</td><td>外部约束</td><td>xsd:string</td></tr>
+  <tr><td><code>std:stageCode</code></td><td>阶段代码</td><td>制定程序</td><td>xsd:string</td></tr>
+  <tr><td><code>std:startDate</code></td><td>开始日期</td><td>制定程序</td><td>xsd:date</td></tr>
+  <tr><td><code>std:endDate</code></td><td>结束日期</td><td>制定程序</td><td>xsd:date</td></tr>
 </table>
 
-<h2 id="axioms">核心公理</h2>
+<h2 id="axioms">核心规则（第 8.2 节）</h2>
 <table>
-  <tr><th>公理</th><th>说明</th></tr>
-  <tr><td>Standard ⊥ RelevantParty</td><td>标准实体与相关方不相交</td></tr>
-  <tr><td>Standard ⊥ Element</td><td>标准实体与要素不相交</td></tr>
-  <tr><td>Standard ⊥ Level</td><td>标准实体与层次不相交</td></tr>
-  <tr><td>Standard ⊥ Term</td><td>标准实体与术语不相交</td></tr>
-  <tr><td>Standard ⊥ InformationUnit</td><td>标准实体与信息单元不相交</td></tr>
-  <tr><td>Standard ⊥ Object</td><td>标准实体与对象不相交</td></tr>
-  <tr><td>Standard ⊥ Characteristic</td><td>标准实体与特性不相交</td></tr>
-  <tr><td>Standard ⊥ ConstraintLogic</td><td>标准实体与约束逻辑不相交</td></tr>
-  <tr><td>Standard ⊥ ExternalConstraint</td><td>标准实体与外部约束不相交</td></tr>
-  <tr><td>Standard ⊥ DevelopmentStage</td><td>标准实体与制定阶段不相交</td></tr>
-  <tr><td>Chapter/Section/Paragraph/Item ⊂ Level</td><td>四级层次均为 Level 子类</td></tr>
-  <tr><td>Clause/Example/Note/List ⊂ InformationUnit</td><td>四种信息单元子类</td></tr>
-  <tr><td>Static/Functional/Constraint ⊂ Characteristic</td><td>特性三分</td></tr>
-  <tr><td>Normative/Informative ⊂ Element</td><td>要素二分</td></tr>
+  <tr><th>规则类别</th><th>声明</th></tr>
+  <tr><td>实体类型不相交（8.2 a）</td><td><code>std:Standard</code> ⊥ 相关方/领域类别/内容要素/结构要素/信息单元/对象/特性/约束逻辑/动作类/外部约束/制定程序/术语/标准化对象/层次（共 14 条）</td></tr>
+  <tr><td>实体类型不相交（8.2 a 示例）</td><td><code>std:NormativeElement</code> ⊥ <code>std:InformativeElement</code>；<code>std:Organization</code> ⊥ <code>std:Individual</code></td></tr>
+  <tr><td>子类层级（8.2 c 层级结构约束）</td><td>章/段/项 ⊂ 层次；条款/示例/注/列表 ⊂ 信息单元；规范性/资料性要素 ⊂ 内容要素；特性三分 ⊂ 特性</td></tr>
+  <tr><td>子类层级（扩展类）</td><td>ICS/CCS ⊂ 领域类别；组织/个体 ⊂ 相关方；法律法规/专利/参考文献 ⊂ 外部约束；判定 ⊂ 动作类；五种表示形式 ⊂ 信息单元表示形式</td></tr>
+  <tr><td>功能性约束（8.2 c1）</td><td><code>std:issuedBy</code>、<code>std:administeredBy</code>、<code>std:creditCode</code>、<code>std:stageCode</code> 为 functional</td></tr>
+  <tr><td>全局唯一标识（8.2 a2）</td><td><code>std:Standard</code> 的 owl:hasKey = <code>std:standardNumber</code></td></tr>
 </table>
 
 <h2 id="shapes">SHACL 验证形状</h2>
-<p>以下 NodeShape 用于验证标准本体实例数据的合规性：</p>
+<p>以下 NodeShape 用于验证标准本体实例数据的 GB/T 48000.3-2026 合规性（基于 §8.2 核心规则）：</p>
 <table>
   <tr><th>Shape</th><th>目标类</th><th>约束</th></tr>
-  <tr><td>StandardShape</td><td>std:Standard</td><td>standardNumber: 1..1 string; issuedDate: 1..*; effectiveDate: 1..*; standardStatus: 1..*; standardName: 1..*</td></tr>
-  <tr><td>OrganizationShape</td><td>std:Organization</td><td>partyName: 1..*</td></tr>
-  <tr><td>PersonShape</td><td>std:Person</td><td>partyName: 1..*</td></tr>
-  <tr><td>TermShape</td><td>std:Term</td><td>termName: 1..*</td></tr>
-  <tr><td>DevelopmentStageShape</td><td>std:DevelopmentStage</td><td>stageCode: 1..1</td></tr>
+  <tr><td>StandardShape</td><td>std:Standard</td><td>standardNumber: 1..1 string; documentName: 1..*; issuedDate: 1..*; effectiveDate: 1..*; status: 1..*; languageVersion: 1..*; purpose: 1..*; constraintType: 1..*</td></tr>
+  <tr><td>OrganizationShape</td><td>std:Organization</td><td>orgName: 1..*</td></tr>
+  <tr><td>IndividualShape</td><td>std:Individual</td><td>personName: 1..*</td></tr>
+  <tr><td>ClauseShape</td><td>std:Clause</td><td>clauseNumber: 1..*</td></tr>
+  <tr><td>ExternalResourceShape</td><td>std:ExternalResource</td><td>fileType: 1..*</td></tr>
+  <tr><td>StandardizationProcessShape</td><td>std:StandardizationProcess</td><td>stageCode: 1..1</td></tr>
 </table>
 <p><code>openclaw ontology validate --data ./instances.ttl --shapes ./standard-shapes.ttl</code></p>
 
@@ -212,7 +260,7 @@
 <p style="color: var(--muted); font-size: 0.8rem;">
   由 <a href="https://github.com/clawdotnet/openclaw.net">openclaw.net</a> 生成 ·
   <code>openclaw ontology build --profile standard</code> ·
-  最后更新：2026-07-16
+  最后更新：2026-08-11
 </p>
 
 </div>

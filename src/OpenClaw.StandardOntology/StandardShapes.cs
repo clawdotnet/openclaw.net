@@ -26,45 +26,52 @@ public static class StandardShapes
         var Sh = ShNs;
         var Std = Namespace;
 
-        // ── Shape: Standard must have standardNumber, issuedDate, standardStatus ──
+        // ── Shape: Standard must carry the mandatory C.1–C.8 data properties ──
         var stdShape = BN(g);
         Assert(g, stdShape, U(Sh, "targetClass"), U(Std, "Standard"));
 
-        // standardNumber: exactly 1, type string
+        // standardNumber: exactly 1, type string (C.6, also the owl:hasKey)
         AddPropertyShape(g, stdShape, U(Std, "standardNumber"),
             minCount: 1, maxCount: 1, datatype: U(XsdNs, "string"));
-
-        // issuedDate: at least 1
+        // documentName: at least 1 (C.5)
+        AddPropertyShape(g, stdShape, U(Std, "documentName"), minCount: 1);
+        // issuedDate: at least 1 (C.7)
         AddPropertyShape(g, stdShape, U(Std, "issuedDate"), minCount: 1);
-
-        // effectiveDate: at least 1 (must be >= issuedDate per standard)
+        // effectiveDate: at least 1 (C.8; must be >= issuedDate per 8.2 b)2)
         AddPropertyShape(g, stdShape, U(Std, "effectiveDate"), minCount: 1);
+        // status: at least 1 (C.3)
+        AddPropertyShape(g, stdShape, U(Std, "status"), minCount: 1);
+        // languageVersion: at least 1 (C.2)
+        AddPropertyShape(g, stdShape, U(Std, "languageVersion"), minCount: 1);
+        // purpose: at least 1 (C.1)
+        AddPropertyShape(g, stdShape, U(Std, "purpose"), minCount: 1);
+        // constraintType: at least 1 (C.4)
+        AddPropertyShape(g, stdShape, U(Std, "constraintType"), minCount: 1);
 
-        // standardStatus: at least 1
-        AddPropertyShape(g, stdShape, U(Std, "standardStatus"), minCount: 1);
-
-        // standardName: at least 1
-        AddPropertyShape(g, stdShape, U(Std, "standardName"), minCount: 1);
-
-        // ── Shape: Organization must have partyName ──
+        // ── Shape: Organization must have orgName (C.11) ──
         var orgShape = BN(g);
         Assert(g, orgShape, U(Sh, "targetClass"), U(Std, "Organization"));
-        AddPropertyShape(g, orgShape, U(Std, "partyName"), minCount: 1);
+        AddPropertyShape(g, orgShape, U(Std, "orgName"), minCount: 1);
 
-        // ── Shape: Person must have partyName ──
-        var persShape = BN(g);
-        Assert(g, persShape, U(Sh, "targetClass"), U(Std, "Person"));
-        AddPropertyShape(g, persShape, U(Std, "partyName"), minCount: 1);
+        // ── Shape: Individual must have personName (C.14) ──
+        var indShape = BN(g);
+        Assert(g, indShape, U(Sh, "targetClass"), U(Std, "Individual"));
+        AddPropertyShape(g, indShape, U(Std, "personName"), minCount: 1);
 
-        // ── Shape: Term must have termName ──
-        var termShape = BN(g);
-        Assert(g, termShape, U(Sh, "targetClass"), U(Std, "Term"));
-        AddPropertyShape(g, termShape, U(Std, "termName"), minCount: 1);
+        // ── Shape: Clause must have clauseNumber (C.26) ──
+        var clauseShape = BN(g);
+        Assert(g, clauseShape, U(Sh, "targetClass"), U(Std, "Clause"));
+        AddPropertyShape(g, clauseShape, U(Std, "clauseNumber"), minCount: 1);
 
-        // ── Shape: DevelopmentStage must have stageCode ──
-        var dsShape = BN(g);
-        Assert(g, dsShape, U(Sh, "targetClass"), U(Std, "DevelopmentStage"));
-        AddPropertyShape(g, dsShape, U(Std, "stageCode"), minCount: 1, maxCount: 1);
+        // ── Shape: ExternalResource must have fileType (C.42) ──
+        var extShape = BN(g);
+        Assert(g, extShape, U(Sh, "targetClass"), U(Std, "ExternalResource"));
+        AddPropertyShape(g, extShape, U(Std, "fileType"), minCount: 1);
+
+        // ── Shape: StandardizationProcess must have stageCode (C.45) ──
+        var procShape = BN(g);
+        Assert(g, procShape, U(Sh, "targetClass"), U(Std, "StandardizationProcess"));
+        AddPropertyShape(g, procShape, U(Std, "stageCode"), minCount: 1, maxCount: 1);
 
         return g;
     }

@@ -25,7 +25,7 @@ openclaw.net 在 `ontologyharnessaction` 分支上实现了一套完整的标准
 | OWL 本体构建 | `OntologyBuilder` 流式 API | 5.3, 附录 A/B/C |
 | SHACL 约束验证 | `ShaclValidator` + `StandardShapes` | 5.3 |
 | SPARQL 知识图谱查询 | `RemoteEndpointSource` + `LocalFilesSource` | 6.2 |
-| 标准领域本体预置 | `StandardOntology`（18实体+34关系+28公理, 629 triples） | 附录 B/C |
+| 标准领域本体预置 | `StandardOntology`（18核心实体+26规范性派生类+34对象属性+45数据属性+8.2公理, 677 triples） | 附录 B/C |
 | 版本追溯 | `VersionTracer`（replaces 链 + Diff） | 6.3.1 |
 | MetaSkill DAG 验证 | `OntologyValidateTool`（ITool） | — |
 | 本体可视化 | `tools/ResourceOntology`（Cytoscape.js） | — |
@@ -120,14 +120,14 @@ ob.WithPrefix("std", "http://openclaw.net/ontology/standard#")
 
 ### 3.2 StandardOntology — GB/T 48000.3 预置本体
 
-`StandardOntology.Build()` 构建完整的标准数字化核心本体（629 triples）：
+`StandardOntology.Build()` 构建完整的标准数字化核心本体（677 triples）：
 
 | 类别 | 数量 | 内容 |
 |------|------|------|
-| **实体类型** | 18 | Entity / Standard / StandardizationObject / Metadata / RelevantParty / Organization / Person / StandardClassification / IcsClassification / CcsClassification / Element / Level / Term / InformationUnit / RepresentationForm / Object / Characteristic / ConstraintLogic / Determination / ExternalConstraint / DevelopmentStage / Version / DocumentNumber |
-| **对象属性** | 34 | adopts / replaces / cites / references / hasPart / issuedBy / proposedBy / administeredBy / draftedBy / publishedBy / classifiedUnder / standardizes / defines / usesTerm / hasRepresentationForm / hasExample / hasNote / citesStandard / referencesClause / involvesObject / specifiesCharacteristic / hasCharacteristic / imposesConstraint / constrainsObject / constrainsCharacteristic / describesAction / referencesExternalResource / isRelatedToPatent / hasDevelopmentStage / includesStandard / hasClause / hasSubClause / hasNormativeElement / hasStructuralElement / hasVersion / hasDocumentNumber |
-| **数据属性** | 22 | standardNumber / standardName / issuedDate / effectiveDate / standardStatus / obligationType / partyName / termName / termDefinition / characteristicName / characteristicValue / maxValue / minValue / nominalValue / toleranceValue / unitOfMeasure / levelCode / levelTitle / versionNumber / versionStatus / stageCode / stageStartDate / stageEndDate |
-| **公理** | 28 | 10 不相交类 + 11 子类层级 + 1 唯一标识(hasKey) + 5 属性特性(functional/transitive等) |
+| **实体类型** | 44 | 18 核心实体（附录 B.1–B.18）+ 26 规范性派生类（§6.2.4/6.2.5/7.3.2/附录 C 引用）：Standard / StandardizationObject / Stakeholder / Organization / Individual / DomainCategory / InternationalClassificationofStandard / ChineseClassificationofStandard / ContentElement / NormativeElement / InformativeElement / StructuralElement / InformationUnit / Clause / TitledClause / Example / Note / List / InformationForm / TextForm / FigureForm / TableForm / FormulaForm / CodeForm / Object / Property / DescriptiveProperty / CapabilityProperty / ConstraintProperty / Constraint / ActionClass / Determination / ExternalResource / LawRegulation / Patent / ReferenceDocument / StandardizationProcess / Level / Section / Paragraph / Item / Term / Version / DocumentNumber |
+| **对象属性** | 36 | 34 核心对象属性（§7.3.2）+ 2 可选扩展（§6.3）：adopts / replaces / cites / references / hasPart / issuedBy / proposedBy / administeredBy / draftedBy / publishedBy / classifiedUnder / standardizes / hasNormativeElement / hasStructuralElement / hasClause / hasSubClause（transitive） / defines / usesTerm / hasRepresentationForm / hasExample / hasNote / citesStandard / referencesClause / involvesObject / specifiesCharacteristic / hasCharacteristic / imposesConstraint / constrainsObject / constrainsCharacteristic / describesAction / referencesExternalResource / isRelatedToPatent / hasDevelopmentStage / includesStandard / hasVersion / hasDocumentNumber |
+| **数据属性** | 45 | 47 C 条目（constraintType 跨 Standard/Clause/Constraint 三域，合并为 45 唯一 IRI）：purpose / languageVersion / status / constraintType / documentName / standardNumber / issuedDate / effectiveDate / subjectName / industrialSector / orgName / creditCode / orgLocation / personName / affiliation / phone / address / ICS_code / ICS_name / CCS_code / CCS_name / elementStatus / scopeOfEffect / sectionNumber / sectionTitle / clauseNumber / clauseTitle / uniqueldentifier / contentDescription / clauseType / objectName / objectCategory / propertyName / propertyValue / propertyType / maxValue / minValue / thresholdRange / unit / fileType / effectiveTime / responsibleParty / stageCode / startDate / endDate |
+| **公理** | — | 14 Standard ⊥ 不相交 + NormativeElement ⊥ InformativeElement + Organization ⊥ Individual + 子类层级（Level、InformationUnit、ContentElement、Property、DomainCategory、Stakeholder、ExternalResource、ActionClass、InformationForm 等）+ 功能性约束（issuedBy / administeredBy / creditCode / stageCode）+ 全局唯一标识（Standard.hasKey = standardNumber） |
 
 ### 3.3 JSON-LD 1.1 Framing
 
