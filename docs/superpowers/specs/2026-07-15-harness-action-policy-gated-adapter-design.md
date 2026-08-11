@@ -1,38 +1,46 @@
-# Harness Action 策略网关适配器设计说明（Policy-Gated Action Adapter）
+# Harness Action 策略网关适配器设计说明
 
-- 文档日期：2026-07-15
-- 设计状态：待评审
-- 适用范围：OpenClaw.NET，MetaSkill 推理结果到业务 API 回写链路
-- 文档语言：中文
+> **Policy-Gated Action Adapter**
+> 文档日期：2026-07-15 | 设计状态：待评审 | 适用范围：OpenClaw.NET
+
+---
 
 ## 1. 背景与问题定义
 
-当前 MetaSkill 已支持以 DAG 方式消费临时图，并通过模型完成推理。但在“推理结果到业务系统落地”这一步，缺少一个统一、可治理、可审计、可回滚的执行层。
+当前 MetaSkill 已支持以 DAG 方式消费临时图，并通过模型完成推理。但在**”推理结果到业务系统落地”**这一步，缺少一个统一、可治理、可审计、可回滚的执行层。
 
-目标不是让 MetaSkill 直接写数据库，也不是将 Harness 简化为普通 API 调用器，而是建立一个具备策略决策能力的 Action 适配层：
+### 核心定位
 
-1. MetaSkill 负责推理与 Action 提案。
-2. Harness 策略层负责风险判级与执行决策。
-3. Action 适配层负责 preCheck、执行编排、补偿回滚、审计落证。
-4. 写路径仅允许业务 API Connector，禁止数据库直写。
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                        分层职责边界                              │
+├─────────────────┬───────────────────────────────────────────────┤
+│   MetaSkill     │  推理与 Action 提案                            │
+│   策略层        │  风险判级与执行决策（ActionPolicyEngine）       │
+│   适配层        │  preCheck、执行编排、补偿回滚、审计落证         │
+│   业务连接器    │  仅允许业务 API Connector，禁止数据库直写       │
+└─────────────────┴───────────────────────────────────────────────┘
+```
+
+> **设计原则**：不将 Harness 简化为普通 API 调用器，而是建立具备策略决策能力的 Action 适配层。
 
 ## 2. 设计目标与非目标
 
-### 2.1 目标
+### 2.1 设计目标
 
-1. 建立标准 ActionProposal 协议，承接 MetaSkill 推理输出。
-2. 建立半自动触发机制：提案由 MetaSkill 产出，执行由策略层决策。
-3. 建立风险分级策略：low 自动执行，medium 审批执行，high 与 critical 默认仅提案。
-4. 建立可追溯审计链：proposal、判级、审批、执行、补偿均可回放。
-5. 与现有 PEV、HarnessContract、EvidenceBundle 最小侵入集成。
+- **O1 - 标准协议**：建立 ActionProposal 协议，承接 MetaSkill 推理输出
+- **O2 - 半自动触发**：提案由 MetaSkill 产出，执行由策略层决策
+- **O3 - 风险分级**：low 自动执行；medium 审批执行；high/critical 仅提案
+- **O4 - 可审计链**：proposal → 判级 → 审批 → 执行 → 补偿均可回放
+- **O5 - 最小侵入**：与 PEV、HarnessContract、EvidenceBundle 和谐共存
 
 ### 2.2 非目标
 
-1. 不在首版引入分布式事件总线与异步编排中台。
-2. 不将 Harness 扩展为通用 BPM 引擎。
-3. 不开放数据库直写能力。
-4. 不承诺所有失败都能自动回滚成功。
-5. 不改变现有未接入 Action 机制的 MetaSkill 行为。
+- **N1 - 无分布式事件总线**：首版不引入异步编排中台
+- **N2 - 非 BPM 引擎**：不将 Harness 扩展为通用流程引擎
+- **N3 - 禁止直写**：不开放数据库直写能力
+- **N4 - 无保证回滚**：不承诺所有失败都能自动回滚成功
+- **N5 - 向后兼容**：不改变现有未接入 Action 机制的 MetaSkill 行为
 
 ## 3. 方案选择与结论
 
@@ -52,30 +60,51 @@
 
 ## 4. 总体架构
 
-端到端流程：
+### 4.1 端到端流程
 
-1. MetaSkill DAG 推理后输出 ActionProposal。
-2. ActionPolicyEngine 自动判级并输出决策：
-   - proceed_execute
-   - require_approval
-   - proposal_only
-3. ActionAdapter 在允许执行时运行：
-   - preCheck
-   - execution
-   - rollback
-4. ActionAuditBridge 将全过程映射到：
-   - SessionMetaRunRecord
-   - HarnessContract
-   - Plan-Execute-Verify Run
-   - EvidenceBundle
+```text
+MetaSkill DAG 推理
+       │
+       ▼
+  ActionProposal
+       │
+       ▼
+┌─────────────────────────────┐
+│   ActionPolicyEngine        │
+│  ┌─────────────────────┐   │
+│  │  风险判级与决策      │   │
+│  └─────────────────────┘   │
+│  • proceed_execute         │
+│  • require_approval        │
+│  • proposal_only           │
+└─────────────────────────────┘
+       │
+       ▼（仅当 proceed_execute / 审批通过）
+┌─────────────────────────────┐
+│      ActionAdapter          │
+│  ┌─────────────────────┐   │
+│  │  preCheck → 执行     │   │
+│  │  失败 → rollback    │   │
+│  └─────────────────────┘   │
+└─────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────┐
+│    ActionAuditBridge        │
+│  • SessionMetaRunRecord    │
+│  • HarnessContract         │
+│  • PEV Run                 │
+│  • EvidenceBundle          │
+└─────────────────────────────┘
+```
 
-组件边界：
+### 4.2 组件边界
 
-1. ActionProposalBuilder：仅构建提案，不负责执行决策。
-2. ActionPolicyEngine：负责判级与决策。
-3. ActionAdapter：负责执行编排与补偿语义。
-4. BusinessApiConnector：封装业务 API，不向上暴露 DB 写接口。
-5. ActionAuditBridge：负责治理记录落地与关联。
+- **ActionProposalBuilder**：仅构建提案，不负责执行决策
+- **ActionPolicyEngine**：负责判级与决策
+- **ActionAdapter**：负责执行编排与补偿语义
+- **BusinessApiConnector**：封装业务 API，不向上暴露 DB 写接口
+- **ActionAuditBridge**：负责治理记录落地与关联
 
 ## 5. ActionProposal DSL 规范（首版）
 
