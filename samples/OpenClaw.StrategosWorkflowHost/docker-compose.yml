@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: openclaw
+      POSTGRES_PASSWORD: openclaw
+      POSTGRES_DB: openclaw_strategos
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openclaw"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  sidecar:
+    build:
+      context: ../..
+      dockerfile: samples/OpenClaw.StrategosWorkflowHost/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=openclaw_strategos;Username=openclaw;Password=openclaw"
+      Llm__Mode: Mock
+      Logging__LogLevel__Default: Information
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres-data:
