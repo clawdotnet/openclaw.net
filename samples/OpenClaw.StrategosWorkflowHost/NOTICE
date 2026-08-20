@@ -1,0 +1,44 @@
+OpenClaw.StrategosWorkflowHost
+Copyright (c) OpenClaw contributors
+
+This sample is licensed under the same terms as the parent OpenClaw.NET repository.
+
+This sample distributes the following third-party components. Their respective
+licenses and copyright notices apply.
+
+================================================================================
+Strategos (LevelUp.Strategos, LevelUp.Strategos.Agents,
+LevelUp.Strategos.Generators, LevelUp.Strategos.Contracts,
+LevelUp.Strategos.Identity.Abstractions)
+Copyright (c) 2025-2026 Levelup Software
+License: MIT (https://licenses.nuget.org/MIT)
+Source: https://github.com/levelup-software/strategos
+
+================================================================================
+Wolverine (WolverineFx, WolverineFx.Marten, WolverineFx.RuntimeCompilation,
+WolverineFx.Postgresql, WolverineFx.RDBMS)
+Copyright (c) Jeremy D. Miller et al.
+License: Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0)
+Source: https://github.com/JasperFx/wolverine
+
+================================================================================
+Marten (Marten, JasperFx, JasperFx.Events, JasperFx.RuntimeCompiler,
+Weasel.Core, Weasel.Postgresql)
+Copyright (c) Jeremy D. Miller et al.
+License: Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0)
+Source: https://github.com/JasperFx/marten
+
+================================================================================
+Microsoft.Extensions.AI (MEAI) and Microsoft.Extensions.AI.Abstractions
+Copyright (c) Microsoft Corporation
+License: MIT (https://licenses.nuget.org/MIT)
+Source: https://github.com/dotnet/extensions
+
+================================================================================
+PostgreSQL / Npgsql (Npgsql, Npgsql.NetTopologySuite)
+Copyright (c) Npgsql developers
+License: PostgreSQL (https://www.postgresql.org/about/licence/)
+
+================================================================================
+Other packages (Spectre.Console, Polly.Core, JasperFx.*, etc.) retain their
+original licenses; see the corresponding NuGet package metadata for details.
