@@ -632,7 +632,6 @@ Gateway.RespondAsync ─POST/respond─▶ DurableHttpAdapter.RespondAsync
 - **P2a**（Evidence Bundle ↔ Marten 互链）插入 `status` 响应的 `OutputPayload`/`Events` 与 `EmitAuditTrace` 步骤——适配器层（§7）即接缝，`FetchStreamAsync` 已就绪。
 - **P2b**（本体 MCP App）把宿主的本体 MCP 服务器（`LevelUp.Strategos.Ontology.MCP`）注册为 OpenClaw MCP App。
 - **P2c**（Thompson Sampling 回灌）用 `IAgentSelector`（接口在 `Strategos.Abstractions`，实现在 `Strategos.Infrastructure`）包装 `Steps/*.cs` agent 步骤，经 `RecordOutcomeAsync` 消费网关运行结果。
-- **P3** 跟踪 Wolverine/Marten AOT 注解成熟度；待"进行中"标注移除后重估 `strategos-inproc`。
 
 ---
 
