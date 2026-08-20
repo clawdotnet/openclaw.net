@@ -41,6 +41,91 @@ The host speaks the `maf-durable-http` contract on port 8080:
 mode is the P0 default; `DirectOpenAI` and `BackThroughGateway` are wired in
 config but throw at startup (P1 follow-up — see `Configuration/LlmMode.cs`).
 
+## MCP App registration
+
+The sidecar hosts a second HTTP surface at `/mcp` exposing the Strategos
+ontology as MCP tools. When `Strategos:Ontology:ManifestOutputPath` is set, the
+sidecar writes an `openclaw.mcpapp.json` manifest into that directory at startup.
+The OpenClaw gateway's existing `McpAppDiscovery` + `McpAppRegistry` pick it up
+automatically and register the tools as native OpenClaw plugins
+(`pluginId = "mcpapp:strategos-ontology"`).
+
+Five tools are advertised over `/mcp`:
+
+| Tool | Purpose |
+|------|---------|
+| `ontology_explore` | Walk the domain: object types, properties, actions. |
+| `ontology_query` | Read object instances / links from the event-sourced state. |
+| `ontology_action` | Propose a mutation; hard constraints are enforced server-side. |
+| `ontology_validate` | Check a proposed change against the ontology's invariants. |
+| `ontology_traverse` | Instance-anchored traversal of a specific object graph. |
+
+### Gateway-side config
+
+Point the gateway's `OpenClaw:McpApps:DiscoveryPaths` at the same directory the
+sidecar writes to:
+
+```json
+{
+  "OpenClaw": {
+    "McpApps": {
+      "Enabled": true,
+      "DiscoveryPaths": ["~/.openclaw/mcp-apps"]
+    }
+  }
+}
+```
+
+### Sidecar-side config (`appsettings.Development.json`)
+
+```json
+{
+  "Strategos": {
+    "Ontology": {
+      "Enabled": true,
+      "Port": 5098,
+      "ManifestOutputPath": "~/.openclaw/mcp-apps"
+    }
+  }
+}
+```
+
+### docker-compose
+
+Mount the manifest directory from the sidecar into the gateway container so the
+two processes share the discovery path:
+
+```yaml
+services:
+  strategos-host:
+    # ... existing service
+    volumes:
+      - mcp-apps:/home/app/.openclaw/mcp-apps
+
+  # Only if you also run the gateway in this compose:
+  # gateway:
+  #   image: clawdotnet/openclaw-gateway:latest
+  #   ports: ["18789:18789"]
+  #   environment:
+  #     OpenClaw__McpApps__DiscoveryPaths: "/home/app/.openclaw/mcp-apps"
+  #     OpenClaw__McpApps__Enabled: "true"
+  #   volumes:
+  #     - mcp-apps:/home/app/.openclaw/mcp-apps
+  #   depends_on:
+  #     - strategos-host
+
+volumes:
+  mcp-apps:
+```
+
+Once the gateway starts, the five ontology tools become OpenClaw native plugins
+callable from any agent conversation turn (and from the gateway's `/mcp`
+endpoint) without going through the workflow contract.
+
+The sidecar's `/mcp` endpoint trusts loopback connections. If you tunnel the
+gateway to the sidecar across machines, terminate the tunnel on
+`127.0.0.1:5098` on the sidecar host or add appropriate auth (out of scope here).
+
 Environment-variable overrides:
 
 - `ConnectionStrings__Postgres` — e.g. `Host=postgres;Port=5432;Database=openclaw_strategos;Username=openclaw;Password=openclaw`

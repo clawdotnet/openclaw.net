@@ -29,6 +29,25 @@ services:
       Logging__LogLevel__Default: Information
     ports:
       - "8080:8080"
+    # Share the MCP App manifest directory with the gateway so the sidecar's
+    # openclaw.mcpapp.json is discoverable across the compose network.
+    volumes:
+      - mcp-apps:/home/app/.openclaw/mcp-apps
+
+  # Optional: only if you also run the OpenClaw gateway in this compose. Uncomment
+  # and point its MCP Apps discovery at the same shared volume.
+  # gateway:
+  #   image: clawdotnet/openclaw-gateway:latest
+  #   ports:
+  #     - "18789:18789"
+  #   environment:
+  #     OpenClaw__McpApps__Enabled: "true"
+  #     OpenClaw__McpApps__DiscoveryPaths: "/home/app/.openclaw/mcp-apps"
+  #   volumes:
+  #     - mcp-apps:/home/app/.openclaw/mcp-apps
+  #   depends_on:
+  #     - sidecar
 
 volumes:
   postgres-data:
+  mcp-apps:
