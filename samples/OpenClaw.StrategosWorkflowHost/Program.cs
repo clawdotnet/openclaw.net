@@ -48,10 +48,16 @@ builder.Host.UseWolverine(opts =>
     opts.Services.AddSingleton<IChatClient>(chat);
 });
 
+// Ontology MCP App surface (P2): hosts the Strategos ontology tools at /mcp when
+// Strategos:Ontology:Enabled is set. Off by default; the Development profile turns it on.
+OntologyServerBootstrap.AddOntologyMcpServer(builder.Services, builder.Configuration);
+
 var app = builder.Build();
 
 app.MapGet("/", () => "OpenClaw.StrategosWorkflowHost");
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+OntologyServerBootstrap.MapOntologyMcpEndpoint(app, builder.Configuration);
 
 // Resolve the adapter once at startup so all three endpoints share its dependencies.
 var adapter = app.Services.GetRequiredService<DurableHttpAdapter>();
