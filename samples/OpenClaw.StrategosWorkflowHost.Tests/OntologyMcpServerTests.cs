@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
+using OpenClaw.StrategosWorkflowHost.Adapters;
 using OpenClaw.StrategosWorkflowHost.Configuration;
 
 using Xunit;
@@ -61,18 +62,32 @@ public class OntologyMcpServerTests
     }
 
     [Fact]
-    public async Task Mcp_Endpoint_Still_Serves_Tools_When_A_Manifest_Path_Is_Configured()
+    public async Task Mcp_Endpoint_Still_Serves_Tools_And_Writes_Manifest_When_A_Manifest_Path_Is_Configured()
     {
-        // ManifestOutputPath is bound but inert until the manifest writer lands; asserting
-        // the host boots with it set keeps the "configured" path exercised from day one.
-        var manifestPath = Path.Combine(Path.GetTempPath(), $"openclaw-mcpapp-{Guid.NewGuid():N}.json");
+        // ManifestOutputPath is bound AND the writer is wired, so a configured path must
+        // produce a discoverable openclaw.mcpapp.json while the /mcp tools keep serving.
+        var manifestDir = Path.Combine(Path.GetTempPath(), $"openclaw-mcpapp-{Guid.NewGuid():N}");
+        try
+        {
+            using var host = BuildTestHost(ontologyEnabled: true, manifestOutputPath: manifestDir);
+            await host.StartAsync(TestContext.Current.CancellationToken);
 
-        using var host = BuildTestHost(ontologyEnabled: true, manifestOutputPath: manifestPath);
-        await host.StartAsync(TestContext.Current.CancellationToken);
+            var toolNames = await ListToolNamesAsync(host);
+            Assert.Contains("ontology_explore", toolNames);
 
-        var toolNames = await ListToolNamesAsync(host);
+            var manifestFilePath = Path.Combine(manifestDir, "openclaw.mcpapp.json");
+            Assert.True(File.Exists(manifestFilePath), $"Expected manifest at {manifestFilePath}");
 
-        Assert.Contains("ontology_explore", toolNames);
+            using var doc = JsonDocument.Parse(File.ReadAllText(manifestFilePath));
+            var root = doc.RootElement;
+            Assert.Equal("strategos-ontology", root.GetProperty("id").GetString());
+            Assert.Equal("http", root.GetProperty("transport").GetString());
+            Assert.Equal("http://127.0.0.1:5098/mcp", root.GetProperty("url").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(manifestDir)) Directory.Delete(manifestDir, recursive: true);
+        }
     }
 
     /// <summary>
@@ -156,7 +171,17 @@ public class OntologyMcpServerTests
                 web.ConfigureServices((context, services) =>
                 {
                     services.AddRouting();
-                    OntologyServerBootstrap.AddOntologyMcpServer(services, context.Configuration);
+                    var options = OntologyServerBootstrap.AddOntologyMcpServer(services, context.Configuration);
+
+                    // Mirror Program.cs: when the ontology is enabled and a manifest path is
+                    // configured, publish the openclaw.mcpapp.json so the startup-wiring path
+                    // is exercised by tests rather than only by a real `dotnet run`.
+                    if (options.Enabled && !string.IsNullOrWhiteSpace(options.ManifestOutputPath))
+                    {
+                        OntologyAppManifestWriter.Write(
+                            OntologyAppManifestWriter.ExpandPath(options.ManifestOutputPath),
+                            OntologyAppManifest.Build(options));
+                    }
                 });
                 web.Configure((context, app) =>
                 {

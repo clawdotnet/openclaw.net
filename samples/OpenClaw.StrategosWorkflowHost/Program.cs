@@ -50,7 +50,18 @@ builder.Host.UseWolverine(opts =>
 
 // Ontology MCP App surface (P2): hosts the Strategos ontology tools at /mcp when
 // Strategos:Ontology:Enabled is set. Off by default; the Development profile turns it on.
-OntologyServerBootstrap.AddOntologyMcpServer(builder.Services, builder.Configuration);
+var ontologyOptions = OntologyServerBootstrap.AddOntologyMcpServer(builder.Services, builder.Configuration);
+
+// When the ontology is enabled and a manifest output path is configured, publish an
+// openclaw.mcpapp.json so the OpenClaw gateway's McpAppDiscovery can register the sidecar
+// as an MCP App. The write is atomic and idempotent; if ManifestOutputPath is unset the
+// sidecar runs without advertising itself (operator wires discovery manually, if at all).
+if (ontologyOptions.Enabled && !string.IsNullOrWhiteSpace(ontologyOptions.ManifestOutputPath))
+{
+    OntologyAppManifestWriter.Write(
+        OntologyAppManifestWriter.ExpandPath(ontologyOptions.ManifestOutputPath),
+        OntologyAppManifest.Build(ontologyOptions));
+}
 
 var app = builder.Build();
 
