@@ -15,6 +15,7 @@ public static class AgentWorkflowStatuses
 public static class AgentWorkflowBackendKinds
 {
     public const string MafDurableHttp = "maf-durable-http";
+    public const string StrategosHttp = "strategos-http";
 }
 
 public sealed class WorkflowsConfig
