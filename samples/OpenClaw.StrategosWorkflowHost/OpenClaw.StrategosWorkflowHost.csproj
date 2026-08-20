@@ -5,6 +5,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenClaw.Core\OpenClaw.Core.csproj" />
+    <InternalsVisibleTo Include="OpenClaw.StrategosWorkflowHost.Tests" />
   </ItemGroup>
 
   <ItemGroup>

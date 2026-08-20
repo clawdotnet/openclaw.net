@@ -118,6 +118,7 @@ public sealed class DurableHttpAdapter
             RunId = workflowId.ToString(),
             Status = status,
             Output = state?.ExecutionResult,
+            OutputPayload = state is not null ? BuildOutputPayload(state) : null,
             PendingInputs = pending,
             Events = events.Select(MapEvent).ToArray(),
             Metadata = new Dictionary<string, string>
@@ -207,24 +208,51 @@ public sealed class DurableHttpAdapter
     private static AgentWorkflowEvent MapEvent(IProgressEvent evt)
     {
         var typeName = evt.GetType().Name;
+        var isAuditTrace = typeName == "EmitAuditTraceCompleted";
+
         return new AgentWorkflowEvent
         {
             Id = $"evt_{Guid.NewGuid():N}"[..20],
             TimestampUtc = evt.Timestamp,
-            Type = ToEventType(typeName),
+            Type = isAuditTrace ? "audit_trace_emitted" : ToEventType(typeName),
             WorkflowId = WorkflowName,
-            Status = PhaseStatusMap.ToOpenClawStatus(evt.GetType().Name switch
-            {
-                var n when n.EndsWith("ApprovalEvent", StringComparison.Ordinal) => "AwaitingApproval",
-                var n when n.EndsWith("Completed", StringComparison.Ordinal) => "ExecutingReview",
-                _ => "Running"
-            }),
-            Summary = $"{typeName} @ {evt.Timestamp:O}",
+            Status = isAuditTrace
+                ? AgentWorkflowStatuses.Completed
+                : PhaseStatusMap.ToOpenClawStatus(typeName switch
+                {
+                    var n when n.EndsWith("ApprovalEvent", StringComparison.Ordinal) => "AwaitingApproval",
+                    var n when n.EndsWith("Completed", StringComparison.Ordinal) => "ExecutingReview",
+                    _ => "Running"
+                }),
+            Summary = isAuditTrace && evt is EmitAuditTraceCompleted audit
+                ? $"Evidence Bundle: {EvidenceBundleParser.ExtractAuditJson(audit.UpdatedState.ExecutionResult) ?? "audit emitted"}"
+                : $"{typeName} @ {evt.Timestamp:O}",
             Metadata = new Dictionary<string, string>
             {
                 ["eventType"] = typeName,
             }
         };
+    }
+
+    private static JsonElement? BuildOutputPayload(ReviewState s)
+    {
+        var node = new System.Text.Json.Nodes.JsonObject
+        {
+            ["workflowId"] = s.WorkflowId,
+            ["plan"] = s.Plan,
+            ["approved"] = s.Decision?.Approved,
+            ["phase"] = s.CurrentPhase,
+            ["reviewCount"] = s.Reviews.Count,
+        };
+
+        var auditJson = EvidenceBundleParser.ExtractAuditJson(s.ExecutionResult);
+        if (auditJson is not null)
+        {
+            node["audit"] = System.Text.Json.Nodes.JsonNode.Parse(auditJson)?.DeepClone();
+        }
+
+        using var doc = JsonDocument.Parse(node.ToJsonString());
+        return doc.RootElement.Clone();
     }
 
     private static string ToEventType(string typeName) => typeName switch
@@ -234,4 +262,10 @@ public sealed class DurableHttpAdapter
         var n when n.EndsWith("Completed", StringComparison.Ordinal) => "step_completed",
         _ => "progress"
     };
+
+    // Internal test seams exposed to the sibling test project via InternalsVisibleTo.
+    // These do not change the adapter's public API contract.
+    internal static AgentWorkflowEvent MapEventForTest(IProgressEvent evt) => MapEvent(evt);
+
+    internal static JsonElement? BuildOutputPayloadForTest(ReviewState s) => BuildOutputPayload(s);
 }
