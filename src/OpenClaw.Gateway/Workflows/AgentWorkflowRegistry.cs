@@ -26,18 +26,25 @@ internal sealed class AgentWorkflowRegistry : IDisposable
                 ? AgentWorkflowBackendKinds.MafDurableHttp
                 : backendConfig.Kind.Trim();
 
-            if (!string.Equals(kind, AgentWorkflowBackendKinds.MafDurableHttp, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException($"Unsupported workflow backend kind '{kind}' for backend '{backendId}'.");
-
             var normalizedBackendId = backendId.Trim();
             if (_runners.ContainsKey(normalizedBackendId))
                 throw new InvalidOperationException($"Duplicate workflow backend id '{normalizedBackendId}' after trimming whitespace.");
 
-            _runners[normalizedBackendId] = new MafDurableHttpWorkflowRunner(
-                normalizedBackendId,
-                backendConfig,
-                events,
-                loggerFactory.CreateLogger<MafDurableHttpWorkflowRunner>());
+            _runners[normalizedBackendId] = kind switch
+            {
+                AgentWorkflowBackendKinds.MafDurableHttp => new MafDurableHttpWorkflowRunner(
+                    normalizedBackendId,
+                    backendConfig,
+                    events,
+                    loggerFactory.CreateLogger<MafDurableHttpWorkflowRunner>()),
+                AgentWorkflowBackendKinds.StrategosHttp => new StrategosHttpWorkflowRunner(
+                    normalizedBackendId,
+                    backendConfig,
+                    events,
+                    loggerFactory.CreateLogger<StrategosHttpWorkflowRunner>()),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported workflow backend kind '{kind}' for backend '{normalizedBackendId}'.")
+            };
         }
     }
 
