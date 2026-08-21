@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="LevelUp.Strategos" Version="2.10.0" />
+    <PackageReference Include="LevelUp.Strategos.Infrastructure" Version="2.10.0" />
     <PackageReference Include="LevelUp.Strategos.Generators" Version="2.10.0" PrivateAssets="all" />
     <PackageReference Include="LevelUp.Strategos.Agents" Version="2.10.0" />
     <PackageReference Include="LevelUp.Strategos.Ontology" Version="2.10.0" />
