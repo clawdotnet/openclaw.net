@@ -70,7 +70,10 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
                 cancellationToken));
 
         RecordEvent(result.RunId, "run_started", result.Status, $"Workflow '{WorkflowId}' started.");
-        RecordStepEvents(result.RunId, result.Events, result.Status);
+        if (_webhook is not null)
+        {
+            RecordStepEvents(result.RunId, result.Events, result.Status);
+        }
         RecordStatus(result.RunId, result.Status, result.Events);
         return result;
     }
@@ -86,7 +89,10 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
                 CoreJsonContext.Default.AgentWorkflowRunSnapshot,
                 cancellationToken));
 
-        RecordStepEvents(snapshot.RunId, snapshot.Events, snapshot.Status);
+        if (_webhook is not null)
+        {
+            RecordStepEvents(snapshot.RunId, snapshot.Events, snapshot.Status);
+        }
         RecordStatus(snapshot.RunId, snapshot.Status, snapshot.Events);
         return snapshot;
     }
@@ -106,7 +112,10 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
                 cancellationToken));
 
         RecordEvent(runId, "response_sent", snapshot.Status, $"Response sent to workflow '{WorkflowId}' port '{response.PortId}'.");
-        RecordStepEvents(snapshot.RunId, snapshot.Events, snapshot.Status);
+        if (_webhook is not null)
+        {
+            RecordStepEvents(snapshot.RunId, snapshot.Events, snapshot.Status);
+        }
         RecordStatus(snapshot.RunId, snapshot.Status, snapshot.Events);
         return snapshot;
     }
@@ -274,7 +283,10 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
         var matchingEvent = workflowEvents.LastOrDefault(evt =>
             string.Equals(evt.Status, status, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(evt.Type, action, StringComparison.OrdinalIgnoreCase));
-        RecordStepEvents(runId, workflowEvents, status);
+        if (_webhook is not null)
+        {
+            RecordStepEvents(runId, workflowEvents, status);
+        }
         RecordEvent(
             runId,
             action,
@@ -305,12 +317,13 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
             if (action is null)
                 continue;
 
+            var bareStepName = StripStepSuffix(evt.Type);
             RecordEvent(
                 runId,
                 action,
                 status,
-                string.IsNullOrWhiteSpace(evt.Summary) ? $"Step '{evt.Type}' completed." : evt.Summary,
-                stepName: evt.Type);
+                string.IsNullOrWhiteSpace(evt.Summary) ? $"Step '{bareStepName}' completed." : evt.Summary,
+                stepName: bareStepName);
         }
     }
 
@@ -322,6 +335,16 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
             || eventType.EndsWith("Faulted", StringComparison.Ordinal))
             return "run_failed";
         return null;
+    }
+
+    private static string StripStepSuffix(string eventType)
+    {
+        foreach (var suffix in new[] { "Completed", "Failed", "Faulted" })
+        {
+            if (eventType.EndsWith(suffix, StringComparison.Ordinal) && eventType.Length > suffix.Length)
+                return eventType[..^suffix.Length];
+        }
+        return eventType;
     }
 
     private void RecordEvent(string runId, string action, string status, string summary, string? stepName = null, double? score = null)

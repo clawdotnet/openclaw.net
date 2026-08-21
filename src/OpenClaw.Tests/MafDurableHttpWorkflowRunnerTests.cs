@@ -29,4 +29,17 @@ public class MafDurableHttpWorkflowRunnerTests
         Assert.Null(method.Invoke(null, new object[] { "status" }));
         Assert.Null(method.Invoke(null, new object[] { "UnknownEvent" }));
     }
+
+    [Fact]
+    public void StripStepSuffix_Removes_Completed_Failed_Faulted()
+    {
+        var asm = typeof(OpenClaw.Gateway.Workflows.MafDurableHttpWorkflowRunner).Assembly;
+        var method = asm.GetType("OpenClaw.Gateway.Workflows.MafDurableHttpWorkflowRunner")!
+            .GetMethod("StripStepSuffix", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+
+        Assert.Equal("SecurityReviewer", method.Invoke(null, new object[] { "SecurityReviewerCompleted" }));
+        Assert.Equal("PlanExecutor", method.Invoke(null, new object[] { "PlanExecutorFailed" }));
+        Assert.Equal("AggregateReviews", method.Invoke(null, new object[] { "AggregateReviewsFaulted" }));
+        Assert.Equal("status", method.Invoke(null, new object[] { "status" })); // no suffix to strip
+    }
 }

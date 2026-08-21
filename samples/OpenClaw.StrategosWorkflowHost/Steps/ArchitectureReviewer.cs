@@ -16,8 +16,16 @@ public sealed class ArchitectureReviewer(IChatClient chat) : IWorkflowStep<Revie
             new ChatMessage(ChatRole.System, "Return ONLY JSON: {role,verdict,summary,confidence}."),
             new ChatMessage(ChatRole.User, PromptBuilders.Architecture(state.Plan, state.UserRequest)),
         };
+        var correlation = new ChatOptions
+        {
+            AdditionalProperties = new AdditionalPropertiesDictionary
+            {
+                ["runId"] = state.Id.ToString(),
+                ["stepName"] = context.StepName,
+            },
+        };
         var response = await chat.GetResponseAsync<ReviewVerdict>(
-            messages, cancellationToken: cancellationToken);
+            messages, options: correlation, cancellationToken: cancellationToken);
         if (!response.TryGetResult(out var verdict) || verdict is null)
             throw new InvalidOperationException("LLM did not return an architecture verdict.");
         var stamped = verdict with { Role = "architecture" };
