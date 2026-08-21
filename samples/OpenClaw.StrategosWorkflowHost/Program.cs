@@ -44,8 +44,21 @@ builder.Host.UseWolverine(opts =>
     var chat = LlmClientFactory.Create(llmOptions, llmLogger);
 
     opts.Services.AddSingleton<IAgentIdentityAccessor, NoopAgentIdentityAccessor>();
-    opts.Services.AddSingleton(chat);
-    opts.Services.AddSingleton<IChatClient>(chat);
+
+    // Selector surface: when Strategos:Selector:Enabled is true, replaces the
+    // direct IChatClient registration with a SelectorBackedChatClient that
+    // routes calls through Thompson Sampling. When disabled (default), this
+    // is a no-op for the IChatClient registration — same behavior as P0/P2.
+    SelectorServerBootstrap.AddSelectorServer(opts.Services, builder.Configuration, chat);
+    if (builder.Configuration.GetValue($"{SelectorOptions.SectionName}:Enabled", false))
+    {
+        opts.Services.AddSingleton<IChatClient>(sp => sp.GetRequiredService<SelectorBackedChatClient>());
+    }
+    else
+    {
+        opts.Services.AddSingleton(chat);
+        opts.Services.AddSingleton<IChatClient>(chat);
+    }
 });
 
 // Ontology MCP App surface (P2): hosts the Strategos ontology tools at /mcp when
@@ -69,6 +82,7 @@ app.MapGet("/", () => "OpenClaw.StrategosWorkflowHost");
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 OntologyServerBootstrap.MapOntologyMcpEndpoint(app, builder.Configuration);
+SelectorServerBootstrap.MapSelectorEventEndpoint(app, builder.Configuration);
 
 // Resolve the adapter once at startup so all three endpoints share its dependencies.
 var adapter = app.Services.GetRequiredService<DurableHttpAdapter>();

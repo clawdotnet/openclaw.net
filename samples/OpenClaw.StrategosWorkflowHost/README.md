@@ -41,6 +41,55 @@ The host speaks the `maf-durable-http` contract on port 8080:
 mode is the P0 default; `DirectOpenAI` and `BackThroughGateway` are wired in
 config but throw at startup (P1 follow-up — see `Configuration/LlmMode.cs`).
 
+## Thompson Sampling selector
+
+The sidecar can wrap its `IChatClient` in a `SelectorBackedChatClient` that
+routes every chat call through Strategos's Thompson Sampling
+`IAgentSelector`. Selected agent ids are recorded in a sidecar-local cache
+keyed by `(runId, stepName)` so the later outcome (delivered over
+`/runtime-events` from the OpenClaw gateway) can be attributed back to the
+agent that produced it.
+
+Disabled by default. To enable:
+
+```json
+{
+  "Strategos": {
+    "Selector": {
+      "Enabled": true,
+      "AvailableAgents": ["mock"],
+      "TaskCategory": "General"
+    }
+  }
+}
+```
+
+When enabled, the sidecar also exposes `POST /runtime-events` on the same
+port (8080) for the gateway to push workflow outcome events. Configure a
+shared bearer token:
+
+```json
+{
+  "Strategos": {
+    "Selector": {
+      "Webhook": {
+        "TokenSecret": "env:OPENCLAW_SELECTOR_TOKEN"
+      }
+    }
+  }
+}
+```
+
+The gateway mirrors events via the `RuntimeEventWebhook` (gateway-side)
+once its `OpenClaw:RuntimeEvents:Webhook:Url` is set to this sidecar's
+`/runtime-events` endpoint and `OpenClaw:RuntimeEvents:Webhook:TokenSecret`
+resolves to the same value.
+
+In Mock mode (`Llm__Mode=Mock`), every `AvailableAgents` id resolves to
+`MockReviewChatClient` — Thompson Sampling runs, but every "agent" returns
+the same verdict, so belief deltas come from noise only. Useful for wiring
+smoke tests; not useful for measuring selector quality.
+
 ## MCP App registration
 
 The sidecar hosts a second HTTP surface at `/mcp` exposing the Strategos

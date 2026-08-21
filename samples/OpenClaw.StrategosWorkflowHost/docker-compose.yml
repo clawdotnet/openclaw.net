@@ -27,6 +27,10 @@ services:
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=openclaw_strategos;Username=openclaw;Password=openclaw"
       Llm__Mode: Mock
       Logging__LogLevel__Default: Information
+      # Selector surface (off by default; uncomment to enable):
+      # Strategos__Selector__Enabled: "true"
+      # Strategos__Selector__AvailableAgents__0: "mock"
+      # Strategos__Selector__Webhook__TokenSecret: "env:OPENCLAW_SELECTOR_TOKEN"
     ports:
       - "8080:8080"
     # Share the MCP App manifest directory with the gateway so the sidecar's
