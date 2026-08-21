@@ -18,6 +18,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
     private readonly HttpClient _http;
     private readonly string? _apiToken;
     private readonly ConcurrentDictionary<string, string> _lastRecordedStatuses = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _lastRecordedStepEventIds = new(StringComparer.Ordinal);
     private bool _disposed;
 
     public MafDurableHttpWorkflowRunner(
@@ -66,6 +67,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
                 cancellationToken));
 
         RecordEvent(result.RunId, "run_started", result.Status, $"Workflow '{WorkflowId}' started.");
+        RecordStepEvents(result.RunId, result.Events, result.Status);
         RecordStatus(result.RunId, result.Status, result.Events);
         return result;
     }
@@ -81,6 +83,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
                 CoreJsonContext.Default.AgentWorkflowRunSnapshot,
                 cancellationToken));
 
+        RecordStepEvents(snapshot.RunId, snapshot.Events, snapshot.Status);
         RecordStatus(snapshot.RunId, snapshot.Status, snapshot.Events);
         return snapshot;
     }
@@ -100,6 +103,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
                 cancellationToken));
 
         RecordEvent(runId, "response_sent", snapshot.Status, $"Response sent to workflow '{WorkflowId}' port '{response.PortId}'.");
+        RecordStepEvents(snapshot.RunId, snapshot.Events, snapshot.Status);
         RecordStatus(snapshot.RunId, snapshot.Status, snapshot.Events);
         return snapshot;
     }
@@ -267,6 +271,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
         var matchingEvent = workflowEvents.LastOrDefault(evt =>
             string.Equals(evt.Status, status, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(evt.Type, action, StringComparison.OrdinalIgnoreCase));
+        RecordStepEvents(runId, workflowEvents, status);
         RecordEvent(
             runId,
             action,
@@ -276,8 +281,64 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
                 : matchingEvent.Summary);
     }
 
-    private void RecordEvent(string runId, string action, string status, string summary)
+    private void RecordStepEvents(string runId, IReadOnlyList<AgentWorkflowEvent> workflowEvents, string status)
     {
+        // The Strategos saga emits one *Completed / *Failed event per step.
+        // Surface each as its own runtime event with stepName=Type so the
+        // sidecar's selector can correlate the outcome back to the (runId,
+        // stepName) pair it cached during the chat call. Workflow-level
+        // status events (Type == "status") are skipped — they are emitted
+        // by StreamAsync, not by the saga.
+        foreach (var evt in workflowEvents)
+        {
+            if (string.Equals(evt.Type, "status", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (string.IsNullOrWhiteSpace(evt.Type))
+                continue;
+            if (!_lastRecordedStepEventIds.TryAdd(evt.Id, 0))
+                continue;
+
+            var action = ResolveStepAction(evt.Type);
+            if (action is null)
+                continue;
+
+            RecordEvent(
+                runId,
+                action,
+                status,
+                string.IsNullOrWhiteSpace(evt.Summary) ? $"Step '{evt.Type}' completed." : evt.Summary,
+                stepName: evt.Type);
+        }
+    }
+
+    private static string? ResolveStepAction(string eventType)
+    {
+        if (eventType.EndsWith("Completed", StringComparison.Ordinal))
+            return "run_completed";
+        if (eventType.EndsWith("Failed", StringComparison.Ordinal)
+            || eventType.EndsWith("Faulted", StringComparison.Ordinal))
+            return "run_failed";
+        return null;
+    }
+
+    private void RecordEvent(string runId, string action, string status, string summary, string? stepName = null, double? score = null)
+    {
+        var metadata = new Dictionary<string, string>
+        {
+            ["backendId"] = BackendId,
+            ["workflowId"] = WorkflowId,
+            ["runId"] = runId,
+            ["status"] = status
+        };
+        if (!string.IsNullOrWhiteSpace(stepName))
+        {
+            metadata["stepName"] = stepName;
+        }
+        if (score.HasValue)
+        {
+            metadata["score"] = score.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         _events.Append(new RuntimeEventEntry
         {
             Id = $"evt_{Guid.NewGuid():N}"[..20],
@@ -285,13 +346,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
             Action = action,
             Severity = status is AgentWorkflowStatuses.Failed or AgentWorkflowStatuses.Cancelled ? "warning" : "info",
             Summary = summary,
-            Metadata = new Dictionary<string, string>
-            {
-                ["backendId"] = BackendId,
-                ["workflowId"] = WorkflowId,
-                ["runId"] = runId,
-                ["status"] = status
-            }
+            Metadata = metadata
         });
     }
 
