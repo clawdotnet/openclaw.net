@@ -38,6 +38,17 @@ services:
     volumes:
       - mcp-apps:/home/app/.openclaw/mcp-apps
 
+  # Optional: when the gateway runs alongside the sidecar, configure it to
+  # mirror workflow events back into the sidecar's Thompson Sampling loop.
+  # gateway:
+  #   image: clawdotnet/openclaw-gateway:latest
+  #   ports: ["18789:18789"]
+  #   environment:
+  #     OpenClaw__RuntimeEvents__Webhook__Url: "http://sidecar:8080/runtime-events"
+  #     OpenClaw__RuntimeEvents__Webhook__TokenSecret: "env:OPENCLAW_SELECTOR_TOKEN"
+  #   depends_on:
+  #     - sidecar
+
   # Optional: only if you also run the OpenClaw gateway in this compose. Uncomment
   # and point its MCP Apps discovery at the same shared volume.
   # gateway:

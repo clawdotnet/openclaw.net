@@ -229,6 +229,45 @@ dotnet test samples/OpenClaw.StrategosWorkflowHost.Tests
 TEST_PG="Host=...;..." dotnet test samples/OpenClaw.StrategosWorkflowHost.Tests --filter KillRestartTests
 ```
 
+## Selector webhook (gateway integration)
+
+When `Strategos:Selector:Enabled=true`, the sidecar exposes
+`POST /runtime-events` on the same port (8080). The OpenClaw gateway can
+mirror its workflow events to this endpoint to close the Thompson Sampling
+feedback loop. The shared bearer token is configured independently on each
+side and resolved through `SecretResolver`:
+
+| Side | Config key | Source |
+|------|-----------|--------|
+| Sidecar (receiver) | `Strategos:Selector:Webhook:TokenSecret` | `env:VAR_NAME` or `raw:LITERAL` |
+| Gateway (sender)  | `OpenClaw:RuntimeEvents:Webhook:TokenSecret` | same |
+
+Gateway-side config to enable the fan-out:
+
+```json
+{
+  "OpenClaw": {
+    "RuntimeEvents": {
+      "Webhook": {
+        "Url": "http://sidecar-host:8080/runtime-events",
+        "TokenSecret": "env:OPENCLAW_SELECTOR_TOKEN"
+      }
+    }
+  }
+}
+```
+
+Behavior:
+
+- The webhook fires after every `RuntimeEventStore.Append`, so JSONL stays
+  the durable record; webhook failures don't lose data.
+- 5xx and connection errors trigger one retry (~1s); 401/403 disable further
+  sending until the config is corrected.
+- Only entries with `component="workflow"` and `action` in
+  `{run_started, run_completed, run_failed, response_sent}` plus the new
+  per-step `run_completed`/`run_failed` events emitted by the gateway for
+  Strategos saga steps are forwarded. Other components are filtered out.
+
 ## Notes on the build
 
 - `TreatWarningsAsErrors=true`. The sample must build with **zero warnings**.
