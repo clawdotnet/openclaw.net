@@ -44,7 +44,7 @@ namespace OpenClaw.Gateway.Composition;
 
 internal static class CoreServicesExtensions
 {
-    public static IServiceCollection AddOpenClawCoreServices(this IServiceCollection services, GatewayStartupContext startup)
+    public static IServiceCollection AddOpenClawCoreServices(this IServiceCollection services, GatewayStartupContext startup, IConfiguration? configuration = null)
     {
         var config = startup.Config;
 
@@ -55,6 +55,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton(startup);
         services.AddSingleton(config);
         services.AddSingleton(config.Learning);
+        services.AddRuntimeEventWebhook(configuration ?? new ConfigurationBuilder().Build());
         services.AddSingleton(config.Governance);
         services.AddSingleton<IToolGovernanceService>(sp => CreateToolGovernanceService(
             config.Governance,
@@ -257,7 +258,11 @@ internal static class CoreServicesExtensions
         services.AddSingleton<CodebaseHarnessMapService>();
         services.AddSingleton<PlanExecuteVerifyService>();
         services.AddSingleton<IPlanExecuteVerifyOrchestrator>(sp => sp.GetRequiredService<PlanExecuteVerifyService>());
-        services.AddSingleton<AgentWorkflowRegistry>();
+        services.AddSingleton(sp => new AgentWorkflowRegistry(
+            startup.Config,
+            sp.GetRequiredService<RuntimeEventStore>(),
+            sp.GetRequiredService<ILoggerFactory>(),
+            sp.GetService<RuntimeEventWebhook>()));
         services.AddSingleton<ICronJobSource, GatewayCronJobSource>();
         services.AddSingleton<ActorRateLimitService>(sp =>
             new ActorRateLimitService(

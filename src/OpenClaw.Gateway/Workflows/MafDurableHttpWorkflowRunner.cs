@@ -14,6 +14,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
 {
     private readonly WorkflowBackendConfig _config;
     private readonly RuntimeEventStore _events;
+    private readonly RuntimeEventWebhook? _webhook;
     private readonly ILogger<MafDurableHttpWorkflowRunner> _logger;
     private readonly HttpClient _http;
     private readonly string? _apiToken;
@@ -25,12 +26,14 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
         string backendId,
         WorkflowBackendConfig config,
         RuntimeEventStore events,
+        RuntimeEventWebhook? webhook,
         ILogger<MafDurableHttpWorkflowRunner> logger)
     {
         BackendId = backendId;
         WorkflowId = string.IsNullOrWhiteSpace(config.WorkflowName) ? backendId : config.WorkflowName.Trim();
         _config = config;
         _events = events;
+        _webhook = webhook;
         _logger = logger;
         _apiToken = SecretResolver.Resolve(config.ApiTokenSecret, logger);
         _http = HttpClientFactory.Create(allowAutoRedirect: false);
@@ -339,7 +342,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
             metadata["score"] = score.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
-        _events.Append(new RuntimeEventEntry
+        var entry = new RuntimeEventEntry
         {
             Id = $"evt_{Guid.NewGuid():N}"[..20],
             Component = "workflow",
@@ -347,7 +350,24 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
             Severity = status is AgentWorkflowStatuses.Failed or AgentWorkflowStatuses.Cancelled ? "warning" : "info",
             Summary = summary,
             Metadata = metadata
-        });
+        };
+
+        _events.Append(entry);
+
+        // Fire-and-forget the webhook so JSONL write latency stays zero. The
+        // webhook does its own retry + swallow internally; any exception that
+        // somehow escapes is captured here.
+        if (_webhook is not null)
+        {
+            _ = Task.Run(async () =>
+            {
+                try { await _webhook.SendAsync(entry).ConfigureAwait(false); }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "RuntimeEventWebhook.SendAsync threw for entry {EventId}.", entry.Id);
+                }
+            });
+        }
     }
 
     private static Uri BuildBaseAddress(string? value)

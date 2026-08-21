@@ -65,7 +65,7 @@ while (true)
         startupConsole.WritePhase("Building services");
         builder.Services.AddOpenApi("openclaw-integration");
         builder.AddOpenClawObservability();
-        builder.Services.AddOpenClawCoreServices(startup);
+        builder.Services.AddOpenClawCoreServices(startup, builder.Configuration);
         builder.Services.AddOpenClawChannelServices(startup);
         builder.Services.AddOpenClawToolServices(startup);
         builder.Services.AddOpenClawBackendServices(startup);

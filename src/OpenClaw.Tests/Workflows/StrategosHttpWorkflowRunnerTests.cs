@@ -15,6 +15,7 @@ public sealed class StrategosHttpWorkflowRunnerTests
             backendId: "strategos",
             config: NewConfig(),
             events: NewEvents(),
+            webhook: null,
             logger: NullLogger<StrategosHttpWorkflowRunner>.Instance);
 
         var summary = runner.GetSummary();
@@ -31,6 +32,7 @@ public sealed class StrategosHttpWorkflowRunnerTests
             backendId: "strategos",
             config: NewConfig(),
             events: NewEvents(),
+            webhook: null,
             logger: NullLogger<StrategosHttpWorkflowRunner>.Instance);
 
         Assert.Equal("strategos", runner.BackendId);

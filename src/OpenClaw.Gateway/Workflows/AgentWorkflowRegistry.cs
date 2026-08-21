@@ -11,7 +11,8 @@ internal sealed class AgentWorkflowRegistry : IDisposable
     public AgentWorkflowRegistry(
         GatewayConfig config,
         RuntimeEventStore events,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        RuntimeEventWebhook? webhook = null)
     {
         _runners = new Dictionary<string, IAgentWorkflowRunner>(StringComparer.OrdinalIgnoreCase);
         if (!config.Workflows.Enabled)
@@ -36,11 +37,13 @@ internal sealed class AgentWorkflowRegistry : IDisposable
                     normalizedBackendId,
                     backendConfig,
                     events,
+                    webhook,
                     loggerFactory.CreateLogger<MafDurableHttpWorkflowRunner>()),
                 AgentWorkflowBackendKinds.StrategosHttp => new StrategosHttpWorkflowRunner(
                     normalizedBackendId,
                     backendConfig,
                     events,
+                    webhook,
                     loggerFactory.CreateLogger<StrategosHttpWorkflowRunner>()),
                 _ => throw new InvalidOperationException(
                     $"Unsupported workflow backend kind '{kind}' for backend '{normalizedBackendId}'.")

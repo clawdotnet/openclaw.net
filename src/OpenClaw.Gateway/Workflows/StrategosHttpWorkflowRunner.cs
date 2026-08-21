@@ -19,6 +19,7 @@ internal sealed class StrategosHttpWorkflowRunner : IAgentWorkflowRunner, IDispo
         string backendId,
         WorkflowBackendConfig config,
         RuntimeEventStore events,
+        RuntimeEventWebhook? webhook,
         ILogger<StrategosHttpWorkflowRunner> logger)
     {
         ArgumentNullException.ThrowIfNull(config, nameof(config));
@@ -29,6 +30,7 @@ internal sealed class StrategosHttpWorkflowRunner : IAgentWorkflowRunner, IDispo
             backendId,
             config,
             events,
+            webhook,
             NullLogger<MafDurableHttpWorkflowRunner>.Instance);
 
         BackendId = _inner.BackendId;
