@@ -68,6 +68,17 @@ public static class AgentPluginMcpAdapter
                 Path = package.McpConfigPath
             });
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // File.OpenRead / 读取期间的非 JSON I/O 失败（与 AgentPluginSkillLoader 一致）
+            diagnostics.Add(new PluginCompatibilityDiagnostic
+            {
+                Code = "mcp_read_error",
+                Message = $"Failed to read mcp.json: {ex.Message}",
+                Surface = "mcp",
+                Path = package.McpConfigPath
+            });
+        }
 
         return diagnostics;
     }
@@ -77,6 +88,31 @@ public static class AgentPluginMcpAdapter
         string serverName,
         JsonElement config)
     {
+        // 显式声明的传输类型（mcp.json 中的 transport / type 字段）
+        string? explicitTransport = null;
+        if (config.TryGetProperty("transport", out var transportEl) &&
+            transportEl.ValueKind == JsonValueKind.String)
+        {
+            explicitTransport = transportEl.GetString();
+        }
+        else if (config.TryGetProperty("type", out var typeEl) &&
+                 typeEl.ValueKind == JsonValueKind.String)
+        {
+            explicitTransport = typeEl.GetString();
+        }
+
+        // SSE 传输不受支持，直接跳过（不要在推断阶段把它当作 streamable-http 处理）
+        if (string.Equals(explicitTransport, "sse", StringComparison.OrdinalIgnoreCase))
+        {
+            return (null, new PluginCompatibilityDiagnostic
+            {
+                Code = "unsupported_transport",
+                Message = $"MCP server '{serverName}' uses unsupported 'sse' transport. Skipping.",
+                Surface = "mcp",
+                Path = package.McpConfigPath
+            });
+        }
+
         // 传输类型检测
         string? transport = null;
         string? command = null;
@@ -152,24 +188,12 @@ public static class AgentPluginMcpAdapter
         }
 
         // 验证 transport
-        if (transport is null && command is null && url is null)
+        if (transport is null)
         {
             return (null, new PluginCompatibilityDiagnostic
             {
                 Code = "invalid_mcp_transport",
                 Message = $"MCP server '{serverName}' has no valid transport (command/args or url). Skipping.",
-                Surface = "mcp",
-                Path = package.McpConfigPath
-            });
-        }
-
-        // 不支持的传输类型跳过
-        if (transport == "sse")
-        {
-            return (null, new PluginCompatibilityDiagnostic
-            {
-                Code = "unsupported_transport",
-                Message = $"MCP server '{serverName}' uses unsupported 'sse' transport. Skipping.",
                 Surface = "mcp",
                 Path = package.McpConfigPath
             });
@@ -219,17 +243,23 @@ public static class AgentPluginMcpAdapter
 
     private static bool IsPathSafe(string path, string pluginRoot)
     {
-        // 拒绝绝对路径
-        if (Path.IsPathRooted(path))
-            return false;
-
-        // 解析并检查是否在 pluginRoot 内
+        // 变量已展开：${PLUGIN_ROOT} 展开后可能是绝对路径，因此不能直接拒绝根路径。
+        // 规则：解析后的最终路径必须落在 pluginRoot 之内（等于 plugin root 本身或其
+        // 后代），拒绝解析到 pluginRoot 之外或逃逸出去的路径（如 ../../../etc）。
         try
         {
-            var fullPath = Path.GetFullPath(Path.Combine(pluginRoot, path));
+            var fullPath = Path.IsPathRooted(path)
+                ? Path.GetFullPath(path)
+                : Path.GetFullPath(Path.Combine(pluginRoot, path));
+
             var fullRoot = Path.GetFullPath(pluginRoot);
-            return fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar) ||
-                   fullPath == fullRoot;
+
+            var comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+
+            return string.Equals(fullPath, fullRoot, comparison) ||
+                   fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, comparison);
         }
         catch
         {
