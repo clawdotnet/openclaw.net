@@ -193,8 +193,14 @@ public class AgentPluginDiscoveryTests
             // The brief targeted Arguments[0] but that slot is "-y"; assert the arg that
             // carried ${PLUGIN_ROOT} was expanded to the plugin root.
             Assert.Contains(servers[0].Arguments, arg => arg.Contains(pluginDir, StringComparison.Ordinal));
-            Assert.Contains("PLUGIN_ROOT", servers[0].Environment.Keys);
-            Assert.Contains("PLUGIN_DATA", servers[0].Environment.Keys);
+            // The adapter expands ${PLUGIN_ROOT} to the plugin root and ${PLUGIN_DATA} to the
+            // shared plugin-data/<name> directory. Assert the actual expanded values, not just
+            // that the keys are present (pins the "数据目录保留" contract).
+            Assert.Contains(pluginDir, servers[0].Environment["PLUGIN_ROOT"], StringComparison.Ordinal);
+            Assert.Contains(
+                Path.Combine("openclaw", "plugin-data", "test-plugin"),
+                servers[0].Environment["PLUGIN_DATA"],
+                StringComparison.Ordinal);
         }
         finally
         {
@@ -520,8 +526,11 @@ public class AgentPluginDiscoveryTests
 
             var result = PluginDiscovery.DiscoverAgentPluginsWithDiagnostics(config, workspacePath: workspaceRoot);
 
-            var pkg = Assert.Single(result.Packages);
-            Assert.Equal(pluginName, pkg.Manifest.Name);
+            // Filter for the plugin we created so the assertion is not coupled to any agent
+            // plugins a developer may have installed in their real ~/.openclaw/plugins/ directory
+            // (DiscoverAgentPluginsWithDiagnostics unconditionally scans that location too).
+            var matching = result.Packages.Where(p => p.Manifest.Name == pluginName).ToList();
+            var pkg = Assert.Single(matching);
             Assert.Equal("1.0.0", pkg.Manifest.Version); // config path wins over workspace plugins/
             Assert.Contains(result.Reports, r => r.Diagnostics.Any(d => d.Code == "duplicate_plugin_id"));
         }
