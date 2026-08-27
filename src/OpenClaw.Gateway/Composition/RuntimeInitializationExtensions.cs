@@ -136,6 +136,19 @@ internal static partial class RuntimeInitializationExtensions
 
         var combinedPluginSkillRoots = CollectPluginSkillRoots(pluginComposition);
 
+        // Agent Plugins 1.0: discover and validate Agent Plugin skills + MCP servers once at
+        // startup. Valid skill directories are appended to the skill priority chain below (so they
+        // enter the same precedence used by PluginHost.SkillRoots / NativeDynamicPluginHost.SkillRoots),
+        // and the MCP servers are merged into the workspace MCP reload path in StartMcpWorkspaceWatcher.
+        AgentPluginRuntimeManager? agentPluginRuntime = null;
+        if (config.Plugins.Enabled)
+        {
+            var agentPluginLogger = loggerFactory.CreateLogger("AgentPlugins");
+            agentPluginRuntime = new AgentPluginRuntimeManager(config.Plugins, resolvedRuntimeWorkspacePath, agentPluginLogger);
+            var agentPluginRefresh = await agentPluginRuntime.RefreshAsync();
+            combinedPluginSkillRoots.AddRange(agentPluginRefresh.SkillDirectories);
+        }
+
         var skillLogger = loggerFactory.CreateLogger("SkillLoader");
         var skills = SkillLoader.LoadAll(config.Skills, resolvedRuntimeWorkspacePath, skillLogger, combinedPluginSkillRoots);
         if (skills.Count > 0)
@@ -209,7 +222,12 @@ internal static partial class RuntimeInitializationExtensions
             app.Services.GetRequiredService<ILogger<SkillWatcherService>>(),
             skills => artifactRuntime.ReplaceSkills(skills));
         skillWatcher.Start(app.Lifetime.ApplicationStopping);
-        var mcpWatcher = StartMcpWorkspaceWatcher(app, services, startup, agentRuntime);
+        var mcpWatcher = StartMcpWorkspaceWatcher(
+            app,
+            services,
+            startup,
+            agentRuntime,
+            agentPluginRuntime is null ? null : () => agentPluginRuntime.GetMcpConfigs());
 
         await services.AutomationService.RefreshCacheAsync(app.Lifetime.ApplicationStopping);
         var cronScheduler = app.Services.GetRequiredService<CronScheduler>();

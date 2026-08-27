@@ -19,6 +19,7 @@ internal sealed class McpWorkspaceWatcherService : IAsyncDisposable, IDisposable
     private readonly ILogger<McpWorkspaceWatcherService> _logger;
     private readonly McpConfigStore _configStore;
     private readonly string? _workspacePath;
+    private readonly Func<IReadOnlyDictionary<string, McpServerConfig>>? _agentPluginServersProvider;
     private readonly Channel<bool> _reloadChannel = Channel.CreateUnbounded<bool>(new UnboundedChannelOptions
     {
         SingleReader = true,
@@ -35,13 +36,15 @@ internal sealed class McpWorkspaceWatcherService : IAsyncDisposable, IDisposable
         IAgentRuntime agentRuntime,
         string? workspacePath,
         ILogger<McpWorkspaceWatcherService> logger,
-        McpConfigStore configStore)
+        McpConfigStore configStore,
+        Func<IReadOnlyDictionary<string, McpServerConfig>>? agentPluginServersProvider = null)
     {
         _registry = registry;
         _agentRuntime = agentRuntime;
         _logger = logger;
         _configStore = configStore;
         _workspacePath = workspacePath;
+        _agentPluginServersProvider = agentPluginServersProvider;
     }
 
     public void TriggerReload() => _reloadChannel.Writer.TryWrite(true);
@@ -61,7 +64,7 @@ internal sealed class McpWorkspaceWatcherService : IAsyncDisposable, IDisposable
 
         var hasWorkspaceFile = !string.IsNullOrWhiteSpace(_workspacePath) &&
             McpJsonRelativePaths.Any(relativePath => File.Exists(Path.Combine(_workspacePath, relativePath)));
-        if (hasWorkspaceFile || _configStore is not null)
+        if (hasWorkspaceFile || _configStore is not null || _agentPluginServersProvider is not null)
             TriggerReload();
     }
 
@@ -121,6 +124,14 @@ internal sealed class McpWorkspaceWatcherService : IAsyncDisposable, IDisposable
                 }
 
                 servers ??= new Dictionary<string, McpServerConfig>(StringComparer.Ordinal);
+                if (_agentPluginServersProvider is not null)
+                {
+                    // Agent Plugin 1.0 MCP servers share the workspace server reload path so the
+                    // atomic "stop old MCP processes before swapping the runtime snapshot" semantics
+                    // (ReloadWorkspaceServersAsync) and tool change application are preserved.
+                    foreach (var (serverId, serverConfig) in _agentPluginServersProvider())
+                        servers[serverId] = serverConfig;
+                }
                 var reload = await _registry.ReloadWorkspaceServersAsync(servers, ct);
                 await _agentRuntime.ApplyMcpToolChangesAsync(reload.AddedTools, reload.RemovedToolNames, ct);
                 _logger.LogInformation(

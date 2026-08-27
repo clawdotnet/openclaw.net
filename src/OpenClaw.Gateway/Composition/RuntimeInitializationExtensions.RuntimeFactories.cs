@@ -10,6 +10,7 @@ using OpenClaw.Core.Middleware;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
+using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Core.Skills;
@@ -30,14 +31,16 @@ internal static partial class RuntimeInitializationExtensions
         WebApplication app,
         RuntimeServices services,
         GatewayStartupContext startup,
-        IAgentRuntime agentRuntime)
+        IAgentRuntime agentRuntime,
+        Func<IReadOnlyDictionary<string, McpServerConfig>>? agentPluginServersProvider = null)
     {
         var watcher = new McpWorkspaceWatcherService(
             services.McpRegistry,
             agentRuntime,
             startup.WorkspacePath,
             app.Services.GetRequiredService<ILogger<McpWorkspaceWatcherService>>(),
-            app.Services.GetRequiredService<McpConfigStore>());
+            app.Services.GetRequiredService<McpConfigStore>(),
+            agentPluginServersProvider);
         app.Services.GetRequiredService<McpWatcherHolder>().Watcher = watcher;
         watcher.Start(app.Lifetime.ApplicationStopping);
         return watcher;
