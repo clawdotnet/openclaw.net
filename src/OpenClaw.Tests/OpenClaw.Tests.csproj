@@ -32,6 +32,7 @@
     <ProjectReference Include="..\OpenClaw.Testing\OpenClaw.Testing.csproj" />
 
     <None Update="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="TestData\**\*" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\OpenClaw.TestPluginFixtures\OpenClaw.TestPluginFixtures.csproj" />
     <ProjectReference Include="..\OpenClaw.WhatsApp.BaileysWorker\OpenClaw.WhatsApp.BaileysWorker.csproj" />
   </ItemGroup>

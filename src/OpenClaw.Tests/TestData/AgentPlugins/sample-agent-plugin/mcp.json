@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "sample-server": {
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/server.js"],
+      "env": {
+        "PLUGIN_ROOT": "${PLUGIN_ROOT}",
+        "PLUGIN_DATA": "${PLUGIN_DATA}"
+      }
+    }
+  }
+}

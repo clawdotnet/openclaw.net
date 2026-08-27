@@ -1,0 +1,8 @@
+{
+  "name": "sample-agent-plugin",
+  "version": "1.0.0",
+  "description": "Sample Agent Plugin 1.0 package used in integration tests",
+  "license": "MIT",
+  "schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "author": "OpenClaw"
+}

@@ -540,6 +540,107 @@ public class AgentPluginDiscoveryTests
         }
     }
 
+    [Fact]
+    public void BothPluginFormats_CoexistWithoutConflict()
+    {
+        // Two plugin formats share one discovery tree; each pipeline must see only its own format.
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // Agent Plugin 1.0 package (plugin.json + mcp.json).
+            // NOTE: this fixture deliberately has no skills/ directory. The legacy
+            // PluginBundleDetector classifies ANY directory containing skills/ (or commands/,
+            // agents/, hooks/, .mcp.json, .lsp.json, settings.json) as a Claude content bundle,
+            // so a skills-bearing agent-plugin dir is unavoidably picked up by legacy discovery.
+            // Omitting skills/ keeps each pipeline seeing only its own format — the coexistence
+            // contract "互不破坏". Skill discovery itself is covered by the committed sample
+            // package test (SampleAgentPluginTestData_IsDiscoverable) below.
+            var agentDir = Path.Combine(tempDir, "agent-plugin");
+            Directory.CreateDirectory(agentDir);
+            File.WriteAllText(Path.Combine(agentDir, "plugin.json"), @"{
+                ""name"": ""agent-plugin"",
+                ""version"": ""1.0.0"",
+                ""description"": ""Agent Plugin 1.0 package"",
+                ""license"": ""MIT""
+            }");
+            File.WriteAllText(Path.Combine(agentDir, "mcp.json"), @"{
+                ""mcpServers"": {
+                    ""srv"": {
+                        ""command"": ""node"",
+                        ""args"": [""${PLUGIN_ROOT}/s.js""]
+                    }
+                }
+            }");
+
+            // Legacy OpenClaw plugin (openclaw.plugin.json + index.js entry).
+            var legacyDir = Path.Combine(tempDir, "legacy-plugin");
+            Directory.CreateDirectory(legacyDir);
+            File.WriteAllText(Path.Combine(legacyDir, "openclaw.plugin.json"), @"{""id"":""legacy-plugin""}");
+            File.WriteAllText(Path.Combine(legacyDir, "index.js"), "module.exports = {};");
+
+            var config = new PluginsConfig
+            {
+                Load = new PluginLoadConfig { Paths = [tempDir] }
+            };
+
+            // Agent Plugin discovery sees only the agent-plugin package.
+            var agentResult = PluginDiscovery.DiscoverAgentPluginsWithDiagnostics(config);
+            var agentPkgs = agentResult.Packages.Where(p => p.Manifest.Name == "agent-plugin").ToList();
+            var agentPkg = Assert.Single(agentPkgs);
+            Assert.Equal("agent-plugin", agentPkg.Manifest.Name);
+
+            // Legacy discovery sees only the legacy plugin.
+            var legacyResult = PluginDiscovery.DiscoverWithDiagnostics(config);
+            var legacyPlugins = legacyResult.Plugins.Where(p => p.Manifest.Id == "legacy-plugin").ToList();
+            var legacyPlugin = Assert.Single(legacyPlugins);
+            Assert.Equal("legacy-plugin", legacyPlugin.Manifest.Id);
+
+            // Cross-format isolation (互不破坏): neither pipeline picks up the other's format.
+            Assert.DoesNotContain(agentResult.Packages, p => p.Manifest.Name == "legacy-plugin");
+            Assert.DoesNotContain(legacyResult.Plugins, p => p.Manifest.Id == "agent-plugin");
+
+            // The agent-plugin's MCP config survived discovery intact.
+            var mcpDiagnostics = AgentPluginMcpAdapter.LoadMcpConfigs(agentPkg, out var servers);
+            var server = Assert.Single(servers);
+            Assert.Equal("srv", server.Name);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void SampleAgentPluginTestData_IsDiscoverable()
+    {
+        // Committed fixture copied to the test output via the TestData csproj rule.
+        var testDataDir = Path.Combine(AppContext.BaseDirectory, "TestData", "AgentPlugins");
+        Assert.True(Directory.Exists(testDataDir), $"Committed test data not found at '{testDataDir}'.");
+
+        var config = new PluginsConfig
+        {
+            Load = new PluginLoadConfig { Paths = [testDataDir] }
+        };
+
+        var result = PluginDiscovery.DiscoverAgentPluginsWithDiagnostics(config);
+
+        var matching = result.Packages.Where(p => p.Manifest.Name == "sample-agent-plugin").ToList();
+        var pkg = Assert.Single(matching);
+        Assert.Equal("sample-agent-plugin", pkg.Manifest.Name);
+
+        // The committed package bundles one skill under skills/hello-skill/SKILL.md.
+        var skillDiagnostics = AgentPluginSkillLoader.ValidateSkills(pkg, out var skillNames);
+        Assert.Contains("hello-skill", skillNames);
+
+        // The committed package declares one stdio MCP server; ${PLUGIN_ROOT} in its args
+        // is expanded to the package root during adaptation.
+        var mcpDiagnostics = AgentPluginMcpAdapter.LoadMcpConfigs(pkg, out var servers);
+        var server = Assert.Single(servers);
+        Assert.Equal("sample-server", server.Name);
+        Assert.Contains(pkg.RootPath, server.Arguments[0]);
+    }
+
     private static void WriteManifest(string pluginDir, string name, string version)
     {
         Directory.CreateDirectory(pluginDir);
