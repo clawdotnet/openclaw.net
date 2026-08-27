@@ -57,3 +57,15 @@ public sealed class AgentPluginPackage
     /// <summary>MCP server configurations.</summary>
     public List<McpServerConfig> McpServers { get; init; } = [];
 }
+
+/// <summary>
+/// Result of Agent Plugin discovery: discovered packages plus structured load reports for invalid entries.
+/// </summary>
+public sealed class AgentPluginDiscoveryResult
+{
+    /// <summary>Successfully discovered Agent Plugin packages.</summary>
+    public List<AgentPluginPackage> Packages { get; } = [];
+
+    /// <summary>Per-plugin load reports for diagnostics and status surfaces.</summary>
+    public List<PluginLoadReport> Reports { get; } = [];
+}

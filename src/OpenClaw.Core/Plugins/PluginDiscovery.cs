@@ -105,6 +105,196 @@ public static class PluginDiscovery
         return result;
     }
 
+    // --- Agent Plugin 1.0 discovery ---
+
+    private const string AgentPluginManifestFileName = "plugin.json";
+    private const string AgentPluginSkillsDirName = "skills";
+    private const string AgentPluginMcpFileName = "mcp.json";
+    private const string AgentPluginSchema = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
+
+    /// <summary>
+    /// Discover Agent Plugins from standard locations and configured paths.
+    /// Compatible with the Agent Plugins 1.0 specification.
+    /// </summary>
+    public static List<AgentPluginPackage> DiscoverAgentPlugins(
+        PluginsConfig pluginsConfig,
+        string? workspacePath = null)
+        => DiscoverAgentPluginsWithDiagnostics(pluginsConfig, workspacePath).Packages;
+
+    /// <summary>
+    /// Discover Agent Plugins plus structured diagnostics for invalid entries.
+    /// </summary>
+    public static AgentPluginDiscoveryResult DiscoverAgentPluginsWithDiagnostics(
+        PluginsConfig pluginsConfig,
+        string? workspacePath = null)
+    {
+        var result = new AgentPluginDiscoveryResult();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        // 1. Config paths (explicit Plugins:Load:Paths)
+        foreach (var configPath in pluginsConfig.Load.Paths)
+        {
+            var expanded = ExpandPath(configPath);
+            if (Directory.Exists(expanded))
+                ScanForAgentPlugins(expanded, seen, result);
+        }
+
+        // 2. Workspace plugins/
+        if (!string.IsNullOrEmpty(workspacePath))
+        {
+            var wsPluginsDir = Path.Combine(workspacePath, "plugins");
+            if (Directory.Exists(wsPluginsDir))
+                ScanForAgentPlugins(wsPluginsDir, seen, result);
+        }
+
+        // 3. User-level ~/.openclaw/plugins/
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var userPluginsDir = Path.Combine(home, ".openclaw", "plugins");
+        if (Directory.Exists(userPluginsDir))
+            ScanForAgentPlugins(userPluginsDir, seen, result);
+
+        return result;
+    }
+
+    private static void ScanForAgentPlugins(string dir, HashSet<string> seen, AgentPluginDiscoveryResult result)
+    {
+        foreach (var subDir in Directory.EnumerateDirectories(dir))
+        {
+            var manifestPath = Path.Combine(subDir, AgentPluginManifestFileName);
+            if (File.Exists(manifestPath))
+                TryAddAgentPlugin(subDir, manifestPath, seen, result);
+        }
+    }
+
+    private static void TryAddAgentPlugin(string pluginRoot, string manifestPath, HashSet<string> seen, AgentPluginDiscoveryResult result)
+    {
+        AgentPluginManifest? manifest;
+        try
+        {
+            using var stream = File.OpenRead(manifestPath);
+            manifest = JsonSerializer.Deserialize(stream, CoreJsonContext.Default.AgentPluginManifest);
+        }
+        catch (Exception ex)
+        {
+            result.Reports.Add(new PluginLoadReport
+            {
+                PluginId = Path.GetFileName(pluginRoot),
+                SourcePath = Path.GetFullPath(pluginRoot),
+                Loaded = false,
+                Diagnostics = [new PluginCompatibilityDiagnostic
+                {
+                    Code = "invalid_agent_plugin_manifest",
+                    Message = $"Failed to parse plugin.json: {ex.Message}",
+                    Path = manifestPath
+                }]
+            });
+            return;
+        }
+
+        if (manifest is null)
+        {
+            result.Reports.Add(new PluginLoadReport
+            {
+                PluginId = Path.GetFileName(pluginRoot),
+                SourcePath = Path.GetFullPath(pluginRoot),
+                Loaded = false,
+                Diagnostics = [new PluginCompatibilityDiagnostic
+                {
+                    Code = "invalid_agent_plugin_manifest",
+                    Message = "Manifest is null after deserialization.",
+                    Path = manifestPath
+                }]
+            });
+            return;
+        }
+
+        if (!ValidateManifest(manifest, out var validationErrors))
+        {
+            result.Reports.Add(new PluginLoadReport
+            {
+                PluginId = Path.GetFileName(pluginRoot),
+                SourcePath = Path.GetFullPath(pluginRoot),
+                Loaded = false,
+                Diagnostics = validationErrors
+            });
+            return;
+        }
+
+        if (!seen.Add(manifest.Name))
+        {
+            result.Reports.Add(new PluginLoadReport
+            {
+                PluginId = manifest.Name,
+                SourcePath = Path.GetFullPath(pluginRoot),
+                Loaded = false,
+                Diagnostics = [new PluginCompatibilityDiagnostic
+                {
+                    Code = "duplicate_plugin_id",
+                    Message = $"Plugin name '{manifest.Name}' was discovered more than once. Later entries are skipped.",
+                    Path = manifestPath
+                }]
+            });
+            return;
+        }
+
+        var pkg = new AgentPluginPackage
+        {
+            Manifest = manifest,
+            RootPath = Path.GetFullPath(pluginRoot),
+            SkillsPath = Directory.Exists(Path.Combine(pluginRoot, AgentPluginSkillsDirName))
+                ? Path.Combine(pluginRoot, AgentPluginSkillsDirName)
+                : null,
+            McpConfigPath = File.Exists(Path.Combine(pluginRoot, AgentPluginMcpFileName))
+                ? Path.Combine(pluginRoot, AgentPluginMcpFileName)
+                : null
+        };
+
+        result.Packages.Add(pkg);
+    }
+
+    private static bool ValidateManifest(AgentPluginManifest manifest, out PluginCompatibilityDiagnostic[] errors)
+    {
+        var list = new List<PluginCompatibilityDiagnostic>();
+
+        if (string.IsNullOrWhiteSpace(manifest.Name))
+            list.Add(new PluginCompatibilityDiagnostic { Code = "missing_name", Message = "plugin.json must have a 'name' field", Path = "" });
+
+        if (string.IsNullOrWhiteSpace(manifest.Version))
+            list.Add(new PluginCompatibilityDiagnostic { Code = "missing_version", Message = "plugin.json must have a 'version' field", Path = "" });
+
+        if (string.IsNullOrWhiteSpace(manifest.Description))
+            list.Add(new PluginCompatibilityDiagnostic { Code = "missing_description", Message = "plugin.json must have a 'description' field", Path = "" });
+
+        if (string.IsNullOrWhiteSpace(manifest.License))
+            list.Add(new PluginCompatibilityDiagnostic { Code = "missing_license", Message = "plugin.json must have a 'license' field", Path = "" });
+
+        // Schema validation - local constant comparison, no network access
+        if (!string.IsNullOrWhiteSpace(manifest.Schema) && manifest.Schema != AgentPluginSchema)
+        {
+            // Unknown schema produces a warning but does not block loading
+            list.Add(new PluginCompatibilityDiagnostic
+            {
+                Severity = "warning",
+                Code = "unknown_schema",
+                Message = $"Unknown schema '{manifest.Schema}'. Expected '{AgentPluginSchema}'.",
+                Path = ""
+            });
+        }
+
+        errors = list.ToArray();
+        return list.All(e => e.Severity != "error");
+    }
+
+    private static string ExpandPath(string path)
+    {
+        var expanded = Environment.ExpandEnvironmentVariables(path);
+        if (expanded.StartsWith('~'))
+            expanded = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                expanded[1..].TrimStart('/').TrimStart('\\'));
+        return expanded;
+    }
+
     private static void ScanExtensionsDirectory(string extensionsDir, HashSet<string> seen, PluginDiscoveryResult result)
     {
         // Scan for *.ts, *.js, and *.mjs files directly in extensions/

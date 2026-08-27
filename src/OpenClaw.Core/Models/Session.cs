@@ -1065,6 +1065,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(IDictionary<string, object?>))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(PluginManifest))]
+[JsonSerializable(typeof(AgentPluginManifest))]
 [JsonSerializable(typeof(PluginsConfig))]
 [JsonSerializable(typeof(PluginLoadConfig))]
 [JsonSerializable(typeof(PluginEntryConfig))]
