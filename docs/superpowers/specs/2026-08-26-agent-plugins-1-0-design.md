@@ -2,9 +2,9 @@
 
 ## 目标
 
-为 OpenClaw.NET 增加 Agent Plugins 1.0.0 可移植插件格式的核心兼容层，同时保留现有 `openclaw.plugin.json` 插件格式。两种格式并行发现，内部通过独立适配模型接入现有技能加载器和 MCP 运行时。
+为 OpenClaw.NET 增加 Agent Plugins 1.0.0 可移植插件格式的核心兼容层，同时保留现有 `openclaw.plugin.json` 插件格式。两种格式并行发现，内部通过独立适配模型接入现有技能加载器和 MCP 运行时。Agent Plugin 的完整发现面是 `plugin.json` → `mcp.json` → `skills/`；客户端不读取或执行服务器源代码来推断插件能力。
 
-本期只覆盖本地插件包的发现、验证、技能加载、MCP 配置适配和运行时刷新。不包含 GitHub 安装/更新/卸载、管理 UI、专家团、IM 或定时任务。
+本期只覆盖本地插件包的发现、验证、技能加载、MCP 配置适配和运行时刷新。不包含 GitHub 安装/更新/卸载、管理 UI。
 
 ## 包格式
 
@@ -18,7 +18,7 @@ plugins/<name>/
 └── mcp.json
 ```
 
-`plugin.json` 必须包含 `name`、`version`、`description` 和 `license`。`$schema` 必须精确匹配本地常量：
+`plugin.json` 必须包含 `name`、`version`、`description` 和 `license`，并可通过 `keywords` 提供注册表和客户端用于发现的关键词。`$schema` 必须精确匹配本地常量：
 
 ```text
 https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
@@ -27,6 +27,16 @@ https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
 加载时不联网获取 schema。未知字段忽略；`extensions` 字段和 `com.*` 反向域名扩展目录不读取、不校验。
 
 技能发现只检查 `skills/` 的直接子目录，并且只接受名字精确为 `SKILL.md` 的文件，不递归扫描。有效技能通过现有 `SkillLoader` 进入技能优先级链；插件带来的技能是只读的，不能单独移除。
+
+## 完整发现面
+
+Agent 客户端只依赖插件包中的三个标准构件理解插件的功能和集成需求：
+
+- `plugin.json`：提供插件身份、版本、描述、许可证、关键词和规范版本，是注册表及客户端读取的顶层入口契约。
+- `mcp.json`：声明插件提供的 MCP 服务器、传输方式、启动参数、环境变量、工作目录和连接地址，是 MCP 集成需求的唯一来源。
+- `skills/`：提供可被发现和加载的 Agent Skills；每个直接子目录中的 `SKILL.md` 自描述该技能何时以及如何调用相关工具。
+
+这三个构件共同构成可移植插件的静态能力描述，并将三类关注点解耦：服务器能做什么由 MCP 工具实现决定，如何访问由 `mcp.json` 决定，何时以及如何使用由 `skills/` 决定。客户端无需检查服务器内部实现即可获得发现、配置和调用所需的上下文。服务器源代码、构建产物之外的私有目录、`extensions` 字段和 `com.*` 扩展目录都不属于 OpenClaw.NET 的发现面，不读取、不执行、不用于补全或覆盖标准构件声明。构件缺失时按各自的可选性处理：清单始终必需，缺少 `mcp.json` 表示没有 MCP 集成，缺少 `skills/` 表示没有技能；存在但不合规的构件则按后文失败边界处理。
 
 ## 发现与适配
 
@@ -113,6 +123,7 @@ Agent Plugins 核心层只处理 JSON、文件系统路径、技能内容和现�
 - 两种插件格式并存且互不破坏。
 - 发现目录优先级和同名覆盖。
 - schema、必需字段、未知字段和扩展字段处理。
+- 客户端仅凭 `plugin.json`、`mcp.json` 和 `skills/` 识别能力，不读取服务器源代码或私有扩展目录。
 - 只发现 `skills/` 直接子目录中的 `SKILL.md`。
 - `${PLUGIN_ROOT}`、`${PLUGIN_DATA}` 展开和数据目录保留。
 - 路径穿越、绝对路径和非法工作目录拒绝。
@@ -129,6 +140,3 @@ Agent Plugins 核心层只处理 JSON、文件系统路径、技能内容和现�
 - GitHub 稀疏浅克隆、临时目录验证、原子安装和来源记录。
 - 更新、卸载和插件数据目录管理 API。
 - 管理 UI 的插件卡片、跳过零件提示和只读组件展示。
-- 专家、专家团、IM 渠道和统一对话历史。
-- 定时任务、错过补跑和并发互斥。
-- 全面的安全中心、命令审批和审计日志。
