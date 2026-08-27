@@ -134,6 +134,7 @@ public static class AgentPluginMcpAdapter
             args = argsEl.EnumerateArray()
                 .Where(e => e.ValueKind == JsonValueKind.String)
                 .Select(e => e.GetString()!)
+                .Select(a => ExpandVariables(a, package.RootPath, package.Manifest.Name))
                 .ToArray();
         }
 
