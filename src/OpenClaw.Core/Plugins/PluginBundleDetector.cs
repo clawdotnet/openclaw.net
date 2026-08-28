@@ -168,6 +168,11 @@ internal static class PluginBundleDetector
             return "cursor";
         }
 
+        // Agent Plugins 1.0 packages are identified by a root plugin.json and are owned by
+        // the Agent Plugin discovery pipeline; never classify them as Claude content bundles.
+        if (File.Exists(Path.Combine(rootPath, "plugin.json")))
+            return null;
+
         if (Directory.Exists(Path.Combine(rootPath, "skills")) ||
             Directory.Exists(Path.Combine(rootPath, "commands")) ||
             Directory.Exists(Path.Combine(rootPath, "agents")) ||
