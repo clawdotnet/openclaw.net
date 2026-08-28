@@ -220,6 +220,22 @@ public static class PluginDiscovery
             return;
         }
 
+        // 非致命（warning）诊断不阻止加载，但也不能被静默吞掉：通过 Reports 暴露给
+        // 网关的诊断面（unknown_schema 等），随后由 AgentPluginRuntimeManager 汇总。
+        var warningDiagnostics = validationErrors
+            .Where(d => !string.Equals(d.Severity, "error", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (warningDiagnostics.Length > 0)
+        {
+            result.Reports.Add(new PluginLoadReport
+            {
+                PluginId = manifest.Name,
+                SourcePath = Path.GetFullPath(pluginRoot),
+                Loaded = true,
+                Diagnostics = warningDiagnostics
+            });
+        }
+
         if (!seen.Add(manifest.Name))
         {
             result.Reports.Add(new PluginLoadReport
@@ -257,7 +273,19 @@ public static class PluginDiscovery
         var list = new List<PluginCompatibilityDiagnostic>();
 
         if (string.IsNullOrWhiteSpace(manifest.Name))
+        {
             list.Add(new PluginCompatibilityDiagnostic { Code = "missing_name", Message = "plugin.json must have a 'name' field", Path = "" });
+        }
+        else if (!IsSafeNameSegment(manifest.Name))
+        {
+            // name 也用于 ${PLUGIN_DATA} 目录名和 MCP server id（plugin/server），必须是单个安全路径段
+            list.Add(new PluginCompatibilityDiagnostic
+            {
+                Code = "invalid_agent_plugin_name",
+                Message = $"plugin.json 'name' must be a single safe path segment (no separators, '.', or '..'), got '{manifest.Name}'.",
+                Path = ""
+            });
+        }
 
         if (string.IsNullOrWhiteSpace(manifest.Version))
             list.Add(new PluginCompatibilityDiagnostic { Code = "missing_version", Message = "plugin.json must have a 'version' field", Path = "" });
@@ -269,7 +297,8 @@ public static class PluginDiscovery
             list.Add(new PluginCompatibilityDiagnostic { Code = "missing_license", Message = "plugin.json must have a 'license' field", Path = "" });
 
         // Schema validation - local constant comparison, no network access
-        if (!string.IsNullOrWhiteSpace(manifest.Schema) && manifest.Schema != AgentPluginSchema)
+        var schemaValue = manifest.Schema ?? manifest.SchemaDollar;
+        if (!string.IsNullOrWhiteSpace(schemaValue) && schemaValue != AgentPluginSchema)
         {
             // Unknown schema produces a warning but does not block loading
             list.Add(new PluginCompatibilityDiagnostic
@@ -283,6 +312,15 @@ public static class PluginDiscovery
 
         errors = list.ToArray();
         return list.All(e => e.Severity != "error");
+    }
+
+    private static bool IsSafeNameSegment(string name)
+    {
+        if (name is "" or "." or "..")
+            return false;
+        if (!string.Equals(Path.GetFileName(name), name, StringComparison.Ordinal))
+            return false;
+        return !name.Contains('/') && !name.Contains('\\');
     }
 
     private static string ExpandPath(string path)

@@ -200,11 +200,8 @@ public static class AgentPluginMcpAdapter
             });
         }
 
-        // Streamable HTTP manual redirect - 不转发 headers
-        if (transport == "http" && url is { })
-        {
-            headers.Clear(); // manual redirect 策略
-        }
+        // 初始请求保留配置的 headers（Streamable HTTP 认证需要）。manual redirect 时不把
+        // headers 转发给重定向目标的策略由传输层实现（此处不在解析期清空 headers）。
 
         var serverConfig = new McpServerConfig
         {
@@ -245,22 +242,22 @@ public static class AgentPluginMcpAdapter
     private static bool IsPathSafe(string path, string pluginRoot)
     {
         // 变量已展开：${PLUGIN_ROOT} 展开后可能是绝对路径，因此不能直接拒绝根路径。
-        // 规则：解析后的最终路径必须落在 pluginRoot 之内（等于 plugin root 本身或其
-        // 后代），拒绝解析到 pluginRoot 之外或逃逸出去的路径（如 ../../../etc）。
+        // 复用遗留路径的包含检查（TryResolveContainedPath 会解析符号链接，防止通过
+        // 插件根内的符号链接逃逸到插件根之外）。
         try
         {
             var fullPath = Path.IsPathRooted(path)
                 ? Path.GetFullPath(path)
                 : Path.GetFullPath(Path.Combine(pluginRoot, path));
 
-            var fullRoot = Path.GetFullPath(pluginRoot);
+            var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(pluginRoot));
 
-            var comparison = OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal;
+            var relative = Path.GetRelativePath(fullRoot, fullPath);
+            if (Path.IsPathRooted(relative) ||
+                relative.StartsWith("..", StringComparison.Ordinal))
+                return false;
 
-            return string.Equals(fullPath, fullRoot, comparison) ||
-                   fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, comparison);
+            return PluginDiscovery.TryResolveContainedPath(fullRoot, relative, out _);
         }
         catch
         {

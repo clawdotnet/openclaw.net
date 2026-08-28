@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace OpenClaw.Core.Plugins;
 
 /// <summary>
@@ -29,6 +31,10 @@ public sealed class AgentPluginManifest
 
     /// <summary>JSON Schema for plugin configuration.</summary>
     public string? Schema { get; init; }
+
+    /// <summary>Canonical JSON-Schema property name ($schema) for the plugin manifest schema.</summary>
+    [JsonPropertyName("$schema")]
+    public string? SchemaDollar { get; init; }
 
     /// <summary>Author information.</summary>
     public string? Author { get; init; }

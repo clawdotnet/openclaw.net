@@ -94,6 +94,48 @@ public class AgentPluginDiscoveryTests
     }
 
     [Fact]
+    public void DiscoverAgentPlugins_UnknownSchemaDollar_WarnsAndLoads()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var pluginDir = Path.Combine(tempDir, "schema-plugin");
+            Directory.CreateDirectory(pluginDir);
+            // Spec-canonical property name is $schema; a mismatched value must not block
+            // loading but must surface an unknown_schema warning.
+            File.WriteAllText(Path.Combine(pluginDir, "plugin.json"), """
+            {
+              "$schema": "https://example.invalid/schema.json",
+              "name": "schema-plugin",
+              "version": "1.0.0",
+              "description": "Test plugin",
+              "license": "MIT"
+            }
+            """);
+
+            var config = new PluginsConfig
+            {
+                Load = new PluginLoadConfig { Paths = [tempDir] }
+            };
+
+            var result = PluginDiscovery.DiscoverAgentPluginsWithDiagnostics(config);
+
+            // The warning is non-fatal: the package still loads...
+            Assert.Contains(result.Packages, p => p.Manifest.Name == "schema-plugin");
+            // ...but the unknown-schema warning is surfaced on the report, not silently dropped.
+            var report = Assert.Single(result.Reports);
+            var warning = Assert.Single(report.Diagnostics);
+            Assert.Equal("warning", warning.Severity);
+            Assert.Equal("unknown_schema", warning.Code);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
     public void AgentPluginSkillLoader_FindsSkillsInDirectSubdirs()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
@@ -312,7 +354,7 @@ public class AgentPluginDiscoveryTests
     }
 
     [Fact]
-    public void AgentPluginMcpAdapter_ManualRedirectClearsHeaders()
+    public void AgentPluginMcpAdapter_PreservesHeadersForHttpInitialRequest()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(tempDir);
@@ -327,7 +369,7 @@ public class AgentPluginDiscoveryTests
                 "http-server": {
                   "url": "http://localhost:4000/mcp",
                   "headers": {
-                    "Authorization": "Bearer secret"
+                    "Authorization": "Bearer token"
                   }
                 }
               }
@@ -352,8 +394,10 @@ public class AgentPluginDiscoveryTests
             Assert.Empty(diagnostics);
             var server = Assert.Single(servers);
             Assert.Equal("http", server.Transport);
-            // Streamable HTTP uses manual redirect: configured headers must NOT be forwarded.
-            Assert.Empty(server.Headers);
+            // The adapter preserves configured headers for the initial Streamable HTTP request
+            // (authentication depends on them). Whether headers are forwarded to a redirect
+            // target is a transport-layer policy, not something cleared at parse time.
+            Assert.Equal("Bearer token", server.Headers["Authorization"]);
         }
         finally
         {
@@ -401,6 +445,54 @@ public class AgentPluginDiscoveryTests
             Assert.Empty(diagnostics);
             var server = Assert.Single(servers);
             Assert.Equal(pluginDir, server.WorkingDirectory);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void AgentPluginMcpAdapter_RejectsRootedCwdOutsideRoot()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var pluginDir = Path.Combine(tempDir, "test-plugin");
+            Directory.CreateDirectory(pluginDir);
+            WriteManifest(pluginDir, "test-plugin", "1.0.0");
+            var outsideCwd = Path.Combine(Path.GetTempPath(), "outside-plugin-root");
+            // 反斜杠必须在 JSON 中转义（Windows 绝对路径），否则 mcp.json 无法解析。
+            var escapedCwd = outsideCwd.Replace("\\", "\\\\");
+            File.WriteAllText(Path.Combine(pluginDir, "mcp.json"), $$"""
+            {
+              "mcpServers": {
+                "test-server": {
+                  "command": "npx",
+                  "cwd": "{{escapedCwd}}"
+                }
+              }
+            }
+            """);
+            var pkg = new AgentPluginPackage
+            {
+                Manifest = new AgentPluginManifest
+                {
+                    Name = "test-plugin",
+                    Version = "1.0.0",
+                    Description = "Test",
+                    License = "MIT"
+                },
+                RootPath = pluginDir,
+                McpConfigPath = Path.Combine(pluginDir, "mcp.json")
+            };
+
+            var diagnostics = AgentPluginMcpAdapter.LoadMcpConfigs(pkg, out var servers);
+
+            Assert.Empty(servers);
+            var diagnostic = Assert.Single(diagnostics);
+            Assert.Equal("unsafe_cwd_path", diagnostic.Code);
         }
         finally
         {

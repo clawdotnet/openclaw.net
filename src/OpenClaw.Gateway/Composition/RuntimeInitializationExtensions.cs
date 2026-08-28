@@ -147,6 +147,17 @@ internal static partial class RuntimeInitializationExtensions
             agentPluginRuntime = new AgentPluginRuntimeManager(config.Plugins, resolvedRuntimeWorkspacePath, agentPluginLogger);
             var agentPluginRefresh = await agentPluginRuntime.RefreshAsync();
             combinedPluginSkillRoots.AddRange(agentPluginRefresh.SkillDirectories);
+
+            // 失败边界：不静默吞掉诊断——启动时逐条记录（错误→LogError，警告→LogWarning）
+            foreach (var diag in agentPluginRefresh.Diagnostics)
+            {
+                if (string.Equals(diag.Severity, "error", StringComparison.OrdinalIgnoreCase))
+                    agentPluginLogger.LogError("Agent Plugin {Surface} issue at {Path}: {Code} — {Message}",
+                        diag.Surface, diag.Path, diag.Code, diag.Message);
+                else
+                    agentPluginLogger.LogWarning("Agent Plugin {Surface} notice at {Path}: {Code} — {Message}",
+                        diag.Surface, diag.Path, diag.Code, diag.Message);
+            }
         }
 
         var skillLogger = loggerFactory.CreateLogger("SkillLoader");
