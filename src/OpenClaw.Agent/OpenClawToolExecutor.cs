@@ -1328,11 +1328,54 @@ public sealed class OpenClawToolExecutor
         if (extension.Equals(".ps1", StringComparison.OrdinalIgnoreCase))
         {
             prefixArguments = ["-NoProfile", "-File", scriptAbsolutePath];
-            return OperatingSystem.IsWindows() ? "pwsh" : "pwsh";
+            return ResolvePowerShellExecutable();
         }
 
         prefixArguments = [scriptAbsolutePath];
         return scriptAbsolutePath;
+    }
+
+    /// <summary>
+    /// Picks a PowerShell interpreter for <c>.ps1</c> skill entrypoints: <c>pwsh</c> (PowerShell 7+)
+    /// when available, falling back to Windows PowerShell <c>powershell.exe</c> on Windows so scripts
+    /// still run on hosts without PowerShell Core installed. On non-Windows, <c>pwsh</c> is the only
+    /// interpreter and a missing install surfaces as a clear Process.Start error.
+    /// </summary>
+    private static string ResolvePowerShellExecutable()
+    {
+        if (ExecutableOnPath("pwsh"))
+            return "pwsh";
+        if (OperatingSystem.IsWindows() && ExecutableOnPath("powershell"))
+            return "powershell";
+        return "pwsh";
+    }
+
+    private static bool ExecutableOnPath(string fileName)
+    {
+        var pathValue = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrWhiteSpace(pathValue))
+            return false;
+
+        var candidates = OperatingSystem.IsWindows()
+            ? new[] { $"{fileName}.exe", $"{fileName}.cmd", $"{fileName}.bat" }
+            : new[] { fileName };
+
+        foreach (var directory in pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            foreach (var candidate in candidates)
+            {
+                try
+                {
+                    if (File.Exists(Path.Combine(directory, candidate)))
+                        return true;
+                }
+                catch (ArgumentException)
+                {
+                    // Malformed PATH entry — ignore and keep scanning.
+                }
+            }
+        }
+        return false;
     }
 
     private static string NormalizeSkillExecOutput(string parseMode, string stdout, string stderr)
