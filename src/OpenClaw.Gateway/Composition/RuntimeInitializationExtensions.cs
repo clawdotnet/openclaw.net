@@ -135,7 +135,7 @@ internal static partial class RuntimeInitializationExtensions
             resolveLogger);
 
         var combinedPluginSkillRoots = CollectPluginSkillRoots(pluginComposition);
-        var agentPluginRuntime = await RefreshAgentPluginsAsync(config.Plugins, resolvedRuntimeWorkspacePath, loggerFactory, combinedPluginSkillRoots);
+        var agentPluginRuntime = RefreshAgentPlugins(config.Plugins, resolvedRuntimeWorkspacePath, loggerFactory, combinedPluginSkillRoots);
 
         var skillLogger = loggerFactory.CreateLogger("SkillLoader");
         var skills = SkillLoader.LoadAll(config.Skills, resolvedRuntimeWorkspacePath, skillLogger, combinedPluginSkillRoots);
@@ -216,6 +216,9 @@ internal static partial class RuntimeInitializationExtensions
             startup,
             agentRuntime,
             agentPluginRuntime is null ? null : () => agentPluginRuntime.GetMcpConfigs());
+        _ = StartAgentPluginWatcher(
+            app, agentPluginRuntime, resolvedRuntimeWorkspacePath, config.Plugins,
+            agentRuntime, skillWatcher, mcpWatcher, loggerFactory);
 
         await services.AutomationService.RefreshCacheAsync(app.Lifetime.ApplicationStopping);
         var cronScheduler = app.Services.GetRequiredService<CronScheduler>();

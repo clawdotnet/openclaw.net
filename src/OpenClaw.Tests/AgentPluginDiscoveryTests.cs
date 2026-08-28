@@ -236,13 +236,46 @@ public class AgentPluginDiscoveryTests
             // carried ${PLUGIN_ROOT} was expanded to the plugin root.
             Assert.Contains(servers[0].Arguments, arg => arg.Contains(pluginDir, StringComparison.Ordinal));
             // The adapter expands ${PLUGIN_ROOT} to the plugin root and ${PLUGIN_DATA} to the
-            // shared plugin-data/<name> directory. Assert the actual expanded values, not just
-            // that the keys are present (pins the "数据目录保留" contract).
+            // ~/.openclaw/plugin-data/<name> directory (the toolchain storage root convention,
+            // NOT %APPDATA%\openclaw). Assert the actual expanded values, not just that the keys
+            // are present (pins the "数据目录保留" contract).
             Assert.Contains(pluginDir, servers[0].Environment["PLUGIN_ROOT"], StringComparison.Ordinal);
-            Assert.Contains(
-                Path.Combine("openclaw", "plugin-data", "test-plugin"),
-                servers[0].Environment["PLUGIN_DATA"],
-                StringComparison.Ordinal);
+            var expectedPluginData = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".openclaw",
+                "plugin-data",
+                "test-plugin");
+            Assert.Equal(expectedPluginData, servers[0].Environment["PLUGIN_DATA"]);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void GetAgentPluginDiscoveryRoots_PreservesOrder_ConfigThenWorkspaceThenUser()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var config = new PluginsConfig();
+            config.Load.Paths = [tempDir];
+            var workspace = Path.Combine(tempDir, "ws");
+
+            var roots = PluginDiscovery.GetAgentPluginDiscoveryRoots(config, workspace);
+
+            // Precedence: config Plugins:Load:Paths, then workspace plugins/, then user ~/.openclaw/plugins/.
+            // The runtime watcher (AgentPluginWatcherService) watches exactly these roots, so pin the order.
+            Assert.Equal(tempDir, roots[0]);
+            Assert.Equal(Path.Combine(workspace, "plugins"), roots[1]);
+            Assert.Equal(
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".openclaw",
+                    "plugins"),
+                roots[2]);
         }
         finally
         {

@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text;
@@ -347,12 +348,19 @@ public sealed class McpAppServer : IAsyncDisposable
                 EnvironmentVariables = ResolveEnvironment(),
                 Name = manifest.Id,
             }),
-            "http" => new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(_entryConfig?.Url ?? manifest.Url!),
-                AdditionalHeaders = ResolveHeaders(),
-                Name = manifest.Id,
-            }),
+            "http" => new HttpClientTransport(
+                new HttpClientTransportOptions
+                {
+                    Endpoint = new Uri(_entryConfig?.Url ?? manifest.Url!),
+                    AdditionalHeaders = ResolveHeaders(),
+                    Name = manifest.Id,
+                },
+                new HttpClient(new HttpClientHandler
+                {
+                    // Manual redirect policy: never follow 3xx automatically so authenticated headers
+                    // are not forwarded to a redirect target. Mirrors McpServerToolRegistry.CreateHttpTransport.
+                    AllowAutoRedirect = false
+                })),
             _ => throw new InvalidOperationException($"Unsupported MCP transport '{transport}' for app '{manifest.Id}'.")
         };
 

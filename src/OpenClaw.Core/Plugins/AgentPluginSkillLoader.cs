@@ -4,27 +4,6 @@ public static class AgentPluginSkillLoader
 {
     private const string SkillFileName = "SKILL.md";
 
-    public static List<string> GetSkillDirectories(List<AgentPluginPackage> packages)
-    {
-        var dirs = new List<string>();
-        foreach (var pkg in packages)
-        {
-            if (!string.IsNullOrEmpty(pkg.SkillsPath) && Directory.Exists(pkg.SkillsPath))
-            {
-                // 只扫描直接子目录
-                foreach (var skillDir in Directory.EnumerateDirectories(pkg.SkillsPath))
-                {
-                    var skillFile = Path.Combine(skillDir, SkillFileName);
-                    if (File.Exists(skillFile))
-                    {
-                        dirs.Add(skillDir);
-                    }
-                }
-            }
-        }
-        return dirs;
-    }
-
     public static List<PluginCompatibilityDiagnostic> ValidateSkills(
         AgentPluginPackage package,
         out List<string> validSkillNames)

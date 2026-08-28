@@ -59,9 +59,6 @@ public sealed class AgentPluginPackage
 
     /// <summary>List of skill directories or files.</summary>
     public List<string> Skills { get; init; } = [];
-
-    /// <summary>MCP server configurations.</summary>
-    public List<McpServerConfig> McpServers { get; init; } = [];
 }
 
 /// <summary>

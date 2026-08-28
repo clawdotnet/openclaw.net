@@ -131,29 +131,46 @@ public static class PluginDiscovery
         var result = new AgentPluginDiscoveryResult();
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
+        foreach (var root in GetAgentPluginDiscoveryRoots(pluginsConfig, workspacePath))
+        {
+            if (Directory.Exists(root))
+                ScanForAgentPlugins(root, seen, result);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Returns the Agent Plugin discovery roots in precedence order (config <c>Plugins:Load:Paths</c>,
+    /// then workspace <c>plugins/</c>, then user <c>~/.openclaw/plugins/</c>), with path segments
+    /// environment-expanded. Used both by discovery and by the runtime watcher so it watches exactly
+    /// the roots discovery scans.
+    /// </summary>
+    public static IReadOnlyList<string> GetAgentPluginDiscoveryRoots(
+        PluginsConfig pluginsConfig,
+        string? workspacePath = null)
+    {
+        var roots = new List<string>();
+
         // 1. Config paths (explicit Plugins:Load:Paths)
         foreach (var configPath in pluginsConfig.Load.Paths)
         {
             var expanded = ExpandPath(configPath);
-            if (Directory.Exists(expanded))
-                ScanForAgentPlugins(expanded, seen, result);
+            if (!string.IsNullOrWhiteSpace(expanded))
+                roots.Add(expanded);
         }
 
         // 2. Workspace plugins/
-        if (!string.IsNullOrEmpty(workspacePath))
-        {
-            var wsPluginsDir = Path.Combine(workspacePath, "plugins");
-            if (Directory.Exists(wsPluginsDir))
-                ScanForAgentPlugins(wsPluginsDir, seen, result);
-        }
+        if (!string.IsNullOrWhiteSpace(workspacePath))
+            roots.Add(Path.Combine(workspacePath, "plugins"));
 
         // 3. User-level ~/.openclaw/plugins/
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var userPluginsDir = Path.Combine(home, ".openclaw", "plugins");
-        if (Directory.Exists(userPluginsDir))
-            ScanForAgentPlugins(userPluginsDir, seen, result);
+        roots.Add(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".openclaw",
+            "plugins"));
 
-        return result;
+        return roots;
     }
 
     private static void ScanForAgentPlugins(string dir, HashSet<string> seen, AgentPluginDiscoveryResult result)

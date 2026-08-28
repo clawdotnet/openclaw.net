@@ -72,7 +72,7 @@ public sealed class AgentRuntime : IAgentRuntime
     private readonly SkillsConfig? _skillsConfig;
     private readonly bool _metaSkillsEnabled;
     private readonly string? _skillWorkspacePath;
-    private readonly IReadOnlyList<string> _pluginSkillDirs;
+    private IReadOnlyList<string> _pluginSkillDirs;
     private readonly IRedactionPipeline _redaction;
     private readonly ISentinelSubstitutionService _sentinelSubstitution;
     private readonly string? _memoryRecallPrefix;
@@ -248,6 +248,17 @@ public sealed class AgentRuntime : IAgentRuntime
             logger.LogInformation("No skills loaded.");
 
         return Task.FromResult<IReadOnlyList<string>>(LoadedSkillNames);
+    }
+
+    /// <inheritdoc />
+    public Task SetPluginSkillDirsAsync(IReadOnlyList<string> pluginSkillDirs, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        lock (_skillGate)
+        {
+            _pluginSkillDirs = pluginSkillDirs ?? [];
+        }
+        return Task.CompletedTask;
     }
 
     public Task ApplyMcpToolChangesAsync(

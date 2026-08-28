@@ -44,6 +44,13 @@ public interface IAgentRuntime
 
     Task<IReadOnlyList<string>> ReloadSkillsAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// Replaces the plugin-packaged skill directories used by subsequent skill reloads (e.g. when
+    /// Agent Plugin discovery picks up a newly installed plugin at runtime). Default no-op for
+    /// runtimes that don't consume plugin skill directories.
+    /// </summary>
+    Task SetPluginSkillDirsAsync(IReadOnlyList<string> pluginSkillDirs, CancellationToken ct = default) => Task.CompletedTask;
+
     IAsyncEnumerable<AgentStreamEvent> RunStreamingAsync(
         Session session,
         string userMessage,

@@ -568,7 +568,15 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
         }
 
         private static HttpClientHandler CreateHttpClientHandler()
-            => new();
+            => new()
+            {
+                // Manual redirect policy (shared transport code — applies to every http MCP server):
+                // never follow HTTP redirects automatically. A 3xx response therefore surfaces as a
+                // logged connection failure so the caller stops and reports, instead of silently
+                // re-sending the authenticated request (with its Authorization/other headers) to the
+                // redirect target. MCP Streamable HTTP does not require auto-redirect handling.
+                AllowAutoRedirect = false
+            };
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,

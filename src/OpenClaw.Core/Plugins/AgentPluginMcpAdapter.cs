@@ -4,8 +4,6 @@ namespace OpenClaw.Core.Plugins;
 
 public static class AgentPluginMcpAdapter
 {
-    private const string SchemaUrl = "https://modelcontext.dev/json/1.0/schema.json";
-
     public static List<PluginCompatibilityDiagnostic> LoadMcpConfigs(
         AgentPluginPackage package,
         out List<McpServerConfig> servers)
@@ -228,9 +226,11 @@ public static class AgentPluginMcpAdapter
         // ${PLUGIN_DATA}
         if (value.Contains("${PLUGIN_DATA}"))
         {
+            // 遵循 ~/.openclaw 工具链惯例（managed skills、extensions、plugins 均在此根下），
+            // 而非 %APPDATA%\openclaw。规范要求落在"现有网关存储根目录下"。
             var pluginDataDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "openclaw",
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".openclaw",
                 "plugin-data",
                 pluginName);
             value = value.Replace("${PLUGIN_DATA}", pluginDataDir);

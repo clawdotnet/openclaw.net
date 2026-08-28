@@ -16,7 +16,7 @@ internal sealed class SkillWatcherService : IAsyncDisposable, IDisposable
     });
     private readonly List<FileSystemWatcher> _watchers = [];
     private readonly object _gate = new();
-    private readonly string[] _watchRoots;
+    private readonly HashSet<string> _watchedRoots = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _reloadLoopCts;
     private Task? _reloadLoopTask;
     private CancellationToken _stoppingToken;
@@ -34,13 +34,16 @@ internal sealed class SkillWatcherService : IAsyncDisposable, IDisposable
         _agentRuntime = agentRuntime;
         _logger = logger;
         _onSkillsReloaded = onSkillsReloaded;
-        _watchRoots = GetWatchRoots(config, workspacePath, pluginSkillDirs)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        foreach (var root in GetWatchRoots(config, workspacePath, pluginSkillDirs)
+            .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            _watchedRoots.Add(root);
+        }
     }
 
     public void Start(CancellationToken stoppingToken)
     {
+        string[] roots;
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -51,52 +54,12 @@ internal sealed class SkillWatcherService : IAsyncDisposable, IDisposable
             _stoppingToken = stoppingToken;
             _reloadLoopCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             _reloadLoopTask = RunReloadLoopAsync(_reloadLoopCts.Token);
+            roots = [.. _watchedRoots];
         }
 
-        foreach (var root in _watchRoots)
+        foreach (var root in roots)
         {
-            try
-            {
-                Directory.CreateDirectory(root);
-
-                var watcher = new FileSystemWatcher(root, "SKILL.md")
-                {
-                    IncludeSubdirectories = true,
-                    NotifyFilter = NotifyFilters.CreationTime |
-                                   NotifyFilters.DirectoryName |
-                                   NotifyFilters.FileName |
-                                   NotifyFilters.LastWrite |
-                                   NotifyFilters.Size,
-                    EnableRaisingEvents = true
-                };
-
-                watcher.Changed += OnWatcherChanged;
-                watcher.Created += OnWatcherChanged;
-                watcher.Deleted += OnWatcherChanged;
-                watcher.Renamed += OnWatcherRenamed;
-                _watchers.Add(watcher);
-
-                // Also watch contract files (artifacts.json, projection indexes, etc.)
-                var jsonWatcher = new FileSystemWatcher(root, "*.json")
-                {
-                    IncludeSubdirectories = true,
-                    NotifyFilter = NotifyFilters.CreationTime |
-                                   NotifyFilters.FileName |
-                                   NotifyFilters.LastWrite |
-                                   NotifyFilters.Size,
-                    EnableRaisingEvents = true
-                };
-
-                jsonWatcher.Changed += OnWatcherChanged;
-                jsonWatcher.Created += OnWatcherChanged;
-                jsonWatcher.Deleted += OnWatcherChanged;
-                jsonWatcher.Renamed += OnWatcherRenamed;
-                _watchers.Add(jsonWatcher);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to watch skill directory {Path}", root);
-            }
+            CreateWatchersForRoot(root);
         }
 
         if (_watchers.Count == 0)
@@ -106,6 +69,78 @@ internal sealed class SkillWatcherService : IAsyncDisposable, IDisposable
         }
 
         _logger.LogInformation("Watching {Count} skill watchers for SKILL.md and contract JSON changes.", _watchers.Count);
+    }
+
+    /// <summary>
+    /// Adds a plugin skill directory to the watch set at runtime (used when Agent Plugin discovery
+    /// finds a newly installed plugin). Creates watchers immediately if already started; otherwise
+    /// the root is picked up by a later Start().
+    /// </summary>
+    internal void AddWatchRoot(string root)
+    {
+        if (string.IsNullOrWhiteSpace(root))
+            return;
+
+        lock (_gate)
+        {
+            if (_disposed || !_watchedRoots.Add(root))
+                return;
+
+            if (_started)
+                CreateWatchersForRoot(root);
+        }
+    }
+
+    private void CreateWatchersForRoot(string root)
+    {
+        try
+        {
+            Directory.CreateDirectory(root);
+
+            var watcher = new FileSystemWatcher(root, "SKILL.md")
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.CreationTime |
+                               NotifyFilters.DirectoryName |
+                               NotifyFilters.FileName |
+                               NotifyFilters.LastWrite |
+                               NotifyFilters.Size,
+                EnableRaisingEvents = true
+            };
+
+            watcher.Changed += OnWatcherChanged;
+            watcher.Created += OnWatcherChanged;
+            watcher.Deleted += OnWatcherChanged;
+            watcher.Renamed += OnWatcherRenamed;
+            lock (_gate)
+            {
+                _watchers.Add(watcher);
+            }
+
+            // Also watch contract files (artifacts.json, projection indexes, etc.)
+            var jsonWatcher = new FileSystemWatcher(root, "*.json")
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.CreationTime |
+                               NotifyFilters.FileName |
+                               NotifyFilters.LastWrite |
+                               NotifyFilters.Size,
+                EnableRaisingEvents = true
+            };
+
+            jsonWatcher.Changed += OnWatcherChanged;
+            jsonWatcher.Created += OnWatcherChanged;
+            jsonWatcher.Deleted += OnWatcherChanged;
+            jsonWatcher.Renamed += OnWatcherRenamed;
+            lock (_gate)
+            {
+                _watchers.Add(jsonWatcher);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to watch skill directory {Path}", root);
+        }
     }
 
     public void Dispose()

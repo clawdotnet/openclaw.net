@@ -8,7 +8,6 @@ public sealed class AgentPluginRuntimeManager
     private readonly string? _workspacePath;
     private readonly ILogger _logger;
 
-    private List<AgentPluginPackage> _currentPackages = [];
     private List<string> _currentSkillDirs = [];
     private Dictionary<string, McpServerConfig> _currentMcpConfigs = [];
 
@@ -22,7 +21,7 @@ public sealed class AgentPluginRuntimeManager
         _logger = logger;
     }
 
-    public async Task<AgentPluginRefreshResult> RefreshAsync()
+    public AgentPluginRefreshResult Refresh()
     {
         _logger.LogInformation("Refreshing Agent Plugins...");
 
@@ -65,31 +64,29 @@ public sealed class AgentPluginRuntimeManager
             }
         }
 
-        // 4. 构建新快照
-        var newSkillDirs = allSkillDirs;
-        var newMcpConfigs = allMcpConfigs;
-
-        // 5. 切换到运行时 (原子替换)
-        _currentPackages = newPackages;
-        _currentSkillDirs = newSkillDirs;
-        _currentMcpConfigs = newMcpConfigs;
+        // 4. 切换到运行时 (原子替换技能目录与 MCP 快照)。packages 通过 RefreshResult 返回给调用方，
+        //    由调用方决定如何进入技能优先级链与 MCP 重载路径。
+        _currentSkillDirs = allSkillDirs;
+        _currentMcpConfigs = allMcpConfigs;
 
         _logger.LogInformation(
             "Agent Plugins refreshed: {PackageCount} packages, {SkillCount} skills, {McpCount} MCP servers",
             newPackages.Count,
-            newSkillDirs.Count,
-            newMcpConfigs.Count);
+            allSkillDirs.Count,
+            allMcpConfigs.Count);
 
         return new AgentPluginRefreshResult
         {
             Packages = newPackages,
-            SkillDirectories = newSkillDirs,
-            McpConfigs = newMcpConfigs,
+            SkillDirectories = allSkillDirs,
+            McpConfigs = allMcpConfigs,
             Diagnostics = diagnostics.SelectMany(r => r.Diagnostics).Concat(packageDiagnostics).ToList()
         };
     }
 
+    /// <summary>Current plugin-packaged skill directories (used to seed runtime re-discovery diffing).</summary>
     public List<string> GetSkillDirectories() => _currentSkillDirs;
+
     public Dictionary<string, McpServerConfig> GetMcpConfigs() => _currentMcpConfigs;
 }
 
