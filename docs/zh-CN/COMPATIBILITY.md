@@ -34,6 +34,7 @@
 | `api.on(...)` | jit only |
 | `api.registerProvider()` | jit only |
 | `api.registerCli()` | Supported with caveats（内置根命令优先；重复插件根命令会失败关闭；仅启用且通过配置验证的插件参与惰性发现；通过一次性 Node 桥接进程执行，并支持上游常用的 Commander 子集） |
+| Agent Plugins 1.0 可移植包 | Supported with caveats（本地 `plugin.json` 包可从配置路径、工作区 `plugins/` 和 `~/.openclaw/plugins/` 发现；加载直接子目录 `skills/*/SKILL.md`，并把 `mcp.json` 中的 stdio / Streamable HTTP 服务器映射到现有 MCP 运行时。见 [plugins/agent-plugins-1-0.md](plugins/agent-plugins-1-0.md)） |
 | 独立 `.js`/`.mjs`/`.ts` | `.ts` 需 `jiti` |
 | 原生动态 .NET 插件 | jit only |
 | 上游 TypeScript `payment` 插件 | Not supported（使用原生支付运行时） |

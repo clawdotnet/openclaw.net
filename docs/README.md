@@ -36,6 +36,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [zh-CN/LOOP_TECHNICAL_ARCHITECTURE.md](zh-CN/LOOP_TECHNICAL_ARCHITECTURE.md) | /loop 定时循环命令技术架构（简体中文）。 |
 | [zh-CN/GOAL_TECHNICAL_ARCHITECTURE.md](zh-CN/GOAL_TECHNICAL_ARCHITECTURE.md) | Goal 目标机制技术架构（简体中文）。 |
 | [SKILLKIT.md](SKILLKIT.md) | Local-first `openclaw skill` workflows for defining, validating, critiquing, packaging, and dry-running reusable OpenClaw skills. |
+| [plugins/agent-plugins-1-0.md](plugins/agent-plugins-1-0.md) | Agent Plugins 1.0 package format, discovery contract, MCP adapter behavior, and a first local plugin tutorial. |
 | [LOCAL_MODELS.md](LOCAL_MODELS.md) | Embedded local model packages, supervised sidecars, frame-based video support, and experimental LiteRT-LM adapter guidance. |
 | [opensquilla-dynamic-turn-routing.md](opensquilla-dynamic-turn-routing.md) | Independent guide to the OpenSquilla-style dynamic turn-routing surface, current implementation status, runtime wiring, and operator expectations. |
 | [opensquilla-meta-skill-migration.md](opensquilla-meta-skill-migration.md) | OpenClaw.NET meta-skill migration notes for OpenSquilla-style DAG orchestration, current parity, and remaining migration gaps. |

@@ -43,6 +43,7 @@
 | 参考 | 术语表 | [GLOSSARY.md](GLOSSARY.md) |
 | 集成 | Semantic Kernel | [SEMANTIC_KERNEL.md](SEMANTIC_KERNEL.md) |
 | 集成 | MCP App | [MCPAPP.md](MCPAPP.md) |
+| 集成 | Agent Plugins 1.0 | [plugins/agent-plugins-1-0.md](plugins/agent-plugins-1-0.md) |
 | 集成 | Microsoft Agent Framework | [integrations/microsoft-agent-framework.md](integrations/microsoft-agent-framework.md) |
 | 集成 | 工作流后端 | [workflow-backends.md](workflow-backends.md) |
 | 集成 | 企业频道（飞书/钉钉/企微）| [ENTERPRISE_CHANNELS.md](ENTERPRISE_CHANNELS.md) |
@@ -125,6 +126,7 @@
 集成
   Semantic Kernel
   MCP App
+  Agent Plugins 1.0
   Microsoft Agent Framework
   工作流后端
   Microsoft Teams
