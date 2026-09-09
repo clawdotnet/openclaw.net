@@ -328,6 +328,8 @@ public class FeatureParityTests
         // Track concurrent executions
         var concurrentCount = 0;
         var maxConcurrent = 0;
+        var concurrencyGate = new object();
+        var bothStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var slowTool = Substitute.For<ITool>();
         slowTool.Name.Returns("slow_tool");
         slowTool.Description.Returns("A slow tool");
@@ -335,14 +337,26 @@ public class FeatureParityTests
         slowTool.ExecuteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
-                var current = Interlocked.Increment(ref concurrentCount);
-                Interlocked.Exchange(ref maxConcurrent, Math.Max(maxConcurrent, current));
-                return new ValueTask<string>(Task.Run(async () =>
+                lock (concurrencyGate)
                 {
-                    await Task.Delay(50, ci.Arg<CancellationToken>());
-                    Interlocked.Decrement(ref concurrentCount);
-                    return "done";
-                }));
+                    concurrentCount++;
+                    maxConcurrent = Math.Max(maxConcurrent, concurrentCount);
+                    if (concurrentCount == 2) bothStarted.TrySetResult();
+                }
+                return new ValueTask<string>(FinishAsync());
+
+                async Task<string> FinishAsync()
+                {
+                    try
+                    {
+                        await bothStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), ci.Arg<CancellationToken>());
+                        return "done";
+                    }
+                    finally
+                    {
+                        lock (concurrencyGate) concurrentCount--;
+                    }
+                }
             });
 
         var agent = new AgentRuntime(chatClient, [slowTool], memory, DefaultConfig,
