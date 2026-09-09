@@ -2798,7 +2798,7 @@ public sealed class AgentRuntime : IAgentRuntime
                     approvalCallback: null,
                     ct: effectiveCt,
                     onDelta: null,
-                    toolCallCount: attempt);
+                    toolCallCount: 1); // A retry still executes a single tool.
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {

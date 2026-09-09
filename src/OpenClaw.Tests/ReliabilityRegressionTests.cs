@@ -52,6 +52,46 @@ public sealed class ReliabilityRegressionTests : IDisposable
         Assert.False(browser.TryAuthorize(context, true, out _));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RoutineAuthentication_PreservesExistingBrowserSession(bool useToken)
+    {
+        var accounts = new OperatorAccountService(_directory, NullLogger<OperatorAccountService>.Instance);
+        var account = accounts.Create(new OperatorAccountCreateRequest { Username = "operator", Password = "test-password", Role = "admin" });
+        var token = accounts.CreateToken(account.Id, new OperatorAccountTokenCreateRequest())!;
+        Assert.True(accounts.TryAuthenticatePassword("operator", "test-password", out var identity));
+        var browser = new BrowserSessionAuthService(new GatewayConfig(), accounts);
+        var ticket = browser.Create(false, identity);
+        if (useToken) Assert.True(accounts.TryAuthenticateToken(token.Token, out _));
+        else Assert.True(accounts.TryAuthenticatePassword("operator", "test-password", out _));
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Cookie = $"{BrowserSessionAuthService.CookieName}={ticket.SessionId}";
+        context.Request.Headers[BrowserSessionAuthService.CsrfHeaderName] = ticket.CsrfToken;
+        Assert.True(browser.TryAuthorize(context, true, out _));
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    public async Task GoalUpdate_RequiresSoloToolBatch(int batchSize, bool allowed)
+    {
+        var tool = Substitute.For<ITool>();
+        tool.Name.Returns("update_goal"); tool.Description.Returns("Update goal"); tool.ParameterSchema.Returns("{\"type\":\"object\"}");
+        tool.ExecuteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(ValueTask.FromResult("done"));
+        var executor = new OpenClawToolExecutor([tool], toolTimeoutSeconds: 5, requireToolApproval: false,
+            approvalRequiredTools: [], hooks: [], metrics: new RuntimeMetrics(), logger: NullLogger.Instance);
+        var result = await executor.ExecuteAsync("update_goal", "{}", "call", NewSession(),
+            new TurnContext { SessionId = "test", ChannelId = "cli" }, false, null,
+            TestContext.Current.CancellationToken, toolCallCount: batchSize);
+        if (allowed) Assert.Equal("done", result.ResultText);
+        else
+        {
+            Assert.Equal(ToolResultStatuses.Blocked, result.ResultStatus);
+            await tool.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default);
+        }
+    }
+
     [Fact]
     public void GoalResume_ResetsTurnAndBlockerCounters_WithoutResettingUsage()
     {
@@ -141,9 +181,11 @@ public sealed class ReliabilityRegressionTests : IDisposable
         IMemoryStore store = sqlite ? new SqliteMemoryStore(Path.Combine(_directory, "sessions.db"), enableFts: false) : new FileMemoryStore(_directory);
         try
         {
-            for (var i = 0; i < 65; i++)
+            var recoveryIds = Enumerable.Range(0, 65).Select(i => $"session-{i:D3}")
+                .Concat(["\uE000", "\U00010000", new string('x', 250)]).ToArray();
+            foreach (var id in recoveryIds)
             {
-                var session = NewSession($"session-{i:D3}");
+                var session = NewSession(id);
                 session.RunState = SessionRunState.Running;
                 session.BackgroundRun = new BackgroundRunMetadata { RunId = session.Id };
                 await store.SaveSessionAsync(session, TestContext.Current.CancellationToken);
@@ -158,8 +200,8 @@ public sealed class ReliabilityRegressionTests : IDisposable
             await worker.RecoverOnceAsync(TestContext.Current.CancellationToken);
             var ids = new List<string>();
             while (pipeline.InboundReader.TryRead(out var message)) ids.Add(message.SessionId!);
-            Assert.Equal(65, ids.Count);
-            Assert.Equal(65, ids.Distinct().Count());
+            Assert.Equal(recoveryIds.Length, ids.Count);
+            Assert.Equal(recoveryIds.Order(StringComparer.Ordinal), ids.Order(StringComparer.Ordinal));
         }
         finally { (store as IDisposable)?.Dispose(); }
     }

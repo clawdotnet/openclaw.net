@@ -60,7 +60,7 @@ Start here:
 - **AgentQi Mobile companion** for Android gateway health, approvals, session-backed work, chat, runtime events, and security posture ([source and build guide](https://github.com/agentqi/agentqi-mobile))
 - **/loop recurring-prompt command** with TickerQ-backed session-scoped timer injection, idempotent override, and dual-path semantic auto-termination for build health checks, log polling, and other periodic tasks
 - **80+ native and optional tool surfaces** covering file ops, sessions, memory, web, messaging, home automation, databases, email, MCP apps, and more
-- **Channel adapters** (Telegram, SMS, WhatsApp, Teams, Slack, Discord, Signal, Feishu, DingTalk, WeCom, email, webhooks) with DM policy, allowlists, and signature validation
+- **Channel adapters** (Telegram, SMS, WhatsApp, Teams, Slack, Discord, Signal, Feishu, DingTalk, WeCom, email, webhooks) with channel-specific access controls; Feishu, DingTalk, and WeCom provide sender/group allowlists over authenticated WebSocket connections
 - **Native LLM providers** for OpenAI, Claude, Gemini, Azure OpenAI, DeepSeek, Ollama, and OpenAI-compatible endpoints
 - **Optional embedded local models** with Gemma 4 GGUF packages, package install/verify CLI commands, supervised sidecar inference, and frame-based video understanding
 - **Practical reuse** of existing OpenClaw TS/JS plugins and `SKILL.md` packages

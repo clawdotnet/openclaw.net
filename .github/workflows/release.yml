@@ -83,7 +83,7 @@ jobs:
           $rid = "${{ matrix.rid }}"
           $root = (Get-Location).Path
           $releaseVersion = "0.0.0"
-          if ($env:RELEASE_TAG -match '^v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$') {
+          if ($env:RELEASE_TAG -match '^v?((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$') {
             $releaseVersion = $Matches[1]
           } elseif ("${{ github.ref_type }}" -eq "tag" -or "${{ inputs.create_release }}" -eq "true") {
             throw "A semantic version tag is required when creating a release."

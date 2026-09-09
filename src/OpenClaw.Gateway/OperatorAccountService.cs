@@ -249,7 +249,6 @@ internal sealed class OperatorAccountService
                 return false;
 
             account.LastLoginAtUtc = DateTimeOffset.UtcNow;
-            account.UpdatedAtUtc = DateTimeOffset.UtcNow;
             SaveUnsafe(state);
             identity = MapIdentity(account, OrganizationAuthModeNames.BrowserSession);
             return true;
@@ -283,7 +282,6 @@ internal sealed class OperatorAccountService
                         continue;
 
                     account.LastLoginAtUtc = DateTimeOffset.UtcNow;
-                    account.UpdatedAtUtc = DateTimeOffset.UtcNow;
                     SaveUnsafe(state);
                     identity = MapIdentity(account, OrganizationAuthModeNames.AccountToken);
                     return true;

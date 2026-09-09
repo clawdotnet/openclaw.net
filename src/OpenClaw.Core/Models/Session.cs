@@ -796,6 +796,7 @@ public sealed class SessionDelegationChildSummary
 /// </summary>
 [JsonSerializable(typeof(Session))]
 [JsonSerializable(typeof(SessionRunState))]
+[JsonSerializable(typeof(BackgroundRecoveryIndexEntry))]
 [JsonSerializable(typeof(BackgroundRunMetadata))]
 [JsonSerializable(typeof(StableSessionBindingInfo))]
 [JsonSerializable(typeof(ChatTurn))]

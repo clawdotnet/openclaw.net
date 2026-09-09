@@ -221,7 +221,18 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         await conn.OpenAsync(ct);
 
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT json FROM sessions ORDER BY updated_at ASC;";
+        cmd.CommandText = recoveryOrder
+            ? """
+                SELECT json FROM sessions
+                WHERE ($after IS NULL OR id > $after COLLATE BINARY)
+                  AND CASE WHEN json_valid(json) THEN
+                    json_type(json, '$.backgroundRun') = 'object'
+                    AND json_extract(json, '$.runState') IN (1, 2)
+                    ELSE 0 END
+                ORDER BY id COLLATE BINARY ASC;
+                """
+            : "SELECT json FROM sessions ORDER BY updated_at ASC;";
+        if (recoveryOrder) cmd.Parameters.AddWithValue("$after", (object?)afterSessionId ?? DBNull.Value);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -250,13 +261,14 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
 
             if (session is { BackgroundRun: not null, RunState: SessionRunState.Running or SessionRunState.Continuing })
                 sessions.Add(session);
+            // The reader streams the indexed ID range; stop as soon as a full valid page is read.
+            // Invalid rows can be skipped without prematurely ending recovery.
+            if (recoveryOrder && sessions.Count == limit) break;
         }
+        if (recoveryOrder) return sessions;
 
-        var ordered = recoveryOrder
-            ? sessions.Where(s => afterSessionId is null || StringComparer.Ordinal.Compare(s.Id, afterSessionId) > 0)
-                .OrderBy(static s => s.Id, StringComparer.Ordinal)
-            : sessions.OrderBy(static s => s.BackgroundRun?.LastContinuedAtUtc ?? s.LastActiveAt);
-        return ordered.Take(limit).ToArray();
+        return sessions.OrderBy(static s => s.BackgroundRun?.LastContinuedAtUtc ?? s.LastActiveAt)
+            .Take(limit).ToArray();
     }
     
     public async ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct)
