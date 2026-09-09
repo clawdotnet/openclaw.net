@@ -68,6 +68,7 @@ jobs:
       - name: Publish, smoke-test, and package assets
         shell: pwsh
         env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
           WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
           APPLE_DEVELOPER_ID_CERT_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERT_BASE64 }}
@@ -81,6 +82,12 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           $rid = "${{ matrix.rid }}"
           $root = (Get-Location).Path
+          $releaseVersion = "0.0.0"
+          if ($env:RELEASE_TAG -match '^v?((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$') {
+            $releaseVersion = $Matches[1]
+          } elseif ("${{ github.ref_type }}" -eq "tag" -or "${{ inputs.create_release }}" -eq "true") {
+            throw "A semantic version tag is required when creating a release."
+          }
           $staging = Join-Path $root "artifacts/release/$rid"
           $archives = Join-Path $root "artifacts/release-archives"
           $exe = if ($IsWindows) { ".exe" } else { "" }
@@ -106,9 +113,9 @@ jobs:
             Write-Host "Using macOS Swift library paths: $env:LIBRARY_PATH"
           }
 
-          dotnet publish "$root/src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" -c Release -r $rid -p:PublishAot=true -o $gateway
-          dotnet publish "$root/src/OpenClaw.Cli/OpenClaw.Cli.csproj" -c Release -r $rid -p:PublishAot=true -o $cli
-          dotnet publish "$root/src/OpenClaw.Companion/OpenClaw.Companion.csproj" -c Release -r $rid --self-contained true -p:PublishAot=false -p:PublishSingleFile=false -o $companion
+          dotnet publish "$root/src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" -c Release -p:Version=$releaseVersion -r $rid -p:PublishAot=true -o $gateway
+          dotnet publish "$root/src/OpenClaw.Cli/OpenClaw.Cli.csproj" -c Release -p:Version=$releaseVersion -r $rid -p:PublishAot=true -o $cli
+          dotnet publish "$root/src/OpenClaw.Companion/OpenClaw.Companion.csproj" -c Release -p:Version=$releaseVersion -r $rid --self-contained true -p:PublishAot=false -p:PublishSingleFile=false -o $companion
 
           Copy-Item -Path $gateway -Destination $desktopGateway -Recurse -Force
           Copy-Item -Path $cli -Destination $desktopCli -Recurse -Force

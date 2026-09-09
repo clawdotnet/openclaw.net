@@ -2,6 +2,8 @@ module github.com/openclaw/whatsapp-whatsmeow-worker
 
 go 1.25.0
 
+toolchain go1.26.6
+
 require (
 	github.com/mattn/go-sqlite3 v1.14.52
 	go.mau.fi/whatsmeow v0.0.0-20260506122147-6a7198d94d26
@@ -21,7 +23,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.27 // indirect
 	go.mau.fi/libsignal v0.2.1 // indirect
 	go.mau.fi/util v0.9.8 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect

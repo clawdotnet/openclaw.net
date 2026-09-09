@@ -38,6 +38,7 @@ public static class OrganizationAuthModeNames
 
 public sealed class OperatorIdentitySnapshot
 {
+    public DateTimeOffset? AccountUpdatedAtUtc { get; init; }
     public string AuthMode { get; init; } = "unauthorized";
     public string Role { get; init; } = OperatorRoleNames.Viewer;
     public string? AccountId { get; init; }

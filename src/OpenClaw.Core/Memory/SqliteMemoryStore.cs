@@ -206,7 +206,13 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         await SyncSessionSearchIndexAsync(conn, persistedSession, ct);
     }
 
-    public async ValueTask<IReadOnlyList<Session>> ListBackgroundRunnableSessionsAsync(int limit, CancellationToken ct)
+    public ValueTask<IReadOnlyList<Session>> ListBackgroundRunnableSessionsAsync(int limit, CancellationToken ct)
+        => ListBackgroundSessionsAsync(limit, null, recoveryOrder: false, ct);
+
+    public ValueTask<IReadOnlyList<Session>> ListBackgroundRecoveryPageAsync(int limit, string? afterSessionId, CancellationToken ct)
+        => ListBackgroundSessionsAsync(limit, afterSessionId, recoveryOrder: true, ct);
+
+    private async ValueTask<IReadOnlyList<Session>> ListBackgroundSessionsAsync(int limit, string? afterSessionId, bool recoveryOrder, CancellationToken ct)
     {
         limit = Math.Clamp(limit, 1, 500);
         var sessions = new List<Session>();
@@ -215,7 +221,18 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         await conn.OpenAsync(ct);
 
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT json FROM sessions ORDER BY updated_at ASC;";
+        cmd.CommandText = recoveryOrder
+            ? """
+                SELECT json FROM sessions
+                WHERE ($after IS NULL OR id > $after COLLATE BINARY)
+                  AND CASE WHEN json_valid(json) THEN
+                    json_type(json, '$.backgroundRun') = 'object'
+                    AND json_extract(json, '$.runState') IN (1, 2)
+                    ELSE 0 END
+                ORDER BY id COLLATE BINARY ASC;
+                """
+            : "SELECT json FROM sessions ORDER BY updated_at ASC;";
+        if (recoveryOrder) cmd.Parameters.AddWithValue("$after", (object?)afterSessionId ?? DBNull.Value);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -244,12 +261,14 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
 
             if (session is { BackgroundRun: not null, RunState: SessionRunState.Running or SessionRunState.Continuing })
                 sessions.Add(session);
+            // The reader streams the indexed ID range; stop as soon as a full valid page is read.
+            // Invalid rows can be skipped without prematurely ending recovery.
+            if (recoveryOrder && sessions.Count == limit) break;
         }
+        if (recoveryOrder) return sessions;
 
-        return sessions
-            .OrderBy(static s => s.BackgroundRun?.LastContinuedAtUtc ?? s.LastActiveAt)
-            .Take(limit)
-            .ToArray();
+        return sessions.OrderBy(static s => s.BackgroundRun?.LastContinuedAtUtc ?? s.LastActiveAt)
+            .Take(limit).ToArray();
     }
     
     public async ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct)

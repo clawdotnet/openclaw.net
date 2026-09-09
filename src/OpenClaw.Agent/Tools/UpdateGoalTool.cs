@@ -8,8 +8,8 @@ namespace OpenClaw.Agent.Tools;
 /// <summary>
 /// Model tool: updates the goal status. Restricted to 'complete' and 'blocked' transitions.
 /// The model cannot pause, resume, or clear the goal — those are CLI-only operations.
-/// Includes external verification: rejects 'complete' if the model appears to be
-/// mid-tool-execution or at iteration 0 (immediate "I'm done").
+/// Requires completed assistant work before accepting a model completion.
+/// The executor rejects status updates mixed into a batch with other tools.
 /// </summary>
 public sealed class UpdateGoalTool : IToolWithContext
 {
@@ -72,20 +72,20 @@ public sealed class UpdateGoalTool : IToolWithContext
 
         try
         {
+            _goalService.UpdateTokenUsage(context.Session.Id, context.Session.GetTotalTokens());
             switch (status.ToLowerInvariant())
             {
                 case "complete":
-                    // External verification: reject if model is mid-tool-chain or at iteration 0
+                    // Require completed work evidence before a model-initiated completion.
                     if (!TryVerifyCompletion(context))
                         return ValueTask.FromResult(
                             "Warning: Cannot verify completion. The goal may not be fully achieved yet. " +
                             "Please continue working toward the objective and verify all requirements before declaring completion.");
-                    _goalService.UpdateStatus(context.Session.Id, GoalStatus.Complete, note);
+                    _goalService.UpdateModelStatus(context.Session.Id, GoalStatus.Complete, note);
                     return ValueTask.FromResult("Goal marked as complete. Well done!");
 
                 case "blocked":
-                    // Blocked requires 3+ consecutive same-blocker turns (enforced at integration layer)
-                    _goalService.UpdateStatus(context.Session.Id, GoalStatus.Blocked, note);
+                    _goalService.UpdateModelStatus(context.Session.Id, GoalStatus.Blocked, note);
                     return ValueTask.FromResult(
                         "Goal marked as blocked. The user can resume it with /goal resume.");
 
@@ -101,13 +101,10 @@ public sealed class UpdateGoalTool : IToolWithContext
 
     /// <summary>
     /// External verification: checks that the model isn't declaring completion prematurely.
-    /// Requires evidence of assistant work in the current session and no in-progress tool-chain marker.
+    /// Accepts completed tool batches as well as assistant text.
     /// </summary>
     private static bool TryVerifyCompletion(ToolExecutionContext context)
     {
-        if (context.TurnContext.ToolCallCount > 0)
-            return false;
-
         var latestAssistantTurn = context.Session.History.LastOrDefault(static turn =>
             string.Equals(turn.Role, "assistant", StringComparison.OrdinalIgnoreCase));
         if (latestAssistantTurn is null)
@@ -117,6 +114,12 @@ public sealed class UpdateGoalTool : IToolWithContext
         if (string.IsNullOrEmpty(content))
             return false;
 
-        return !string.Equals(content, "[tool_use]", StringComparison.Ordinal);
+        if (!string.Equals(content, "[tool_use]", StringComparison.Ordinal))
+            return true;
+
+        // Completed work is evidence, not a marker of in-flight execution.
+        return latestAssistantTurn.ToolCalls is { Count: > 0 } calls
+            && calls.All(call => call.ResultStatus is null or ToolResultStatuses.Completed)
+            && calls.Any(call => call.ToolName is not ("create_goal" or "get_goal" or "update_goal"));
     }
 }

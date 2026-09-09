@@ -19,11 +19,13 @@ internal static class EndpointHelpers
         string? AccountId,
         string? Username,
         string? DisplayName,
-        bool IsBootstrapAdmin)
+        bool IsBootstrapAdmin,
+        DateTimeOffset? AccountUpdatedAtUtc = null)
     {
         public OperatorIdentitySnapshot ToIdentity()
             => new()
             {
+                AccountUpdatedAtUtc = AccountUpdatedAtUtc ?? BrowserSession?.AccountUpdatedAtUtc,
                 AuthMode = AuthMode,
                 Role = Role,
                 AccountId = AccountId,
@@ -167,7 +169,8 @@ internal static class EndpointHelpers
                 AccountId: accountIdentity.AccountId,
                 Username: accountIdentity.Username,
                 DisplayName: accountIdentity.DisplayName,
-                IsBootstrapAdmin: false);
+                IsBootstrapAdmin: false,
+                AccountUpdatedAtUtc: accountIdentity.AccountUpdatedAtUtc);
         }
 
         if (IsAllowedAuthMode(policy, OrganizationAuthModeNames.BrowserSession) &&

@@ -75,6 +75,8 @@ The macOS runner label is intentionally ARM-native for the `osx-arm64` artifact.
 
 Before publishing a public desktop release, run this manual smoke on at least one desktop bundle:
 
+Set `OPENCLAW_COMPANION_STATE_DIR` to a fresh temporary directory when launching Companion to isolate its settings, managed config, workspace, and scoped token storage from an existing installation.
+
 1. Extract the desktop archive into a clean directory.
 2. Launch Companion from the `companion` folder.
 3. Use **Setup** with a temporary workspace and either a local Ollama model or a throwaway provider key.

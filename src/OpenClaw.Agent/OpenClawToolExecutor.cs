@@ -201,6 +201,12 @@ public sealed class OpenClawToolExecutor
         activity?.SetTag("tool.name", toolName);
         var persistedArgsJson = _redaction.Redact(argsJson);
 
+        if (toolName == "update_goal" && toolCallCount > 1)
+            return CreateImmediateResult(toolName, persistedArgsJson,
+                "Error: update_goal must be called alone after all other tools have completed.",
+                callId: callId, resultStatus: ToolResultStatuses.Blocked,
+                failureCode: ToolFailureCodes.ToolFailed);
+
         ITool? tool;
         lock (_toolsMutationLock)
         {
