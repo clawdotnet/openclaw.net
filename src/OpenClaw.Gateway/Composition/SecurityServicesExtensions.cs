@@ -32,7 +32,7 @@ internal static class SecurityServicesExtensions
             new PairingManager(
                 startup.Config.Memory.StoragePath,
                 sp.GetRequiredService<ILogger<PairingManager>>()));
-        services.AddSingleton(sp => new BrowserSessionAuthService(startup.Config));
+        services.AddSingleton(sp => new BrowserSessionAuthService(startup.Config, sp.GetRequiredService<OperatorAccountService>()));
         services.AddSingleton(sp =>
             new OperatorAccountService(
                 startup.Config.Memory.StoragePath,

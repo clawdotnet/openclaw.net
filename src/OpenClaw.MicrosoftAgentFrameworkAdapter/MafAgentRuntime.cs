@@ -244,6 +244,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         string? correlationId = null)
     {
         using var activity = _telemetry.StartRunActivity("Agent.Maf.RunAsync", session, _runtimeState);
+        _goalService?.BeginTurn(session.Id);
         var resolvedCorrelationId = ResolveCorrelationId(correlationId);
         var turnCtx = new TurnContext
         {
@@ -461,6 +462,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             throw new NotSupportedException("MAF streaming is disabled for this runtime.");
 
         using var activity = _telemetry.StartRunActivity("Agent.Maf.RunStreamingAsync", session, _runtimeState);
+        _goalService?.BeginTurn(session.Id);
         var resolvedCorrelationId = ResolveCorrelationId(correlationId);
         var turnCtx = new TurnContext
         {

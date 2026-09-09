@@ -228,7 +228,7 @@ internal sealed class AgentTurnAccounting
             correlationId: turnCtx.CorrelationId);
     }
 
-    private void RecordTurnUsage(
+    public void RecordTurnUsage(
         Session session,
         string providerId,
         string modelId,

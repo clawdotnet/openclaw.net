@@ -31,6 +31,9 @@
     <ProjectReference Include="..\OpenClaw.Plugins.TokenJuice\OpenClaw.Plugins.TokenJuice.csproj" />
     <ProjectReference Include="..\OpenClaw.Testing\OpenClaw.Testing.csproj" />
 
+    <Compile Include="../OpenClaw.Dashboard/Services/ApiService.cs" Link="Dashboard/ApiService.cs" />
+    <Compile Include="../OpenClaw.Dashboard/Services/AuthService.cs" Link="Dashboard/AuthService.cs" />
+    <Compile Include="../OpenClaw.Dashboard/Models/AuthState.cs" Link="Dashboard/AuthState.cs" />
     <None Update="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\OpenClaw.TestPluginFixtures\OpenClaw.TestPluginFixtures.csproj" />
     <ProjectReference Include="..\OpenClaw.WhatsApp.BaileysWorker\OpenClaw.WhatsApp.BaileysWorker.csproj" />

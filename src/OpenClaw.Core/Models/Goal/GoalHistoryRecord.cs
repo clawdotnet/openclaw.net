@@ -19,4 +19,5 @@ public sealed record GoalHistoryRecord
 }
 
 [JsonSerializable(typeof(GoalHistoryRecord))]
+[JsonSerializable(typeof(SessionGoal))]
 internal sealed partial class GoalJsonContext : JsonSerializerContext;

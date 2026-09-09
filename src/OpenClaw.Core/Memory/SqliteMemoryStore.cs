@@ -206,7 +206,13 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
         await SyncSessionSearchIndexAsync(conn, persistedSession, ct);
     }
 
-    public async ValueTask<IReadOnlyList<Session>> ListBackgroundRunnableSessionsAsync(int limit, CancellationToken ct)
+    public ValueTask<IReadOnlyList<Session>> ListBackgroundRunnableSessionsAsync(int limit, CancellationToken ct)
+        => ListBackgroundSessionsAsync(limit, null, recoveryOrder: false, ct);
+
+    public ValueTask<IReadOnlyList<Session>> ListBackgroundRecoveryPageAsync(int limit, string? afterSessionId, CancellationToken ct)
+        => ListBackgroundSessionsAsync(limit, afterSessionId, recoveryOrder: true, ct);
+
+    private async ValueTask<IReadOnlyList<Session>> ListBackgroundSessionsAsync(int limit, string? afterSessionId, bool recoveryOrder, CancellationToken ct)
     {
         limit = Math.Clamp(limit, 1, 500);
         var sessions = new List<Session>();
@@ -246,10 +252,11 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
                 sessions.Add(session);
         }
 
-        return sessions
-            .OrderBy(static s => s.BackgroundRun?.LastContinuedAtUtc ?? s.LastActiveAt)
-            .Take(limit)
-            .ToArray();
+        var ordered = recoveryOrder
+            ? sessions.Where(s => afterSessionId is null || StringComparer.Ordinal.Compare(s.Id, afterSessionId) > 0)
+                .OrderBy(static s => s.Id, StringComparer.Ordinal)
+            : sessions.OrderBy(static s => s.BackgroundRun?.LastContinuedAtUtc ?? s.LastActiveAt);
+        return ordered.Take(limit).ToArray();
     }
     
     public async ValueTask DeleteSessionAsync(string sessionId, CancellationToken ct)

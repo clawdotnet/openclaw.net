@@ -344,6 +344,7 @@ internal sealed class OperatorAccountService
     private static OperatorIdentitySnapshot MapIdentity(StoredAccount account, string authMode)
         => new()
         {
+            AccountUpdatedAtUtc = account.UpdatedAtUtc,
             AuthMode = authMode,
             Role = OperatorRoleNames.Normalize(account.Role),
             AccountId = account.Id,

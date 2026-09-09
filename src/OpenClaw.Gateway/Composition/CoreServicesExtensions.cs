@@ -246,7 +246,8 @@ internal static class CoreServicesExtensions
             var historyPath = !string.IsNullOrEmpty(storagePath)
                 ? Path.Combine(Path.GetFullPath(storagePath), "goal-history.jsonl")
                 : null;
-            return new InMemoryGoalService(logger, historyPath);
+            return new InMemoryGoalService(logger, historyPath,
+                Path.Combine(Path.GetFullPath(storagePath), "goals"));
         });
         services.AddSingleton<ITool, GetGoalTool>();
         services.AddSingleton<ITool, CreateGoalTool>();
