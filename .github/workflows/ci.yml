@@ -81,14 +81,14 @@ jobs:
       - name: HelloAgent smoke
         run: dotnet run --project samples/OpenClaw.HelloAgent -c Release --no-build
 
-      - name: Restore sandbox-enabled solution
-        run: dotnet restore OpenClaw.Net.slnx -p:OpenClawEnableOpenSandbox=true
+      - name: Restore optional integrations
+        run: dotnet restore OpenClaw.Net.slnx -p:OpenClawEnableOpenSandbox=true -p:OpenClawEnableMempalace=true
 
-      - name: Build sandbox-enabled solution
-        run: dotnet build OpenClaw.Net.slnx --no-restore -c Release -p:OpenClawEnableOpenSandbox=true
+      - name: Build optional integrations
+        run: dotnet build OpenClaw.Net.slnx --no-restore -c Release -p:OpenClawEnableOpenSandbox=true -p:OpenClawEnableMempalace=true
 
-      - name: Test sandbox-enabled targets
-        run: dotnet test --no-build -c Release -p:OpenClawEnableOpenSandbox=true --verbosity normal --logger "trx;LogFileName=results-sandbox.trx" src/OpenClaw.Tests
+      - name: Test optional integrations
+        run: dotnet test --no-build -c Release -p:OpenClawEnableOpenSandbox=true -p:OpenClawEnableMempalace=true --verbosity normal --logger "trx;LogFileName=results-sandbox.trx" src/OpenClaw.Tests
 
       - name: Upload test results
         if: always()
