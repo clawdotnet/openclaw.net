@@ -2,6 +2,8 @@ module github.com/openclaw/whatsapp-whatsmeow-worker
 
 go 1.25.0
 
+toolchain go1.26.6
+
 require (
 	github.com/mattn/go-sqlite3 v1.14.52
 	go.mau.fi/whatsmeow v0.0.0-20260506122147-6a7198d94d26
