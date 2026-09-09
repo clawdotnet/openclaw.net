@@ -188,9 +188,31 @@ jobs:
           $desktopArchive = Join-Path $archives "openclaw-desktop-$rid.zip"
           $gatewayArchive = Join-Path $archives "openclaw-gateway-aot-$rid.zip"
           $cliArchive = Join-Path $archives "openclaw-cli-aot-$rid.zip"
-          Compress-Archive -Path (Join-Path $staging "desktop/*") -DestinationPath $desktopArchive -Force
-          Compress-Archive -Path (Join-Path $gateway "*") -DestinationPath $gatewayArchive -Force
-          Compress-Archive -Path (Join-Path $cli "*") -DestinationPath $cliArchive -Force
+          function New-ReleaseArchive([string] $source, [string] $destination) {
+            if ($IsWindows) {
+              Compress-Archive -Path (Join-Path $source "*") -DestinationPath $destination -Force
+            } else {
+              # Compress-Archive drops executable permissions on Unix.
+              Push-Location $source
+              try { & zip -q -r $destination . } finally { Pop-Location }
+            }
+          }
+          New-ReleaseArchive (Join-Path $staging "desktop") $desktopArchive
+          New-ReleaseArchive $gateway $gatewayArchive
+          New-ReleaseArchive $cli $cliArchive
+
+          if (-not $IsWindows) {
+            $extracted = Join-Path $staging "extraction-smoke"
+            New-Item -ItemType Directory -Force -Path $extracted | Out-Null
+            & unzip -q $desktopArchive -d $extracted
+            foreach ($relative in @("companion/OpenClaw.Companion", "gateway/OpenClaw.Gateway", "cli/openclaw")) {
+              $binary = Join-Path $extracted $relative
+              if (([IO.File]::GetUnixFileMode($binary) -band [IO.UnixFileMode]::UserExecute) -eq 0) {
+                throw "Extracted desktop binary is not executable: $relative"
+              }
+            }
+            & (Join-Path $extracted "cli/openclaw") --version
+          }
 
           if ($IsMacOS -and $env:APPLE_ID -and $env:APPLE_TEAM_ID -and $env:APPLE_APP_SPECIFIC_PASSWORD -and $env:APPLE_CODESIGN_IDENTITY) {
             xcrun notarytool submit $desktopArchive --apple-id $env:APPLE_ID --team-id $env:APPLE_TEAM_ID --password $env:APPLE_APP_SPECIFIC_PASSWORD --wait
