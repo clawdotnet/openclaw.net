@@ -21,9 +21,14 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            // Isolated profiles support release smoke tests without touching an operator's setup.
+            var stateDirectory = Environment.GetEnvironmentVariable("OPENCLAW_COMPANION_STATE_DIR");
+            stateDirectory = string.IsNullOrWhiteSpace(stateDirectory) ? null : System.IO.Path.GetFullPath(stateDirectory);
             _client = new GatewayWebSocketClient();
-            _managedGateway = new ManagedGatewayService();
-            var settings = new SettingsStore();
+            _managedGateway = new ManagedGatewayService(
+                configPath: stateDirectory is null ? null : System.IO.Path.Combine(stateDirectory, "config", "openclaw.settings.json"),
+                workspacePath: stateDirectory is null ? null : System.IO.Path.Combine(stateDirectory, "workspace"));
+            var settings = new SettingsStore(stateDirectory);
             var viewModel = new MainWindowViewModel(settings, _client, managedGateway: _managedGateway);
             viewModel.AttachDesktopNotifier(new DesktopNotifier());
 
