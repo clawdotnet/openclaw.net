@@ -47,7 +47,7 @@ public sealed class RuntimeScenarioRunner(
                     _ => null
                 };
                 if (kind is not null)
-                    steps.Add(new TraceStep { Kind = kind, TimestampUtc = DateTimeOffset.UtcNow,
+                    lock (steps) steps.Add(new TraceStep { Kind = kind, TimestampUtc = DateTimeOffset.UtcNow,
                         ToolName = item.ToolName, ArgumentsJson = item.ToolArguments,
                         Result = item.Type == AgentStreamEventType.ToolResult ? item.Content : null,
                         Error = item.Type == AgentStreamEventType.Error ? item.Content : item.FailureMessage });
@@ -57,11 +57,13 @@ public sealed class RuntimeScenarioRunner(
         catch (Exception ex)
         {
             failed = true;
-            steps.Add(new TraceStep { Kind = TraceStepKinds.Error, TimestampUtc = DateTimeOffset.UtcNow, Error = ex.Message });
+            lock (steps) steps.Add(new TraceStep { Kind = TraceStepKinds.Error, TimestampUtc = DateTimeOffset.UtcNow, Error = ex.Message });
         }
+        List<TraceStep> capturedSteps;
+        lock (steps) capturedSteps = steps.ToList();
         var ended = DateTimeOffset.UtcNow;
         var trace = new AgentRunTrace { RunId = runId, ScenarioId = scenario.Id, StartedAtUtc = started,
-            CompletedAtUtc = ended, Steps = steps, FinalAnswer = answer.ToString(),
+            CompletedAtUtc = ended, Steps = capturedSteps, FinalAnswer = answer.ToString(),
             Status = !failed && completed ? ScenarioRunStatuses.Completed : ScenarioRunStatuses.Failed };
         var results = new List<OracleResult>
         {
