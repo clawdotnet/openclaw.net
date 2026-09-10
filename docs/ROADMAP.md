@@ -2,10 +2,11 @@
 
 ## Recently Completed
 
-- **Companion token protection and migration**: OS-backed token storage now automatically migrates legacy JSON/fallback credentials with read-back verification, preserves recoverable copies on failure, respects Remember token and plaintext opt-in, and uses atomic private file writes. See [Companion token storage](companion-token-storage.md).
+- **Run explanation and recovery view**: admin console, Dashboard, and Companion session details combine recorded run/goal state, goal notes, session-scoped pending approvals, checkpoints, and recent tool failure evidence with contextual recovery guidance. Existing timelines remain available for investigation; the view does not authorize or replay actions.
 
 - Browser sessions invalidate after local operator account updates, deletion, or disablement.
 - Goal completion accepts completed tool work; model status updates run alone and blocked transitions require three observations. Resume resets continuation and blocker counters.
+- **Companion token protection and migration**: OS-backed token storage now automatically migrates legacy JSON/fallback credentials with read-back verification, preserves recoverable copies on failure, respects Remember token and plaintext opt-in, and uses atomic private file writes. See [Companion token storage](companion-token-storage.md).
 - Goal state is persisted atomically under the configured memory storage directory and restored lazily after restart.
 - Startup recovery pages all runnable sessions by stable ID instead of stopping after its first batch.
 - Dashboard authentication shares the gateway login request contract; typed API failures surface HTTP errors.
@@ -65,7 +66,7 @@ The runtime already includes CLI insights, URL safety validation, and trajectory
 1. **Durable action reconciliation**: supplement persisted goals and completed-batch checkpoints with an action journal and provider idempotency keys. An interrupted external action with an unknown outcome must be reconciled before replay.
 2. **Real-run regression capture**: extend `RuntimeScenarioRunner` with redacted trajectory import and deterministic provider/tool replay fixtures.
 3. **Full-instance backup and restore**: extend upgrade rollback to include sessions, goals, schedules, governance records, and secret-reference manifests; validate restores in an isolated instance without dispatching actions.
-4. **Run explanation and recovery view**: connect existing timelines, approvals, and evidence to show the exact blocker and valid next recovery actions.
+4. **Guided recovery actions**: extend the completed explanation view with permission-aware recovery controls and action reconciliation once durable action outcomes are available.
 
 ## Security Hardening (Likely Breaking)
 
