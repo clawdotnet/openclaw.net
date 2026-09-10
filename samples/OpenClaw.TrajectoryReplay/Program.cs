@@ -12,7 +12,7 @@ if (args.Length != 4 || !int.TryParse(args[2], out var turn) || turn < 0 || stri
 }
 
 // Add project-specific redactors before using captures containing private data.
-var redaction = new RedactionPipeline([new BaselineSecretRedactor()]);
+var redaction = new RedactionPipeline([]);
 using var reader = File.OpenText(args[0]);
 var fixture = await TrajectoryReplayImporter.ImportAsync(reader, args[1], turn, redaction);
 var memoryPath = Path.Join(Path.GetTempPath(), "openclaw-replay-" + Guid.NewGuid().ToString("N"));

@@ -88,6 +88,28 @@ public sealed class TrajectoryReplayTests
         Assert.True(result.Passed, result.FailureSummary);
     }
 
+    [Theory]
+    [InlineData("client_secret")]
+    [InlineData("private_key")]
+    [InlineData("session_token")]
+    [InlineData("x-api-key")]
+    public async Task ImportMasksOpaqueCredentialFields(string field)
+    {
+        var records = Records();
+        records[2] = Record("tool_call", 1, arguments: "{\"" + field + "\":\"opaque-value\"}");
+        var fixture = await Import(records);
+        Assert.DoesNotContain("opaque-value", fixture.Responses[0].ToolCalls[0].ArgumentsJson);
+    }
+
+    [Fact]
+    public async Task UnexpectedResultIdIsRejected()
+    {
+        using var replay = new TrajectoryReplay(await Import(Records()));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => replay.GetResponseAsync([
+            new ChatMessage(ChatRole.User, "Find [PERSON]"),
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("unknown", "extra")])], cancellationToken: Ct));
+    }
+
     [Fact]
     public async Task OversizedExchangeDoesNotHideLaterValidCapture()
     {
