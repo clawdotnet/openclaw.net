@@ -47,6 +47,30 @@ public sealed class TrajectoryReplayTests
     ];
 
     [Theory]
+    [InlineData("Find private-person\n")]
+    [InlineData("Find private-person\r\n")]
+    public async Task ReplayNormalizesChannelPromptWhitespace(string prompt)
+    {
+        var records = Records(); records[0] = Record("prompt", 0, prompt);
+        var result = await RuntimeScenarioRunner.RunReplayAsync(await Import(records), Assertions(), Runtime, cancellationToken: Ct);
+        Assert.True(result.Passed, result.FailureSummary);
+    }
+
+    [Fact]
+    public async Task ImportRedactsNumericValuesThroughCallerPipeline()
+    {
+        var records = Records(); records[2] = Record("tool_call", 1, arguments: "{\"account\":123456}");
+        using var reader = new StringReader(string.Join('\n', records.Select(r => JsonSerializer.Serialize(r, CoreJsonContext.Default.TrajectoryExportRecord))));
+        var fixture = await TrajectoryReplayImporter.ImportAsync(reader, "private-session", 0, new RedactionPipeline([new NumericRedactor()]), Ct);
+        Assert.DoesNotContain("123456", fixture.Responses[0].ToolCalls[0].ArgumentsJson);
+    }
+    private sealed class NumericRedactor : ISensitiveDataRedactor
+    {
+        public string Name => "numeric";
+        public string Redact(string? value) => (value ?? "").Replace("123456", "[NUMBER]");
+    }
+
+    [Theory]
     [InlineData("client_secret")]
     [InlineData("private_key")]
     [InlineData("session_token")]
