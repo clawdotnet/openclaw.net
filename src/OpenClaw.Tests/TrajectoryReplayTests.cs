@@ -44,6 +44,74 @@ public sealed class TrajectoryReplayTests
         new() { Type = ScenarioOracleTypes.FinalAnswerContains, Value = JsonSerializer.SerializeToElement("Found [PERSON]") }
     ];
 
+    [Theory]
+    [InlineData("failed")]
+    [InlineData("blocked")]
+    public async Task CaptureImportsAndReplaysStructuredFailures(string status)
+    {
+        var directory = Path.Combine(AppContext.BaseDirectory, "capture-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var session = new Session { Id = "private-session", SenderId = "private-person", ChannelId = "private-channel" };
+            session.History.Add(new ChatTurn { Role = "user", Content = "Find private-person" });
+            session.History.Add(new ChatTurn { Role = "assistant", Content = "[tool_use]", ToolCalls =
+                [new ToolInvocation { CallId = "private-call", ToolName = "lookup", Arguments = "{}", Result = "provider unavailable",
+                    ResultStatus = status, FailureCode = "provider_unavailable", FailureMessage = "private-person unavailable" }] });
+            session.History.Add(new ChatTurn { Role = "assistant", Content = "Found private-person" });
+            Assert.Equal(1, await OpenClaw.Core.Testing.RegressionCapture.CaptureAsync(session, directory, Redaction, ct: Ct));
+            Assert.Equal(0, await OpenClaw.Core.Testing.RegressionCapture.CaptureAsync(session, directory, Redaction, ct: Ct));
+            var captured = await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(directory, "*.jsonl")), Ct);
+            Assert.DoesNotContain("private-", captured);
+            var fixture = await TrajectoryReplayImporter.ImportAsync(new StringReader(captured), "capture", 0, Redaction, Ct);
+            Assert.Equal(status, fixture.Responses[0].ToolCalls[0].ResultStatus);
+            var result = await RuntimeScenarioRunner.RunReplayAsync(fixture, Assertions(), Runtime, cancellationToken: Ct);
+            Assert.True(result.Passed, result.FailureSummary);
+            Assert.Contains(result.Trace.Steps, s => s.Kind == TraceStepKinds.ToolResult && s.Error == "[PERSON] unavailable");
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    }
+
+    [Theory]
+    [InlineData("IMAGE_URL")]
+    [InlineData("AUDIO_URL")]
+    [InlineData("VIDEO_URL")]
+    [InlineData("DOCUMENT_URL")]
+    public async Task ReplayValidatesMultimodalPromptWithoutNetwork(string marker)
+    {
+        var fixture = new TrajectoryReplayFixture { Prompt = $"Describe this\n[{marker}: https://media.invalid/fixture]",
+            Responses = [new ReplayResponse { Text = "A recorded answer" }] };
+        var result = await RuntimeScenarioRunner.RunReplayAsync(fixture,
+            [new ScenarioOracleDefinition { Type = ScenarioOracleTypes.FinalAnswerContains, Value = JsonSerializer.SerializeToElement("recorded answer") }],
+            Runtime, cancellationToken: Ct);
+        Assert.True(result.Passed, result.FailureSummary);
+    }
+
+    [Fact]
+    public void ReplayRejectsLocalMediaAndDetectsMissingMedia()
+    {
+        Assert.Throws<InvalidDataException>(() => new TrajectoryReplay(new() { Prompt = "[IMAGE_PATH: /private/image.png]", Responses = [new() { Text = "answer" }] }));
+        using var replay = new TrajectoryReplay(new() { Prompt = "Look\n[IMAGE_URL: https://media.invalid/fixture]", Responses = [new() { Text = "answer" }] });
+        Assert.Throws<InvalidOperationException>(() => replay.GetResponseAsync([new ChatMessage(ChatRole.User, "Look")]).GetAwaiter().GetResult());
+    }
+
+    [Fact]
+    public async Task CaptureIsBoundedAndSkipsIncompleteExchanges()
+    {
+        var directory = Path.Combine(AppContext.BaseDirectory, "capture-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var session = new Session { Id = "s", ChannelId = "c", SenderId = "u" };
+            session.History.Add(new() { Role = "user", Content = "one" });
+            Assert.Equal(0, await OpenClaw.Core.Testing.RegressionCapture.CaptureAsync(session, directory, Redaction, 1, Ct));
+            session.History.Add(new() { Role = "assistant", Content = "answer" });
+            Assert.Equal(1, await OpenClaw.Core.Testing.RegressionCapture.CaptureAsync(session, directory, Redaction, 1, Ct));
+            session.History.Add(new() { Role = "user", Content = "two" }); session.History.Add(new() { Role = "assistant", Content = "another" });
+            Assert.Equal(0, await OpenClaw.Core.Testing.RegressionCapture.CaptureAsync(session, directory, Redaction, 1, Ct));
+            Assert.Single(Directory.GetFiles(directory));
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    }
+
     [Fact]
     public async Task Import_RedactsNestedValuesAndDropsSourceIdentity()
     {
@@ -77,7 +145,6 @@ public sealed class TrajectoryReplayTests
     }
 
     [Theory]
-    [InlineData("failed")]
     [InlineData("denied")]
     [InlineData("unknown")]
     public async Task Import_RejectsNonCompletedTools(string status)

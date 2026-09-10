@@ -19,4 +19,7 @@ public sealed class ReplayToolCall
     public string ToolName { get; init; } = "";
     public string ArgumentsJson { get; init; } = "{}";
     public string Result { get; init; } = "";
+    public string ResultStatus { get; init; } = "completed";
+    public string? FailureCode { get; init; }
+    public string? FailureMessage { get; init; }
 }

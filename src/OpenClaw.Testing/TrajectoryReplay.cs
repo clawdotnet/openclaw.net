@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Models;
 
 namespace OpenClaw.Testing;
 
@@ -22,6 +23,10 @@ public sealed class TrajectoryReplay : IChatClient
             ScenarioJsonContext.Default.TrajectoryReplayFixture) ?? throw new InvalidDataException("Missing replay fixture.");
         if (_fixture.SchemaVersion != 1 || _fixture.Prompt is null || _fixture.Responses is not { Count: > 0 })
             throw new InvalidDataException("Invalid replay fixture schema or input.");
+        var (media, _) = MediaMarkerProtocol.Extract(_fixture.Prompt);
+        if (media.Any(m => m.Kind is MediaMarkerKind.FilePath or MediaMarkerKind.ImagePath ||
+            !Uri.TryCreate(m.Value, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http")))
+            throw new InvalidDataException("Replay media must use HTTP(S) references; no local files, inline binary, or unresolved channel IDs.");
         foreach (var response in _fixture.Responses)
         {
             if (response is null || response.Text is null || response.ToolCalls is null)
@@ -30,6 +35,9 @@ public sealed class TrajectoryReplay : IChatClient
             {
                 if (call is null || string.IsNullOrWhiteSpace(call.ToolName) || call.Result is null)
                     throw new InvalidDataException("Invalid replay tool call.");
+                if (call.ResultStatus is not ("completed" or "failed" or "blocked") ||
+                    (call.ResultStatus == "completed" && (call.FailureCode is not null || call.FailureMessage is not null)))
+                    throw new InvalidDataException("Invalid replay outcome.");
                 using var args = JsonDocument.Parse(call.ArgumentsJson);
                 if (args.RootElement.ValueKind != JsonValueKind.Object)
                     throw new InvalidDataException("Replay arguments must be JSON objects.");
@@ -53,7 +61,7 @@ public sealed class TrajectoryReplay : IChatClient
         lock (_gate)
         {
             var history = messages.ToList();
-            if (_nextResponse == 0 && history.LastOrDefault(m => m.Role == ChatRole.User)?.Text != _fixture.Prompt)
+            if (_nextResponse == 0 && !PromptMatches(history.LastOrDefault(m => m.Role == ChatRole.User)))
                 throw Divergence("Replay prompt differs from the recorded prompt.");
             if (_pending.Any(call => !call.Consumed)) throw Divergence("Runtime skipped a recorded tool call.");
             var results = history.Where(m => m.Role == ChatRole.Tool).SelectMany(m => m.Contents).OfType<FunctionResultContent>().ToArray();
@@ -101,8 +109,25 @@ public sealed class TrajectoryReplay : IChatClient
             var match = _pending.FirstOrDefault(call => !call.Consumed && call.Call.ToolName == tool && ArgumentsEqual(call.Call.ArgumentsJson, arguments));
             if (match is null) throw Divergence("Tool name, arguments, or execution count differs from the fixture.");
             match.Consumed = true;
+            if (match.Call.ResultStatus != "completed")
+                throw new ToolOutcomeException(match.Call.Result, match.Call.ResultStatus, match.Call.FailureCode, match.Call.FailureMessage);
             return match.Call.Result;
         }
+    }
+
+    private bool PromptMatches(ChatMessage? message)
+    {
+        if (message is null) return false;
+        var (markers, text) = MediaMarkerProtocol.Extract(_fixture.Prompt);
+        if (markers.Count == 0) return message.Text == _fixture.Prompt && message.Contents.All(c => c is TextContent);
+        var uris = message.Contents.OfType<UriContent>().ToArray();
+        return message.Text == text && uris.Length == markers.Count &&
+            message.Contents.All(c => c is TextContent or UriContent) &&
+            markers.Select((marker, i) => uris[i].Uri == new Uri(marker.Value) && uris[i].MediaType == (marker.Kind switch
+            {
+                MediaMarkerKind.ImageUrl => "image/*", MediaMarkerKind.AudioUrl => "audio/*", MediaMarkerKind.VideoUrl => "video/*",
+                _ => "application/octet-stream"
+            })).All(equal => equal);
     }
 
     private InvalidOperationException Divergence(string message) { _diverged = true; return new(message); }

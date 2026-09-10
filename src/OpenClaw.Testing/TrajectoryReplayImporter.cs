@@ -47,7 +47,7 @@ public static class TrajectoryReplayImporter
         var prompt = records[start];
         if (prompt.Role != "user" || prompt.Content is null)
             throw new InvalidDataException("Replay requires a user text prompt.");
-        var fixture = new TrajectoryReplayFixture { Prompt = Redact(prompt.Content, redaction) };
+        var fixture = new TrajectoryReplayFixture { Prompt = TrajectorySanitizer.Redact(prompt.Content, redaction) };
         ReplayResponse? response = null;
         var turnIndex = promptTurnIndex;
         for (var i = start + 1; i < records.Count; i++)
@@ -61,7 +61,7 @@ public static class TrajectoryReplayImporter
                 if (response is { ToolCalls.Count: 0 })
                     throw new InvalidDataException("Multiple final responses are not supported.");
                 turnIndex = record.TurnIndex;
-                response = new ReplayResponse { Text = Redact(record.Content, redaction) };
+                response = new ReplayResponse { Text = TrajectorySanitizer.Redact(record.Content, redaction) };
                 fixture.Responses.Add(response);
             }
             else if (record.Type == "tool_call")
@@ -71,8 +71,9 @@ public static class TrajectoryReplayImporter
                 var result = records[i];
                 if (result.Type != "tool_result" || result.TurnIndex != turnIndex || result.CallId != record.CallId || result.ToolName != record.ToolName || result.Result is null)
                     throw new InvalidDataException("Tool result does not match its call.");
-                if (result.ResultStatus is not null and not "completed" || result.FailureCode is not null || result.FailureMessage is not null)
-                    throw new InvalidDataException("Only completed tool results can be replayed by this fixture version.");
+                if (result.ResultStatus is not null and not "completed" and not "failed" and not "blocked" ||
+                    (result.ResultStatus is null or "completed" && (result.FailureCode is not null || result.FailureMessage is not null)))
+                    throw new InvalidDataException("Unsupported or inconsistent tool outcome.");
                 if (string.IsNullOrWhiteSpace(record.ToolName) || record.ToolName.Length > 128 || record.ToolName.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not '_' and not '-' and not '.'))
                     throw new InvalidDataException("Invalid replay tool name.");
                 string args;
@@ -81,11 +82,13 @@ public static class TrajectoryReplayImporter
                     using var json = JsonDocument.Parse(record.Arguments ?? "");
                     if (json.RootElement.ValueKind != JsonValueKind.Object) throw new JsonException();
                     using var stream = new MemoryStream();
-                    using (var writer = new Utf8JsonWriter(stream)) WriteRedactedJson(writer, json.RootElement, redaction);
+                    using (var writer = new Utf8JsonWriter(stream)) TrajectorySanitizer.WriteRedactedJson(writer, json.RootElement, redaction);
                     args = Encoding.UTF8.GetString(stream.ToArray());
                 }
                 catch (JsonException) { throw new InvalidDataException("Tool arguments must be a valid JSON object."); }
-                response.ToolCalls.Add(new ReplayToolCall { ToolName = record.ToolName, ArgumentsJson = args, Result = RedactPayload(result.Result, redaction) });
+                response.ToolCalls.Add(new ReplayToolCall { ToolName = record.ToolName, ArgumentsJson = args, Result = TrajectorySanitizer.RedactPayload(result.Result, redaction),
+                    ResultStatus = result.ResultStatus ?? "completed", FailureCode = result.FailureCode is null ? null : TrajectorySanitizer.Redact(result.FailureCode, redaction),
+                    FailureMessage = result.FailureMessage is null ? null : TrajectorySanitizer.Redact(result.FailureMessage, redaction) });
             }
             else throw new InvalidDataException("Unexpected trajectory record in selected exchange.");
         }
@@ -103,47 +106,4 @@ public static class TrajectoryReplayImporter
         return fixture;
     }
 
-    private static string RedactPayload(string text, IRedactionPipeline pipeline)
-    {
-        try
-        {
-            using var json = JsonDocument.Parse(text);
-            using var stream = new MemoryStream();
-            using (var writer = new Utf8JsonWriter(stream)) WriteRedactedJson(writer, json.RootElement, pipeline);
-            return Encoding.UTF8.GetString(stream.ToArray());
-        }
-        catch (JsonException) { return Redact(text, pipeline); }
-    }
-
-    private static string Redact(string text, IRedactionPipeline pipeline)
-        => new BaselineSecretRedactor().Redact(pipeline.Redact(text));
-
-    private static void WriteRedactedJson(Utf8JsonWriter writer, JsonElement value, IRedactionPipeline pipeline)
-    {
-        switch (value.ValueKind)
-        {
-            case JsonValueKind.Object:
-                writer.WriteStartObject();
-                var keys = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var property in value.EnumerateObject())
-                {
-                    var key = Redact(property.Name, pipeline);
-                    if (!keys.Add(key)) throw new InvalidDataException("Duplicate argument keys after redaction.");
-                    writer.WritePropertyName(key);
-                    var normalized = property.Name.Replace("_", "").Replace("-", "").ToLowerInvariant();
-                    if (normalized is "password" or "secret" or "apikey" or "token" or "accesstoken" or "refreshtoken" or "authorization" or "cookie")
-                        writer.WriteStringValue("[REDACTED]");
-                    else WriteRedactedJson(writer, property.Value, pipeline);
-                }
-                writer.WriteEndObject();
-                break;
-            case JsonValueKind.Array:
-                writer.WriteStartArray();
-                foreach (var item in value.EnumerateArray()) WriteRedactedJson(writer, item, pipeline);
-                writer.WriteEndArray();
-                break;
-            case JsonValueKind.String: writer.WriteStringValue(Redact(value.GetString()!, pipeline)); break;
-            default: value.WriteTo(writer); break;
-        }
-    }
 }

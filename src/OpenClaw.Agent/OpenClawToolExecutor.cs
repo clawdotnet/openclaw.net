@@ -575,6 +575,15 @@ public sealed class OpenClawToolExecutor
             _metrics?.IncrementToolTimeouts();
             _logger?.LogWarning("[{CorrelationId}] Tool {Tool} timed out after {Timeout}s", turnCtx.CorrelationId, tool.Name, _toolTimeoutSeconds);
         }
+        catch (ToolOutcomeException ex)
+        {
+            result = ex.Result;
+            toolFailed = true;
+            resultStatus = ex.ResultStatus;
+            failureCode = ex.FailureCode;
+            failureMessage = ex.FailureMessage;
+            _metrics?.IncrementToolFailures();
+        }
         catch (ToolSandboxException ex)
         {
             result = ex.Message;

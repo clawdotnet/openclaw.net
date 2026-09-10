@@ -96,6 +96,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton(sp =>
             new AllowlistManager(config.Memory.StoragePath, sp.GetRequiredService<ILogger<AllowlistManager>>()));
 
+        services.AddHostedService<RegressionCaptureWorker>();
         services.AddSingleton<RuntimeMetrics>();
         services.AddSingleton<IMemoryStore>(sp => CreateMemoryStore(
             startup,

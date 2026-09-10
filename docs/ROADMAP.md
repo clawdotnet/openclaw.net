@@ -63,7 +63,7 @@ These are strong candidates for the next roadmap phases because they extend the 
 The runtime already includes CLI insights, URL safety validation, and trajectory export. The next additions build on those capabilities:
 
 1. **Durable action reconciliation**: supplement persisted goals and completed-batch checkpoints with an action journal and provider idempotency keys. An interrupted external action with an unknown outcome must be reconciled before replay.
-2. **Expanded regression capture**: build on completed trajectory import/offline replay with automatic capture and support for structured failures and multimodal exchanges.
+2. **Expanded regression capture (implemented)**: opt-in bounded automatic capture, structured failed/blocked tool replay, and offline multimodal URL-content verification. See [trajectory replay](testing/trajectory-replay.md).
 3. **Full-instance backup and restore**: extend upgrade rollback to include sessions, goals, schedules, governance records, and secret-reference manifests; validate restores in an isolated instance without dispatching actions.
 4. **Run explanation and recovery view**: connect existing timelines, approvals, and evidence to show the exact blocker and valid next recovery actions.
 
