@@ -29,7 +29,7 @@ public sealed class MemoryStoreCorruptionException : IOException
 /// Sessions and notes are stored as JSON files with URL-safe base64 encoded filenames
 /// to prevent path traversal attacks. Includes in-memory LRU cache for sessions.
 /// </summary>
-public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNoteCatalog, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IBackgroundSessionStore, IAsyncDisposable, IDisposable
+public sealed class FileMemoryStore : IMemoryStore, ISessionSnapshotSource, IMemoryNoteSearch, IMemoryNoteCatalog, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IBackgroundSessionStore, IAsyncDisposable, IDisposable
 {
     private const int SessionLoadStripeCount = 64;
 
@@ -73,6 +73,24 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNo
         _sessionLoadStripes = Enumerable.Range(0, SessionLoadStripeCount)
             .Select(static _ => new SemaphoreSlim(1, 1))
             .ToArray();
+    }
+
+    public async IAsyncEnumerable<Session> ReadSnapshotsAsync(DateTimeOffset? since,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        foreach (var file in Directory.EnumerateFiles(_sessionsPath, "*.json"))
+        {
+            ct.ThrowIfCancellationRequested();
+            Session? snapshot;
+            try
+            {
+                if (since is { } cutoff && File.GetLastWriteTimeUtc(file) < cutoff.UtcDateTime) continue;
+                snapshot = JsonSerializer.Deserialize(await File.ReadAllTextAsync(file, ct), CoreJsonContext.Default.Session);
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+            { _logger?.LogWarning(ex, "Skipping an unreadable capture snapshot."); continue; }
+            if (snapshot is not null) yield return snapshot;
+        }
     }
 
     public async ValueTask<Session?> GetSessionAsync(string sessionId, CancellationToken ct)

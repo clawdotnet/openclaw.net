@@ -119,7 +119,7 @@ public sealed class TrajectoryReplay : IChatClient
     {
         if (message is null) return false;
         var (markers, text) = MediaMarkerProtocol.Extract(_fixture.Prompt);
-        if (markers.Count == 0) return message.Text == _fixture.Prompt && message.Contents.All(c => c is TextContent);
+        if (markers.Count == 0) return message.Text == (string.IsNullOrWhiteSpace(text) ? _fixture.Prompt : text) && message.Contents.All(c => c is TextContent);
         var uris = message.Contents.OfType<UriContent>().ToArray();
         return message.Text == text && uris.Length == markers.Count &&
             message.Contents.All(c => c is TextContent or UriContent) &&
