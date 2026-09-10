@@ -162,9 +162,9 @@ public sealed class SettingsStore
                 if (!persisted)
                     LastWarning = $"{LastWarning} The new token could not be reloaded; existing credential copies were retained.".Trim();
             }
-            if (!persisted && legacy.Length > 0)
+            if (!persisted)
             {
-                LastWarning = $"{LastWarning} Settings were not changed because the legacy token could not be stored safely.".Trim();
+                LastWarning = $"{LastWarning} Settings were not changed because the intended token could not be stored safely.".Trim();
                 return;
             }
         }
