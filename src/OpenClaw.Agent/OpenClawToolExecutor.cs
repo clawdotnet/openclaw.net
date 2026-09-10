@@ -31,7 +31,7 @@ public sealed class ToolExecutionResult
 
 public sealed class OpenClawToolExecutor
 {
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _liveActionResults = new();
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Session, System.Collections.Concurrent.ConcurrentDictionary<string, string>> _sessionActionResults = new();
     private Dictionary<string, ITool> _toolsByName;
     private AITool[] _toolDeclarations;
     private readonly object _toolsMutationLock = new();
@@ -521,14 +521,17 @@ public sealed class OpenClawToolExecutor
         using var actionLease = _config.Tooling.DurableActionJournal && tool.Name != "meta_invoke"
             ? await new DurableActionJournal(_config.Memory.StoragePath).OpenAsync(session.Id, ct)
             : null;
+        var liveActionResults = _sessionActionResults.GetOrCreateValue(session);
         ActionRecord? action = null;
         if (actionLease is not null)
         {
             // A changed provider call ID cannot bypass an interrupted or uncheckpointed dispatch.
             var recordedCalls = session.History.SelectMany(t => t.ToolCalls ?? []).Select(t => t.CallId).ToHashSet();
+            foreach (var recorded in actionLease.Records.Where(r => r.HistoryPersisted))
+                liveActionResults.TryRemove(recorded.Id, out _);
             var unresolved = actionLease.Records.FirstOrDefault(r => r.CallId != callId &&
                 (r.State == "started" || (r.State == "completed" && !r.HistoryPersisted && !recordedCalls.Contains(r.CallId) &&
-                    (!_liveActionResults.TryGetValue(r.Id, out var correlation) || correlation != turnCtx.CorrelationId))));
+                    (!liveActionResults.TryGetValue(r.Id, out var correlation) || correlation != turnCtx.CorrelationId))));
             if (unresolved is not null)
                 return CreateImmediateResult(toolName, persistedArgsJson,
                     $"Action {unresolved.Id} requires reconciliation before another tool can run.", callId: callId,
@@ -538,12 +541,25 @@ public sealed class OpenClawToolExecutor
                     resultStatus: ToolResultStatuses.Blocked, failureCode: "action_identity_required");
             var existed = actionLease.Records.Any(r => r.CallId == callId);
             action = actionLease.Begin(callId, toolName, argsJson);
-            if (existed && action.State == "started" && tool is IReconciliableTool reconciliable)
+            if (existed && action.State == "started" && tool is IReconcilableTool reconciliable)
             {
-                var outcome = await reconciliable.ReconcileAsync(action.Id, ct);
-                if (outcome.State is "completed" or "not_executed")
-                    actionLease.Resolve(action, action.Revision, outcome.State, "Provider reconciliation.",
-                        outcome.Result is null ? null : _redaction.Redact(outcome.Result));
+                try
+                {
+                    using var reconciliationTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    if (_toolTimeoutSeconds > 0) reconciliationTimeout.CancelAfter(TimeSpan.FromSeconds(_toolTimeoutSeconds));
+                    var outcome = await reconciliable.ReconcileAsync(action.Id, reconciliationTimeout.Token);
+                    if (outcome.State is "completed" or "not_executed")
+                        actionLease.Resolve(action, action.Revision, outcome.State, "Provider reconciliation.",
+                            outcome.Result is null ? null : _redaction.Redact(outcome.Result));
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Action reconciliation could not establish an outcome for {ActionId}", action.Id);
+                    return CreateImmediateResult(toolName, persistedArgsJson,
+                        $"Action {action.Id} still requires provider reconciliation.", callId: callId,
+                        resultStatus: ToolResultStatuses.Blocked, failureCode: "action_reconciliation_required");
+                }
             }
             if (existed && action.State == "started")
                 return CreateImmediateResult(toolName, persistedArgsJson,
@@ -578,7 +594,7 @@ public sealed class OpenClawToolExecutor
             persistedArgsJson = _redaction.Redact(substitution.PersistedArgumentsJson);
             afterHookCtx = hookCtx with { ArgumentsJson = persistedArgsJson };
 
-            if (action is not null && tool is IReconciliableTool durableTool)
+            if (action is not null && tool is IReconcilableTool durableTool)
             {
                 using var actionTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 if (_toolTimeoutSeconds > 0) actionTimeout.CancelAfter(TimeSpan.FromSeconds(_toolTimeoutSeconds));
@@ -657,22 +673,6 @@ public sealed class OpenClawToolExecutor
         failureMessage = failureMessage is null ? null : _redaction.Redact(failureMessage);
         nextStep = nextStep is null ? null : _redaction.Redact(nextStep);
 
-        if (action is not null)
-        {
-            if (!toolFailed)
-            {
-                actionLease!.Complete(action, result);
-                _liveActionResults[action.Id] = turnCtx.CorrelationId;
-            }
-            else
-            {
-                // An exception or timeout does not prove that an external mutation failed.
-                resultStatus = ToolResultStatuses.Blocked;
-                failureCode = "action_reconciliation_required";
-                nextStep = $"Verify provider outcome for action {action.Id} before retrying.";
-            }
-        }
-
         // Apply result interceptors (e.g., TokenJuice reduction)
         if (_interceptors is { Count: > 0 })
         {
@@ -694,6 +694,22 @@ public sealed class OpenClawToolExecutor
                     _logger?.LogWarning(ex, "[{CorrelationId}] Interceptor {Interceptor} failed, returning raw output",
                         turnCtx.CorrelationId, interceptor.Name);
                 }
+            }
+        }
+
+        if (action is not null)
+        {
+            if (!toolFailed)
+            {
+                actionLease!.Complete(action, result);
+                liveActionResults[action.Id] = turnCtx.CorrelationId;
+            }
+            else
+            {
+                // An exception or timeout does not prove that an external mutation failed.
+                resultStatus = ToolResultStatuses.Blocked;
+                failureCode = "action_reconciliation_required";
+                nextStep = $"Verify provider outcome for action {action.Id} before retrying.";
             }
         }
 

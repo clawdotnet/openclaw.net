@@ -17,6 +17,31 @@ public sealed class DurableActionJournalTests : IDisposable
         => executor.ExecuteAsync("test", "{}", id, _session, context ?? new(), false, null, TestContext.Current.CancellationToken);
 
     [Fact]
+    public async Task ReconciliationErrorsRemainBlockedWithoutAnotherDispatch()
+    {
+        var tool = new ProviderTool { FailReconciliation = true };
+        await Run(Executor(tool), "one");
+        Assert.Equal("action_reconciliation_required", (await Run(Executor(tool), "one")).FailureCode);
+        Assert.Single(tool.Keys);
+    }
+    [Fact]
+    public async Task ReplayUsesFinalInterceptedResult()
+    {
+        var tool = new CountingTool();
+        var executor = new OpenClawToolExecutor([tool], 5, false, [], [], config: new GatewayConfig
+        { Memory = new() { StoragePath = _root }, Tooling = new() { DurableActionJournal = true, RequireToolApproval = false } },
+            interceptors: [new ReducedResult()]);
+        Assert.Equal("reduced", (await Run(executor, "one")).ResultText);
+        Assert.Equal("reduced", (await Run(Executor(tool), "one")).ResultText);
+        Assert.Equal(1, tool.Calls);
+    }
+    private sealed class ReducedResult : IToolResultInterceptor
+    {
+        public int Order => 0; public string Name => "test";
+        public ValueTask<string> InterceptAsync(ReductionContext context, CancellationToken ct) => ValueTask.FromResult("reduced");
+    }
+
+    [Fact]
     public async Task PersistedResultsDoNotBlockAfterHistoryCompaction()
     {
         var tool = new CountingTool();
@@ -93,12 +118,12 @@ public sealed class DurableActionJournalTests : IDisposable
         public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
         { Calls++; if (Fail) throw new OperationCanceledException(); return ValueTask.FromResult("done"); }
     }
-    private sealed class ProviderTool : CountingTool, IReconciliableTool
+    private sealed class ProviderTool : CountingTool, IReconcilableTool
     {
-        public List<string> Keys = []; public int Reconciliations;
+        public readonly List<string> Keys = []; public int Reconciliations; public bool FailReconciliation;
         public ProviderTool() { Fail = true; }
         public ValueTask<ActionOutcome> ReconcileAsync(string key, CancellationToken ct)
-        { Reconciliations++; return ValueTask.FromResult(new ActionOutcome("not_executed")); }
+        { Reconciliations++; if (FailReconciliation) throw new IOException("provider offline"); return ValueTask.FromResult(new ActionOutcome("not_executed")); }
         public ValueTask<string> ExecuteWithIdempotencyAsync(string args, string key, ToolExecutionContext context, CancellationToken ct)
         { Assert.Equal(key, context.IdempotencyKey); Keys.Add(key); return ExecuteAsync(args, ct); }
     }
