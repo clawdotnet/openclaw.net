@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using OpenClaw.Core.Actions;
 using System.Text;
 using System.Text.Json;
 using System.Runtime.InteropServices;
@@ -30,6 +31,7 @@ public sealed class ToolExecutionResult
 
 public sealed class OpenClawToolExecutor
 {
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _liveActionResults = new();
     private Dictionary<string, ITool> _toolsByName;
     private AITool[] _toolDeclarations;
     private readonly object _toolsMutationLock = new();
@@ -516,6 +518,42 @@ public sealed class OpenClawToolExecutor
             }
         }
 
+        using var actionLease = _config.Tooling.DurableActionJournal && tool.Name != "meta_invoke"
+            ? await new DurableActionJournal(_config.Memory.StoragePath).OpenAsync(session.Id, ct)
+            : null;
+        ActionRecord? action = null;
+        if (actionLease is not null)
+        {
+            // A changed provider call ID cannot bypass an interrupted or uncheckpointed dispatch.
+            var recordedCalls = session.History.SelectMany(t => t.ToolCalls ?? []).Select(t => t.CallId).ToHashSet();
+            var unresolved = actionLease.Records.FirstOrDefault(r => r.CallId != callId &&
+                (r.State == "started" || (r.State == "completed" && !recordedCalls.Contains(r.CallId) &&
+                    (!_liveActionResults.TryGetValue(r.Id, out var correlation) || correlation != turnCtx.CorrelationId))));
+            if (unresolved is not null)
+                return CreateImmediateResult(toolName, persistedArgsJson,
+                    $"Action {unresolved.Id} requires reconciliation before another tool can run.", callId: callId,
+                    resultStatus: ToolResultStatuses.Blocked, failureCode: "action_reconciliation_required");
+            if (string.IsNullOrWhiteSpace(callId))
+                return CreateImmediateResult(toolName, persistedArgsJson, "Durable actions require a stable call ID.",
+                    resultStatus: ToolResultStatuses.Blocked, failureCode: "action_identity_required");
+            var existed = actionLease.Records.Any(r => r.CallId == callId);
+            action = actionLease.Begin(callId, toolName, argsJson);
+            if (existed && action.State == "started" && tool is IReconciliableTool reconciliable)
+            {
+                var outcome = await reconciliable.ReconcileAsync(action.Id, ct);
+                if (outcome.State is "completed" or "not_executed")
+                    actionLease.Resolve(action, action.Revision, outcome.State, "Provider reconciliation.",
+                        outcome.Result is null ? null : _redaction.Redact(outcome.Result));
+            }
+            if (existed && action.State == "started")
+                return CreateImmediateResult(toolName, persistedArgsJson,
+                    $"Action {action.Id} has an unknown outcome. Verify provider state before retrying.", callId: callId,
+                    resultStatus: ToolResultStatuses.Blocked, failureCode: "action_reconciliation_required");
+            if (action.State == "completed")
+                return CreateImmediateResult(toolName, persistedArgsJson, action.Result!, callId: callId);
+            if (action.State == "not_executed") actionLease.MarkStarted(action);
+        }
+
         var sw = Stopwatch.StartNew();
         string result;
         string resultStatus = ToolResultStatuses.Completed;
@@ -540,7 +578,14 @@ public sealed class OpenClawToolExecutor
             persistedArgsJson = _redaction.Redact(substitution.PersistedArgumentsJson);
             afterHookCtx = hookCtx with { ArgumentsJson = persistedArgsJson };
 
-            if (onDelta is not null && tool is IStreamingTool streamingTool)
+            if (action is not null && tool is IReconciliableTool durableTool)
+            {
+                using var actionTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                if (_toolTimeoutSeconds > 0) actionTimeout.CancelAfter(TimeSpan.FromSeconds(_toolTimeoutSeconds));
+                result = await durableTool.ExecuteWithIdempotencyAsync(executionArgsJson, action.Id,
+                    new ToolExecutionContext { Session = session, TurnContext = turnCtx, IdempotencyKey = action.Id }, actionTimeout.Token);
+            }
+            else if (onDelta is not null && tool is IStreamingTool streamingTool)
                 result = await ExecuteStreamingToolCollectAsync(streamingTool, executionArgsJson, onDelta, ct);
             else if (_metaInvokeExecutor is not null &&
                 string.Equals(tool.Name, "meta_invoke", StringComparison.Ordinal) &&
@@ -611,6 +656,22 @@ public sealed class OpenClawToolExecutor
         result = _redaction.Redact(result);
         failureMessage = failureMessage is null ? null : _redaction.Redact(failureMessage);
         nextStep = nextStep is null ? null : _redaction.Redact(nextStep);
+
+        if (action is not null)
+        {
+            if (!toolFailed)
+            {
+                actionLease!.Complete(action, result);
+                _liveActionResults[action.Id] = turnCtx.CorrelationId;
+            }
+            else
+            {
+                // An exception or timeout does not prove that an external mutation failed.
+                resultStatus = ToolResultStatuses.Blocked;
+                failureCode = "action_reconciliation_required";
+                nextStep = $"Verify provider outcome for action {action.Id} before retrying.";
+            }
+        }
 
         // Apply result interceptors (e.g., TokenJuice reduction)
         if (_interceptors is { Count: > 0 })
