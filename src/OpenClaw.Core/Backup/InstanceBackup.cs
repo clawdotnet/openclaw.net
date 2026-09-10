@@ -42,6 +42,7 @@ public static class InstanceBackup
                 throw new InvalidOperationException("Backup destination must be outside every source root.");
         EnsureNewDestination(destination);
         var staging = destination + ".staging-" + Guid.NewGuid().ToString("N");
+        EnsureNewDestination(staging);
         try
         {
             PrivateDirectory(staging);
@@ -118,6 +119,7 @@ public static class InstanceBackup
         if (Within(Path.GetFullPath(backup), destination) || Within(destination, Path.GetFullPath(backup)))
             throw new InvalidOperationException("Restore destination must be outside the backup.");
         var staging = destination + ".staging-" + Guid.NewGuid().ToString("N");
+        EnsureNewDestination(staging);
         try
         {
             PrivateDirectory(staging);
@@ -129,7 +131,7 @@ public static class InstanceBackup
                 if (await DigestAsync(target, ct) != file.Sha256) throw new InvalidDataException("Backup changed during restore.");
             }
             // SQLite checks run only on the isolated copy, including any captured WAL. Nothing starts the gateway.
-            foreach (var file in manifest.Files.Where(f => f.Path.EndsWith(".db", StringComparison.OrdinalIgnoreCase) || f.Path.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase)))
+            foreach (var file in manifest.Files.Where(f => f.Path.EndsWith(".db", StringComparison.OrdinalIgnoreCase) || f.Path.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) || f.Path.EndsWith(".sqlite3", StringComparison.OrdinalIgnoreCase)))
             {
                 using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
                 { DataSource = SafePath(staging, file.Path), Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
