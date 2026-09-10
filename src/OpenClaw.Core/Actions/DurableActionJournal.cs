@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Microsoft.Extensions.Logging;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -68,16 +69,22 @@ public sealed class DurableActionJournal(string storagePath)
         catch { handle.Dispose(); throw; }
     }
 
-    public async Task AcknowledgePersistedHistoryAsync(Session session, CancellationToken ct)
+    public async Task AcknowledgePersistedHistoryAsync(Session session, CancellationToken ct, ILogger? logger = null)
     {
         // A tool can persist session metadata while it holds the dispatch lease. Skip that
         // acknowledgement; the completed batch/final turn will acknowledge later.
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromMilliseconds(100));
-        Lease lease;
-        try { lease = await OpenAsync(session.Id, timeout.Token); }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return; }
-        using (lease) lease.AcknowledgeHistory(session);
+        try
+        {
+            using var lease = await OpenAsync(session.Id, timeout.Token);
+            lease.AcknowledgeHistory(session);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)
+        {
+            logger?.LogWarning(ex, "Session history was saved, but journal acknowledgement failed. Action reconciliation remains required.");
+        }
     }
 
     public sealed class Lease(string path, string sessionId, FileStream handle, List<ActionRecord> records) : IDisposable
