@@ -1233,7 +1233,7 @@
     /// <c>Session</c> with <c>history</c> of <c>ChatTurn</c>, plus <c>isActive</c> /
     /// <c>branchCount</c> / <c>metadata</c>) into the Dashboard <see cref="SessionDetail"/> shape.
     /// </summary>
-    private static SessionDetail BuildSessionDetailFromAdmin(
+    private SessionDetail BuildSessionDetailFromAdmin(
         SessionInfo fallback,
         System.Text.Json.JsonElement root,
         System.Text.Json.JsonElement sessionEl)

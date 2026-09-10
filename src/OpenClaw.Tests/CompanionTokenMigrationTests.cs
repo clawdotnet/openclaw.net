@@ -47,6 +47,18 @@ public sealed class CompanionTokenMigrationTests : IDisposable
     }
 
     [Fact]
+    public void FailedTokenReplacementCannotPairOldSecretWithNewServer()
+    {
+        var store = Store();
+        store.Save(new CompanionSettings { RememberToken = true, AuthToken = "old", ServerUrl = "ws://old.invalid/ws" });
+        _secure.FailSave = true;
+        store.Save(new CompanionSettings { RememberToken = true, AuthToken = "new", ServerUrl = "ws://new.invalid/ws" });
+        var loaded = store.Load();
+        Assert.Equal("old", loaded.AuthToken);
+        Assert.Equal("ws://old.invalid/ws", loaded.ServerUrl);
+    }
+
+    [Fact]
     public void OrdinarySavePreservesConflictingRecoveryCopiesWithoutSecureRewrite()
     {
         Legacy(); _secure.Secret = "protected-secret";
