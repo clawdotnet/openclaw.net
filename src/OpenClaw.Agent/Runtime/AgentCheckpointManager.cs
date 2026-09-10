@@ -80,7 +80,7 @@ internal sealed class AgentCheckpointManager(IMemoryStore memory, ILogger? logge
             {
                 checkpoint.PersistedAtUtc = DateTimeOffset.UtcNow;
                 await memory.SaveSessionAsync(session, ct);
-                if (journal is not null) await journal.AcknowledgePersistedHistoryAsync(session, ct);
+                if (journal is not null) await journal.AcknowledgePersistedHistoryAsync(session, ct, logger);
                 logger?.LogInformation(
                     "[{CorrelationId}] Persisted checkpoint {CheckpointId} for session={SessionId} toolCalls={ToolCallCount}",
                     turnCtx.CorrelationId,

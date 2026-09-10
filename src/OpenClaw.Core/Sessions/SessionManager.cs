@@ -152,7 +152,7 @@ public sealed class SessionManager : IAsyncDisposable, IDisposable
             try
             {
                 await _store.SaveSessionAsync(session, ct);
-                if (_actionJournal is not null) await _actionJournal.AcknowledgePersistedHistoryAsync(session, ct);
+                if (_actionJournal is not null) await _actionJournal.AcknowledgePersistedHistoryAsync(session, ct, _logger);
                 return;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)

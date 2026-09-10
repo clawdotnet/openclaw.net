@@ -46,7 +46,7 @@ The runner evaluates emitted runtime evidence and requires at least one outcome 
 
 Malformed JSON, unmatched calls/results, duplicate prompt selection, incomplete exchanges, unsupported schemas, failed/denied/unknown tool outcomes, and ambiguous identical calls within one batch are rejected. Import does not reconstruct prior conversation context, original tool schemas, model reasoning, token usage, timings, approval decisions, images, or audio. Configure approvals in the test explicitly; they are denied by default. Recorded model outputs test the runtime, not the quality of a live model's next response.
 
-Automatic capture during production execution and replay of structured failures/media remain follow-on work. Durable action reconciliation remains a separate roadmap item; this feature never resumes or repeats a live external action.
+Automatic capture and structured-failure/media replay are implemented as described below. Durable action reconciliation is a separate opt-in runtime feature; offline replay never resumes or repeats a live external action.
 
 ## Automatic capture and expanded outcomes
 

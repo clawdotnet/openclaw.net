@@ -1,4 +1,5 @@
 using OpenClaw.Agent;
+using NSubstitute;
 using OpenClaw.Core.Actions;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
@@ -15,6 +16,36 @@ public sealed class DurableActionJournalTests : IDisposable
     { Memory = new() { StoragePath = _root }, Tooling = new() { DurableActionJournal = true, RequireToolApproval = false } });
     private Task<ToolExecutionResult> Run(OpenClawToolExecutor executor, string id, TurnContext? context = null)
         => executor.ExecuteAsync("test", "{}", id, _session, context ?? new(), false, null, TestContext.Current.CancellationToken);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CorruptJournalDoesNotRetrySuccessfulSessionPersistence(bool checkpoint)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var journal = new DurableActionJournal(_root);
+        using (var lease = await journal.OpenAsync(_session.Id, ct)) lease.Begin("call", "test", "{}");
+        var journalPath = Assert.Single(Directory.GetFiles(Path.Combine(_root, "action-journal"), "*.json"));
+        await File.WriteAllTextAsync(journalPath, "{", ct);
+        var memory = Substitute.For<IMemoryStore>();
+        var logger = Substitute.For<Microsoft.Extensions.Logging.ILogger>();
+        if (checkpoint)
+        {
+            await new AgentCheckpointManager(memory, logger, journal).PersistToolBatchCheckpointAsync(_session, new(), 1,
+                [new ToolInvocation { CallId = "call", ToolName = "test", Arguments = "{}", Result = "done" }], ct);
+            Assert.NotNull(_session.ExecutionCheckpoint!.PersistedAtUtc);
+        }
+        else
+        {
+            using var manager = new OpenClaw.Core.Sessions.SessionManager(memory, new GatewayConfig
+            { Memory = new() { StoragePath = _root }, Tooling = new() { DurableActionJournal = true } }, logger);
+            await manager.PersistAsync(_session, ct);
+        }
+        await memory.Received(1).SaveSessionAsync(_session, ct);
+        Assert.Contains(logger.ReceivedCalls(), call => call.GetMethodInfo().Name == "Log");
+        Assert.Equal("{", await File.ReadAllTextAsync(journalPath, ct));
+        await Assert.ThrowsAsync<System.Text.Json.JsonException>(() => journal.OpenAsync(_session.Id, ct));
+    }
 
     [Fact]
     public async Task CatalogReadFailureDoesNotBlockLaterMutation()
