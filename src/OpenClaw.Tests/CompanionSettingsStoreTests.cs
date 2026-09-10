@@ -55,7 +55,8 @@ public sealed class CompanionSettingsStoreTests
             Assert.Contains("not saved", store.LastWarning, StringComparison.OrdinalIgnoreCase);
 
             var loaded = store.Load();
-            Assert.True(loaded.RememberToken);
+            Assert.False(loaded.RememberToken);
+            Assert.False(File.Exists(store.SettingsPath));
             Assert.Null(loaded.AuthToken);
         }
         finally
