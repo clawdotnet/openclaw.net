@@ -18,7 +18,7 @@ internal static class BackupCommands
                 var planPath = Path.GetFullPath(args[1]);
                 var plan = JsonSerializer.Deserialize(await File.ReadAllTextAsync(planPath), BackupJsonContext.Default.InstanceBackupPlan)
                     ?? throw new InvalidDataException("Invalid backup plan.");
-                foreach (var key in plan.Roots.Keys.ToArray()) plan.Roots[key] = Path.GetFullPath(plan.Roots[key], Path.GetDirectoryName(planPath)!);
+                foreach (var key in plan.Roots.Keys.ToArray()) plan.Roots[key] = Path.GetFullPath(OpenClaw.Core.Setup.GatewaySetupPaths.ExpandPath(plan.Roots[key]), Path.GetDirectoryName(planPath)!);
                 await InstanceBackup.CreateAsync(plan, args[2], offline: true);
                 Console.WriteLine("Backup created and checksums validated."); return 0;
             case "validate" when args.Length == 2:
