@@ -50,10 +50,11 @@ public partial class App : Application
             desktop.Exit += async (_, _) =>
             {
                 viewModel.StopApprovalsPolling();
+                // Desktop Exit does not await async event handlers. Stop the owned child
+                // synchronously before socket cleanup can yield and the process exits.
+                _managedGateway?.Dispose();
                 if (_client is not null)
                     await _client.DisposeAsync();
-                if (_managedGateway is not null)
-                    await _managedGateway.DisposeAsync();
             };
         }
 
