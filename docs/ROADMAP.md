@@ -2,6 +2,8 @@
 
 ## Recently Completed
 
+- **Run explanation and recovery view**: admin console, Dashboard, and Companion session details combine recorded run/goal state, goal notes, session-scoped pending approvals, checkpoints, and recent tool failure evidence with contextual recovery guidance. Existing timelines remain available for investigation; the view does not authorize or replay actions.
+
 - **Real-run regression import and offline replay**: import a redacted, complete text exchange from a gateway trajectory export and run recorded provider/tool fixtures through `RuntimeScenarioRunner`, with independent assertions and strict consumption checks. Includes an executable sample; see [trajectory replay](testing/trajectory-replay.md).
 
 - Browser sessions invalidate after local operator account updates, deletion, or disablement.

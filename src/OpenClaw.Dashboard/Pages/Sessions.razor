@@ -177,6 +177,20 @@
                         </div>
                     </div>
 
+                    @if (_selectedDetail.Recovery is { } recovery)
+                    {
+                        <MudDivider Class="my-3" />
+                        <section class="sx-section">
+                            <MudText Typo="Typo.subtitle2">Run explanation and recovery</MudText>
+                            <MudText Typo="Typo.body2">@recovery.Summary</MudText>
+                            <MudText Typo="Typo.subtitle2" Class="mt-3">Recorded evidence</MudText>
+                            <ul>@foreach (var item in recovery.Evidence) { <li>@item</li> }</ul>
+                            <MudText Typo="Typo.subtitle2">Next steps</MudText>
+                            <ol>@foreach (var item in recovery.NextSteps) { <li>@item</li> }</ol>
+                            <MudText Typo="Typo.caption">Refresh to check for changes. These steps do not execute or approve actions.</MudText>
+                        </section>
+                    }
+
                     @if (!string.IsNullOrEmpty(_selectedDetail.RunState) && _selectedDetail.RunState is not "Idle")
                     {
                         <MudDivider Class="my-3" />
@@ -1294,7 +1308,10 @@
             metadata.Count == 0 ? null : metadata, messages,
             RunState: runState,
             BackgroundRunObjective: backgroundRunObjective,
-            BackgroundContinuationCount: backgroundContinuationCount);
+            BackgroundContinuationCount: backgroundContinuationCount,
+            Recovery: root.TryGetProperty("recovery", out var recovery) && recovery.ValueKind == System.Text.Json.JsonValueKind.Object
+                ? System.Text.Json.JsonSerializer.Deserialize<OpenClaw.Core.Models.SessionRecoveryExplanation>(recovery.GetRawText(), new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                : null);
     }
 
     private async Task LoadSessionTimeline(string sessionId)
