@@ -17,6 +17,40 @@ public sealed class DurableActionJournalTests : IDisposable
         => executor.ExecuteAsync("test", "{}", id, _session, context ?? new(), false, null, TestContext.Current.CancellationToken);
 
     [Fact]
+    public async Task MafAdapterGeneratesDistinctPersistableActionIds()
+    {
+        var tool = new CountingTool(); var invocations = new List<ToolInvocation>();
+        using var scope = AgentExecutionContextScope.Push(new AgentExecutionContext
+        { Session = _session, TurnContext = new(), SystemPromptLength = 0, SkillPromptLength = 0,
+            SessionTokenBudget = 0, ToolInvocations = invocations });
+        var adapter = new OpenClaw.MicrosoftAgentFrameworkAdapter.MafToolAdapter(tool, Executor(tool));
+        await adapter.InvokeAsync(new Microsoft.Extensions.AI.AIFunctionArguments(), TestContext.Current.CancellationToken);
+        await adapter.InvokeAsync(new Microsoft.Extensions.AI.AIFunctionArguments(), TestContext.Current.CancellationToken);
+        Assert.Equal(2, tool.Calls);
+        Assert.Equal(2, invocations.Select(c => c.CallId).Distinct().Count());
+        Assert.All(invocations, call => Assert.False(string.IsNullOrWhiteSpace(call.CallId)));
+    }
+
+    [Fact]
+    public async Task PreparationFailureDoesNotLeaveUnknownExternalOutcome()
+    {
+        var tool = new CountingTool();
+        var executor = new OpenClawToolExecutor([tool], 5, false, [], [], config: new GatewayConfig
+        { Memory = new() { StoragePath = _root }, Tooling = new() { DurableActionJournal = true, RequireToolApproval = false } },
+            sentinelSubstitution: new FailedPreparation());
+        await Run(executor, "one"); Assert.Equal(0, tool.Calls);
+        using (var lease = await new DurableActionJournal(_root).OpenAsync(_session.Id, TestContext.Current.CancellationToken))
+            Assert.Equal("not_executed", Assert.Single(lease.Records).State);
+        await Run(Executor(tool), "two"); Assert.Equal(1, tool.Calls);
+    }
+
+    private sealed class FailedPreparation : OpenClaw.Core.Security.ISentinelSubstitutionService
+    {
+        public ValueTask<OpenClaw.Core.Security.SentinelSubstitutionResult> SubstituteAsync(OpenClaw.Core.Security.SentinelSubstitutionContext context, CancellationToken ct)
+            => throw new InvalidOperationException("Unavailable secret reference.");
+    }
+
+    [Fact]
     public async Task ReusedIdentityWithDifferentArgumentsBlocksInsteadOfThrowing()
     {
         var executor = Executor(new CountingTool());
