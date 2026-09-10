@@ -8,7 +8,7 @@ using OpenClaw.Core.Models;
 namespace OpenClaw.Core.Actions;
 
 /// <summary>Adapters must query provider state without performing the action in ReconcileAsync.</summary>
-public interface IReconciliableTool : ITool
+public interface IReconcilableTool : ITool
 {
     ValueTask<ActionOutcome> ReconcileAsync(string idempotencyKey, CancellationToken ct);
     ValueTask<string> ExecuteWithIdempotencyAsync(string argumentsJson, string idempotencyKey, ToolExecutionContext context, CancellationToken ct);
@@ -58,7 +58,10 @@ public sealed class DurableActionJournal(string storagePath)
                     ?? throw new InvalidDataException("Invalid action journal.")
                 : [];
             if (records.Any(r => r.SessionId != sessionId || r.Id != Hash(sessionId + "\n" + r.CallId)
-                || r.State is not ("started" or "completed" or "not_executed") || r.Revision < 1)
+                || r.State is not ("started" or "completed" or "not_executed") || r.Revision < 1
+                || (r.State == "completed" && r.Result is null)
+                || (r.State != "started" && string.IsNullOrWhiteSpace(r.Evidence))
+                || (r.HistoryPersisted && r.State != "completed"))
                 || records.Select(r => r.Id).Distinct().Count() != records.Count)
                 throw new InvalidDataException("Invalid action journal records.");
             return new Lease(stem + ".json", sessionId, handle, records);
