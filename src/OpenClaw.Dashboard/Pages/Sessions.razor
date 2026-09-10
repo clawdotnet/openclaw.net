@@ -1310,7 +1310,7 @@
             BackgroundRunObjective: backgroundRunObjective,
             BackgroundContinuationCount: backgroundContinuationCount,
             Recovery: root.TryGetProperty("recovery", out var recovery) && recovery.ValueKind == System.Text.Json.JsonValueKind.Object
-                ? System.Text.Json.JsonSerializer.Deserialize<OpenClaw.Core.Models.SessionRecoveryExplanation>(recovery.GetRawText(), new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                ? System.Text.Json.JsonSerializer.Deserialize<OpenClaw.Core.Models.SessionRecoveryExplanation>(recovery.GetRawText(), Api.JsonOptions)
                 : null);
     }
 
