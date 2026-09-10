@@ -32,6 +32,7 @@ internal static class Program
                 "insights" => await InsightsAsync(rest),
                 "setup" => await SetupAsync(rest),
                 "upgrade" => await UpgradeAsync(rest),
+                "backup" => await BackupCommands.RunAsync(rest),
                 "maintenance" => await MaintenanceAsync(rest),
                 "payment" => await PaymentCommands.RunAsync(rest),
                 "external" => await ExternalCliCommands.RunAsync(rest),
@@ -102,6 +103,7 @@ internal static class Program
               openclaw setup [options]
               openclaw setup <launch|service|status|verify|channel|provider|tailscale> [options]
               openclaw upgrade <check|rollback> [options]
+              openclaw backup <create|validate|restore> [options]
               openclaw init [options]
               openclaw migrate [options]
               openclaw migrate <legacy|upstream> [options]
