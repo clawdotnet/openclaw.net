@@ -3,7 +3,7 @@ using OpenClaw.Companion.Models;
 
 namespace OpenClaw.Companion;
 
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true, PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(CompanionSettings))]
 internal partial class CompanionJsonContext : JsonSerializerContext
 {
