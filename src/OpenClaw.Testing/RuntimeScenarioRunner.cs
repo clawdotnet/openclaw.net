@@ -1,4 +1,6 @@
 using System.Text;
+using Microsoft.Extensions.AI;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Agent;
 using OpenClaw.Core.Models;
 
@@ -14,6 +16,33 @@ public sealed class RuntimeScenarioRunner(
     ToolApprovalCallback? approval = null,
     ScenarioOracleRegistry? oracles = null) : IScenarioRunner
 {
+    /// <summary>Exercises the runtime with isolated recorded provider/tool fixtures and independent outcome assertions.</summary>
+    public static async ValueTask<ScenarioRunResult> RunReplayAsync(TrajectoryReplayFixture fixture,
+        IReadOnlyList<ScenarioOracleDefinition> assertions,
+        Func<IChatClient, IReadOnlyList<ITool>, IAgentRuntime> createRuntime,
+        ToolApprovalCallback? approval = null, CancellationToken cancellationToken = default)
+    {
+        using var replay = new TrajectoryReplay(fixture);
+        var scenario = new AgentScenario
+        {
+            Id = "trajectory-replay", Input = new() { UserMessage = fixture.Prompt }, Oracles = assertions.ToList()
+        };
+        var result = await new RuntimeScenarioRunner(_ => createRuntime(replay, replay.Tools), approval).RunAsync(scenario, cancellationToken);
+        string? divergence = null;
+        try { replay.VerifyComplete(); }
+        catch (InvalidOperationException ex) { divergence = ex.Message; }
+        var outcomes = result.OracleResults.Append(new OracleResult
+        {
+            Name = "replay-consumed", Passed = divergence is null, Message = divergence ?? "All recorded responses and tools were consumed."
+        }).ToList();
+        return new ScenarioRunResult
+        {
+            Scenario = result.Scenario, Trace = result.Trace, OracleResults = outcomes,
+            Passed = outcomes.All(o => o.Passed), StartedAtUtc = result.StartedAtUtc, CompletedAtUtc = result.CompletedAtUtc,
+            FailureSummary = string.Join("; ", outcomes.Where(o => !o.Passed).Select(o => o.Message))
+        };
+    }
+
     public async ValueTask<ScenarioRunResult> RunAsync(AgentScenario scenario, CancellationToken cancellationToken = default)
     {
         var started = DateTimeOffset.UtcNow;

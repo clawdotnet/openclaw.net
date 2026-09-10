@@ -209,6 +209,9 @@ public sealed class PromptCacheTraceConfig
 
 public sealed class MemoryConfig
 {
+    public bool RegressionCaptureEnabled { get; set; }
+    public int RegressionCaptureMaxFiles { get; set; } = 100;
+
     /// <summary>Memory backend provider: "file" (default), "sqlite", or "mempalace".</summary>
     public string Provider { get; set; } = "file";
 

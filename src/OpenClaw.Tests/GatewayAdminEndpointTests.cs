@@ -1481,6 +1481,34 @@ public sealed class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task AdminTrajectoryExport_CanReplayACompleteNativeExchange()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("replay-export", "api", "operator", TestContext.Current.CancellationToken);
+        session.History.Add(new ChatTurn { Role = "user", Content = "Look up the answer" });
+        session.History.Add(new ChatTurn { Role = "assistant", Content = "[tool_use]", ToolCalls =
+            [new() { CallId = "original-call", ToolName = "lookup", Arguments = "{}", Result = "42", ResultStatus = ToolResultStatuses.Completed }] });
+        session.History.Add(new ChatTurn { Role = "assistant", Content = "The answer is 42" });
+        await harness.Runtime.SessionManager.PersistAsync(session, TestContext.Current.CancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/trajectory/export?sessionId=replay-export&anonymize=true");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        using var response = await harness.Client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var jsonl = await response.Content.ReadAsStringAsync();
+        using var first = JsonDocument.Parse(jsonl.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
+        var exportedId = first.RootElement.GetProperty("sessionId").GetString()!;
+        var fixture = await OpenClaw.Testing.TrajectoryReplayImporter.ImportAsync(new StringReader(jsonl), exportedId, 0,
+            new RedactionPipeline([new BaselineSecretRedactor()]), TestContext.Current.CancellationToken);
+        Assert.Empty(fixture.Responses[0].Text);
+        var result = await OpenClaw.Testing.RuntimeScenarioRunner.RunReplayAsync(fixture,
+            [new() { Type = OpenClaw.Testing.ScenarioOracleTypes.FinalAnswerContains, Value = JsonSerializer.SerializeToElement("42") }],
+            (provider, tools) => new AgentRuntime(provider, tools, Substitute.For<IMemoryStore>(), new LlmProviderConfig { Model = "offline" }, maxHistoryTurns: 20),
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(result.Passed, result.FailureSummary);
+        Assert.Equal("The answer is 42", result.Trace.FinalAnswer);
+    }
+
+    [Fact]
     public async Task AdminTrajectoryExport_ExportsJsonlAndAnonymizes()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);

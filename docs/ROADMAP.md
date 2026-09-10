@@ -2,6 +2,8 @@
 
 ## Recently Completed
 
+- **Real-run regression import and offline replay**: import a redacted, complete text exchange from a gateway trajectory export and run recorded provider/tool fixtures through `RuntimeScenarioRunner`, with independent assertions and strict consumption checks. Includes an executable sample; see [trajectory replay](testing/trajectory-replay.md).
+
 - Browser sessions invalidate after local operator account updates, deletion, or disablement.
 - Goal completion accepts completed tool work; model status updates run alone and blocked transitions require three observations. Resume resets continuation and blocker counters.
 - Goal state is persisted atomically under the configured memory storage directory and restored lazily after restart.
@@ -61,7 +63,7 @@ These are strong candidates for the next roadmap phases because they extend the 
 The runtime already includes CLI insights, URL safety validation, and trajectory export. The next additions build on those capabilities:
 
 1. **Durable action reconciliation (implemented, opt-in)**: persisted dispatch journal, stable provider adapter keys, completed-result reuse, and blocking of unknown outcomes before replay. See [durable actions](durable-actions.md). Provider-specific adapters and executor-bypassing jobs need individual integration.
-2. **Real-run regression capture**: extend `RuntimeScenarioRunner` with redacted trajectory import and deterministic provider/tool replay fixtures.
+2. **Expanded regression capture (implemented)**: opt-in bounded automatic capture, structured failed/blocked tool replay, and offline multimodal URL-content verification. See [trajectory replay](testing/trajectory-replay.md).
 3. **Full-instance backup and restore**: extend upgrade rollback to include sessions, goals, schedules, governance records, and secret-reference manifests; validate restores in an isolated instance without dispatching actions.
 4. **Guided recovery controls (implemented)**: permission-aware goal pause/resume and evidence-backed action reconciliation with revision, approval, and budget checks. Complements the run explanation view; see [guided recovery](guided-recovery.md).
 
