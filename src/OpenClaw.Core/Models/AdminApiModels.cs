@@ -160,6 +160,7 @@ public sealed class SessionBranchListResponse
 
 public sealed class AdminSessionDetailResponse
 {
+    public SessionRecoveryExplanation? Recovery { get; init; }
     public Session? Session { get; init; }
     public bool IsActive { get; init; }
     public int BranchCount { get; init; }
