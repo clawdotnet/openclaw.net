@@ -2792,7 +2792,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 lastResult = await _toolExecutor.ExecuteAsync(
                     toolName,
                     toolArgsJson,
-                    $"meta:{metaSkill?.Name ?? "fan_out"}:{step.Id}:attempt:{attempt}",
+                    $"meta:{metaSkill?.Name ?? "fan_out"}:{step.Id}:attempt:{attempt}:{Guid.NewGuid():N}",
                     session,
                     turnCtx,
                     isStreaming: false,
