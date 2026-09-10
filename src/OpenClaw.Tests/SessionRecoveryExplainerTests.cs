@@ -15,6 +15,14 @@ public sealed class SessionRecoveryExplainerTests
         => new() { SessionId = "s1", Objective = "Fix the issue", Status = state, StatusNote = "Access is missing" };
 
     [Fact]
+    public void CorruptGoalStateLeavesExplanationAvailable()
+    {
+        var goals = NSubstitute.Substitute.For<OpenClaw.Core.Abstractions.IGoalService>();
+        NSubstitute.SubstituteExtensions.Returns(goals.GetGoal("s1"), _ => throw new InvalidDataException("bad goal"));
+        Assert.Equal("unknown", SessionRecoveryExplainer.ExplainWithGoalStore(Session(), goals, []).Status);
+    }
+
+    [Fact]
     public void Approvals_AreScopedToExactSession_AndDoNotExposeArguments()
     {
         var own = new ToolApprovalRequest { ApprovalId = "a1", SessionId = "s1", ChannelId = "test", SenderId = "user", ToolName = "shell", Arguments = "secret", Summary = "private" };
@@ -27,6 +35,19 @@ public sealed class SessionRecoveryExplainerTests
         Assert.DoesNotContain("secret", json);
         Assert.DoesNotContain("private", json);
         Assert.Equal("idle", SessionRecoveryExplainer.Explain(Session(), null, [other]).Status);
+    }
+
+    [Fact]
+    public void BlockedGoalIncludesCurrentFailureButNotAnOlderResolvedBatch()
+    {
+        var session = Session(SessionRunState.Completed);
+        session.History.Add(new ChatTurn { Role = "assistant", Content = "", ToolCalls =
+            [new() { ToolName = "upload", Arguments = "{}", FailureCode = "access_denied" }] });
+        Assert.Contains(SessionRecoveryExplainer.Explain(session, Goal(GoalStatus.Blocked), []).Evidence,
+            item => item.Contains("access_denied"));
+        session.History.Add(new ChatTurn { Role = "assistant", Content = "Resolved." });
+        Assert.DoesNotContain(SessionRecoveryExplainer.Explain(session, Goal(GoalStatus.Blocked), []).Evidence,
+            item => item.Contains("access_denied"));
     }
 
     [Theory]
