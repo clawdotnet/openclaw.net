@@ -31,7 +31,7 @@ internal static partial class AdminEndpoints
                     services.Runtime.ToolApprovalService.ListPending().Any(a => a.SessionId == id), services.Startup.Config.SessionTokenBudget), RecoveryJsonContext.Default.RecoveryControls);
             }
             catch (Exception ex) when ((ex is OperationCanceledException && !ctx.RequestAborted.IsCancellationRequested)
-                || ex is IOException or JsonException or UnauthorizedAccessException)
+                || ex is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)
             {
                 return Results.Json(new RecoveryControls { Message = "Recovery state is busy or unavailable. Refresh after active execution stops; inspect persisted data if this continues." }, RecoveryJsonContext.Default.RecoveryControls);
             }

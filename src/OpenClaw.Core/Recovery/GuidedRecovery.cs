@@ -41,7 +41,7 @@ public static class GuidedRecovery
         var recorded = session.History.SelectMany(t => t.ToolCalls ?? []).Select(c => c.CallId).ToHashSet();
         var unresolved = actions.Where(a => a.State == "started" || (a.State == "completed" && !a.HistoryPersisted && !recorded.Contains(a.CallId))).ToArray();
         var totalTokens = session.TotalInputTokens + session.TotalOutputTokens;
-        var budgetExceeded = (sessionTokenBudget > 0 && totalTokens >= sessionTokenBudget) ||
+        var budgetExceeded = session.BackgroundRun?.LastStopReason == "MaxContinuationTurnsReached" || (sessionTokenBudget > 0 && totalTokens >= sessionTokenBudget) ||
             (goal is { TokenBudget: > 0 } && Math.Max(goal.TokensUsed, totalTokens - goal.TokensAtStart) >= goal.TokenBudget) || (session.BackgroundRun is { TokenBudget: > 0 } background &&
             session.TotalInputTokens + session.TotalOutputTokens >= background.TokenBudget);
         var canResume = !running && !pendingApproval && unresolved.Length == 0 && !budgetExceeded && session.State == SessionState.Active &&
@@ -56,7 +56,7 @@ public static class GuidedRecovery
             Message = running ? "Stop active execution before changing recovery state." :
                 unresolved.Length > 0 ? "Verify provider outcomes and record evidence before resuming." :
                 pendingApproval ? "Resolve the pending approval on an approval-capable surface." :
-                budgetExceeded ? "The token budget is exhausted; resume cannot increase it." :
+                budgetExceeded ? "A token budget or continuation limit is exhausted; resume cannot increase it." :
                 goal?.Status is GoalStatus.UsageLimited or GoalStatus.BudgetLimited ? "Resolve the usage or budget limit before resuming through the normal goal workflow." :
                 canResume ? "Resume makes the goal eligible for your next message; it does not dispatch work." : "No eligible goal resume action.",
             Actions = unresolved.Select(a => new RecoveryActionItem(a.Id, a.ToolName, a.State, a.Revision)).ToList()
