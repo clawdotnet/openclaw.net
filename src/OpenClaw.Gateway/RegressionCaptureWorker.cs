@@ -21,10 +21,15 @@ internal sealed class RegressionCaptureWorker(GatewayConfig config, IMemoryStore
                     var batch = await sessions.ListSessionsAsync(page, 100, new SessionListQuery(), stoppingToken);
                     foreach (var summary in batch.Items)
                     {
-                        var session = await memory.GetSessionAsync(summary.Id, stoppingToken);
-                        if (session is not null)
-                            await RegressionCapture.CaptureAsync(session, Path.Combine(config.Memory.StoragePath, "regression-captures"),
-                                redaction, config.Memory.RegressionCaptureMaxFiles, stoppingToken);
+                        try
+                        {
+                            var session = await memory.GetSessionAsync(summary.Id, stoppingToken);
+                            if (session is not null)
+                                await RegressionCapture.CaptureAsync(session, Path.Combine(config.Memory.StoragePath, "regression-captures"),
+                                    redaction, config.Memory.RegressionCaptureMaxFiles, stoppingToken);
+                        }
+                        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
+                        catch (Exception ex) { logger.LogWarning(ex, "Skipping a session that could not be captured."); }
                     }
                     if (!batch.HasMore) break;
                 }

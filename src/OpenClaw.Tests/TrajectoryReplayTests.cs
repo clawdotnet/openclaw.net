@@ -95,6 +95,19 @@ public sealed class TrajectoryReplayTests
     }
 
     [Fact]
+    public async Task CaptureSkipsMissingToolResultEvenWithFinalText()
+    {
+        var directory = Path.Combine(AppContext.BaseDirectory, "capture-" + Guid.NewGuid().ToString("N"));
+        var session = new Session { Id = "s", ChannelId = "c", SenderId = "u" };
+        session.History.Add(new() { Role = "user", Content = "question" });
+        session.History.Add(new() { Role = "assistant", Content = "[tool_use]", ToolCalls =
+            [new ToolInvocation { ToolName = "lookup", Arguments = "{}" }] });
+        session.History.Add(new() { Role = "assistant", Content = "interrupted" });
+        Assert.Equal(0, await OpenClaw.Core.Testing.RegressionCapture.CaptureAsync(session, directory, Redaction, ct: Ct));
+        Assert.False(Directory.Exists(directory));
+    }
+
+    [Fact]
     public async Task CaptureIsBoundedAndSkipsIncompleteExchanges()
     {
         var directory = Path.Combine(AppContext.BaseDirectory, "capture-" + Guid.NewGuid().ToString("N"));

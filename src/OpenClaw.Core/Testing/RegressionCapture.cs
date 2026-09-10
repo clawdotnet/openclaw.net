@@ -21,6 +21,7 @@ public static class RegressionCapture
             var end = start + 1;
             while (end < history.Length && history[end].Role != "user") end++;
             if (end <= start + 1 || history[end - 1].Role != "assistant" || history[end - 1].ToolCalls is { Count: > 0 }) continue;
+            if (history[start..end].Any(t => t.ToolCalls?.Any(call => call.Result is null) == true)) continue;
             var builder = new StringBuilder();
             for (var i = start; i < end; i++)
             {
