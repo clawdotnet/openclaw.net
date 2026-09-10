@@ -7,7 +7,7 @@ internal static class BackupCommands
 {
     public static async Task<int> RunAsync(string[] args)
     {
-        if (args.Length == 0 || args[0] is "--help" or "help")
+        if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
         {
             Console.WriteLine("backup create <plan.json> <new-directory> --offline\nbackup validate <backup-directory>\nbackup restore <backup-directory> <new-isolated-directory>\nStop all writers before create. Plans must cover configuration, sessions, goals, schedules, governance, and secret references.");
             return 0;

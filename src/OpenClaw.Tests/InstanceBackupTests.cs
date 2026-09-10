@@ -87,10 +87,12 @@ public sealed class InstanceBackupTests : IDisposable
         await restored.OpenAsync(); using var check = restored.CreateCommand(); check.CommandText = "SELECT id FROM goals";
         Assert.Equal("durable", await check.ExecuteScalarAsync());
     }
-    [Fact]
-    public async Task InvalidDatabaseLeavesNoPartialRestore()
+    [Theory]
+    [InlineData("broken.db")]
+    [InlineData("broken.sqlite3")]
+    public async Task InvalidDatabaseLeavesNoPartialRestore(string fileName)
     {
-        File.WriteAllText(Path.Combine(Source, "broken.db"), "not a database");
+        File.WriteAllText(Path.Combine(Source, fileName), "not a database");
         await InstanceBackup.CreateAsync(Plan, Backup, true);
         await Assert.ThrowsAsync<SqliteException>(() => InstanceBackup.RestoreAsync(Backup, Restore));
         Assert.False(Directory.Exists(Restore)); Assert.Empty(Directory.GetDirectories(_root, "*.staging-*"));
