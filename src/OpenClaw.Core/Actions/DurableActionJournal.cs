@@ -24,6 +24,7 @@ public sealed class ActionRecord
     public string ArgumentsHash { get; set; } = "";
     public string State { get; set; } = "started";
     public string? Result { get; set; }
+    public bool HistoryPersisted { get; set; }
     public string? Evidence { get; set; }
     public long Revision { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
@@ -65,6 +66,18 @@ public sealed class DurableActionJournal(string storagePath)
         catch { handle.Dispose(); throw; }
     }
 
+    public async Task AcknowledgePersistedHistoryAsync(Session session, CancellationToken ct)
+    {
+        // A tool can persist session metadata while it holds the dispatch lease. Skip that
+        // acknowledgement; the completed batch/final turn will acknowledge later.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromMilliseconds(100));
+        Lease lease;
+        try { lease = await OpenAsync(session.Id, timeout.Token); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return; }
+        using (lease) lease.AcknowledgeHistory(session);
+    }
+
     public sealed class Lease(string path, string sessionId, FileStream handle, List<ActionRecord> records) : IDisposable
     {
         public IReadOnlyList<ActionRecord> Records => records;
@@ -93,6 +106,12 @@ public sealed class DurableActionJournal(string storagePath)
                 throw new ArgumentException("Resolution requires provider evidence and a completed result or confirmed non-execution.");
             record.State = state; record.Result = result; record.Evidence = evidence;
             Save(record);
+        }
+        public void AcknowledgeHistory(Session session)
+        {
+            var calls = session.History.SelectMany(t => t.ToolCalls ?? []).Select(c => c.CallId).ToHashSet();
+            foreach (var record in records.Where(r => r.State == "completed" && !r.HistoryPersisted && calls.Contains(r.CallId)))
+            { record.HistoryPersisted = true; Save(record); }
         }
         public void MarkStarted(ActionRecord record) { record.State = "started"; Save(record); }
         public void Complete(ActionRecord record, string result)

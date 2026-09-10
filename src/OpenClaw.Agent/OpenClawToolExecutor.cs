@@ -527,7 +527,7 @@ public sealed class OpenClawToolExecutor
             // A changed provider call ID cannot bypass an interrupted or uncheckpointed dispatch.
             var recordedCalls = session.History.SelectMany(t => t.ToolCalls ?? []).Select(t => t.CallId).ToHashSet();
             var unresolved = actionLease.Records.FirstOrDefault(r => r.CallId != callId &&
-                (r.State == "started" || (r.State == "completed" && !recordedCalls.Contains(r.CallId) &&
+                (r.State == "started" || (r.State == "completed" && !r.HistoryPersisted && !recordedCalls.Contains(r.CallId) &&
                     (!_liveActionResults.TryGetValue(r.Id, out var correlation) || correlation != turnCtx.CorrelationId))));
             if (unresolved is not null)
                 return CreateImmediateResult(toolName, persistedArgsJson,

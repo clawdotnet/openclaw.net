@@ -17,6 +17,22 @@ public sealed class DurableActionJournalTests : IDisposable
         => executor.ExecuteAsync("test", "{}", id, _session, context ?? new(), false, null, TestContext.Current.CancellationToken);
 
     [Fact]
+    public async Task PersistedResultsDoNotBlockAfterHistoryCompaction()
+    {
+        var tool = new CountingTool();
+        await Run(Executor(tool), "one");
+        _session.History.Add(new ChatTurn { Role = "assistant", Content = "[tool_use]", ToolCalls =
+            [new ToolInvocation { CallId = "one", ToolName = "test", Arguments = "{}", Result = "done" }] });
+        var memory = NSubstitute.Substitute.For<IMemoryStore>();
+        using var manager = new OpenClaw.Core.Sessions.SessionManager(memory, new GatewayConfig
+        { Memory = new() { StoragePath = _root }, Tooling = new() { DurableActionJournal = true } });
+        await manager.PersistAsync(_session, TestContext.Current.CancellationToken);
+        _session.History.Clear();
+        Assert.Equal("done", (await Run(Executor(tool), "two")).ResultText);
+        Assert.Equal(2, tool.Calls);
+    }
+
+    [Fact]
     public async Task CompletedDispatchReplaysWithoutCallingProviderAfterRestart()
     {
         var tool = new CountingTool();
