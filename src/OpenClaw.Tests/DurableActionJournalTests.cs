@@ -17,6 +17,24 @@ public sealed class DurableActionJournalTests : IDisposable
         => executor.ExecuteAsync("test", "{}", id, _session, context ?? new(), false, null, TestContext.Current.CancellationToken);
 
     [Fact]
+    public async Task ReusedIdentityWithDifferentArgumentsBlocksInsteadOfThrowing()
+    {
+        var executor = Executor(new CountingTool());
+        await Run(executor, "one");
+        var result = await executor.ExecuteAsync("test", "{\"changed\":true}", "one", _session, new(), false, null, TestContext.Current.CancellationToken);
+        Assert.Equal("action_identity_conflict", result.FailureCode);
+    }
+
+    [Fact]
+    public async Task JournalWaitHonorsCallerCancellation()
+    {
+        var journal = new DurableActionJournal(_root);
+        using var lease = await journal.OpenAsync(_session.Id, TestContext.Current.CancellationToken);
+        using var cancelled = new CancellationTokenSource(TimeSpan.FromMilliseconds(150));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => journal.OpenAsync(_session.Id, cancelled.Token));
+    }
+
+    [Fact]
     public async Task ReconciliationErrorsRemainBlockedWithoutAnotherDispatch()
     {
         var tool = new ProviderTool { FailReconciliation = true };
