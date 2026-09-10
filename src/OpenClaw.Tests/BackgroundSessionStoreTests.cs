@@ -12,6 +12,23 @@ public sealed class BackgroundSessionStoreTests : IAsyncDisposable
     private readonly List<string> _tempFiles = [];
 
     [Fact]
+    public async Task CaptureSnapshotDoesNotExposeOrReplaceCachedSession()
+    {
+        var dir = NewTempDir("capture-snapshot");
+        await using var store = new FileMemoryStore(dir);
+        var session = NewSession("snapshot", SessionRunState.Completed);
+        await store.SaveSessionAsync(session, TestContext.Current.CancellationToken);
+        var cached = await store.GetSessionAsync(session.Id, TestContext.Current.CancellationToken);
+        await foreach (var snapshot in store.ReadSnapshotsAsync(null, TestContext.Current.CancellationToken))
+        {
+            Assert.NotSame(cached, snapshot);
+            snapshot.History.Add(new ChatTurn { Role = "assistant", Content = "detached" });
+        }
+        Assert.Same(cached, await store.GetSessionAsync(session.Id, TestContext.Current.CancellationToken));
+        Assert.DoesNotContain(cached!.History, turn => turn.Content == "detached");
+    }
+
+    [Fact]
     public async Task FileStore_ListsOnlyRunnableBackgroundSessions()
     {
         var dir = NewTempDir("bg-file-basic");
