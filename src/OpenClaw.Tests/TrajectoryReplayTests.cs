@@ -64,7 +64,8 @@ public sealed class TrajectoryReplayTests
             Assert.Equal(0, await OpenClaw.Core.Testing.RegressionCapture.CaptureAsync(session, directory, Redaction, ct: Ct));
             var captured = await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(directory, "*.jsonl")), Ct);
             Assert.DoesNotContain("private-", captured);
-            var fixture = await TrajectoryReplayImporter.ImportAsync(new StringReader(captured), "capture", 0, Redaction, Ct);
+            using var capturedReader = new StringReader(captured);
+            var fixture = await TrajectoryReplayImporter.ImportAsync(capturedReader, "capture", 0, Redaction, Ct);
             Assert.Equal(status, fixture.Responses[0].ToolCalls[0].ResultStatus);
             var result = await RuntimeScenarioRunner.RunReplayAsync(fixture, Assertions(), Runtime, cancellationToken: Ct);
             Assert.True(result.Passed, result.FailureSummary);
@@ -361,7 +362,9 @@ public sealed class TrajectoryReplayTests
     public async Task Import_HonorsCancellationAndSizeLimit()
     {
         using var canceled = new CancellationTokenSource(); canceled.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => TrajectoryReplayImporter.ImportAsync(new StringReader("data"), "s", 0, Redaction, canceled.Token));
-        await Assert.ThrowsAsync<InvalidDataException>(() => TrajectoryReplayImporter.ImportAsync(new StringReader(new string('x', TrajectoryReplayImporter.MaxInputCharacters + 1)), "s", 0, Redaction, Ct));
+        using var cancelledReader = new StringReader("data");
+        using var oversizedReader = new StringReader(new string('x', TrajectoryReplayImporter.MaxInputCharacters + 1));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => TrajectoryReplayImporter.ImportAsync(cancelledReader, "s", 0, Redaction, canceled.Token));
+        await Assert.ThrowsAsync<InvalidDataException>(() => TrajectoryReplayImporter.ImportAsync(oversizedReader, "s", 0, Redaction, Ct));
     }
 }

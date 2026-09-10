@@ -1463,7 +1463,8 @@ public sealed class GatewayAdminEndpointTests
         var jsonl = await response.Content.ReadAsStringAsync();
         using var first = JsonDocument.Parse(jsonl.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
         var exportedId = first.RootElement.GetProperty("sessionId").GetString()!;
-        var fixture = await OpenClaw.Testing.TrajectoryReplayImporter.ImportAsync(new StringReader(jsonl), exportedId, 0,
+        using var trajectoryReader = new StringReader(jsonl);
+        var fixture = await OpenClaw.Testing.TrajectoryReplayImporter.ImportAsync(trajectoryReader, exportedId, 0,
             new RedactionPipeline([new BaselineSecretRedactor()]), TestContext.Current.CancellationToken);
         Assert.Empty(fixture.Responses[0].Text);
         var result = await OpenClaw.Testing.RuntimeScenarioRunner.RunReplayAsync(fixture,
