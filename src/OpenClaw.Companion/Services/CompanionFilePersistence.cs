@@ -20,7 +20,9 @@ internal static class CompanionFilePersistence
         }
         finally
         {
-            if (File.Exists(temporary)) File.Delete(temporary);
+            try { if (File.Exists(temporary)) File.Delete(temporary); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { System.Diagnostics.Trace.TraceWarning("Temporary credential file cleanup failed: {0}", ex.GetType().Name); }
         }
     }
 }

@@ -33,3 +33,5 @@ Migration does not rotate tokens, alter gateway accounts, or move credentials be
 A `token-update.pending` marker is written before replacing a remembered credential. It is cleared only after credential verification and the settings write succeed. If an update is interrupted or fails, Companion does not load saved gateway tokens until the intended token is re-entered and saved, or Remember token is turned off. This prevents pairing a changed credential with an old server URL. The marker contains no secret.
 
 Atomic file replacement protects individual writes; settings files and OS credential stores are not a cross-store transaction. Use one Companion writer per profile. If the process stops between a verified protected save and JSON cleanup, the next load can finish cleanup without needing to recover a lost token.
+
+Native migration has been smoke-tested on macOS. Windows DPAPI and Linux Secret Service behavior have deterministic fake-store coverage; native end-to-end migration on those platforms remains unverified.

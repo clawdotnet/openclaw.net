@@ -106,6 +106,18 @@ public sealed class ProtectedTokenStore
         return false;
     }
 
+    internal bool TryReadProtected(out string? token)
+    {
+        token = null;
+        try
+        {
+            if (!_secureStore.IsAvailable) return false;
+            token = _secureStore.LoadSecret(out var warning);
+            return warning is null;
+        }
+        catch (Exception ex) when (IsStorageFailure(ex)) { return false; }
+    }
+
     public bool SaveToken(string token, bool allowPlaintextFallback, out string? warning)
     {
         warning = null;
@@ -117,7 +129,9 @@ public sealed class ProtectedTokenStore
                 var verified = _secureStore.LoadSecret(out var readWarning);
                 if (readWarning is null && string.Equals(verified, token, StringComparison.Ordinal))
                 {
-                    warning = JoinWarning(warning, DeleteFallback());
+                    if (File.Exists(_fallbackPath))
+                        warning = JoinWarning(warning, string.Equals(File.ReadAllText(_fallbackPath), token, StringComparison.Ordinal)
+                            ? DeleteFallback() : "A different plaintext token was preserved for recovery.");
                     LastWarning = warning;
                     return true;
                 }
