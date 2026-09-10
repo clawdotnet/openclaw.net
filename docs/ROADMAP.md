@@ -2,6 +2,8 @@
 
 ## Recently Completed
 
+- **Real-run regression import and offline replay**: import a redacted, complete text exchange from a gateway trajectory export and run recorded provider/tool fixtures through `RuntimeScenarioRunner`, with independent assertions and strict consumption checks. Includes an executable sample; see [trajectory replay](testing/trajectory-replay.md).
+
 - Browser sessions invalidate after local operator account updates, deletion, or disablement.
 - Goal completion accepts completed tool work; model status updates run alone and blocked transitions require three observations. Resume resets continuation and blocker counters.
 - Goal state is persisted atomically under the configured memory storage directory and restored lazily after restart.
@@ -61,7 +63,7 @@ These are strong candidates for the next roadmap phases because they extend the 
 The runtime already includes CLI insights, URL safety validation, and trajectory export. The next additions build on those capabilities:
 
 1. **Durable action reconciliation**: supplement persisted goals and completed-batch checkpoints with an action journal and provider idempotency keys. An interrupted external action with an unknown outcome must be reconciled before replay.
-2. **Real-run regression capture**: extend `RuntimeScenarioRunner` with redacted trajectory import and deterministic provider/tool replay fixtures.
+2. **Expanded regression capture**: build on completed trajectory import/offline replay with automatic capture and support for structured failures and multimodal exchanges.
 3. **Full-instance backup and restore**: extend upgrade rollback to include sessions, goals, schedules, governance records, and secret-reference manifests; validate restores in an isolated instance without dispatching actions.
 4. **Run explanation and recovery view**: connect existing timelines, approvals, and evidence to show the exact blocker and valid next recovery actions.
 

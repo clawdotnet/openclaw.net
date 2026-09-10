@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace OpenClaw.Testing;
 
+[JsonSerializable(typeof(TrajectoryReplayFixture))]
 [JsonSerializable(typeof(AgentScenario))]
 [JsonSerializable(typeof(List<AgentScenario>))]
 [JsonSerializable(typeof(ScenarioInput))]
