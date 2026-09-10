@@ -267,7 +267,9 @@ public sealed class TrajectoryReplayTests
     public async Task Import_HonorsCancellationAndSizeLimit()
     {
         using var canceled = new CancellationTokenSource(); canceled.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => TrajectoryReplayImporter.ImportAsync(new StringReader("data"), "s", 0, Redaction, canceled.Token));
-        await Assert.ThrowsAsync<InvalidDataException>(() => TrajectoryReplayImporter.ImportAsync(new StringReader(new string('x', TrajectoryReplayImporter.MaxInputCharacters + 1)), "s", 0, Redaction, Ct));
+        using var cancelledReader = new StringReader("data");
+        using var oversizedReader = new StringReader(new string('x', TrajectoryReplayImporter.MaxInputCharacters + 1));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => TrajectoryReplayImporter.ImportAsync(cancelledReader, "s", 0, Redaction, canceled.Token));
+        await Assert.ThrowsAsync<InvalidDataException>(() => TrajectoryReplayImporter.ImportAsync(oversizedReader, "s", 0, Redaction, Ct));
     }
 }
