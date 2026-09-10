@@ -57,7 +57,7 @@ public sealed class DurableActionJournal(string storagePath)
                 ? JsonSerializer.Deserialize(await File.ReadAllTextAsync(stem + ".json", ct), ActionJsonContext.Default.ListActionRecord)
                     ?? throw new InvalidDataException("Invalid action journal.")
                 : [];
-            if (records.Any(r => r.SessionId != sessionId || r.Id != Hash(sessionId + "\n" + r.CallId)
+            if (records.Any(r => r is null || r.SessionId != sessionId || r.Id != Hash(sessionId + "\n" + r.CallId)
                 || r.State is not ("started" or "completed" or "not_executed") || r.Revision < 1
                 || (r.State == "completed" && r.Result is null)
                 || (r.State != "started" && string.IsNullOrWhiteSpace(r.Evidence))

@@ -18,15 +18,17 @@ public sealed class DurableActionJournalTests : IDisposable
         => executor.ExecuteAsync("test", "{}", id, _session, context ?? new(), false, null, TestContext.Current.CancellationToken);
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CorruptJournalDoesNotRetrySuccessfulSessionPersistence(bool checkpoint)
+    [InlineData(false, "{")]
+    [InlineData(true, "{")]
+    [InlineData(false, "[null]")]
+    [InlineData(true, "[null]")]
+    public async Task CorruptJournalDoesNotRetrySuccessfulSessionPersistence(bool checkpoint, string corruptJson)
     {
         var ct = TestContext.Current.CancellationToken;
         var journal = new DurableActionJournal(_root);
         using (var lease = await journal.OpenAsync(_session.Id, ct)) lease.Begin("call", "test", "{}");
         var journalPath = Assert.Single(Directory.GetFiles(Path.Combine(_root, "action-journal"), "*.json"));
-        await File.WriteAllTextAsync(journalPath, "{", ct);
+        await File.WriteAllTextAsync(journalPath, corruptJson, ct);
         var memory = Substitute.For<IMemoryStore>();
         var logger = Substitute.For<Microsoft.Extensions.Logging.ILogger>();
         if (checkpoint)
@@ -43,8 +45,9 @@ public sealed class DurableActionJournalTests : IDisposable
         }
         await memory.Received(1).SaveSessionAsync(_session, ct);
         Assert.Contains(logger.ReceivedCalls(), call => call.GetMethodInfo().Name == "Log");
-        Assert.Equal("{", await File.ReadAllTextAsync(journalPath, ct));
-        await Assert.ThrowsAsync<System.Text.Json.JsonException>(() => journal.OpenAsync(_session.Id, ct));
+        Assert.Equal(corruptJson, await File.ReadAllTextAsync(journalPath, ct));
+        var error = await Record.ExceptionAsync(() => journal.OpenAsync(_session.Id, ct));
+        Assert.True(error is System.Text.Json.JsonException or InvalidDataException);
     }
 
     [Fact]
