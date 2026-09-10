@@ -5308,7 +5308,7 @@
                 ${(data.actions || []).map(action => `<div class="card" data-action-id="${escapeHtml(action.id)}" data-action-revision="${escapeHtml(action.revision)}">
                     <strong>${escapeHtml(action.toolName)} · ${escapeHtml(action.state)}</strong><p>${escapeHtml(action.id)}</p>
                     ${data.canMutate ? `<label>Provider evidence<textarea data-evidence maxlength="4000" placeholder="Receipt or provider verification evidence"></textarea></label>
-                    <label>Verified result<textarea data-result maxlength="65536" placeholder="Required for an unknown action confirmed completed"></textarea></label>
+                    ${action.state === 'started' ? '<label>Verified result<textarea data-result maxlength="65536" placeholder="Required for an unknown action confirmed completed"></textarea></label>' : '<p>The recorded completed result will be retained.</p>'}
                     <button data-recovery="completed">Confirm completed outcome</button>
                     ${action.state === 'started' ? '<button data-recovery="not_executed">Confirm action did not execute</button>' : ''}` : ''}</div>`).join('')}
                 </div>`;
@@ -5318,10 +5318,11 @@
             if (!button || button.disabled || !sessionsState.selectedSessionId) return;
             const id = sessionsState.selectedSessionId;
             const command = button.dataset.recovery;
+            if (command === 'not_executed' && !window.confirm('Confirm provider evidence proves this action did not execute. This permits a future execution.')) return;
             const card = button.closest('[data-action-id]');
             const payload = { revision: recoveryRevision, command, actionId: card?.dataset.actionId,
                 actionRevision: Number(card?.dataset.actionRevision || 0), evidence: card?.querySelector('[data-evidence]')?.value,
-                result: card?.querySelector('[data-result]')?.value || null };
+                result: card?.querySelector('[data-result]')?.value ?? null };
             button.disabled = true;
             try {
                 const { resp, data } = await mutate(`/admin/sessions/${encodeURIComponent(id)}/${command === 'stop' ? 'abort' : 'recovery'}`,

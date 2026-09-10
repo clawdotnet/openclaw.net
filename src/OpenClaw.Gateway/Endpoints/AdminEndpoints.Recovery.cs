@@ -20,11 +20,21 @@ internal static partial class AdminEndpoints
             if (session is null) return Results.NotFound();
             // Avoid waiting behind an active dispatch just to show the stop guidance.
             var running = services.Runtime.AbortRegistry.ActiveSessionIds.Contains(id);
-            using var journal = !running && services.Startup.Config.Tooling.DurableActionJournal
-                ? await new DurableActionJournal(services.Startup.Config.Memory.StoragePath).OpenAsync(id, ctx.RequestAborted) : null;
-            return Results.Json(GuidedRecovery.Describe(session, app.Services.GetService<IGoalService>()?.GetGoal(id), journal?.Records ?? [],
-                EndpointHelpers.IsRoleAllowed(authorization.Authorization!.Role, "admin.sessions.recovery.mutate", out _), running,
-                services.Runtime.ToolApprovalService.ListPending().Any(a => a.SessionId == id), services.Startup.Config.SessionTokenBudget), RecoveryJsonContext.Default.RecoveryControls);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted);
+            timeout.CancelAfter(TimeSpan.FromMilliseconds(100));
+            try
+            {
+                using var journal = !running && services.Startup.Config.Tooling.DurableActionJournal
+                    ? await new DurableActionJournal(services.Startup.Config.Memory.StoragePath).OpenAsync(id, timeout.Token) : null;
+                return Results.Json(GuidedRecovery.Describe(session, app.Services.GetService<IGoalService>()?.GetGoal(id), journal?.Records ?? [],
+                    EndpointHelpers.IsRoleAllowed(authorization.Authorization!.Role, "admin.sessions.recovery.mutate", out _), running,
+                    services.Runtime.ToolApprovalService.ListPending().Any(a => a.SessionId == id), services.Startup.Config.SessionTokenBudget), RecoveryJsonContext.Default.RecoveryControls);
+            }
+            catch (Exception ex) when ((ex is OperationCanceledException && !ctx.RequestAborted.IsCancellationRequested)
+                || ex is IOException or JsonException or UnauthorizedAccessException)
+            {
+                return Results.Json(new RecoveryControls { Message = "Recovery state is busy or unavailable. Refresh after active execution stops; inspect persisted data if this continues." }, RecoveryJsonContext.Default.RecoveryControls);
+            }
         });
         app.MapPost("/admin/sessions/{id}/recovery", async (HttpContext ctx, string id) =>
         {
@@ -39,6 +49,8 @@ internal static partial class AdminEndpoints
             try { request = JsonSerializer.Deserialize(body.Text, RecoveryJsonContext.Default.RecoveryRequest); }
             catch (JsonException) { return Results.BadRequest(); }
             if (request is null) return Results.BadRequest();
+            try { GuidedRecovery.ValidateRequest(request); }
+            catch (ArgumentException) { return Results.BadRequest(); }
             var redaction = app.Services.GetService<IRedactionPipeline>() ?? new NoopRedactionPipeline();
             request.Evidence = request.Evidence is null ? null : new BaselineSecretRedactor().Redact(redaction.Redact(request.Evidence));
             request.Result = request.Result is null ? null : new BaselineSecretRedactor().Redact(redaction.Redact(request.Result));
