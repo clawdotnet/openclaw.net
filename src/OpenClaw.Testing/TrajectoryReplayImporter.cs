@@ -14,6 +14,7 @@ public static class TrajectoryReplayImporter
     public static async Task<TrajectoryReplayFixture> ImportAsync(TextReader reader, string sessionId,
         int promptTurnIndex, IRedactionPipeline redaction, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(reader);
         ArgumentNullException.ThrowIfNull(redaction);
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentOutOfRangeException.ThrowIfNegative(promptTurnIndex);

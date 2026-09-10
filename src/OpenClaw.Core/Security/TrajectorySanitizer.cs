@@ -32,7 +32,7 @@ public static class TrajectorySanitizer
                     if (!keys.Add(key)) throw new InvalidDataException("Duplicate argument keys after redaction.");
                     writer.WritePropertyName(key);
                     var normalized = property.Name.Replace("_", "").Replace("-", "").ToLowerInvariant();
-                    if (normalized is "password" or "secret" or "apikey" or "token" or "accesstoken" or "refreshtoken" or "authorization" or "cookie")
+                    if (normalized is "password" or "secret" or "apikey" or "token" or "accesstoken" or "refreshtoken" or "authorization" or "cookie" or "clientsecret" or "privatekey" or "sessiontoken" or "xapikey")
                         writer.WriteStringValue("[REDACTED]");
                     else WriteRedactedJson(writer, property.Value, pipeline);
                 }
@@ -44,7 +44,11 @@ public static class TrajectorySanitizer
                 writer.WriteEndArray();
                 break;
             case JsonValueKind.String: writer.WriteStringValue(Redact(value.GetString()!, pipeline)); break;
-            default: value.WriteTo(writer); break;
+            default:
+                var raw = value.GetRawText();
+                var clean = Redact(raw, pipeline);
+                if (raw == clean) value.WriteTo(writer); else writer.WriteStringValue(clean);
+                break;
         }
     }
 }

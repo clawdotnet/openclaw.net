@@ -35,3 +35,5 @@ The existing authenticated session detail endpoints now include an additive `rec
 It contains `status`, `summary`, `evidence`, and `nextSteps`. The arrays contain display text, not executable commands or action authorization. Older gateways may omit this object; clients continue showing their existing session details.
 
 Tool arguments and raw results are not copied into the explanation. Goal notes and failure messages retain the same operator access boundary as session details. A missing or corrupt goal store can prevent loading details; it is not silently represented as a healthy goal.
+
+Unavailable or corrupt goal data produces an unknown explanation; session details remain readable. An exhausted background continuation cap requires a new session for further automatic continuation.

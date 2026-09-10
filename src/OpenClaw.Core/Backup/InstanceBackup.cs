@@ -94,7 +94,7 @@ public static class InstanceBackup
         if (manifest.SchemaVersion != 1 || manifest.Files.Count > MaxFiles) throw new InvalidDataException("Unsupported backup manifest.");
         ValidatePlan(manifest.Plan, requireSources: false);
         var payload = Path.Combine(backup, "payload");
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var names = new HashSet<string>(StringComparer.Ordinal);
         long bytes = 0;
         foreach (var file in manifest.Files)
         {
@@ -123,6 +123,18 @@ public static class InstanceBackup
         try
         {
             PrivateDirectory(staging);
+            var probe = Path.Combine(staging, "case-probe");
+            await WritePrivateAsync(probe, [], ct);
+            var ignoresCase = File.Exists(Path.Combine(staging, "CASE-PROBE"));
+            File.Delete(probe);
+            if (ignoresCase)
+            {
+                var paths = manifest.Files.SelectMany(f => Enumerable.Range(1, f.Path.Split('/').Length)
+                    .Select(count => string.Join('/', f.Path.Split('/').Take(count))))
+                    .Concat(manifest.Plan.Roots.Keys).Distinct(StringComparer.Ordinal).ToArray();
+                if (paths.Distinct(StringComparer.OrdinalIgnoreCase).Count() != paths.Length)
+                    throw new InvalidDataException("Backup contains case-distinct paths that collide on the restore filesystem.");
+            }
             foreach (var name in manifest.Plan.Roots.Keys) PrivateDirectory(Path.Combine(staging, name));
             foreach (var file in manifest.Files)
             {
@@ -130,14 +142,26 @@ public static class InstanceBackup
                 await CopyPrivateAsync(SafePath(Path.Combine(Path.GetFullPath(backup), "payload"), file.Path), target, ct);
                 if (await DigestAsync(target, ct) != file.Sha256) throw new InvalidDataException("Backup changed during restore.");
             }
-            // SQLite checks run only on the isolated copy, including any captured WAL. Nothing starts the gateway.
+            // SQLite can rewrite WAL/SHM even for a read-only connection. Validate disposable copies.
             foreach (var file in manifest.Files.Where(f => f.Path.EndsWith(".db", StringComparison.OrdinalIgnoreCase) || f.Path.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) || f.Path.EndsWith(".sqlite3", StringComparison.OrdinalIgnoreCase)))
             {
-                using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-                { DataSource = SafePath(staging, file.Path), Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
-                await connection.OpenAsync(ct);
-                using var command = connection.CreateCommand(); command.CommandText = "PRAGMA quick_check;";
-                if (!Equals(await command.ExecuteScalarAsync(ct), "ok")) throw new InvalidDataException($"SQLite validation failed: {file.Path}");
+                var scratch = staging + ".sqlite-check-" + Guid.NewGuid().ToString("N");
+                try
+                {
+                    PrivateDirectory(scratch);
+                    var database = Path.Combine(scratch, "database.db");
+                    foreach (var suffix in new[] { "", "-wal", "-shm" })
+                    {
+                        var source = SafePath(staging, file.Path + suffix);
+                        if (File.Exists(source)) await CopyPrivateAsync(source, database + suffix, ct);
+                    }
+                    using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+                    { DataSource = database, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+                    await connection.OpenAsync(ct);
+                    using var command = connection.CreateCommand(); command.CommandText = "PRAGMA quick_check;";
+                    if (!Equals(await command.ExecuteScalarAsync(ct), "ok")) throw new InvalidDataException($"SQLite validation failed: {file.Path}");
+                }
+                finally { if (Directory.Exists(scratch)) Directory.Delete(scratch, true); }
             }
             await WritePrivateAsync(Path.Combine(staging, "RESTORE-REQUIRES-REVIEW.txt"),
                 System.Text.Encoding.UTF8.GetBytes("Offline restore validated. Do not start until paths and secret references have been reviewed. Original absolute paths are not rewritten. No schedules, tools, or providers were started.\n"), ct);
@@ -170,8 +194,9 @@ public static class InstanceBackup
             else yield return entry;
         }
     }
-    private static bool Within(string root, string path) => path.Equals(root, StringComparison.OrdinalIgnoreCase)
-        || path.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    private static StringComparison PathComparison => OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+    private static bool Within(string root, string path) => path.Equals(root, PathComparison)
+        || path.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, PathComparison);
     private static string SafePath(string root, string relative)
     {
         if (relative.Contains('\\') || relative.Contains(':') || relative.Split('/').Any(p => p is "" or "." or "..") || Path.IsPathRooted(relative))

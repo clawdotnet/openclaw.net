@@ -47,6 +47,60 @@ public sealed class CompanionTokenMigrationTests : IDisposable
     }
 
     [Fact]
+    public void OrdinarySavePreservesConflictingRecoveryCopiesWithoutSecureRewrite()
+    {
+        Legacy(); _secure.Secret = "protected-secret";
+        File.WriteAllText(FallbackPath, "different-fallback");
+        var store = Store(); var settings = store.Load();
+        settings.DebugMode = true; _secure.FailSave = true;
+        store.Save(settings);
+        Assert.Equal(0, _secure.SaveCount);
+        Assert.Contains("legacy-secret", File.ReadAllText(SettingsPath));
+        Assert.Equal("different-fallback", File.ReadAllText(FallbackPath));
+        Assert.False(File.Exists(Path.Join(_directory, "token-update.pending")));
+        Assert.Equal("protected-secret", store.Load().AuthToken);
+    }
+
+    [Fact]
+    public void SuccessfulSavePreservesDifferentFallback()
+    {
+        var store = new ProtectedTokenStore(_directory, _secure);
+        File.WriteAllText(FallbackPath, "recovery-copy");
+        Assert.True(store.SaveToken("new-secret", false, out var warning));
+        Assert.Equal("recovery-copy", File.ReadAllText(FallbackPath));
+        Assert.Contains("preserved", warning);
+    }
+
+    [Fact]
+    public void MalformedSettingsSaveDoesNotChangeCredentials()
+    {
+        Legacy(); File.WriteAllText(SettingsPath, "{");
+        var store = Store(); store.Save(new CompanionSettings { RememberToken = true, AuthToken = "new" });
+        Assert.Equal("{", File.ReadAllText(SettingsPath));
+        Assert.Equal(0, _secure.SaveCount);
+        Assert.NotNull(store.LastWarning);
+    }
+
+    [Fact]
+    public void NullLegacyFieldDoesNotPreventMigrationOrWarnForever()
+    {
+        Legacy(); File.WriteAllText(SettingsPath, """{"rememberToken":true,"authToken":null}""");
+        var store = Store(); store.Load();
+        Assert.DoesNotContain("authToken", File.ReadAllText(SettingsPath));
+        Assert.Null(store.LastWarning);
+    }
+
+    [Fact]
+    public void FailedUnchangedWriteDoesNotStrandMigrationMarker()
+    {
+        Legacy(); _secure.FailSave = true;
+        var store = Store(); store.Save(new CompanionSettings { RememberToken = true, AuthToken = "new" });
+        Assert.False(File.Exists(Path.Join(_directory, "token-update.pending")));
+        _secure.FailSave = false;
+        Assert.Equal("legacy-secret", store.Load().AuthToken);
+    }
+
+    [Fact]
     public void Load_MigratesPascalCaseLegacySettings()
     {
         Legacy(); File.WriteAllText(SettingsPath, """{"RememberToken":true,"AuthToken":"legacy-secret","ServerUrl":"ws://example.invalid/ws"}""");

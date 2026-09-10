@@ -63,10 +63,26 @@ public static class GuidedRecovery
         };
     }
 
+    public static void ValidateRequest(RecoveryRequest request)
+    {
+        if (request.Command is not ("pause" or "resume" or "completed" or "not_executed"))
+            throw new ArgumentException("Unknown recovery command.");
+        if (request.Command is "completed" or "not_executed")
+        {
+            if (request.ActionId is not { Length: 64 } || !request.ActionId.All(char.IsAsciiHexDigit) || request.ActionRevision < 1)
+                throw new ArgumentException("Provide a valid action ID and action revision.");
+        }
+        else if (request.ActionId is not null || request.ActionRevision != 0 || request.Evidence is not null || request.Result is not null)
+            throw new ArgumentException("Goal commands do not accept action fields.");
+    }
+
     /// <summary>The caller must hold the runtime session lock and authorize the operator before calling.</summary>
     public static async Task ApplyAsync(Session session, IGoalService? goals, IMemoryStore memory,
         DurableActionJournal.Lease? journal, RecoveryRequest request, bool running, bool pendingApproval, CancellationToken ct, long sessionTokenBudget = 0)
     {
+        ValidateRequest(request);
+        if (request.Command is "completed" or "not_executed" && journal is null)
+            throw new ArgumentException("Durable action journaling is disabled.");
         var controls = Describe(session, goals?.GetGoal(session.Id), journal?.Records ?? [], true, running, pendingApproval, sessionTokenBudget);
         if (controls.Revision != request.Revision) throw new InvalidOperationException("Recovery state changed. Refresh and review again.");
         if (running) throw new InvalidOperationException("Stop active execution before changing recovery state.");
@@ -80,16 +96,24 @@ public static class GuidedRecovery
                 throw new ArgumentException("Provide up to 4000 characters of provider evidence and at most 65536 characters of result.");
             if (action.State == "completed" && request.Command != "completed")
                 throw new InvalidOperationException("A recorded completed action cannot be declared not executed.");
-            var result = action.State == "completed" ? action.Result : request.Result;
+            var recorded = session.History.SelectMany(t => t.ToolCalls ?? []).Where(c => c.CallId == action.CallId).ToArray();
+            if (recorded.Length > 1 || recorded.Any(c => c.ToolName != action.ToolName || c.Result is null || c.ResultStatus != "completed"))
+                throw new InvalidOperationException("Persisted history conflicts with this action; inspect it before resolving.");
+            if (recorded.Length > 0 && request.Command == "not_executed")
+                throw new InvalidOperationException("Persisted history records completion; it cannot be declared not executed.");
+            var result = recorded.Length == 1 ? recorded[0].Result : action.State == "completed" ? action.Result : request.Result;
             if (request.Command == "completed")
             {
                 if (result is null) throw new ArgumentException("A completed action requires its verified result.");
                 // Persist recovery evidence into history first. A crash before journal resolution still blocks replay.
+                if (recorded.Length == 0)
+                {
                 var turn = new ChatTurn { Role = "assistant", Content = "[reconciled_action]", ToolCalls =
                     [new ToolInvocation { CallId = action.CallId, ToolName = action.ToolName, Arguments = "{}", Result = result, ResultStatus = "completed" }] };
                 session.History.Add(turn);
                 try { await memory.SaveSessionAsync(session, ct); }
                 catch { session.History.Remove(turn); throw; }
+                }
             }
             journal!.Resolve(action, request.ActionRevision, request.Command, request.Evidence, result);
             if (request.Command == "completed") journal.AcknowledgeHistory(session);

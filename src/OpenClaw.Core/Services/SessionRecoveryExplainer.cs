@@ -1,4 +1,6 @@
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Abstractions;
+using System.Text.Json;
 using OpenClaw.Core.Models.Goal;
 using OpenClaw.Core.Pipeline;
 
@@ -6,6 +8,18 @@ namespace OpenClaw.Core.Services;
 
 public static class SessionRecoveryExplainer
 {
+    public static SessionRecoveryExplanation ExplainWithGoalStore(Session session, IGoalService? goals,
+        IEnumerable<ToolApprovalRequest> approvals)
+    {
+        try { return Explain(session, goals?.GetGoal(session.Id), approvals); }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)
+        {
+            return new() { Status = "unknown", Summary = "Goal state could not be loaded.",
+                Evidence = ["Persisted goal data is unavailable or corrupt; session history remains available."],
+                NextSteps = ["Inspect and restore the goal data before resuming. Do not treat unavailable goal state as a completed or absent goal."] };
+        }
+    }
+
     public static SessionRecoveryExplanation Explain(Session session, SessionGoal? goal,
         IEnumerable<ToolApprovalRequest> pendingApprovals)
     {
@@ -25,9 +39,11 @@ public static class SessionRecoveryExplainer
         }
         if (session.ExecutionCheckpoint is { } checkpoint)
             evidence.Add($"Checkpoint {checkpoint.CheckpointId}: {checkpoint.State}; {checkpoint.ToolCalls.Count} tool result(s); recorded {checkpoint.CreatedAtUtc:O}. A checkpoint does not prove the outcome of actions interrupted before it was saved.");
-        if (session.RunState is SessionRunState.Failed or SessionRunState.Blocked)
+        if (session.RunState is SessionRunState.Failed or SessionRunState.Blocked || goal?.Status == GoalStatus.Blocked)
         {
-            var lastToolTurn = session.History.LastOrDefault(turn => turn.ToolCalls is { Count: > 0 });
+            var lastToolTurn = session.History.LastOrDefault(turn => turn.Role == "assistant");
+            if (session.BackgroundRun is { } background && lastToolTurn?.Timestamp < background.LastContinuedAtUtc)
+                lastToolTurn = null;
             foreach (var tool in (lastToolTurn?.ToolCalls ?? []).Where(tool =>
                          !string.IsNullOrWhiteSpace(tool.FailureCode) || !string.IsNullOrWhiteSpace(tool.FailureMessage)).Take(5))
                 evidence.Add($"Last tool batch ({lastToolTurn!.Timestamp:O}): {tool.ToolName}; {tool.FailureCode ?? "failure"}; {tool.FailureMessage ?? "No failure message recorded."}");
@@ -51,7 +67,7 @@ public static class SessionRecoveryExplainer
         {
             if (session.BackgroundRun?.LastStopReason == "MaxContinuationTurnsReached")
                 return Result("budget_limited", "The background continuation limit stopped automatic progress.",
-                    "Review the completed work and continuation limit before sending a follow-up in this session.");
+                    "Preserve the completed work and start a new session for further automatic continuation. A follow-up in this session runs one turn but does not reset its exhausted continuation limit.");
             return Result("budget_limited", "A recorded budget limit stopped automatic progress.",
                 "Review token usage and the configured limits before continuing. Resuming a goal does not increase its token budget.",
                 "Preserve the current objective and results before replacing an exhausted goal with a newly budgeted goal.");

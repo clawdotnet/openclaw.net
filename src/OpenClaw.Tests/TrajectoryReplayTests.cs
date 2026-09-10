@@ -33,9 +33,11 @@ public sealed class TrajectoryReplayTests
         Record("tool_result", 1, result: """{"answer":"private-person","token":"hidden-token"}""", status: "completed"),
         Record("response", 2, "Found private-person")
     ];
-    private static Task<TrajectoryReplayFixture> Import(IEnumerable<TrajectoryExportRecord> records, int turn = 0)
-        => TrajectoryReplayImporter.ImportAsync(new StringReader(string.Join('\n', records.Select(r => JsonSerializer.Serialize(r, CoreJsonContext.Default.TrajectoryExportRecord)))),
-            "private-session", turn, Redaction, Ct);
+    private static async Task<TrajectoryReplayFixture> Import(IEnumerable<TrajectoryExportRecord> records, int turn = 0)
+    {
+        using var reader = new StringReader(string.Join('\n', records.Select(r => JsonSerializer.Serialize(r, CoreJsonContext.Default.TrajectoryExportRecord))));
+        return await TrajectoryReplayImporter.ImportAsync(reader, "private-session", turn, Redaction, Ct);
+    }
     private static IAgentRuntime Runtime(IChatClient client, IReadOnlyList<ITool> tools)
         => new AgentRuntime(client, tools, Substitute.For<IMemoryStore>(), new LlmProviderConfig { Model = "offline" }, maxHistoryTurns: 20);
     private static List<ScenarioOracleDefinition> Assertions() =>
@@ -84,6 +86,42 @@ public sealed class TrajectoryReplayTests
             [new ScenarioOracleDefinition { Type = ScenarioOracleTypes.FinalAnswerContains, Value = JsonSerializer.SerializeToElement("recorded answer") }],
             Runtime, cancellationToken: Ct);
         Assert.True(result.Passed, result.FailureSummary);
+    }
+
+    [Theory]
+    [InlineData("client_secret")]
+    [InlineData("private_key")]
+    [InlineData("session_token")]
+    [InlineData("x-api-key")]
+    public async Task ImportMasksOpaqueCredentialFields(string field)
+    {
+        var records = Records();
+        records[2] = Record("tool_call", 1, arguments: "{\"" + field + "\":\"opaque-value\"}");
+        var fixture = await Import(records);
+        Assert.DoesNotContain("opaque-value", fixture.Responses[0].ToolCalls[0].ArgumentsJson);
+    }
+
+    [Fact]
+    public async Task UnexpectedResultIdIsRejected()
+    {
+        using var replay = new TrajectoryReplay(await Import(Records()));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => replay.GetResponseAsync([
+            new ChatMessage(ChatRole.User, "Find [PERSON]"),
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("unknown", "extra")])], cancellationToken: Ct));
+    }
+
+    [Fact]
+    public async Task OversizedExchangeDoesNotHideLaterValidCapture()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "capture-" + Guid.NewGuid().ToString("N"));
+        var session = new Session { Id = "s", ChannelId = "test", SenderId = "u" };
+        session.History.Add(new ChatTurn { Role = "user", Content = new string('x', 8 * 1024 * 1024 + 1) });
+        session.History.Add(new ChatTurn { Role = "assistant", Content = "big" });
+        session.History.Add(new ChatTurn { Role = "user", Content = "small" });
+        session.History.Add(new ChatTurn { Role = "system", Content = "[goal_check]" });
+        session.History.Add(new ChatTurn { Role = "assistant", Content = "done" });
+        try { Assert.Equal(1, await OpenClaw.Core.Testing.RegressionCapture.CaptureAsync(session, directory, Redaction, ct: Ct)); }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
     }
 
     [Fact]

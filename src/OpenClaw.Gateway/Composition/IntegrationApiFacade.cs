@@ -159,8 +159,8 @@ internal sealed class IntegrationApiFacade
             Session = session,
             IsActive = _runtime.SessionManager.IsActive(id),
             BranchCount = branches.Count,
-            Recovery = OpenClaw.Core.Services.SessionRecoveryExplainer.Explain(session,
-                _goalService?.GetGoal(id), _runtime.ToolApprovalService.ListPending()),
+            Recovery = OpenClaw.Core.Services.SessionRecoveryExplainer.ExplainWithGoalStore(session,
+                _goalService, _runtime.ToolApprovalService.ListPending()),
             Metadata = _runtime.Operations.SessionMetadata.Get(id)
         };
     }

@@ -14,6 +14,7 @@ public sealed class TrajectoryReplay : IChatClient
     private readonly List<PendingCall> _pending = [];
     private int _nextResponse;
     private bool _diverged;
+    private readonly HashSet<string> _issuedIds = new(StringComparer.Ordinal);
     public IReadOnlyList<ITool> Tools { get; }
 
     public TrajectoryReplay(TrajectoryReplayFixture fixture)
@@ -38,7 +39,7 @@ public sealed class TrajectoryReplay : IChatClient
                 if (call.ResultStatus is not ("completed" or "failed" or "blocked") ||
                     (call.ResultStatus == "completed" && (call.FailureCode is not null || call.FailureMessage is not null)))
                     throw new InvalidDataException("Invalid replay outcome.");
-                using var args = JsonDocument.Parse(call.ArgumentsJson);
+                using var args = ParseArguments(call.ArgumentsJson);
                 if (args.RootElement.ValueKind != JsonValueKind.Object)
                     throw new InvalidDataException("Replay arguments must be JSON objects.");
                 if (response.ToolCalls.Count(other => other.ToolName == call.ToolName && ArgumentsEqual(other.ArgumentsJson, call.ArgumentsJson)) > 1)
@@ -65,6 +66,7 @@ public sealed class TrajectoryReplay : IChatClient
                 throw Divergence("Replay prompt differs from the recorded prompt.");
             if (_pending.Any(call => !call.Consumed)) throw Divergence("Runtime skipped a recorded tool call.");
             var results = history.Where(m => m.Role == ChatRole.Tool).SelectMany(m => m.Contents).OfType<FunctionResultContent>().ToArray();
+            if (results.Any(result => !_issuedIds.Contains(result.CallId))) throw Divergence("Runtime returned a result for an unknown call ID.");
             foreach (var call in _pending)
                 if (results.Count(result => result.CallId == call.Id) != 1 || !results.Any(result => result.CallId == call.Id && result.Result?.ToString() == call.Call.Result))
                     throw Divergence("Runtime did not return the recorded tool result to the provider.");
@@ -77,8 +79,9 @@ public sealed class TrajectoryReplay : IChatClient
             {
                 var call = response.ToolCalls[i];
                 var id = $"replay_{_nextResponse}_{i}";
+                _issuedIds.Add(id);
                 _pending.Add(new PendingCall(id, call));
-                using var args = JsonDocument.Parse(call.ArgumentsJson);
+                using var args = ParseArguments(call.ArgumentsJson);
                 var values = args.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value.Clone(), StringComparer.Ordinal);
                 content.Add(new FunctionCallContent(id, call.ToolName, values));
             }
@@ -115,11 +118,17 @@ public sealed class TrajectoryReplay : IChatClient
         }
     }
 
+    private static JsonDocument ParseArguments(string json)
+    {
+        try { return JsonDocument.Parse(json); }
+        catch (JsonException) { throw new InvalidDataException("Replay arguments must be valid JSON."); }
+    }
+
     private bool PromptMatches(ChatMessage? message)
     {
         if (message is null) return false;
         var (markers, text) = MediaMarkerProtocol.Extract(_fixture.Prompt);
-        if (markers.Count == 0) return message.Text == _fixture.Prompt && message.Contents.All(c => c is TextContent);
+        if (markers.Count == 0) return message.Text == (string.IsNullOrWhiteSpace(text) ? _fixture.Prompt : text) && message.Contents.All(c => c is TextContent);
         var uris = message.Contents.OfType<UriContent>().ToArray();
         return message.Text == text && uris.Length == markers.Count &&
             message.Contents.All(c => c is TextContent or UriContent) &&

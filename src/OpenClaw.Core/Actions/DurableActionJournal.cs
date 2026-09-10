@@ -44,12 +44,11 @@ public sealed class DurableActionJournal(string storagePath)
         Directory.CreateDirectory(_root);
         var stem = Path.Combine(_root, Hash(sessionId));
         FileStream handle;
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
         while (true)
         {
             ct.ThrowIfCancellationRequested();
             try { handle = new FileStream(stem + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); break; }
-            catch (IOException) when (DateTimeOffset.UtcNow < deadline) { await Task.Delay(50, ct); }
+            catch (IOException ex) when ((ex.HResult & 0xffff) is 11 or 32 or 33) { await Task.Delay(50, ct); }
         }
         try
         {

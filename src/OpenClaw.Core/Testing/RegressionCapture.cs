@@ -13,7 +13,8 @@ public static class RegressionCapture
         int maximumFiles = 100, CancellationToken ct = default)
     {
         if (maximumFiles is < 1 or > 10_000) throw new ArgumentOutOfRangeException(nameof(maximumFiles));
-        var history = session.History.ToArray();
+        if (Directory.Exists(directory) && Directory.EnumerateFiles(directory, "*.jsonl").Take(maximumFiles).Count() >= maximumFiles) return 0;
+        var history = session.History.Where(turn => turn.Role is "user" or "assistant").ToArray();
         var written = 0;
         for (var start = 0; start < history.Length; start++)
         {
@@ -22,9 +23,12 @@ public static class RegressionCapture
             while (end < history.Length && history[end].Role != "user") end++;
             if (end <= start + 1 || history[end - 1].Role != "assistant" || history[end - 1].ToolCalls is { Count: > 0 }) continue;
             if (history[start..end].Any(t => t.ToolCalls?.Any(call => call.Result is null) == true)) continue;
+            if (history[(start + 1)..(end - 1)].Any(t => t.ToolCalls is not { Count: > 0 })) continue;
             var builder = new StringBuilder();
+            var tooLarge = false;
             for (var i = start; i < end; i++)
             {
+                if (tooLarge) break;
                 var turn = history[i];
                 Add(turn.Role == "user" ? "prompt" : "response", i - start, turn.Role, turn.Content);
                 foreach (var call in turn.ToolCalls ?? [])
@@ -33,6 +37,7 @@ public static class RegressionCapture
                     Add("tool_result", i - start, null, null, call, true);
                 }
             }
+            if (tooLarge) continue;
             var bytes = Encoding.UTF8.GetBytes(builder.ToString());
             if (bytes.Length > 8 * 1024 * 1024) continue;
             if (OperatingSystem.IsWindows()) Directory.CreateDirectory(directory);
@@ -53,6 +58,7 @@ public static class RegressionCapture
 
             void Add(string type, int turn, string? role, string? content, ToolInvocation? call = null, bool result = false)
             {
+                if (tooLarge) return;
                 var calls = history[start + turn].ToolCalls;
                 var record = new TrajectoryExportRecord
                 {
@@ -66,8 +72,9 @@ public static class RegressionCapture
                     FailureMessage = result && call?.FailureMessage is not null ? TrajectorySanitizer.Redact(call.FailureMessage, redaction) : null,
                     Anonymized = true
                 };
-                builder.AppendLine(JsonSerializer.Serialize(record, CoreJsonContext.Default.TrajectoryExportRecord));
-                if (builder.Length > 8 * 1024 * 1024) throw new InvalidDataException("Capture exceeds size limit.");
+                var line = JsonSerializer.Serialize(record, CoreJsonContext.Default.TrajectoryExportRecord);
+                if (builder.Length + line.Length > 8 * 1024 * 1024) { tooLarge = true; return; }
+                builder.AppendLine(line);
             }
         }
         return written;

@@ -19,6 +19,28 @@ public sealed class InstanceBackupTests : IDisposable
         SecretReferences = ["env:MODEL_API_KEY"]
     };
     [Fact]
+    public async Task RestoreValidatesWalWithoutChangingPayloadBytes()
+    {
+        var database = Path.Combine(_root, "live.db");
+        using (var connection = new SqliteConnection($"Data Source={database};Pooling=False"))
+        {
+            await connection.OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA journal_mode=WAL; CREATE TABLE data(value TEXT); INSERT INTO data VALUES('saved');";
+            await command.ExecuteNonQueryAsync();
+            foreach (var suffix in new[] { "", "-wal", "-shm" })
+                if (File.Exists(database + suffix)) File.Copy(database + suffix, Path.Combine(Source, "state.db" + suffix));
+        }
+        await InstanceBackup.CreateAsync(Plan, Backup, true);
+        await InstanceBackup.RestoreAsync(Backup, Restore);
+        var manifest = await InstanceBackup.ValidateAsync(Backup);
+        foreach (var file in manifest.Files)
+            Assert.Equal(await File.ReadAllBytesAsync(Path.Combine(Backup, "payload", file.Path)),
+                await File.ReadAllBytesAsync(Path.Combine(Restore, file.Path)));
+        Assert.Equal(manifest.Files.Count, Directory.GetFiles(Path.Combine(Restore, "state"), "*", SearchOption.AllDirectories).Length);
+    }
+
+    [Fact]
     public async Task RoundTripPreservesDurableDataAndReferencesWithoutStartingJobs()
     {
         File.WriteAllText(Path.Combine(Source, "goals.json"), "{\"status\":\"active\"}");

@@ -518,7 +518,7 @@ public sealed class OpenClawToolExecutor
             }
         }
 
-        using var actionLease = _config.Tooling.DurableActionJournal && tool.Name != "meta_invoke"
+        using var actionLease = _config.Tooling.DurableActionJournal && tool.Name != "meta_invoke" && !IsKnownReadOnly(tool, argsJson)
             ? await new DurableActionJournal(_config.Memory.StoragePath).OpenAsync(session.Id, ct)
             : null;
         var liveActionResults = _sessionActionResults.GetOrCreateValue(session);
@@ -540,7 +540,12 @@ public sealed class OpenClawToolExecutor
                 return CreateImmediateResult(toolName, persistedArgsJson, "Durable actions require a stable call ID.",
                     resultStatus: ToolResultStatuses.Blocked, failureCode: "action_identity_required");
             var existed = actionLease.Records.Any(r => r.CallId == callId);
-            action = actionLease.Begin(callId, toolName, argsJson);
+            try { action = actionLease.Begin(callId, toolName, argsJson); }
+            catch (InvalidOperationException)
+            {
+                return CreateImmediateResult(toolName, persistedArgsJson, "Action identity was reused with different arguments. Refresh the action before continuing.",
+                    callId: callId, resultStatus: ToolResultStatuses.Blocked, failureCode: "action_identity_conflict");
+            }
             if (existed && action.State == "started" && tool is IReconcilableTool reconciliable)
             {
                 try
@@ -579,6 +584,7 @@ public sealed class OpenClawToolExecutor
         var toolFailed = false;
         var toolTimedOut = false;
         var afterHookCtx = hookCtx;
+        var dispatchStarted = false;
         try
         {
             var substitution = await _sentinelSubstitution.SubstituteAsync(new SentinelSubstitutionContext
@@ -594,6 +600,7 @@ public sealed class OpenClawToolExecutor
             persistedArgsJson = _redaction.Redact(substitution.PersistedArgumentsJson);
             afterHookCtx = hookCtx with { ArgumentsJson = persistedArgsJson };
 
+            dispatchStarted = true;
             if (action is not null && tool is IReconcilableTool durableTool)
             {
                 using var actionTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -622,6 +629,8 @@ public sealed class OpenClawToolExecutor
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            if (action is not null && !dispatchStarted)
+                actionLease!.Resolve(action, action.Revision, "not_executed", "Cancelled before tool dispatch.");
             throw;
         }
         catch (OperationCanceledException)
@@ -708,7 +717,9 @@ public sealed class OpenClawToolExecutor
 
         if (action is not null)
         {
-            if (!toolFailed)
+            if (!dispatchStarted)
+                actionLease!.Resolve(action, action.Revision, "not_executed", "Argument preparation failed before tool dispatch.");
+            else if (!toolFailed)
             {
                 actionLease!.Complete(action, result);
                 liveActionResults[action.Id] = turnCtx.CorrelationId;
@@ -874,6 +885,19 @@ public sealed class OpenClawToolExecutor
         if (decision.EvaluationMs is not null)
             activity?.SetTag("tool.governance.evaluation_ms", decision.EvaluationMs);
         activity?.SetTag("tool.governance.unavailable", decision.IsUnavailable);
+    }
+
+    private static bool IsKnownReadOnly(ITool tool, string arguments)
+    {
+        // Unknown and custom tools stay conservative. Only established read operations opt out.
+        if (tool.Name is "web_search" or "web_fetch" or "read_file" or "memory_get") return true;
+        if (ToolActionPolicyResolver.SupportsActionAwareApproval(tool.Name))
+        {
+            var descriptor = ToolActionPolicyResolver.Resolve(tool.Name, arguments);
+            return !descriptor.IsMutation && descriptor.Action is "list" or "get" or "preview" or "log" or "poll"
+                or "wait" or "list_connectors" or "list_commands" or "command_schema" or "connector_status";
+        }
+        return false;
     }
 
     private static bool IsValidJson(string value)

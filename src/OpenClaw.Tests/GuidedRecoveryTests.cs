@@ -31,6 +31,30 @@ public sealed class GuidedRecoveryTests : IDisposable
             new() { Command = "resume", Revision = state.Revision }, running, approval, Ct));
     }
     [Fact]
+    public async Task RetryAfterHistoryCommitKeepsOneResultAndRejectsNonExecution()
+    {
+        using var lease = await new DurableActionJournal(_root).OpenAsync(_session.Id, Ct);
+        var action = lease.Begin("call", "email", "{}");
+        _session.History.Add(new ChatTurn { Role = "assistant", Content = "[reconciled_action]", ToolCalls =
+            [new() { CallId = "call", ToolName = "email", Arguments = "{}", Result = "", ResultStatus = "completed" }] });
+        var state = GuidedRecovery.Describe(_session, null, lease.Records, true, false, false);
+        var request = new RecoveryRequest { Command = "not_executed", Revision = state.Revision, ActionId = action.Id,
+            ActionRevision = action.Revision, Evidence = "receipt" };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => GuidedRecovery.ApplyAsync(_session, null, _memory, lease, request, false, false, Ct));
+        request.Command = "completed"; request.Result = "replacement";
+        await GuidedRecovery.ApplyAsync(_session, null, _memory, lease, request, false, false, Ct);
+        Assert.Single(_session.History); Assert.Equal("", action.Result);
+        await _memory.DidNotReceive().SaveSessionAsync(_session, Ct);
+    }
+
+    [Fact]
+    public void GoalCommandRejectsExtraneousActionFields()
+    {
+        Assert.Throws<ArgumentException>(() => GuidedRecovery.ValidateRequest(new() { Command = "pause", ActionId = "untrusted audit text" }));
+        Assert.Throws<ArgumentException>(() => GuidedRecovery.ValidateRequest(new() { Command = "completed" }));
+    }
+
+    [Fact]
     public void ResumeRespectsSessionBudgetAndCurrentSessionUsage()
     {
         _goals.CreateGoal(_session.Id, "work", 100, 0); _goals.UpdateStatus(_session.Id, GoalStatus.Paused);
