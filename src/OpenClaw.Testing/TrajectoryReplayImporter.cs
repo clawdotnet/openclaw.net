@@ -14,6 +14,7 @@ public static class TrajectoryReplayImporter
     public static async Task<TrajectoryReplayFixture> ImportAsync(TextReader reader, string sessionId,
         int promptTurnIndex, IRedactionPipeline redaction, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(reader);
         ArgumentNullException.ThrowIfNull(redaction);
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentOutOfRangeException.ThrowIfNegative(promptTurnIndex);
@@ -47,7 +48,10 @@ public static class TrajectoryReplayImporter
         var prompt = records[start];
         if (prompt.Role != "user" || prompt.Content is null)
             throw new InvalidDataException("Replay requires a user text prompt.");
-        var fixture = new TrajectoryReplayFixture { Prompt = Redact(prompt.Content, redaction) };
+        var cleanPrompt = Redact(prompt.Content, redaction);
+        if (MediaMarkerProtocol.Extract(cleanPrompt).Markers.Count > 0)
+            throw new InvalidDataException("This text fixture importer does not support media markers.");
+        var fixture = new TrajectoryReplayFixture { Prompt = cleanPrompt };
         ReplayResponse? response = null;
         var turnIndex = promptTurnIndex;
         for (var i = start + 1; i < records.Count; i++)
@@ -131,7 +135,7 @@ public static class TrajectoryReplayImporter
                     if (!keys.Add(key)) throw new InvalidDataException("Duplicate argument keys after redaction.");
                     writer.WritePropertyName(key);
                     var normalized = property.Name.Replace("_", "").Replace("-", "").ToLowerInvariant();
-                    if (normalized is "password" or "secret" or "apikey" or "token" or "accesstoken" or "refreshtoken" or "authorization" or "cookie")
+                    if (normalized is "password" or "secret" or "apikey" or "token" or "accesstoken" or "refreshtoken" or "authorization" or "cookie" or "clientsecret" or "privatekey" or "sessiontoken" or "xapikey")
                         writer.WriteStringValue("[REDACTED]");
                     else WriteRedactedJson(writer, property.Value, pipeline);
                 }
@@ -143,7 +147,11 @@ public static class TrajectoryReplayImporter
                 writer.WriteEndArray();
                 break;
             case JsonValueKind.String: writer.WriteStringValue(Redact(value.GetString()!, pipeline)); break;
-            default: value.WriteTo(writer); break;
+            default:
+                var raw = value.GetRawText();
+                var clean = Redact(raw, pipeline);
+                if (raw == clean) value.WriteTo(writer); else writer.WriteStringValue(clean);
+                break;
         }
     }
 }

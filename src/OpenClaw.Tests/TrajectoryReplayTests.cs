@@ -33,9 +33,11 @@ public sealed class TrajectoryReplayTests
         Record("tool_result", 1, result: """{"answer":"private-person","token":"hidden-token"}""", status: "completed"),
         Record("response", 2, "Found private-person")
     ];
-    private static Task<TrajectoryReplayFixture> Import(IEnumerable<TrajectoryExportRecord> records, int turn = 0)
-        => TrajectoryReplayImporter.ImportAsync(new StringReader(string.Join('\n', records.Select(r => JsonSerializer.Serialize(r, CoreJsonContext.Default.TrajectoryExportRecord)))),
-            "private-session", turn, Redaction, Ct);
+    private static async Task<TrajectoryReplayFixture> Import(IEnumerable<TrajectoryExportRecord> records, int turn = 0)
+    {
+        using var reader = new StringReader(string.Join('\n', records.Select(r => JsonSerializer.Serialize(r, CoreJsonContext.Default.TrajectoryExportRecord))));
+        return await TrajectoryReplayImporter.ImportAsync(reader, "private-session", turn, Redaction, Ct);
+    }
     private static IAgentRuntime Runtime(IChatClient client, IReadOnlyList<ITool> tools)
         => new AgentRuntime(client, tools, Substitute.For<IMemoryStore>(), new LlmProviderConfig { Model = "offline" }, maxHistoryTurns: 20);
     private static List<ScenarioOracleDefinition> Assertions() =>
@@ -43,6 +45,28 @@ public sealed class TrajectoryReplayTests
         new() { Type = ScenarioOracleTypes.ToolCalled, Tool = "lookup" },
         new() { Type = ScenarioOracleTypes.FinalAnswerContains, Value = JsonSerializer.SerializeToElement("Found [PERSON]") }
     ];
+
+    [Theory]
+    [InlineData("client_secret")]
+    [InlineData("private_key")]
+    [InlineData("session_token")]
+    [InlineData("x-api-key")]
+    public async Task ImportMasksOpaqueCredentialFields(string field)
+    {
+        var records = Records();
+        records[2] = Record("tool_call", 1, arguments: "{\"" + field + "\":\"opaque-value\"}");
+        var fixture = await Import(records);
+        Assert.DoesNotContain("opaque-value", fixture.Responses[0].ToolCalls[0].ArgumentsJson);
+    }
+
+    [Fact]
+    public async Task UnexpectedResultIdIsRejected()
+    {
+        using var replay = new TrajectoryReplay(await Import(Records()));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => replay.GetResponseAsync([
+            new ChatMessage(ChatRole.User, "Find [PERSON]"),
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("unknown", "extra")])], cancellationToken: Ct));
+    }
 
     [Fact]
     public async Task Import_RedactsNestedValuesAndDropsSourceIdentity()
