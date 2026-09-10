@@ -884,7 +884,7 @@ public sealed class OpenClawToolExecutor
     private static bool IsKnownReadOnly(ITool tool, string arguments)
     {
         // Unknown and custom tools stay conservative. Only established read operations opt out.
-        if (tool.Name is "web_search" or "web_fetch" or "read_file" or "memory_get") return true;
+        if (ToolGovernanceDescriptorCatalog.Resolve(tool.Name, tool.Description, ResolveToolActionDescriptor(tool, arguments)).ReadOnly) return true;
         if (ToolActionPolicyResolver.SupportsActionAwareApproval(tool.Name))
         {
             var descriptor = ToolActionPolicyResolver.Resolve(tool.Name, arguments);
