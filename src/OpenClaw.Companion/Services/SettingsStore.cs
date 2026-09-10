@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text;
 using OpenClaw.Companion.Models;
 
 namespace OpenClaw.Companion.Services;
@@ -9,6 +10,7 @@ public sealed class SettingsStore
     private readonly ProtectedTokenStore _tokenStore;
     private readonly ProtectedTokenStore _providerKeyStore;
     private readonly string _providerKeyMarkerPath;
+    private readonly string _tokenUpdateMarkerPath;
 
     public string SettingsPath { get; }
     public string? LastWarning { get; private set; }
@@ -23,6 +25,7 @@ public sealed class SettingsStore
             "Companion");
         var dir = baseDir ?? defaultDir;
         SettingsPath = Path.Join(dir, "settings.json");
+        _tokenUpdateMarkerPath = Path.Join(dir, "token-update.pending");
         _tokenStore = tokenStore ?? new ProtectedTokenStore(dir);
         var providerKeyDir = Path.Join(dir, "provider-key");
         _providerKeyStore = providerKeyStore ?? new ProtectedTokenStore(providerKeyDir);
@@ -40,9 +43,24 @@ public sealed class SettingsStore
 
             var json = File.ReadAllText(SettingsPath);
             var settings = JsonSerializer.Deserialize(json, CompanionJsonContext.Default.CompanionSettings) ?? new CompanionSettings();
-            settings.AuthToken = _tokenStore.LoadToken(settings.AllowPlaintextTokenFallback)
-                ?? TryReadLegacyAuthToken(json, settings.RememberToken);
-            LastWarning = _tokenStore.LastWarning;
+            if (!settings.RememberToken)
+                return settings;
+            if (File.Exists(_tokenUpdateMarkerPath))
+            {
+                LastWarning = "A previous token update is incomplete. No saved token was loaded; re-enter the intended token and save, or turn off Remember token.";
+                return settings;
+            }
+            try
+            {
+                settings.AuthToken = _tokenStore.LoadToken(settings.AllowPlaintextTokenFallback);
+                LastWarning = _tokenStore.LastWarning;
+                MigrateLegacyToken(settings, json);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException
+                or System.Security.Cryptography.CryptographicException or System.ComponentModel.Win32Exception or NotSupportedException)
+            {
+                LastWarning = "Credentials could not be loaded or migrated. Existing storage was preserved; unlock secure storage and retry.";
+            }
             return settings;
         }
         catch (JsonException ex)
@@ -95,22 +113,57 @@ public sealed class SettingsStore
             SetupLocalModelPath = settings.SetupLocalModelPath
         };
 
-        var json = JsonSerializer.Serialize(toSave, CompanionJsonContext.Default.CompanionSettings);
-        var tmp = SettingsPath + ".tmp";
-        File.WriteAllText(tmp, json);
-        File.Move(tmp, SettingsPath, overwrite: true);
-
-        if (!settings.RememberToken || string.IsNullOrWhiteSpace(settings.AuthToken))
+        if (settings.RememberToken && string.IsNullOrWhiteSpace(settings.AuthToken))
         {
-            _tokenStore.ClearToken();
+            LastWarning = "No token was supplied; existing credentials and settings were retained. Re-enter the intended token or turn off Remember token. Token migration is still pending if secure storage is unavailable.";
             return;
         }
+        var persisted = false;
 
-        _tokenStore.SaveToken(
-            settings.AuthToken,
-            settings.AllowPlaintextTokenFallback,
-            out var warning);
-        LastWarning = warning;
+        if (settings.RememberToken && !string.IsNullOrWhiteSpace(settings.AuthToken))
+        {
+            // A crash or failed settings write must not pair a changed credential with an old server URL.
+            CompanionFilePersistence.WriteAtomically(_tokenUpdateMarkerPath, "pending"u8);
+            var protectedSave = _tokenStore.SaveToken(settings.AuthToken, settings.AllowPlaintextTokenFallback, out var warning);
+            LastWarning = warning;
+            persisted = protectedSave;
+            if (!persisted && settings.AllowPlaintextTokenFallback)
+            {
+                try { persisted = string.Equals(_tokenStore.LoadToken(true), settings.AuthToken, StringComparison.Ordinal); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException
+                    or System.Security.Cryptography.CryptographicException or System.ComponentModel.Win32Exception or NotSupportedException)
+                {
+                    persisted = false;
+                }
+                if (!persisted)
+                    LastWarning = $"{LastWarning} The new token could not be reloaded; existing credential copies were retained.".Trim();
+            }
+            if (!persisted && File.Exists(SettingsPath) && HasLegacyToken(File.ReadAllText(SettingsPath)))
+            {
+                LastWarning = $"{LastWarning} Settings were not changed because the legacy token could not be stored safely.".Trim();
+                return;
+            }
+        }
+
+        var json = JsonSerializer.Serialize(toSave, CompanionJsonContext.Default.CompanionSettings);
+        CompanionFilePersistence.WriteAtomically(SettingsPath, Encoding.UTF8.GetBytes(json));
+        if (!settings.RememberToken)
+        {
+            _tokenStore.ClearToken();
+            LastWarning = _tokenStore.LastWarning;
+            ClearTokenUpdateMarker();
+        }
+        else if (persisted)
+            ClearTokenUpdateMarker();
+    }
+
+    private void ClearTokenUpdateMarker()
+    {
+        try { File.Delete(_tokenUpdateMarkerPath); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LastWarning = "Credentials were stored, but the incomplete-update marker could not be removed. Saved-token loading remains disabled until a successful save.";
+        }
     }
 
     public string? LoadProviderApiKey(bool allowPlaintextFallback)
@@ -133,7 +186,7 @@ public sealed class SettingsStore
         LastWarning ??= _providerKeyStore.LastWarning;
         if (!string.Equals(loadedProviderApiKey, providerApiKey, StringComparison.Ordinal))
         {
-            TryDelete(_providerKeyMarkerPath);
+            // A failed replacement must not hide a previously stored provider key.
             return false;
         }
 
@@ -147,30 +200,65 @@ public sealed class SettingsStore
         TryDelete(_providerKeyMarkerPath);
     }
 
-    private static string? TryReadLegacyAuthToken(string json, bool rememberToken)
+    private void MigrateLegacyToken(CompanionSettings settings, string originalJson)
     {
-        if (!rememberToken)
-            return null;
-
+        using var document = JsonDocument.Parse(originalJson);
+        var properties = document.RootElement.EnumerateObject()
+            .Where(property => property.Name.Equals("authToken", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (properties.Length == 0) return;
+        var tokens = properties.Where(p => p.Value.ValueKind == JsonValueKind.String)
+            .Select(p => p.Value.GetString()).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray();
+        if (tokens.Length != 1 || properties.Any(p => p.Value.ValueKind != JsonValueKind.String))
+        {
+            LastWarning = "Legacy token fields are empty, conflicting, or invalid; they were preserved for manual review.";
+            return;
+        }
+        var legacy = tokens[0]!;
+        var protectedCopy = _tokenStore.LastLoadWasProtected && string.Equals(settings.AuthToken, legacy, StringComparison.Ordinal);
+        if (!protectedCopy)
+        {
+            if (!string.IsNullOrWhiteSpace(settings.AuthToken) && !string.Equals(settings.AuthToken, legacy, StringComparison.Ordinal))
+            {
+                LastWarning = "A different stored token is in use; the legacy token was preserved for recovery.";
+                return;
+            }
+            if (!_tokenStore.TryMigrateToken(legacy, out var warning))
+            {
+                LastWarning = $"{warning} Legacy token remains in settings."
+                    + (settings.AllowPlaintextTokenFallback ? " Plaintext fallback is enabled." : " It was not loaded because plaintext fallback is disabled.");
+                if (settings.AllowPlaintextTokenFallback) settings.AuthToken = legacy;
+                return;
+            }
+            LastWarning = warning;
+            settings.AuthToken = legacy;
+        }
         try
         {
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-            if (root.TryGetProperty("AuthToken", out var authToken) && authToken.ValueKind == JsonValueKind.String)
-                return authToken.GetString();
-            if (root.TryGetProperty("authToken", out authToken) && authToken.ValueKind == JsonValueKind.String)
-                return authToken.GetString();
+            if (!string.Equals(File.ReadAllText(SettingsPath), originalJson, StringComparison.Ordinal))
+            {
+                LastWarning = "Token is protected, but settings changed during migration; plaintext cleanup was deferred.";
+                return;
+            }
+            using var content = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(content, new JsonWriterOptions { Indented = true }))
+            {
+                writer.WriteStartObject();
+                foreach (var property in document.RootElement.EnumerateObject())
+                    if (!property.Name.Equals("authToken", StringComparison.OrdinalIgnoreCase)) property.WriteTo(writer);
+                writer.WriteEndObject();
+            }
+            CompanionFilePersistence.WriteAtomically(SettingsPath, content.ToArray());
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Trace.TraceWarning("Settings store ignored legacy token JSON error: {0}", ex.Message);
+            LastWarning = "Token is protected, but the legacy plaintext field could not be removed. Migration will retry on next load.";
         }
-        catch (InvalidOperationException ex)
-        {
-            Trace.TraceWarning("Settings store ignored legacy token invalid state: {0}", ex.Message);
-        }
+    }
 
-        return null;
+    private static bool HasLegacyToken(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.EnumerateObject().Any(p => p.Name.Equals("authToken", StringComparison.OrdinalIgnoreCase));
     }
 
     private static void TraceSettingsLoadFailure(Exception ex)

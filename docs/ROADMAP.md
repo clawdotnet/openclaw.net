@@ -2,6 +2,8 @@
 
 ## Recently Completed
 
+- **Companion token protection and migration**: OS-backed token storage now automatically migrates legacy JSON/fallback credentials with read-back verification, preserves recoverable copies on failure, respects Remember token and plaintext opt-in, and uses atomic private file writes. See [Companion token storage](companion-token-storage.md).
+
 - Browser sessions invalidate after local operator account updates, deletion, or disablement.
 - Goal completion accepts completed tool work; model status updates run alone and blocked transitions require three observations. Resume resets continuation and blocker counters.
 - Goal state is persisted atomically under the configured memory storage directory and restored lazily after restart.
@@ -78,11 +80,7 @@ Recommend implementing behind flags first, then enabling by default in a major r
    - Current: `legacy` makes empty allowlist behave as allow-all for some channels.
    - Target: `strict` should be the default for safer out-of-the-box behavior.
 
-3. **Encrypt Companion token storage**
-   - Store the auth token using OS-provided secure storage (Keychain/DPAPI/etc).
-   - Include migration from existing plaintext settings.
-
-4. **Default Telegram webhook signature validation to `true`**
+3. **Default Telegram webhook signature validation to `true`**
    - Requires `WebhookSecretToken`/`WebhookSecretTokenRef` to be configured.
    - Improves default webhook authenticity guarantees.
 
