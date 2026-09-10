@@ -17,6 +17,23 @@ public sealed class DurableActionJournalTests : IDisposable
         => executor.ExecuteAsync("test", "{}", id, _session, context ?? new(), false, null, TestContext.Current.CancellationToken);
 
     [Fact]
+    public async Task CatalogReadFailureDoesNotBlockLaterMutation()
+    {
+        var read = Executor(new ReadFailureTool());
+        await read.ExecuteAsync("memory_search", "{}", "read", _session, new(), false, null, TestContext.Current.CancellationToken);
+        using (var lease = await new DurableActionJournal(_root).OpenAsync(_session.Id, TestContext.Current.CancellationToken))
+            Assert.Empty(lease.Records);
+        var write = new CountingTool();
+        Assert.Equal("done", (await Run(Executor(write), "write")).ResultText);
+        Assert.Equal(1, write.Calls);
+    }
+    private sealed class ReadFailureTool : ITool
+    {
+        public string Name => "memory_search"; public string Description => "read"; public string ParameterSchema => "{}";
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct) => throw new IOException("Read unavailable.");
+    }
+
+    [Fact]
     public async Task MafAdapterGeneratesDistinctPersistableActionIds()
     {
         var tool = new CountingTool(); var invocations = new List<ToolInvocation>();
