@@ -19,6 +19,7 @@ public sealed class IntegrationSessionsResponse
 
 public sealed class IntegrationSessionDetailResponse
 {
+    public SessionRecoveryExplanation? Recovery { get; init; }
     public Session? Session { get; init; }
     public bool IsActive { get; init; }
     public int BranchCount { get; init; }

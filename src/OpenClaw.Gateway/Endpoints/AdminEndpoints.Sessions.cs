@@ -113,6 +113,8 @@ internal static partial class AdminEndpoints
                 Session = session,
                 IsActive = runtime.SessionManager.IsActive(id),
                 BranchCount = branches.Count,
+                Recovery = OpenClaw.Core.Services.SessionRecoveryExplainer.Explain(session,
+                    ctx.RequestServices.GetService<IGoalService>()?.GetGoal(id), runtime.ToolApprovalService.ListPending()),
                 Metadata = operations.SessionMetadata.Get(id)
             }, CoreJsonContext.Default.AdminSessionDetailResponse);
         });

@@ -208,7 +208,7 @@ public sealed class CompanionRuntimeConsoleTests : IDisposable
             {
                 return request.RequestUri!.AbsolutePath switch
                 {
-                    "/api/integration/sessions/sess-a" => JsonResponse("""{ "session": null, "isActive": true, "branchCount": 3, "metadata": null }"""),
+                    "/api/integration/sessions/sess-a" => JsonResponse("""{ "session": null, "isActive": true, "branchCount": 3, "metadata": null, "recovery": { "status": "blocked", "summary": "Access is missing", "evidence": ["Goal is blocked"], "nextSteps": ["Resolve access first"] } }"""),
                     "/api/integration/sessions/sess-a/timeline" => JsonResponse("""
                     {
                       "sessionId": "sess-a",
@@ -241,6 +241,8 @@ public sealed class CompanionRuntimeConsoleTests : IDisposable
 
         Assert.Contains("Session: sess-a", viewModel.SelectedSessionDetail, StringComparison.Ordinal);
         Assert.Contains("Branches: 3", viewModel.SelectedSessionDetail, StringComparison.Ordinal);
+        Assert.Contains("Access is missing", viewModel.SelectedSessionDetail, StringComparison.Ordinal);
+        Assert.Contains("Resolve access first", viewModel.SelectedSessionDetail, StringComparison.Ordinal);
         var timeline = Assert.Single(viewModel.SessionTimelineRows);
         Assert.Equal("chat", timeline.Component);
         Assert.True(viewModel.HasSessionTimelineRows);
