@@ -600,16 +600,19 @@ public sealed class OpenClawToolExecutor
             persistedArgsJson = _redaction.Redact(substitution.PersistedArgumentsJson);
             afterHookCtx = hookCtx with { ArgumentsJson = persistedArgsJson };
 
-            dispatchStarted = true;
             if (action is not null && tool is IReconcilableTool durableTool)
             {
                 using var actionTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 if (_toolTimeoutSeconds > 0) actionTimeout.CancelAfter(TimeSpan.FromSeconds(_toolTimeoutSeconds));
+                dispatchStarted = true;
                 result = await durableTool.ExecuteWithIdempotencyAsync(executionArgsJson, action.Id,
                     new ToolExecutionContext { Session = session, TurnContext = turnCtx, IdempotencyKey = action.Id }, actionTimeout.Token);
             }
             else if (onDelta is not null && tool is IStreamingTool streamingTool)
+            {
+                dispatchStarted = true;
                 result = await ExecuteStreamingToolCollectAsync(streamingTool, executionArgsJson, onDelta, ct);
+            }
             else if (_metaInvokeExecutor is not null &&
                 string.Equals(tool.Name, "meta_invoke", StringComparison.Ordinal) &&
                 TryGetMetaInvokeArguments(executionArgsJson, out var requestedSkill, out var requestedInput))
@@ -625,7 +628,7 @@ public sealed class OpenClawToolExecutor
                 }
             }
             else
-                result = await ExecuteToolWithRoutingAsync(tool, executionArgsJson, session, turnCtx, ct);
+                result = await ExecuteToolWithRoutingAsync(tool, executionArgsJson, session, turnCtx, ct, () => dispatchStarted = true);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -1097,18 +1100,23 @@ public sealed class OpenClawToolExecutor
         string argsJson,
         Session session,
         TurnContext turnCtx,
-        CancellationToken ct)
+        CancellationToken ct, Action dispatchStarting)
     {
+        Task<string> DispatchLocalAsync()
+        {
+            dispatchStarting();
+            return ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
+        }
         if (!_executionRouter.TryResolveRoute(tool, out var route, out var template, out var legacySandboxRoute, out var sandboxMode))
         {
             if (IsLocalExecutionDisabled(tool))
                 throw CreateLocalExecutionUnavailableException(tool);
 
-            return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
+            return await DispatchLocalAsync();
         }
 
         if (tool is not ISandboxCapableTool sandboxCapableTool)
-            return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
+            return await DispatchLocalAsync();
 
         var backendName = string.IsNullOrWhiteSpace(route?.Backend)
             ? _config.Execution.DefaultBackend
@@ -1123,7 +1131,7 @@ public sealed class OpenClawToolExecutor
             throw CreateLocalExecutionUnavailableException(tool);
 
         if (string.Equals(backendName, "local", StringComparison.OrdinalIgnoreCase) && !legacySandboxRoute)
-            return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
+            return await DispatchLocalAsync();
 
         if (_executionRouter.RequiresWorkspace(backendName) && string.IsNullOrWhiteSpace(_config.Tooling.WorkspaceRoot))
         {
@@ -1153,6 +1161,7 @@ public sealed class OpenClawToolExecutor
                 tool.Name,
                 sandboxRequest.TimeToLiveSeconds);
 
+            dispatchStarting();
             var executionResult = await _executionRouter.ExecuteAsync(new ExecutionRequest
             {
                 ToolName = tool.Name,
@@ -1200,7 +1209,7 @@ public sealed class OpenClawToolExecutor
                 turnCtx.CorrelationId,
                 tool.Name,
                 legacySandboxRoute ? "local tool execution" : route!.FallbackBackend);
-            return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
+            return await DispatchLocalAsync();
         }
         catch (ToolSandboxUnavailableException ex)
         {

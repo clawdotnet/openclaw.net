@@ -48,7 +48,7 @@ public sealed class DurableActionJournal(string storagePath)
         {
             ct.ThrowIfCancellationRequested();
             try { handle = new FileStream(stem + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); break; }
-            catch (IOException ex) when ((ex.HResult & 0xffff) is 11 or 32 or 33) { await Task.Delay(50, ct); }
+            catch (IOException ex) when ((ex.HResult & 0xffff) is 11 or 32 or 33 or 35) { await Task.Delay(50, ct); }
         }
         try
         {
