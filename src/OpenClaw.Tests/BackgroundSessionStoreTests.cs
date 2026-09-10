@@ -16,7 +16,7 @@ public sealed class BackgroundSessionStoreTests : IAsyncDisposable
     {
         var dir = NewTempDir("capture-snapshot");
         await using var store = new FileMemoryStore(dir);
-        var session = NewSession("snapshot", SessionRunState.Completed);
+        var session = NewSession("websocket:snapshot", SessionRunState.Completed);
         await store.SaveSessionAsync(session, TestContext.Current.CancellationToken);
         var cached = await store.GetSessionAsync(session.Id, TestContext.Current.CancellationToken);
         await foreach (var snapshot in store.ReadSnapshotsAsync(null, TestContext.Current.CancellationToken))
