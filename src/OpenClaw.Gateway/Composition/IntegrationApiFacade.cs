@@ -22,6 +22,7 @@ internal sealed class IntegrationApiFacade
     private readonly TextToSpeechService? _textToSpeechService;
     private readonly GatewayMaintenanceRuntimeService? _maintenanceService;
     private readonly AgentWorkflowRegistry _workflows;
+    private readonly IGoalService? _goalService;
 
     public static IntegrationApiFacade Create(
         GatewayStartupContext startup,
@@ -55,7 +56,7 @@ internal sealed class IntegrationApiFacade
             toolPresetResolver,
             textToSpeechService,
             maintenanceService,
-            workflows);
+            workflows, services.GetService<IGoalService>());
     }
 
     public IntegrationApiFacade(
@@ -70,8 +71,10 @@ internal sealed class IntegrationApiFacade
         IToolPresetResolver? toolPresetResolver,
         TextToSpeechService? textToSpeechService,
         GatewayMaintenanceRuntimeService? maintenanceService,
-        AgentWorkflowRegistry workflows)
+        AgentWorkflowRegistry workflows,
+        IGoalService? goalService = null)
     {
+        _goalService = goalService;
         _startup = startup;
         _runtime = runtime;
         _sessionAdminStore = sessionAdminStore;
@@ -156,6 +159,8 @@ internal sealed class IntegrationApiFacade
             Session = session,
             IsActive = _runtime.SessionManager.IsActive(id),
             BranchCount = branches.Count,
+            Recovery = OpenClaw.Core.Services.SessionRecoveryExplainer.ExplainWithGoalStore(session,
+                _goalService, _runtime.ToolApprovalService.ListPending()),
             Metadata = _runtime.Operations.SessionMetadata.Get(id)
         };
     }

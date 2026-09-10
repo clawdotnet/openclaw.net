@@ -28,7 +28,8 @@ public record SessionDetail(
     List<SessionMessage>? Messages,
     string? RunState = null,
     string? BackgroundRunObjective = null,
-    int BackgroundContinuationCount = 0
+    int BackgroundContinuationCount = 0,
+    OpenClaw.Core.Models.SessionRecoveryExplanation? Recovery = null
 );
 
 public record SessionMessage(
