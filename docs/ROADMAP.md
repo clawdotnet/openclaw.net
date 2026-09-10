@@ -63,7 +63,7 @@ The runtime already includes CLI insights, URL safety validation, and trajectory
 1. **Durable action reconciliation (implemented, opt-in)**: persisted dispatch journal, stable provider adapter keys, completed-result reuse, and blocking of unknown outcomes before replay. See [durable actions](durable-actions.md). Provider-specific adapters and executor-bypassing jobs need individual integration.
 2. **Real-run regression capture**: extend `RuntimeScenarioRunner` with redacted trajectory import and deterministic provider/tool replay fixtures.
 3. **Full-instance backup and restore**: extend upgrade rollback to include sessions, goals, schedules, governance records, and secret-reference manifests; validate restores in an isolated instance without dispatching actions.
-4. **Run explanation and recovery view**: connect existing timelines, approvals, and evidence to show the exact blocker and valid next recovery actions.
+4. **Guided recovery controls (implemented)**: permission-aware goal pause/resume and evidence-backed action reconciliation with revision, approval, and budget checks. Complements the run explanation view; see [guided recovery](guided-recovery.md).
 
 ## Security Hardening (Likely Breaking)
 
