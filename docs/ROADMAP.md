@@ -2,6 +2,8 @@
 
 ## Recently Completed
 
+- **Run explanation and recovery view**: admin console, Dashboard, and Companion session details combine recorded run/goal state, goal notes, session-scoped pending approvals, checkpoints, and recent tool failure evidence with contextual recovery guidance. Existing timelines remain available for investigation; the view does not authorize or replay actions.
+
 - Browser sessions invalidate after local operator account updates, deletion, or disablement.
 - Goal completion accepts completed tool work; model status updates run alone and blocked transitions require three observations. Resume resets continuation and blocker counters.
 - Goal state is persisted atomically under the configured memory storage directory and restored lazily after restart.

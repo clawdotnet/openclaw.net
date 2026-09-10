@@ -5602,6 +5602,26 @@ public sealed class GatewayAdminEndpointTests
         Assert.Equal("queued message", queued.Text);
     }
 
+    [Theory]
+    [InlineData("/admin/sessions/")]
+    [InlineData("/api/integration/sessions/")]
+    public async Task SessionDetail_ExplainsRecordedFailure(string route)
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("recovery-test", "api", "operator", TestContext.Current.CancellationToken);
+        session.RunState = SessionRunState.Failed;
+        session.BackgroundRun = new() { LastStopReason = "Failed" };
+        await harness.Runtime.SessionManager.PersistAsync(session, TestContext.Current.CancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, route + session.Id);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        using var response = await harness.Client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        var recovery = payload.RootElement.GetProperty("recovery");
+        Assert.Equal("failed", recovery.GetProperty("status").GetString());
+        Assert.Contains("Do not blindly repeat", recovery.GetProperty("nextSteps").ToString());
+    }
+
     [Fact]
     public async Task SessionDetail_And_Promotion_Surface_Work()
     {

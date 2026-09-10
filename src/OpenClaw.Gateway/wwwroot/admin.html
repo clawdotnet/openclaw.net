@@ -5363,6 +5363,17 @@
 
             sessionDetailOutput.innerHTML = `
                 <div class="pill-row">${metadataPills.map(value => `<span class="pill">${escapeHtml(value)}</span>`).join('')}</div>
+                ${detail.recovery ? `
+                    <div class="card" style="margin-top:0.75rem;">
+                        <h4>Run explanation and recovery</h4>
+                        <p>${escapeHtml(detail.recovery.summary)}</p>
+                        <h4>Recorded evidence</h4>
+                        <ul>${(detail.recovery.evidence || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+                        <h4>Next steps</h4>
+                        <ol>${(detail.recovery.nextSteps || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ol>
+                        <p class="muted">Refresh to check for changes. These steps do not execute or approve actions.</p>
+                    </div>
+                ` : ''}
                 ${delegation ? `
                     <div class="card" style="margin-top:0.75rem;">
                         <strong>Delegated Session</strong>

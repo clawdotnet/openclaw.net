@@ -1614,6 +1614,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(SessionPromotionRequest))]
 [JsonSerializable(typeof(SessionPromotionResponse))]
 [JsonSerializable(typeof(SessionDiffResponse))]
+[JsonSerializable(typeof(SessionRecoveryExplanation))]
 [JsonSerializable(typeof(SessionTimelineResponse))]
 [JsonSerializable(typeof(SessionExportItem))]
 [JsonSerializable(typeof(List<SessionExportItem>))]
