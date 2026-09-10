@@ -183,7 +183,8 @@ public sealed class AgentRuntime : IAgentRuntime
         var projectId = gatewayConfig?.Memory.ProjectId
             ?? Environment.GetEnvironmentVariable("OPENCLAW_PROJECT");
         _memoryRecallPrefix = string.IsNullOrWhiteSpace(projectId) ? null : $"project:{projectId.Trim()}:";
-        _checkpoints = new AgentCheckpointManager(memory, logger);
+        _checkpoints = new AgentCheckpointManager(memory, logger, gatewayConfig?.Tooling.DurableActionJournal == true
+            ? new OpenClaw.Core.Actions.DurableActionJournal(gatewayConfig.Memory.StoragePath) : null);
         _toolLoop = new AgentToolCallLoop(_toolExecutor, _parallelToolExecution);
         _accounting = new AgentTurnAccounting(metrics, providerUsage, config, _sessionTokenBudget,
             _estimateTokenBudgetAdmission, turnTokenUsageObserver, () => CircuitBreakerState,
@@ -2791,7 +2792,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 lastResult = await _toolExecutor.ExecuteAsync(
                     toolName,
                     toolArgsJson,
-                    $"meta:{metaSkill?.Name ?? "fan_out"}:{step.Id}:attempt:{attempt}",
+                    $"meta:{metaSkill?.Name ?? "fan_out"}:{step.Id}:attempt:{attempt}:{Guid.NewGuid():N}",
                     session,
                     turnCtx,
                     isStreaming: false,

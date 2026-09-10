@@ -29,6 +29,7 @@ internal static partial class AdminEndpoints
 {
     private static void MapSessionEndpoints(WebApplication app, AdminEndpointServices services)
     {
+        MapRecoveryEndpoints(app, services);
         var startup = services.Startup;
         var runtime = services.Runtime;
         var browserSessions = services.BrowserSessions;

@@ -49,6 +49,40 @@ namespace OpenClaw.Tests;
 public sealed class GatewayAdminEndpointTests
 {
     [Fact]
+    public async Task GuidedRecovery_RequiresOperatorCsrfAndCurrentRevision()
+    {
+        await using var harness = await CreateHarnessAsync(true, config => config.Tooling.DurableActionJournal = true);
+        var session = new Session { Id = "recovery-test", ChannelId = "test", SenderId = "user" };
+        await harness.MemoryStore.SaveSessionAsync(session, CancellationToken.None);
+        using (var lease = await new OpenClaw.Core.Actions.DurableActionJournal(harness.StoragePath).OpenAsync(session.Id, CancellationToken.None))
+            lease.Begin("call", "email", "{}");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await harness.Client.GetAsync("/admin/sessions/recovery-test/recovery")).StatusCode);
+        var viewer = CreateOperatorToken(harness, OperatorRoleNames.Viewer, "recovery-viewer");
+        using var view = new HttpRequestMessage(HttpMethod.Get, "/admin/sessions/recovery-test/recovery");
+        view.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewer);
+        using var viewed = await harness.Client.SendAsync(view); Assert.Equal(HttpStatusCode.OK, viewed.StatusCode);
+        using var data = await ReadJsonAsync(viewed); Assert.False(data.RootElement.GetProperty("canMutate").GetBoolean());
+        var action = data.RootElement.GetProperty("actions")[0];
+        var request = new OpenClaw.Core.Recovery.RecoveryRequest { Command = "not_executed", Revision = data.RootElement.GetProperty("revision").GetString()!,
+            ActionId = action.GetProperty("id").GetString(), ActionRevision = action.GetProperty("revision").GetInt64(), Evidence = "Provider receipt confirms rejected before dispatch." };
+        var json = JsonSerializer.Serialize(request, OpenClaw.Core.Recovery.RecoveryJsonContext.Default.RecoveryRequest);
+        using var viewerPost = new HttpRequestMessage(HttpMethod.Post, "/admin/sessions/recovery-test/recovery") { Content = JsonContent(json) };
+        viewerPost.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewer);
+        Assert.Equal(HttpStatusCode.Forbidden, (await harness.Client.SendAsync(viewerPost)).StatusCode);
+        var (cookie, csrf) = await LoginAsync(harness.Client, harness.AuthToken);
+        using var noCsrf = new HttpRequestMessage(HttpMethod.Post, "/admin/sessions/recovery-test/recovery") { Content = JsonContent(json) };
+        noCsrf.Headers.Add("Cookie", cookie);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await harness.Client.SendAsync(noCsrf)).StatusCode);
+        using var update = new HttpRequestMessage(HttpMethod.Post, "/admin/sessions/recovery-test/recovery") { Content = JsonContent(json) };
+        update.Headers.Add("Cookie", cookie); update.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrf);
+        Assert.Equal(HttpStatusCode.OK, (await harness.Client.SendAsync(update)).StatusCode);
+        using var stale = new HttpRequestMessage(HttpMethod.Post, "/admin/sessions/recovery-test/recovery") { Content = JsonContent(json) };
+        stale.Headers.Add("Cookie", cookie); stale.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrf);
+        Assert.Equal(HttpStatusCode.Conflict, (await harness.Client.SendAsync(stale)).StatusCode);
+        Assert.False(harness.Runtime.Pipeline.InboundReader.TryRead(out _));
+    }
+
+    [Fact]
     public async Task WorkspaceMcp_AdminApi_RequiresAuth_AndPersistsConfig()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -1444,6 +1478,35 @@ public sealed class GatewayAdminEndpointTests
             payload.RootElement.GetProperty("tools").EnumerateArray(),
             item => item.GetProperty("toolName").GetString() == "web_fetch" &&
                     item.GetProperty("calls").GetInt64() == 1);
+    }
+
+    [Fact]
+    public async Task AdminTrajectoryExport_CanReplayACompleteNativeExchange()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync("replay-export", "api", "operator", TestContext.Current.CancellationToken);
+        session.History.Add(new ChatTurn { Role = "user", Content = "Look up the answer" });
+        session.History.Add(new ChatTurn { Role = "assistant", Content = "[tool_use]", ToolCalls =
+            [new() { CallId = "original-call", ToolName = "lookup", Arguments = "{}", Result = "42", ResultStatus = ToolResultStatuses.Completed }] });
+        session.History.Add(new ChatTurn { Role = "assistant", Content = "The answer is 42" });
+        await harness.Runtime.SessionManager.PersistAsync(session, TestContext.Current.CancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/trajectory/export?sessionId=replay-export&anonymize=true");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        using var response = await harness.Client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var jsonl = await response.Content.ReadAsStringAsync();
+        using var first = JsonDocument.Parse(jsonl.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
+        var exportedId = first.RootElement.GetProperty("sessionId").GetString()!;
+        using var trajectoryReader = new StringReader(jsonl);
+        var fixture = await OpenClaw.Testing.TrajectoryReplayImporter.ImportAsync(trajectoryReader, exportedId, 0,
+            new RedactionPipeline([new BaselineSecretRedactor()]), TestContext.Current.CancellationToken);
+        Assert.Empty(fixture.Responses[0].Text);
+        var result = await OpenClaw.Testing.RuntimeScenarioRunner.RunReplayAsync(fixture,
+            [new() { Type = OpenClaw.Testing.ScenarioOracleTypes.FinalAnswerContains, Value = JsonSerializer.SerializeToElement("42") }],
+            (provider, tools) => new AgentRuntime(provider, tools, Substitute.For<IMemoryStore>(), new LlmProviderConfig { Model = "offline" }, maxHistoryTurns: 20),
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(result.Passed, result.FailureSummary);
+        Assert.Equal("The answer is 42", result.Trace.FinalAnswer);
     }
 
     [Fact]

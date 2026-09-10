@@ -18,6 +18,7 @@ public sealed class SessionManager : IAsyncDisposable, IDisposable
     private readonly ConcurrentDictionary<long, Task> _backgroundPersists = new();
     private readonly IMemoryStore _store;
     internal IMemoryStore Store => _store;
+    private readonly OpenClaw.Core.Actions.DurableActionJournal? _actionJournal;
     private readonly ILogger? _logger;
     private readonly RuntimeMetrics? _metrics;
     private readonly TimeSpan _timeout;
@@ -30,6 +31,7 @@ public sealed class SessionManager : IAsyncDisposable, IDisposable
     public SessionManager(IMemoryStore store, GatewayConfig config, ILogger? logger = null, RuntimeMetrics? metrics = null)
     {
         _store = store;
+        _actionJournal = config.Tooling.DurableActionJournal ? new(config.Memory.StoragePath) : null;
         _logger = logger;
         _metrics = metrics;
         _timeout = TimeSpan.FromMinutes(config.SessionTimeoutMinutes);
@@ -150,6 +152,7 @@ public sealed class SessionManager : IAsyncDisposable, IDisposable
             try
             {
                 await _store.SaveSessionAsync(session, ct);
+                if (_actionJournal is not null) await _actionJournal.AcknowledgePersistedHistoryAsync(session, ct, _logger);
                 return;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)

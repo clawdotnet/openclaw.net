@@ -9,7 +9,7 @@ using OpenClaw.Core.Security;
 
 namespace OpenClaw.Core.Memory;
 
-public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNoteCatalog, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IBackgroundSessionStore, IDisposable
+public sealed class SqliteMemoryStore : IMemoryStore, ISessionSnapshotSource, IMemoryNoteSearch, IMemoryNoteCatalog, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IBackgroundSessionStore, IDisposable
 {
     private readonly string _dbPath;
     private readonly bool _enableFtsRequested;
@@ -144,6 +144,24 @@ public sealed class SqliteMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemory
             {
                 // Column already exists — safe to ignore
             }
+        }
+    }
+
+    public async IAsyncEnumerable<Session> ReadSnapshotsAsync(DateTimeOffset? since,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        await using var connection = new SqliteConnection(ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = since is null ? "SELECT json FROM sessions;" : "SELECT json FROM sessions WHERE updated_at >= $since;";
+        if (since is { } cutoff) command.Parameters.AddWithValue("$since", cutoff.ToUnixTimeSeconds());
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            Session? snapshot;
+            try { snapshot = JsonSerializer.Deserialize(reader.GetString(0), CoreJsonContext.Default.Session); }
+            catch (JsonException ex) { _logger?.LogWarning(ex, "Skipping an unreadable capture snapshot."); continue; }
+            if (snapshot is not null) yield return snapshot;
         }
     }
 

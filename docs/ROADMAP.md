@@ -2,7 +2,11 @@
 
 ## Recently Completed
 
+- **Companion token protection and migration**: OS-backed token storage now automatically migrates legacy JSON/fallback credentials with read-back verification, preserves recoverable copies on failure, respects Remember token and plaintext opt-in, and uses atomic private file writes. See [Companion token storage](companion-token-storage.md).
+
 - **Run explanation and recovery view**: admin console, Dashboard, and Companion session details combine recorded run/goal state, goal notes, session-scoped pending approvals, checkpoints, and recent tool failure evidence with contextual recovery guidance. Existing timelines remain available for investigation; the view does not authorize or replay actions.
+
+- **Real-run regression import and offline replay**: import a redacted, complete text exchange from a gateway trajectory export and run recorded provider/tool fixtures through `RuntimeScenarioRunner`, with independent assertions and strict consumption checks. Includes an executable sample; see [trajectory replay](testing/trajectory-replay.md).
 
 - Browser sessions invalidate after local operator account updates, deletion, or disablement.
 - Goal completion accepts completed tool work; model status updates run alone and blocked transitions require three observations. Resume resets continuation and blocker counters.
@@ -62,10 +66,10 @@ These are strong candidates for the next roadmap phases because they extend the 
 
 The runtime already includes CLI insights, URL safety validation, and trajectory export. The next additions build on those capabilities:
 
-1. **Durable action reconciliation**: supplement persisted goals and completed-batch checkpoints with an action journal and provider idempotency keys. An interrupted external action with an unknown outcome must be reconciled before replay.
-2. **Real-run regression capture**: extend `RuntimeScenarioRunner` with redacted trajectory import and deterministic provider/tool replay fixtures.
-3. **Full-instance backup and restore**: extend upgrade rollback to include sessions, goals, schedules, governance records, and secret-reference manifests; validate restores in an isolated instance without dispatching actions.
-4. **Guided recovery actions**: extend the completed explanation view with permission-aware recovery controls and action reconciliation once durable action outcomes are available.
+1. **Durable action reconciliation (implemented, opt-in)**: persisted dispatch journal, stable provider adapter keys, completed-result reuse, and blocking of unknown outcomes before replay. See [durable actions](durable-actions.md). Provider-specific adapters and executor-bypassing jobs need individual integration.
+2. **Expanded regression capture (implemented)**: opt-in bounded automatic capture, structured failed/blocked tool replay, and offline multimodal URL-content verification. See [trajectory replay](testing/trajectory-replay.md).
+3. **Full-instance backup and restore (implemented)**: offline inventory plans capture durable state and secret-reference manifests, verify checksums, and restore into a new isolated directory with SQLite validation and no dispatch. See [instance backup](instance-backup.md).
+4. **Guided recovery controls (implemented)**: permission-aware goal pause/resume and evidence-backed action reconciliation with revision, approval, and budget checks. Complements the run explanation view; see [guided recovery](guided-recovery.md).
 
 ## Security Hardening (Likely Breaking)
 
@@ -80,11 +84,7 @@ Recommend implementing behind flags first, then enabling by default in a major r
    - Current: `legacy` makes empty allowlist behave as allow-all for some channels.
    - Target: `strict` should be the default for safer out-of-the-box behavior.
 
-3. **Encrypt Companion token storage**
-   - Store the auth token using OS-provided secure storage (Keychain/DPAPI/etc).
-   - Include migration from existing plaintext settings.
-
-4. **Default Telegram webhook signature validation to `true`**
+3. **Default Telegram webhook signature validation to `true`**
    - Requires `WebhookSecretToken`/`WebhookSecretTokenRef` to be configured.
    - Improves default webhook authenticity guarantees.
 

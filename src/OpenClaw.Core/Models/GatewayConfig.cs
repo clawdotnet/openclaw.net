@@ -209,6 +209,9 @@ public sealed class PromptCacheTraceConfig
 
 public sealed class MemoryConfig
 {
+    public bool RegressionCaptureEnabled { get; set; }
+    public int RegressionCaptureMaxFiles { get; set; } = 100;
+
     /// <summary>Memory backend provider: "file" (default), "sqlite", or "mempalace".</summary>
     public string Provider { get; set; } = "file";
 
@@ -495,6 +498,9 @@ public sealed class CanvasConfig
 
 public sealed class ToolingConfig
 {
+    /// <summary>Persist tool dispatches and block uncertain retries. Opt-in for compatibility.</summary>
+    public bool DurableActionJournal { get; set; }
+
     /// <summary>Autonomy mode: "readonly", "supervised", or "full".</summary>
     public string AutonomyMode { get; set; } = "supervised";
 

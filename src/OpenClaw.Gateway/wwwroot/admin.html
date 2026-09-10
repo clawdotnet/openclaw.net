@@ -1701,6 +1701,7 @@
                 <div class="actions" style="margin-bottom:0.75rem;">
                     <button id="session-promote-button">Promote Session</button>
                 </div>
+                <div id="session-recovery-controls" class="stack"></div>
                 <div id="session-detail-output" class="stack muted">Select a session.</div>
                 <pre id="session-promotion-output">Select a session.</pre>
                 <div id="session-branches-output" class="muted"></div>
@@ -5292,6 +5293,45 @@
             `).join('')}</ul>`;
         }
 
+        let recoveryRevision = null;
+        async function loadRecoveryControls(id) {
+            const host = document.getElementById('session-recovery-controls');
+            host.textContent = 'Loading recovery controls…';
+            const { resp, data } = await api(`/admin/sessions/${encodeURIComponent(id)}/recovery`);
+            if (sessionsState.selectedSessionId !== id) return;
+            if (!resp.ok) { host.textContent = `Recovery unavailable (${resp.status}).`; return; }
+            recoveryRevision = data.revision;
+            host.innerHTML = `<div class="card"><strong>Recovery controls</strong><p>${escapeHtml(data.message)}</p>
+                ${data.canMutate ? `<button data-recovery="pause" ${data.canPause ? '' : 'disabled'}>Pause goal</button>
+                <button data-recovery="resume" ${data.canResume ? '' : 'disabled'}>Resume for next message</button>
+                <button data-recovery="stop">Stop active execution</button>` : '<p class="muted">Operator role required to change recovery state.</p>'}
+                ${(data.actions || []).map(action => `<div class="card" data-action-id="${escapeHtml(action.id)}" data-action-revision="${escapeHtml(action.revision)}">
+                    <strong>${escapeHtml(action.toolName)} · ${escapeHtml(action.state)}</strong><p>${escapeHtml(action.id)}</p>
+                    ${data.canMutate ? `<label>Provider evidence<textarea data-evidence maxlength="4000" placeholder="Receipt or provider verification evidence"></textarea></label>
+                    ${action.state === 'started' ? '<label>Verified result<textarea data-result maxlength="65536" placeholder="Required for an unknown action confirmed completed"></textarea></label>' : '<p>The recorded completed result will be retained.</p>'}
+                    <button data-recovery="completed">Confirm completed outcome</button>
+                    ${action.state === 'started' ? '<button data-recovery="not_executed">Confirm action did not execute</button>' : ''}` : ''}</div>`).join('')}
+                </div>`;
+        }
+        document.getElementById('session-recovery-controls').addEventListener('click', async event => {
+            const button = event.target.closest('button[data-recovery]');
+            if (!button || button.disabled || !sessionsState.selectedSessionId) return;
+            const id = sessionsState.selectedSessionId;
+            const command = button.dataset.recovery;
+            if (command === 'not_executed' && !window.confirm('Confirm provider evidence proves this action did not execute. This permits a future execution.')) return;
+            const card = button.closest('[data-action-id]');
+            const payload = { revision: recoveryRevision, command, actionId: card?.dataset.actionId,
+                actionRevision: Number(card?.dataset.actionRevision || 0), evidence: card?.querySelector('[data-evidence]')?.value,
+                result: card?.querySelector('[data-result]')?.value ?? null };
+            button.disabled = true;
+            try {
+                const { resp, data } = await mutate(`/admin/sessions/${encodeURIComponent(id)}/${command === 'stop' ? 'abort' : 'recovery'}`,
+                    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                showFlash(data?.message || `Recovery ${resp.ok ? 'updated' : 'failed'} (${resp.status}).`, resp.ok ? 'ok' : 'error');
+                if (sessionsState.selectedSessionId === id) await loadRecoveryControls(id);
+            } catch (error) { showFlash(String(error), 'error'); button.disabled = false; }
+        });
+
         function renderSessionDetail(detail) {
             const session = detail?.session;
             if (!session) {
@@ -5440,6 +5480,7 @@
             const detail = await api(`/api/integration/sessions/${encodeURIComponent(sessionId)}`);
             if (detail.resp.ok) {
                 renderSessionDetail(detail.data);
+                await loadRecoveryControls(sessionId);
                 sessionStarredInput.checked = Boolean(detail.data.metadata?.starred);
                 sessionTagsInput.value = Array.isArray(detail.data.metadata?.tags) ? detail.data.metadata.tags.join(', ') : '';
                 renderJson(sessionPromotionOutput, { selectedSessionId: sessionId });

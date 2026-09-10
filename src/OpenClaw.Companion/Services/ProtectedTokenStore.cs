@@ -26,6 +26,8 @@ public sealed class ProtectedTokenStore
 
     public string? LastWarning { get; private set; }
 
+    public bool LastLoadWasProtected { get; private set; }
+
     public string ProtectedPath => _secureStore.StorageDescription;
 
     public string FallbackPath => _fallbackPath;
@@ -45,77 +47,152 @@ public sealed class ProtectedTokenStore
     public string? LoadToken(bool allowPlaintextFallback)
     {
         LastWarning = null;
-
-        if (_secureStore.IsAvailable)
+        LastLoadWasProtected = false;
+        var secureAvailable = _secureStore.IsAvailable;
+        if (secureAvailable)
         {
             var token = _secureStore.LoadSecret(out var warning);
             LastWarning = warning;
             if (!string.IsNullOrWhiteSpace(token))
+            {
+                LastLoadWasProtected = warning is null;
+                if (warning is null && File.Exists(_fallbackPath))
+                {
+                    if (string.Equals(File.ReadAllText(_fallbackPath), token, StringComparison.Ordinal))
+                        LastWarning = JoinWarning(LastWarning, DeleteFallback());
+                    else
+                        LastWarning = JoinWarning(LastWarning, "A different plaintext token was preserved for recovery; the protected token is being used.");
+                }
                 return token;
+            }
         }
         else
-        {
             LastWarning = "Secure token storage is unavailable on this system.";
+
+        if (!File.Exists(_fallbackPath)) return null;
+        var fallback = File.ReadAllText(_fallbackPath);
+        if (secureAvailable && LastWarning is null && !string.IsNullOrWhiteSpace(fallback))
+        {
+            if (TryMigrateToken(fallback, out var migrationWarning))
+            {
+                LastLoadWasProtected = true;
+                return fallback;
+            }
+            LastWarning = migrationWarning;
         }
-
-        if (!File.Exists(_fallbackPath))
-            return null;
-
         if (!allowPlaintextFallback)
         {
-            LastWarning = LastWarning is null
-                ? "A plaintext companion token exists, but plaintext fallback is disabled."
-                : $"{LastWarning} Plaintext fallback is disabled.";
+            LastWarning = JoinWarning(LastWarning, "A plaintext token was preserved, but it was not loaded because plaintext fallback is disabled.");
             return null;
         }
+        LastWarning = JoinWarning(LastWarning, "Using plaintext companion token fallback storage.");
+        return fallback;
+    }
 
-        LastWarning = LastWarning is null
-            ? "Using plaintext companion token fallback storage."
-            : $"{LastWarning} Plaintext fallback was used.";
-        return File.ReadAllText(_fallbackPath);
+    /// <summary>Migrates an existing token without replacing a different or unreadable protected credential.</summary>
+    public bool TryMigrateToken(string token, out string? warning)
+    {
+        warning = null;
+        if (!_secureStore.IsAvailable)
+            warning = "Secure token storage is unavailable on this system.";
+        else
+        {
+            var existing = _secureStore.LoadSecret(out warning);
+            if (warning is null && !string.IsNullOrWhiteSpace(existing) && !string.Equals(existing, token, StringComparison.Ordinal))
+                warning = "A different protected token already exists; the legacy token was preserved for recovery.";
+            if (warning is null) return SaveToken(token, allowPlaintextFallback: false, out warning);
+        }
+        LastWarning = warning;
+        return false;
+    }
+
+    internal bool TryReadProtected(out string? token)
+    {
+        token = null;
+        try
+        {
+            if (!_secureStore.IsAvailable) return false;
+            token = _secureStore.LoadSecret(out var warning);
+            return warning is null;
+        }
+        catch (Exception ex) when (IsStorageFailure(ex)) { return false; }
     }
 
     public bool SaveToken(string token, bool allowPlaintextFallback, out string? warning)
     {
         warning = null;
         Directory.CreateDirectory(Path.GetDirectoryName(_fallbackPath)!);
-
-        if (_secureStore.IsAvailable && _secureStore.SaveSecret(token, out warning))
+        try
         {
-            TryDelete(_fallbackPath);
-            LastWarning = warning;
-            return true;
+            if (_secureStore.IsAvailable && _secureStore.SaveSecret(token, out warning))
+            {
+                var verified = _secureStore.LoadSecret(out var readWarning);
+                if (readWarning is null && string.Equals(verified, token, StringComparison.Ordinal))
+                {
+                    if (File.Exists(_fallbackPath))
+                        warning = JoinWarning(warning, string.Equals(File.ReadAllText(_fallbackPath), token, StringComparison.Ordinal)
+                            ? DeleteFallback() : "A different plaintext token was preserved for recovery.");
+                    LastWarning = warning;
+                    return true;
+                }
+                warning = JoinWarning(readWarning, "Protected token storage could not be verified.");
+            }
         }
-
-        warning ??= _secureStore.IsAvailable
-            ? "Secure token storage failed."
-            : "Secure token storage is unavailable on this system.";
-
+        catch (Exception ex) when (IsStorageFailure(ex))
+        {
+            warning = "Protected token storage could not be written and verified.";
+        }
+        warning ??= _secureStore.IsAvailable ? "Secure token storage failed." : "Secure token storage is unavailable on this system.";
         if (!allowPlaintextFallback)
         {
-            TryDelete(_fallbackPath);
-            warning = $"{warning} Token was not saved because plaintext fallback is disabled.";
+            // Never destroy the only recoverable credential after an unsuccessful secure save.
+            warning = JoinWarning(warning, "Token was not saved because plaintext fallback is disabled. Existing plaintext storage, if any, was preserved.");
             LastWarning = warning;
             return false;
         }
-
-        File.WriteAllText(_fallbackPath, token);
-        warning = $"{warning} Plaintext fallback was used.";
+        CompanionFilePersistence.WriteAtomically(_fallbackPath, Encoding.UTF8.GetBytes(token));
+        warning = JoinWarning(warning, "Plaintext fallback was used.");
         LastWarning = warning;
         return false;
     }
 
-    public void ClearToken()
+    private string? DeleteFallback()
     {
-        _secureStore.ClearSecret();
-        TryDelete(_fallbackPath);
-        LastWarning = null;
+        try { File.Delete(_fallbackPath); return null; }
+        catch (IOException) { return "Plaintext token storage could not be removed."; }
+        catch (UnauthorizedAccessException) { return "Plaintext token storage could not be removed."; }
     }
 
-    private static void TryDelete(string path)
+    private static string? JoinWarning(string? first, string? second)
+        => first is null ? second : second is null ? first : $"{first} {second}";
+
+    public void ClearToken()
     {
-        try { File.Delete(path); } catch { }
+        LastLoadWasProtected = false;
+        LastWarning = DeleteFallback();
+        try
+        {
+            _secureStore.ClearSecret();
+            if (_secureStore.IsAvailable)
+            {
+                var remaining = _secureStore.LoadSecret(out var warning);
+                LastWarning = JoinWarning(LastWarning, warning);
+                if (!string.IsNullOrWhiteSpace(remaining))
+                    LastWarning = JoinWarning(LastWarning, "Protected token storage could not be cleared.");
+            }
+            else
+                LastWarning = JoinWarning(LastWarning, "Secure token storage is unavailable; any previous protected credential could not be checked or cleared.");
+        }
+        catch (Exception ex) when (IsStorageFailure(ex))
+        {
+            LastWarning = JoinWarning(LastWarning, "Protected token storage could not be cleared or verified.");
+        }
     }
+
+    private static bool IsStorageFailure(Exception ex)
+        => ex is IOException or UnauthorizedAccessException or InvalidOperationException or CryptographicException
+            or System.ComponentModel.Win32Exception or NotSupportedException;
+
 }
 
 internal static class CompanionSecretStoreFactory
@@ -406,7 +483,7 @@ internal sealed class WindowsDpapiSecretStore : ICompanionSecretStore
             }
 
             var protectedBytes = Protect(Encoding.UTF8.GetBytes(secret));
-            File.WriteAllBytes(_ciphertextPath, protectedBytes);
+            CompanionFilePersistence.WriteAtomically(_ciphertextPath, protectedBytes);
             return true;
         }
         catch (Exception ex)
