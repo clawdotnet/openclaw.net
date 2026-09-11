@@ -1,5 +1,7 @@
 # Durable action reconciliation
 
+> **Release availability:** Available on `main` and targeted for v0.3.0; not included in v0.2.0. See the [roadmap](ROADMAP.md).
+
 Set `OpenClaw:Tooling:DurableActionJournal` to `true` to journal native and MAF tool executor dispatches under `Memory.StoragePath/action-journal`. This is opt-in because it deliberately blocks work that older versions retried automatically.
 
 The executor obtains an exclusive session lease after policy and approval checks, persists a `started` record before invoking the tool, and persists its redacted result before returning. Records contain a stable session/call-derived idempotency key and an argument hash, never raw arguments. Protect the storage directory: returned results and reconciliation evidence can still contain application data. Files are atomically replaced and private on Unix.

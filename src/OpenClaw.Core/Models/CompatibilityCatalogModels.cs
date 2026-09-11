@@ -27,6 +27,7 @@ public sealed class CompatibilityCatalogEntry
     public string? ExpectedRelativePath { get; init; }
     public string? ConfigJsonExample { get; init; }
     public string[] InstallExtraPackages { get; init; } = [];
+    public string[] LatestCanaryInstallExtraPackages { get; init; } = [];
     public string[] ExpectedToolNames { get; init; } = [];
     public string[] ExpectedSkillNames { get; init; } = [];
     public string[] ExpectedCliCommandNames { get; init; } = [];

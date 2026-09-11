@@ -294,7 +294,6 @@ jobs:
   public-compatibility-smoke:
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     timeout-minutes: 30
     env:
       OPENCLAW_PUBLIC_SMOKE: "1"
@@ -329,6 +328,7 @@ jobs:
         run: dotnet test --no-build -c Release --filter "Category=PublicSmoke" --verbosity normal --logger "trx;LogFileName=public-smoke.trx" src/OpenClaw.Tests
 
       - name: Probe latest public plugin packages
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         id: latest_plugin_canary
         continue-on-error: true
         env:
@@ -336,7 +336,7 @@ jobs:
         run: dotnet test --no-build -c Release --filter "Category=LatestCanary" --verbosity normal --logger "trx;LogFileName=latest-plugin-canary.trx" src/OpenClaw.Tests
 
       - name: Report latest-package compatibility canary
-        if: always()
+        if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         shell: bash
         run: |
           if [[ "${{ steps.latest_plugin_canary.outcome }}" == "success" ]]; then

@@ -4,6 +4,13 @@ All notable changes to this project are tracked in this file.
 
 ## [Unreleased]
 
+### Release Engineering
+
+- Made the deterministic pinned public-plugin compatibility smoke run on pull requests and `main` pushes, while keeping the moving latest-package canary scheduled/manual and non-blocking.
+- Added the pinned public-plugin compatibility smoke as a prerequisite for release asset builds.
+- Pinned Supermemory's complete plugin/peer test set and kept a separate latest-peer canary so release verification is reproducible while upstream drift remains visible.
+- Clarified exact-head merge checks, v0.2.0 verification scope, main-only reliability features, and the OpenClaw.NET/AgentQi/AgentQiX product boundary.
+
 ### MCP v2 Upgrade
 
 - Upgraded MCP integration surfaces to C# SDK `2.0.0` behavior across gateway, MCP App, and client-facing SDK helpers.

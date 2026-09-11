@@ -39,6 +39,11 @@ Use the existing CI workflow as the primary required check. At minimum, `main` p
 - Release build
 - Release tests
 - deterministic `samples/OpenClaw.HelloAgent` smoke run
+- the pinned `public-compatibility-smoke` job
+
+Required checks must complete on the exact PR head (or merge-queue commit) before merge. A queued or still-running check is not evidence that the reviewed revision passed. Do not merge through an administrator bypass while an exact-head required check is pending or red.
+
+The latest-package compatibility canary is intentionally advisory because it tracks moving upstream releases. The pinned compatibility job is deterministic and should be required.
 
 NativeAOT publish checks are valuable, but they can remain separate required or advisory checks depending on runtime reliability and release needs. If they become required, keep their failure modes documented in release or compatibility docs.
 

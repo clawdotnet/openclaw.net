@@ -1,5 +1,7 @@
 # Companion token storage and legacy migration
 
+> **Release availability:** Available on `main` and targeted for v0.3.0; not included in v0.2.0. See the [roadmap](ROADMAP.md).
+
 Companion stores remembered gateway tokens and provider API keys through the operating system:
 
 - macOS: Keychain.
