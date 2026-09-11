@@ -18,6 +18,9 @@ public sealed class CompatibilityCatalogTests
         Assert.Equal("npm-plugin", tavily.Kind);
         Assert.Contains("openclaw plugins install openclaw-tavily@0.2.1 --dry-run", tavily.InstallCommand, StringComparison.Ordinal);
         Assert.Contains(tavily.InstallExtraPackages, pkg => pkg == "jiti@2.7.0");
+        Assert.Contains("jiti@latest", tavily.LatestCanaryInstallExtraPackages);
+        Assert.All(catalog.Items.Where(item => item.InstallExtraPackages.Contains("jiti@2.7.0")),
+            item => Assert.Contains("jiti@latest", item.LatestCanaryInstallExtraPackages));
         Assert.Contains(tavily.Guidance, note => note.Contains("jiti", StringComparison.OrdinalIgnoreCase));
 
         var supermemory = Assert.Single(catalog.Items, item => item.Id == "supermemory");

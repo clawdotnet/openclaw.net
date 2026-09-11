@@ -292,6 +292,8 @@ jobs:
           cache-to: type=gha,mode=max
 
   public-compatibility-smoke:
+    permissions:
+      contents: read
     needs: build-and-test
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -299,6 +301,8 @@ jobs:
       OPENCLAW_PUBLIC_SMOKE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68

@@ -30,6 +30,7 @@
       "packageName": "openclaw-tavily",
       "pluginId": "openclaw-tavily",
       "installExtraPackages": ["jiti@2.7.0"],
+      "latestCanaryInstallExtraPackages": ["jiti@latest"],
       "expectedStatus": "compatible",
       "configJson": "{\"apiKey\":\"tvly_test_key\",\"includeAnswer\":\"advanced\",\"includeRawContent\":\"markdown\"}",
       "expectedToolNames": ["tavily_search", "tavily_research"],
@@ -43,6 +44,7 @@
       "packageName": "@xquik/tweetclaw",
       "pluginId": "tweetclaw",
       "installExtraPackages": ["jiti@2.7.0"],
+      "latestCanaryInstallExtraPackages": ["jiti@latest"],
       "expectedStatus": "compatible",
       "configJson": "{}",
       "expectedToolNames": ["explore", "tweetclaw"],
@@ -56,6 +58,7 @@
       "packageName": "openclaw-tavily",
       "pluginId": "openclaw-tavily",
       "installExtraPackages": ["jiti@2.7.0"],
+      "latestCanaryInstallExtraPackages": ["jiti@latest"],
       "expectedStatus": "incompatible",
       "configJson": "{\"apiKey\":\"tvly_test_key\",\"includeAnswer\":42}",
       "expectedDiagnosticCodes": ["config_one_of_mismatch"]
