@@ -87,7 +87,7 @@ Set `OPENCLAW_COMPANION_STATE_DIR` to a fresh temporary directory when launching
 
 ### macOS NativeAOT Linker Note
 
-The gateway and release workflow use Apple's current linker by default for `osx-arm64` NativeAOT publishes. Scheduled/manual CI also verifies this path. Without `-ld_classic`, the release workflow must build the gateway, run `--doctor`, package the assets, extract the desktop archive, verify executable permissions, and execute the bundled CLI.
+The gateway and release workflow use Apple's current linker by default for `osx-arm64` NativeAOT publishes. Pull-request, scheduled, and manual CI also verify this path on `macos-15`. Without `-ld_classic`, the release workflow must build the gateway, run `--doctor`, package the assets, extract the desktop archive, verify executable permissions, and execute the bundled CLI.
 
 The deprecated classic linker remains available temporarily as an emergency diagnostic override:
 

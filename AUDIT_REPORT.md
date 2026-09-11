@@ -5,7 +5,7 @@ Date: 2026-05-02
 ## Follow-Up Status (September 2026)
 
 - The `macos-15` gateway publish without `-ld_classic` failed on [September 8](https://github.com/clawdotnet/openclaw.net/actions/runs/34228171020), then passed on [September 9](https://github.com/clawdotnet/openclaw.net/actions/runs/34353670930), [September 10](https://github.com/clawdotnet/openclaw.net/actions/runs/34479046578), and [September 11](https://github.com/clawdotnet/openclaw.net/actions/runs/34600596468).
-- Based on those three consecutive successes, the gateway now defaults to Apple's current linker and the release workflow explicitly builds its release-equivalent assets with `OpenClawUseClassicMacLd=false`.
+- Based on those three consecutive successes, the gateway now defaults to Apple's current linker, pull-request/scheduled/manual CI verifies it on `macos-15`, and the release workflow explicitly builds its release-equivalent assets with `OpenClawUseClassicMacLd=false`.
 - `OpenClawUseClassicMacLd=true` remains temporarily available only as an emergency diagnostic override. Remove the fallback after one published release completes successfully with the modern linker.
 
 ## Executive Summary
