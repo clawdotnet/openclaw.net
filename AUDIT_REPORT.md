@@ -109,7 +109,7 @@ None in the standard build, test, CLI, gateway, or companion paths audited so fa
 - Gateway suppresses known package-level Playwright trim/AOT warnings while still surfacing project-owned diagnostics.
 - Optional adapters are marked as non-AOT or conditional where appropriate.
 - The MAF-enabled validation build failure was the main NativeAOT/JIT boundary confidence issue found; the flagged build now passes.
-- The CLI osx-arm64 NativeAOT publish no longer carries the gateway's classic-linker fallback. The gateway still carries it intentionally because removing it reproduced an Apple linker assertion on this toolchain.
+- The CLI osx-arm64 NativeAOT publish no longer carries the gateway's classic-linker fallback. The gateway now uses the modern linker by default and retains only the explicit `OpenClawUseClassicMacLd=true` emergency override; the earlier Apple linker assertion is historical.
 
 ## Documentation Mismatches
 
