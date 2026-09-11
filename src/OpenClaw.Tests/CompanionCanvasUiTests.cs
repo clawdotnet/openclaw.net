@@ -103,7 +103,7 @@ public sealed class CompanionCanvasUiTests : IDisposable
 
             var tabControl = window.GetVisualDescendants().OfType<TabControl>().Single();
             Assert.Equal(Dock.Left, tabControl.TabStripPlacement);
-            Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), text => string.Equals(text.Text, "OpenClaw.NET Companion", StringComparison.Ordinal));
+            Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), text => string.Equals(text.Text, "AgentQi", StringComparison.Ordinal));
 
             var headers = tabControl.Items.OfType<TabItem>().Select(static item => item.Header?.ToString()).ToArray();
             Assert.Contains("Home", headers);
@@ -124,6 +124,156 @@ public sealed class CompanionCanvasUiTests : IDisposable
         {
             window.Close();
         }
+    }
+
+    [AvaloniaFact]
+    public void Navigation_AllFeaturePagesRemainReachable_AndApprovalsTrackSelection()
+    {
+        var vm = CreateViewModel();
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(2, vm.SelectedSectionIndex);
+            var host = window.FindControl<TabControl>("SectionHost")!;
+            var navigation = window.FindControl<ListBox>("PrimaryNavigation")!;
+            var sections = window.FindControl<ListBox>("SectionNavigation")!;
+            Assert.Equal(15, vm.NavigationGroups.SelectMany(g => g.Sections).Select(s => s.Index).Distinct().Count());
+            foreach (var group in vm.NavigationGroups)
+            {
+                navigation.SelectedItem = group;
+                Dispatcher.UIThread.RunJobs();
+                foreach (var section in group.Sections)
+                {
+                    sections.SelectedItem = section;
+                    Dispatcher.UIThread.RunJobs();
+                    Assert.Equal(section.Index, host.SelectedIndex);
+                    Assert.Equal(section.Index == 5, vm.IsApprovalsTabActive);
+                    Assert.NotNull(host.SelectedContent);
+                }
+            }
+            vm.NavigateToSectionCommand.Execute("whatsapp");
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Connections", vm.SelectedNavigationGroup!.Title);
+            Assert.Equal("WhatsApp", vm.SelectedNavigationSection!.Title);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void Palette_FiltersAndNavigates_WithoutLosingChatDraft()
+    {
+        var vm = CreateViewModel();
+        vm.InputText = "Keep this draft";
+        vm.OpenCommandPaletteCommand.Execute(null);
+        vm.NavigationSearch = "WhatsApp";
+        Assert.Single(vm.NavigationSearchResults);
+        vm.OpenSearchResultCommand.Execute(null);
+        Assert.Equal(13, vm.SelectedSectionIndex);
+        Assert.False(vm.IsCommandPaletteOpen);
+        Assert.Equal("Keep this draft", vm.InputText);
+        vm.NavigationSearch = "no-matching-page";
+        Assert.True(vm.HasNoNavigationResults);
+        vm.OpenSearchResultCommand.Execute(null);
+        Assert.Equal(13, vm.SelectedSectionIndex);
+    }
+
+    [AvaloniaFact]
+    public void Theme_UpdatesWindow_AndPersistsInSettings()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "companion-theme-tests", Guid.NewGuid().ToString("N"));
+        _tempDirs.Add(dir);
+        var store = new SettingsStore(dir);
+        var vm = new MainWindowViewModel(store, new GatewayWebSocketClient());
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            window.Show();
+            vm.ToggleThemeCommand.Execute(null);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(Avalonia.Styling.ThemeVariant.Dark, window.ActualThemeVariant);
+            Assert.True(store.Load().IsDarkTheme);
+            vm.ToggleThemeCommand.Execute(null);
+            Assert.Equal(Avalonia.Styling.ThemeVariant.Light, window.ActualThemeVariant);
+            Assert.False(store.Load().IsDarkTheme);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void Keyboard_PaletteAndComposer_PreserveDraftUntilSend()
+    {
+        var vm = CreateViewModel();
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            window.Show();
+            var composer = window.FindControl<TextBox>("ChatComposer")!;
+            composer.Focus();
+            Assert.True(composer.IsFocused);
+            window.KeyTextInput("A draft");
+            window.KeyPress(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.Shift, Avalonia.Input.PhysicalKey.None, null);
+            window.KeyRelease(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.Shift, Avalonia.Input.PhysicalKey.None, null);
+            Assert.Contains('\n', vm.InputText);
+            window.KeyPress(Avalonia.Input.Key.K, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.None, null);
+            window.KeyRelease(Avalonia.Input.Key.K, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.None, null);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(vm.IsCommandPaletteOpen);
+            Assert.True(window.FindControl<TextBox>("NavigationSearchBox")!.IsFocused);
+            window.KeyTextInput("WhatsApp");
+            window.KeyPress(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, null);
+            window.KeyRelease(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, null);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(13, vm.SelectedSectionIndex);
+            Assert.False(vm.IsCommandPaletteOpen);
+            vm.NavigateToSectionCommand.Execute("chat");
+            vm.OpenCommandPaletteCommand.Execute(null);
+            Dispatcher.UIThread.RunJobs();
+            window.KeyPress(Avalonia.Input.Key.Escape, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, null);
+            window.KeyRelease(Avalonia.Input.Key.Escape, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, null);
+            Assert.False(vm.IsCommandPaletteOpen);
+            Dispatcher.UIThread.RunJobs();
+            composer.Focus();
+            Assert.True(composer.IsFocused);
+            window.KeyPress(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, null);
+            window.KeyRelease(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, null);
+            Assert.Equal("A draft\n", vm.InputText); // Disconnected: do not submit or discard it.
+            vm.IsConnected = true;
+            window.KeyPress(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, null);
+            window.KeyRelease(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, null);
+            Assert.Equal("", vm.InputText);
+            Assert.Contains(vm.Messages, message => message.IsUser && message.Text == "A draft");
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task CompanionConfiguration_OfflineSetupAndTheme_DoNotNeedAModel()
+    {
+        var vm = CreateViewModel();
+        vm.InputText = "/setup";
+        await vm.SendCommand.ExecuteAsync(null);
+        Assert.True(vm.IsLocalSetupOpen);
+        Assert.Empty(vm.InputText);
+        Assert.Empty(vm.Messages);
+        vm.CancelConfigurationCommand.Execute(null);
+        Assert.False(vm.IsLocalSetupOpen);
+        vm.InputText = "use dark mode";
+        await vm.SendCommand.ExecuteAsync(null);
+        Assert.True(vm.IsDarkTheme);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Single(vm.Messages);
+        Assert.False(vm.IsConfigurationBusy);
+    }
+
+    [Fact]
+    public void CompanionConfiguration_EditorPreservesTypesAndLiteralText()
+    {
+        Assert.Equal("a \"model\"", new ConfigurationEdit { Key = "modelName", Kind = System.Text.Json.JsonValueKind.String, Value = "a \"model\"" }.ToJson().GetString());
+        Assert.True(new ConfigurationEdit { Key = "readOnlyMode", Kind = System.Text.Json.JsonValueKind.False, Value = "true" }.ToJson().GetBoolean());
+        Assert.Equal(45, new ConfigurationEdit { Key = "sessionTimeoutMinutes", Kind = System.Text.Json.JsonValueKind.Number, Value = "45" }.ToJson().GetInt32());
+        Assert.ThrowsAny<System.Text.Json.JsonException>(() => new ConfigurationEdit { Key = "sessionTimeoutMinutes", Kind = System.Text.Json.JsonValueKind.Number, Value = "forty" }.ToJson());
     }
 
     private MainWindowViewModel CreateViewModel()

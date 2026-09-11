@@ -5,12 +5,13 @@ using OpenClaw.Core.Validation;
 
 namespace OpenClaw.Gateway;
 
-internal sealed class AdminSettingsService
+internal sealed partial class AdminSettingsService
 {
     private const string SettingsFileName = "admin-settings.json";
     private readonly object _gate = new();
     private readonly GatewayConfig _config;
     private readonly AdminSettingsSnapshot _baseSnapshot;
+    private readonly AdminSettingsSnapshot _runningSnapshot;
     private readonly string _settingsPath;
     private readonly ILogger<AdminSettingsService> _logger;
 
@@ -22,6 +23,7 @@ internal sealed class AdminSettingsService
     {
         _config = config;
         _baseSnapshot = baseSnapshot;
+        _runningSnapshot = CreateSnapshot(config);
         _settingsPath = settingsPath;
         _logger = logger;
     }
@@ -38,6 +40,11 @@ internal sealed class AdminSettingsService
     public static AdminSettingsSnapshot CreateSnapshot(GatewayConfig config)
         => new()
         {
+            ModelProvider = config.Llm.Provider,
+            ModelName = config.Llm.Model,
+            DefaultModelProfile = config.Models.DefaultProfile ?? "",
+            ModelMaxTokens = config.Llm.MaxTokens,
+            ModelTemperature = config.Llm.Temperature,
             UsageFooter = config.UsageFooter,
             MaxConcurrentSessions = config.MaxConcurrentSessions,
             SessionTimeoutMinutes = config.SessionTimeoutMinutes,
@@ -134,6 +141,11 @@ internal sealed class AdminSettingsService
 
     public static void ApplySnapshot(GatewayConfig config, AdminSettingsSnapshot snapshot)
     {
+        if (snapshot.ModelProvider is not null) config.Llm.Provider = snapshot.ModelProvider;
+        if (snapshot.ModelName is not null) config.Llm.Model = snapshot.ModelName;
+        if (snapshot.DefaultModelProfile is not null) config.Models.DefaultProfile = string.IsNullOrWhiteSpace(snapshot.DefaultModelProfile) ? null : snapshot.DefaultModelProfile;
+        if (snapshot.ModelMaxTokens is not null) config.Llm.MaxTokens = snapshot.ModelMaxTokens.Value;
+        if (snapshot.ModelTemperature is not null) config.Llm.Temperature = snapshot.ModelTemperature.Value;
         config.UsageFooter = snapshot.UsageFooter;
         config.MaxConcurrentSessions = snapshot.MaxConcurrentSessions;
         config.SessionTimeoutMinutes = snapshot.SessionTimeoutMinutes;
@@ -237,9 +249,14 @@ internal sealed class AdminSettingsService
                     errors);
             }
 
+            try { PersistSnapshot(CreateSnapshot(clone)); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "Could not persist admin settings");
+                return new(false, previous, BuildPersistenceInfo(), false, [], ["Settings could not be saved. No changes were applied."]);
+            }
             ApplySnapshot(_config, snapshot);
-            PersistSnapshot(snapshot);
-            var changedRestartFields = GetRestartRequiredChanges(previous, snapshot);
+            var changedRestartFields = GetRestartRequiredChanges(_runningSnapshot, CreateSnapshot(_config));
             return new AdminSettingsResult(
                 true,
                 CreateSnapshot(_config),
@@ -255,7 +272,6 @@ internal sealed class AdminSettingsService
         lock (_gate)
         {
             var previous = CreateSnapshot(_config);
-            ApplySnapshot(_config, _baseSnapshot);
 
             try
             {
@@ -265,9 +281,11 @@ internal sealed class AdminSettingsService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to delete admin settings override file at {Path}", _settingsPath);
+                return new(false, previous, BuildPersistenceInfo(), false, [], ["Settings could not be reset. No changes were applied."]);
             }
 
-            var changedRestartFields = GetRestartRequiredChanges(previous, _baseSnapshot);
+            ApplySnapshot(_config, _baseSnapshot);
+            var changedRestartFields = GetRestartRequiredChanges(_runningSnapshot, _baseSnapshot);
             return new AdminSettingsResult(
                 true,
                 CreateSnapshot(_config),
@@ -304,6 +322,7 @@ internal sealed class AdminSettingsService
 
     public static IReadOnlyList<string> RestartFieldKeys { get; } =
     [
+        "models.defaultProfile", "llm.provider", "llm.model", "llm.maxTokens", "llm.temperature",
         "general.maxConcurrentSessions",
         "general.sessionTimeoutMinutes",
         "general.sessionTokenBudget",
@@ -363,10 +382,19 @@ internal sealed class AdminSettingsService
     private void PersistSnapshot(AdminSettingsSnapshot snapshot)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath)!);
-        var tempPath = _settingsPath + ".tmp";
-        var json = JsonSerializer.Serialize(snapshot, CoreJsonContext.Default.AdminSettingsSnapshot);
-        File.WriteAllText(tempPath, json);
-        File.Move(tempPath, _settingsPath, overwrite: true);
+        var tempPath = _settingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
+            if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            using (var stream = new FileStream(tempPath, options))
+            {
+                JsonSerializer.Serialize(stream, snapshot, CoreJsonContext.Default.AdminSettingsSnapshot);
+                stream.Flush(flushToDisk: true);
+            }
+            File.Move(tempPath, _settingsPath, overwrite: true);
+        }
+        finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
     }
 
     private AdminSettingsPersistenceInfo BuildPersistenceInfo()
@@ -393,6 +421,11 @@ internal sealed class AdminSettingsService
     private static List<string> GetRestartRequiredChanges(AdminSettingsSnapshot before, AdminSettingsSnapshot after)
     {
         var changed = new List<string>();
+        AddIfChanged(changed, "models.defaultProfile", before.DefaultModelProfile, after.DefaultModelProfile ?? before.DefaultModelProfile);
+        AddIfChanged(changed, "llm.provider", before.ModelProvider, after.ModelProvider ?? before.ModelProvider);
+        AddIfChanged(changed, "llm.model", before.ModelName, after.ModelName ?? before.ModelName);
+        AddIfChanged(changed, "llm.maxTokens", before.ModelMaxTokens, after.ModelMaxTokens ?? before.ModelMaxTokens);
+        AddIfChanged(changed, "llm.temperature", before.ModelTemperature, after.ModelTemperature ?? before.ModelTemperature);
         AddIfChanged(changed, "general.maxConcurrentSessions", before.MaxConcurrentSessions, after.MaxConcurrentSessions);
         AddIfChanged(changed, "general.sessionTimeoutMinutes", before.SessionTimeoutMinutes, after.SessionTimeoutMinutes);
         AddIfChanged(changed, "general.sessionTokenBudget", before.SessionTokenBudget, after.SessionTokenBudget);
@@ -455,7 +488,6 @@ internal sealed class AdminSettingsService
     }
 
     private static void AddIfChanged<T>(ICollection<string> changes, string fieldKey, T before, T after)
-        where T : notnull
     {
         if (!EqualityComparer<T>.Default.Equals(before, after))
             changes.Add(fieldKey);
@@ -472,6 +504,11 @@ internal sealed class AdminSettingsService
 
         return new AdminSettingsSnapshot
         {
+            ModelProvider = source.ModelProvider,
+            ModelName = source.ModelName,
+            DefaultModelProfile = source.DefaultModelProfile,
+            ModelMaxTokens = source.ModelMaxTokens,
+            ModelTemperature = source.ModelTemperature,
             UsageFooter = source.UsageFooter,
             MaxConcurrentSessions = source.MaxConcurrentSessions,
             SessionTimeoutMinutes = source.SessionTimeoutMinutes,

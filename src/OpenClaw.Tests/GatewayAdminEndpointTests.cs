@@ -46,7 +46,7 @@ using Xunit;
 
 namespace OpenClaw.Tests;
 
-public sealed class GatewayAdminEndpointTests
+public sealed partial class GatewayAdminEndpointTests
 {
     [Fact]
     public async Task GuidedRecovery_RequiresOperatorCsrfAndCurrentRevision()

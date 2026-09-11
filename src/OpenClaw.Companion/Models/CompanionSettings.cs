@@ -9,6 +9,7 @@ public sealed class CompanionSettings
     public string OperatorTokenLabel { get; set; } = "companion";
     public bool RememberToken { get; set; } = false;
     public bool AllowPlaintextTokenFallback { get; set; } = false;
+    public bool IsDarkTheme { get; set; }
     public bool DebugMode { get; set; } = false;
     public bool ApprovalDesktopNotificationsEnabled { get; set; } = true;
     public bool ApprovalDesktopNotificationsOnlyWhenUnfocused { get; set; } = true;

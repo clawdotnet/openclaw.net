@@ -108,8 +108,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         {
             OnPropertyChanged(nameof(HasMessages));
             OnPropertyChanged(nameof(HasNoMessages));
+            OnPropertyChanged(nameof(ShowChatWelcome));
         };
 
+        InitializeNavigation();
         LoadSettings();
         RefreshManagedGatewayStateCore();
     }
@@ -127,6 +129,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             AllowPlaintextTokenFallback = settings.AllowPlaintextTokenFallback;
             AuthToken = settings.AuthToken ?? "";
             DebugMode = settings.DebugMode;
+            IsDarkTheme = settings.IsDarkTheme;
             ApprovalDesktopNotificationsEnabled = settings.ApprovalDesktopNotificationsEnabled;
             ApprovalDesktopNotificationsOnlyWhenUnfocused = settings.ApprovalDesktopNotificationsOnlyWhenUnfocused;
             AutoStartLocalGateway = settings.AutoStartLocalGateway;
@@ -158,6 +161,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             RememberToken = RememberToken,
             AllowPlaintextTokenFallback = AllowPlaintextTokenFallback,
             DebugMode = DebugMode,
+            IsDarkTheme = IsDarkTheme,
             ApprovalDesktopNotificationsEnabled = ApprovalDesktopNotificationsEnabled,
             ApprovalDesktopNotificationsOnlyWhenUnfocused = ApprovalDesktopNotificationsOnlyWhenUnfocused,
             AutoStartLocalGateway = AutoStartLocalGateway,
@@ -671,9 +675,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         if (text.Length == 0)
             return;
 
-        if (!_client.IsConnected)
+        if (IsConfigurationBusy || await TryHandleConfigurationChatAsync(text)) return;
+
+        if (!IsConnected || !_client.IsConnected)
         {
-            AddSystemMessage("Not connected.");
+            AddSystemMessage("Connect to chat, or type /setup to configure your local assistant.");
             return;
         }
 

@@ -1,0 +1,31 @@
+using System.Text.Json;
+using OpenClaw.Core.Models;
+
+namespace OpenClaw.Client;
+
+public sealed partial class OpenClawHttpClient
+{
+    public async Task<ConfigurationState> GetConfigurationAsync(CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(_baseUri, "/admin/configuration"));
+        return await SendAsync(request, ConfigurationJsonContext.Default.ConfigurationState, ct);
+    }
+
+    public async Task<ConfigurationState> PreviewConfigurationAsync(ConfigurationRequest request, CancellationToken ct = default)
+        => await SendConfigurationAsync("preview", request, ct);
+
+    public async Task<ConfigurationState> ApplyConfigurationAsync(ConfigurationRequest request, CancellationToken ct = default)
+        => await SendConfigurationAsync("apply", request, ct);
+
+    private async Task<ConfigurationState> SendConfigurationAsync(string operation, ConfigurationRequest body, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(_baseUri, $"/admin/configuration/{operation}"))
+        { Content = BuildJsonContent(body, ConfigurationJsonContext.Default.ConfigurationRequest) };
+        using var response = await _http.SendAsync(request, ct);
+        if (response.StatusCode is not System.Net.HttpStatusCode.BadRequest and not System.Net.HttpStatusCode.Conflict)
+            response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        return await JsonSerializer.DeserializeAsync(stream, ConfigurationJsonContext.Default.ConfigurationState, ct)
+            ?? throw new InvalidOperationException("The gateway returned an empty configuration response.");
+    }
+}

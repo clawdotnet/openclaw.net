@@ -87,7 +87,7 @@ Each desktop bundle includes Companion, the NativeAOT gateway, and the NativeAOT
 4. Choose a provider/model and enter the provider key, choose DeepSeek for the hosted OpenAI-compatible DeepSeek API, choose Ollama for a local model server, or choose Embedded for an OpenClaw-managed local model such as Gemma 4.
 5. Click **Set Up and Start**.
 
-Companion writes a local config, starts the bundled gateway on `127.0.0.1`, and connects to it. The current Windows and macOS release archives are unsigned, so first-run OS warnings are expected. See [docs/RELEASES.md](docs/RELEASES.md) for checksums, standalone CLI/gateway archives, signing status, and maintainer release flow.
+Companion writes a local config, starts the bundled gateway on `127.0.0.1`, and connects to it. It also supports [reviewed configuration through chat](docs/companion-chat-configuration.md), with an optional manual editor and inline local setup. The current Windows and macOS release archives are unsigned, so first-run OS warnings are expected. See [docs/RELEASES.md](docs/RELEASES.md) for checksums, standalone CLI/gateway archives, signing status, and maintainer release flow.
 
 ## Quickstart
 

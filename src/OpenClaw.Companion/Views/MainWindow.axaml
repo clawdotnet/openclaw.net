@@ -7,84 +7,60 @@
         mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="820"
         x:Class="OpenClaw.Companion.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Icon="/Assets/avalonia-logo.ico"
-		WindowState="Maximized"
-        Title="OpenClaw.NET Companion">
+        Icon="/Assets/agentqi-icon.png"
+		Width="1440" Height="960" MinWidth="1000" MinHeight="700" WindowStartupLocation="CenterScreen"
+        Title="AgentQi [OpenClaw.NET]" Classes="companion-window">
 
 	<Design.DataContext>
 		<vm:MainWindowViewModel/>
 	</Design.DataContext>
 
-	<Grid RowDefinitions="Auto,*" Margin="14" RowSpacing="12">
-		<Border Grid.Row="0" Classes="section-card">
-			<Grid RowDefinitions="Auto,Auto" RowSpacing="10">
-				<Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
-					<StackPanel Grid.Column="0" Spacing="2">
-						<TextBlock Text="OpenClaw.NET Companion" Classes="page-title" />
-						<TextBlock Text="Runtime Console" Classes="muted" />
-					</StackPanel>
-
-					<WrapPanel Grid.Column="1" VerticalAlignment="Center">
-						<Border Classes="badge" Margin="0,0,6,4">
-							<TextBlock Text="{Binding GatewayStatusBadge}" FontSize="12" />
-						</Border>
-						<Border Classes="badge" Margin="0,0,6,4">
-							<TextBlock Text="{Binding OperatorIdentity}" FontSize="12" />
-						</Border>
-						<Border Classes="badge" Margin="0,0,6,4">
-							<TextBlock Text="{Binding OperatorRole}" FontSize="12" />
-						</Border>
-						<Border Classes="badge" Margin="0,0,6,4">
-							<TextBlock Text="{Binding OperatorAuthMode}" FontSize="12" />
-						</Border>
-						<Border Classes="badge" Margin="0,0,6,4">
-							<TextBlock Text="{Binding LocalGatewayHealthBadge}" FontSize="12" />
-						</Border>
-						<Border Classes="badge" Margin="0,0,0,4">
-							<TextBlock Text="{Binding PendingApprovalsBadge}" FontSize="12" />
-						</Border>
-					</WrapPanel>
-
-					<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-						<Button Content="Connect" Command="{Binding ConnectCommand}"
-                                IsVisible="{Binding IsConnected, Converter={StaticResource InverseBool}}"
-                                IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" Classes="primary" />
-						<Button Content="Disconnect" Command="{Binding DisconnectCommand}"
-                                IsVisible="{Binding IsConnected}"
-                                IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" />
-						<Button Content="Start" Command="{Binding StartLocalGatewayCommand}"
-                                IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
-						<Button Content="Stop" Command="{Binding StopLocalGatewayCommand}"
-                                IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
-					</StackPanel>
-				</Grid>
-
-				<Expander Grid.Row="1" Header="Connection settings" IsExpanded="{Binding ConnectionSettingsExpanded}">
-					<Grid Margin="0,8,0,0" ColumnDefinitions="2*,*,*,Auto,Auto,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="6">
-						<TextBlock Grid.Row="0" Grid.Column="0" Text="Gateway URL" FontWeight="SemiBold" />
-						<TextBlock Grid.Row="0" Grid.Column="1" Text="Operator User" FontWeight="SemiBold" />
-						<TextBlock Grid.Row="0" Grid.Column="2" Text="Operator Token" FontWeight="SemiBold" />
-						<TextBlock Grid.Row="0" Grid.Column="3" Text="Remember" FontWeight="SemiBold" />
-						<TextBlock Grid.Row="0" Grid.Column="4" Text="Plaintext" FontWeight="SemiBold" />
-						<TextBlock Grid.Row="0" Grid.Column="5" Text="Debug" FontWeight="SemiBold" />
-						<TextBox Grid.Row="1" Grid.Column="0" Text="{Binding ServerUrl}" PlaceholderText="ws://127.0.0.1:18789/ws" />
-						<TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Username}" PlaceholderText="viewer1 / operator1 / admin1" />
-						<TextBox Grid.Row="1" Grid.Column="2" Text="{Binding AuthToken}" PasswordChar="•" PlaceholderText="Operator account token" />
-						<CheckBox Grid.Row="1" Grid.Column="3" IsChecked="{Binding RememberToken}" />
-						<CheckBox Grid.Row="1" Grid.Column="4" IsChecked="{Binding AllowPlaintextTokenFallback}" />
-						<CheckBox Grid.Row="1" Grid.Column="5" IsChecked="{Binding DebugMode}" />
-					</Grid>
-				</Expander>
-			</Grid>
-		</Border>
-
-		<TabControl Grid.Row="1" TabStripPlacement="Left" SelectedIndex="{Binding SelectedSectionIndex}">
+    <Grid ColumnDefinitions="232,*">
+        <Border Background="{DynamicResource CompanionSidebar}" BorderBrush="{DynamicResource CompanionBorder}" BorderThickness="0,0,1,0">
+            <Grid RowDefinitions="Auto,*,Auto">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="20,26,16,28">
+                    <Image Source="/Assets/agentqi-icon.png" Width="38" Height="38" Stretch="Uniform" AutomationProperties.Name="AgentQi logo" />
+                    <StackPanel Grid.Column="1" Spacing="3"><TextBlock Text="AgentQi" FontWeight="SemiBold" FontSize="19" /><TextBlock Text="[OpenClaw.NET]" Classes="muted" FontSize="11" /></StackPanel>
+                </Grid>
+                <ListBox x:Name="PrimaryNavigation" Grid.Row="1" Classes="navigation" Margin="10,0" ItemsSource="{Binding NavigationGroups}" SelectedItem="{Binding SelectedNavigationGroup}" AutomationProperties.Name="Main navigation">
+                    <ListBox.ItemTemplate><DataTemplate DataType="vm:CompanionNavigationGroup">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12"><Path Data="{Binding Icon}" Width="17" Height="17" Stretch="Uniform" Stroke="{DynamicResource CompanionMuted}" StrokeThickness="1.7" /><TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="14" FontWeight="Medium" VerticalAlignment="Center" /></Grid>
+                    </DataTemplate></ListBox.ItemTemplate>
+                </ListBox>
+                <StackPanel Grid.Row="2" Margin="14" Spacing="12">
+                    <Button Classes="status-card" Command="{Binding NavigateToSectionCommand}" CommandParameter="home" HorizontalAlignment="Stretch">
+                        <StackPanel Spacing="5"><TextBlock Text="{Binding GatewayStatusBadge}" Classes="connection-label" Classes.connected="{Binding IsConnected}" FontWeight="SemiBold" /><TextBlock Text="Runtime overview  →" Classes="muted" FontSize="12" /></StackPanel>
+                    </Button>
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="4,0">
+                        <Border Background="{DynamicResource CompanionAccentSoft}" Width="32" Height="32" CornerRadius="16"><PathIcon Width="16" Height="16" Foreground="{DynamicResource CompanionAccent}" Data="M16 7A4 4 0 1 1 8 7A4 4 0 1 1 16 7M4 22V19Q4 14 12 14Q20 14 20 19V22" /></Border>
+                        <StackPanel Grid.Column="1" Spacing="3"><TextBlock Text="{Binding OperatorRole}" FontSize="13" FontWeight="SemiBold" /><TextBlock Text="{Binding OperatorIdentity}" Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding OperatorIdentity}" /></StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Grid>
+        </Border>
+        <Grid Grid.Column="1" RowDefinitions="58,Auto,*">
+            <Border Background="{DynamicResource CompanionSurface}" BorderBrush="{DynamicResource CompanionBorder}" BorderThickness="0,0,0,1" Padding="24,10">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                    <Button x:Name="SearchNavigationButton" Classes="search-trigger" Command="{Binding OpenCommandPaletteCommand}" HorizontalAlignment="Left" Width="300" AutomationProperties.Name="Search navigation">
+                        <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Search pages and settings…" Classes="muted" /><TextBlock Grid.Column="1" Text="⌘ / Ctrl K" Classes="muted" FontSize="11" /></Grid>
+                    </Button>
+                    <Button Grid.Column="1" Classes="quiet" Content="{Binding PendingApprovalsBadge}" IsVisible="{Binding HasPendingApprovals}" Command="{Binding NavigateToSectionCommand}" CommandParameter="approvals" />
+                    <Button Grid.Column="2" Classes="quiet" Content="{Binding ThemeToggleLabel}" Command="{Binding ToggleThemeCommand}" />
+                </Grid>
+            </Border>
+            <Border Grid.Row="1" Background="{DynamicResource CompanionSurface}" BorderBrush="{DynamicResource CompanionBorder}" BorderThickness="0,0,0,1" Padding="24,10">
+                <ListBox x:Name="SectionNavigation" Classes="section-navigation" ItemsSource="{Binding SelectedNavigationGroup.Sections}" SelectedItem="{Binding SelectedNavigationSection}" AutomationProperties.Name="Section navigation">
+                    <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate><DataTemplate DataType="vm:CompanionSection"><TextBlock Text="{Binding Title}" FontSize="13" /></DataTemplate></ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+		<TabControl x:Name="SectionHost" Grid.Row="2" Margin="24,20,24,24" Classes="section-host" TabStripPlacement="Left" SelectedIndex="{Binding SelectedSectionIndex}">
 			<TabItem Header="Home">
 				<ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-					<StackPanel Spacing="12" Margin="12,0,0,0">
+					<StackPanel Spacing="12" Margin="0">
 						<Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
 							<StackPanel Spacing="2">
-								<TextBlock Text="Runtime Dashboard" Classes="page-title" />
+								<TextBlock Text="Runtime overview" Classes="page-title" />
 								<TextBlock Text="{Binding DashboardStatus}" Classes="muted" TextWrapping="Wrap" />
 							</StackPanel>
 							<Button Grid.Column="1" Content="Refresh" Command="{Binding LoadDashboardCommand}"
@@ -193,43 +169,10 @@
 
 			<TabItem Header="Setup">
 				<ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-					<StackPanel Spacing="12" Margin="12,0,0,0">
-						<TextBlock Text="Setup" Classes="page-title" />
-						<Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-							<Border Grid.Column="0" Classes="section-card">
-								<StackPanel Spacing="10">
-									<Grid ColumnDefinitions="*,Auto">
-										<TextBlock Text="Local Gateway" Classes="section-title" />
-										<CheckBox Grid.Column="1" Content="Auto-start" IsChecked="{Binding AutoStartLocalGateway}" />
-									</Grid>
-									<TextBlock Text="{Binding LocalGatewayStatus}" TextWrapping="Wrap" />
-									<TextBlock Text="{Binding LocalGatewayAvailability}" Classes="muted" TextWrapping="Wrap" />
-									<TextBlock Text="{Binding LocalGatewayConfigPath, StringFormat=Config: {0}}" Classes="muted" TextWrapping="Wrap" />
-									<StackPanel Orientation="Horizontal" Spacing="8">
-										<Button Content="Refresh" Command="{Binding RefreshLocalGatewayCommand}" IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
-										<Button Content="Start" Command="{Binding StartLocalGatewayCommand}" IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
-										<Button Content="Stop" Command="{Binding StopLocalGatewayCommand}" IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
-									</StackPanel>
-								</StackPanel>
-							</Border>
-
-							<Border Grid.Column="1" Classes="section-card">
-								<StackPanel Spacing="10">
-									<TextBlock Text="Embedded Local Model" Classes="section-title" />
-									<TextBlock Text="{Binding EmbeddedLocalModelDisabledReason}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding HasEmbeddedLocalModelDisabledReason}" />
-									<TextBox Text="{Binding SetupLocalModelPath}" PlaceholderText="Local model path (.gguf / .litertlm)" />
-									<StackPanel Orientation="Horizontal" Spacing="8">
-										<Button Content="Status" Command="{Binding RefreshEmbeddedLocalModelStatusCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
-										<Button Content="Install" Command="{Binding InstallEmbeddedLocalModelCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
-										<Button Content="Verify" Command="{Binding VerifyEmbeddedLocalModelCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
-										<Button Content="Remove" Command="{Binding RemoveEmbeddedLocalModelCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" Classes="danger" />
-									</StackPanel>
-									<TextBlock Text="{Binding EmbeddedLocalModelStatus}" Classes="muted" TextWrapping="Wrap" />
-								</StackPanel>
-							</Border>
-						</Grid>
-
-						<Border Classes="section-card">
+					<StackPanel Spacing="12" Margin="0">
+						<TextBlock Text="Set up your assistant" Classes="page-title" />
+<TextBlock Text="Choose a model, connect your runtime, and make yourself at home." Classes="muted" />
+				<Border Classes="section-card">
 							<StackPanel Spacing="10">
 								<TextBlock Text="First Run Setup" Classes="section-title" />
 								<Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="4">
@@ -253,72 +196,167 @@
 											  IsEditable="True" />
 								</Grid>
 								<Grid ColumnDefinitions="2*,*" ColumnSpacing="10">
-									<TextBox Grid.Column="0" Text="{Binding SetupWorkspacePath}" PlaceholderText="Workspace path" />
-									<TextBox Grid.Column="1" Text="{Binding SetupApiKey}" PasswordChar="•" PlaceholderText="Provider API key" />
+									<StackPanel Grid.Column="0" Spacing="6"><TextBlock Text="Workspace folder" Classes="muted" FontSize="12" /><TextBox Text="{Binding SetupWorkspacePath}" AutomationProperties.Name="Workspace folder" PlaceholderText="Workspace path" /></StackPanel>
+									<StackPanel Grid.Column="1" Spacing="6"><TextBlock Text="Provider API key" Classes="muted" FontSize="12" /><TextBox Text="{Binding SetupApiKey}" PasswordChar="•" AutomationProperties.Name="Provider API key" PlaceholderText="Provider API key" /></StackPanel>
 								</Grid>
 								<TextBlock Text="Provider API key is not needed for Ollama or Embedded. Secrets are stored through the configured token store when possible." Classes="muted" TextWrapping="Wrap" />
 								<Button Content="Set Up and Start" Command="{Binding SetupAndStartLocalGatewayCommand}" IsEnabled="{Binding CanRunLocalGatewaySetup}" Classes="primary" HorizontalAlignment="Left" />
 							</StackPanel>
 						</Border>
+<Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+							<Border Grid.Column="0" Classes="section-card">
+								<StackPanel Spacing="10">
+									<Grid ColumnDefinitions="*,Auto">
+										<TextBlock Text="Local Gateway" Classes="section-title" />
+										<CheckBox Grid.Column="1" Content="Auto-start" IsChecked="{Binding AutoStartLocalGateway}" />
+									</Grid>
+									<TextBlock Text="{Binding LocalGatewayStatus}" TextWrapping="Wrap" />
+									<Expander Header="Runtime details"><StackPanel Spacing="6">
+<TextBlock Text="{Binding LocalGatewayAvailability}" Classes="muted" TextWrapping="Wrap" />
+									<TextBlock Text="{Binding LocalGatewayConfigPath, StringFormat=Config: {0}}" Classes="muted" TextWrapping="Wrap" />
+</StackPanel></Expander>
+									<StackPanel Orientation="Horizontal" Spacing="8">
+										<Button Content="Refresh" Command="{Binding RefreshLocalGatewayCommand}" IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
+										<Button Content="Start" Command="{Binding StartLocalGatewayCommand}" IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
+										<Button Content="Stop" Command="{Binding StopLocalGatewayCommand}" IsEnabled="{Binding IsManagedGatewayBusy, Converter={StaticResource InverseBool}}" />
+									</StackPanel>
+								</StackPanel>
+							</Border>
+
+							<Border Grid.Column="1" Classes="section-card">
+								<StackPanel Spacing="10">
+									<TextBlock Text="Embedded Local Model" Classes="section-title" />
+									<TextBlock Text="{Binding EmbeddedLocalModelDisabledReason}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding HasEmbeddedLocalModelDisabledReason}" />
+									<TextBox Text="{Binding SetupLocalModelPath}" AutomationProperties.Name="Local model path (.gguf / .litertlm)" PlaceholderText="Local model path (.gguf / .litertlm)" />
+									<StackPanel Orientation="Horizontal" Spacing="8">
+										<Button Content="Status" Command="{Binding RefreshEmbeddedLocalModelStatusCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
+										<Button Content="Install" Command="{Binding InstallEmbeddedLocalModelCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
+										<Button Content="Verify" Command="{Binding VerifyEmbeddedLocalModelCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" />
+										<Button Content="Remove" Command="{Binding RemoveEmbeddedLocalModelCommand}" IsEnabled="{Binding CanRunEmbeddedLocalModelCommands}" Classes="danger" />
+									</StackPanel>
+									<TextBlock Text="{Binding EmbeddedLocalModelStatus}" Classes="muted" TextWrapping="Wrap" />
+								</StackPanel>
+							</Border>
+						</Grid>
+<Expander Header="Advanced connection settings" IsExpanded="{Binding ConnectionSettingsExpanded}">
+    <StackPanel Spacing="16" Margin="0,12,0,0">
+        <TextBlock Text="Connect to a local or remote gateway. Access is determined by your operator account." Classes="muted" TextWrapping="Wrap" />
+        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="12">
+            <StackPanel Spacing="6"><TextBlock Text="Gateway URL" FontWeight="Medium" /><TextBox Text="{Binding ServerUrl}" AutomationProperties.Name="ws://127.0.0.1:18789/ws" PlaceholderText="ws://127.0.0.1:18789/ws" /></StackPanel>
+            <StackPanel Grid.Column="1" Spacing="6"><TextBlock Text="Operator username" FontWeight="Medium" /><TextBox Text="{Binding Username}" AutomationProperties.Name="Your operator username" PlaceholderText="Your operator username" /></StackPanel>
+            <StackPanel Grid.Row="1" Spacing="6"><TextBlock Text="Operator token" FontWeight="Medium" /><TextBox Text="{Binding AuthToken}" PasswordChar="•" AutomationProperties.Name="Enter your operator token" PlaceholderText="Enter your operator token" /></StackPanel>
+            <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4"><CheckBox Content="Remember token" IsChecked="{Binding RememberToken}" /><CheckBox Content="Enable debug logging" IsChecked="{Binding DebugMode}" /></StackPanel>
+        </Grid>
+        <Expander Header="Token storage fallback"><StackPanel Spacing="8" Margin="0,8"><TextBlock Text="Plaintext fallback stores the token without encryption when protected storage is unavailable. Only enable this if you accept that risk." Classes="muted" TextWrapping="Wrap" /><CheckBox Content="Allow plaintext token fallback" IsChecked="{Binding AllowPlaintextTokenFallback}" /></StackPanel></Expander>
+        <WrapPanel><Button Content="Connect" Classes="primary" Command="{Binding ConnectCommand}" IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" Margin="0,0,8,0" /><Button Content="Disconnect" Command="{Binding DisconnectCommand}" IsEnabled="{Binding IsConnected}" /><TextBlock Text="{Binding Status}" Classes="muted" Margin="12,0" VerticalAlignment="Center" /></WrapPanel>
+    </StackPanel>
+</Expander>
 					</StackPanel>
 				</ScrollViewer>
 			</TabItem>
 
-			<TabItem Header="Chat">
-				<Grid RowDefinitions="Auto,*,Auto" RowSpacing="12" Margin="12,0,0,0">
-					<StackPanel Grid.Row="0" Spacing="2">
-						<TextBlock Text="Chat" Classes="page-title" />
-						<TextBlock Text="Connected runtime messages, tool events, and errors." Classes="muted" />
-					</StackPanel>
-					<Border Grid.Row="1" Classes="section-card">
-						<Grid>
-							<Border Classes="empty-state" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasNoMessages}">
-								<StackPanel Spacing="4">
-									<TextBlock Text="No messages yet." FontWeight="SemiBold" HorizontalAlignment="Center" />
-									<TextBlock Text="Connect to the gateway and send a runtime message." Classes="muted" HorizontalAlignment="Center" />
-								</StackPanel>
-							</Border>
-							<ListBox ItemsSource="{Binding Messages}" Background="Transparent" BorderThickness="0" IsVisible="{Binding HasMessages}">
-								<ListBox.ItemTemplate>
-									<DataTemplate DataType="models:ChatMessage">
-										<StackPanel Margin="0,0,0,10">
-											<Border IsVisible="{Binding IsUser}" Background="#1f6feb" CornerRadius="8" Padding="10" HorizontalAlignment="Right" MaxWidth="760">
-												<StackPanel>
-													<TextBlock Text="{Binding RoleLabel}" FontWeight="SemiBold" Foreground="White" />
-													<TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="White" />
-												</StackPanel>
-											</Border>
-											<Border IsVisible="{Binding IsAssistant}" Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}" CornerRadius="8" Padding="10" HorizontalAlignment="Left" MaxWidth="760">
-												<StackPanel>
-													<TextBlock Text="{Binding RoleLabel}" FontWeight="SemiBold" />
-													<TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
-													<TextBlock Text="Streaming…" Classes="muted" IsVisible="{Binding IsStreamingPlaceholder}" />
-												</StackPanel>
-											</Border>
-											<Border IsVisible="{Binding IsToolEvent}" Classes="badge" HorizontalAlignment="Left" MaxWidth="760">
-												<TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="12" />
-											</Border>
-											<Border IsVisible="{Binding IsError}" Classes="error-banner" HorizontalAlignment="Left" MaxWidth="760">
-												<TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
-											</Border>
-											<Border IsVisible="{Binding IsSystem}" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" CornerRadius="8" Padding="10" HorizontalAlignment="Left" MaxWidth="760">
-												<TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
-											</Border>
-										</StackPanel>
-									</DataTemplate>
-								</ListBox.ItemTemplate>
-							</ListBox>
-						</Grid>
-					</Border>
-					<Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="10">
-						<TextBox Text="{Binding InputText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" PlaceholderText="Type a message. Shift+Enter is not required; click Send when ready." />
-						<Button Grid.Column="1" Content="Send" Command="{Binding SendCommand}" IsEnabled="{Binding IsConnected}" MinWidth="96" Classes="primary" />
-					</Grid>
-				</Grid>
-			</TabItem>
+            <TabItem Header="Chat">
+                <Grid RowDefinitions="Auto,*,Auto" RowSpacing="16">
+                    <Border Classes="connection-notice" IsVisible="{Binding IsConnected, Converter={StaticResource InverseBool}}">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="Connect your assistant to get started" FontWeight="SemiBold" />
+                                <TextBlock Text="Your draft stays here while you set up or reconnect." Classes="muted" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="Connect" Command="{Binding ConnectCommand}" IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+                    <Grid Grid.Row="1">
+                        <ScrollViewer IsVisible="{Binding ShowChatWelcome}" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel Classes="welcome" MaxWidth="640" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Grid Height="128" HorizontalAlignment="Stretch" AutomationProperties.Name="AgentQi [OpenClaw.NET]">
+                                    <Border CornerRadius="16" ClipToBounds="True" Background="Transparent" IsVisible="{Binding IsDarkTheme, Converter={StaticResource InverseBool}}">
+                                        <Image Source="/Assets/agentqi-wordmark-transparent.png" Stretch="Uniform" />
+                                    </Border>
+                                    <Border CornerRadius="16" ClipToBounds="True" Background="#030B10" IsVisible="{Binding IsDarkTheme}">
+                                        <Grid ColumnDefinitions="*,*">
+                                            <Image Source="/Assets/agentqi-artwork.png" Stretch="Uniform" />
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6" Margin="12,0"><TextBlock Text="AgentQi" FontSize="40" FontWeight="SemiBold" Foreground="#BAF4EF" /><TextBlock Text="[OpenClaw.NET]" Foreground="#CBB99B" FontSize="14" /></StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                                <TextBlock Text="[OpenClaw.NET]" Classes="muted" FontSize="12" IsVisible="{Binding IsDarkTheme, Converter={StaticResource InverseBool}}" />
+                                <TextBlock Classes="welcome-title" Text="A little help. A lot of possibility." FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <TextBlock Text="Bring a question, work through an idea, or put your assistant to work. Everything you need is close by." Classes="muted" FontSize="15" TextWrapping="Wrap" LineHeight="24" />
+                                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="12" Margin="0,12,0,0">
+                                    <Button Classes="suggestion" Command="{Binding BeginChatSetupCommand}"><StackPanel Spacing="6"><TextBlock Text="Set up my assistant  →" FontWeight="SemiBold" /><TextBlock Text="Choose a model and get connected" Classes="muted" TextWrapping="Wrap" /></StackPanel></Button>
+                                    <Button Grid.Column="1" Classes="suggestion" Command="{Binding NavigateToSectionCommand}" CommandParameter="whatsapp"><StackPanel Spacing="6"><TextBlock Text="Connect WhatsApp  →" FontWeight="SemiBold" /><TextBlock Text="Bring your assistant to your messages" Classes="muted" TextWrapping="Wrap" /></StackPanel></Button>
+                                    <Button Grid.Row="1" Classes="suggestion" Command="{Binding NavigateToSectionCommand}" CommandParameter="workflows"><StackPanel Spacing="6"><TextBlock Text="Explore workflows  →" FontWeight="SemiBold" /><TextBlock Text="Turn a task into a clear next step" Classes="muted" TextWrapping="Wrap" /></StackPanel></Button>
+                                    <Button Grid.Row="1" Grid.Column="1" Classes="suggestion" Command="{Binding NavigateToSectionCommand}" CommandParameter="memory"><StackPanel Spacing="6"><TextBlock Text="Browse memory  →" FontWeight="SemiBold" /><TextBlock Text="Find the context worth keeping" Classes="muted" TextWrapping="Wrap" /></StackPanel></Button>
+                                </Grid>
+                            </StackPanel>
+                        </ScrollViewer>
+                        <ScrollViewer x:Name="ChatScroll" IsVisible="{Binding HasMessages}" HorizontalScrollBarVisibility="Disabled" ScrollChanged="OnChatScrollChanged">
+                            <ItemsControl x:Name="ChatMessages" ItemsSource="{Binding Messages}" MaxWidth="760" HorizontalAlignment="Stretch">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="models:ChatMessage">
+                                        <StackPanel Margin="0,0,0,24" Spacing="8">
+                                            <Border IsVisible="{Binding IsUser}" Background="{DynamicResource CompanionAccentSoft}" CornerRadius="14,14,4,14" Padding="16,12" HorizontalAlignment="Right" MaxWidth="640">
+                                                <StackPanel Spacing="6"><TextBlock Text="You" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource CompanionAccent}" /><SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" /></StackPanel>
+                                            </Border>
+                                            <StackPanel IsVisible="{Binding IsAssistant}" Spacing="10" Margin="0,0,20,0">
+                                                <TextBlock Text="AgentQi" FontWeight="SemiBold" Foreground="{DynamicResource CompanionAccent}" />
+                                                <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                                                <TextBlock Text="Working on it…" Classes="muted" IsVisible="{Binding IsStreamingPlaceholder}" />
+                                            </StackPanel>
+                                            <Expander IsVisible="{Binding IsToolEvent}" Header="Tool activity"><SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="13" /></Expander>
+                                            <Border IsVisible="{Binding IsError}" Classes="error-banner"><SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" /></Border>
+                                            <TextBlock IsVisible="{Binding IsSystem}" Text="{Binding Text}" Classes="muted" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                    <StackPanel Grid.Row="2" MaxWidth="800" HorizontalAlignment="Stretch" Spacing="10">
+                        <Border Classes="section-card" IsVisible="{Binding IsLocalSetupOpen}">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Let’s set up your assistant" FontWeight="SemiBold" />
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                    <StackPanel Spacing="4"><TextBlock Text="Provider" Classes="muted" /><ComboBox ItemsSource="{Binding SetupProviderOptions}" SelectedItem="{Binding SetupProvider}" HorizontalAlignment="Stretch" /></StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="4"><TextBlock Text="Model" Classes="muted" /><TextBox Text="{Binding SetupModel}" /></StackPanel>
+                                </Grid>
+                                <TextBlock Text="API key (stored securely, never sent in chat)" Classes="muted" />
+                                <TextBox Text="{Binding SetupApiKey}" PasswordChar="●" />
+                                <TextBlock Text="{Binding LocalGatewayStatus}" TextWrapping="Wrap" Classes="muted" />
+                                <WrapPanel><Button Content="Set up and start" Classes="primary" Command="{Binding SetupAndStartLocalGatewayCommand}" IsEnabled="{Binding CanRunLocalGatewaySetup}" /><Button Content="Advanced setup" Command="{Binding NavigateToSectionCommand}" CommandParameter="setup" /><Button Content="Cancel" Command="{Binding CancelConfigurationCommand}" /></WrapPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="section-card" IsVisible="{Binding IsConfigurationOpen}">
+                            <StackPanel Spacing="8" IsEnabled="{Binding IsConfigurationBusy, Converter={StaticResource InverseBool}}">
+                                <TextBlock Text="Review configuration" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding ConfigurationStatus}" TextWrapping="Wrap" Classes="muted" />
+                                <ScrollViewer MaxHeight="210"><ItemsControl ItemsSource="{Binding ConfigurationEdits}"><ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ConfigurationEdit"><Grid ColumnDefinitions="*,*" Margin="0,4" ColumnSpacing="12"><StackPanel><TextBlock Text="{Binding Label}" TextWrapping="Wrap" /><TextBlock Text="{Binding Hint}" Classes="muted" FontSize="11" /></StackPanel><TextBox Grid.Column="1" Text="{Binding Value}" /></Grid></DataTemplate>
+                                </ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
+                                <Expander Header="Choose a setting manually"><Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,8"><ComboBox ItemsSource="{Binding ConfigurationKeys}" SelectedItem="{Binding SelectedConfigurationKey}" HorizontalAlignment="Stretch" /><Button Grid.Column="1" Content="Add" Command="{Binding AddConfigurationFieldCommand}" /></Grid></Expander>
+                                <WrapPanel><Button Content="Apply changes" Classes="primary" Command="{Binding ApplyConfigurationCommand}" /><Button Content="Reload" Command="{Binding OpenConfigurationCommand}" /><Button Content="Cancel" Command="{Binding CancelConfigurationCommand}" /></WrapPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="composer">
+                            <Grid RowDefinitions="Auto,Auto" RowSpacing="10">
+                                <TextBox x:Name="ChatComposer" Classes="composer-input" Text="{Binding InputText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="58" MaxHeight="160" PlaceholderText="Ask a question or describe what you need…" AutomationProperties.Name="Message your assistant" />
+                                <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <Button Classes="quiet" Content="{Binding SetupProviderSummary}" Command="{Binding NavigateToSectionCommand}" CommandParameter="providers" MaxWidth="360" HorizontalAlignment="Left" FontSize="12" ToolTip.Tip="Models and providers" />
+                                    <Button Grid.Column="1" Content="Send  ↑" Command="{Binding SendCommand}" IsEnabled="{Binding IsConfigurationBusy, Converter={StaticResource InverseBool}}" MinWidth="84" Classes="primary" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="Enter to send · Shift+Enter for a new line" Classes="muted" FontSize="12" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"><CheckBox Content="Configure via chat" IsChecked="{Binding IsConfigurationMode}" /><Button Content="Settings" Classes="quiet" Command="{Binding OpenConfigurationCommand}" FontSize="12" /></StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
 
 			<TabItem Header="Canvas">
-				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
+				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="0">
 					<StackPanel Grid.Row="0" Spacing="2">
 						<TextBlock Text="Canvas" Classes="page-title" />
 						<TextBlock Text="{Binding CanvasStatus}" Classes="muted" TextWrapping="Wrap" />
@@ -365,7 +403,7 @@
 													<TextBlock Text="{Binding Body}" TextWrapping="Wrap" IsVisible="{Binding HasBody}" />
 													<Button Content="{Binding Label}" Command="{Binding ActivateCommand}" IsVisible="{Binding IsButton}" HorizontalAlignment="Left" Classes="primary" />
 													<Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding IsInput}">
-														<TextBox Text="{Binding ValueText}" PlaceholderText="{Binding Label}" />
+														<TextBox Text="{Binding ValueText}" AutomationProperties.Name="{Binding Label}" PlaceholderText="{Binding Label}" />
 														<Button Grid.Column="1" Content="Send" Command="{Binding CommitValueCommand}" />
 													</Grid>
 													<ItemsControl ItemsSource="{Binding Options}" IsVisible="{Binding HasOptions}">
@@ -401,19 +439,19 @@
 			</TabItem>
 
 			<TabItem Header="Sessions">
-				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
+				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="0">
 					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
-						<TextBlock Text="Sessions" Classes="page-title" />
+						<TextBlock Text="Conversation history" Classes="page-title" />
 						<Button Grid.Column="1" Content="Load" Command="{Binding LoadSessionsCommand}" IsEnabled="{Binding IsSessionsBusy, Converter={StaticResource InverseBool}}" Classes="primary" />
 					</Grid>
 					<Border Grid.Row="1" Classes="section-card">
 						<Grid ColumnDefinitions="*,*,*,*,Auto,Auto" ColumnSpacing="8">
-							<TextBox Grid.Column="0" Text="{Binding SessionsSearchText}" PlaceholderText="Search text" />
-							<TextBox Grid.Column="1" Text="{Binding SessionsChannelId}" PlaceholderText="Channel ID" />
-							<TextBox Grid.Column="2" Text="{Binding SessionsSenderId}" PlaceholderText="Sender ID" />
-							<TextBox Grid.Column="3" Text="{Binding SessionsState}" PlaceholderText="State" />
+							<TextBox Grid.Column="0" Text="{Binding SessionsSearchText}" AutomationProperties.Name="Search text" PlaceholderText="Search text" />
+							<TextBox Grid.Column="1" Text="{Binding SessionsChannelId}" AutomationProperties.Name="Channel ID" PlaceholderText="Channel ID" />
+							<TextBox Grid.Column="2" Text="{Binding SessionsSenderId}" AutomationProperties.Name="Sender ID" PlaceholderText="Sender ID" />
+							<TextBox Grid.Column="3" Text="{Binding SessionsState}" AutomationProperties.Name="State" PlaceholderText="State" />
 							<CheckBox Grid.Column="4" Content="Starred" IsChecked="{Binding SessionsStarredOnly}" VerticalAlignment="Center" />
-							<TextBox Grid.Column="5" Text="{Binding SessionsTag}" PlaceholderText="Tag" MinWidth="120" />
+							<TextBox Grid.Column="5" Text="{Binding SessionsTag}" AutomationProperties.Name="Tag" PlaceholderText="Tag" MinWidth="120" />
 						</Grid>
 					</Border>
 					<Grid Grid.Row="2" ColumnDefinitions="2*,3*" ColumnSpacing="12">
@@ -469,7 +507,7 @@
 						</Border>
 					</StackPanel>
 				</TabItem.Header>
-				<Grid RowDefinitions="Auto,*,Auto,*" RowSpacing="10" Margin="12,0,0,0">
+				<Grid RowDefinitions="Auto,*,Auto,*" RowSpacing="10" Margin="0">
 					<Border Grid.Row="0" Classes="section-card">
 						<Grid ColumnDefinitions="*,Auto">
 							<StackPanel>
@@ -544,7 +582,7 @@
 			</TabItem>
 
 			<TabItem Header="Workflows">
-				<Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="12,0,0,0">
+				<Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="0">
 					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
 						<StackPanel>
 							<TextBlock Text="Workflows" Classes="page-title" />
@@ -569,11 +607,11 @@
 						<Border Grid.Column="1" Classes="section-card">
 							<Grid RowDefinitions="Auto,Auto,*,*,Auto" RowSpacing="8">
 								<Grid ColumnDefinitions="*,Auto">
-									<TextBox Text="{Binding WorkflowInput}" PlaceholderText="Workflow input" AcceptsReturn="True" MinHeight="58" TextWrapping="Wrap" />
+									<TextBox Text="{Binding WorkflowInput}" AutomationProperties.Name="Workflow input" PlaceholderText="Workflow input" AcceptsReturn="True" MinHeight="58" TextWrapping="Wrap" />
 									<Button Grid.Column="1" Content="Run" Command="{Binding RunSelectedWorkflowCommand}" Margin="8,0,0,0" />
 								</Grid>
 								<Grid Grid.Row="1" ColumnDefinitions="*,Auto">
-									<TextBox Text="{Binding WorkflowRunId}" PlaceholderText="Run id" />
+									<TextBox Text="{Binding WorkflowRunId}" AutomationProperties.Name="Run id" PlaceholderText="Run id" />
 									<Button Grid.Column="1" Content="Load Run" Command="{Binding LoadWorkflowRunCommand}" Margin="8,0,0,0" />
 								</Grid>
 								<TextBox Grid.Row="2" Text="{Binding WorkflowRunDetail}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" />
@@ -610,7 +648,7 @@
 			</TabItem>
 
 			<TabItem Header="Automations">
-				<Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="12,0,0,0">
+				<Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="0">
 					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
 						<StackPanel>
 							<TextBlock Text="Automations" Classes="page-title" />
@@ -677,7 +715,7 @@
 			</TabItem>
 
 			<TabItem Header="Runtime Events">
-				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
+				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="0">
 					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
 						<StackPanel>
 							<TextBlock Text="Runtime Events" Classes="page-title" />
@@ -687,11 +725,11 @@
 					</Grid>
 					<Border Grid.Row="1" Classes="section-card">
 						<Grid ColumnDefinitions="*,*,*,*,*,Auto" ColumnSpacing="8">
-							<TextBox Text="{Binding RuntimeEventsSessionId}" PlaceholderText="Session" />
-							<TextBox Grid.Column="1" Text="{Binding RuntimeEventsChannelId}" PlaceholderText="Channel" />
-							<TextBox Grid.Column="2" Text="{Binding RuntimeEventsSenderId}" PlaceholderText="Sender" />
-							<TextBox Grid.Column="3" Text="{Binding RuntimeEventsComponent}" PlaceholderText="Component" />
-							<TextBox Grid.Column="4" Text="{Binding RuntimeEventsAction}" PlaceholderText="Action" />
+							<TextBox Text="{Binding RuntimeEventsSessionId}" AutomationProperties.Name="Session" PlaceholderText="Session" />
+							<TextBox Grid.Column="1" Text="{Binding RuntimeEventsChannelId}" AutomationProperties.Name="Channel" PlaceholderText="Channel" />
+							<TextBox Grid.Column="2" Text="{Binding RuntimeEventsSenderId}" AutomationProperties.Name="Sender" PlaceholderText="Sender" />
+							<TextBox Grid.Column="3" Text="{Binding RuntimeEventsComponent}" AutomationProperties.Name="Component" PlaceholderText="Component" />
+							<TextBox Grid.Column="4" Text="{Binding RuntimeEventsAction}" AutomationProperties.Name="Action" PlaceholderText="Action" />
 							<NumericUpDown Grid.Column="5" Value="{Binding RuntimeEventsLimit}" Minimum="1" Maximum="500" Width="90" />
 						</Grid>
 					</Border>
@@ -722,7 +760,7 @@
 			</TabItem>
 
 			<TabItem Header="Plugins &amp; Channels">
-				<Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="12,0,0,0">
+				<Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="0">
 					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
 						<StackPanel>
 							<TextBlock Text="Plugins &amp; Channels" Classes="page-title" />
@@ -734,6 +772,7 @@
 						<Border Grid.Row="0" Grid.Column="0" Classes="section-card">
 							<DockPanel>
 								<TextBlock DockPanel.Dock="Top" Text="Plugins" Classes="section-title" />
+<TextBlock DockPanel.Dock="Top" Margin="0,16,0,0" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding HasPluginRows, Converter={StaticResource InverseBool}}" Text="No plugin data to show. Load your connections to check available extensions." />
 								<ListBox ItemsSource="{Binding PluginRows}" Background="Transparent" BorderThickness="0">
 									<ListBox.ItemTemplate>
 										<DataTemplate DataType="vm:PluginRow">
@@ -750,6 +789,7 @@
 						<Border Grid.Row="0" Grid.Column="1" Classes="section-card">
 							<DockPanel>
 								<TextBlock DockPanel.Dock="Top" Text="Compatibility Catalog" Classes="section-title" />
+<TextBlock DockPanel.Dock="Top" Margin="0,16,0,0" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding HasCompatibilityRows, Converter={StaticResource InverseBool}}" Text="Compatibility details will appear here after loading." />
 								<ListBox ItemsSource="{Binding CompatibilityRows}" Background="Transparent" BorderThickness="0">
 									<ListBox.ItemTemplate>
 										<DataTemplate DataType="vm:CompatibilityRow">
@@ -766,6 +806,7 @@
 						<Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Classes="section-card">
 							<DockPanel>
 								<TextBlock DockPanel.Dock="Top" Text="Channels" Classes="section-title" />
+<TextBlock DockPanel.Dock="Top" Margin="0,16,0,0" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding HasPluginChannelRows, Converter={StaticResource InverseBool}}" Text="No channel data to show. Load your connections to check channel readiness." />
 								<ItemsControl ItemsSource="{Binding PluginChannelRows}">
 									<ItemsControl.ItemTemplate>
 										<DataTemplate DataType="vm:ChannelReadinessRow">
@@ -788,7 +829,7 @@
 			</TabItem>
 
 			<TabItem Header="Memory &amp; Profiles">
-				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
+				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="0">
 					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
 						<StackPanel>
 							<TextBlock Text="Memory &amp; Profiles" Classes="page-title" />
@@ -798,7 +839,7 @@
 					</Grid>
 					<Border Grid.Row="1" Classes="section-card">
 						<Grid ColumnDefinitions="*,Auto">
-							<TextBox Text="{Binding MemorySearchText}" PlaceholderText="Search memory notes" />
+							<TextBox Text="{Binding MemorySearchText}" AutomationProperties.Name="Search memory notes" PlaceholderText="Search memory notes" />
 							<Button Grid.Column="1" Content="Search" Command="{Binding SearchMemoryNotesCommand}" Margin="8,0,0,0" />
 						</Grid>
 					</Border>
@@ -860,7 +901,7 @@
 			</TabItem>
 
 			<TabItem Header="Models &amp; Providers">
-				<Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="12,0,0,0">
+				<Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="0">
 					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
 						<StackPanel>
 							<TextBlock Text="Models &amp; Providers" Classes="page-title" />
@@ -907,16 +948,21 @@
 
 			<TabItem Header="Admin">
 				<ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-					<StackPanel Spacing="12" Margin="12,0,0,0">
-						<TextBlock Text="Admin" Classes="page-title" />
+					<StackPanel Spacing="12" Margin="0">
+						<TextBlock Text="Access &amp; notifications" Classes="page-title" />
+<WrapPanel>
+    <Border Classes="badge" Margin="0,0,8,4"><TextBlock Text="{Binding OperatorRole}" /></Border>
+    <Border Classes="badge" Margin="0,0,8,4"><TextBlock Text="{Binding OperatorAuthMode}" /></Border>
+    <TextBlock Text="{Binding OperatorIdentity}" Classes="muted" VerticalAlignment="Center" />
+</WrapPanel>
 						<Grid ColumnDefinitions="*,*" ColumnSpacing="12">
 							<Border Grid.Column="0" Classes="section-card">
 								<StackPanel Spacing="10">
 									<TextBlock Text="Operator Access" Classes="section-title" />
 									<Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
-										<TextBox Text="{Binding Username}" PlaceholderText="Username" />
-										<TextBox Grid.Column="1" Text="{Binding Password}" PasswordChar="•" PlaceholderText="Password" />
-										<TextBox Grid.Column="2" Text="{Binding OperatorTokenLabel}" PlaceholderText="Token label" />
+										<TextBox Text="{Binding Username}" AutomationProperties.Name="Username" PlaceholderText="Username" />
+										<TextBox Grid.Column="1" Text="{Binding Password}" PasswordChar="•" AutomationProperties.Name="Password" PlaceholderText="Password" />
+										<TextBox Grid.Column="2" Text="{Binding OperatorTokenLabel}" AutomationProperties.Name="Token label" PlaceholderText="Token label" />
 									</Grid>
 									<StackPanel Orientation="Horizontal" Spacing="8">
 										<Button Content="Issue Operator Token" Command="{Binding IssueOperatorTokenCommand}" />
@@ -950,7 +996,7 @@
 
 			<TabItem Header="WhatsApp">
 				<ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-					<StackPanel Spacing="12" Margin="12,0,0,0">
+					<StackPanel Spacing="12" Margin="0">
 						<Grid ColumnDefinitions="*,Auto,Auto,Auto">
 							<StackPanel>
 								<TextBlock Text="WhatsApp" Classes="page-title" />
@@ -983,20 +1029,20 @@
 						<Border Classes="section-card">
 							<StackPanel Spacing="10">
 								<TextBlock Text="Official Cloud API" Classes="section-title" />
-								<Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10">
-									<TextBox Text="{Binding WhatsAppWebhookPath}" PlaceholderText="/whatsapp/inbound" />
-									<TextBox Grid.Column="1" Text="{Binding WhatsAppWebhookPublicBaseUrl}" PlaceholderText="https://example.com" />
-									<TextBox Grid.Row="1" Text="{Binding WhatsAppWebhookVerifyToken}" PasswordChar="•" PlaceholderText="Verify token" />
-									<TextBox Grid.Row="1" Grid.Column="1" Text="{Binding WhatsAppWebhookVerifyTokenRef}" PlaceholderText="env:WHATSAPP_VERIFY_TOKEN" />
+								<Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="12" ColumnSpacing="12">
+									<StackPanel  Spacing="6"><TextBlock Text="Webhook path" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppWebhookPath}" AutomationProperties.Name="Webhook path" PlaceholderText="/whatsapp/inbound" /></StackPanel>
+									<StackPanel Grid.Column="1" Spacing="6"><TextBlock Text="Public webhook base URL" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppWebhookPublicBaseUrl}" AutomationProperties.Name="Public webhook base URL" PlaceholderText="https://example.com" /></StackPanel>
+									<StackPanel Grid.Row="1" Spacing="6"><TextBlock Text="Verification token" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppWebhookVerifyToken}" PasswordChar="•" AutomationProperties.Name="Verification token" PlaceholderText="Verify token" /></StackPanel>
+									<StackPanel Grid.Row="1" Grid.Column="1" Spacing="6"><TextBlock Text="Verification token reference" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppWebhookVerifyTokenRef}" AutomationProperties.Name="Verification token reference" PlaceholderText="env:WHATSAPP_VERIFY_TOKEN" /></StackPanel>
 									<CheckBox Grid.Row="2" Content="Validate signature" IsChecked="{Binding WhatsAppValidateSignature}" />
-									<TextBox Grid.Row="3" Text="{Binding WhatsAppWebhookAppSecret}" PasswordChar="•" PlaceholderText="App secret" />
-									<TextBox Grid.Row="3" Grid.Column="1" Text="{Binding WhatsAppWebhookAppSecretRef}" PlaceholderText="env:WHATSAPP_APP_SECRET" />
-									<TextBox Grid.Row="4" Text="{Binding WhatsAppCloudApiToken}" PasswordChar="•" PlaceholderText="Cloud API token" />
-									<TextBox Grid.Row="4" Grid.Column="1" Text="{Binding WhatsAppCloudApiTokenRef}" PlaceholderText="env:WHATSAPP_CLOUD_API_TOKEN" />
+									<StackPanel Grid.Row="3" Spacing="6"><TextBlock Text="App secret" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppWebhookAppSecret}" PasswordChar="•" AutomationProperties.Name="App secret" PlaceholderText="App secret" /></StackPanel>
+									<StackPanel Grid.Row="3" Grid.Column="1" Spacing="6"><TextBlock Text="App secret reference" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppWebhookAppSecretRef}" AutomationProperties.Name="App secret reference" PlaceholderText="env:WHATSAPP_APP_SECRET" /></StackPanel>
+									<StackPanel Grid.Row="4" Spacing="6"><TextBlock Text="Cloud API token" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppCloudApiToken}" PasswordChar="•" AutomationProperties.Name="Cloud API token" PlaceholderText="Cloud API token" /></StackPanel>
+									<StackPanel Grid.Row="4" Grid.Column="1" Spacing="6"><TextBlock Text="Cloud API token reference" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppCloudApiTokenRef}" AutomationProperties.Name="Cloud API token reference" PlaceholderText="env:WHATSAPP_CLOUD_API_TOKEN" /></StackPanel>
 								</Grid>
 								<Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-									<TextBox Text="{Binding WhatsAppPhoneNumberId}" PlaceholderText="Phone number ID" />
-									<TextBox Grid.Column="1" Text="{Binding WhatsAppBusinessAccountId}" PlaceholderText="Business account ID" />
+									<StackPanel  Spacing="6"><TextBlock Text="Phone number ID" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppPhoneNumberId}" AutomationProperties.Name="Phone number ID" PlaceholderText="Phone number ID" /></StackPanel>
+									<StackPanel Grid.Column="1" Spacing="6"><TextBlock Text="Business account ID" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppBusinessAccountId}" AutomationProperties.Name="Business account ID" PlaceholderText="Business account ID" /></StackPanel>
 								</Grid>
 							</StackPanel>
 						</Border>
@@ -1005,18 +1051,18 @@
 								<StackPanel Spacing="8">
 									<TextBlock Text="Plugin Bridge" Classes="section-title" />
 									<CheckBox Content="Plugin detected" IsChecked="{Binding WhatsAppPluginDetected}" IsEnabled="False" />
-									<TextBox Text="{Binding WhatsAppPluginId}" PlaceholderText="Plugin ID" />
+									<StackPanel  Spacing="6"><TextBlock Text="Plugin ID" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppPluginId}" AutomationProperties.Name="Plugin ID" PlaceholderText="Plugin ID" /></StackPanel>
 									<TextBlock Text="{Binding WhatsAppPluginWarning}" Classes="muted" TextWrapping="Wrap" />
-									<TextBox Text="{Binding WhatsAppPluginConfigJson}" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="120" />
-									<TextBox Text="{Binding WhatsAppFirstPartyWorkerConfigJson}" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="120" />
+									<Expander Header="Advanced plugin configuration"><TextBox Text="{Binding WhatsAppPluginConfigJson}" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="120" /></Expander>
+									<Expander Header="Advanced worker configuration"><TextBox Text="{Binding WhatsAppFirstPartyWorkerConfigJson}" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="120" /></Expander>
 								</StackPanel>
 							</Border>
 							<Border Grid.Column="1" Classes="section-card">
 								<StackPanel Spacing="8">
 									<TextBlock Text="Bridge Secrets" Classes="section-title" />
-									<TextBox Text="{Binding WhatsAppBridgeUrl}" PlaceholderText="Built-in bridge URL" />
-									<TextBox Text="{Binding WhatsAppBridgeToken}" PasswordChar="•" PlaceholderText="Built-in bridge token" />
-									<TextBox Text="{Binding WhatsAppBridgeTokenRef}" PlaceholderText="env:WHATSAPP_BRIDGE_TOKEN" />
+									<StackPanel  Spacing="6"><TextBlock Text="Bridge URL" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppBridgeUrl}" AutomationProperties.Name="Bridge URL" PlaceholderText="Built-in bridge URL" /></StackPanel>
+									<StackPanel  Spacing="6"><TextBlock Text="Bridge token" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppBridgeToken}" PasswordChar="•" AutomationProperties.Name="Bridge token" PlaceholderText="Built-in bridge token" /></StackPanel>
+									<StackPanel  Spacing="6"><TextBlock Text="Bridge token reference" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppBridgeTokenRef}" AutomationProperties.Name="Bridge token reference" PlaceholderText="env:WHATSAPP_BRIDGE_TOKEN" /></StackPanel>
 									<CheckBox Content="Suppress bridge send exceptions" IsChecked="{Binding WhatsAppBridgeSuppressSendExceptions}" />
 								</StackPanel>
 							</Border>
@@ -1032,7 +1078,7 @@
 								<StackPanel Spacing="8">
 									<TextBlock Text="QR" Classes="section-title" />
 									<Image Source="{Binding WhatsAppQrImage}" Width="220" Height="220" Stretch="Uniform" HorizontalAlignment="Center" />
-									<TextBox Text="{Binding WhatsAppQrData}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="110" />
+									<Expander Header="Pairing data"><TextBox Text="{Binding WhatsAppQrData}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="monospace" MinHeight="110" /></Expander>
 								</StackPanel>
 							</Border>
 						</Grid>
@@ -1055,7 +1101,7 @@
 			</TabItem>
 
 			<TabItem Header="Payment Lab">
-				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="12,0,0,0">
+				<Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="0">
 					<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
 						<StackPanel>
 							<TextBlock Text="Payment Lab" Classes="page-title" />
@@ -1071,8 +1117,8 @@
 							<StackPanel Spacing="8">
 								<TextBlock Text="Setup" Classes="section-title" />
 								<Grid ColumnDefinitions="*,*">
-									<TextBox Text="{Binding PaymentProvider}" PlaceholderText="Provider" />
-									<TextBox Grid.Column="1" Text="{Binding PaymentEnvironment}" PlaceholderText="test/live" Margin="8,0,0,0" />
+									<TextBox Text="{Binding PaymentProvider}" AutomationProperties.Name="Provider" PlaceholderText="Provider" />
+									<TextBox Grid.Column="1" Text="{Binding PaymentEnvironment}" AutomationProperties.Name="test/live" PlaceholderText="test/live" Margin="8,0,0,0" />
 								</Grid>
 								<TextBox Text="{Binding PaymentSetupSummary}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="120" />
 							</StackPanel>
@@ -1095,28 +1141,28 @@
 						<Border Grid.Row="1" Grid.Column="0" Classes="section-card">
 							<StackPanel Spacing="8">
 								<TextBlock Text="Virtual Card" Classes="section-title" />
-								<TextBox Text="{Binding VirtualCardMerchantName}" PlaceholderText="Merchant name" />
-								<TextBox Text="{Binding VirtualCardMerchantUrl}" PlaceholderText="Merchant URL" />
+								<TextBox Text="{Binding VirtualCardMerchantName}" AutomationProperties.Name="Merchant name" PlaceholderText="Merchant name" />
+								<TextBox Text="{Binding VirtualCardMerchantUrl}" AutomationProperties.Name="Merchant URL" PlaceholderText="Merchant URL" />
 								<Grid ColumnDefinitions="*,*">
-									<TextBox Text="{Binding VirtualCardAmountMinor}" PlaceholderText="Amount minor" />
-									<TextBox Grid.Column="1" Text="{Binding VirtualCardCurrency}" PlaceholderText="Currency" Margin="8,0,0,0" />
+									<TextBox Text="{Binding VirtualCardAmountMinor}" AutomationProperties.Name="Amount minor" PlaceholderText="Amount minor" />
+									<TextBox Grid.Column="1" Text="{Binding VirtualCardCurrency}" AutomationProperties.Name="Currency" PlaceholderText="Currency" Margin="8,0,0,0" />
 								</Grid>
-								<TextBox Text="{Binding VirtualCardFundingSourceId}" PlaceholderText="Funding source ID" />
+								<TextBox Text="{Binding VirtualCardFundingSourceId}" AutomationProperties.Name="Funding source ID" PlaceholderText="Funding source ID" />
 								<Button Content="Issue Virtual Card" Command="{Binding IssueVirtualCardCommand}" Classes="danger" HorizontalAlignment="Left" />
 							</StackPanel>
 						</Border>
 						<Border Grid.Row="1" Grid.Column="1" Classes="section-card">
 							<StackPanel Spacing="8">
 								<TextBlock Text="Execute / Status" Classes="section-title" />
-								<TextBox Text="{Binding MachinePaymentMerchantName}" PlaceholderText="Merchant name" />
+								<TextBox Text="{Binding MachinePaymentMerchantName}" AutomationProperties.Name="Merchant name" PlaceholderText="Merchant name" />
 								<Grid ColumnDefinitions="*,*">
-									<TextBox Text="{Binding MachinePaymentAmountMinor}" PlaceholderText="Amount minor" />
-									<TextBox Grid.Column="1" Text="{Binding MachinePaymentCurrency}" PlaceholderText="Currency" Margin="8,0,0,0" />
+									<TextBox Text="{Binding MachinePaymentAmountMinor}" AutomationProperties.Name="Amount minor" PlaceholderText="Amount minor" />
+									<TextBox Grid.Column="1" Text="{Binding MachinePaymentCurrency}" AutomationProperties.Name="Currency" PlaceholderText="Currency" Margin="8,0,0,0" />
 								</Grid>
-								<TextBox Text="{Binding MachinePaymentFundingSourceId}" PlaceholderText="Funding source ID" />
+								<TextBox Text="{Binding MachinePaymentFundingSourceId}" AutomationProperties.Name="Funding source ID" PlaceholderText="Funding source ID" />
 								<Button Content="Execute Payment" Command="{Binding ExecuteMachinePaymentCommand}" Classes="danger" HorizontalAlignment="Left" />
 								<Grid ColumnDefinitions="*,Auto">
-									<TextBox Text="{Binding PaymentStatusLookupId}" PlaceholderText="Payment id" />
+									<TextBox Text="{Binding PaymentStatusLookupId}" AutomationProperties.Name="Payment id" PlaceholderText="Payment id" />
 									<Button Grid.Column="1" Content="Lookup" Command="{Binding LookupPaymentStatusCommand}" Margin="8,0,0,0" />
 								</Grid>
 								<TextBox Text="{Binding PaymentResultText}" IsReadOnly="True" AcceptsReturn="True" Classes="monospace" TextWrapping="Wrap" MinHeight="80" />
@@ -1126,5 +1172,21 @@
 				</Grid>
 			</TabItem>
 		</TabControl>
-	</Grid>
+        </Grid>
+        <Grid Grid.ColumnSpan="2" IsVisible="{Binding IsCommandPaletteOpen}" Background="#66000000" ZIndex="10">
+            <Border Classes="palette" KeyboardNavigation.TabNavigation="Cycle" Width="560" MaxHeight="570" VerticalAlignment="Top" Margin="20,90,20,20">
+                <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="14">
+                    <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Where would you like to go?" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" /><Button Grid.Column="1" Classes="quiet" Content="Close · Esc" Command="{Binding CloseCommandPaletteCommand}" /></Grid>
+                    <TextBox x:Name="NavigationSearchBox" Grid.Row="1" Text="{Binding NavigationSearch}" PlaceholderText="Try models, approvals, WhatsApp…" AutomationProperties.Name="Search pages and settings" />
+                    <Grid Grid.Row="2">
+                        <ListBox x:Name="SearchResults" Classes="navigation" ItemsSource="{Binding NavigationSearchResults}" SelectedItem="{Binding SelectedSearchResult}" DoubleTapped="OnSearchResultActivated" MaxHeight="340">
+                            <ListBox.ItemTemplate><DataTemplate DataType="vm:CompanionSection"><StackPanel Spacing="4"><TextBlock Text="{Binding Title}" FontWeight="SemiBold" /><TextBlock Text="{Binding Description}" Classes="muted" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock Text="No pages found. Try a different search." Classes="muted" IsVisible="{Binding HasNoNavigationResults}" Margin="12" />
+                    </Grid>
+                    <Button Grid.Row="3" Content="Open page  →" Classes="primary" Command="{Binding OpenSearchResultCommand}" HorizontalAlignment="Right" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
 </Window>
