@@ -189,9 +189,8 @@ jobs:
           echo "LIBRARY_PATH=$joined" >> "$GITHUB_ENV"
           echo "Using macOS Swift library paths: $joined"
 
-      - name: Probe gateway NativeAOT without classic linker
+      - name: Verify gateway NativeAOT with modern linker
         id: probe
-        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -206,12 +205,13 @@ jobs:
             2>&1 | tee artifacts/linker-probe/publish.log
 
       - name: Report linker probe outcome
+        if: always()
         shell: bash
         run: |
           if [[ "${{ steps.probe.outcome }}" == "success" ]]; then
-            echo "::notice title=Gateway linked without classic linker::Remove the gateway OpenClawUseClassicMacLd default after validating release smoke coverage."
+            echo "::notice title=Gateway linked with modern linker::Keep the explicit classic-linker override only until one published release completes successfully."
           else
-            echo "::warning title=Gateway still needs classic linker::The no-classic-linker probe failed on macos-15; keep the scoped gateway fallback."
+            echo "::warning title=Modern linker regression::The macos-15 gateway publish failed; use the scoped classic-linker override only for emergency diagnosis."
           fi
 
       - name: Upload linker probe log

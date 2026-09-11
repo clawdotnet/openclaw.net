@@ -2,6 +2,12 @@
 
 Date: 2026-05-02
 
+## Follow-Up Status (September 2026)
+
+- The `macos-15` gateway publish without `-ld_classic` failed on [September 8](https://github.com/clawdotnet/openclaw.net/actions/runs/34228171020), then passed on [September 9](https://github.com/clawdotnet/openclaw.net/actions/runs/34353670930), [September 10](https://github.com/clawdotnet/openclaw.net/actions/runs/34479046578), and [September 11](https://github.com/clawdotnet/openclaw.net/actions/runs/34600596468).
+- Based on those three consecutive successes, the gateway now defaults to Apple's current linker and the release workflow explicitly builds its release-equivalent assets with `OpenClawUseClassicMacLd=false`.
+- `OpenClawUseClassicMacLd=true` remains temporarily available only as an emergency diagnostic override. Remove the fallback after one published release completes successfully with the modern linker.
+
 ## Executive Summary
 
 OpenClaw.NET is in a generally healthy state for the standard runtime path: restore, Release build, full test suite, CLI NativeAOT publish, and gateway NativeAOT publish all completed successfully on macOS arm64 with .NET SDK 10.0.100. The main product risk found in the initial pass was not the default path; it was the optional compatibility and filesystem-hardening edge cases around plugin loading and MAF-enabled builds. Those highest-value issues were fixed in this pass, and the follow-up limitation pass tightened the remaining developer-confidence issues where the repository controls them.
@@ -27,10 +33,10 @@ No Critical issue was found in the standard runtime, gateway, CLI, companion, or
 - Limitation-pass focused tests for streaming and browser coverage: Passed, 34/34 tests.
 - Limitation-pass `dotnet test OpenClaw.Net.slnx --configuration Release --no-restore`: Passed, 1045/1045 tests.
 - `dotnet publish src/OpenClaw.Cli/OpenClaw.Cli.csproj --configuration Release --runtime osx-arm64 --self-contained true`: Passed and the resulting `openclaw --help` ran successfully. After scoping `-ld_classic`, the CLI publish no longer emits the deprecated linker warning.
-- `dotnet publish src/OpenClaw.Gateway/OpenClaw.Gateway.csproj --configuration Release --runtime osx-arm64 --self-contained true`: Passed. Gateway still emits the deprecated `-ld_classic` warning plus package/toolchain module-cache debug-info warnings. A probe without the classic linker failed with an Apple `ld::Fixup` assertion, so the gateway fallback remains intentionally scoped.
+- Original May 2 `dotnet publish src/OpenClaw.Gateway/OpenClaw.Gateway.csproj --configuration Release --runtime osx-arm64 --self-contained true` result: Passed using the scoped fallback. At that time, the gateway emitted the deprecated `-ld_classic` warning and a probe without it failed with an Apple `ld::Fixup` assertion. See the September follow-up above for the current default.
 - Post-fix `dotnet build OpenClaw.Net.slnx --configuration Release -p:OpenClawEnableOpenSandbox=true`: Passed with 0 warnings and 0 errors.
 - Post-fix `dotnet build OpenClaw.Net.slnx --configuration Release -p:OpenClawEnableMafExperiment=true`: Passed with 0 warnings and 0 errors.
-- CI follow-up: `.github/workflows/ci.yml` now restores/builds `OpenClaw.Net.slnx` for the standard, OpenSandbox-enabled, and MAF-enabled variants; PR CI now runs the standard Linux NativeAOT gateway/CLI smoke, and scheduled/manual CI probes macOS gateway publish with `-p:OpenClawUseClassicMacLd=false`.
+- Initial CI follow-up: `.github/workflows/ci.yml` restores/builds `OpenClaw.Net.slnx` for the standard, OpenSandbox-enabled, and MAF-enabled variants; PR CI runs the standard Linux NativeAOT gateway/CLI smoke, and scheduled/manual CI originally added an advisory macOS gateway probe with `-p:OpenClawUseClassicMacLd=false`. The September follow-up makes that macOS verification blocking.
 
 ## Critical Bugs Found
 
@@ -76,7 +82,7 @@ None in the standard build, test, CLI, gateway, or companion paths audited so fa
 ## Low Severity
 
 - Low: CLI top-level usage omitted the existing `openclaw plugins <install|remove|list|search>` command even though plugin help/examples appeared lower in the same output. Fixed in this pass.
-- Low: macOS gateway NativeAOT publish emits native linker/debug-info warnings. The CLI no longer uses `-ld_classic` by default; the gateway keeps it because the current toolchain failed to link the gateway without it. Release documentation now calls this out.
+- Original May 2 low finding: macOS gateway NativeAOT publish emitted native linker/debug-info warnings. The CLI did not use `-ld_classic` by default, while the gateway retained it because that toolchain failed to link without it. The September follow-up changes the gateway default and retains only an explicit emergency override.
 
 ## Business Logic Mismatches
 
@@ -114,5 +120,5 @@ None in the standard build, test, CLI, gateway, or companion paths audited so fa
 ## Recommended Follow-Up Work
 
 - Monitor the first GitHub Actions run after these workflow changes, especially the PR-time Linux NativeAOT smoke and scheduled macOS linker probe.
-- Remove the gateway `OpenClawUseClassicMacLd` default once the scheduled macOS probe links the gateway reliably without it.
+- Completed in September 2026: the gateway now defaults `OpenClawUseClassicMacLd` to `false`. Remove the explicit emergency override after one published release succeeds with the modern linker.
 - Consider an explicit browser-dependent test category only if CI or contributor environments need a fully offline default test command.

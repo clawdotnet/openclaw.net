@@ -4,6 +4,10 @@ All notable changes to this project are tracked in this file.
 
 ## [Unreleased]
 
+### Release Engineering
+
+- Defaulted macOS arm64 gateway NativeAOT publishes to Apple's current linker, retained the deprecated classic linker only as an explicit emergency override, and made the release workflow prove the modern-linker path through packaging and smoke tests.
+
 ### MCP v2 Upgrade
 
 - Upgraded MCP integration surfaces to C# SDK `2.0.0` behavior across gateway, MCP App, and client-facing SDK helpers.
