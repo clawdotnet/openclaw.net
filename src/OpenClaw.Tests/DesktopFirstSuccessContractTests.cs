@@ -33,11 +33,12 @@ public sealed class DesktopFirstSuccessContractTests
         {
             window.Show();
             viewModel.SetupProvider = "ollama";
-            viewModel.SetupModel = "fixture-model";
+            viewModel.SetupModel = "llama3.2";
             viewModel.SetupModelPreset = "ollama-agentic";
             Dispatcher.UIThread.RunJobs();
 
             var settings = store.Load();
+            Assert.Equal("llama3.2", settings.SetupModel);
             Assert.Equal("ollama-agentic", settings.SetupModelPreset);
             Assert.All(viewModel.SetupModelPresetOptions, id =>
                 Assert.True(LocalModelPresetCatalog.TryGet(id, out _), $"Setup offers unknown preset '{id}'."));
