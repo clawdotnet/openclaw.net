@@ -15,7 +15,7 @@
   <ItemGroup>
     <Folder Include="Models\" />
     <Folder Include="Services\" />
-    <AvaloniaResource Include="Assets\**" />
+    <AvaloniaResource Include="Assets\agentqi-icon.png;Assets\agentqi-artwork.png;Assets\agentqi-wordmark-transparent.png" />
   </ItemGroup>
 
   <ItemGroup>

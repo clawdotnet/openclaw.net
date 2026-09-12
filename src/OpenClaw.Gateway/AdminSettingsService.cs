@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Validation;
@@ -141,7 +142,7 @@ internal sealed partial class AdminSettingsService
 
     public static void ApplySnapshot(GatewayConfig config, AdminSettingsSnapshot snapshot)
     {
-        if (snapshot.ModelProvider is not null) config.Llm.Provider = snapshot.ModelProvider;
+        // Provider selection belongs to secure setup, never an admin snapshot override.
         if (snapshot.ModelName is not null) config.Llm.Model = snapshot.ModelName;
         if (snapshot.DefaultModelProfile is not null) config.Models.DefaultProfile = string.IsNullOrWhiteSpace(snapshot.DefaultModelProfile) ? null : snapshot.DefaultModelProfile;
         if (snapshot.ModelMaxTokens is not null) config.Llm.MaxTokens = snapshot.ModelMaxTokens.Value;
@@ -249,7 +250,7 @@ internal sealed partial class AdminSettingsService
                     errors);
             }
 
-            try { PersistSnapshot(CreateSnapshot(clone)); }
+            try { PersistSnapshot(CreateSnapshot(clone), previous); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 _logger.LogWarning(ex, "Could not persist admin settings");
@@ -379,8 +380,23 @@ internal sealed partial class AdminSettingsService
         "channels.whatsapp.firstPartyWorker"
     ];
 
-    private void PersistSnapshot(AdminSettingsSnapshot snapshot)
+    private void PersistSnapshot(AdminSettingsSnapshot snapshot, AdminSettingsSnapshot previous)
     {
+        // Persist only intentionally changed model fields. Unrelated admin saves must not
+        // pin the provider/model from the startup configuration indefinitely.
+        var node = JsonSerializer.SerializeToNode(snapshot, CoreJsonContext.Default.AdminSettingsSnapshot)!.AsObject();
+        var before = JsonSerializer.SerializeToNode(previous, CoreJsonContext.Default.AdminSettingsSnapshot)!.AsObject();
+        var baseline = JsonSerializer.SerializeToNode(_baseSnapshot, CoreJsonContext.Default.AdminSettingsSnapshot)!.AsObject();
+        TryLoadPersistedSnapshot(_settingsPath, out var persisted, out var loadError);
+        if (loadError is not null) throw new IOException("Cannot update an unreadable settings override file.");
+        var existing = persisted is null ? new JsonObject() : JsonSerializer.SerializeToNode(persisted, CoreJsonContext.Default.AdminSettingsSnapshot)!.AsObject();
+        node["modelProvider"] = null;
+        foreach (var key in new[] { "modelName", "modelMaxTokens", "modelTemperature", "defaultModelProfile" })
+        {
+            if (JsonNode.DeepEquals(node[key], before[key])) node[key] = existing[key]?.DeepClone();
+            else if (JsonNode.DeepEquals(node[key], baseline[key])) node[key] = null;
+        }
+        var saved = node.Deserialize(CoreJsonContext.Default.AdminSettingsSnapshot)!;
         Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath)!);
         var tempPath = _settingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -389,7 +405,7 @@ internal sealed partial class AdminSettingsService
             if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
             using (var stream = new FileStream(tempPath, options))
             {
-                JsonSerializer.Serialize(stream, snapshot, CoreJsonContext.Default.AdminSettingsSnapshot);
+                JsonSerializer.Serialize(stream, saved, CoreJsonContext.Default.AdminSettingsSnapshot);
                 stream.Flush(flushToDisk: true);
             }
             File.Move(tempPath, _settingsPath, overwrite: true);

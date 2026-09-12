@@ -53,6 +53,12 @@ internal static partial class AdminEndpoints
                     {
                         request.Changes = await ConfigurationPlanner.ProposeAsync(registration.Client,
                             registration.Profile.ModelId, request.Instruction, state, timeout.Token);
+                        if (request.Changes.Count == 0)
+                        {
+                            state.Success = false;
+                            state.Message = "I couldn't map that to a setting. Please rephrase or choose a setting below.";
+                            return Results.Json(state, ConfigurationJsonContext.Default.ConfigurationState);
+                        }
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException || !ctx.RequestAborted.IsCancellationRequested)
                     {
@@ -64,7 +70,7 @@ internal static partial class AdminEndpoints
                 var result = services.AdminSettings.ChangeConfiguration(request, apply);
                 if (apply)
                     RecordOperatorAudit(ctx, services.Operations, auth.Authorization!, "configuration_apply", "gateway-settings",
-                        result.Success ? "Applied reviewed configuration changes." : "Configuration change rejected.", result.Success, before: null, after: null);
+                        result.Success ? "Applied reviewed configuration changes: " + string.Join(", ", result.Changes.Keys.Order(StringComparer.Ordinal)) : "Configuration change rejected.", result.Success, before: null, after: null);
                 return Results.Json(result, ConfigurationJsonContext.Default.ConfigurationState,
                     statusCode: result.Success ? 200 : request.Revision != result.Revision ? 409 : 400);
             });

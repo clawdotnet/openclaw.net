@@ -54,7 +54,6 @@ public sealed partial class MainWindowViewModel
     {
         if (IsConfigurationBusy) return;
         SelectedSectionIndex = 2;
-        IsConfigurationMode = true;
         IsLocalSetupOpen = false;
         IsConfigurationOpen = true;
         IsConfigurationBusy = true;
@@ -74,7 +73,7 @@ public sealed partial class MainWindowViewModel
             SelectedConfigurationKey = ConfigurationKeys.FirstOrDefault();
             ConfigurationStatus = _configurationState.Message;
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or InvalidOperationException or OperationCanceledException)
         {
             _configurationState = null;
             ConfigurationKeys.Clear();
@@ -95,11 +94,11 @@ public sealed partial class MainWindowViewModel
     {
         IsLocalSetupOpen = false;
         IsConfigurationOpen = true;
-        IsConfigurationMode = true;
         IsConfigurationBusy = true;
         try
         {
-            await LoadConfigurationAsync();
+            // Keep the revision and pending edits together; the server rejects a stale draft.
+            if (_configurationState is null) await LoadConfigurationAsync();
             if (_configurationState is null) return;
             using var client = RequireIntegrationClient(s => ConfigurationStatus = s);
             if (client is null) return;
@@ -107,9 +106,14 @@ public sealed partial class MainWindowViewModel
             ConfigurationStatus = string.Join(" ", new[] { result.Message }.Concat(result.Errors));
             if (!result.Success) return;
             foreach (var (key, value) in result.Changes)
-                ConfigurationEdits.Add(new() { Key = key, Kind = value.ValueKind, Value = value.ValueKind == JsonValueKind.Null ? "" : value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : value.GetRawText() });
+            {
+                var edited = ConfigurationEdits.FirstOrDefault(edit => edit.Key == key);
+                var text = value.ValueKind == JsonValueKind.Null ? "" : value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : value.GetRawText();
+                if (edited is not null) edited.Value = text;
+                else ConfigurationEdits.Add(new() { Key = key, Kind = value.ValueKind, Value = text });
+            }
         }
-        catch (Exception) { ConfigurationStatus = "The request could not be completed. Retry or choose a setting below."; }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or InvalidOperationException or OperationCanceledException) { ConfigurationStatus = "The request could not be completed. Retry or choose a setting below."; }
         finally { IsConfigurationBusy = false; }
     }
 
@@ -132,10 +136,11 @@ public sealed partial class MainWindowViewModel
             if (!result.Success) return;
             _configurationState = result;
             ConfigurationEdits.Clear();
+            IsConfigurationMode = false;
             AddSystemMessage(result.Message + (result.RestartRequired ? " Pending: " + string.Join(", ", result.RestartRequiredFields) : ""));
         }
         catch (JsonException) { ConfigurationStatus = "Enter valid numbers or true/false for the indicated fields."; }
-        catch (Exception) { ConfigurationStatus = "Could not confirm the save. Reload settings before retrying."; }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or InvalidOperationException or OperationCanceledException) { ConfigurationStatus = ex is HttpRequestException ? ex.Message : "Could not confirm the save. Reload settings before retrying."; }
         finally { IsConfigurationBusy = false; }
     }
 

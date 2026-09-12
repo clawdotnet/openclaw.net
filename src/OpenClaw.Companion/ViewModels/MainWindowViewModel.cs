@@ -129,7 +129,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             AllowPlaintextTokenFallback = settings.AllowPlaintextTokenFallback;
             AuthToken = settings.AuthToken ?? "";
             DebugMode = settings.DebugMode;
-            IsDarkTheme = settings.IsDarkTheme;
+            _followSystemTheme = settings.IsDarkTheme is null;
+            IsDarkTheme = settings.IsDarkTheme ?? false; // The attached window supplies the effective system theme on the UI thread.
             ApprovalDesktopNotificationsEnabled = settings.ApprovalDesktopNotificationsEnabled;
             ApprovalDesktopNotificationsOnlyWhenUnfocused = settings.ApprovalDesktopNotificationsOnlyWhenUnfocused;
             AutoStartLocalGateway = settings.AutoStartLocalGateway;
@@ -161,7 +162,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             RememberToken = RememberToken,
             AllowPlaintextTokenFallback = AllowPlaintextTokenFallback,
             DebugMode = DebugMode,
-            IsDarkTheme = IsDarkTheme,
+            IsDarkTheme = _followSystemTheme ? null : IsDarkTheme,
             ApprovalDesktopNotificationsEnabled = ApprovalDesktopNotificationsEnabled,
             ApprovalDesktopNotificationsOnlyWhenUnfocused = ApprovalDesktopNotificationsOnlyWhenUnfocused,
             AutoStartLocalGateway = AutoStartLocalGateway,

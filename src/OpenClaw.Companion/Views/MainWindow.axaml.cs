@@ -46,6 +46,11 @@ public partial class MainWindow : Window
         ChatComposer.AddHandler(KeyDownEvent, OnComposerKeyDown, RoutingStrategies.Tunnel);
         NavigationSearchBox.AddHandler(KeyDownEvent, OnSearchKeyDown, RoutingStrategies.Tunnel);
         SearchResults.AddHandler(KeyDownEvent, OnSearchKeyDown, RoutingStrategies.Tunnel);
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property == ActualThemeVariantProperty)
+                _observedViewModel?.UpdateSystemTheme(ActualThemeVariant == ThemeVariant.Dark);
+        };
         Closed += (_, _) =>
         {
             if (_observedViewModel is not null)
@@ -53,16 +58,20 @@ public partial class MainWindow : Window
         };
     }
 
-    private void ApplyTheme() => RequestedThemeVariant = _observedViewModel?.IsDarkTheme == true
-        ? ThemeVariant.Dark : ThemeVariant.Light;
+    private void ApplyTheme()
+    {
+        RequestedThemeVariant = _observedViewModel is not { FollowSystemTheme: false } vm
+            ? ThemeVariant.Default : vm.IsDarkTheme ? ThemeVariant.Dark : ThemeVariant.Light;
+        _observedViewModel?.UpdateSystemTheme(ActualThemeVariant == ThemeVariant.Dark);
+    }
 
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainWindowViewModel.IsDarkTheme)) ApplyTheme();
+        if (e.PropertyName is nameof(MainWindowViewModel.IsDarkTheme) or nameof(MainWindowViewModel.FollowSystemTheme)) ApplyTheme();
         if (e.PropertyName == nameof(MainWindowViewModel.IsCommandPaletteOpen))
             Dispatcher.UIThread.Post(() =>
             {
-                if (_observedViewModel?.IsCommandPaletteOpen == true) NavigationSearchBox.Focus();
+                if (_observedViewModel is { IsCommandPaletteOpen: true }) NavigationSearchBox.Focus();
                 else SearchNavigationButton.Focus();
             });
     }
@@ -109,9 +118,9 @@ public partial class MainWindow : Window
     private void OnChatScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
         if (sender is not ScrollViewer scroll) return;
-        if (e.ExtentDelta.Y != 0 && _followChat)
+        if (Math.Abs(e.ExtentDelta.Y) > 0.01 && _followChat)
             scroll.ScrollToEnd();
-        else if (e.OffsetDelta.Y != 0)
+        else if (Math.Abs(e.OffsetDelta.Y) > 0.01)
             _followChat = scroll.Extent.Height - scroll.Viewport.Height - scroll.Offset.Y < 48;
     }
 

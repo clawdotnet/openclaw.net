@@ -263,7 +263,7 @@ public sealed class CompanionCanvasUiTests : IDisposable
         await vm.SendCommand.ExecuteAsync(null);
         Assert.True(vm.IsDarkTheme);
         Dispatcher.UIThread.RunJobs();
-        Assert.Single(vm.Messages);
+        Assert.Single(vm.Messages, message => message.Text == "Switched to dark mode.");
         Assert.False(vm.IsConfigurationBusy);
     }
 
@@ -274,6 +274,40 @@ public sealed class CompanionCanvasUiTests : IDisposable
         Assert.True(new ConfigurationEdit { Key = "readOnlyMode", Kind = System.Text.Json.JsonValueKind.False, Value = "true" }.ToJson().GetBoolean());
         Assert.Equal(45, new ConfigurationEdit { Key = "sessionTimeoutMinutes", Kind = System.Text.Json.JsonValueKind.Number, Value = "45" }.ToJson().GetInt32());
         Assert.ThrowsAny<System.Text.Json.JsonException>(() => new ConfigurationEdit { Key = "sessionTimeoutMinutes", Kind = System.Text.Json.JsonValueKind.Number, Value = "forty" }.ToJson());
+    }
+
+    [AvaloniaFact]
+    public void CompanionTheme_MissingPreferenceFollowsSystemUntilExplicitToggle()
+    {
+        var app = Application.Current!;
+        var previous = app.RequestedThemeVariant;
+        app.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+        var vm = CreateViewModel();
+        var window = new MainWindow { DataContext = vm };
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(vm.FollowSystemTheme);
+            Assert.True(vm.IsDarkTheme);
+            Assert.Equal(Avalonia.Styling.ThemeVariant.Dark, window.ActualThemeVariant);
+            app.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Light;
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(vm.IsDarkTheme);
+            vm.ToggleThemeCommand.Execute(null);
+            Assert.False(vm.FollowSystemTheme);
+            Assert.True(vm.IsDarkTheme);
+        }
+        finally { window.Close(); app.RequestedThemeVariant = previous; }
+    }
+
+    [Fact]
+    public void CompanionBranding_PreservesAssemblyAndManifestIdentities()
+    {
+        Assert.Equal("OpenClaw.Companion", typeof(App).Assembly.GetName().Name);
+        var path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/OpenClaw.Companion/app.manifest"));
+        var manifest = System.Xml.Linq.XDocument.Load(path);
+        Assert.Equal("OpenClaw.Companion.Desktop", manifest.Root!.Elements().Single(e => e.Name.LocalName == "assemblyIdentity").Attribute("name")!.Value);
     }
 
     private MainWindowViewModel CreateViewModel()

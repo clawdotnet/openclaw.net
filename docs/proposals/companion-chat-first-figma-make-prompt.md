@@ -1,6 +1,6 @@
 # OpenClaw Companion: chat-first prototype
 
-Prepared from the current Companion AXAML and view-model surface on September 10, 2026. This is a design brief, not a claim that conversational configuration already exists. The scope is all current Companion features, not every CLI or gateway capability.
+Prepared from the current Companion AXAML and view-model surface on September 10, 2026. The Companion now implements reviewed scalar admin configuration and inline local setup; see [the implemented scope](../companion-chat-configuration.md). Broader conversational actions in this brief remain proposals. The scope is all current Companion features, not every CLI or gateway capability.
 
 ## Recommended implementation direction
 
@@ -57,7 +57,7 @@ Chat and GUI must use the same prototype state: a change applied in one is immed
 
 Credentials belong in masked secure-entry cards, never ordinary chat messages or history. Display only credential status or a masked reference after submission. Do not let the assistant invent successful connections. Role restrictions, missing integrations, and unsupported operations need understandable explanations and a concrete next step.
 
-Natural-language configuration is a proposed orchestration layer. In the prototype's design notes, distinguish current feature actions from proposed additions. Proposed enhancements include universal chat configuration, synchronized configuration drafts, automation creation/editing through conversation, and new editing controls for surfaces currently limited to inspection. Do not silently imply those operations already exist in the desktop app.
+Natural-language scalar admin configuration, editable review/apply, and inline local setup are implemented in Companion. In the prototype's design notes, distinguish current feature actions from proposed additions. Proposed enhancements beyond the implemented scalar settings editor include universal chat configuration, cross-surface synchronized configuration drafts, automation creation/editing through conversation, and new editing controls for surfaces currently limited to inspection. Do not silently imply those operations already exist in the desktop app.
 
 ### Screens and complete current-feature coverage
 

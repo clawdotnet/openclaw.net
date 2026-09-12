@@ -8,7 +8,7 @@
         x:Class="OpenClaw.Companion.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/agentqi-icon.png"
-		Width="1440" Height="960" MinWidth="1000" MinHeight="700" WindowStartupLocation="CenterScreen"
+		Width="1440" Height="960" MinWidth="1000" MinHeight="700" WindowStartupLocation="CenterScreen" WindowState="Maximized"
         Title="AgentQi [OpenClaw.NET]" Classes="companion-window">
 
 	<Design.DataContext>
@@ -332,7 +332,7 @@
                                 <TextBlock Text="Review configuration" FontWeight="SemiBold" />
                                 <TextBlock Text="{Binding ConfigurationStatus}" TextWrapping="Wrap" Classes="muted" />
                                 <ScrollViewer MaxHeight="210"><ItemsControl ItemsSource="{Binding ConfigurationEdits}"><ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:ConfigurationEdit"><Grid ColumnDefinitions="*,*" Margin="0,4" ColumnSpacing="12"><StackPanel><TextBlock Text="{Binding Label}" TextWrapping="Wrap" /><TextBlock Text="{Binding Hint}" Classes="muted" FontSize="11" /></StackPanel><TextBox Grid.Column="1" Text="{Binding Value}" /></Grid></DataTemplate>
+                                    <DataTemplate x:DataType="vm:ConfigurationEdit"><Grid ColumnDefinitions="*,*" Margin="0,4" ColumnSpacing="12"><StackPanel><TextBlock Text="{Binding Label}" TextWrapping="Wrap" /><TextBlock Text="{Binding Hint}" Classes="muted" FontSize="11" /></StackPanel><TextBox Grid.Column="1" Text="{Binding Value}" AutomationProperties.Name="{Binding Label}" /></Grid></DataTemplate>
                                 </ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
                                 <Expander Header="Choose a setting manually"><Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,8"><ComboBox ItemsSource="{Binding ConfigurationKeys}" SelectedItem="{Binding SelectedConfigurationKey}" HorizontalAlignment="Stretch" /><Button Grid.Column="1" Content="Add" Command="{Binding AddConfigurationFieldCommand}" /></Grid></Expander>
                                 <WrapPanel><Button Content="Apply changes" Classes="primary" Command="{Binding ApplyConfigurationCommand}" /><Button Content="Reload" Command="{Binding OpenConfigurationCommand}" /><Button Content="Cancel" Command="{Binding CancelConfigurationCommand}" /></WrapPanel>

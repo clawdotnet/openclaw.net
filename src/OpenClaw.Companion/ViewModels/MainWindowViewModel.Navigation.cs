@@ -29,6 +29,9 @@ public sealed partial class MainWindowViewModel
 
     public ObservableCollection<CompanionSection> NavigationSearchResults { get; } = [];
     public bool HasNoNavigationResults => NavigationSearchResults.Count == 0;
+    private bool _followSystemTheme;
+    private bool _updatingSystemTheme;
+    public bool FollowSystemTheme => _followSystemTheme;
     public string ThemeToggleLabel => IsDarkTheme ? "Light theme" : "Dark theme";
 
     private void InitializeNavigation()
@@ -94,6 +97,19 @@ public sealed partial class MainWindowViewModel
     partial void OnIsDarkThemeChanged(bool value)
     {
         OnPropertyChanged(nameof(ThemeToggleLabel));
-        if (!_isLoadingSettings) SaveSettings();
+        if (!_isLoadingSettings && !_updatingSystemTheme)
+        {
+            _followSystemTheme = false;
+            OnPropertyChanged(nameof(FollowSystemTheme));
+            SaveSettings();
+        }
     }
+    public void UpdateSystemTheme(bool isDark)
+    {
+        if (!_followSystemTheme) return;
+        _updatingSystemTheme = true;
+        try { IsDarkTheme = isDark; }
+        finally { _updatingSystemTheme = false; }
+    }
+
 }

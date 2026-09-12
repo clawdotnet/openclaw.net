@@ -21,7 +21,7 @@ Type `/setup` or choose **Set up my assistant**. The inline provider/model/API-k
 
 The configuration API exposes the scalar admin settings for sessions, tool approval and autonomy, shell/browser access, history/compaction, retention, and messaging-channel enablement, signature validation, direct-message policies, and WhatsApp connection metadata/secret references. It also supports the base model name, token limit, temperature, and selection of an already configured default model profile.
 
-Provider credentials and WhatsApp worker-account objects use their dedicated setup forms. A base model edit does not overwrite named model profiles. A model controlled by `MODEL_PROVIDER_MODEL` must be changed in that environment variable. Automations, workflows, memory, approvals, and payment operations continue to use their existing runtime tools and management APIs; they are not treated as scalar settings patches.
+Provider credentials and WhatsApp worker-account objects use their dedicated setup forms. A base model edit does not overwrite named model profiles. Unrelated settings saves do not pin the startup provider or model: provider selection always comes from secure setup/configuration, and only intentionally changed model fields are persisted as overrides. A model controlled by `MODEL_PROVIDER_MODEL` must be changed in that environment variable. Automations, workflows, memory, approvals, and payment operations continue to use their existing runtime tools and management APIs; they are not treated as scalar settings patches.
 
 ## API and persistence
 

@@ -22,10 +22,19 @@ public sealed partial class OpenClawHttpClient
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(_baseUri, $"/admin/configuration/{operation}"))
         { Content = BuildJsonContent(body, ConfigurationJsonContext.Default.ConfigurationRequest) };
         using var response = await _http.SendAsync(request, ct);
-        if (response.StatusCode is not System.Net.HttpStatusCode.BadRequest and not System.Net.HttpStatusCode.Conflict)
-            response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(ct);
-        return await JsonSerializer.DeserializeAsync(stream, ConfigurationJsonContext.Default.ConfigurationState, ct)
-            ?? throw new InvalidOperationException("The gateway returned an empty configuration response.");
+        if (!response.IsSuccessStatusCode && response.StatusCode is not System.Net.HttpStatusCode.BadRequest and not System.Net.HttpStatusCode.Conflict)
+            throw await CreateHttpErrorAsync(response, ct);
+        var payload = await response.Content.ReadAsStringAsync(ct);
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            if (document.RootElement.ValueKind == JsonValueKind.Object &&
+                document.RootElement.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(message.GetString()) && document.RootElement.TryGetProperty("success", out _))
+                return JsonSerializer.Deserialize(payload, ConfigurationJsonContext.Default.ConfigurationState)!;
+        }
+        catch (JsonException) { }
+        if (!response.IsSuccessStatusCode) throw await CreateHttpErrorAsync(response, ct);
+        throw new InvalidOperationException("The gateway returned an invalid configuration response.");
     }
 }

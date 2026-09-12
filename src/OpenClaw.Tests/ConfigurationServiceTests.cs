@@ -51,12 +51,12 @@ public sealed class ConfigurationServiceTests : IDisposable
     {
         var config = Config();
         var service = Service(config);
-        var result = service.ChangeConfiguration(Request(service.DescribeConfiguration().Revision, "{\"maxConcurrentSessions\":77,\"modelName\":\"test-model\"}"), true);
+        var result = service.ChangeConfiguration(Request(service.DescribeConfiguration().Revision, "{\"maxConcurrentSessions\":77}"), true);
         Assert.True(result.Success, string.Join(" ", result.Errors));
         var source = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["OpenClaw:Memory:StoragePath"] = _root }).Build();
         var loaded = GatewayBootstrapExtensions.LoadGatewayConfig(source);
         Assert.Equal(77, loaded.MaxConcurrentSessions);
-        Assert.Equal(Environment.GetEnvironmentVariable("MODEL_PROVIDER_MODEL") ?? "test-model", loaded.Llm.Model);
+        Assert.Equal(Environment.GetEnvironmentVariable("MODEL_PROVIDER_MODEL") ?? "gpt-4o", loaded.Llm.Model);
         Assert.NotEqual(77, GatewayBootstrapExtensions.LoadGatewayConfig(source, false).MaxConcurrentSessions);
         Assert.False(Service(loaded).ChangeConfiguration(Request(result.Revision, "{\"usageFooter\":\"off\"}"), true).Success);
     }
@@ -90,6 +90,32 @@ public sealed class ConfigurationServiceTests : IDisposable
         Assert.False(result.Success);
         Assert.Contains(result.Errors, error => error.Contains("Refusing to start"));
         Assert.False(File.Exists(AdminSettingsService.GetSettingsPath(config)));
+    }
+
+    [Fact]
+    public void UnrelatedSave_DoesNotFreezeModelOrProvider_AndExplicitModelOverridesSurviveLaterSaves()
+    {
+        var config = Config();
+        var service = Service(config);
+        Assert.True(service.ChangeConfiguration(Request(service.DescribeConfiguration().Revision, "{\"usageFooter\":\"tokens\"}"), true).Success);
+        Assert.True(AdminSettingsService.TryLoadPersistedSnapshot(AdminSettingsService.GetSettingsPath(config), out var persisted, out _));
+        Assert.Null(persisted!.ModelProvider);
+        Assert.Null(persisted.ModelName);
+        Assert.Null(persisted.DefaultModelProfile);
+        var changedSource = Config();
+        changedSource.Llm.Provider = "ollama";
+        changedSource.Llm.Model = "new-model";
+        changedSource.Models.DefaultProfile = "selected-profile";
+        AdminSettingsService.ApplySnapshot(changedSource, persisted);
+        Assert.Equal("ollama", changedSource.Llm.Provider);
+        Assert.Equal("new-model", changedSource.Llm.Model);
+        Assert.Equal("selected-profile", changedSource.Models.DefaultProfile);
+        Assert.True(service.ChangeConfiguration(Request(service.DescribeConfiguration().Revision, "{\"modelMaxTokens\":2222}"), true).Success);
+        Assert.True(service.ChangeConfiguration(Request(service.DescribeConfiguration().Revision, "{\"usageFooter\":\"full\"}"), true).Success);
+        Assert.True(AdminSettingsService.TryLoadPersistedSnapshot(AdminSettingsService.GetSettingsPath(config), out persisted, out _));
+        Assert.Equal(2222, persisted!.ModelMaxTokens);
+        Assert.Null(persisted.ModelName);
+        Assert.Null(persisted.ModelProvider);
     }
 
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
