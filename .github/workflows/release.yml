@@ -37,6 +37,20 @@ permissions:
   contents: read
 
 jobs:
+  release-documentation:
+    name: Release Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Reject stale release availability language
+        if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.create_release)
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: python3 eng/verify-release-docs.py "$RELEASE_TAG"
+
   public-compatibility-smoke:
     permissions:
       contents: read
@@ -86,7 +100,10 @@ jobs:
 
   build-release-assets:
     name: Build ${{ matrix.asset }} assets
-    needs: public-compatibility-smoke
+    needs:
+      - release-documentation
+      - public-compatibility-smoke
+      - desktop-first-success
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -235,6 +252,11 @@ jobs:
           & $cliBin version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+          if ($IsLinux) {
+            python3 "$root/eng/verify-desktop-first-success.py" --cli $cliBin --gateway $gatewayBin
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
           $desktopArchive = Join-Path $archives "openclaw-desktop-$rid.zip"
           $gatewayArchive = Join-Path $archives "openclaw-gateway-aot-$rid.zip"
           $cliArchive = Join-Path $archives "openclaw-cli-aot-$rid.zip"
@@ -282,6 +304,43 @@ jobs:
           name: release-assets-${{ matrix.rid }}
           path: artifacts/release-archives/*
 
+  desktop-first-success:
+    name: Desktop First-Success Contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('OpenClaw.Net.slnx', '**/*.csproj', '**/*.props', '**/*.targets') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore desktop contract tests
+        run: dotnet restore src/OpenClaw.Tests
+
+      - name: Build desktop contract tests
+        run: dotnet build --no-restore -c Release src/OpenClaw.Tests ${{ env.FAST_BUILD_PROPERTIES }}
+
+      - name: Run local-agent first-success contract
+        run: dotnet test --no-build -c Release --filter "Category=DesktopRelease" --verbosity normal --logger "trx;LogFileName=desktop-first-success.trx" src/OpenClaw.Tests
+
+      - name: Upload desktop contract results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: desktop-first-success-results
+          path: "**/desktop-first-success.trx"
+
   publish-github-release:
     name: Publish GitHub Release
     needs: build-release-assets
@@ -327,9 +386,9 @@ jobs:
           - openclaw-desktop-osx-arm64.zip
           - openclaw-desktop-linux-x64.zip
 
-          These archives bundle Companion, the NativeAOT gateway, and the NativeAOT CLI. Standalone gateway and CLI archives are also attached for operators.
+          These archives bundle AgentQi Companion, the NativeAOT gateway, and the NativeAOT CLI. Standalone gateway and CLI archives are also attached for operators.
 
-          Release verification for this exact tag includes the deterministic pinned public-plugin compatibility gate. The moving latest-package canary is reported separately and is not release-blocking.
+          Release verification for this exact tag includes the deterministic pinned public-plugin compatibility gate, the AgentQi Companion local-agent first-success contract, and the release-documentation availability check. The moving latest-package canary is reported separately and is not release-blocking.
 
           Windows and macOS assets are currently unsigned unless this workflow is extended with signing secrets. See docs/RELEASES.md for the expected first-run warnings and the signing path.
           EOF

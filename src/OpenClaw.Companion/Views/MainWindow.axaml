@@ -9,7 +9,7 @@
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/agentqi-icon.png"
 		Width="1440" Height="960" MinWidth="1000" MinHeight="700" WindowStartupLocation="CenterScreen" WindowState="Maximized"
-        Title="AgentQi [OpenClaw.NET]" Classes="companion-window">
+        Title="AgentQi Companion" Classes="companion-window">
 
 	<Design.DataContext>
 		<vm:MainWindowViewModel/>
@@ -269,7 +269,7 @@
                     <Grid Grid.Row="1">
                         <ScrollViewer IsVisible="{Binding ShowChatWelcome}" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel Classes="welcome" MaxWidth="640" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <Grid Height="128" HorizontalAlignment="Stretch" AutomationProperties.Name="AgentQi [OpenClaw.NET]">
+                                <Grid Height="128" HorizontalAlignment="Stretch" AutomationProperties.Name="AgentQi Companion">
                                     <Border CornerRadius="16" ClipToBounds="True" Background="Transparent" IsVisible="{Binding IsDarkTheme, Converter={StaticResource InverseBool}}">
                                         <Image Source="/Assets/agentqi-wordmark-transparent.png" Stretch="Uniform" />
                                     </Border>
