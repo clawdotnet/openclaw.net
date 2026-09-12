@@ -1,277 +1,105 @@
 <div align="center">
-  <img src="src/OpenClaw.Gateway/wwwroot/image.png" alt="OpenClaw.NET Logo" width="180" />
+  <img src="src/OpenClaw.Gateway/wwwroot/image.png" alt="OpenClaw.NET logo" width="140" />
 </div>
 
 # OpenClaw.NET
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+**A self-hosted AI agent runtime for .NET, with a desktop companion for everyday use.**
+
+[![CI](https://github.com/clawdotnet/openclaw.net/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/clawdotnet/openclaw.net/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![NativeAOT-friendly](https://img.shields.io/badge/NativeAOT-friendly-blue)
-![Plugin compatibility](https://img.shields.io/badge/plugin%20compatibility-evolving-green)
-![Tools](https://img.shields.io/badge/native%20tools-80%2B-green)
-![Channels](https://img.shields.io/badge/channels-multiple-green)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/clawdotnet/openclaw.net)
 
-[中文](README-cn.md)
+[Download desktop](#download-and-run-desktop) · [Run from source](#quickstart) · [Documentation](https://agentqi.dev) · [Compatibility](docs/COMPATIBILITY.md) · [中文](README-cn.md)
 
-> **Disclaimer**: This project is not affiliated with, endorsed by, or associated with [OpenClaw](https://github.com/openclaw/openclaw). It is an independent .NET implementation inspired by their work.
+Run an assistant locally or host a gateway for your team. Connect a hosted or local model, give it tools and memory, and work through desktop chat, the browser, messaging channels, or APIs. Developers can extend the runtime in .NET and deploy supported capabilities with NativeAOT.
 
-OpenClaw.NET is a NativeAOT-friendly AI agent runtime and gateway for .NET with practical OpenClaw ecosystem compatibility.
+**OpenClaw.NET** is the runtime and repository. **AgentQi [OpenClaw.NET]** is the Avalonia desktop companion; [AgentQi.dev](https://agentqi.dev) is the documentation and ecosystem home.
 
-It is for .NET developers and operators who want a local or self-hosted agent gateway with explicit diagnostics, first-party .NET tools, OpenAI-compatible HTTP surfaces, and a path from source checkout to NativeAOT release artifacts.
+This is an independent .NET implementation inspired by [OpenClaw](https://github.com/openclaw/openclaw), with practical ecosystem compatibility. It is not affiliated with or endorsed by the upstream project.
 
-> **Docs:** [AgentQi.dev](https://agentqi.dev) is the documentation and ecosystem home for OpenClaw.NET. OpenClaw.NET remains the current runtime and repository identity.
+## Meet the desktop companion
 
-## AgentQi Documentation
+Chat is the starting point. AgentQi brings setup, connections, activity, memory, history, and settings into one desktop interface, with light and dark themes.
 
-AgentQi is the broader developer-infrastructure direction behind OpenClaw.NET: practical, observable, self-hosted AI agent systems for .NET developers.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/companion/agentqi-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/companion/agentqi-light.png" />
+  <img src="docs/images/companion/agentqi-light.png" alt="AgentQi Avalonia desktop companion: chat welcome screen, setup shortcuts, navigation sidebar, and Configure via chat option" width="1200" />
+</picture>
 
-OpenClaw.NET is the runtime and repository you can use today. AgentQiX is the likely future runtime identity.
+*Companion welcome screen from `main`, before connecting a gateway. Packaged releases may show an earlier interface.*
 
-Start here:
+- **Set up through the app:** choose a provider and model, enter credentials in dedicated fields, and start a local gateway.
+- **Describe a settings change:** use `/configure set the session timeout to 45 minutes`, review the proposed values, then apply or cancel.
+- **Use the GUI when you prefer:** the manual settings editor works without a language model when the gateway is reachable; advanced setup is available when needed.
 
-- [Quickstart](https://agentqi.dev/docs/quickstart)
-- [Getting Started](https://agentqi.dev/docs/getting-started)
-- [Architecture](https://agentqi.dev/docs/start-here)
-- [Security](https://agentqi.dev/docs/security)
-- [Roadmap](https://agentqi.dev/docs/roadmap)
-- [AgentQi Mobile companion](https://github.com/agentqi/agentqi-mobile) — open-source Android operator console with build-from-source instructions
-
-## What Works Now
-
-- **NativeAOT-friendly** runtime and gateway for .NET agent workloads
-- **Agent runtime** with tool execution, streaming, cancellation, retry, memory, and session support
-- **Gateway** with chat UI, admin UI, OpenAI-compatible endpoints, MCP, websocket, health, and diagnostics
-- **Passive Harness Contracts** for inspectable agent-work plans without changing default chat or approval behavior
-- **Passive Evidence Bundles** for inspectable run evidence, checks, risks, and human review without default runtime interception
-- **Optional Plan-Execute-Verify Mode** for governed high-risk tool execution with contracts, evidence, and verification
-- **Passive Governance Ledger** for durable approval and oversight decisions without auto-approving future actions
-- **Harness Regression Suite** via `openclaw harness test` for offline checks before trusting harness/runtime changes
-- **Harness Evolution Proposals** for review-first suggestions to improve harness policies, routing, memory retrieval, verification, pulse behavior, and tool governance
-- **Optional Fractal Memory MCP integration** for compact structured project memory and Runtime Pulse context without replacing OpenClaw memory/session stores
-- **Shared Harness State** for passive delegated-work coordination across participants, actions, read/write sets, assumptions, verifier obligations, evidence links, and conflicts
-- **Codebase Harness Map** via `openclaw harness map` for passive static repository maps of projects, modules, endpoints, tools, providers, channels, config, and tests
-- **OpenClaw SkillKit** via `openclaw skill` for local-first skill authoring, validation, critique, packaging, and dry-run execution planning
-- **First-class MCP App support** for manifest-discovered third-party MCP apps with lifecycle management, tool bridging, and interactive UI resources
-- **Session-scoped `/goal` auto-continuation** for long-running work that should continue until complete, blocked, or budget-limited
-- **TokenJuice output reduction** for deterministic, rule-driven compression of verbose tool output before it enters model context
-- **First-class optional Microsoft Agent Framework adapter** for `Runtime.Orchestrator=maf` without a special build
-- **Durable workflow delegation** through supported workflow backends such as `maf-durable-http`
-- **CLI and Companion** setup flows for source checkouts and desktop bundles
-- **AgentQi Mobile companion** for Android gateway health, approvals, session-backed work, chat, runtime events, and security posture ([source and build guide](https://github.com/agentqi/agentqi-mobile))
-- **/loop recurring-prompt command** with TickerQ-backed session-scoped timer injection, idempotent override, and dual-path semantic auto-termination for build health checks, log polling, and other periodic tasks
-- **80+ native and optional tool surfaces** covering file ops, sessions, memory, web, messaging, home automation, databases, email, MCP apps, and more
-- **Channel adapters** (Telegram, SMS, WhatsApp, Teams, Slack, Discord, Signal, Feishu, DingTalk, WeCom, email, webhooks) with channel-specific access controls; Feishu, DingTalk, and WeCom provide sender/group allowlists over authenticated WebSocket connections
-- **Native LLM providers** for OpenAI, Claude, Gemini, Azure OpenAI, DeepSeek, Ollama, and OpenAI-compatible endpoints
-- **Optional embedded local models** with Gemma 4 GGUF packages, package install/verify CLI commands, supervised sidecar inference, and frame-based video understanding
-- **Practical reuse** of existing OpenClaw TS/JS plugins and `SKILL.md` packages
-
-Start with [docs/START_HERE.md](docs/START_HERE.md) for the evaluator overview, [docs/QUICKSTART.md](docs/QUICKSTART.md) for the supported local setup path, or [docs/RELEASES.md](docs/RELEASES.md) for desktop downloads.
-
-For Microsoft Agent Framework, A2A, and durable workflow setup, see [docs/integrations/microsoft-agent-framework.md](docs/integrations/microsoft-agent-framework.md), [docs/a2a.md](docs/a2a.md), and [docs/workflow-backends.md](docs/workflow-backends.md).
+Chat configuration covers supported scalar settings, not every operation. Credentials, provider setup, and complex account objects retain dedicated forms. See [what can be configured through chat](docs/companion-chat-configuration.md).
 
 ## Download And Run Desktop
 
-For the lowest-friction desktop start, download the latest desktop bundle for your platform:
+Choose a desktop bundle from the [latest release](https://github.com/clawdotnet/openclaw.net/releases/latest). Each includes Companion, the NativeAOT gateway, and the NativeAOT CLI.
 
 | Platform | Download |
-|----------|----------|
+| --- | --- |
 | Windows x64 | [openclaw-desktop-win-x64.zip](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-win-x64.zip) |
 | Apple Silicon macOS | [openclaw-desktop-osx-arm64.zip](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-osx-arm64.zip) |
 | Linux x64 | [openclaw-desktop-linux-x64.zip](https://github.com/clawdotnet/openclaw.net/releases/latest/download/openclaw-desktop-linux-x64.zip) |
 
-Each desktop bundle includes Companion, the NativeAOT gateway, and the NativeAOT CLI.
+1. Extract the archive and launch Companion from the `companion` folder.
+2. Open **Setup**. In the redesigned Companion, you can also choose **Set up my assistant** in Chat.
+3. Choose your provider and model. Enter a hosted provider key, or choose Ollama for a local model server.
+4. Click **Set Up and Start**.
 
-1. Extract the archive.
-2. Launch Companion from the `companion` folder.
-3. Open the **Setup** tab.
-4. Choose a provider/model and enter the provider key, choose DeepSeek for the hosted OpenAI-compatible DeepSeek API, choose Ollama for a local model server, or choose Embedded for an OpenClaw-managed local model such as Gemma 4.
-5. Click **Set Up and Start**.
+Companion writes a local configuration, starts the bundled gateway on `127.0.0.1`, and connects to it. Embedded local inference is also available; see the [local model guide](docs/LOCAL_MODELS.md) for package installation and requirements.
 
-Companion writes a local config, starts the bundled gateway on `127.0.0.1`, and connects to it. It also supports [reviewed configuration through chat](docs/companion-chat-configuration.md), with an optional manual editor and inline local setup. The current Windows and macOS release archives are unsigned, so first-run OS warnings are expected. See [docs/RELEASES.md](docs/RELEASES.md) for checksums, standalone CLI/gateway archives, signing status, and maintainer release flow.
+The Windows and macOS release archives are currently unsigned. See the [release guide](docs/RELEASES.md) for first-run OS warnings, checksums, standalone CLI/gateway downloads, and signing status. The screenshot above shows development on `main`; check release notes for the features included in your download.
 
 ## Quickstart
 
-For a real local gateway from source:
+### Run a local gateway from source
+
+Install **Git and the .NET 10 SDK**, then clone the repository:
+
+```bash
+git clone https://github.com/clawdotnet/openclaw.net
+cd openclaw.net
+```
+
+For the default hosted-provider path, set your API key and start the guided setup. These commands use Bash or zsh:
 
 ```bash
 export MODEL_PROVIDER_KEY="sk-..."
 dotnet run --project src/OpenClaw.Cli -c Release -- start
 ```
 
-When the gateway finishes startup it now prints explicit phase markers, a final `OpenClaw gateway ready.` block, the localhost URLs, `Ctrl-C to stop`, and any non-fatal startup notices under `Started with notices:`. Then open:
+In PowerShell, set the key with `$env:MODEL_PROVIDER_KEY = "sk-..."`, then run the same `dotnet` command. To use another provider or a local model, follow the [provider setup guide](docs/QUICKSTART.md).
 
-| Surface | URL |
-|---------|-----|
-| Web UI / Live Chat | `http://127.0.0.1:18789/chat` |
-| Admin UI | `http://127.0.0.1:18789/admin` |
-| Integration API | `http://127.0.0.1:18789/api/integration/status` |
+The CLI runs setup if needed, saves the local configuration, and launches the gateway. Wait for **`OpenClaw gateway ready.`**, then open:
+
+| Surface | Address |
+| --- | --- |
+| Browser chat | `http://127.0.0.1:18789/chat` |
+| Administration | `http://127.0.0.1:18789/admin` |
+| Integration status API | `http://127.0.0.1:18789/api/integration/status` |
 | MCP endpoint | `http://127.0.0.1:18789/mcp` |
 
-If you are hosting an MCP App UI through OpenClaw.NET, use the gateway host routes instead of connecting the browser directly to the App's upstream MCP URL: discover the App via `/apps/health`, connect the browser MCP client to `/apps/mcp/{appId}`, and use `/apps/chat` for chat-host SSE bridging. See [docs/MCPAPP.md](docs/MCPAPP.md).
+Use named operator accounts for browser administration and operator account tokens for Companion, CLI, API, and WebSocket clients. The [quickstart](docs/QUICKSTART.md) covers the full first-run walkthrough and troubleshooting.
 
-The root URL redirects to `/chat`. For the full first-run walkthrough (including the "First 10 Minutes" runbook and debugging flow), see [docs/QUICKSTART.md](docs/QUICKSTART.md). For the project shape and repository map before changing code, see [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
-
-If you want a direct gateway fallback instead of the full CLI onboarding flow, run:
+To try the Avalonia Companion from the same checkout:
 
 ```bash
-dotnet run --project src/OpenClaw.Gateway -c Release -- --quickstart
+dotnet run --project src/OpenClaw.Companion -c Release
 ```
 
-`--quickstart` is interactive-only. It applies a minimal loopback-local profile for the current process, prompts for missing provider inputs, retries on the common first-run failures, and after a successful start can save the working setup to `~/.openclaw/config/openclaw.settings.json`.
+Connect it to your running gateway through **Setup & runtime**. See [Companion token storage](docs/companion-token-storage.md) for authentication and credential handling.
 
-If the CLI is already on your `PATH`, the same guided entrypoints are:
+### Try the runtime without an API key
 
-```bash
-openclaw start
-openclaw setup
-openclaw setup launch --config ~/.openclaw/config/openclaw.settings.json
-openclaw setup service --config ~/.openclaw/config/openclaw.settings.json --platform all
-openclaw setup status --config ~/.openclaw/config/openclaw.settings.json
-openclaw upgrade check --config ~/.openclaw/config/openclaw.settings.json
-openclaw upgrade rollback --config ~/.openclaw/config/openclaw.settings.json --offline
-```
-
-Useful follow-up commands and surfaces:
+From the repository root, this deterministic sample demonstrates the runtime loop and tool invocation without a model server, Docker, or a browser:
 
 ```bash
-openclaw models presets
-openclaw models packages
-openclaw models install gemma-4-e4b --accept-license --path ~/Downloads/gemma-4-E4B-it-Q4_K_M.gguf --mmproj-path ~/Downloads/mmproj-gemma-4-E4B-it-Q8_0.gguf
-openclaw models doctor
-openclaw maintenance scan --config ~/.openclaw/config/openclaw.settings.json
-openclaw maintenance fix --config ~/.openclaw/config/openclaw.settings.json --dry-run
-openclaw skill new "Community Research Insight Extractor" --category research
-openclaw skill validate community.research_insight
-openclaw skills inspect ./skills/my-skill
-openclaw compatibility catalog
-openclaw insights
-openclaw admin trajectory export --anonymize --output ./trajectory.jsonl
-openclaw upgrade check --config ~/.openclaw/config/openclaw.settings.json --offline
-openclaw upgrade rollback --config ~/.openclaw/config/openclaw.settings.json --offline
-openclaw migrate upstream --source ./upstream-agent --target-config ~/.openclaw/config/openclaw.settings.json
-```
-
-- Skill inventory: `/admin/skills`
-- Maintenance report: `/admin/maintenance`
-- Observability summary: `/admin/observability/summary`
-- Operator insights: `/admin/insights`
-- Audit export: `/admin/audit/export`
-- Trajectory export: `/admin/trajectory/export`
-- Compatibility matrix: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)
-
-For local Ollama setups, prefer the native root endpoint and an explicit preset:
-
-```bash
-openclaw setup --non-interactive --profile local --workspace ./workspace --provider ollama --model llama3.2 --model-preset ollama-general
-```
-
-OpenClaw.NET now treats Ollama as a first-class native provider at `http://127.0.0.1:11434`. Older `/v1` endpoints still work for one compatibility cycle, but `openclaw models doctor` will flag them so you can migrate cleanly.
-
-For DeepSeek, use the named provider instead of the generic OpenAI-compatible provider. Setup writes the current DeepSeek API endpoint, defaults to `deepseek-v4-flash`, and uses `DEEPSEEK_API_KEY` in the generated env example:
-
-```bash
-openclaw setup --non-interactive --profile local --workspace ./workspace --provider deepseek --api-key env:DEEPSEEK_API_KEY
-```
-
-Use `--model deepseek-v4-pro` when you want the higher-capability DeepSeek model.
-
-For OpenClaw-managed local inference, use provider `embedded` with an installable package. Gemma 4 is now the main embedded local model path:
-
-```bash
-openclaw models packages
-openclaw models install gemma-4-e4b \
-  --accept-license \
-  --path ~/Downloads/gemma-4-E4B-it-Q4_K_M.gguf \
-  --mmproj-path ~/Downloads/mmproj-gemma-4-E4B-it-Q8_0.gguf
-openclaw setup --provider embedded --model-preset embedded-gemma-4-e4b --model gemma-4-e4b
-openclaw models status gemma-4-e4b
-```
-
-The package catalog includes Gemma 4 E2B, E4B, 31B, and 26B-A4B GGUF entries, plus the experimental Gemma 4 E2B LiteRT-LM package for adapter work. The older `gemma-local-small-q4` Gemma 3 package remains available for smaller machines.
-
-Embedded video support is frame-based: OpenClaw samples local `video/*` inputs into ordered image frames before calling the local sidecar, and Gemma 4 GGUF packages include the multimodal projector file needed for image-frame inputs. LiteRT-LM packages are experimental and require an OpenClaw-compatible adapter binary; see [docs/LOCAL_MODELS.md](docs/LOCAL_MODELS.md).
-
-> **Breaking change**: browser admin usage is account/session-first. Use named operator accounts for `/admin`, and use operator account tokens for Companion, CLI, API, and websocket clients.
-
-## Private Access With Tailscale Serve
-
-OpenClaw.NET can be exposed privately inside a tailnet using Tailscale Serve while keeping the gateway bound to `127.0.0.1`.
-
-This is useful for private access to `/chat`, `/admin`, `/mcp`, `/api/integration/*`, and `/ws` without binding the gateway publicly.
-
-Use the guided helper for instructions:
-
-```bash
-openclaw setup tailscale serve
-```
-
-See [docs/deployment/TAILSCALE.md](docs/deployment/TAILSCALE.md).
-
-## Security
-
-When binding to a non-loopback address, the gateway **refuses to start** unless dangerous settings are explicitly hardened (auth token required, tooling roots restricted, signature validation enforced, `raw:` secret refs rejected). See [SECURITY.md](SECURITY.md) before exposing the gateway publicly.
-
-Outbound web fetches and browser navigations run through `OpenClaw:Tooling:UrlSafety` by default. The safe default blocks loopback, private/link-local, multicast, and metadata hosts; operators can disable the policy intentionally or add `BlockedHostGlobs` and `BlockedCidrs` for environment-specific deny lists.
-
-## Docs
-
-The public documentation site is **[AgentQi.dev](https://agentqi.dev)**. The source documentation map lives at **[docs/README.md](docs/README.md)**. Starting points:
-
-| Doc | When to read |
-|-----|--------------|
-| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | Project shape, repository map, and first-run debugging flow |
-| [docs/QUICKSTART.md](docs/QUICKSTART.md) | Shortest supported path to a running local instance |
-| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Providers, tools, skills, memory, channels, and day-to-day operation |
-| [docs/RELEASES.md](docs/RELEASES.md) | Desktop downloads, release assets, and signing status |
-| [docs/ARCHITECTURE_BOUNDARIES.md](docs/ARCHITECTURE_BOUNDARIES.md) | Core, gateway, extension, AOT/JIT, and Industrial Pack boundaries |
-| [docs/CAPABILITY_MATRIX.md](docs/CAPABILITY_MATRIX.md) | Core, optional, experimental, and JIT-only capability lanes |
-| [docs/build/dashboard-assets.md](docs/build/dashboard-assets.md) | Gateway Dashboard asset build and publish behavior |
-| [docs/TOOLS_GUIDE.md](docs/TOOLS_GUIDE.md) | Native tool catalog and configuration |
-| [docs/MCPAPP.md](docs/MCPAPP.md) | MCP App manifest discovery, lifecycle management, tool bridging, and UI resources |
-| [docs/tokenjuice.md](docs/tokenjuice.md) | Rule-driven tool output reduction and configuration |
-| [docs/GOAL_TECHNICAL_ARCHITECTURE.md](docs/GOAL_TECHNICAL_ARCHITECTURE.md) | Session-scoped goal auto-continuation architecture |
-| [docs/LOOP_TECHNICAL_ARCHITECTURE.md](docs/LOOP_TECHNICAL_ARCHITECTURE.md) | `/loop` recurring-prompt command architecture |
-| [docs/LOCAL_MODELS.md](docs/LOCAL_MODELS.md) | Embedded local models, frame-based video, and experimental LiteRT-LM adapter notes |
-| [docs/opensquilla-dynamic-turn-routing.md](docs/opensquilla-dynamic-turn-routing.md) | Independent guide to the OpenSquilla-style dynamic turn-routing surface and its current implementation status |
-| [docs/mempalace-memory.md](docs/mempalace-memory.md) | Optional MemPalace.NET memory provider and temporal knowledge graph |
-| [docs/CANVAS_A2UI.md](docs/CANVAS_A2UI.md) | Supported Canvas and A2UI visual workspace behavior |
-| [docs/MODEL_PROFILES.md](docs/MODEL_PROFILES.md) | Provider-agnostic named model profiles (including Gemma) |
-| [docs/TELEGRAM.md](docs/TELEGRAM.md) | Telegram webhook and long-polling channel setup |
-| [docs/deployment/TAILSCALE.md](docs/deployment/TAILSCALE.md) | Optional Tailscale Serve private access |
-| [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Supported upstream skill, plugin, and channel surface |
-| [docs/zh-CN/START_HERE.md](docs/zh-CN/START_HERE.md) | Simplified Chinese first-run orientation |
-| [docs/zh-CN/SITE_MAP.md](docs/zh-CN/SITE_MAP.md) | Simplified Chinese documentation map |
-| [SECURITY.md](SECURITY.md) | Hardening guidance for public deployments |
-
-Capability lanes at a glance:
-
-| Lane | Examples |
-|-----|----------|
-| Core | Runtime loop, gateway, CLI, NativeAOT-friendly host path, OpenAI-compatible API |
-| Optional | Browser and MQTT protocol packages, channels, model providers, workflow backends |
-| Experimental | Embedded local model sidecars and adapter-oriented package paths |
-| JIT-only | Dynamic plugin channels, commands, hooks, providers, and native dynamic .NET plugins |
-
-## Contributing
-
-Contributions welcome — especially security review, NativeAOT trimming improvements, sandboxing ideas, new channel adapters, and performance benchmarks. See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-Project governance, maintainer roles, sponsorship boundaries, branch protection, and review expectations are documented in [docs/project/governance.md](docs/project/governance.md), [docs/project/maintainers.md](docs/project/maintainers.md), [docs/project/sponsors.md](docs/project/sponsors.md), [docs/project/branch-protection.md](docs/project/branch-protection.md), and [docs/maintainers/review-checklist.md](docs/maintainers/review-checklist.md).
-
-If this project helps your .NET AI work, please star it.
-
-## License
-
-[MIT](LICENSE)
-
-## Fastest Source Proof
-
-This deterministic sample proves the runtime loop and tool path without provider keys, Ollama, Docker, or a browser:
-
-```bash
-git clone https://github.com/clawdotnet/openclaw.net
-cd openclaw.net
-
 dotnet restore OpenClaw.Net.slnx
 dotnet build OpenClaw.Net.slnx --configuration Release --no-restore
 dotnet run --project samples/OpenClaw.HelloAgent -c Release --no-build
@@ -285,3 +113,73 @@ User: hello
 Agent: hello from OpenClaw.NET
 Tool: echo(hello): ok
 ```
+
+## What Works Now
+
+| Area | Capabilities |
+| --- | --- |
+| Agent runtime | Streaming, tool execution, cancellation, retries, sessions, memory, and token-usage reporting. |
+| Interfaces | AgentQi desktop companion, browser chat and admin UI, CLI, terminal UI, OpenAI-compatible HTTP endpoints, MCP, and WebSockets. |
+| Models | OpenAI, Claude, Gemini, Azure OpenAI, DeepSeek, Ollama, and OpenAI-compatible providers; named profiles and optional embedded local inference. |
+| Tools and channels | 80+ native and optional tool surfaces for files, web, sessions, databases, email, home automation, and more; adapters for Telegram, WhatsApp, Teams, Slack, Discord, and other channels. The active set depends on configuration. |
+| Extensions | MCP servers and interactive MCP Apps, reusable `SKILL.md` packages, first-party .NET integrations, and supported OpenClaw TS/JS plugins. |
+| Long-running work | Session-scoped `/goal` continuation, `/loop` recurring prompts, and optional durable workflow backends. |
+| Review and observability | Tool approvals, diagnostics, audit and trajectory exports, passive harness contracts, evidence bundles, and optional Plan-Execute-Verify execution. |
+| Developer tooling | Offline harness regression checks, static codebase maps, SkillKit authoring and validation, and TokenJuice tool-output reduction. |
+
+Explore the [user guide](docs/USER_GUIDE.md), [tool catalog](docs/TOOLS_GUIDE.md), [SkillKit](docs/SKILLKIT.md), and [harness testing](docs/HARNESS_REGRESSION.md) for details. The separate [AgentQi Mobile repository](https://github.com/agentqi/agentqi-mobile) provides an Android operator console and build instructions.
+
+## Compatibility and capability boundaries
+
+NativeAOT support and upstream compatibility depend on the feature you enable. Check the [capability matrix](docs/CAPABILITY_MATRIX.md) and [compatibility guide](docs/COMPATIBILITY.md) before choosing a deployment lane.
+
+| Lane | Examples |
+| --- | --- |
+| Core | Runtime loop, gateway, CLI, OpenAI-compatible API, and NativeAOT-friendly host path. |
+| Optional | Companion, channel adapters, browser/MQTT packages, model integrations, and workflow backends. |
+| Experimental | Embedded local model sidecars and adapter-oriented package paths. |
+| JIT-only | Dynamic plugin channels, commands, hooks, providers, and dynamic native .NET plugins. |
+
+For framework and agent interoperability, see [Microsoft Agent Framework](docs/integrations/microsoft-agent-framework.md), [A2A](docs/a2a.md), and [workflow backends](docs/workflow-backends.md). For interactive MCP App hosting, use the documented [gateway host routes](docs/MCPAPP.md).
+
+## Security
+
+Local setup binds the gateway to loopback. Before exposing it beyond your machine, read [SECURITY.md](SECURITY.md): the gateway refuses unsafe public-bind configurations until required authentication and tooling restrictions are in place.
+
+Outbound web fetches and browser navigations use URL safety checks by default, including restrictions on private, loopback, link-local, and metadata destinations. See the security guide before changing those policies.
+
+For private access while keeping the gateway on `127.0.0.1`, use [Tailscale Serve](docs/deployment/TAILSCALE.md):
+
+```bash
+openclaw setup tailscale serve
+```
+
+This command assumes the CLI is on your `PATH`; from a checkout, use `dotnet run --project src/OpenClaw.Cli -c Release -- setup tailscale serve`.
+
+## Docs
+
+Browse [AgentQi.dev](https://agentqi.dev) or the [complete repository documentation index](docs/README.md).
+
+| Start here | What you will find |
+| --- | --- |
+| [Evaluator overview](docs/START_HERE.md) | What the project does and how to evaluate it. |
+| [Quickstart](docs/QUICKSTART.md) | First-run setup, provider examples, diagnostics, and recovery. |
+| [Getting started](docs/GETTING_STARTED.md) | Repository map, architecture, and contributor setup. |
+| [User guide](docs/USER_GUIDE.md) | Providers, tools, skills, memory, channels, and daily operation. |
+| [Companion chat configuration](docs/companion-chat-configuration.md) | Supported settings, review/apply behavior, and advanced setup. |
+| [Releases](docs/RELEASES.md) | Downloads, checksums, signing status, and release procedures. |
+| [Capability matrix](docs/CAPABILITY_MATRIX.md) | Core, optional, experimental, and JIT-only features. |
+| [Local models](docs/LOCAL_MODELS.md) | Embedded model packages, sidecars, and frame-based video support. |
+| [Architecture boundaries](docs/ARCHITECTURE_BOUNDARIES.md) | Runtime, gateway, extension, and AOT/JIT boundaries. |
+| [Roadmap](docs/ROADMAP.md) | Planned work and current priorities. |
+| [中文文档](docs/zh-CN/START_HERE.md) | Simplified Chinese first-run orientation. |
+
+## Contributing
+
+Contributions are welcome, especially security reviews, NativeAOT improvements, channel adapters, and performance benchmarks. Start with [CONTRIBUTING.md](CONTRIBUTING.md).
+
+See [project governance](docs/project/governance.md), [maintainer roles](docs/project/maintainers.md), and the [review checklist](docs/maintainers/review-checklist.md) for contribution and review expectations.
+
+## License
+
+[MIT](LICENSE)
