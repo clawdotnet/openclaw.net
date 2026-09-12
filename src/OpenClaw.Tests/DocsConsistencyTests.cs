@@ -13,24 +13,22 @@ public sealed class DocsConsistencyTests
         var userGuide = File.ReadAllText(Path.Combine(root, "docs", "USER_GUIDE.md"));
         var dockerhub = File.ReadAllText(Path.Combine(root, "docs", "DOCKERHUB.md"));
 
-        Assert.Contains("openclaw setup", readme, StringComparison.Ordinal);
-        Assert.Contains("openclaw setup launch", readme, StringComparison.Ordinal);
-        Assert.Contains("openclaw setup service", readme, StringComparison.Ordinal);
-        Assert.Contains("openclaw setup status", readme, StringComparison.Ordinal);
-        Assert.Contains("openclaw models presets", readme, StringComparison.Ordinal);
-        Assert.Contains("openclaw maintenance scan", readme, StringComparison.Ordinal);
-        Assert.Contains("docs/COMPATIBILITY.md", readme, StringComparison.Ordinal);
-        Assert.Contains("openclaw skills inspect", readme, StringComparison.Ordinal);
-        Assert.Contains("/admin/skills", readme, StringComparison.Ordinal);
-        Assert.Contains("/admin/maintenance", readme, StringComparison.Ordinal);
-        Assert.Contains("openclaw compatibility catalog", readme, StringComparison.Ordinal);
-        Assert.Contains("openclaw upgrade rollback", readme, StringComparison.Ordinal);
-        Assert.Contains("openclaw migrate upstream", readme, StringComparison.Ordinal);
-        Assert.Contains("/admin/observability/summary", readme, StringComparison.Ordinal);
-        Assert.Contains("/admin/audit/export", readme, StringComparison.Ordinal);
-        Assert.Contains("Breaking change", readme, StringComparison.Ordinal);
+        // The README is the entry point; detailed operational commands belong in
+        // the linked guides, whose coverage remains asserted below.
+        Assert.Contains("dotnet run --project src/OpenClaw.Cli -c Release -- start", readme, StringComparison.Ordinal);
+        Assert.Contains("dotnet run --project src/OpenClaw.Companion -c Release", readme, StringComparison.Ordinal);
+        Assert.Contains("samples/OpenClaw.HelloAgent", readme, StringComparison.Ordinal);
         Assert.Contains("operator account tokens", readme, StringComparison.Ordinal);
-        Assert.Contains("http://127.0.0.1:11434", readme, StringComparison.Ordinal);
+        foreach (var relativePath in new[]
+        {
+            "docs/QUICKSTART.md", "docs/USER_GUIDE.md", "docs/COMPATIBILITY.md",
+            "docs/RELEASES.md", "docs/CAPABILITY_MATRIX.md", "docs/companion-chat-configuration.md",
+            "docs/images/companion/agentqi-light.png", "docs/images/companion/agentqi-dark.png"
+        })
+        {
+            Assert.Contains(relativePath, readme, StringComparison.Ordinal);
+            Assert.True(File.Exists(Path.Combine(root, relativePath)), $"Missing README resource: {relativePath}");
+        }
 
         Assert.Contains("openclaw setup", quickstart, StringComparison.Ordinal);
         Assert.Contains("openclaw setup launch", quickstart, StringComparison.Ordinal);

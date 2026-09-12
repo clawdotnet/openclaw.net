@@ -138,7 +138,7 @@ NativeAOT support and upstream compatibility depend on the feature you enable. C
 | Core | Runtime loop, gateway, CLI, OpenAI-compatible API, and NativeAOT-friendly host path. |
 | Optional | Companion, channel adapters, browser/MQTT packages, model integrations, and workflow backends. |
 | Experimental | Embedded local model sidecars and adapter-oriented package paths. |
-| JIT-only | Dynamic plugin channels, commands, hooks, providers, and dynamic native .NET plugins. |
+| JIT-only | Dynamically loaded native .NET plugins. |
 
 For framework and agent interoperability, see [Microsoft Agent Framework](docs/integrations/microsoft-agent-framework.md), [A2A](docs/a2a.md), and [workflow backends](docs/workflow-backends.md). For interactive MCP App hosting, use the documented [gateway host routes](docs/MCPAPP.md).
 
