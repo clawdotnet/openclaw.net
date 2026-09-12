@@ -55,8 +55,9 @@ public sealed class DesktopFirstSuccessContractTests
                 settings.SetupModelPreset);
             var profile = Assert.Single(config.Models.Profiles);
             Assert.Equal("ollama-agentic", profile.PresetId);
-            Assert.True(profile.Capabilities.SupportsTools);
-            Assert.False(profile.Capabilities.SupportsParallelToolCalls);
+            var capabilities = Assert.NotNull(profile.Capabilities);
+            Assert.True(capabilities.SupportsTools);
+            Assert.False(capabilities.SupportsParallelToolCalls);
 
             using var registry = new ConfiguredModelProfileRegistry(config, NullLogger<ConfiguredModelProfileRegistry>.Instance);
             registry.SetDefaultProfileId();
