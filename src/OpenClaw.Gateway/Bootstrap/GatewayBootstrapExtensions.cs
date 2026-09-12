@@ -27,6 +27,7 @@ internal static class GatewayBootstrapExtensions
             opts.SerializerOptions.TypeInfoResolverChain.Add(CoreJsonContext.Default);
         });
 
+        var baseSettings = AdminSettingsService.CreateSnapshot(LoadGatewayConfig(builder.Configuration, loadPersistedSettings: false));
         var config = LoadGatewayConfig(builder.Configuration);
         var configSources = ConfigurationSourceDiagnosticsBuilder.Build(builder.Configuration, config);
 
@@ -132,6 +133,7 @@ internal static class GatewayBootstrapExtensions
             Startup = new GatewayStartupContext
             {
                 Config = config,
+                BaseAdminSettings = baseSettings,
                 RuntimeState = runtimeState,
                 IsNonLoopbackBind = isNonLoopbackBind,
                 ConfigSources = configSources,
@@ -147,7 +149,7 @@ internal static class GatewayBootstrapExtensions
         Console.Error.WriteLine(ConfigurationSourceDiagnosticsBuilder.Render(diagnostics));
     }
 
-    internal static GatewayConfig LoadGatewayConfig(IConfiguration configuration)
+    internal static GatewayConfig LoadGatewayConfig(IConfiguration configuration, bool loadPersistedSettings = true)
     {
         var openClawSection = configuration.GetSection("OpenClaw");
         var config = openClawSection.Get<GatewayConfig>() ?? new GatewayConfig();
@@ -159,6 +161,14 @@ internal static class GatewayBootstrapExtensions
             && pluginEntries is not null)
         {
             PluginAdminSettingsService.ApplyEntries(config, pluginEntries);
+        }
+        var settingsPath = AdminSettingsService.GetSettingsPath(config);
+        if (loadPersistedSettings)
+        {
+            if (AdminSettingsService.TryLoadPersistedSnapshot(settingsPath, out var settings, out var settingsError) && settings is not null)
+                AdminSettingsService.ApplySnapshot(config, settings);
+            else if (settingsError is not null)
+                throw new InvalidOperationException(settingsError);
         }
         ApplyEnvironmentOverrides(config);
         ApplyExecutionCompatibility(config);

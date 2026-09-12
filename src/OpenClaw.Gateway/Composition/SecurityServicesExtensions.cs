@@ -44,7 +44,7 @@ internal static class SecurityServicesExtensions
         services.AddSingleton(sp =>
             new AdminSettingsService(
                 startup.Config,
-                AdminSettingsService.CreateSnapshot(startup.Config),
+                startup.BaseAdminSettings ?? AdminSettingsService.CreateSnapshot(startup.Config),
                 AdminSettingsService.GetSettingsPath(startup.Config),
                 sp.GetRequiredService<ILogger<AdminSettingsService>>()));
         services.AddSingleton(sp =>

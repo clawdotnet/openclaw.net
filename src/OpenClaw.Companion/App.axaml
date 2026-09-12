@@ -3,6 +3,7 @@
              x:Class="OpenClaw.Companion.App"
              xmlns:local="using:OpenClaw.Companion"
              xmlns:conv="using:OpenClaw.Companion.Converters"
+             Name="AgentQi [OpenClaw.NET]"
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
@@ -13,9 +14,14 @@
     <Application.DataTemplates>
         <local:ViewLocator/>
     </Application.DataTemplates>
-  
+
     <Application.Styles>
-        <FluentTheme />
+        <FluentTheme>
+            <FluentTheme.Palettes>
+                <ColorPaletteResources x:Key="Light" Accent="#287B77" />
+                <ColorPaletteResources x:Key="Dark" Accent="#81C5BD" />
+            </FluentTheme.Palettes>
+        </FluentTheme>
         <StyleInclude Source="avares://OpenClaw.Companion/Styles/CompanionStyles.axaml" />
     </Application.Styles>
 </Application>

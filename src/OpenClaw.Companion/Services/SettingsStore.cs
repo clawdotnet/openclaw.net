@@ -103,6 +103,7 @@ public sealed class SettingsStore
             RememberToken = settings.RememberToken,
             AllowPlaintextTokenFallback = settings.AllowPlaintextTokenFallback,
             DebugMode = settings.DebugMode,
+            IsDarkTheme = settings.IsDarkTheme,
             ApprovalDesktopNotificationsEnabled = settings.ApprovalDesktopNotificationsEnabled,
             ApprovalDesktopNotificationsOnlyWhenUnfocused = settings.ApprovalDesktopNotificationsOnlyWhenUnfocused,
             AutoStartLocalGateway = settings.AutoStartLocalGateway,

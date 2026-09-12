@@ -4,6 +4,12 @@ namespace OpenClaw.Core.Models;
 
 public sealed class AdminSettingsSnapshot
 {
+    // Nullable fields keep snapshots written by older gateways backward compatible.
+    public string? ModelProvider { get; init; }
+    public string? ModelName { get; init; }
+    public string? DefaultModelProfile { get; init; }
+    public int? ModelMaxTokens { get; init; }
+    public float? ModelTemperature { get; init; }
     public string UsageFooter { get; init; } = "off";
     public int MaxConcurrentSessions { get; init; }
     public int SessionTimeoutMinutes { get; init; }

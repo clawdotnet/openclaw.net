@@ -109,7 +109,7 @@ public sealed class DesktopNotifier : IDesktopNotifier
     }
 
     private static Task NotifyLinuxAsync(string title, string body, CancellationToken ct)
-        => RunProcessAsync("notify-send", ["--app-name=OpenClaw.Companion", "--", title, body], ct);
+        => RunProcessAsync("notify-send", ["--app-name=AgentQi [OpenClaw.NET]", "--", title, body], ct);
 
     private static async Task RunProcessAsync(string fileName, string[] arguments, CancellationToken ct)
     {

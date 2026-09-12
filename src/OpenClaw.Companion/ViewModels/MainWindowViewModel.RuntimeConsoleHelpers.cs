@@ -11,7 +11,7 @@ public sealed partial class MainWindowViewModel
     private IConfirmationDialogService _confirmationDialogService = new DenyConfirmationDialogService();
 
     [ObservableProperty]
-    private int _selectedSectionIndex;
+    private int _selectedSectionIndex = 2;
 
     [ObservableProperty]
     private bool _connectionSettingsExpanded;
