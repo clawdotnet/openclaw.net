@@ -107,6 +107,8 @@ public sealed class DesktopFirstSuccessContractTests
             Assert.Equal("desktop first success complete", result);
             Assert.Equal(1, tool.CallCount);
             Assert.Equal(2, handler.RequestBodies.Count);
+            using var firstRequest = JsonDocument.Parse(handler.RequestBodies[0]);
+            Assert.Equal("llama3.2", firstRequest.RootElement.GetProperty("model").GetString());
             Assert.Contains("\"record_observation\"", handler.RequestBodies[0], StringComparison.Ordinal);
             Assert.Contains("\"read_observation\"", handler.RequestBodies[0], StringComparison.Ordinal);
             Assert.Contains("\"role\":\"tool\"", handler.RequestBodies[1], StringComparison.Ordinal);

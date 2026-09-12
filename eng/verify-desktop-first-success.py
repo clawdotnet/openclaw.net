@@ -64,22 +64,32 @@ class OllamaFixtureHandler(BaseHTTPRequestHandler):
         del format, args
 
 
-def read_json(url: str, token: str | None = None, payload: dict | None = None) -> dict:
+def read_json(
+    url: str,
+    token: str | None = None,
+    payload: dict | None = None,
+    timeout: float = 5,
+) -> dict:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = Request(url, data=data, headers=headers, method="POST" if payload is not None else "GET")
-    with urlopen(request, timeout=5) as response:
+    with urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
-def wait_for_health(url: str, process: subprocess.Popen[str]) -> None:
+def read_gateway_log(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+
+
+def wait_for_health(url: str, process: subprocess.Popen[str], log_path: Path) -> None:
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            stdout, stderr = process.communicate()
-            raise RuntimeError(f"Packaged gateway exited before readiness.\n{stdout}\n{stderr}")
+            raise RuntimeError(
+                f"Packaged gateway exited before readiness.\n{read_gateway_log(log_path)}"
+            )
         try:
             with urlopen(url, timeout=5) as response:
                 response.read()
@@ -141,33 +151,41 @@ def main() -> int:
                 raise AssertionError("Packaged CLI did not persist sequential tool capabilities.")
             config_path.write_text(json.dumps(config), encoding="utf-8")
 
-            process = subprocess.Popen(
-                [gateway, "--config", str(config_path)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            try:
-                base_url = f"http://127.0.0.1:{gateway_port}"
-                wait_for_health(f"{base_url}/health", process)
-                response = read_json(
-                    f"{base_url}/v1/chat/completions",
-                    openclaw.get("authToken"),
-                    {
-                        "model": "local-primary",
-                        "messages": [{"role": "user", "content": "Read the desktop release contract memory note."}],
-                    },
+            gateway_log_path = root / "gateway.log"
+            with gateway_log_path.open("w", encoding="utf-8") as gateway_log:
+                process = subprocess.Popen(
+                    [gateway, "--config", str(config_path)],
+                    stdout=gateway_log,
+                    stderr=subprocess.STDOUT,
+                    text=True,
                 )
-                rendered = json.dumps(response)
-                if FINAL_TEXT not in rendered:
-                    raise AssertionError(f"Gateway response did not contain the fixture completion: {rendered}")
-            finally:
-                process.terminate()
                 try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
+                    base_url = f"http://127.0.0.1:{gateway_port}"
+                    wait_for_health(f"{base_url}/health", process, gateway_log_path)
+                    response = read_json(
+                        f"{base_url}/v1/chat/completions",
+                        openclaw.get("authToken"),
+                        {
+                            "model": "local-primary",
+                            "messages": [{"role": "user", "content": "Read the desktop release contract memory note."}],
+                        },
+                        timeout=60,
+                    )
+                    rendered = json.dumps(response)
+                    if FINAL_TEXT not in rendered:
+                        raise AssertionError(f"Gateway response did not contain the fixture completion: {rendered}")
+                except Exception as error:
+                    gateway_log.flush()
+                    raise RuntimeError(
+                        f"{error}\nPackaged gateway log:\n{read_gateway_log(gateway_log_path)}"
+                    ) from error
+                finally:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
 
             if len(OllamaFixtureHandler.requests) != 2:
                 raise AssertionError(f"Expected two sequential provider requests, got {len(OllamaFixtureHandler.requests)}.")
