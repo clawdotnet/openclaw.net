@@ -1,5 +1,7 @@
 # Full-instance offline backup and restore
 
+> **Release availability:** Available on `main` and targeted for v0.3.0; not included in v0.2.0. See the [roadmap](ROADMAP.md).
+
 `openclaw backup` snapshots a declared inventory of instance directories, including file and SQLite state. It never starts a gateway, scheduler, plugin, model, or tool. Restoration always targets a new isolated directory and never replaces an existing deployment.
 
 Stop the gateway, Companion-managed gateway, and all other writers before creating a backup. `--offline` acknowledges this prerequisite; the CLI cannot prove that arbitrary external processes have stopped. It rechecks the source inventory and hashes and rejects observed changes, but this is not a live transactional database backup.

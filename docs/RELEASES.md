@@ -61,7 +61,20 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-Maintainers can also run the `Release` workflow manually. Manual runs can create or update a draft release when a tag is supplied.
+Maintainers can also run the `Release` workflow manually. Manual runs can create or update a draft release when a tag is supplied. Before any platform assets build, the workflow runs the deterministic pinned public-plugin compatibility gate. The scheduled/manual latest-package canary remains non-blocking and is not part of release readiness.
+
+### Release Integrity Gate
+
+A release is ready only when all of the following are true for the exact tag commit:
+
+1. Core build and test jobs pass.
+2. The pinned `public-compatibility-smoke` job passes with the complete plugin and peer dependency set fixed by `compat/public-smoke.json`.
+3. Platform asset builds and extraction smokes pass.
+4. The release notes distinguish shipped behavior from capabilities available only on `main`.
+
+Use **full CI** only when all required lanes above passed for that exact commit. Report the non-blocking latest-package canary separately so upstream drift is visible without making a moving dependency a release gate.
+
+> **v0.2.0 verification note:** v0.2.0 was published before the pinned public compatibility job became a release-workflow dependency. Its successful build and platform smokes did not establish public-plugin compatibility. The reliability and recovery work currently marked **main only** in the [roadmap](ROADMAP.md) also landed after the v0.2.0 tag.
 
 The workflow currently builds:
 

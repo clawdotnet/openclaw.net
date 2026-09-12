@@ -1,5 +1,7 @@
 # Run explanation and recovery
 
+> **Release availability:** Available on `main` and targeted for v0.3.0; not included in v0.2.0. See the [roadmap](ROADMAP.md).
+
 Open a session in the admin console, Dashboard, or Companion's Sessions tab. The **Run explanation and recovery** section shows a snapshot of the recorded state and the next steps appropriate to it. Refresh the session to see changes.
 
 The view combines:

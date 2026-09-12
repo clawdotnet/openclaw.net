@@ -1,5 +1,7 @@
 # Turn a captured exchange into an offline regression
 
+> **Release availability:** Available on `main` and targeted for v0.3.0; not included in v0.2.0. See the [roadmap](../ROADMAP.md).
+
 `OpenClaw.Testing` can import one user exchange from the gateway's version 1 JSONL trajectory export and replay its provider responses and tool outputs through the real runtime. This tests orchestration, tool dispatch, approval behavior, and output assertions without repeating external actions.
 
 The new sample is an executable entry point:
