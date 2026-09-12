@@ -7,8 +7,8 @@
     <PublishAot>true</PublishAot>
     <StripSymbols>true</StripSymbols>
     <OptimizationPreference>Size</OptimizationPreference>
-    <!-- The gateway AOT link currently trips Apple's new macOS arm64 linker; keep the classic linker scoped to this project. -->
-    <OpenClawUseClassicMacLd Condition="'$(OpenClawUseClassicMacLd)' == ''">true</OpenClawUseClassicMacLd>
+    <!-- Use Apple's current linker by default. Set this property to true only as an emergency macOS arm64 fallback. -->
+    <OpenClawUseClassicMacLd Condition="'$(OpenClawUseClassicMacLd)' == ''">false</OpenClawUseClassicMacLd>
     <!-- Aggressive AOT trimming for minimal binary -->
     <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
     <IlcOptimizationPreference>Size</IlcOptimizationPreference>

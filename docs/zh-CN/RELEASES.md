@@ -85,7 +85,15 @@ macOS runner 标签故意为 ARM 原生，用于 `osx-arm64` 工件。仅当你�
 
 ### macOS NativeAOT 链接器说明
 
-网关项目当前为 `osx-arm64` NativeAOT 发布选择 Apple 经典链接器，因为新的 macOS arm64 链接器可能会在网关二进制文件上因 `ld::Fixup` 断言而失败。这可能在网关发布期间打印 `-ld_classic is deprecated` 警告。CLI 默认不使用此回退。定时/手动 CI 使用 `-p:OpenClawUseClassicMacLd=false` 探测网关；当 Apple/.NET 工具链在没有它的情况下可靠链接网关时，移除网关选择加入。
+网关和发布工作流默认使用 Apple 当前的链接器来生成 `osx-arm64` NativeAOT 发布。拉取请求、定时和手动 CI 也会在 `macos-15` 上验证此路径。在不使用 `-ld_classic` 的情况下，发布工作流必须构建网关、运行 `--doctor`、打包工件、解压桌面归档、验证可执行权限，并执行随附的 CLI。
+
+已弃用的经典链接器临时保留为紧急诊断覆盖：
+
+```bash
+dotnet publish src/OpenClaw.Gateway/OpenClaw.Gateway.csproj -c Release -r osx-arm64 -p:PublishAot=true -p:OpenClawUseClassicMacLd=true
+```
+
+不要将此覆盖用于常规发布工件。在一个已发布版本使用现代链接器成功完成后，删除该覆盖。
 
 ## CI 工件 vs 发布
 

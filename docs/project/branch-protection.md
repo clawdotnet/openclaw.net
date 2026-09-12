@@ -45,7 +45,9 @@ Required checks must complete on the exact PR head (or merge-queue commit) befor
 
 The latest-package compatibility canary is intentionally advisory because it tracks moving upstream releases. The pinned compatibility job is deterministic and should be required.
 
-NativeAOT publish checks are valuable, but they can remain separate required or advisory checks depending on runtime reliability and release needs. If they become required, keep their failure modes documented in release or compatibility docs.
+Require `macos-gateway-linker-probe` alongside `build-and-test`. This job verifies the modern-linker macOS NativeAOT path on every pull request, including fork PRs, using a `macos-15` runner with a 60-minute timeout. Its failure modes and emergency override are documented in [RELEASES.md](../RELEASES.md#macos-nativeaot-linker-note).
+
+Workflow failures become merge-blocking only when the matching check is configured in the live repository rule. Maintainers must add this check to the `main` rule when adopting this change; changing this document does not update GitHub protection. Other NativeAOT probes may remain advisory.
 
 ## CODEOWNERS Relationship
 

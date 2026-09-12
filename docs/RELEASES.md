@@ -100,7 +100,15 @@ Set `OPENCLAW_COMPANION_STATE_DIR` to a fresh temporary directory when launching
 
 ### macOS NativeAOT Linker Note
 
-The gateway project currently opts into Apple's classic linker for `osx-arm64` NativeAOT publishes because the new macOS arm64 linker can fail with an `ld::Fixup` assertion on the gateway binary. This may print a `-ld_classic is deprecated` warning during gateway publish. The CLI does not use this fallback by default. Scheduled/manual CI probes the gateway with `-p:OpenClawUseClassicMacLd=false`; remove the gateway opt-in when the Apple/.NET toolchain links the gateway reliably without it.
+The gateway and release workflow use Apple's current linker by default for `osx-arm64` NativeAOT publishes. Pull-request, scheduled, and manual CI also verify this path on `macos-15`. Without `-ld_classic`, the release workflow must build the gateway, run `--doctor`, package the assets, extract the desktop archive, verify executable permissions, and execute the bundled CLI.
+
+The deprecated classic linker remains available temporarily as an emergency diagnostic override:
+
+```bash
+dotnet publish src/OpenClaw.Gateway/OpenClaw.Gateway.csproj -c Release -r osx-arm64 -p:PublishAot=true -p:OpenClawUseClassicMacLd=true
+```
+
+Do not use that override for normal release artifacts. Remove it after one published release completes successfully with the modern linker.
 
 ## CI Artifacts vs Releases
 
