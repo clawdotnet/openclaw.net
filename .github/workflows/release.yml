@@ -279,7 +279,7 @@ jobs:
       - name: Upload release artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: release-${{ matrix.rid }}
+          name: release-assets-${{ matrix.rid }}
           path: artifacts/release-archives/*
 
   publish-github-release:
@@ -295,6 +295,7 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
+          pattern: release-assets-*
           path: release-assets
           merge-multiple: true
 
