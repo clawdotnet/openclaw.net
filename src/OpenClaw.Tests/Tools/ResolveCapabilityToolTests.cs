@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.AspNetCore;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using NSubstitute;
 using OpenClaw.Agent;
@@ -130,6 +131,57 @@ public sealed class ResolveCapabilityToolTests
     }
 
     [Fact]
+    public async Task SearchError_ReturnsRouterUnavailable_InsteadOfNoCandidates()
+    {
+        var (tool, _, _, server) = await BuildWithAsync<SearchErrorFakeNacosRouter>();
+        await using (server)
+        {
+            var result = await tool.ExecuteAsync("""{"task_description":"weather city"}""", CancellationToken.None);
+
+            using var doc = JsonDocument.Parse(result);
+            // A protocol-level search failure is a router failure, not "no candidates".
+            Assert.Equal("router_unavailable", doc.RootElement.GetProperty("failure_code").GetString());
+            Assert.Empty(doc.RootElement.GetProperty("tried").EnumerateArray().ToList());
+        }
+    }
+
+    [Fact]
+    public async Task AddError_IsErrorBeatsInstallProse_ReturnsAllAddsFailed()
+    {
+        var (tool, _, _, server) = await BuildWithAsync<AddErrorFakeNacosRouter>();
+        await using (server)
+        {
+            var result = await tool.ExecuteAsync("""{"task_description":"weather city","key_words":"weather"}""", CancellationToken.None);
+
+            using var doc = JsonDocument.Parse(result);
+            // The add response carries IsError=true even though its prose contains
+            // "安装完成" and a parseable tool list — the protocol error must win
+            // over prose inspection, otherwise a failed install binds successfully.
+            Assert.Equal("all_adds_failed", doc.RootElement.GetProperty("failure_code").GetString());
+            var tried = doc.RootElement.GetProperty("tried").EnumerateArray().ToList();
+            Assert.Single(tried);
+        }
+    }
+
+    [Fact]
+    public async Task TransportFailure_OnSearch_ReturnsRouterUnavailable_InsteadOfThrowing()
+    {
+        var (tool, _, _, server) = await BuildAsync();
+        await using (server)
+        {
+            // Reload succeeded while the server was up (the registry connects
+            // eagerly); stopping it afterwards simulates the Router dying
+            // mid-session, which must surface as a structured envelope.
+            await server.StopAsync(TestContext.Current.CancellationToken);
+            var result = await tool.ExecuteAsync("""{"task_description":"weather city"}""", CancellationToken.None);
+
+            using var doc = JsonDocument.Parse(result);
+            Assert.Equal("router_unavailable", doc.RootElement.GetProperty("failure_code").GetString());
+            Assert.Empty(doc.RootElement.GetProperty("tried").EnumerateArray().ToList());
+        }
+    }
+
+    [Fact]
     public async Task MetaSkill_ResolveCapabilityOnly_ZeroLlmRoundtrips()
     {
         var (resolveTool, _, _, server) = await BuildAsync();
@@ -209,6 +261,14 @@ public sealed class ResolveCapabilityToolTests
     }
 
     private static async Task<(ResolveCapabilityTool tool, McpServerToolRegistry registry, NacosRouterFixtureState state, WebApplication server)> BuildAsync()
+        => await BuildWithAsync<FakeNacosRouterMcpTools>();
+
+    private static async Task<(
+        ResolveCapabilityTool tool,
+        McpServerToolRegistry registry,
+        NacosRouterFixtureState state,
+        WebApplication server)>
+        BuildWithAsync<TTools>() where TTools : class
     {
         var state = new NacosRouterFixtureState();
         var builder = WebApplication.CreateSlimBuilder();
@@ -216,13 +276,13 @@ public sealed class ResolveCapabilityToolTests
         builder.Services.AddSingleton(state);
         builder.Services.AddMcpServer()
             .WithHttpTransport(o => o.Stateless = true)
-            .WithTools<FakeNacosRouterMcpTools>();
+            .WithTools<TTools>();
         var server = builder.Build();
         server.MapMcp("/mcp");
         await server.StartAsync(TestContext.Current.CancellationToken);
-        var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
         // Real registry: configured above via ReloadWorkspaceServersAsync against the test MCP server.
-        var reload = await registry.ReloadWorkspaceServersAsync(
+        var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
+        await registry.ReloadWorkspaceServersAsync(
             new Dictionary<string, McpServerConfig>
             {
                 ["nacos-mcp-router"] = new()
@@ -233,8 +293,7 @@ public sealed class ResolveCapabilityToolTests
                     ToolNamePrefix = "nacos_mcp_router_",
                 },
             }, TestContext.Current.CancellationToken);
-        var tool = new ResolveCapabilityTool(registry);
-        return (tool, registry, state, server);
+        return (new ResolveCapabilityTool(registry), registry, state, server);
     }
 
     private static async Task<(
@@ -243,31 +302,7 @@ public sealed class ResolveCapabilityToolTests
         NacosRouterFixtureState state,
         WebApplication server)>
         BuildEmptyAsync()
-    {
-        var state = new NacosRouterFixtureState();
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        builder.Services.AddSingleton(state);
-        builder.Services.AddMcpServer()
-            .WithHttpTransport(o => o.Stateless = true)
-            .WithTools<EmptyFakeNacosRouter>();
-        var server = builder.Build();
-        server.MapMcp("/mcp");
-        await server.StartAsync(TestContext.Current.CancellationToken);
-        var registry = new McpServerToolRegistry(
-            new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
-        await registry.ReloadWorkspaceServersAsync(
-            new Dictionary<string, McpServerConfig>
-            {
-                ["nacos-mcp-router"] = new()
-                {
-                    Enabled = true, Transport = "http",
-                    Url = server.Urls.Single() + "/mcp",
-                    ToolNamePrefix = "nacos_mcp_router_",
-                },
-            }, TestContext.Current.CancellationToken);
-        return (new ResolveCapabilityTool(registry), registry, state, server);
-    }
+        => await BuildWithAsync<EmptyFakeNacosRouter>();
 
     private static async Task<(
         ResolveCapabilityTool tool,
@@ -275,31 +310,7 @@ public sealed class ResolveCapabilityToolTests
         NacosRouterFixtureState state,
         WebApplication server)>
         BuildAllFailAsync()
-    {
-        var state = new NacosRouterFixtureState();
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        builder.Services.AddSingleton(state);
-        builder.Services.AddMcpServer()
-            .WithHttpTransport(o => o.Stateless = true)
-            .WithTools<AllFailFakeNacosRouter>();
-        var server = builder.Build();
-        server.MapMcp("/mcp");
-        await server.StartAsync(TestContext.Current.CancellationToken);
-        var registry = new McpServerToolRegistry(
-            new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
-        await registry.ReloadWorkspaceServersAsync(
-            new Dictionary<string, McpServerConfig>
-            {
-                ["nacos-mcp-router"] = new()
-                {
-                    Enabled = true, Transport = "http",
-                    Url = server.Urls.Single() + "/mcp",
-                    ToolNamePrefix = "nacos_mcp_router_",
-                },
-            }, TestContext.Current.CancellationToken);
-        return (new ResolveCapabilityTool(registry), registry, state, server);
-    }
+        => await BuildWithAsync<AllFailFakeNacosRouter>();
 
     private static async Task<(
         ResolveCapabilityTool tool,
@@ -307,36 +318,48 @@ public sealed class ResolveCapabilityToolTests
         NacosRouterFixtureState state,
         WebApplication server)>
         BuildMalformedAsync()
-    {
-        var state = new NacosRouterFixtureState();
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        builder.Services.AddSingleton(state);
-        builder.Services.AddMcpServer()
-            .WithHttpTransport(o => o.Stateless = true)
-            .WithTools<MalformedToolListFakeNacosRouter>();
-        var server = builder.Build();
-        server.MapMcp("/mcp");
-        await server.StartAsync(TestContext.Current.CancellationToken);
-        var registry = new McpServerToolRegistry(
-            new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
-        await registry.ReloadWorkspaceServersAsync(
-            new Dictionary<string, McpServerConfig>
-            {
-                ["nacos-mcp-router"] = new()
-                {
-                    Enabled = true, Transport = "http",
-                    Url = server.Urls.Single() + "/mcp",
-                    ToolNamePrefix = "nacos_mcp_router_",
-                },
-            }, TestContext.Current.CancellationToken);
-        return (new ResolveCapabilityTool(registry), registry, state, server);
-    }
+        => await BuildWithAsync<MalformedToolListFakeNacosRouter>();
 
     [McpServerToolType]
     private sealed class EmptyFakeNacosRouter
     {
         [McpServerTool(Name = "search_mcp_server")]
         public string Search(string task_description, string key_words) => "### 1. 当前可用的mcp server列表为：{}\n### 2. ";
+    }
+
+    [McpServerToolType]
+    private sealed class SearchErrorFakeNacosRouter
+    {
+        [McpServerTool(Name = "search_mcp_server")]
+        public CallToolResult Search(string task_description, string key_words) =>
+            new() { IsError = true, Content = [new TextContentBlock { Text = "search failed" }] };
+    }
+
+    [McpServerToolType]
+    private sealed class AddErrorFakeNacosRouter
+    {
+        [McpServerTool(Name = "search_mcp_server")]
+        public string Search(string task_description, string key_words) =>
+            """
+            ## 获取weather city的步骤如下：
+            ### 1. 当前可用的mcp server列表为：{"weather-mcp":{"name":"weather-mcp","description":"weather city"}}
+            ### 2. 从当前可用的mcp server列表中选择你需要的mcp server调add_mcp_server工具安装mcp server
+            """;
+
+        // IsError=true even though the prose says 安装完成 and carries a valid
+        // tool list: protocol error must win over prose inspection.
+        [McpServerTool(Name = "add_mcp_server")]
+        public CallToolResult Add(string mcp_server_name) =>
+            new()
+            {
+                IsError = true,
+                Content =
+                [
+                    new TextContentBlock
+                    {
+                        Text = "1. " + mcp_server_name + "安装完成, tool 列表为: [{\"name\":\"get_weather\",\"description\":\"weather city\",\"inputSchema\":{\"type\":\"object\"}}]\n2. 后续通过use_tool代理使用",
+                    },
+                ],
+            };
     }
 }

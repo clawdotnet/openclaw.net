@@ -1,6 +1,8 @@
+using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using OpenClaw.Agent.Plugins;
@@ -37,14 +39,18 @@ public sealed class ResolveCapabilityTool : ITool
         if (client is null)
             return JsonFail(ResolveCapabilityFailureCodes.RouterUnavailable, Array.Empty<RouterCandidate>());
 
-        var searchText = await CallToolAsStringAsync(client, "search_mcp_server",
+        var search = await CallToolAsync(client, "search_mcp_server",
             new Dictionary<string, JsonElement>
             {
                 ["task_description"] = JsonSerializer.SerializeToElement(request.TaskDescription, ResolveCapabilitySerializerContext.Default.String),
                 ["key_words"] = JsonSerializer.SerializeToElement(request.KeyWords ?? "", ResolveCapabilitySerializerContext.Default.String),
             }, ct);
+        // A search that never reaches the Router (transport) or reports a
+        // protocol-level error is a router failure, not "no candidates".
+        if (!search.Reached || search.IsError)
+            return JsonFail(ResolveCapabilityFailureCodes.RouterUnavailable, Array.Empty<RouterCandidate>());
 
-        var candidates = RouterCandidateParser.Parse(searchText);
+        var candidates = RouterCandidateParser.Parse(search.Text);
         if (candidates.Count == 0)
             return JsonFail(ResolveCapabilityFailureCodes.NoCandidates, Array.Empty<RouterCandidate>());
 
@@ -56,13 +62,22 @@ public sealed class ResolveCapabilityTool : ITool
         foreach (var candidate in picked)
         {
             tried.Add(candidate);
-            var addText = await CallToolAsStringAsync(client, "add_mcp_server",
+            var add = await CallToolAsync(client, "add_mcp_server",
                 new Dictionary<string, JsonElement>
                 {
                     ["mcp_server_name"] = JsonSerializer.SerializeToElement(candidate.Name, ResolveCapabilitySerializerContext.Default.String),
                 }, ct);
 
-            if (TryExtractTool(addText, out var toolName, out var schema))
+            // The Router dying mid-chain stops the rotation: further adds would
+            // hit the same dead transport.
+            if (!add.Reached)
+                return JsonFail(ResolveCapabilityFailureCodes.RouterUnavailable, tried);
+            // A protocol-level error on this install fails only this candidate,
+            // even when the prose claims installation succeeded.
+            if (add.IsError)
+                continue;
+
+            if (TryExtractTool(add.Text, out var toolName, out var schema))
                 return JsonBinding(candidate, toolName, schema, tried);
         }
 
@@ -134,16 +149,40 @@ public sealed class ResolveCapabilityTool : ITool
         return new ResolveCapabilityRequest(task, keywords, policy);
     }
 
-    private static async Task<string> CallToolAsStringAsync(
+    private readonly record struct ToolCallOutcome(bool Reached, bool IsError, string Text);
+
+    /// <summary>
+    /// Invokes a Router tool and normalises failures instead of letting them
+    /// escape: transport/protocol exceptions become <c>Reached=false</c>, a
+    /// protocol-level error result becomes <c>IsError=true</c>, and only
+    /// caller-initiated cancellation propagates.
+    /// </summary>
+    private static async Task<ToolCallOutcome> CallToolAsync(
         McpClient client, string toolName, Dictionary<string, JsonElement> args, CancellationToken ct)
     {
-        var response = await client.SendRequestAsync<CallToolRequestParams, CallToolResult>(
-            RequestMethods.ToolsCall,
-            new CallToolRequestParams { Name = toolName, Arguments = args },
-            cancellationToken: ct);
-        var parts = new List<string>();
-        foreach (var c in response.Content ?? []) if (c is TextContentBlock t) parts.Add(t.Text);
-        return string.Join("\n", parts);
+        try
+        {
+            var response = await client.SendRequestAsync<CallToolRequestParams, CallToolResult>(
+                RequestMethods.ToolsCall,
+                new CallToolRequestParams { Name = toolName, Arguments = args },
+                cancellationToken: ct);
+            var parts = new List<string>();
+            foreach (var c in response.Content ?? []) if (c is TextContentBlock t) parts.Add(t.Text);
+            return new ToolCallOutcome(true, response.IsError ?? false, string.Join("\n", parts));
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // Transport-level timeout/abort, not caller cancellation.
+            return new ToolCallOutcome(false, true, "");
+        }
+        catch (McpException)
+        {
+            return new ToolCallOutcome(false, true, "");
+        }
+        catch (HttpRequestException)
+        {
+            return new ToolCallOutcome(false, true, "");
+        }
     }
 
     private static string JsonFail(string code, IReadOnlyList<RouterCandidate> tried) =>
