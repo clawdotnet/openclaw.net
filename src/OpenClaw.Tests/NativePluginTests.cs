@@ -119,6 +119,35 @@ public class NativePluginRegistryTests
         Assert.True(registry.IsNativeTool("mqtt_publish"));
     }
 
+    // Issue #230 AC1: the runtime tool table must contain resolve_capability. The tool-level smoke
+    // tests never touch the composition path, so the registration itself is pinned here.
+    [Fact]
+    public void AddOpenClawToolServices_RegistersResolveCapability()
+    {
+        var startup = new GatewayStartupContext
+        {
+            Config = new GatewayConfig(),
+            RuntimeState = new GatewayRuntimeState
+            {
+                RequestedMode = "jit",
+                EffectiveMode = GatewayRuntimeMode.Jit,
+                DynamicCodeSupported = true
+            },
+            IsNonLoopbackBind = false
+        };
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOpenClawToolServices(startup);
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<NativePluginRegistry>();
+
+        Assert.True(registry.IsNativeTool("resolve_capability"));
+        Assert.Equal("agent.resolve-capability", registry.GetPluginId("resolve_capability"));
+        Assert.Single(registry.Tools, t => t.Name == "resolve_capability");
+    }
+
     [Fact]
     public void Constructor_NotionEnabled_RegistersReadAndWriteTools()
     {

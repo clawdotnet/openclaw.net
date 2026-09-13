@@ -23,6 +23,7 @@ internal static class ToolServicesExtensions
                 registry.RegisterExternalTool(new MqttPublishTool(startup.Config.Plugins.Native.Mqtt, startup.Config.Tooling), "mqtt");
             }
 
+            // Deliberate duplicate: CreateBuiltInTools also contributes this tool, and ResolvePreference dedups by name with built-ins winning — do not remove either side (#230).
             registry.RegisterExternalTool(
                 new ResolveCapabilityTool(sp.GetRequiredService<McpServerToolRegistry>()),
                 pluginId: "agent.resolve-capability");
