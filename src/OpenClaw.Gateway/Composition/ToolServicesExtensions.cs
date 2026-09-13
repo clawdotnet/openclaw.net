@@ -1,4 +1,5 @@
 using OpenClaw.Agent.Plugins;
+using OpenClaw.Agent.Tools;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.McpApp;
 using OpenClaw.Protocols.Mqtt.Tools;
@@ -21,6 +22,10 @@ internal static class ToolServicesExtensions
                 registry.RegisterExternalTool(new MqttTool(startup.Config.Plugins.Native.Mqtt), "mqtt");
                 registry.RegisterExternalTool(new MqttPublishTool(startup.Config.Plugins.Native.Mqtt, startup.Config.Tooling), "mqtt");
             }
+
+            registry.RegisterExternalTool(
+                new ResolveCapabilityTool(sp.GetRequiredService<McpServerToolRegistry>()),
+                pluginId: "agent.resolve-capability");
 
             return registry;
         });

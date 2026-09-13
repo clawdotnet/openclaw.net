@@ -190,6 +190,9 @@ internal static partial class RuntimeInitializationExtensions
             new MetaSkillRuntimeE2ERunTool(),
             new MetaSkillPersistProposalTool(),
 
+            // Capability resolution: binds an intent to a Router tool with zero LLM round-trips (#230).
+            new ResolveCapabilityTool(services.McpRegistry),
+
             // Goal system
             new GetGoalTool(services.GoalService),
             new CreateGoalTool(services.GoalService),

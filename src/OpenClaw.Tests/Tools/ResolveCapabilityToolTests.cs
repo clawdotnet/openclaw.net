@@ -134,6 +134,26 @@ public sealed class ResolveCapabilityToolTests
         }
     }
 
+    [Fact]
+    public void ToolName_IsResolveCapability()
+    {
+        Assert.Equal("resolve_capability", new ResolveCapabilityTool(
+            new McpServerToolRegistry(
+                new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance)).Name);
+    }
+
+    [Fact]
+    public void ParameterSchema_DeclaresIntentFields()
+    {
+        var schema = new ResolveCapabilityTool(
+            new McpServerToolRegistry(
+                new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance)).ParameterSchema;
+        using var doc = JsonDocument.Parse(schema);
+        var required = doc.RootElement.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Contains("task_description", required);
+        Assert.Contains("selection_policy", doc.RootElement.GetProperty("properties").EnumerateObject().Select(p => p.Name));
+    }
+
     private static async Task<(ResolveCapabilityTool tool, McpServerToolRegistry registry, NacosRouterFixtureState state, WebApplication server)> BuildAsync()
     {
         var state = new NacosRouterFixtureState();
