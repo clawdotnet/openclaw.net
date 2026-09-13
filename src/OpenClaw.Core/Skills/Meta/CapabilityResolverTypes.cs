@@ -14,6 +14,11 @@ public sealed record ResolveCapabilityRequest(
     [property: JsonPropertyName("key_words")] string? KeyWords,
     [property: JsonPropertyName("selection_policy")] ResolveCapabilitySelectionPolicy SelectionPolicy);
 
+/// <summary>
+/// A single candidate server emitted by the upstream Nacos MCP Router. The
+/// <see cref="Score"/> is computed as <c>1.0 / rank</c> and is monotonic in
+/// the upstream's deterministic top-N ordering; it is not fabricated locally.
+/// </summary>
 public sealed record RouterCandidate(
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("description")] string Description,
