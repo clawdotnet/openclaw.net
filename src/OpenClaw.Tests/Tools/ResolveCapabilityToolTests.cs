@@ -78,79 +78,60 @@ public sealed class ResolveCapabilityToolTests
     [Fact]
     public async Task MetaSkill_ResolveCapabilityOnly_ZeroLlmRoundtrips()
     {
-        var state = new NacosRouterFixtureState();
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        builder.Services.AddSingleton(state);
-        builder.Services.AddMcpServer()
-            .WithHttpTransport(o => o.Stateless = true)
-            .WithTools<FakeNacosRouterMcpTools>();
-        await using var server = builder.Build();
-        server.MapMcp("/mcp");
-        await server.StartAsync(TestContext.Current.CancellationToken);
-
-        var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
-        var reload = await registry.ReloadWorkspaceServersAsync(
-            new Dictionary<string, McpServerConfig>
-            {
-                ["nacos-mcp-router"] = new()
-                {
-                    Enabled = true, Transport = "http",
-                    Url = server.Urls.Single() + "/mcp",
-                    ToolNamePrefix = "nacos_mcp_router_",
-                },
-            }, TestContext.Current.CancellationToken);
-
-        var resolveTool = new ResolveCapabilityTool(registry);
-        var tools = reload.AddedTools.Append<ITool>(resolveTool).Append(new EmitTextTool()).ToArray();
-
-        var chat = Substitute.For<IChatClient>();
-        var execution = Substitute.For<ILlmExecutionService>();
-        var root = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-        using var memory = new FileMemoryStore(root, 4);
-
-        var session = new Session { Id = "resolve-cap-test", SenderId = "test", ChannelId = "test" };
-        var skill = new SkillDefinition
+        var (resolveTool, _, _, server) = await BuildAsync();
+        await using (server)
         {
-            Name = "resolve-cap-fixture",
-            Description = "resolve capability fixture",
-            Instructions = "resolve capability fixture",
-            Location = "/skills/resolve-cap-fixture",
-            Kind = SkillKind.Meta,
-            FinalTextMode = "step:answer",
-            Composition = new MetaSkillComposition
+            var tools = new ITool[] { resolveTool, new EmitTextTool() };
+
+            var chat = Substitute.For<IChatClient>();
+            var execution = Substitute.For<ILlmExecutionService>();
+            var root = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            using var memory = new FileMemoryStore(root, 4);
+
+            var session = new Session { Id = "resolve-cap-test", SenderId = "test", ChannelId = "test" };
+            var skill = new SkillDefinition
             {
-                Steps = new[]
+                Name = "resolve-cap-fixture",
+                Description = "resolve capability fixture",
+                Instructions = "resolve capability fixture",
+                Location = "/skills/resolve-cap-fixture",
+                Kind = SkillKind.Meta,
+                FinalTextMode = "step:answer",
+                Composition = new MetaSkillComposition
                 {
-                    new MetaSkillStepDefinition
+                    Steps = new[]
                     {
-                        Id = "resolve", Kind = "tool_call",
-                        Tool = "resolve_capability",
-                        ToolArgsJson = """{"task_description":"weather city","key_words":"weather"}""",
-                    },
-                    new MetaSkillStepDefinition
-                    {
-                        Id = "answer", Kind = "tool_call",
-                        Tool = "emit_text",
-                        ToolArgsJson = """{"text":"{{ outputs.resolve | xml_escape }}"}""",
-                        DependsOn = new[] { "resolve" },
+                        new MetaSkillStepDefinition
+                        {
+                            Id = "resolve", Kind = "tool_call",
+                            Tool = "resolve_capability",
+                            ToolArgsJson = """{"task_description":"weather city","key_words":"weather"}""",
+                        },
+                        new MetaSkillStepDefinition
+                        {
+                            Id = "answer", Kind = "tool_call",
+                            Tool = "emit_text",
+                            ToolArgsJson = """{"text":"{{ outputs.resolve | xml_escape }}"}""",
+                            DependsOn = new[] { "resolve" },
+                        },
                     },
                 },
-            },
-        };
+            };
 
-        var runtime = new AgentRuntime(chat, tools, memory, new GatewayConfig().Llm, maxHistoryTurns: 5, skills: [skill]);
+            var runtime = new AgentRuntime(chat, tools, memory, new GatewayConfig().Llm, maxHistoryTurns: 5,
+                skills: [skill], llmExecutionService: execution);
 
-        var method = typeof(AgentRuntime).GetMethod("ExecuteMetaSkillAsync",
-            BindingFlags.Instance | BindingFlags.NonPublic)!;
-        var result = await (Task<string>)method.Invoke(runtime,
-            [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
+            var method = typeof(AgentRuntime).GetMethod("ExecuteMetaSkillAsync",
+                BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var result = await (Task<string>)method.Invoke(runtime,
+                [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
 
-        Assert.Contains("weather-mcp", result);
-        Assert.Empty(chat.ReceivedCalls());
-        Assert.Empty(execution.ReceivedCalls());
+            Assert.Contains("weather-mcp", result);
+            Assert.Empty(chat.ReceivedCalls());
+            Assert.Empty(execution.ReceivedCalls());
 
-        if (Directory.Exists(root)) Directory.Delete(root, true);
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
     }
 
     private static async Task<(ResolveCapabilityTool tool, McpServerToolRegistry registry, NacosRouterFixtureState state, WebApplication server)> BuildAsync()
