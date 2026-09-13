@@ -2,15 +2,15 @@
 
 ## Release Availability
 
-The roadmap describes the current `main` branch, not necessarily the latest published binaries. [v0.2.0](https://github.com/clawdotnet/openclaw.net/tree/v0.2.0) was cut before the reliability integration listed below. Items marked **main only** target **v0.3.0** and are not available in v0.2.0. A v0.2.1 release, if needed, is reserved for corrective release or compatibility work rather than this feature set.
+The roadmap describes the current `main` branch, which may move ahead of published binaries. The reliability, recovery, and AgentQi Companion work listed as recently completed is available in [v0.3.0](https://github.com/clawdotnet/openclaw.net/tree/v0.3.0) and later. Consult each future item for an explicit target release rather than assuming that `main` is already packaged.
 
 ## Recently Completed
 
-- **Companion token protection and migration** (**main only; target v0.3.0**): OS-backed token storage now automatically migrates legacy JSON/fallback credentials with read-back verification, preserves recoverable copies on failure, respects Remember token and plaintext opt-in, and uses atomic private file writes. See [Companion token storage](companion-token-storage.md).
+- **Companion token protection and migration** (**released in v0.3.0**): OS-backed token storage now automatically migrates legacy JSON/fallback credentials with read-back verification, preserves recoverable copies on failure, respects Remember token and plaintext opt-in, and uses atomic private file writes. See [Companion token storage](companion-token-storage.md).
 
-- **Run explanation and recovery view** (**main only; target v0.3.0**): admin console, Dashboard, and Companion session details combine recorded run/goal state, goal notes, session-scoped pending approvals, checkpoints, and recent tool failure evidence with contextual recovery guidance. Existing timelines remain available for investigation; the view does not authorize or replay actions.
+- **Run explanation and recovery view** (**released in v0.3.0**): admin console, Dashboard, and Companion session details combine recorded run/goal state, goal notes, session-scoped pending approvals, checkpoints, and recent tool failure evidence with contextual recovery guidance. Existing timelines remain available for investigation; the view does not authorize or replay actions.
 
-- **Real-run regression import and offline replay** (**main only; target v0.3.0**): import a redacted, complete text exchange from a gateway trajectory export and run recorded provider/tool fixtures through `RuntimeScenarioRunner`, with independent assertions and strict consumption checks. Includes an executable sample; see [trajectory replay](testing/trajectory-replay.md).
+- **Real-run regression import and offline replay** (**released in v0.3.0**): import a redacted, complete text exchange from a gateway trajectory export and run recorded provider/tool fixtures through `RuntimeScenarioRunner`, with independent assertions and strict consumption checks. Includes an executable sample; see [trajectory replay](testing/trajectory-replay.md).
 
 - Browser sessions invalidate after local operator account updates, deletion, or disablement.
 - Goal completion accepts completed tool work; model status updates run alone and blocked transitions require three observations. Resume resets continuation and blocker counters.
@@ -70,10 +70,10 @@ These are strong candidates for the next roadmap phases because they extend the 
 
 The runtime already includes CLI insights, URL safety validation, and trajectory export. The next additions build on those capabilities:
 
-1. **Durable action reconciliation (main only, opt-in; target v0.3.0)**: persisted dispatch journal, stable provider adapter keys, completed-result reuse, and blocking of unknown outcomes before replay. See [durable actions](durable-actions.md). Provider-specific adapters and executor-bypassing jobs need individual integration.
-2. **Expanded regression capture (main only; target v0.3.0)**: opt-in bounded automatic capture, structured failed/blocked tool replay, and offline multimodal URL-content verification. See [trajectory replay](testing/trajectory-replay.md).
-3. **Full-instance backup and restore (main only; target v0.3.0)**: offline inventory plans capture durable state and secret-reference manifests, verify checksums, and restore into a new isolated directory with SQLite validation and no dispatch. See [instance backup](instance-backup.md).
-4. **Guided recovery controls (main only; target v0.3.0)**: permission-aware goal pause/resume and evidence-backed action reconciliation with revision, approval, and budget checks. Complements the run explanation view; see [guided recovery](guided-recovery.md).
+1. **Durable action reconciliation (released in v0.3.0, opt-in)**: persisted dispatch journal, stable provider adapter keys, completed-result reuse, and blocking of unknown outcomes before replay. See [durable actions](durable-actions.md). Provider-specific adapters and executor-bypassing jobs need individual integration.
+2. **Expanded regression capture (released in v0.3.0)**: opt-in bounded automatic capture, structured failed/blocked tool replay, and offline multimodal URL-content verification. See [trajectory replay](testing/trajectory-replay.md).
+3. **Full-instance backup and restore (released in v0.3.0)**: offline inventory plans capture durable state and secret-reference manifests, verify checksums, and restore into a new isolated directory with SQLite validation and no dispatch. See [instance backup](instance-backup.md).
+4. **Guided recovery controls (released in v0.3.0)**: permission-aware goal pause/resume and evidence-backed action reconciliation with revision, approval, and budget checks. Complements the run explanation view; see [guided recovery](guided-recovery.md).
 
 ## Security Hardening (Likely Breaking)
 

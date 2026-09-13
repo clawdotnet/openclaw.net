@@ -103,7 +103,7 @@ public sealed class CompanionCanvasUiTests : IDisposable
 
             var tabControl = window.GetVisualDescendants().OfType<TabControl>().Single();
             Assert.Equal(Dock.Left, tabControl.TabStripPlacement);
-            Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), text => string.Equals(text.Text, "AgentQi", StringComparison.Ordinal));
+            Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), text => string.Equals(text.Text, "AgentQi Companion", StringComparison.Ordinal));
 
             var headers = tabControl.Items.OfType<TabItem>().Select(static item => item.Header?.ToString()).ToArray();
             Assert.Contains("Home", headers);

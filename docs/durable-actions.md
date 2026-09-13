@@ -1,6 +1,6 @@
 # Durable action reconciliation
 
-> **Release availability:** Available on `main` and targeted for v0.3.0; not included in v0.2.0. See the [roadmap](ROADMAP.md).
+> **Release availability:** Included in v0.3.0 and later; not included in v0.2.0. See the [roadmap](ROADMAP.md).
 
 Set `OpenClaw:Tooling:DurableActionJournal` to `true` to journal native and MAF tool executor dispatches under `Memory.StoragePath/action-journal`. This is opt-in because it deliberately blocks work that older versions retried automatically.
 

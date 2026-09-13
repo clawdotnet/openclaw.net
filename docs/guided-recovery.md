@@ -1,6 +1,6 @@
 # Guided operator recovery
 
-> **Release availability:** Available on `main` and targeted for v0.3.0; not included in v0.2.0. See the [roadmap](ROADMAP.md).
+> **Release availability:** Included in v0.3.0 and later; not included in v0.2.0. See the [roadmap](ROADMAP.md).
 
 The admin session page now includes recovery controls beside session details. The explanation view in PR #213 complements these controls; it is not required to operate them.
 

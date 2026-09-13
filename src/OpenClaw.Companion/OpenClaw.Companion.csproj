@@ -1,8 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <Title>AgentQi [OpenClaw.NET]</Title>
-    <Product>AgentQi [OpenClaw.NET]</Product>
+    <Title>AgentQi Companion</Title>
+    <Product>AgentQi Companion</Product>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
