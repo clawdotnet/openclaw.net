@@ -123,7 +123,7 @@ Inputs:
 
 - `task_description` (required) — the same shape the Router `search_mcp_server` accepts.
 - `key_words` (optional) — comma-separated string, same wire shape as the Router.
-- `selection_policy` (optional) — `first` (default) or `exact_name` (case-insensitive name match against `task_description`).
+- `selection_policy` (optional) — `first` (default) or `exact_name` (case-insensitive name match against `task_description`); a name with no exact match fails with `failure_code: "all_adds_failed"` and an empty `tried`.
 
 Output (success):
 
@@ -131,17 +131,18 @@ Output (success):
 {
   "server": "weather-mcp",
   "tool": "get_weather",
-  "schema": { "type": "object", "properties": { "city": {"type":"string"} }, "required": ["city"] },
+  "schema": "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}",
   "tried": [
-    {"name": "weather-mcp", "description": "...", "score": 1.0},
-    {"name": "candidate-1", "description": "...", "score": 0.5}
+    {"name": "weather-mcp", "description": "...", "score": 1.0}
   ]
 }
 ```
 
-Output (failure — JSON, not exception):
+`schema` is the upstream tool schema delivered as a JSON-encoded string — parse it before use.
 
-```json
+Output (failure — Router failure prose is returned as JSON, not thrown):
+
+```text
 { "failure_code": "no_candidates", "tried": [] }
 { "failure_code": "all_adds_failed", "tried": [{"name":"...","description":"...","score":0.5}, ...] }
 { "failure_code": "router_unavailable", "tried": [] }
