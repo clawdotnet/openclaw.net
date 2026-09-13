@@ -113,6 +113,48 @@ dotnet test src/OpenClaw.Tests -c Release --filter FullyQualifiedName~LiveRouter
 
 Unset `OPENCLAW_NACOS_LIVE` for normal CI; the live check is skipped.
 
+## Capability resolver (issue #230)
+
+The `resolve_capability` native tool turns the model-driven three-step
+chain into a deterministic code path. The model only needs to emit an
+intent; binding happens in code.
+
+Inputs:
+
+- `task_description` (required) — the same shape the Router `search_mcp_server` accepts.
+- `key_words` (optional) — comma-separated string, same wire shape as the Router.
+- `selection_policy` (optional) — `first` (default) or `exact_name` (case-insensitive name match against `task_description`).
+
+Output (success):
+
+```json
+{
+  "server": "weather-mcp",
+  "tool": "get_weather",
+  "schema": { "type": "object", "properties": { "city": {"type":"string"} }, "required": ["city"] },
+  "tried": [
+    {"name": "weather-mcp", "description": "...", "score": 1.0},
+    {"name": "candidate-1", "description": "...", "score": 0.5}
+  ]
+}
+```
+
+Output (failure — JSON, not exception):
+
+```json
+{ "failure_code": "no_candidates", "tried": [] }
+{ "failure_code": "all_adds_failed", "tried": [{"name":"...","description":"...","score":0.5}, ...] }
+{ "failure_code": "router_unavailable", "tried": [] }
+```
+
+Behaviour contract:
+
+1. The tool never invokes `use_tool`; downstream DAG nodes execute the bound tool.
+2. The tool never calls any LLM; round-trips are zero (test: `chat.ReceivedCalls()` empty).
+3. The tool never throws on Router prose failures; they are normalised to a `failure_code`.
+4. `tried` lists the candidates the resolver actually attempted to add, not all returned candidates.
+5. `score` is `1.0 / rank` so the field is monotonic in the upstream's deterministic top-N ordering (upstream does not return scores; this avoids fabricating them).
+
 ## Remaining live acceptance and downstream decisions
 
 Before closing #229 or proceeding with the dependent runtime changes:
