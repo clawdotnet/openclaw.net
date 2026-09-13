@@ -15,18 +15,18 @@
 
 Run an assistant locally or host a gateway for your team. Connect a hosted or local model, give it tools and memory, and work through desktop chat, the browser, messaging channels, or APIs. Developers can extend the runtime in .NET and deploy supported capabilities with NativeAOT.
 
-**OpenClaw.NET** is the runtime and repository. **AgentQi [OpenClaw.NET]** is the Avalonia desktop companion; [AgentQi.dev](https://agentqi.dev) is the documentation and ecosystem home.
+**OpenClaw.NET** is the runtime and repository. **AgentQi Companion** is the Avalonia desktop product for OpenClaw.NET; [AgentQi.dev](https://agentqi.dev) is the documentation and ecosystem home.
 
 This is an independent .NET implementation inspired by [OpenClaw](https://github.com/openclaw/openclaw), with practical ecosystem compatibility. It is not affiliated with or endorsed by the upstream project.
 
 ## Meet the desktop companion
 
-Chat is the starting point. AgentQi brings setup, connections, activity, memory, history, and settings into one desktop interface, with light and dark themes.
+Chat is the starting point. AgentQi Companion brings setup, connections, activity, memory, history, and settings into one desktop interface, with light and dark themes.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/companion/agentqi-dark.png" />
   <source media="(prefers-color-scheme: light)" srcset="docs/images/companion/agentqi-light.png" />
-  <img src="docs/images/companion/agentqi-light.png" alt="AgentQi Avalonia desktop companion: chat welcome screen, setup shortcuts, navigation sidebar, and Configure via chat option" width="1200" />
+  <img src="docs/images/companion/agentqi-light.png" alt="AgentQi Companion for OpenClaw.NET: chat welcome screen, setup shortcuts, navigation sidebar, and Configure via chat option" width="1200" />
 </picture>
 
 *Companion welcome screen from `main`, before connecting a gateway. Packaged releases may show an earlier interface.*
@@ -39,7 +39,7 @@ Chat configuration covers supported scalar settings, not every operation. Creden
 
 ## Download And Run Desktop
 
-Choose a desktop bundle from the [latest release](https://github.com/clawdotnet/openclaw.net/releases/latest). Each includes Companion, the NativeAOT gateway, and the NativeAOT CLI.
+Choose a desktop bundle from the [latest release](https://github.com/clawdotnet/openclaw.net/releases/latest). Each includes AgentQi Companion, the NativeAOT gateway, and the NativeAOT CLI.
 
 | Platform | Download |
 | --- | --- |
@@ -119,7 +119,7 @@ Tool: echo(hello): ok
 | Area | Capabilities |
 | --- | --- |
 | Agent runtime | Streaming, tool execution, cancellation, retries, sessions, memory, and token-usage reporting. |
-| Interfaces | AgentQi desktop companion, browser chat and admin UI, CLI, terminal UI, OpenAI-compatible HTTP endpoints, MCP, and WebSockets. |
+| Interfaces | AgentQi Companion, browser chat and admin UI, CLI, terminal UI, OpenAI-compatible HTTP endpoints, MCP, and WebSockets. |
 | Models | OpenAI, Claude, Gemini, Azure OpenAI, DeepSeek, Ollama, and OpenAI-compatible providers; named profiles and optional embedded local inference. |
 | Tools and channels | 80+ native and optional tool surfaces for files, web, sessions, databases, email, home automation, and more; adapters for Telegram, WhatsApp, Teams, Slack, Discord, and other channels. The active set depends on configuration. |
 | Extensions | MCP servers and interactive MCP Apps, reusable `SKILL.md` packages, first-party .NET integrations, and supported OpenClaw TS/JS plugins. |

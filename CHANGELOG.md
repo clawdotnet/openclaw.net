@@ -6,6 +6,9 @@ All notable changes to this project are tracked in this file.
 
 ### Release Engineering
 
+- Standardized the desktop product name as AgentQi Companion while preserving OpenClaw.NET runtime, package, protocol, and storage identities.
+- Added a release-blocking desktop first-success contract covering Companion preset persistence, shared preset capabilities, sequential multi-tool selection, and an Ollama-compatible tool round trip.
+- Added a release documentation gate that rejects tags still described as future or unavailable work, and updated v0.3.0 availability guidance.
 - Made the deterministic pinned public-plugin compatibility smoke run on pull requests and `main` pushes, while keeping the moving latest-package canary scheduled/manual and non-blocking.
 - Added the pinned public-plugin compatibility smoke as a prerequisite for release asset builds.
 - Pinned Supermemory's complete plugin/peer test set and kept a separate latest-peer canary so release verification is reproducible while upstream drift remains visible.

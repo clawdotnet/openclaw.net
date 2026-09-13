@@ -93,6 +93,38 @@ public sealed class DocsConsistencyTests
         Assert.Contains("## Known Limitations", compatibility, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BrandingSurfaces_DefineAgentQiCompanionWithoutRenamingRuntimeIdentity()
+    {
+        var root = FindRepositoryRoot();
+        var paths = new[]
+        {
+            "README.md",
+            "docs/ARCHITECTURE_BOUNDARIES.md",
+            "src/OpenClaw.Companion/Assets/BRANDING.md",
+            "src/OpenClaw.Companion/OpenClaw.Companion.csproj",
+            "src/OpenClaw.Companion/App.axaml",
+            "src/OpenClaw.Companion/Views/MainWindow.axaml",
+            "src/OpenClaw.Companion/Services/DesktopNotifier.cs"
+        };
+        var surfaces = paths.ToDictionary(
+            path => path,
+            path => File.ReadAllText(Path.Combine(root, path)),
+            StringComparer.Ordinal);
+
+        Assert.All(surfaces, surface =>
+        {
+            Assert.Contains("AgentQi Companion", surface.Value, StringComparison.Ordinal);
+            Assert.DoesNotContain("AgentQi [OpenClaw.NET]", surface.Value, StringComparison.Ordinal);
+        });
+        Assert.Contains("OpenClaw.NET** | Repository and runtime identity", surfaces["docs/ARCHITECTURE_BOUNDARIES.md"], StringComparison.Ordinal);
+        Assert.Contains("AgentQi** | Documentation and ecosystem umbrella", surfaces["docs/ARCHITECTURE_BOUNDARIES.md"], StringComparison.Ordinal);
+        Assert.Contains("AgentQiX** | Reserved likely future runtime identity", surfaces["docs/ARCHITECTURE_BOUNDARIES.md"], StringComparison.Ordinal);
+        Assert.Contains("GitHub release titles | **OpenClaw.NET**", surfaces["docs/ARCHITECTURE_BOUNDARIES.md"], StringComparison.Ordinal);
+        Assert.Contains("Desktop window chrome", surfaces["docs/ARCHITECTURE_BOUNDARIES.md"], StringComparison.Ordinal);
+        Assert.Contains("<Product>AgentQi Companion</Product>", surfaces["src/OpenClaw.Companion/OpenClaw.Companion.csproj"], StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);

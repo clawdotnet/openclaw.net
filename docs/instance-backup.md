@@ -1,6 +1,6 @@
 # Full-instance offline backup and restore
 
-> **Release availability:** Available on `main` and targeted for v0.3.0; not included in v0.2.0. See the [roadmap](ROADMAP.md).
+> **Release availability:** Included in v0.3.0 and later; not included in v0.2.0. See the [roadmap](ROADMAP.md).
 
 `openclaw backup` snapshots a declared inventory of instance directories, including file and SQLite state. It never starts a gateway, scheduler, plugin, model, or tool. Restoration always targets a new isolated directory and never replaces an existing deployment.
 

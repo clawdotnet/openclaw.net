@@ -1,6 +1,10 @@
 # AgentQi Companion branding
 
-Display name: **AgentQi [OpenClaw.NET]**. Assembly names, protocol identifiers, settings paths, and credential-store identifiers remain compatible with existing installations.
+Canonical desktop product name: **AgentQi Companion**.
+
+Relationship descriptor: **AgentQi Companion for OpenClaw.NET**. Use this in explanatory copy where the runtime relationship needs to be explicit; do not treat the descriptor as an executable, package, protocol, or storage identity.
+
+Assembly names, protocol identifiers, settings paths, and credential-store identifiers remain compatible with existing installations.
 
 - `agentqi-wordmark.png`: supplied light wordmark, copied unchanged.
 - `agentqi-artwork.png`: supplied dark artwork, copied unchanged.

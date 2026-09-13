@@ -8,9 +8,19 @@ OpenClaw.NET is a NativeAOT-friendly agent runtime and gateway for local and sel
 | --- | --- | --- |
 | **OpenClaw.NET** | Repository and runtime identity | Owns runtime correctness, local/self-hosted execution, gateway and CLI primitives, durable state, recovery, replay, and plugin execution compatibility. |
 | **AgentQi** | Documentation and ecosystem umbrella | Owns the broader developer/operator experience, ecosystem discovery, trust and lifecycle UX, and future multi-instance or fleet-level management. |
+| **AgentQi Companion** | Desktop product for OpenClaw.NET | Owns the chat-first desktop experience for setup and operation of one OpenClaw.NET runtime. “For OpenClaw.NET” describes the relationship; it is not a package, protocol, or storage rename. |
 | **AgentQiX** | Reserved likely future runtime identity | No current package, repository, or runtime rename is implied. A migration requires an explicit naming decision, compatibility plan, and release boundary. |
 
-The current rule is therefore to keep runtime capabilities in OpenClaw.NET and describe cross-runtime ecosystem or managed-product work under AgentQi. Do not introduce AgentQiX naming into runtime packages or user-facing migration guidance until that separate decision is made.
+The current rule is therefore to keep runtime capabilities in OpenClaw.NET, use AgentQi Companion for the desktop application, and describe cross-runtime ecosystem or managed-product work under AgentQi. Do not introduce AgentQiX naming into runtime packages or user-facing migration guidance until that separate decision is made.
+
+### Naming surfaces
+
+| Surface | Canonical label |
+| --- | --- |
+| Repository, runtime, gateway, CLI, packages, protocols, settings, and GitHub release titles | **OpenClaw.NET** |
+| Desktop window chrome, application metadata, desktop-bundle descriptions, and desktop documentation | **AgentQi Companion**; use **AgentQi Companion for OpenClaw.NET** when the relationship needs explanation |
+| Documentation and ecosystem navigation | **AgentQi** and **AgentQi.dev** |
+| Future runtime references | Keep **AgentQiX** reserved until an explicit migration decision and compatibility plan exist |
 
 ## OpenClaw.NET Core
 

@@ -2,7 +2,7 @@
 
 OpenClaw.NET's low-friction desktop path is the **desktop bundle** published on [GitHub Releases](https://github.com/clawdotnet/openclaw.net/releases/latest). It bundles:
 
-- Companion
+- AgentQi Companion
 - the NativeAOT gateway
 - the NativeAOT CLI
 
@@ -74,7 +74,7 @@ A release is ready only when all of the following are true for the exact tag com
 
 Use **full CI** only when all required lanes above passed for that exact commit. Report the non-blocking latest-package canary separately so upstream drift is visible without making a moving dependency a release gate.
 
-> **v0.2.0 verification note:** v0.2.0 was published before the pinned public compatibility job became a release-workflow dependency. Its successful build and platform smokes did not establish public-plugin compatibility. The reliability and recovery work currently marked **main only** in the [roadmap](ROADMAP.md) also landed after the v0.2.0 tag.
+> **v0.2.0 verification note:** v0.2.0 was published before the pinned public compatibility job became a release-workflow dependency. Its successful build and platform smokes did not establish public-plugin compatibility. The reliability and recovery work documented in the [roadmap](ROADMAP.md) landed after v0.2.0 and was first released in v0.3.0.
 
 The workflow currently builds:
 
@@ -84,7 +84,7 @@ The workflow currently builds:
 
 The macOS runner label is intentionally ARM-native for the `osx-arm64` artifact. Add an Intel macOS row only if you want to support older Intel Macs and have a runner that can NativeAOT publish that RID reliably.
 
-### Companion Release Smoke
+### AgentQi Companion Release Smoke
 
 Before publishing a public desktop release, run this manual smoke on at least one desktop bundle:
 

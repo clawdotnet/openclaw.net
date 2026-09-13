@@ -3,7 +3,7 @@
              x:Class="OpenClaw.Companion.App"
              xmlns:local="using:OpenClaw.Companion"
              xmlns:conv="using:OpenClaw.Companion.Converters"
-             Name="AgentQi [OpenClaw.NET]"
+             Name="AgentQi Companion"
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
