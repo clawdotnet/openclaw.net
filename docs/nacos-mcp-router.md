@@ -123,7 +123,7 @@ Inputs:
 
 - `task_description` (required) — the same shape the Router `search_mcp_server` accepts.
 - `key_words` (optional) — comma-separated string, same wire shape as the Router.
-- `selection_policy` (optional) — `first` (default) or `exact_name` (case-insensitive name match against `task_description`); a name with no exact match fails with `failure_code: "all_adds_failed"` and an empty `tried`.
+- `selection_policy` (optional) — `first` (default) or `exact_name` (case-insensitive name match against `task_description`); a name with no exact match fails with `failure_code: "selection_policy_no_match"` and an empty `tried`.
 
 Output (success):
 
@@ -133,7 +133,7 @@ Output (success):
   "tool": "get_weather",
   "schema": "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}",
   "tried": [
-    {"name": "weather-mcp", "description": "...", "score": 1.0}
+    {"name": "weather-mcp", "description": "...", "rank": 1}
   ]
 }
 ```
@@ -144,7 +144,8 @@ Output (failure — Router failure prose is returned as JSON, not thrown):
 
 ```text
 { "failure_code": "no_candidates", "tried": [] }
-{ "failure_code": "all_adds_failed", "tried": [{"name":"...","description":"...","score":0.5}, ...] }
+{ "failure_code": "selection_policy_no_match", "tried": [] }
+{ "failure_code": "all_adds_failed", "tried": [{"name":"...","description":"...","rank":1}, ...] }
 { "failure_code": "router_unavailable", "tried": [] }
 ```
 
@@ -152,9 +153,13 @@ Behaviour contract:
 
 1. The tool never invokes `use_tool`; downstream DAG nodes execute the bound tool.
 2. The tool never calls any LLM; round-trips are zero (test: `chat.ReceivedCalls()` empty).
-3. The tool never throws on Router prose failures; they are normalised to a `failure_code`.
+3. The tool never throws on Router failures; prose failures, transport failures, and protocol-level `isError` results are all normalised to a `failure_code`.
+   - search that fails to reach the Router (transport) or reports `isError` → `router_unavailable`.
+   - add that reports `isError` fails only that candidate and continues rotation; `isError` wins over prose inspection, so a "安装完成" message inside an error result cannot bind a tool.
+   - add that fails to reach the Router stops rotation → `router_unavailable` with the candidates attempted so far.
+   - caller cancellation still propagates as `OperationCanceledException`.
 4. `tried` lists the candidates the resolver actually attempted to add, not all returned candidates.
-5. `score` is `1.0 / rank` so the field is monotonic in the upstream's deterministic top-N ordering (upstream does not return scores; this avoids fabricating them).
+5. `rank` is the candidate's position in the upstream's deterministic top-N ordering. Upstream search returns no scores, so none are fabricated.
 
 ## Remaining live acceptance and downstream decisions
 
@@ -168,9 +173,10 @@ Before closing #229 or proceeding with the dependent runtime changes:
    configuration. Read actual session input/output usage; take the median of the
    five per-run totals. Record discovery quality separately. Do not use invented
    fixture token counts as a model measurement.
-4. Decide how resolver results get ranking/version metadata (upstream search
-   provides neither score nor version), and how prose failures become typed
-   failures before implementing fallback, retries, caching, or replay.
+4. Ranking metadata is the upstream positional `rank` (see above); version
+   metadata remains open (upstream search provides none), and prose failures
+   must become typed failures before implementing fallback, retries, caching,
+   or replay.
 
 | Measurement | Static binding | Model-driven exploration |
 | --- | --- | --- |

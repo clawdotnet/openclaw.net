@@ -204,7 +204,7 @@ sequenceDiagram
 resolve_capability(intent) → binding { server, tool, schema }
 ```
 
-内部程序化调用 Router 的三个端点，把绑定过程变成确定性代码路径；模型只负责产出 intent 参数。解析失败时再降级回 LLM 逐步模式。同时配合工具输出裁剪（如 TokenJuice 思路），对 search 返回的 Top-5 结果只保留 `name / description / score`。
+内部程序化调用 Router 的三个端点，把绑定过程变成确定性代码路径；模型只负责产出 intent 参数。解析失败时再降级回 LLM 逐步模式。同时配合工具输出裁剪（如 TokenJuice 思路），对 search 返回的 Top-5 结果只保留 `name / description / rank`（rank 为候选在上游确定性排序中的位置；上游不返回 score，不做本地伪造）。
 
 ### 7.2 注册描述与本体对齐
 
