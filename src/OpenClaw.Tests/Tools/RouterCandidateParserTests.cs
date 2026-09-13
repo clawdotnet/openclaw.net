@@ -20,8 +20,10 @@ public sealed class RouterCandidateParserTests
         Assert.Equal(2, parsed.Count);
         Assert.Equal("weather-mcp", parsed[0].Name);
         Assert.Equal("weather forecast", parsed[0].Description);
-        Assert.Equal(1.0, parsed[0].Score); // rank 1 → 1/1
-        Assert.Equal(0.5, parsed[1].Score); // rank 2 → 1/2
+        // Upstream supplies no scores; Rank is the position in the upstream's
+        // deterministic ordering and must not be dressed up as a score.
+        Assert.Equal(1, parsed[0].Rank);
+        Assert.Equal(2, parsed[1].Rank);
     }
 
     [Fact]

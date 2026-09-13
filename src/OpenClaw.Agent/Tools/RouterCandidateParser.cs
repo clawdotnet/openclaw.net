@@ -46,7 +46,7 @@ public static class RouterCandidateParser
                     description = descNode.GetString() ?? "";
                 }
 
-                results.Add(new RouterCandidate(name, description, 1.0 / rank));
+                results.Add(new RouterCandidate(name, description, rank));
                 rank++;
             }
             return results;

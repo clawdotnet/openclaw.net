@@ -16,13 +16,13 @@ public sealed record ResolveCapabilityRequest(
 
 /// <summary>
 /// A single candidate server emitted by the upstream Nacos MCP Router. The
-/// <see cref="Score"/> is computed as <c>1.0 / rank</c> and is monotonic in
-/// the upstream's deterministic top-N ordering; it is not fabricated locally.
+/// <see cref="Rank"/> is the candidate's position in the upstream's deterministic
+/// top-N ordering. Upstream supplies no scores; none are fabricated here.
 /// </summary>
 public sealed record RouterCandidate(
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("description")] string Description,
-    [property: JsonPropertyName("score")] double Score);
+    [property: JsonPropertyName("rank")] int Rank);
 
 public sealed record ResolveCapabilityBinding(
     [property: JsonPropertyName("server")] string Server,
