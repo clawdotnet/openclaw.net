@@ -9,8 +9,8 @@ exposes three stable MCP tools — `search_mcp_server`, `add_mcp_server`,
 and `use_tool` — that the Gateway can compose as native meta-skill steps.
 
 > **Status (2026-09-13).** T0 (probing the live Router contract) is
-> **BLOCKED-EXTERNAL** in this commit: the local Nacos 3.2.4 compose stack at
-> `E:/GitHub/RedNb.Nacos/deploy/docker-compose` (Docker, ports 8080/8848/9848)
+> **BLOCKED-EXTERNAL** in this commit: the local Nacos 3.2.4 compose stack
+> (Docker, ports 8080/8848/9848)
 > and the `nacos-mcp-router` HTTP endpoint at `127.0.0.1:8000/mcp` are not
 > reachable from the sandboxed test environment. All other PoC steps
 > (sample `mcp.json`, skill examples, mock Router fixture, integration tests,
@@ -147,8 +147,9 @@ all run against the in-process mock fixture. A live probe is gated on the
 environment variable `OPENCLAW_NACOS_LIVE`:
 
 ```bash
-# Boot the stack (see /e/GitHub/RedNb.Nacos/deploy/docker-compose/README.md)
-cd /e/GitHub/RedNb.Nacos/deploy/docker-compose
+# Boot the stack from your local Nacos compose checkout
+# (e.g. a RedNb.Nacos-style standalone deployment; see its README.md)
+cd <path-to-nacos-compose>
 umask 077
 printf 'NACOS_AUTH_TOKEN=%s\nNACOS_AUTH_IDENTITY_VALUE=%s\n' \
     "$(openssl rand -base64 48 | tr -d '\n')" \

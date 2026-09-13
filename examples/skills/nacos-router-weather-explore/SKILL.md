@@ -37,7 +37,8 @@ composition:
       tool: nacos-mcp-router_use_tool
       tool_args:
         mcp_server_name: weather-mcp
-        tool_name: "{{ steps.bind.tool_name | default('get_current_weather') }}"
+        # NOTE: the 'default' Jinja filter is blocked by MetaTemplateRenderer's filter
+# allowlist (fallback args are silently ignored); avoid using it in steps.
         params:
           city: "{{ input }}"
       on_failure: query_fallback

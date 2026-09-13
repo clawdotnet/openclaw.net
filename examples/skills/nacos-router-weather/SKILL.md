@@ -30,7 +30,11 @@ composition:
       tool: nacos-mcp-router_use_tool
       tool_args:
         mcp_server_name: weather-mcp
-        tool_name: "{{ steps.bind.tool_name | default('get_current_weather') }}"
+        # T0 BLOCKED-EXTERNAL：真实工具名待 Router 实测后确认（见 docs/nacos-mcp-router.md Notes）。
+        # 不要用 "{{ ... | default(...) }}"：default 过滤器被 MetaTemplateRenderer
+        # 的过滤器白名单阻断（MetaTemplateRenderer.cs HardenFilterAllowlist），
+        # fallback 参数不生效，会渲染成空串导致 use_tool 必然失败。
+        tool_name: get_current_weather
         params:
           city: "{{ input }}"
       on_failure: query_fallback

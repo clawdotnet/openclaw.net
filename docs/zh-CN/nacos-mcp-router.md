@@ -8,8 +8,7 @@ Router 位于 Gateway 与一组 Nacos 注册的 MCP Server 之间，向上层暴
 `use_tool` —— Gateway 可以将其作为原生 MetaSkill 步骤来编排。
 
 > **状态（2026-09-13）。** T0（探测真实 Router 契约）在本提交中标记为
-> **BLOCKED-EXTERNAL**：本地 Nacos 3.2.4 compose 栈位于
-> `E:/GitHub/RedNb.Nacos/deploy/docker-compose`（Docker、端口
+> **BLOCKED-EXTERNAL**：本地 Nacos 3.2.4 compose 栈（Docker、端口
 > 8080/8848/9848），`nacos-mcp-router` HTTP 端点位于
 > `127.0.0.1:8000/mcp`，在沙箱测试环境中均不可达。本 PoC 的其余步骤
 > （`mcp.json` 示例、技能示例、Mock Router 夹具、集成测试、文档）
@@ -136,8 +135,8 @@ Runtime 无需直接调用 Nacos SDK。
 `OPENCLAW_NACOS_LIVE` 环境变量开启：
 
 ```bash
-# 启动 Nacos 栈（参见 /e/GitHub/RedNb.Nacos/deploy/docker-compose/README.md）
-cd /e/GitHub/RedNb.Nacos/deploy/docker-compose
+# 启动本地 Nacos compose 栈（例如 RedNb.Nacos 式单机部署；参见其 README.md）
+cd <nacos-compose-路径>
 umask 077
 printf 'NACOS_AUTH_TOKEN=%s\nNACOS_AUTH_IDENTITY_VALUE=%s\n' \
     "$(openssl rand -base64 48 | tr -d '\n')" \
