@@ -76,6 +76,58 @@ public sealed class ResolveCapabilityToolTests
     }
 
     [Fact]
+    public async Task MalformedToolList_ReturnsAllAddsFailed_InsteadOfThrowing()
+    {
+        var (tool, _, state, serverLifetime) = await BuildMalformedAsync();
+        await using var _ = serverLifetime;
+        // The fixture's add response is 安装完成 + a tool list whose first object has
+        // no "name" property; pre-fix TryExtractTool threw KeyNotFoundException here.
+        var args = """{"task_description":"weather city","key_words":"weather"}""";
+        var result = await tool.ExecuteAsync(args, CancellationToken.None);
+
+        using var doc = JsonDocument.Parse(result);
+        Assert.Equal("all_adds_failed", doc.RootElement.GetProperty("failure_code").GetString());
+        var tried = doc.RootElement.GetProperty("tried").EnumerateArray().ToList();
+        var attempted = Assert.Single(tried);
+        Assert.Equal("weather-mcp", attempted.GetProperty("name").GetString());
+        Assert.Contains("add:weather-mcp", state.Calls);
+    }
+
+    [Fact]
+    public async Task ExactNamePolicy_CaseInsensitiveMatch_ReturnsBinding()
+    {
+        var (tool, _, state, server) = await BuildAsync();
+        await using (server)
+        {
+            var args = """{"task_description":"WEATHER-MCP","selection_policy":"exact_name"}""";
+            var result = await tool.ExecuteAsync(args, CancellationToken.None);
+
+            using var doc = JsonDocument.Parse(result);
+            var root = doc.RootElement;
+            Assert.Equal("weather-mcp", root.GetProperty("server").GetString());
+            Assert.Equal("get_weather", root.GetProperty("tool").GetString());
+            Assert.Equal(1, root.GetProperty("tried").GetArrayLength());
+            Assert.Contains("add:weather-mcp", state.Calls);
+        }
+    }
+
+    [Fact]
+    public async Task ExactNamePolicy_ZeroMatch_ReturnsAllAddsFailed_WithEmptyTried()
+    {
+        var (tool, _, state, server) = await BuildAsync();
+        await using (server)
+        {
+            var args = """{"task_description":"nonexistent-mcp","selection_policy":"exact_name"}""";
+            var result = await tool.ExecuteAsync(args, CancellationToken.None);
+
+            using var doc = JsonDocument.Parse(result);
+            Assert.Equal("all_adds_failed", doc.RootElement.GetProperty("failure_code").GetString());
+            Assert.Empty(doc.RootElement.GetProperty("tried").EnumerateArray().ToList());
+            Assert.Empty(state.Calls.FindAll(c => c.StartsWith("add:")));
+        }
+    }
+
+    [Fact]
     public async Task MetaSkill_ResolveCapabilityOnly_ZeroLlmRoundtrips()
     {
         var (resolveTool, _, _, server) = await BuildAsync();
@@ -229,6 +281,38 @@ public sealed class ResolveCapabilityToolTests
         builder.Services.AddMcpServer()
             .WithHttpTransport(o => o.Stateless = true)
             .WithTools<AllFailFakeNacosRouter>();
+        var server = builder.Build();
+        server.MapMcp("/mcp");
+        await server.StartAsync(TestContext.Current.CancellationToken);
+        var registry = new McpServerToolRegistry(
+            new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
+        await registry.ReloadWorkspaceServersAsync(
+            new Dictionary<string, McpServerConfig>
+            {
+                ["nacos-mcp-router"] = new()
+                {
+                    Enabled = true, Transport = "http",
+                    Url = server.Urls.Single() + "/mcp",
+                    ToolNamePrefix = "nacos_mcp_router_",
+                },
+            }, TestContext.Current.CancellationToken);
+        return (new ResolveCapabilityTool(registry), registry, state, server);
+    }
+
+    private static async Task<(
+        ResolveCapabilityTool tool,
+        McpServerToolRegistry registry,
+        NacosRouterFixtureState state,
+        WebApplication server)>
+        BuildMalformedAsync()
+    {
+        var state = new NacosRouterFixtureState();
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton(state);
+        builder.Services.AddMcpServer()
+            .WithHttpTransport(o => o.Stateless = true)
+            .WithTools<MalformedToolListFakeNacosRouter>();
         var server = builder.Build();
         server.MapMcp("/mcp");
         await server.StartAsync(TestContext.Current.CancellationToken);

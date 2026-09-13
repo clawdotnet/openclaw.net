@@ -91,15 +91,24 @@ public sealed class ResolveCapabilityTool : ITool
         try
         {
             using var doc = JsonDocument.Parse(match.Groups[1].Value);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return false;
             var first = doc.RootElement.EnumerateArray().FirstOrDefault();
             if (first.ValueKind != JsonValueKind.Object) return false;
-            toolName = first.GetProperty("name").GetString() ?? "";
+            if (!first.TryGetProperty("name", out var nameNode)
+                || nameNode.ValueKind != JsonValueKind.String)
+            {
+                return false;
+            }
+            toolName = nameNode.GetString() ?? "";
             schema = first.TryGetProperty("inputSchema", out var s)
                 ? s.GetRawText()
                 : "{}";
             return !string.IsNullOrEmpty(toolName);
         }
-        catch (JsonException) { return false; }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or KeyNotFoundException)
+        {
+            return false;
+        }
     }
 
     private static ResolveCapabilityRequest ParseRequest(string argumentsJson)
