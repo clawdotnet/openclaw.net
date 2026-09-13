@@ -15,7 +15,7 @@ public static class RouterCandidateParser
 {
     private const int MaxCandidates = 5;
     private static readonly Regex JsonBlock = new(
-        @"### 1\. 当前可用的mcp server列表为：(\{.*?\})\n### 2\.",
+        @"### 1\. 当前可用的mcp server列表为：(\{.*?\})\r?\n### 2\.",
         RegexOptions.Singleline | RegexOptions.Compiled);
 
     public static IReadOnlyList<RouterCandidate> Parse(string prose)
