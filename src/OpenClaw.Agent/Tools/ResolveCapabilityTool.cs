@@ -48,8 +48,12 @@ public sealed class ResolveCapabilityTool : ITool
         if (candidates.Count == 0)
             return JsonFail(ResolveCapabilityFailureCodes.NoCandidates, Array.Empty<RouterCandidate>());
 
+        var picked = PickCandidates(candidates, request).ToList();
+        if (picked.Count == 0)
+            return JsonFail(ResolveCapabilityFailureCodes.SelectionPolicyNoMatch, Array.Empty<RouterCandidate>());
+
         var tried = new List<RouterCandidate>();
-        foreach (var candidate in PickCandidates(candidates, request))
+        foreach (var candidate in picked)
         {
             tried.Add(candidate);
             var addText = await CallToolAsStringAsync(client, "add_mcp_server",

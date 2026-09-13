@@ -112,7 +112,7 @@ public sealed class ResolveCapabilityToolTests
     }
 
     [Fact]
-    public async Task ExactNamePolicy_ZeroMatch_ReturnsAllAddsFailed_WithEmptyTried()
+    public async Task ExactNamePolicy_ZeroMatch_ReturnsSelectionPolicyNoMatch_WithEmptyTried()
     {
         var (tool, _, state, server) = await BuildAsync();
         await using (server)
@@ -121,7 +121,9 @@ public sealed class ResolveCapabilityToolTests
             var result = await tool.ExecuteAsync(args, CancellationToken.None);
 
             using var doc = JsonDocument.Parse(result);
-            Assert.Equal("all_adds_failed", doc.RootElement.GetProperty("failure_code").GetString());
+            // Zero match under exact_name is a selection failure, not an add
+            // failure: no add was ever attempted, so "all_adds_failed" would lie.
+            Assert.Equal("selection_policy_no_match", doc.RootElement.GetProperty("failure_code").GetString());
             Assert.Empty(doc.RootElement.GetProperty("tried").EnumerateArray().ToList());
             Assert.Empty(state.Calls.FindAll(c => c.StartsWith("add:")));
         }
