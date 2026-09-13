@@ -54,6 +54,8 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Integrations | WhatsApp | [WHATSAPP_SETUP.md](WHATSAPP_SETUP.md) |
 | Integrations | A2A | [a2a.md](a2a.md) |
 | Integrations | External Coding Backends | [external-coding-backends.md](external-coding-backends.md) |
+| Integrations | Nacos MCP Router (PoC) | [nacos-mcp-router.md](nacos-mcp-router.md) |
+| Integrations | Nacos MCP Router (PoC, zh-CN) | [zh-CN/nacos-mcp-router.md](zh-CN/nacos-mcp-router.md) |
 | Integrations | Tailscale Deployment | [deployment/TAILSCALE.md](deployment/TAILSCALE.md) |
 | Operations | Workspace Admin APIs | [WORKSPACE_ADMIN.md](WORKSPACE_ADMIN.md) |
 | Operations | Security | [SECURITY.md](../SECURITY.md) |
@@ -140,6 +142,7 @@ Integrations
   WhatsApp
   A2A
   External Coding Backends
+  Nacos MCP Router (PoC)
   Tailscale Deployment
 
 Operations
