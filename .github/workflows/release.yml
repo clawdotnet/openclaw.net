@@ -326,6 +326,9 @@ jobs:
           restore-keys: |
             nuget-${{ runner.os }}-
 
+      - name: Validate packaged smoke fixture
+        run: python3 -m unittest discover -s eng -p "test_verify_desktop_first_success.py"
+
       - name: Restore desktop contract tests
         run: dotnet restore src/OpenClaw.Tests
 

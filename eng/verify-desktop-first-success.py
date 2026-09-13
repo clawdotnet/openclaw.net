@@ -2,6 +2,7 @@
 """Exercise packaged CLI/setup and gateway through an Ollama-compatible tool round trip."""
 
 import argparse
+import base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -15,6 +16,8 @@ from urllib.request import Request, urlopen
 
 
 FINAL_TEXT = "desktop packaged first success complete"
+NOTE_KEY = "desktop-release-contract"
+NOTE_TEXT = "verified desktop release memory sentinel"
 
 
 def free_port() -> int:
@@ -39,15 +42,16 @@ class OllamaFixtureHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         payload = json.loads(self.rfile.read(length).decode("utf-8"))
         self.requests.append(payload)
-        has_tool_result = any(message.get("role") == "tool" for message in payload.get("messages", []))
-        if has_tool_result:
-            message = {"role": "assistant", "content": FINAL_TEXT}
+        tool_results = [message for message in payload.get("messages", []) if message.get("role") == "tool"]
+        if tool_results:
+            valid = any(message.get("content") == NOTE_TEXT for message in tool_results)
+            message = {"role": "assistant", "content": FINAL_TEXT if valid else "unexpected tool result"}
         else:
             message = {
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [
-                    {"function": {"name": "memory_get", "arguments": {"key": "desktop-release-contract"}}}
+                    {"function": {"name": "memory_get", "arguments": {"key": NOTE_KEY}}}
                 ],
             }
         self.send_json({"message": message, "done": True, "done_reason": "stop", "prompt_eval_count": 12, "eval_count": 4})
@@ -107,10 +111,10 @@ def main() -> int:
 
     cli = str(Path(args.cli).resolve(strict=True))
     gateway = str(Path(args.gateway).resolve(strict=True))
-    provider_port = free_port()
-    gateway_port = free_port()
     OllamaFixtureHandler.requests = []
-    provider = ThreadingHTTPServer(("127.0.0.1", provider_port), OllamaFixtureHandler)
+    provider = ThreadingHTTPServer(("127.0.0.1", 0), OllamaFixtureHandler)
+    provider_port = provider.server_port
+    gateway_port = free_port()
     provider_thread = threading.Thread(target=provider.serve_forever, daemon=True)
     provider_thread.start()
 
@@ -150,6 +154,11 @@ def main() -> int:
             if capabilities["supportsTools"] is not True or capabilities["supportsParallelToolCalls"] is not False:
                 raise AssertionError("Packaged CLI did not persist sequential tool capabilities.")
             config_path.write_text(json.dumps(config), encoding="utf-8")
+            # Seed the file-memory store so errors or missing notes cannot satisfy the gate.
+            notes = Path(openclaw["memory"]["storagePath"]) / "notes"
+            notes.mkdir(parents=True, exist_ok=True)
+            encoded_key = base64.urlsafe_b64encode(NOTE_KEY.encode()).decode().rstrip("=")
+            (notes / f"{encoded_key}.md").write_text(NOTE_TEXT, encoding="utf-8")
 
             gateway_log_path = root / "gateway.log"
             with gateway_log_path.open("w", encoding="utf-8") as gateway_log:
@@ -158,6 +167,7 @@ def main() -> int:
                     stdout=gateway_log,
                     stderr=subprocess.STDOUT,
                     text=True,
+                    cwd=root,
                 )
                 try:
                     base_url = f"http://127.0.0.1:{gateway_port}"
@@ -190,9 +200,11 @@ def main() -> int:
             if len(OllamaFixtureHandler.requests) != 2:
                 raise AssertionError(f"Expected two sequential provider requests, got {len(OllamaFixtureHandler.requests)}.")
             first, second = OllamaFixtureHandler.requests
+            if any(request.get("model") != "fixture-model" for request in (first, second)):
+                raise AssertionError("Gateway did not use the configured model.")
             if len(first.get("tools", [])) < 2:
                 raise AssertionError("Gateway did not advertise multiple tools to the sequential-tool model.")
-            if not any(message.get("role") == "tool" for message in second.get("messages", [])):
+            if not any(message.get("role") == "tool" and message.get("content") == NOTE_TEXT for message in second.get("messages", [])):
                 raise AssertionError("Gateway did not return the tool result before requesting the final response.")
     finally:
         provider.shutdown()
