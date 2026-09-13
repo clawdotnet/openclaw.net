@@ -65,7 +65,13 @@ public sealed class McpNativeTool(
 
             var text = FormatResponseContent(response, suppressStructuredContent);
             var isError = response.IsError ?? false;
+            if (isError && context is not null)
+                throw new ToolOutcomeException($"Error: {text}", "failed", "mcp_tool_error", text);
             return isError ? $"Error: {text}" : text;
+        }
+        catch (ToolOutcomeException)
+        {
+            throw;
         }
         catch (JsonException ex)
         {
