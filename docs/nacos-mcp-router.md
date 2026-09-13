@@ -15,7 +15,7 @@ These are source observations, **not a live deployment capture**:
 | --- | --- | --- |
 | `search_mcp_server` | `task_description`, `key_words` (comma-separated string) | Prose containing a JSON object keyed by server name; entries have `name` and `description`, no score |
 | `add_mcp_server` | `mcp_server_name` | Prose containing a tool list with `name`, `description`, `inputSchema` |
-| `use_tool` | `mcp_server_name`, `mcp_tool_name`, `params` | String representation of downstream MCP content |
+| `use_tool` | `mcp_server_name`, `mcp_tool_name`, `params` (JSON-encoded string) | String representation of downstream MCP content |
 
 Do not substitute `tool_name` for `mcp_tool_name`, assume search is a bare JSON
 array, fabricate scores, or assume every failure sets MCP `isError`. The Python
@@ -23,6 +23,14 @@ Router returns some initialization/install/unhealthy/use failures as ordinary
 text. Such responses cannot safely drive generic protocol-level fallback without
 a Router-specific normalization contract. The mock suite distinguishes these
 plain-text results from explicit MCP protocol failures.
+
+`use_tool`'s `params` argument is declared by upstream as a JSON-encoded
+string and decoded server-side via `json.loads(arguments["params"])` before
+dispatch to the inner MCP tool. Callers MUST serialize the inner object to a
+string before invoking — passing a nested object causes `TypeError`, which the
+Router catches and returns as the plain text `failed to use tool: <tool_name>`.
+SKILL.md authors: use `params: '{"key": "value"}'` (inline JSON string), never
+a YAML mapping.
 
 The server ID `nacos-mcp-router` retains its hyphens in default tool names.
 Configure `toolNamePrefix` explicitly to obtain the underscore names below.

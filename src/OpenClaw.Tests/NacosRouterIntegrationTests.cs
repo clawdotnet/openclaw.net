@@ -47,17 +47,29 @@ public sealed class NacosRouterIntegrationTests
         var reload = await registry.ReloadWorkspaceServersAsync(config, TestContext.Current.CancellationToken);
         Assert.Equal(new[] { "nacos_mcp_router_add_mcp_server", "nacos_mcp_router_search_mcp_server", "nacos_mcp_router_use_tool" }, reload.AddedTools.Select(t => t.Name).Order().ToArray());
         var search = await reload.AddedTools.Single(t => t.Name.EndsWith("_search_mcp_server")).ExecuteAsync("""{"task_description":"weather city","key_words":"weather,city"}""", TestContext.Current.CancellationToken);
+        // Search envelope must mirror the upstream Router prose structure so that
+        // contract drift between the fixture and the live Router surfaces as a test
+        // failure. Per upstream router.py, search emits a header line plus the
+        // candidate list JSON between the two `###` markers.
+        Assert.Contains("## 获取weather city的步骤如下：", search);
+        Assert.Contains("### 1. 当前可用的mcp server列表为：", search);
+        Assert.Contains("### 2. ", search);
         Assert.Contains("weather-mcp", search);
         Assert.DoesNotContain("score", search);
         if (fail)
         {
+            // Per upstream contract, `params` is a JSON-encoded string the Router
+            // forwards via `json.loads` to the inner MCP tool. The fixture mirrors
+            // that, so the wire call here must serialize params as a string.
             var direct = await reload.AddedTools.Single(t => t.Name.EndsWith("_use_tool")).ExecuteAsync(
-                """{"mcp_server_name":"weather-mcp","mcp_tool_name":"get_weather","params":{"city":"Oslo"}}""", TestContext.Current.CancellationToken);
+                """{"mcp_server_name":"weather-mcp","mcp_tool_name":"get_weather","params":"{\"city\":\"Oslo\"}"}""", TestContext.Current.CancellationToken);
             Assert.Equal(plainText ? "failed to use tool: get_weather" : "Error: failed to use tool: get_weather", direct);
         }
         state.Calls.Clear();
         var skill = LoadDemo();
-        var root = Path.Join(Path.GetTempPath(), "nacos-poc-tests", Guid.NewGuid().ToString("N"));
+        // Use a unique sibling dir under TEMP directly to avoid leaving an empty
+        // `nacos-poc-tests` parent behind across CI runs.
+        var root = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         using var memory = new FileMemoryStore(root, 4);
         using var services = new ServiceCollection().BuildServiceProvider();
         var chat = Substitute.For<IChatClient>();

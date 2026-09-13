@@ -2,7 +2,6 @@
 name: nacos-router-weather
 description: "Opt-in Nacos Router weather PoC; requires a registered weather-mcp server."
 kind: meta
-always: false
 final_text_mode: "step:query"
 triggers: ["nacos weather"]
 composition:
@@ -12,6 +11,12 @@ composition:
       tool: nacos_mcp_router_add_mcp_server
       tool_args:
         mcp_server_name: weather-mcp
+      on_failure: fallback_bind
+    - id: fallback_bind
+      kind: tool_call
+      tool: emit_text
+      tool_args:
+        text: "weather-mcp could not be bound; register it via Nacos and confirm the Router can reach it before retrying."
     - id: query
       kind: tool_call
       tool: nacos_mcp_router_use_tool
@@ -19,8 +24,10 @@ composition:
       tool_args:
         mcp_server_name: weather-mcp
         mcp_tool_name: get_weather
-        params:
-          city: "{{ input }}"
+        # Upstream Router declares `params` as type "string" and does
+        # `params = json.loads(arguments["params"])` before dispatching.
+        # Pass an inline JSON-encoded string, NOT a YAML mapping.
+        params: '{"city": "{{ input }}"}'
       on_failure: fallback_notice
     - id: fallback_notice
       kind: tool_call
