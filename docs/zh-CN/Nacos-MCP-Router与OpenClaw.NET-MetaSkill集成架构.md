@@ -139,16 +139,15 @@ MetaSkill 节点不直接引用工具，而是声明一个能力槽位。槽位�
     "ms:intent": {
       "@type": "cap:WeatherQuery",
       "ms:taskDescription": "查询指定城市的天气",
-      "ms:keywords": ["天气", "城市"]
+      "ms:keywords": "天气,城市"
     },
-    "ms:selectionPolicy": {
-      "topK": 5,
-      "preferVersion": ">=1.0.0"
-    },
+    "ms:selectionPolicy": "first",
     "ms:fallback": "ms:node/native-web-search"
   }
 }
 ```
+
+> 契约对齐（#230 已实现）：`ms:keywords` 为**逗号分隔字符串**（对应 `resolve_capability` 的 `key_words` wire 参数），`ms:selectionPolicy` 为 `first` / `exact_name` 字符串枚举（对应 `selection_policy`）。`topK` / `preferVersion` 是 #231 预留扩展，Resolver 支持前不得写入节点 schema。
 
 领域对象（DDD）经 JSON-LD Framing 投影为 MetaSkill 节点时，`@type`（如 `cap:WeatherQuery`）同时作为语义检索的关键词来源，保证「本体词汇 → 检索查询 → 注册描述」三者处于同一向量空间。
 
