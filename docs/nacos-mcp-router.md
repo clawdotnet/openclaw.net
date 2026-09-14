@@ -231,7 +231,11 @@ Binding modes:
   retried on the next call), then proxies every invocation through `use_tool`.
 - **dynamic** — the executor resolves the intent through the same
   `resolve_capability` core as #230 (`search → add`, no LLM, no `use_tool`
-  inside the resolver), then calls `use_tool` on the bound tool.
+  inside the resolver), then calls `use_tool` on the bound tool. Successful
+  bindings are cached per session, keyed by a SHA-256 hash of the normalised
+  intent (task_description + keywords + selection_policy); later slots in the
+  same session reuse the binding until its TTL (default 300 s) expires or the
+  workspace MCP config reloads. `resolve_capability` itself is never cached.
 
 Semantics shared with the resolver:
 

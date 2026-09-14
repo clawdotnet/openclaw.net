@@ -158,7 +158,7 @@ SKILL.md 中的 `capability_ref` 与 JSON-LD 投影的字段对应，以及槽�
 | SKILL.md 字段 | JSON-LD 术语 | 执行语义 |
 |---|---|---|
 | `binding: static` | `ms:binding = "static"` | 槽位首次执行自动 `add_mcp_server`；运行时级幂等缓存只记成功，失败下次重试；此后每次调用 `use_tool` |
-| `binding: dynamic` | `ms:binding = "dynamic"` | 执行时经 #230 Resolver 核心 `search → add` 解析绑定，再 `use_tool`；零 LLM 往返 |
+| `binding: dynamic` | `ms:binding = "dynamic"` | 执行时经 #230 Resolver 核心 `search → add` 解析绑定，再 `use_tool`；零 LLM 往返；绑定按会话缓存（intent 哈希键，TTL/reload 失效，#232） |
 | `static.mcp_server_name` / `static.tool_name` | `ms:mcpServerName` / `ms:toolName` | 固定目标，直接决定 Router `add` / `use_tool` 的参数 |
 | `intent.type` | `@type`（如 `cap:WeatherQuery`） | 本体类型标识，与注册描述共用同一向量空间词汇 |
 | `intent.task_description` | `ms:taskDescription` | Router `search_mcp_server` 的 `task_description` wire 参数 |
@@ -221,7 +221,7 @@ sequenceDiagram
 2. **Token 最小化**：模型只接触 MetaSkill DAG 结构与 Router 的少量工具描述，而非全部后端服务的 Schema。
 3. **绑定可演进**：更换/升级后端服务只需修改 Nacos 注册信息，MetaSkill 定义不变。
 
-> 实现对照（2026-09-14，#230/#231 已落地）：上图中动态槽位的 `search → add → use` 与静态槽位的 `add`（首次，幂等缓存）→ `use` 均为确定性代码路径；会话级绑定缓存与 Nacos 变更事件订阅的失效联动仍属后续项。
+> 实现对照（2026-09-14，#230/#231/#232 已落地）：上图中动态槽位的 `search → add → use` 与静态槽位的 `add`（首次，幂等缓存）→ `use` 均为确定性代码路径；会话级绑定缓存（intent 哈希 + TTL/reload 失效）已实现，Nacos 变更事件订阅的失效联动仍属后续项。
 
 ## 7. 关键工程决策
 
@@ -250,7 +250,7 @@ Router 语义检索的质量完全取决于 Nacos 中 MCP Server 的 `descriptio
 |---|---|
 | 缓存粒度 | 会话级（默认）+ 运行时级（静态绑定） |
 | 缓存键 | intent 哈希（task_description + key_words + selectionPolicy） |
-| 失效机制 | 订阅 Nacos 配置变更事件；Server 下线/升版时对应 binding 失效，下次执行重新解析 |
+| 失效机制 | TTL 过期（可配，默认 300s）+ mcp.json reload 成功清空（#232 已实现）；订阅 Nacos 配置变更事件（后续项，需 Nacos SDK 或 Router 通知能力） |
 
 ### 7.4 版本与准入治理
 
