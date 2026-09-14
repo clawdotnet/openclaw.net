@@ -8,7 +8,7 @@ using OpenClaw.Gateway.Mcp;
 
 namespace OpenClaw.Gateway;
 
-internal sealed class McpWorkspaceWatcherService : IAsyncDisposable, IDisposable
+internal sealed class McpWorkspaceWatcherService : IMcpWorkspaceReloadTrigger, IAsyncDisposable, IDisposable
 {
     private static readonly string[] McpJsonRelativePaths =
     [
