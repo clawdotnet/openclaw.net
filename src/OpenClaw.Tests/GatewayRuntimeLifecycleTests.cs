@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Plugins;
+using OpenClaw.Agent.Tools;
 using OpenClaw.Channels;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Memory;
@@ -74,7 +75,8 @@ public sealed class GatewayRuntimeLifecycleTests
                 runtime,
                 workspacePath: null,
                 NullLogger<McpWorkspaceWatcherService>.Instance,
-                store);
+                store,
+                new CapabilityBindingCache());
 
             using var cts = new CancellationTokenSource();
             service.Start(cts.Token);
@@ -83,6 +85,50 @@ public sealed class GatewayRuntimeLifecycleTests
             await WaitForConditionAsync(
                 () => runtime.ReceivedCalls().Any(call =>
                     string.Equals(call.GetMethodInfo().Name, nameof(IAgentRuntime.ApplyMcpToolChangesAsync), StringComparison.Ordinal)),
+                TimeSpan.FromSeconds(3),
+                TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            DeleteDirectoryIfPresent(root);
+        }
+    }
+
+    [Fact]
+    public async Task McpWorkspaceWatcherService_ReloadSuccess_ClearsCapabilityBindingCache()
+    {
+        var root = CreateTempRoot();
+        Directory.CreateDirectory(root);
+        await using var registry = new McpServerToolRegistry(
+            new McpPluginsConfig
+            {
+                Enabled = false,
+                Servers = new Dictionary<string, McpServerConfig>(StringComparer.Ordinal)
+            },
+            NullLogger<McpServerToolRegistry>.Instance);
+        try
+        {
+            var runtime = Substitute.For<IAgentRuntime>();
+            var store = new McpConfigStore(root, NullLogger<McpConfigStore>.Instance);
+            await store.SaveAsync("""{"enabled":true,"servers":{}}""", TestContext.Current.CancellationToken);
+            var cache = new CapabilityBindingCache();
+            var key = CapabilityBindingCache.ComputeIntentKey("weather city", "weather,city", "First");
+            cache.Set("sess-1", key, "weather-mcp", "get_weather");
+
+            using var service = new McpWorkspaceWatcherService(
+                registry,
+                runtime,
+                workspacePath: null,
+                NullLogger<McpWorkspaceWatcherService>.Instance,
+                store,
+                cache);
+
+            using var cts = new CancellationTokenSource();
+            service.Start(cts.Token);
+            service.TriggerReload();
+
+            await WaitForConditionAsync(
+                () => !cache.TryGet("sess-1", key, out _, out _),
                 TimeSpan.FromSeconds(3),
                 TestContext.Current.CancellationToken);
         }

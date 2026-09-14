@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using System.Linq;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Plugins;
+using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Gateway.Mcp;
 
@@ -18,6 +19,7 @@ internal sealed class McpWorkspaceWatcherService : IAsyncDisposable, IDisposable
     private readonly IAgentRuntime _agentRuntime;
     private readonly ILogger<McpWorkspaceWatcherService> _logger;
     private readonly McpConfigStore _configStore;
+    private readonly CapabilityBindingCache _bindingCache;
     private readonly string? _workspacePath;
     private readonly Channel<bool> _reloadChannel = Channel.CreateUnbounded<bool>(new UnboundedChannelOptions
     {
@@ -35,13 +37,15 @@ internal sealed class McpWorkspaceWatcherService : IAsyncDisposable, IDisposable
         IAgentRuntime agentRuntime,
         string? workspacePath,
         ILogger<McpWorkspaceWatcherService> logger,
-        McpConfigStore configStore)
+        McpConfigStore configStore,
+        CapabilityBindingCache bindingCache)
     {
         _registry = registry;
         _agentRuntime = agentRuntime;
         _logger = logger;
         _configStore = configStore;
         _workspacePath = workspacePath;
+        _bindingCache = bindingCache;
     }
 
     public void TriggerReload() => _reloadChannel.Writer.TryWrite(true);
@@ -123,6 +127,8 @@ internal sealed class McpWorkspaceWatcherService : IAsyncDisposable, IDisposable
                 servers ??= new Dictionary<string, McpServerConfig>(StringComparer.Ordinal);
                 var reload = await _registry.ReloadWorkspaceServersAsync(servers, ct);
                 await _agentRuntime.ApplyMcpToolChangesAsync(reload.AddedTools, reload.RemovedToolNames, ct);
+                _bindingCache.Clear();
+                _logger.LogDebug("Cleared capability binding cache after workspace MCP reload.");
                 _logger.LogInformation(
                     "Workspace MCP reload applied. Added {AddedCount} tools, removed {RemovedCount} tools.",
                     reload.AddedTools.Count,
