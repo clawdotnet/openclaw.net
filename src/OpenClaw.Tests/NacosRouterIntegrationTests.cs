@@ -72,7 +72,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry));
+        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
         try
         {
             for (var i = 0; i < 2; i++)
@@ -131,7 +131,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry));
+        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
         try
         {
             for (var i = 0; i < 2; i++)
@@ -152,6 +152,56 @@ public sealed class NacosRouterIntegrationTests
                 "search", "add:weather-mcp", "use:weather-mcp:get_weather",
                 "search", "add:weather-mcp", "use:weather-mcp:get_weather"
             }, state.Calls);
+            Assert.Empty(chat.ReceivedCalls());
+            Assert.Empty(execution.ReceivedCalls());
+        }
+        finally
+        {
+            if (runtime is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
+            else if (runtime is IDisposable disposable) disposable.Dispose();
+            memory.Dispose();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DynamicSlot_SameSession_ResolvesOnceThenReusesBinding(bool maf)
+    {
+        var state = new NacosRouterFixtureState();
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton(state);
+        builder.Services.AddMcpServer().WithHttpTransport(options => options.Stateless = true).WithTools<FakeNacosRouterMcpTools>();
+        await using var server = builder.Build();
+        server.MapMcp("/mcp");
+        await server.StartAsync(TestContext.Current.CancellationToken);
+        await using var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
+        var config = ServerConfig(server.Urls.Single() + "/mcp");
+        var reload = await registry.ReloadWorkspaceServersAsync(config, TestContext.Current.CancellationToken);
+        state.Calls.Clear();
+        var skill = LoadDynamicDemo();
+        var root = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using var memory = new FileMemoryStore(root, 4);
+        var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
+        var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
+        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig,
+            new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        try
+        {
+            // One session, two invocations: the first resolves, the second reuses.
+            var session = new Session { Id = "nacos-dyn-cached", SenderId = "test", ChannelId = "test" };
+            for (var i = 0; i < 2; i++)
+            {
+                var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                var result = await (Task<string>)method.Invoke(runtime, [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
+                Assert.Equal("Weather for Oslo: sunny", result);
+                var run = session.MetaRunHistory[i];
+                var query = Assert.Single(run.StepResults, step => step.Id == "query");
+                Assert.Equal("completed", query.Status);
+            }
+            Assert.Equal(new[] { "search", "add:weather-mcp", "use:weather-mcp:get_weather", "use:weather-mcp:get_weather" }, state.Calls);
             Assert.Empty(chat.ReceivedCalls());
             Assert.Empty(execution.ReceivedCalls());
         }

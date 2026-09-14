@@ -17,6 +17,8 @@ namespace OpenClaw.Agent.Tools;
 /// (idempotent runtime cache), then proxy every call through the Router's
 /// use_tool. Dynamic bindings resolve the intent through the shared
 /// <see cref="ResolveCapabilityTool"/> core, then use_tool the bound tool.
+/// Dynamic bindings are cached per session via the injected
+/// <see cref="CapabilityBindingCache"/> (TTL + reload invalidation, issue #232).
 /// Plain-text Router failures and protocol errors are normalised into
 /// <see cref="CapabilitySlotFailureCodes"/> so the meta failure-branch
 /// machinery routes them deterministically. Never calls an LLM.
@@ -26,24 +28,28 @@ public sealed class CapabilitySlotExecutor
     private const string RouterServerId = "nacos-mcp-router";
 
     private readonly McpServerToolRegistry _registry;
+    private readonly CapabilityBindingCache _bindingCache;
 
     // Runtime-level add cache: a server is added at most once per executor
     // instance; the Router's own add is idempotent, so a re-add on failure
     // is always safe (the cache only records successes).
     private readonly ConcurrentDictionary<string, byte> _addedServers = new(StringComparer.Ordinal);
 
-    public CapabilitySlotExecutor(McpServerToolRegistry registry)
+    public CapabilitySlotExecutor(McpServerToolRegistry registry, CapabilityBindingCache bindingCache)
     {
         _registry = registry;
+        _bindingCache = bindingCache;
     }
 
     /// <summary>
     /// Executes a capability slot. <paramref name="toolArgsJson"/> carries the
     /// inner tool's arguments (the resolved step tool_args); the executor
     /// serialises them onto the Router's <c>params</c> wire field.
+    /// <paramref name="sessionId"/> scopes the dynamic binding cache; a null or
+    /// empty id skips caching (resolve fresh, store nothing).
     /// </summary>
     public async Task<ToolExecutionResult> ExecuteAsync(
-        MetaCapabilityRefDefinition capabilityRef, string toolArgsJson, CancellationToken ct)
+        MetaCapabilityRefDefinition capabilityRef, string toolArgsJson, string sessionId, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(capabilityRef);
 
@@ -75,17 +81,31 @@ public sealed class CapabilitySlotExecutor
                 capabilityRef.SelectionPolicy == "exact_name"
                     ? ResolveCapabilitySelectionPolicy.ExactName
                     : ResolveCapabilitySelectionPolicy.First);
-            var (binding, failure) = await ResolveCapabilityTool.ResolveCoreAsync(_registry, request, ct);
-            if (binding is null)
-            {
-                var code = failure!.FailureCode == ResolveCapabilityFailureCodes.RouterUnavailable
-                    ? CapabilitySlotFailureCodes.RouterUnavailable
-                    : CapabilitySlotFailureCodes.ResolveFailed;
-                return Fail(code, $"capability resolve failed: {failure.FailureCode}", toolArgsJson);
-            }
 
-            server = binding.Server;
-            tool = binding.Tool;
+            var intentKey = CapabilityBindingCache.ComputeIntentKey(
+                request.TaskDescription, request.KeyWords, request.SelectionPolicy.ToString());
+            if (!string.IsNullOrEmpty(sessionId) &&
+                _bindingCache.TryGet(sessionId, intentKey, out var cachedServer, out var cachedTool))
+            {
+                server = cachedServer;
+                tool = cachedTool;
+            }
+            else
+            {
+                var (binding, failure) = await ResolveCapabilityTool.ResolveCoreAsync(_registry, request, ct);
+                if (binding is null)
+                {
+                    var code = failure!.FailureCode == ResolveCapabilityFailureCodes.RouterUnavailable
+                        ? CapabilitySlotFailureCodes.RouterUnavailable
+                        : CapabilitySlotFailureCodes.ResolveFailed;
+                    return Fail(code, $"capability resolve failed: {failure.FailureCode}", toolArgsJson);
+                }
+
+                server = binding.Server;
+                tool = binding.Tool;
+                if (!string.IsNullOrEmpty(sessionId))
+                    _bindingCache.Set(sessionId, intentKey, server, tool);
+            }
         }
 
         return await UseToolAsync(client, server, tool, toolArgsJson, ct);

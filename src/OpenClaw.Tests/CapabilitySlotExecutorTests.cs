@@ -62,7 +62,7 @@ public sealed class CapabilitySlotExecutorTests
         {
             ["nacos-mcp-router"] = new() { Enabled = true, Transport = "http", Url = server.Urls.Single() + "/mcp", ToolNamePrefix = "nacos_mcp_router_" }
         }, TestContext.Current.CancellationToken);
-        return new RouterFixture { State = state, Executor = new CapabilitySlotExecutor(registry), Server = server, Registry = registry };
+        return new RouterFixture { State = state, Executor = new CapabilitySlotExecutor(registry, new CapabilityBindingCache()), Server = server, Registry = registry };
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class CapabilitySlotExecutorTests
 
         for (var i = 0; i < 2; i++)
         {
-            var result = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", TestContext.Current.CancellationToken);
+            var result = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
             Assert.Equal(ToolResultStatuses.Completed, result.ResultStatus);
             Assert.Equal("Weather for Oslo: sunny", result.ResultText);
         }
@@ -86,13 +86,13 @@ public sealed class CapabilitySlotExecutorTests
         await using var fixture = await CreateFixtureAsync();
         fixture.State.FailAdd = true;
 
-        var failed = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", TestContext.Current.CancellationToken);
+        var failed = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
         Assert.Equal(ToolResultStatuses.Failed, failed.ResultStatus);
         Assert.Equal("capability_add_failed", failed.FailureCode);
 
         // The failure must not be cached: a later healthy Router still gets an add.
         fixture.State.FailAdd = false;
-        var retried = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", TestContext.Current.CancellationToken);
+        var retried = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
         Assert.Equal(ToolResultStatuses.Completed, retried.ResultStatus);
         Assert.Equal("Weather for Oslo: sunny", retried.ResultText);
         Assert.Equal(new[] { "add:weather-mcp", "add:weather-mcp", "use:weather-mcp:get_weather" }, fixture.State.Calls);
@@ -105,7 +105,7 @@ public sealed class CapabilitySlotExecutorTests
         fixture.State.FailUse = true;
         fixture.State.PlainTextFailure = true;
 
-        var result = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", TestContext.Current.CancellationToken);
+        var result = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
         Assert.Equal(ToolResultStatuses.Failed, result.ResultStatus);
         Assert.Equal("capability_use_tool_failed", result.FailureCode);
         Assert.Contains("failed to use tool", result.ResultText);
@@ -117,7 +117,7 @@ public sealed class CapabilitySlotExecutorTests
         await using var fixture = await CreateFixtureAsync();
         fixture.State.FailUse = true;
 
-        var result = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", TestContext.Current.CancellationToken);
+        var result = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
         Assert.Equal(ToolResultStatuses.Failed, result.ResultStatus);
         Assert.Equal("capability_use_tool_failed", result.FailureCode);
     }
@@ -126,9 +126,9 @@ public sealed class CapabilitySlotExecutorTests
     public async Task Execute_NoRouterClient_ReturnsCapabilityRouterUnavailable()
     {
         await using var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
-        var executor = new CapabilitySlotExecutor(registry);
+        var executor = new CapabilitySlotExecutor(registry, new CapabilityBindingCache());
 
-        var result = await executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", TestContext.Current.CancellationToken);
+        var result = await executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
         Assert.Equal(ToolResultStatuses.Failed, result.ResultStatus);
         Assert.Equal("capability_router_unavailable", result.FailureCode);
     }
@@ -138,7 +138,7 @@ public sealed class CapabilitySlotExecutorTests
     {
         await using var fixture = await CreateFixtureAsync();
 
-        var result = await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", TestContext.Current.CancellationToken);
+        var result = await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
         Assert.Equal(ToolResultStatuses.Completed, result.ResultStatus);
         Assert.Equal("Weather for Oslo: sunny", result.ResultText);
         Assert.Equal(new[] { "search", "add:weather-mcp", "use:weather-mcp:get_weather" }, fixture.State.Calls);
@@ -150,7 +150,7 @@ public sealed class CapabilitySlotExecutorTests
         await using var fixture = await CreateFixtureAsync();
 
         var result = await fixture.Executor.ExecuteAsync(
-            DynamicRef(task: "ghost-city", policy: "exact_name"), """{"city":"Oslo"}""", TestContext.Current.CancellationToken);
+            DynamicRef(task: "ghost-city", policy: "exact_name"), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
         Assert.Equal(ToolResultStatuses.Failed, result.ResultStatus);
         Assert.Equal("capability_resolve_failed", result.FailureCode);
         Assert.Contains("selection_policy_no_match", result.FailureMessage);
@@ -163,11 +163,38 @@ public sealed class CapabilitySlotExecutorTests
         await using var fixture = await CreateFixtureAsync();
         fixture.State.EmptySearch = true;
 
-        var result = await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", TestContext.Current.CancellationToken);
+        var result = await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
         Assert.Equal(ToolResultStatuses.Failed, result.ResultStatus);
         Assert.Equal("capability_resolve_failed", result.FailureCode);
         Assert.Contains("no_candidates", result.FailureMessage);
         Assert.Equal(new[] { "search" }, fixture.State.Calls);
+    }
+
+    [Fact]
+    public async Task Execute_Dynamic_SameSessionSecondCall_SkipsResolve()
+    {
+        await using var fixture = await CreateFixtureAsync();
+
+        for (var i = 0; i < 2; i++)
+        {
+            var result = await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
+            Assert.Equal(ToolResultStatuses.Completed, result.ResultStatus);
+            Assert.Equal("Weather for Oslo: sunny", result.ResultText);
+        }
+
+        // Same session: the binding is cached, so the second call only proxies.
+        Assert.Equal(new[] { "search", "add:weather-mcp", "use:weather-mcp:get_weather", "use:weather-mcp:get_weather" }, fixture.State.Calls);
+    }
+
+    [Fact]
+    public async Task Execute_Dynamic_DifferentSession_ResolvesIndependently()
+    {
+        await using var fixture = await CreateFixtureAsync();
+
+        await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
+        await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", "sess-2", TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "search", "add:weather-mcp", "use:weather-mcp:get_weather", "search", "add:weather-mcp", "use:weather-mcp:get_weather" }, fixture.State.Calls);
     }
 
     [Theory]

@@ -2645,7 +2645,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             var effectiveCt = timeoutCts?.Token ?? ct;
             try
             {
-                lastResult = await _capabilitySlotExecutor.ExecuteAsync(capabilityRef, toolArgsJson, effectiveCt);
+                lastResult = await _capabilitySlotExecutor.ExecuteAsync(capabilityRef, toolArgsJson, session.Id, effectiveCt);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {

@@ -38,10 +38,16 @@ internal static class ToolServicesExtensions
                 startup.Config.Plugins.Mcp,
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger<McpServerToolRegistry>()));
 
+        // Capability binding cache (#232): session-scoped dynamic bindings, cleared
+        // on workspace MCP reload by McpWorkspaceWatcherService.
+        services.AddSingleton<CapabilityBindingCache>();
+
         // Capability slot executor (#231): executes capability_ref steps in the
         // meta DAG through the same Router registry as resolve_capability.
         services.AddSingleton(sp =>
-            new CapabilitySlotExecutor(sp.GetRequiredService<McpServerToolRegistry>()));
+            new CapabilitySlotExecutor(
+                sp.GetRequiredService<McpServerToolRegistry>(),
+                sp.GetRequiredService<CapabilityBindingCache>()));
 
         // MCP App support — discovery and hosting
         services.AddOpenClawMcpAppServices(startup.Config.McpApps);
