@@ -6,13 +6,16 @@ Status: **live wire-contract verified (2026-09-14); model-token baseline measure
 slots implemented (2026-09-14)** for #231; **node-level degradation
 and retry implemented (2026-09-14)** for #233; **binding trajectory
 observability and offline replay implemented (2026-09-14)** for
-[#234](https://github.com/clawdotnet/openclaw.net/issues/234). The wire contract
+[#234](https://github.com/clawdotnet/openclaw.net/issues/234); **Nacos event
+subscription implemented (2026-09-14)** for
+[#238](https://github.com/clawdotnet/openclaw.net/issues/238). The wire contract
 (envelopes, tool schemas, failure prose) was captured from a real Router 0.2.2
 against a local Nacos 3.2.4 test bed, and both example skills were measured five
 times against a live model (MiniMax-M2.1 via an OpenAI-compatible endpoint) with
 fresh sessions; the medians and the discovery-quality caveats are recorded
-below. The resolver (#230), capability slots (#231), and binding trajectory
-replay (#234) are implemented on this evidence.
+below. The resolver (#230), capability slots (#231), binding trajectory
+replay (#234), and Nacos event subscription (#238) are implemented on this
+evidence.
 
 ## Contract observations
 
@@ -304,6 +307,29 @@ the slot against a deterministic router harness and asserts the same binding
 cache with the recorded binding). See
 `src/OpenClaw.Tests/NacosRouterIntegrationTests.cs` for the loop.
 
+## Nacos event subscription (issue #238)
+
+The Gateway subscribes to Nacos configuration changes for the MCP workspace
+file and funnels them into the existing reload path. A
+`NacosConfigSubscriptionService` (built on the `RedNb.Nacos.All 2.0.0` SDK's
+long-polling listener) registers for the `openclaw-mcp.json` dataId in
+`DEFAULT_GROUP` at startup; on change it calls the
+`McpWorkspaceWatcherService` reload trigger, which re-runs the workspace
+reload and clears **both** caches — the session binding cache (#232) and the
+runtime-level static "already added" cache (#231) — so the next slot
+execution re-resolves and re-adds from scratch. `McpWorkspaceWatcherService`
+is the single convergence point: file change, startup reload, and Nacos
+events all run the same invalidation fan-out.
+
+The subscription is opt-in through the `Nacos` configuration section
+(`ServerAddr`, `DataId`, `Group`, `LongPollingTimeoutMs`, and
+`Username`/`Password` from the existing Nacos credential source). When
+`ServerAddr` is absent, the service degrades to a no-op and the TTL/reload
+fallback (#232) remains the only invalidation path; when Nacos is
+unreachable, listener registration fails over to that same fallback and
+gateway startup never blocks on Nacos. Credentials are read from
+configuration only — nothing is hardcoded or committed.
+
 ## Remaining live acceptance and downstream decisions
 
 Before closing #229 or proceeding with the dependent runtime changes:
@@ -346,6 +372,13 @@ Before closing #229 or proceeding with the dependent runtime changes:
    now typed via the #230 `failure_code` envelope; fallback routing, candidate
    rotation, retry, and caching build on that (#231/#232/#233). Binding
    trajectory observability and offline replay are implemented (#234).
+5. ~~Subscribe to Nacos config change events and wire them into binding
+   invalidation (dual cache clear + workspace reload).~~
+   **Done 2026-09-14**: `RedNb.Nacos.All 2.0.0` long-polling subscription on
+   the mcp.json dataId; onChange clears the session binding cache and the
+   runtime added-server cache and triggers the workspace watcher reload.
+   Graceful no-op without `Nacos:ServerAddr`; the TTL/reload fallback stays
+   active.
 
 | Measurement | Static binding | Model-driven exploration |
 | --- | --- | --- |
@@ -360,3 +393,6 @@ implemented. Binding trajectory observability and offline replay (#234) are
 implemented: every slot records its full binding path (intent → candidates →
 selected server/tool → cache hit → elapsed) on the run's step evidence, and
 `OpenClaw.Testing` replays the exported JSON with same-binding assertions.
+Nacos event subscription (#238) is implemented: config changes to the
+mcp.json dataId converge on `McpWorkspaceWatcherService` and clear both
+caches before the next slot execution.

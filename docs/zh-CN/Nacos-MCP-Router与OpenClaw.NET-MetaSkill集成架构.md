@@ -221,7 +221,7 @@ sequenceDiagram
 2. **Token 最小化**：模型只接触 MetaSkill DAG 结构与 Router 的少量工具描述，而非全部后端服务的 Schema。
 3. **绑定可演进**：更换/升级后端服务只需修改 Nacos 注册信息，MetaSkill 定义不变。
 
-> 实现对照（2026-09-14，#230/#231/#232/#233 已落地）：上图中动态槽位的 `search → add → use` 与静态槽位的 `add`（首次，幂等缓存）→ `use` 均为确定性代码路径；会话级绑定缓存（intent 哈希 + TTL/reload 失效）与节点级降级（fallback 路由 / Top-5 候选轮替 / retry 重试熔断）已实现；Nacos 变更事件订阅的失效联动仍属后续项。
+> 实现对照（2026-09-14，#230/#231/#232/#233/#238 已落地）：上图中动态槽位的 `search → add → use` 与静态槽位的 `add`（首次，幂等缓存）→ `use` 均为确定性代码路径；会话级绑定缓存（intent 哈希 + TTL/reload 失效）与节点级降级（fallback 路由 / Top-5 候选轮替 / retry 重试熔断）已实现；Nacos 变更事件订阅的失效联动（#238）已实现——变更到达即双清缓存（会话绑定缓存 + 运行时 added-server 缓存）并触发 watcher reload。
 
 ## 7. 关键工程决策
 
@@ -250,7 +250,8 @@ Router 语义检索的质量完全取决于 Nacos 中 MCP Server 的 `descriptio
 |---|---|
 | 缓存粒度 | 会话级（默认）+ 运行时级（静态绑定） |
 | 缓存键 | intent 哈希（task_description + key_words + selectionPolicy） |
-| 失效机制 | TTL 过期（可配，默认 300s）+ mcp.json reload 成功清空（#232 已实现）；订阅 Nacos 配置变更事件（后续项，需 Nacos SDK 或 Router 通知能力） |
+| 失效机制 | TTL 过期（可配，默认 300s）+ mcp.json reload 成功清空（#232 已实现）；订阅 Nacos 配置变更事件（#238 已实现，2026-09-14） |
+| Nacos 变更事件订阅 | `RedNb.Nacos.All 2.0.0` LongPolling 订阅 mcp.json dataId；onChange → watcher reload → 会话绑定缓存 + 运行时 added-server 缓存双清；`ServerAddr` 未配置或 Nacos 不可达时优雅降级为 no-op，TTL/reload 兜底保持生效 |
 
 ### 7.4 版本与准入治理
 
@@ -281,7 +282,7 @@ Router 语义检索的质量完全取决于 Nacos 中 MCP Server 的 `descriptio
 | **Agent 级（PoC）** | Gateway 作为 MCP Client 直连 Router 的 streamableHTTP 端点，Agent 看到 3 个工具，三步链由模型完成；MetaSkill 先全部使用静态绑定 | 一周内跑通验证 |
 | **Runtime 级（生产）** | 实现原生 Capability Resolver + 绑定缓存 + 变更事件订阅；MetaSkill 节点支持动态槽位；三步链确定性化 | 正式架构 |
 
-> 实现状态（2026-09-14）：原生 Resolver（#230）与槽位执行（#231，静态 + 动态）已落地，三步链确定性化完成；会话级绑定缓存（#232）与节点级降级（#233）已实现；绑定轨迹可观测性与离线重放（#234）已实现；Nacos 变更事件订阅仍待实现。
+> 实现状态（2026-09-14）：原生 Resolver（#230）与槽位执行（#231，静态 + 动态）已落地，三步链确定性化完成；会话级绑定缓存（#232）与节点级降级（#233）已实现；绑定轨迹可观测性与离线重放（#234）已实现；Nacos 变更事件订阅（#238）已实现。
 
 ## 9. 附录：最小配置示例
 
