@@ -1334,7 +1334,10 @@ public sealed class MafAgentRuntime : IAgentRuntime
                             resultStatus,
                             failureCode,
                             stepSw.Elapsed.TotalMilliseconds,
-                            Continued: !completed && continueOnError));
+                            Continued: !completed && continueOnError,
+                            ExecutionEvidence: toolResult.BindingTrajectory is null
+                                ? null
+                                : new SessionMetaStepExecutionEvidence { CapabilityBinding = toolResult.BindingTrajectory }));
 
                         if (completed)
                         {
