@@ -320,6 +320,88 @@ public sealed class NacosRouterIntegrationTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task ToolCallStep_McpProtocolIsError_StepFailsTyped_AndOnFailureSubstituteRuns(bool maf)
+    {
+        // Issue #237: a protocol-level IsError=true surfaces as
+        // ToolOutcomeException("mcp_tool_error") on the meta tool_call step,
+        // so the step records Failed + mcp_tool_error and the on_failure
+        // substitute executes. No capability slot and no OutputContract
+        // simulation: the failure is the MCP adapter's own.
+        var state = new NacosRouterFixtureState { FailUse = true };
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton(state);
+        builder.Services.AddMcpServer().WithHttpTransport(options => options.Stateless = true).WithTools<FakeNacosRouterMcpTools>();
+        await using var server = builder.Build();
+        server.MapMcp("/mcp");
+        await server.StartAsync(TestContext.Current.CancellationToken);
+        await using var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
+        var config = ServerConfig(server.Urls.Single() + "/mcp");
+        var reload = await registry.ReloadWorkspaceServersAsync(config, TestContext.Current.CancellationToken);
+        state.Calls.Clear();
+        var skill = new SkillDefinition
+        {
+            Name = "mcp-iserror-fallback",
+            Description = "MCP IsError propagation e2e (issue #237)",
+            Instructions = "...",
+            Location = "/skills/mcp-iserror-fallback",
+            Kind = SkillKind.Meta,
+            Composition = new MetaSkillComposition
+            {
+                Steps =
+                [
+                    new MetaSkillStepDefinition
+                    {
+                        Id = "use",
+                        Kind = "tool_call",
+                        Tool = "nacos_mcp_router_use_tool",
+                        WithJson = """{"mcp_server_name":"weather-mcp","mcp_tool_name":"get_weather","params":"{\"city\":\"Oslo\"}"}""",
+                        OnFailure = "fallback"
+                    },
+                    new MetaSkillStepDefinition
+                    {
+                        Id = "fallback",
+                        Kind = "tool_call",
+                        Tool = "emit_text",
+                        WithJson = """{"text":"mcp use failed; fallback fired"}"""
+                    }
+                ]
+            }
+        };
+        var root = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using var memory = new FileMemoryStore(root, 4);
+        var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
+        var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
+        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        try
+        {
+            var session = new Session { Id = "nacos-iserror-" + (maf ? "maf" : "native"), SenderId = "test", ChannelId = "test" };
+            var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var result = await (Task<string>)method.Invoke(runtime, [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
+
+            Assert.Equal("mcp use failed; fallback fired", result);
+            var run = Assert.Single(session.MetaRunHistory);
+            var use = Assert.Single(run.StepResults, step => step.Id == "use");
+            Assert.Equal("failed", use.Status);
+            Assert.Equal("mcp_tool_error", use.FailureCode);
+            var fallback = Assert.Single(run.StepResults, step => step.Id == "fallback");
+            Assert.Equal("completed", fallback.Status);
+            Assert.Equal(new[] { "use:weather-mcp:get_weather" }, state.Calls);
+            Assert.Empty(chat.ReceivedCalls());
+            Assert.Empty(execution.ReceivedCalls());
+        }
+        finally
+        {
+            if (runtime is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
+            else if (runtime is IDisposable disposable) disposable.Dispose();
+            memory.Dispose();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task DynamicSlot_SameSession_ResolvesOnceThenReusesBinding(bool maf)
     {
         var state = new NacosRouterFixtureState();
