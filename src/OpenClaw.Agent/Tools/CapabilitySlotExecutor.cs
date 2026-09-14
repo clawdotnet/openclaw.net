@@ -43,6 +43,21 @@ public sealed class CapabilitySlotExecutor
     }
 
     /// <summary>
+    /// Wipes the runtime-level "already added" cache so the next slot execution
+    /// re-runs <c>add_mcp_server</c>. Invoked by
+    /// <c>McpWorkspaceWatcherService</c> after a mcp.json reload or a Nacos
+    /// config-change event (issue #238) so statically bound slots re-bind
+    /// against the post-reload server registry.
+    /// </summary>
+    public void ClearRuntimeCache() => _addedServers.Clear();
+
+    /// <summary>
+    /// Diagnostic surface for tests and observability — number of servers
+    /// currently known to be added on this executor instance.
+    /// </summary>
+    internal int AddedServerCount => _addedServers.Count;
+
+    /// <summary>
     /// Executes a capability slot. <paramref name="toolArgsJson"/> carries the
     /// inner tool's arguments (the resolved step tool_args); the executor
     /// serialises them onto the Router's <c>params</c> wire field.

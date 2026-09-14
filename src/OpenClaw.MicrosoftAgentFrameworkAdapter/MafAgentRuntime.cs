@@ -222,6 +222,13 @@ public sealed class MafAgentRuntime : IAgentRuntime
         return Task.CompletedTask;
     }
 
+    public Task ClearCapabilitySlotRuntimeCacheAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        _capabilitySlotExecutor?.ClearRuntimeCache();
+        return Task.CompletedTask;
+    }
+
     private static string ResolveCorrelationId(string? correlationId)
         => !string.IsNullOrWhiteSpace(correlationId)
             ? correlationId.Trim()

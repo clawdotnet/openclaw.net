@@ -252,6 +252,13 @@ public sealed class AgentRuntime : IAgentRuntime
         return Task.CompletedTask;
     }
 
+    public Task ClearCapabilitySlotRuntimeCacheAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        _capabilitySlotExecutor?.ClearRuntimeCache();
+        return Task.CompletedTask;
+    }
+
     /// <summary>
     /// Exposes the circuit breaker state for health/metrics endpoints.
     /// </summary>

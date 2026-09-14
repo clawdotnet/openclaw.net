@@ -344,4 +344,59 @@ public sealed class CapabilitySlotExecutorTests
         Assert.Empty(trajectory.Candidates);
         Assert.Empty(trajectory.Attempted);
     }
+
+    // Issue #238: Nacos event subscription must invalidate the runtime-level
+    // "_addedServers" cache as well as the session-level binding cache. Watcher
+    // reload calls ClearRuntimeCache; subsequent slot executions re-add.
+
+    [Fact]
+    public void ClearRuntimeCache_InitialCount_IsZero()
+    {
+        var executor = new CapabilitySlotExecutor(
+            new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance),
+            new CapabilityBindingCache());
+        Assert.Equal(0, executor.AddedServerCount);
+    }
+
+    [Fact]
+    public async Task ClearRuntimeCache_WipesAddedServers_AndNextExecutionReAdds()
+    {
+        await using var fixture = await CreateFixtureAsync();
+
+        // First successful execution populates _addedServers with weather-mcp.
+        var first = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
+        Assert.Equal(ToolResultStatuses.Completed, first.ResultStatus);
+        Assert.True(fixture.Executor.AddedServerCount >= 1);
+
+        fixture.Executor.ClearRuntimeCache();
+        Assert.Equal(0, fixture.Executor.AddedServerCount);
+
+        // Next execution must re-add (cache wiped) — verify by call log.
+        var second = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
+        Assert.Equal(ToolResultStatuses.Completed, second.ResultStatus);
+        var addCalls = fixture.State.Calls.Count(c => c.StartsWith("add:weather-mcp", StringComparison.Ordinal));
+        Assert.Equal(2, addCalls); // 1 before ClearRuntimeCache + 1 after
+        Assert.True(fixture.Executor.AddedServerCount >= 1);
+    }
+
+    [Fact]
+    public async Task ClearRuntimeCache_PreservesFailureNotCachedContract()
+    {
+        await using var fixture = await CreateFixtureAsync();
+
+        // Failure path: add NOT cached (per existing #231 contract).
+        fixture.State.FailAdd = true;
+        var failed = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
+        Assert.Equal(ToolResultStatuses.Failed, failed.ResultStatus);
+        Assert.Equal(0, fixture.Executor.AddedServerCount);
+
+        fixture.State.FailAdd = false;
+        fixture.Executor.ClearRuntimeCache(); // no-op semantics on empty cache, but must not throw
+        Assert.Equal(0, fixture.Executor.AddedServerCount);
+
+        // Healthy retry succeeds and adds.
+        var succeeded = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
+        Assert.Equal(ToolResultStatuses.Completed, succeeded.ResultStatus);
+        Assert.True(fixture.Executor.AddedServerCount >= 1);
+    }
 }
