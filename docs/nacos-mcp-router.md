@@ -1,15 +1,19 @@
 # Nacos MCP Router PoC
 
-Status: **mock-verified integration foundation; live acceptance pending** for
-[#229](https://github.com/clawdotnet/openclaw.net/issues/229). This guide does not
-claim that the Nacos deployment, discovery quality, or model-token baseline has
-been validated. The resolver/schema/cache work in #230–#234 depends on that evidence.
+Status: **live wire-contract verified (2026-09-14); model-token baseline pending** for
+[#229](https://github.com/clawdotnet/openclaw.net/issues/229). The wire contract
+(envelopes, tool schemas, failure prose) was captured from a real Router 0.2.2
+against a local Nacos 3.2.4 test bed; discovery quality and the model-token
+baseline have not been measured. The resolver/schema/cache work in #230–#234
+depends on that remaining evidence.
 
 ## Contract observations
 
 The reference is the upstream Python Router at commit
 [`0ee95f4f353d6f66184dafdb3e0ffd342c4edb09`](https://github.com/nacos-group/nacos-mcp-router-python/blob/0ee95f4f353d6f66184dafdb3e0ffd342c4edb09/src/nacos_mcp_router/router.py).
-These are source observations, **not a live deployment capture**:
+Originally source observations, re-verified on 2026-09-14 against a live capture
+from Router **0.2.2** (`@latest` at capture time) on a local Nacos 3.2.4 test bed
+— the envelope shapes below matched verbatim:
 
 | Tool | Arguments | Returned text |
 | --- | --- | --- |
@@ -35,6 +39,26 @@ a YAML mapping.
 The server ID `nacos-mcp-router` retains its hyphens in default tool names.
 Configure `toolNamePrefix` explicitly to obtain the underscore names below.
 
+Live-capture findings (2026-09-14):
+
+- **Dependency pin**: 0.2.2 declares `mcp>=1.9.4` with no upper bound; current
+  mcp 2.x renamed the `streamablehttp_client` import and the Router crashes on
+  startup. Run with `--with "mcp<2"` (see the opt-in command below). Report the
+  break upstream if it still exists when you read this.
+- **`use_tool` wraps its result in a Python repr**: the returned text is
+  `str(response.content)` of the downstream MCP result, e.g.
+  `[TextContent(type='text', text='{...}', annotations=None, meta=None)]`.
+  Consumers that wrap `use_tool` must strip this shell before presenting the
+  payload to a model. `resolve_capability` never calls `use_tool`, so #230 is
+  unaffected.
+- **Registration hard requirements** (the Router silently skips anything else):
+  the registry entry must have a **non-empty `description`** (keyword search is
+  a normalized substring match against it, so bilingual descriptions serve both
+  Chinese intents and English test keywords) and the local server config must be
+  **`mcpServers`-wrapped**: `{"mcpServers": {"<name>": {"command": ..., "args": [...]}}}`.
+  A flat `{"command", "args"}` config installs fail with the plain text
+  `failed to install mcp server: <name>`.
+
 ## Opt-in configuration
 
 Keep Nacos and Router on the same host when Nacos binds only to loopback. Do not
@@ -48,8 +72,11 @@ Router version using the upstream transport spelling:
 : "${NACOS_PASSWORD:?Supply through your secret environment}"
 : "${NACOS_ROUTER_VERSION:?Pin the Router version tested against your deployment}"
 export TRANSPORT_TYPE=streamable_http
-uvx "nacos-mcp-router@${NACOS_ROUTER_VERSION}"
+uvx --with "mcp<2" "nacos-mcp-router@${NACOS_ROUTER_VERSION}"
 ```
+
+`--with "mcp<2"` upper-bounds the mcp SDK: Router 0.2.2 declares `mcp>=1.9.4`
+unbounded, and mcp 2.x breaks its import (verified 2026-09-14).
 
 Set `NACOS_ROUTER_VERSION` to an explicitly validated package version, not an
 unverified moving `latest`. Inspect startup output for the actual endpoint.
@@ -69,12 +96,14 @@ Merge this entry into `<storagePath>/mcp/mcp.json`; preserve existing servers:
 }
 ```
 
-Register a test server named `weather-mcp` exposing `get_weather` with required
-string argument `city` using the deployment's supported Nacos console/API. Verify
-its registration and `add_mcp_server` output before running the static example.
-The referenced Windows compose deployment and architecture document are not in
-this repository, so this guide deliberately does not invent administrator-init
-commands or a version-specific registration payload.
+Register a test server named `weather-mcp` using the deployment's Nacos
+console/API. Verified on the referenced deployment (2026-09-14): a console
+registration with a non-empty bilingual description and a stdio local config
+wrapped as `{"mcpServers": {"weather-mcp": {"command": "uvx", "args": ["mcp-server-time"]}}}`.
+`mcp-server-time` is a test-bed stand-in so the full `add_mcp_server` chain runs;
+replace it with a real weather server. Verify its registration and
+`add_mcp_server` output before running the static example — a live add success
+envelope is `1. <name>安装完成, tool 列表为: [{name, description, inputSchema}]...`.
 
 The examples stay under `examples/skills/` and are not bundled or enabled by
 default. Copy the two example directories into an isolated gateway workspace's
@@ -165,24 +194,29 @@ Behaviour contract:
 
 Before closing #229 or proceeding with the dependent runtime changes:
 
-1. Capture the real three tool schemas, success/error responses, and Router
-   package version from the intended Nacos 3.2.4 deployment. Redact credentials.
-2. Record the actual weather-server registration payload and reproducible startup
-   commands from that deployment; the issue's Windows path is not portable.
+1. ~~Capture the real three tool schemas, success/error responses, and Router
+   package version from the intended Nacos 3.2.4 deployment. Redact credentials.~~
+   **Done 2026-09-14**: schemas, search/add/use envelopes and failure prose
+   captured from Router 0.2.2 on the local Nacos 3.2.4 test bed; matches the
+   pinned contract. No credentials in this guide or the captures.
+2. ~~Record the actual weather-server registration payload and reproducible startup
+   commands from that deployment; the issue's Windows path is not portable.~~
+   **Done 2026-09-14**: registration payload and startup command recorded above
+   (`--with "mcp<2"` pin included).
 3. Run both examples five times with the same city, model, fresh session, and
    configuration. Read actual session input/output usage; take the median of the
    five per-run totals. Record discovery quality separately. Do not use invented
    fixture token counts as a model measurement.
 4. Ranking metadata is the upstream positional `rank` (see above); version
-   metadata remains open (upstream search provides none), and prose failures
-   must become typed failures before implementing fallback, retries, caching,
-   or replay.
+   metadata remains open (upstream search provides none). Prose failures are
+   now typed via the #230 `failure_code` envelope; fallback, retries, caching,
+   or replay build on that.
 
 | Measurement | Static binding | Model-driven exploration |
 | --- | --- | --- |
-| Live recall / selected server | Not measured | Not measured |
+| Live recall / selected server | Weather intent only: search found `weather-mcp` | Not measured |
 | Median input + output tokens (5 runs) | Not measured | Not measured |
-| Router version / deployment | Not provided | Not provided |
+| Router version / deployment | 0.2.2 (`@latest`, requires `mcp<2`) / local Nacos 3.2.4, streamable_http :8000 | same |
 
 No cache, capability slots, retry policy, or binding replay is implemented by this
 PoC. Those remain separately tracked by #230–#234.

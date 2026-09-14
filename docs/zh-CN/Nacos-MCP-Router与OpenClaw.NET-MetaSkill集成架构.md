@@ -285,8 +285,10 @@ export NACOS_ADDR=127.0.0.1:8848
 export NACOS_USERNAME=nacos
 export NACOS_PASSWORD=<password>
 export TRANSPORT_TYPE=streamable_http
-uvx nacos-mcp-router@latest
+uvx --with "mcp<2" nacos-mcp-router@latest
 ```
+
+> `--with "mcp<2"` 为必要约束（2026-09-14 live 验证）：Router 0.2.2 声明 `mcp>=1.9.4` 无上界，mcp 2.x 改名 `streamablehttp_client` 导入导致启动崩溃。
 
 ## 10. 总结
 

@@ -182,6 +182,24 @@ public sealed class ResolveCapabilityToolTests
     }
 
     [Fact]
+    public async Task LiveCapturedAddEnvelope_BindsQueryWeather()
+    {
+        var (tool, _, _, server) = await BuildWithAsync<LiveCapturedAddEnvelopeFakeNacosRouter>();
+        await using (server)
+        {
+            var result = await tool.ExecuteAsync("""{"task_description":"weather city","key_words":"weather"}""", CancellationToken.None);
+
+            using var doc = JsonDocument.Parse(result);
+            var root = doc.RootElement;
+            Assert.Equal("cn.pianam.mcp/weather-mcp-china", root.GetProperty("server").GetString());
+            Assert.Equal("query_weather", root.GetProperty("tool").GetString());
+            using var schema = JsonDocument.Parse(root.GetProperty("schema").GetString()!);
+            Assert.Contains("city",
+                schema.RootElement.GetProperty("required").EnumerateArray().Select(e => e.GetString()));
+        }
+    }
+
+    [Fact]
     public async Task MetaSkill_ResolveCapabilityOnly_ZeroLlmRoundtrips()
     {
         var (resolveTool, _, _, server) = await BuildAsync();
@@ -319,6 +337,27 @@ public sealed class ResolveCapabilityToolTests
         WebApplication server)>
         BuildMalformedAsync()
         => await BuildWithAsync<MalformedToolListFakeNacosRouter>();
+
+    // Live capture from a real nacos-mcp-router 0.2.2 add response (2026-09-14,
+    // local test bed, server cn.pianam.mcp/weather-mcp-china): spaced JSON,
+    // nested inputSchema, slash in the server name.
+    [McpServerToolType]
+    private sealed class LiveCapturedAddEnvelopeFakeNacosRouter
+    {
+        [McpServerTool(Name = "search_mcp_server")]
+        public string Search(string task_description, string key_words) =>
+            "## 获取weather city的步骤如下：\n"
+            + RouterProseContract.SearchListMarker
+            + """{"cn.pianam.mcp/weather-mcp-china": {"name": "cn.pianam.mcp/weather-mcp-china", "description": "MCP server for current weather and multi-day forecasts worldwide, Chinese city names and output."}}"""
+            + "\n" + RouterProseContract.SearchStepMarker
+            + "从当前可用的mcp server列表中选择你需要的mcp server调add_mcp_server工具安装mcp server";
+
+        [McpServerTool(Name = "add_mcp_server")]
+        public string Add(string mcp_server_name) =>
+            "1. " + mcp_server_name + RouterProseContract.AddSuccessMarker + ", " + RouterProseContract.AddToolListMarker
+            + """[{"name": "query_weather", "description": "查询全球城市的实时天气和未来几天预报。city城市名中英文均可，days预报天数1~7默认3天。主源Open-Meteo，备源wttr.in。", "inputSchema": {"properties": {"city": {"title": "City", "type": "string"}, "days": {"default": 3, "title": "Days", "type": "integer"}}, "required": ["city"], "title": "query_weatherArguments", "type": "object"}}]"""
+            + "\n2." + mcp_server_name + "的工具需要通过nacos-mcp-router的use_tool工具代理使用";
+    }
 
     [McpServerToolType]
     private sealed class EmptyFakeNacosRouter

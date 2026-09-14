@@ -42,4 +42,29 @@ public sealed class RouterCandidateParserTests
         var parsed = RouterCandidateParser.Parse("garbage with no JSON");
         Assert.Empty(parsed);
     }
+
+    // Live capture from a real nacos-mcp-router 0.2.2 + Nacos 3.2.4 (2026-09-14,
+    // local test bed). Note the spaced JSON (Python json.dumps default
+    // separators), the slash-containing server name and the bilingual
+    // descriptions — the parser must eat the envelope exactly as upstream
+    // emits it, not the compact form the fixtures above assume.
+    private static readonly string LiveCapturedSearchEnvelope =
+        "## 获取weather city的步骤如下：\n"
+        + RouterProseContract.SearchListMarker
+        + """{"weather-mcp": {"name": "weather-mcp", "description": "天气服务：提供城市天气查询、天气预报等工具，Weather service for city weather query and forecast."}, "cn.pianam.mcp/weather-mcp-china": {"name": "cn.pianam.mcp/weather-mcp-china", "description": "MCP server for current weather and multi-day forecasts worldwide, Chinese city names and output."}}"""
+        + "\n" + RouterProseContract.SearchStepMarker
+        + "从当前可用的mcp server列表中选择你需要的mcp server调add_mcp_server工具安装mcp server";
+
+    [Fact]
+    public void Parse_LiveCapturedEnvelope_ReturnsTwoRankedCandidates()
+    {
+        var parsed = RouterCandidateParser.Parse(LiveCapturedSearchEnvelope);
+        Assert.Equal(2, parsed.Count);
+        Assert.Equal("weather-mcp", parsed[0].Name);
+        Assert.Equal(1, parsed[0].Rank);
+        Assert.Contains("天气服务", parsed[0].Description);
+        Assert.Equal("cn.pianam.mcp/weather-mcp-china", parsed[1].Name);
+        Assert.Equal(2, parsed[1].Rank);
+        Assert.Contains("multi-day forecasts", parsed[1].Description);
+    }
 }
