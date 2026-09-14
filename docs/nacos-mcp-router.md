@@ -1,11 +1,13 @@
 # Nacos MCP Router PoC
 
-Status: **live wire-contract verified (2026-09-14); model-token baseline pending** for
+Status: **live wire-contract verified (2026-09-14); model-token baseline measured
+(2026-09-14)** for
 [#229](https://github.com/clawdotnet/openclaw.net/issues/229). The wire contract
 (envelopes, tool schemas, failure prose) was captured from a real Router 0.2.2
-against a local Nacos 3.2.4 test bed; discovery quality and the model-token
-baseline have not been measured. The resolver/schema/cache work in #230–#234
-depends on that remaining evidence.
+against a local Nacos 3.2.4 test bed, and both example skills were measured five
+times against a live model (MiniMax-M2.1 via an OpenAI-compatible endpoint) with
+fresh sessions; the medians and the discovery-quality caveats are recorded
+below. The resolver/schema/cache work in #230–#234 can proceed on this evidence.
 
 ## Contract observations
 
@@ -204,10 +206,30 @@ Before closing #229 or proceeding with the dependent runtime changes:
    commands from that deployment; the issue's Windows path is not portable.~~
    **Done 2026-09-14**: registration payload and startup command recorded above
    (`--with "mcp<2"` pin included).
-3. Run both examples five times with the same city, model, fresh session, and
+3. ~~Run both examples five times with the same city, model, fresh session, and
    configuration. Read actual session input/output usage; take the median of the
    five per-run totals. Record discovery quality separately. Do not use invented
-   fixture token counts as a model measurement.
+   fixture token counts as a model measurement.~~
+   **Done 2026-09-14**: MiniMax-M2.1 (OpenAI-compatible endpoint) × Oslo ×
+   5 runs each, live Router 0.2.2, fresh `Session` per run, real session
+   usage counters. Static example: 0 input / 0 output tokens × 5 (the DAG is
+   deterministic — zero LLM confirmed live). Exploration example: median
+   input **17479** / output **1181** tokens per run in the traced batch; an
+   earlier untraced batch hit the 12-iteration cap with medians 29763 / 1870,
+   so treat the cost as a range whose spread comes from the model's loop
+   behaviour (repeated re-searches), not from the Router.
+   Discovery quality was **0/5** for environmental reasons: the test-bed
+   `weather-mcp` backend is `mcp-server-time` (its real tools are
+   `get_current_time`/`convert_time` while its description promises weather),
+   and `cn.pianam.mcp/weather-mcp-china` add intermittently returned
+   `failed to install mcp server` during the measurement windows although
+   serial Python probes against the same Router before and after succeeded
+   (10/10). The cause is not yet pinned — Router-side registry/install
+   suspicion; the Router's warning traceback would settle it. The model never
+   fabricated weather: every run reported the failure per SKILL.md, and it
+   self-corrected after one hallucinated `use_tool` call and one
+   `meta_invoke` misuse. Tool-call traces per run are kept next to the
+   measurement driver (throwaway, not in the repo).
 4. Ranking metadata is the upstream positional `rank` (see above); version
    metadata remains open (upstream search provides none). Prose failures are
    now typed via the #230 `failure_code` envelope; fallback, retries, caching,
@@ -215,8 +237,8 @@ Before closing #229 or proceeding with the dependent runtime changes:
 
 | Measurement | Static binding | Model-driven exploration |
 | --- | --- | --- |
-| Live recall / selected server | Weather intent only: search found `weather-mcp` | Not measured |
-| Median input + output tokens (5 runs) | Not measured | Not measured |
+| Live recall / selected server | `weather-mcp` bound; pinned `get_weather` does not exist on the test-bed backend (`mcp-server-time` has `get_current_time`/`convert_time`) → plain-text tool error | 0/5: `weather-mcp` exposes time tools only; `weather-mcp-china` add failed during the measurement window (intermittent, cause not yet pinned) |
+| Median input + output tokens (5 runs) | 0 + 0 (no LLM turn) | 17479 + 1181 (traced batch; untraced batch at the iteration cap: 29763 + 1870) |
 | Router version / deployment | 0.2.2 (`@latest`, requires `mcp<2`) / local Nacos 3.2.4, streamable_http :8000 | same |
 
 No cache, capability slots, retry policy, or binding replay is implemented by this
