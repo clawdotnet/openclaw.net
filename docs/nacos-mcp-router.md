@@ -3,13 +3,14 @@
 Status: **live wire-contract verified (2026-09-14); model-token baseline measured
 (2026-09-14)** for
 [#229](https://github.com/clawdotnet/openclaw.net/issues/229); **capability
-slots implemented (2026-09-14)** for #231. The wire contract
+slots implemented (2026-09-14)** for #231; **node-level degradation
+and retry implemented (2026-09-14)** for #233. The wire contract
 (envelopes, tool schemas, failure prose) was captured from a real Router 0.2.2
 against a local Nacos 3.2.4 test bed, and both example skills were measured five
 times against a live model (MiniMax-M2.1 via an OpenAI-compatible endpoint) with
 fresh sessions; the medians and the discovery-quality caveats are recorded
 below. The resolver (#230) and capability slots (#231) are implemented on this
-evidence; the remaining cache/retry/replay work (#232–#234) builds on it.
+evidence; the remaining replay work (#234) builds on it.
 
 ## Contract observations
 
@@ -162,7 +163,7 @@ Inputs:
 
 - `task_description` (required) — the same shape the Router `search_mcp_server` accepts.
 - `key_words` (optional) — comma-separated string, same wire shape as the Router.
-- `selection_policy` (optional) — `first` (default) or `exact_name` (case-insensitive name match against `task_description`); a name with no exact match fails with `failure_code: "selection_policy_no_match"` and an empty `tried`.
+- `selection_policy` (optional) — `first` (default) or `exact_name` (case-insensitive name match against `task_description`); a name with no exact match fails with `failure_code: "selection_policy_no_match"` and an empty `tried`. Under `first`, candidates are attempted in the upstream's deterministic top-N order and a failed add rotates to the next candidate; the first successful add wins.
 
 Output (success):
 
@@ -197,7 +198,7 @@ Behaviour contract:
    - add that reports `isError` fails only that candidate and continues rotation; `isError` wins over prose inspection, so a "安装完成" message inside an error result cannot bind a tool.
    - add that fails to reach the Router stops rotation → `router_unavailable` with the candidates attempted so far.
    - caller cancellation still propagates as `OperationCanceledException`.
-4. `tried` lists the candidates the resolver actually attempted to add, not all returned candidates.
+4. `tried` lists the candidates the resolver actually attempted to add, in rank order, not all returned candidates. Rotation applies to every attempted candidate: a failed add (prose or protocol) moves to the next one, and only a dead transport stops the rotation.
 5. `rank` is the candidate's position in the upstream's deterministic top-N ordering. Upstream search returns no scores, so none are fabricated.
 
 ## Capability slots (issue #231)
@@ -236,6 +237,12 @@ Binding modes:
   intent (task_description + keywords + selection_policy); later slots in the
   same session reuse the binding until its TTL (default 300 s) expires or the
   workspace MCP config reloads. `resolve_capability` itself is never cached.
+- **degradation** — a failed slot routes to the step's `fallback` (folded into
+  `on_failure` at parse time; declaring both `capability_ref.fallback` and a
+  step-level `on_failure` is rejected as `invalid_capability_ref`). `use_tool`
+  failures retry per the step's `retry` policy (`max_attempts` + `backoff_ms`)
+  before the fallback fires, and the failed step records its `failure_code` in
+  the run's step results.
 
 Semantics shared with the resolver:
 
@@ -262,9 +269,10 @@ Failure codes (all in `failure_code`):
 Schema validation rejects `top_k` / `prefer_version` with
 `capabilityref_reserved_field` until the resolver supports them.
 
-Examples: `examples/skills/nacos-router-weather` (static) and
-`examples/skills/nacos-router-weather-dynamic` (dynamic). Both add an
-`emit_text` fallback step and stay opt-in, not bundled by default.
+Examples: `examples/skills/nacos-router-weather` (static),
+`examples/skills/nacos-router-weather-dynamic` (dynamic), and
+`examples/skills/nacos-router-weather-retry` (dynamic + `retry` policy).
+Each adds an `emit_text` fallback step and stays opt-in, not bundled by default.
 
 ## Remaining live acceptance and downstream decisions
 
@@ -305,8 +313,9 @@ Before closing #229 or proceeding with the dependent runtime changes:
    measurement driver (throwaway, not in the repo).
 4. Ranking metadata is the upstream positional `rank` (see above); version
    metadata remains open (upstream search provides none). Prose failures are
-   now typed via the #230 `failure_code` envelope; fallback, retries, caching,
-   or replay build on that.
+   now typed via the #230 `failure_code` envelope; fallback routing, candidate
+   rotation, retry, and caching build on that (#231/#232/#233). Binding replay
+   remains #234.
 
 | Measurement | Static binding | Model-driven exploration |
 | --- | --- | --- |
@@ -315,6 +324,6 @@ Before closing #229 or proceeding with the dependent runtime changes:
 | Router version / deployment | 0.2.2 (`@latest`, requires `mcp<2`) / local Nacos 3.2.4, streamable_http :8000 | same |
 
 Capability slots (#231) and the capability resolver (#230) are implemented. The
-static slot's auto-add cache is runtime-scoped idempotency only — no
-session-level binding cache, retry policy, or binding replay yet; those remain
-tracked by #232–#234.
+static slot's auto-add cache is runtime-scoped idempotency; session-level
+binding caching (#232) and node-level degradation with retry (#233) are
+implemented. Binding replay remains tracked by #234.
