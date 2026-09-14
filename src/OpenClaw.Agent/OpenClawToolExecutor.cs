@@ -24,6 +24,7 @@ public sealed class ToolExecutionResult
     public string? FailureCode { get; init; }
     public string? FailureMessage { get; init; }
     public string? NextStep { get; init; }
+    public CapabilityBindingTrajectory? BindingTrajectory { get; init; }
 
     public FunctionResultContent ToFunctionResultContent(string callId)
         => new(callId, ResultText);

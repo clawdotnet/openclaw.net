@@ -35,7 +35,7 @@ public sealed class ResolveCapabilityTool : ITool
     public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
     {
         var request = ParseRequest(argumentsJson);
-        var (binding, failure) = await ResolveCoreAsync(_registry, request, ct);
+        var (binding, failure, _) = await ResolveCoreAsync(_registry, request, ct);
         if (binding is not null)
             return JsonBinding(binding);
         return JsonFail(failure?.FailureCode ?? ResolveCapabilityFailureCodes.RouterUnavailable, failure?.TriedCandidates ?? []);
@@ -47,12 +47,12 @@ public sealed class ResolveCapabilityTool : ITool
     /// <c>resolve_capability</c> tool share one implementation and one contract.
     /// Never calls use_tool and never touches an LLM.
     /// </summary>
-    internal static async Task<(ResolveCapabilityBinding? Binding, ResolveCapabilityFailure? Failure)> ResolveCoreAsync(
+    internal static async Task<(ResolveCapabilityBinding? Binding, ResolveCapabilityFailure? Failure, IReadOnlyList<RouterCandidate> Candidates)> ResolveCoreAsync(
         McpServerToolRegistry registry, ResolveCapabilityRequest request, CancellationToken ct)
     {
         var client = registry.GetClientByServerId("nacos-mcp-router");
         if (client is null)
-            return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.RouterUnavailable, []));
+            return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.RouterUnavailable, []), []);
 
         var search = await CallToolAsync(client, "search_mcp_server",
             new Dictionary<string, JsonElement>
@@ -63,15 +63,15 @@ public sealed class ResolveCapabilityTool : ITool
         // A search that never reaches the Router (transport) or reports a
         // protocol-level error is a router failure, not "no candidates".
         if (!search.Reached || search.IsError)
-            return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.RouterUnavailable, []));
+            return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.RouterUnavailable, []), []);
 
         var candidates = RouterCandidateParser.Parse(search.Text);
         if (candidates.Count == 0)
-            return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.NoCandidates, []));
+            return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.NoCandidates, []), []);
 
         var picked = PickCandidates(candidates, request).ToList();
         if (picked.Count == 0)
-            return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.SelectionPolicyNoMatch, []));
+            return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.SelectionPolicyNoMatch, []), candidates);
 
         var tried = new List<RouterCandidate>();
         foreach (var candidate in picked)
@@ -86,17 +86,17 @@ public sealed class ResolveCapabilityTool : ITool
             // The Router dying mid-chain stops the rotation: further adds would
             // hit the same dead transport.
             if (!add.Reached)
-                return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.RouterUnavailable, tried));
+                return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.RouterUnavailable, tried), candidates);
             // A protocol-level error on this install fails only this candidate,
             // even when the prose claims installation succeeded.
             if (add.IsError)
                 continue;
 
             if (TryExtractTool(add.Text, out var toolName, out var schema))
-                return (new ResolveCapabilityBinding(candidate.Name, toolName, schema, tried), null);
+                return (new ResolveCapabilityBinding(candidate.Name, toolName, schema, tried), null, candidates);
         }
 
-        return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.AllAddsFailed, tried));
+        return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.AllAddsFailed, tried), candidates);
     }
 
     private static IEnumerable<RouterCandidate> PickCandidates(

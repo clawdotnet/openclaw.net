@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -53,12 +54,16 @@ public sealed class CapabilitySlotExecutor
     {
         ArgumentNullException.ThrowIfNull(capabilityRef);
 
+        var bindingSw = Stopwatch.StartNew();
+        var trajectory = BuildTrajectory(capabilityRef);
+
         var client = _registry.GetClientByServerId(RouterServerId);
         if (client is null)
         {
+            trajectory.ElapsedMs = bindingSw.Elapsed.TotalMilliseconds;
             return Fail(CapabilitySlotFailureCodes.RouterUnavailable,
                 $"Nacos MCP Router '{RouterServerId}' is not registered; configure the Router server before executing capability slots.",
-                toolArgsJson);
+                toolArgsJson, trajectory);
         }
 
         string server;
@@ -68,9 +73,14 @@ public sealed class CapabilitySlotExecutor
             var pinned = capabilityRef.Static!;
             server = pinned.McpServerName;
             tool = pinned.ToolName;
-            var addFailure = await EnsureAddedAsync(client, server, ct);
+            var addFailure = await EnsureAddedAsync(client, server, trajectory, ct);
             if (addFailure is not null)
+            {
+                trajectory.Server = server;
+                trajectory.Tool = tool;
+                trajectory.ElapsedMs = bindingSw.Elapsed.TotalMilliseconds;
                 return addFailure;
+            }
         }
         else
         {
@@ -89,29 +99,55 @@ public sealed class CapabilitySlotExecutor
             {
                 server = cachedServer;
                 tool = cachedTool;
+                trajectory.CacheHit = true;
             }
             else
             {
-                var (binding, failure) = await ResolveCapabilityTool.ResolveCoreAsync(_registry, request, ct);
+                var (binding, failure, candidates) = await ResolveCapabilityTool.ResolveCoreAsync(_registry, request, ct);
                 if (binding is null)
                 {
                     var code = failure!.FailureCode == ResolveCapabilityFailureCodes.RouterUnavailable
                         ? CapabilitySlotFailureCodes.RouterUnavailable
                         : CapabilitySlotFailureCodes.ResolveFailed;
-                    return Fail(code, $"capability resolve failed: {failure.FailureCode}", toolArgsJson);
+                    trajectory.Candidates = ToTrajectoryCandidates(candidates);
+                    trajectory.Attempted = ToTrajectoryCandidates(failure.TriedCandidates);
+                    trajectory.ElapsedMs = bindingSw.Elapsed.TotalMilliseconds;
+                    return Fail(code, $"capability resolve failed: {failure.FailureCode}", toolArgsJson, trajectory);
                 }
 
                 server = binding.Server;
                 tool = binding.Tool;
+                trajectory.Candidates = ToTrajectoryCandidates(candidates);
+                trajectory.Attempted = ToTrajectoryCandidates(binding.TriedCandidates);
                 if (!string.IsNullOrEmpty(sessionId))
                     _bindingCache.Set(sessionId, intentKey, server, tool);
             }
         }
 
-        return await UseToolAsync(client, server, tool, toolArgsJson, ct);
+        trajectory.Server = server;
+        trajectory.Tool = tool;
+        trajectory.ElapsedMs = bindingSw.Elapsed.TotalMilliseconds;
+        return await UseToolAsync(client, server, tool, toolArgsJson, trajectory, ct);
     }
 
-    private async Task<ToolExecutionResult?> EnsureAddedAsync(McpClient client, string server, CancellationToken ct)
+    private static CapabilityBindingTrajectory BuildTrajectory(MetaCapabilityRefDefinition capabilityRef)
+    {
+        var trajectory = new CapabilityBindingTrajectory { Binding = capabilityRef.Binding };
+        if (capabilityRef.Binding == "dynamic" && capabilityRef.Intent is { } intent)
+        {
+            trajectory.TaskDescription = intent.TaskDescription;
+            trajectory.KeyWords = intent.Keywords.Count > 0 ? string.Join(",", intent.Keywords) : null;
+            trajectory.SelectionPolicy = capabilityRef.SelectionPolicy == "exact_name" ? "exact_name" : "first";
+            trajectory.IntentKey = CapabilityBindingCache.ComputeIntentKey(
+                intent.TaskDescription, trajectory.KeyWords, capabilityRef.SelectionPolicy == "exact_name" ? "ExactName" : "First");
+        }
+        return trajectory;
+    }
+
+    private static List<CapabilityBindingCandidate> ToTrajectoryCandidates(IReadOnlyList<RouterCandidate> candidates)
+        => candidates.Select(c => new CapabilityBindingCandidate { Name = c.Name, Rank = c.Rank }).ToList();
+
+    private async Task<ToolExecutionResult?> EnsureAddedAsync(McpClient client, string server, CapabilityBindingTrajectory trajectory, CancellationToken ct)
     {
         if (_addedServers.ContainsKey(server))
             return null;
@@ -124,17 +160,17 @@ public sealed class CapabilitySlotExecutor
         if (!add.Reached)
         {
             return Fail(CapabilitySlotFailureCodes.RouterUnavailable,
-                $"add_mcp_server never reached the Router for '{server}'.", "{}");
+                $"add_mcp_server never reached the Router for '{server}'.", "{}", trajectory);
         }
         if (add.IsError)
         {
             return Fail(CapabilitySlotFailureCodes.AddFailed,
-                $"add_mcp_server reported a protocol error for '{server}': {add.Text}", "{}");
+                $"add_mcp_server reported a protocol error for '{server}': {add.Text}", "{}", trajectory);
         }
         if (!add.Text.Contains(RouterProseContract.AddSuccessMarker, StringComparison.Ordinal))
         {
             return Fail(CapabilitySlotFailureCodes.AddFailed,
-                $"add_mcp_server failed for '{server}': {add.Text}", "{}");
+                $"add_mcp_server failed for '{server}': {add.Text}", "{}", trajectory);
         }
 
         _addedServers[server] = 1;
@@ -142,7 +178,7 @@ public sealed class CapabilitySlotExecutor
     }
 
     private static async Task<ToolExecutionResult> UseToolAsync(
-        McpClient client, string server, string tool, string toolArgsJson, CancellationToken ct)
+        McpClient client, string server, string tool, string toolArgsJson, CapabilityBindingTrajectory trajectory, CancellationToken ct)
     {
         var use = await ResolveCapabilityTool.CallToolAsync(client, "use_tool",
             new Dictionary<string, JsonElement>
@@ -157,24 +193,24 @@ public sealed class CapabilitySlotExecutor
         if (!use.Reached)
         {
             return Fail(CapabilitySlotFailureCodes.RouterUnavailable,
-                $"use_tool never reached the Router for '{server}.{tool}'.", toolArgsJson);
+                $"use_tool never reached the Router for '{server}.{tool}'.", toolArgsJson, trajectory);
         }
 
         var text = StripUseToolShell(use.Text);
         if (use.IsError)
         {
             return Fail(CapabilitySlotFailureCodes.UseToolFailed,
-                $"use_tool reported a protocol error for '{server}.{tool}': {text}", toolArgsJson);
+                $"use_tool reported a protocol error for '{server}.{tool}': {text}", toolArgsJson, trajectory);
         }
         // The live Router reports some use failures as plain text, not MCP
         // protocol errors; the pinned prose marker normalises them here.
         if (text.StartsWith(RouterProseContract.UseFailureMarker, StringComparison.Ordinal))
         {
             return Fail(CapabilitySlotFailureCodes.UseToolFailed,
-                $"use_tool failed for '{server}.{tool}': {text}", toolArgsJson);
+                $"use_tool failed for '{server}.{tool}': {text}", toolArgsJson, trajectory);
         }
 
-        return Completed(text, toolArgsJson, server, tool);
+        return Completed(text, toolArgsJson, server, tool, trajectory);
     }
 
     /// <summary>
@@ -248,7 +284,7 @@ public sealed class CapabilitySlotExecutor
         return parts.Count == 0 ? text : string.Join("\n", parts);
     }
 
-    private static ToolExecutionResult Fail(string code, string message, string arguments) => new()
+    private static ToolExecutionResult Fail(string code, string message, string arguments, CapabilityBindingTrajectory? trajectory = null) => new()
     {
         Invocation = new ToolInvocation
         {
@@ -262,10 +298,11 @@ public sealed class CapabilitySlotExecutor
         ResultText = message,
         ResultStatus = ToolResultStatuses.Failed,
         FailureCode = code,
-        FailureMessage = message
+        FailureMessage = message,
+        BindingTrajectory = trajectory
     };
 
-    private static ToolExecutionResult Completed(string text, string arguments, string server, string tool) => new()
+    private static ToolExecutionResult Completed(string text, string arguments, string server, string tool, CapabilityBindingTrajectory? trajectory = null) => new()
     {
         Invocation = new ToolInvocation
         {
@@ -275,7 +312,8 @@ public sealed class CapabilitySlotExecutor
             ResultStatus = ToolResultStatuses.Completed
         },
         ResultText = text,
-        ResultStatus = ToolResultStatuses.Completed
+        ResultStatus = ToolResultStatuses.Completed,
+        BindingTrajectory = trajectory
     };
 }
 

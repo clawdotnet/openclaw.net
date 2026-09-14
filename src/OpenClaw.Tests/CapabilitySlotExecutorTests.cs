@@ -245,4 +245,103 @@ public sealed class CapabilitySlotExecutorTests
     {
         Assert.Equal(expected, CapabilitySlotExecutor.StripUseToolShell(raw));
     }
+
+    [Fact]
+    public async Task Execute_Dynamic_RecordsBindingTrajectoryOnResult()
+    {
+        await using var fixture = await CreateFixtureAsync();
+
+        var result = await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
+
+        Assert.Equal(ToolResultStatuses.Completed, result.ResultStatus);
+        var trajectory = Assert.IsType<CapabilityBindingTrajectory>(result.BindingTrajectory);
+        Assert.Equal("dynamic", trajectory.Binding);
+        Assert.Equal("weather city", trajectory.TaskDescription);
+        Assert.Equal("weather", trajectory.KeyWords);
+        Assert.Equal("first", trajectory.SelectionPolicy);
+        Assert.Equal(CapabilityBindingCache.ComputeIntentKey("weather city", "weather", "First"), trajectory.IntentKey);
+        Assert.False(trajectory.CacheHit);
+        Assert.Equal("weather-mcp", trajectory.Server);
+        Assert.Equal("get_weather", trajectory.Tool);
+        Assert.True(trajectory.ElapsedMs >= 0);
+        Assert.Equal(
+            new[] { "weather-mcp", "candidate-1", "candidate-2", "candidate-3", "candidate-4" },
+            trajectory.Candidates.Select(c => c.Name).ToArray());
+        Assert.Equal(new[] { 1, 2, 3, 4, 5 }, trajectory.Candidates.Select(c => c.Rank).ToArray());
+        var attempted = Assert.Single(trajectory.Attempted);
+        Assert.Equal("weather-mcp", attempted.Name);
+        Assert.Equal(1, attempted.Rank);
+    }
+
+    [Fact]
+    public async Task Execute_Dynamic_CacheHit_RecordsCacheHitTrajectory()
+    {
+        await using var fixture = await CreateFixtureAsync();
+
+        var first = await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
+        Assert.False(first.BindingTrajectory!.CacheHit);
+        var callsAfterFirst = fixture.State.Calls.Count;
+
+        var second = await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Bergen"}""", "sess-1", TestContext.Current.CancellationToken);
+
+        var trajectory = Assert.IsType<CapabilityBindingTrajectory>(second.BindingTrajectory);
+        Assert.True(trajectory.CacheHit);
+        Assert.Equal("weather-mcp", trajectory.Server);
+        Assert.Equal("get_weather", trajectory.Tool);
+        Assert.Empty(trajectory.Candidates);
+        Assert.Empty(trajectory.Attempted);
+        // A cache hit resolves without touching the Router; only use_tool fires.
+        Assert.Equal(new[] { "use:weather-mcp:get_weather" }, fixture.State.Calls.Skip(callsAfterFirst).ToArray());
+    }
+
+    [Fact]
+    public async Task Execute_Dynamic_FirstAddFails_RecordsAttemptedCandidatesInRankOrder()
+    {
+        await using var fixture = await CreateFixtureAsync();
+        fixture.State.FailAddNames.Add("weather-mcp");
+        fixture.State.SucceedUseServers.Add("candidate-1");
+
+        var result = await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
+
+        Assert.Equal(ToolResultStatuses.Completed, result.ResultStatus);
+        var trajectory = Assert.IsType<CapabilityBindingTrajectory>(result.BindingTrajectory);
+        Assert.Equal("candidate-1", trajectory.Server);
+        Assert.Equal(5, trajectory.Candidates.Count);
+        Assert.Equal(new[] { "weather-mcp", "candidate-1" }, trajectory.Attempted.Select(c => c.Name).ToArray());
+    }
+
+    [Fact]
+    public async Task Execute_Dynamic_AllAddsFail_RecordsAttemptedCandidatesWithoutServer()
+    {
+        await using var fixture = await CreateFixtureAsync();
+        fixture.State.FailAdd = true;
+
+        var result = await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
+
+        Assert.Equal("capability_resolve_failed", result.FailureCode);
+        var trajectory = Assert.IsType<CapabilityBindingTrajectory>(result.BindingTrajectory);
+        Assert.Null(trajectory.Server);
+        Assert.Null(trajectory.Tool);
+        Assert.False(trajectory.CacheHit);
+        Assert.Equal(5, trajectory.Candidates.Count);
+        Assert.Equal(5, trajectory.Attempted.Count);
+    }
+
+    [Fact]
+    public async Task Execute_Static_RecordsStaticBindingTrajectory()
+    {
+        await using var fixture = await CreateFixtureAsync();
+
+        var result = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
+
+        var trajectory = Assert.IsType<CapabilityBindingTrajectory>(result.BindingTrajectory);
+        Assert.Equal("static", trajectory.Binding);
+        Assert.Null(trajectory.TaskDescription);
+        Assert.Null(trajectory.IntentKey);
+        Assert.False(trajectory.CacheHit);
+        Assert.Equal("weather-mcp", trajectory.Server);
+        Assert.Equal("get_weather", trajectory.Tool);
+        Assert.Empty(trajectory.Candidates);
+        Assert.Empty(trajectory.Attempted);
+    }
 }
