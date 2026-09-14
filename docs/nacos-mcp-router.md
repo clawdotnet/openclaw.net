@@ -330,6 +330,20 @@ unreachable, listener registration fails over to that same fallback and
 gateway startup never blocks on Nacos. Credentials are read from
 configuration only — nothing is hardcoded or committed.
 
+Runtime requirement (JIT builds): the RedNb SDK serialises its gRPC
+payloads with reflection-based System.Text.Json, and `PublishAot=true`
+disables that process-wide — the SDK injects
+`System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault=false` into
+*every* gateway runtimeconfig, including plain JIT runs, which makes the
+SDK throw `JsonSerializerIsReflectionDisabled`. `OpenClaw.Gateway.csproj`
+therefore re-enables the switch in JIT builds only
+(`JsonSerializerIsReflectionEnabledByDefault` conditioned on no
+`RuntimeIdentifier`); the gateway's own paths use source-generated
+contexts and are unaffected. NativeAOT builds keep the switch off — the
+SDK's payload types are trimmed there, so under NativeAOT the
+subscription degrades to the TTL/reload fallback (tracked as a
+follow-up issue).
+
 ## Remaining live acceptance and downstream decisions
 
 Before closing #229 or proceeding with the dependent runtime changes:
@@ -378,7 +392,10 @@ Before closing #229 or proceeding with the dependent runtime changes:
    the mcp.json dataId; onChange clears the session binding cache and the
    runtime added-server cache and triggers the workspace watcher reload.
    Graceful no-op without `Nacos:ServerAddr`; the TTL/reload fallback stays
-   active.
+   active. Hand-verified live on the local Nacos 3.2.4 test bed (JIT):
+   publish via `POST /nacos/v3/admin/cs/config` → `Nacos config change
+   received …; triggering MCP workspace reload` plus the dual-cache clear
+   logged at **+310 ms** (DoD: ≤ 2 s).
 
 | Measurement | Static binding | Model-driven exploration |
 | --- | --- | --- |

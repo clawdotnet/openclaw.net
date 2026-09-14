@@ -251,7 +251,7 @@ Router 语义检索的质量完全取决于 Nacos 中 MCP Server 的 `descriptio
 | 缓存粒度 | 会话级（默认）+ 运行时级（静态绑定） |
 | 缓存键 | intent 哈希（task_description + key_words + selectionPolicy） |
 | 失效机制 | TTL 过期（可配，默认 300s）+ mcp.json reload 成功清空（#232 已实现）；订阅 Nacos 配置变更事件（#238 已实现，2026-09-14） |
-| Nacos 变更事件订阅 | `RedNb.Nacos.All 2.0.0` LongPolling 订阅 mcp.json dataId；onChange → watcher reload → 会话绑定缓存 + 运行时 added-server 缓存双清；`ServerAddr` 未配置或 Nacos 不可达时优雅降级为 no-op，TTL/reload 兜底保持生效 |
+| Nacos 变更事件订阅 | `RedNb.Nacos.All 2.0.0` LongPolling 订阅 mcp.json dataId；onChange → watcher reload → 会话绑定缓存 + 运行时 added-server 缓存双清；`ServerAddr` 未配置或 Nacos 不可达时优雅降级为 no-op，TTL/reload 兜底保持生效。运行时要求：SDK 的 gRPC 载荷走反射式 System.Text.Json，而 `PublishAot=true` 会在**所有** runtimeconfig 中注入 `System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault=false`（JIT 运行也会中招）——csproj 仅在 JIT 构建（无 `RuntimeIdentifier`）时重新开启该开关；NativeAOT 下 SDK 载荷类型被裁剪，订阅降级为 TTL/reload 兜底（后续 issue 跟进） |
 
 ### 7.4 版本与准入治理
 

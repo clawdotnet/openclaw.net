@@ -25,6 +25,15 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);skills\**</DefaultItemExcludes>
     <!-- Optional protocol packages can carry transitive AOT warnings; keep package-level warnings suppressed while surfacing project-owned trim diagnostics. -->
     <NoWarn>$(NoWarn);IL2104;IL3000;IL3002;IL3053</NoWarn>
+    <!-- Issue #238: the RedNb.Nacos SDK serializes its gRPC payloads with
+         reflection-based System.Text.Json, which PublishAot disables process-
+         wide (the SDK injects System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault=false
+         into every runtimeconfig). Re-enable it in JIT builds so the Nacos
+         subscription can connect; gateway-owned paths use source-generated
+         contexts and are unaffected. NativeAOT builds keep the default false:
+         the SDK's payload types are trimmed there and the subscription degrades
+         to the TTL/reload fallback (see follow-up issue). -->
+    <JsonSerializerIsReflectionEnabledByDefault Condition="'$(RuntimeIdentifier)' == ''">true</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
