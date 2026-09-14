@@ -167,6 +167,102 @@ public sealed class NacosRouterIntegrationTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task DynamicSlot_EmptySearch_RoutesToFallback(bool maf)
+    {
+        var state = new NacosRouterFixtureState { EmptySearch = true };
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton(state);
+        builder.Services.AddMcpServer().WithHttpTransport(options => options.Stateless = true).WithTools<FakeNacosRouterMcpTools>();
+        await using var server = builder.Build();
+        server.MapMcp("/mcp");
+        await server.StartAsync(TestContext.Current.CancellationToken);
+        await using var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
+        var config = ServerConfig(server.Urls.Single() + "/mcp");
+        var reload = await registry.ReloadWorkspaceServersAsync(config, TestContext.Current.CancellationToken);
+        state.Calls.Clear();
+        var skill = LoadDynamicDemo();
+        var root = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using var memory = new FileMemoryStore(root, 4);
+        var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
+        var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
+        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        try
+        {
+            var session = new Session { Id = "nacos-empty-" + (maf ? "maf" : "native"), SenderId = "test", ChannelId = "test" };
+            var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var result = await (Task<string>)method.Invoke(runtime, [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
+            // Empty search degrades to the fallback step and completes normally.
+            Assert.Equal("no weather capability bound; check Nacos registration and Router logs.", result);
+            var run = Assert.Single(session.MetaRunHistory);
+            var query = Assert.Single(run.StepResults, step => step.Id == "query");
+            Assert.Equal("capability_resolve_failed", query.FailureCode);
+            var fallback = Assert.Single(run.StepResults, step => step.Id == "fallback_notice");
+            Assert.Equal("completed", fallback.Status);
+            Assert.Equal(new[] { "search" }, state.Calls);
+            Assert.Empty(chat.ReceivedCalls());
+            Assert.Empty(execution.ReceivedCalls());
+        }
+        finally
+        {
+            if (runtime is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
+            else if (runtime is IDisposable disposable) disposable.Dispose();
+            memory.Dispose();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DynamicSlot_FirstCandidateAddFails_BindsToNextCandidate(bool maf)
+    {
+        var state = new NacosRouterFixtureState();
+        state.FailAddNames.Add("weather-mcp");
+        state.SucceedUseServers.Add("candidate-1");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton(state);
+        builder.Services.AddMcpServer().WithHttpTransport(options => options.Stateless = true).WithTools<FakeNacosRouterMcpTools>();
+        await using var server = builder.Build();
+        server.MapMcp("/mcp");
+        await server.StartAsync(TestContext.Current.CancellationToken);
+        await using var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
+        var config = ServerConfig(server.Urls.Single() + "/mcp");
+        var reload = await registry.ReloadWorkspaceServersAsync(config, TestContext.Current.CancellationToken);
+        state.Calls.Clear();
+        var skill = LoadDynamicDemo();
+        var root = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using var memory = new FileMemoryStore(root, 4);
+        var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
+        var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
+        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        try
+        {
+            var session = new Session { Id = "nacos-rotate-" + (maf ? "maf" : "native"), SenderId = "test", ChannelId = "test" };
+            var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var result = await (Task<string>)method.Invoke(runtime, [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
+            // The first candidate's add fails; the DAG binds the second candidate.
+            Assert.Equal("Weather for Oslo: sunny", result);
+            var run = Assert.Single(session.MetaRunHistory);
+            var query = Assert.Single(run.StepResults, step => step.Id == "query");
+            Assert.Equal("completed", query.Status);
+            Assert.Equal(new[] { "search", "add:weather-mcp", "add:candidate-1", "use:candidate-1:get_weather" }, state.Calls);
+            Assert.Empty(chat.ReceivedCalls());
+            Assert.Empty(execution.ReceivedCalls());
+        }
+        finally
+        {
+            if (runtime is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
+            else if (runtime is IDisposable disposable) disposable.Dispose();
+            memory.Dispose();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task DynamicSlot_SameSession_ResolvesOnceThenReusesBinding(bool maf)
     {
         var state = new NacosRouterFixtureState();
