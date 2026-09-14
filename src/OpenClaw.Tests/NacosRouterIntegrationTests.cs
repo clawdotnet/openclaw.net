@@ -525,6 +525,61 @@ public sealed class NacosRouterIntegrationTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DynamicSlot_SameSessionSecondExecution_RecordsCacheHitTrajectory(bool maf)
+    {
+        var state = new NacosRouterFixtureState();
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton(state);
+        builder.Services.AddMcpServer().WithHttpTransport(options => options.Stateless = true).WithTools<FakeNacosRouterMcpTools>();
+        await using var server = builder.Build();
+        server.MapMcp("/mcp");
+        await server.StartAsync(TestContext.Current.CancellationToken);
+        await using var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
+        var config = ServerConfig(server.Urls.Single() + "/mcp");
+        var reload = await registry.ReloadWorkspaceServersAsync(config, TestContext.Current.CancellationToken);
+        state.Calls.Clear();
+        var skill = LoadDynamicDemo();
+        var root = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using var memory = new FileMemoryStore(root, 4);
+        var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
+        var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
+        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        try
+        {
+            var session = new Session { Id = "nacos-cache-" + (maf ? "maf" : "native"), SenderId = "test", ChannelId = "test" };
+            var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var first = await (Task<string>)method.Invoke(runtime, [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
+            var callsAfterFirst = state.Calls.Count;
+
+            var second = await (Task<string>)method.Invoke(runtime, [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
+            Assert.Equal("Weather for Oslo: sunny", first);
+            Assert.Equal("Weather for Oslo: sunny", second);
+
+            // The second execution binds from the session cache: only use_tool fires.
+            Assert.Equal(new[] { "use:weather-mcp:get_weather" }, state.Calls.Skip(callsAfterFirst).ToArray());
+            Assert.Equal(2, session.MetaRunHistory.Count);
+            var firstBinding = session.MetaRunHistory[0].StepResults.Single(s => s.Id == "query").ExecutionEvidence!.CapabilityBinding!;
+            var secondBinding = session.MetaRunHistory[1].StepResults.Single(s => s.Id == "query").ExecutionEvidence!.CapabilityBinding!;
+            Assert.False(firstBinding.CacheHit);
+            Assert.True(secondBinding.CacheHit);
+            Assert.Empty(secondBinding.Candidates);
+            Assert.Empty(secondBinding.Attempted);
+            Assert.Equal(firstBinding.Server, secondBinding.Server);
+            Assert.Equal(firstBinding.Tool, secondBinding.Tool);
+        }
+        finally
+        {
+            if (runtime is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
+            else if (runtime is IDisposable disposable) disposable.Dispose();
+            memory.Dispose();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
     public static bool LiveEnabled => Environment.GetEnvironmentVariable("OPENCLAW_NACOS_LIVE") == "1";
 
     [Fact(Skip = "Set OPENCLAW_NACOS_LIVE=1 and OPENCLAW_NACOS_ROUTER_URL for a provisioned Router.", SkipUnless = nameof(LiveEnabled))]
