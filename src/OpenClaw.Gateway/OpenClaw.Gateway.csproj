@@ -76,6 +76,8 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
+    <!-- Issue #238: Nacos config event subscription (LongPolling) SDK. -->
+    <PackageReference Include="RedNb.Nacos.All" Version="2.0.0" />
     <PackageReference Include="TickerQ" Version="10.4.0" />
   </ItemGroup>
 
