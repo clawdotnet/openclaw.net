@@ -148,6 +148,43 @@ public class NativePluginRegistryTests
         Assert.Single(registry.Tools, t => t.Name == "resolve_capability");
     }
 
+    // resolve_capability is registered only in the composition root (external, like
+    // mqtt) — there is no built-in duplicate. Pin that the registry's instance is
+    // the one ResolvePreference puts into the runtime tool table.
+    [Fact]
+    public void ResolvePreference_IncludesResolveCapabilityFromNativeRegistry()
+    {
+        var startup = new GatewayStartupContext
+        {
+            Config = new GatewayConfig(),
+            RuntimeState = new GatewayRuntimeState
+            {
+                RequestedMode = "jit",
+                EffectiveMode = GatewayRuntimeMode.Jit,
+                DynamicCodeSupported = true
+            },
+            IsNonLoopbackBind = false
+        };
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOpenClawToolServices(startup);
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<NativePluginRegistry>();
+        var registered = Assert.Single(registry.Tools, t => t.Name == "resolve_capability");
+
+        var resolved = NativePluginRegistry.ResolvePreference(
+            builtInTools: [],
+            nativePluginTools: registry.Tools,
+            bridgePluginTools: [],
+            startup.Config.Plugins,
+            NullLogger.Instance);
+
+        var tool = Assert.Single(resolved, t => t.Name == "resolve_capability");
+        Assert.Same(registered, tool);
+    }
+
     [Fact]
     public void Constructor_NotionEnabled_RegistersReadAndWriteTools()
     {
