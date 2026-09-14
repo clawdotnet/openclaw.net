@@ -13,6 +13,13 @@ public sealed class NacosRouterFixtureState
     public bool PlainTextFailure { get; set; }
     public bool FailAdd { get; set; }
     public bool EmptySearch { get; set; }
+
+    // Issue #233: per-candidate add failures drive the rotation tests.
+    public HashSet<string> FailAddNames { get; } = new(StringComparer.Ordinal);
+
+    // Issue #233: when non-empty, use_tool succeeds for these servers too
+    // (default remains weather-mcp only, keeping legacy tests pinned).
+    public HashSet<string> SucceedUseServers { get; } = new(StringComparer.Ordinal);
 }
 
 // Parameters and prose envelopes follow the pinned upstream Python Router.
@@ -38,7 +45,7 @@ public sealed class FakeNacosRouterMcpTools(NacosRouterFixtureState state)
     public string Add(string mcp_server_name)
     {
         state.Calls.Add("add:" + mcp_server_name);
-        if (state.FailAdd)
+        if (state.FailAdd || state.FailAddNames.Contains(mcp_server_name))
             return "failed to install mcp server: " + mcp_server_name;
         return "1. " + mcp_server_name + RouterProseContract.AddSuccessMarker + ", " + RouterProseContract.AddToolListMarker
             + "[{\"name\":\"get_weather\",\"description\":\"weather city\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}]"
@@ -49,7 +56,8 @@ public sealed class FakeNacosRouterMcpTools(NacosRouterFixtureState state)
     public CallToolResult Use(string mcp_server_name, string mcp_tool_name, string @params)
     {
         state.Calls.Add("use:" + mcp_server_name + ":" + mcp_tool_name);
-        var invalid = mcp_server_name != "weather-mcp" || mcp_tool_name != "get_weather";
+        var serverOk = mcp_server_name == "weather-mcp" || state.SucceedUseServers.Contains(mcp_server_name);
+        var invalid = !serverOk || mcp_tool_name != "get_weather";
         var failed = state.FailUse || invalid;
 
         string text;

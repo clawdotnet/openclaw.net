@@ -158,6 +158,38 @@ public sealed class CapabilitySlotExecutorTests
     }
 
     [Fact]
+    public async Task Execute_Dynamic_FirstCandidateAddFails_RotatesToNextCandidate()
+    {
+        await using var fixture = await CreateFixtureAsync();
+        fixture.State.FailAddNames.Add("weather-mcp");
+        fixture.State.SucceedUseServers.Add("candidate-1");
+
+        var result = await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
+        Assert.Equal(ToolResultStatuses.Completed, result.ResultStatus);
+        Assert.Equal("Weather for Oslo: sunny", result.ResultText);
+        // The first candidate's add fails; rotation binds the next candidate.
+        Assert.Equal(new[] { "search", "add:weather-mcp", "add:candidate-1", "use:candidate-1:get_weather" }, fixture.State.Calls);
+    }
+
+    [Fact]
+    public async Task Execute_Dynamic_AllCandidateAddsFail_ReturnsCapabilityResolveFailedWithAllAddsFailed()
+    {
+        await using var fixture = await CreateFixtureAsync();
+        fixture.State.FailAdd = true;
+
+        var result = await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
+        Assert.Equal(ToolResultStatuses.Failed, result.ResultStatus);
+        Assert.Equal("capability_resolve_failed", result.FailureCode);
+        Assert.Contains("all_adds_failed", result.FailureMessage);
+        // Every Top-5 candidate is attempted in rank order before giving up.
+        Assert.Equal(new[]
+        {
+            "search",
+            "add:weather-mcp", "add:candidate-1", "add:candidate-2", "add:candidate-3", "add:candidate-4"
+        }, fixture.State.Calls);
+    }
+
+    [Fact]
     public async Task Execute_Dynamic_NoCandidates_ReturnsCapabilityResolveFailed()
     {
         await using var fixture = await CreateFixtureAsync();

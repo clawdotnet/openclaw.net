@@ -108,7 +108,10 @@ public sealed class ResolveCapabilityTool : ITool
             return candidates.Where(c =>
                 string.Equals(c.Name, request.TaskDescription, StringComparison.OrdinalIgnoreCase));
         }
-        return new[] { candidates[0] };
+
+        // First policy: try candidates in the upstream's deterministic top-N
+        // order; the first successful add wins and failed adds rotate (issue #233).
+        return candidates;
     }
 
     private static bool TryExtractTool(string addResponse, out string toolName, out string schema)
