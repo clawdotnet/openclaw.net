@@ -4,13 +4,15 @@ Status: **live wire-contract verified (2026-09-14); model-token baseline measure
 (2026-09-14)** for
 [#229](https://github.com/clawdotnet/openclaw.net/issues/229); **capability
 slots implemented (2026-09-14)** for #231; **node-level degradation
-and retry implemented (2026-09-14)** for #233. The wire contract
+and retry implemented (2026-09-14)** for #233; **binding trajectory
+observability and offline replay implemented (2026-09-14)** for
+[#234](https://github.com/clawdotnet/openclaw.net/issues/234). The wire contract
 (envelopes, tool schemas, failure prose) was captured from a real Router 0.2.2
 against a local Nacos 3.2.4 test bed, and both example skills were measured five
 times against a live model (MiniMax-M2.1 via an OpenAI-compatible endpoint) with
 fresh sessions; the medians and the discovery-quality caveats are recorded
-below. The resolver (#230) and capability slots (#231) are implemented on this
-evidence; the remaining replay work (#234) builds on it.
+below. The resolver (#230), capability slots (#231), and binding trajectory
+replay (#234) are implemented on this evidence.
 
 ## Contract observations
 
@@ -274,6 +276,34 @@ Examples: `examples/skills/nacos-router-weather` (static),
 `examples/skills/nacos-router-weather-retry` (dynamic + `retry` policy).
 Each adds an `emit_text` fallback step and stays opt-in, not bundled by default.
 
+## Binding trajectory observability (issue #234)
+
+Every capability slot execution records a binding trajectory on the run's
+step evidence (under `stepResults[].executionEvidence.capabilityBinding` in
+`meta-runs --json`):
+
+- `binding` — `static` or `dynamic`;
+- intent fields (dynamic): `taskDescription`, `keyWords`, `selectionPolicy`
+  (wire values `first` / `exact_name`) and `intentKey` (SHA-256 of the
+  normalised intent, the session cache key);
+- `cacheHit` — whether the session binding cache supplied the binding;
+- `server` / `tool` — the bound pair (null when binding failed);
+- `elapsedMs` — the binding phase only (excludes `use_tool`);
+- `candidates` — the search Top-N in upstream rank order, and `attempted` —
+  the candidates the resolver actually tried to add, as `name` + `rank`.
+
+Upstream search returns no scores (#230), so the trajectory records the
+positional `rank` — none are fabricated. Failure trajectories are recorded
+too (empty candidates, null server/tool, the step's `failure_code`).
+
+The exported run JSON deserialises through `CoreJsonContext` and replays
+offline through `OpenClaw.Testing`: `CapabilityBindingReplayFixture.FromMetaRun`
+extracts the recorded trajectory, and `CapabilityBindingReplay` re-executes
+the slot against a deterministic router harness and asserts the same binding
+(same-input → same-binding; cache-hit fixtures are reproduced by seeding the
+cache with the recorded binding). See
+`src/OpenClaw.Tests/NacosRouterIntegrationTests.cs` for the loop.
+
 ## Remaining live acceptance and downstream decisions
 
 Before closing #229 or proceeding with the dependent runtime changes:
@@ -314,8 +344,8 @@ Before closing #229 or proceeding with the dependent runtime changes:
 4. Ranking metadata is the upstream positional `rank` (see above); version
    metadata remains open (upstream search provides none). Prose failures are
    now typed via the #230 `failure_code` envelope; fallback routing, candidate
-   rotation, retry, and caching build on that (#231/#232/#233). Binding replay
-   remains #234.
+   rotation, retry, and caching build on that (#231/#232/#233). Binding
+   trajectory observability and offline replay are implemented (#234).
 
 | Measurement | Static binding | Model-driven exploration |
 | --- | --- | --- |
@@ -326,4 +356,7 @@ Before closing #229 or proceeding with the dependent runtime changes:
 Capability slots (#231) and the capability resolver (#230) are implemented. The
 static slot's auto-add cache is runtime-scoped idempotency; session-level
 binding caching (#232) and node-level degradation with retry (#233) are
-implemented. Binding replay remains tracked by #234.
+implemented. Binding trajectory observability and offline replay (#234) are
+implemented: every slot records its full binding path (intent → candidates →
+selected server/tool → cache hit → elapsed) on the run's step evidence, and
+`OpenClaw.Testing` replays the exported JSON with same-binding assertions.

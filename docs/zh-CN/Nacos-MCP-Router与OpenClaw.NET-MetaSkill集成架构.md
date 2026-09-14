@@ -272,6 +272,8 @@ Router 语义检索的质量完全取决于 Nacos 中 MCP Server 的 `descriptio
 1. 作为 harness 回归测试的 fixture，保证绑定行为可复现；
 2. 反哺优化：统计哪些 intent 经常选错 Server，据此修正 Nacos 注册描述与 MetaSkill 关键词（本体词汇对齐度度量）。
 
+> 实现状态（#234 已实现，2026-09-14）：每次槽位执行的 binding 轨迹随 step executionEvidence（`meta-runs --json` 中位于 `stepResults[].executionEvidence.capabilityBinding`）持久化并可导出——含 binding 模式、intent（taskDescription/keyWords/selectionPolicy 与 intent 键）、缓存命中、选定 server/tool、绑定耗时、Top-N 候选与已尝试候选（name + rank）。上游不返回 score，轨迹只记 rank 不伪造 score（#230 契约）。导出 JSON 经 OpenClaw.Testing 的 `CapabilityBindingReplayFixture.FromMetaRun` / `CapabilityBindingReplay` 离线重放，断言同输入→同绑定（缓存命中变体通过播种缓存还原）。
+
 ## 8. 落地路径
 
 | 阶段 | 做法 | 适用场景 |
@@ -279,7 +281,7 @@ Router 语义检索的质量完全取决于 Nacos 中 MCP Server 的 `descriptio
 | **Agent 级（PoC）** | Gateway 作为 MCP Client 直连 Router 的 streamableHTTP 端点，Agent 看到 3 个工具，三步链由模型完成；MetaSkill 先全部使用静态绑定 | 一周内跑通验证 |
 | **Runtime 级（生产）** | 实现原生 Capability Resolver + 绑定缓存 + 变更事件订阅；MetaSkill 节点支持动态槽位；三步链确定性化 | 正式架构 |
 
-> 实现状态（2026-09-14）：原生 Resolver（#230）与槽位执行（#231，静态 + 动态）已落地，三步链确定性化完成；会话级绑定缓存（#232）与节点级降级（#233）已实现；Nacos 变更事件订阅仍待实现。
+> 实现状态（2026-09-14）：原生 Resolver（#230）与槽位执行（#231，静态 + 动态）已落地，三步链确定性化完成；会话级绑定缓存（#232）与节点级降级（#233）已实现；绑定轨迹可观测性与离线重放（#234）已实现；Nacos 变更事件订阅仍待实现。
 
 ## 9. 附录：最小配置示例
 
