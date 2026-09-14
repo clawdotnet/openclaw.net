@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.AI;
@@ -17,6 +18,7 @@ using OpenClaw.Core.Observability;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Skills;
 using OpenClaw.MicrosoftAgentFrameworkAdapter;
+using OpenClaw.Testing;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -570,6 +572,108 @@ public sealed class NacosRouterIntegrationTests
             Assert.Empty(secondBinding.Attempted);
             Assert.Equal(firstBinding.Server, secondBinding.Server);
             Assert.Equal(firstBinding.Tool, secondBinding.Tool);
+        }
+        finally
+        {
+            if (runtime is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
+            else if (runtime is IDisposable disposable) disposable.Dispose();
+            memory.Dispose();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task RecordedTrajectory_ReplaysThroughTestingHarness_WithSameBinding()
+    {
+        var state = new NacosRouterFixtureState();
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton(state);
+        builder.Services.AddMcpServer().WithHttpTransport(options => options.Stateless = true).WithTools<FakeNacosRouterMcpTools>();
+        await using var server = builder.Build();
+        server.MapMcp("/mcp");
+        await server.StartAsync(TestContext.Current.CancellationToken);
+        await using var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
+        var config = ServerConfig(server.Urls.Single() + "/mcp");
+        var reload = await registry.ReloadWorkspaceServersAsync(config, TestContext.Current.CancellationToken);
+        state.Calls.Clear();
+        var skill = LoadDynamicDemo();
+        var root = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using var memory = new FileMemoryStore(root, 4);
+        var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
+        var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
+        var (runtime, chat, execution) = CreateRuntime(false, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        try
+        {
+            var session = new Session { Id = "nacos-replay", SenderId = "test", ChannelId = "test" };
+            var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            await (Task<string>)method.Invoke(runtime, [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
+            var recorded = Assert.Single(session.MetaRunHistory);
+
+            // Export through the same source-gen context the CLI's meta-runs --json uses.
+            var json = JsonSerializer.Serialize(recorded, CoreJsonContext.Default.SessionMetaRunRecord);
+            var exported = JsonSerializer.Deserialize(json, CoreJsonContext.Default.SessionMetaRunRecord)!;
+
+            var fixture = CapabilityBindingReplayFixture.FromMetaRun(exported, session.Id);
+            var replay = new CapabilityBindingReplay(fixture);
+            var result = await replay.RunAsync(registry, new CapabilityBindingCache(), TestContext.Current.CancellationToken);
+
+            Assert.True(result.Passed, result.Message);
+            Assert.Equal("weather-mcp", result.Reproduced!.Server);
+            Assert.Equal("get_weather", result.Reproduced!.Tool);
+            Assert.False(result.Reproduced!.CacheHit);
+            Assert.Equal(
+                exported.StepResults.Single(s => s.Id == "query").ExecutionEvidence!.CapabilityBinding!.Server,
+                result.Reproduced.Server);
+        }
+        finally
+        {
+            if (runtime is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
+            else if (runtime is IDisposable disposable) disposable.Dispose();
+            memory.Dispose();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task RecordedCacheHitTrajectory_ReplaysThroughTestingHarness_WithCacheHit()
+    {
+        var state = new NacosRouterFixtureState();
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton(state);
+        builder.Services.AddMcpServer().WithHttpTransport(options => options.Stateless = true).WithTools<FakeNacosRouterMcpTools>();
+        await using var server = builder.Build();
+        server.MapMcp("/mcp");
+        await server.StartAsync(TestContext.Current.CancellationToken);
+        await using var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
+        var config = ServerConfig(server.Urls.Single() + "/mcp");
+        var reload = await registry.ReloadWorkspaceServersAsync(config, TestContext.Current.CancellationToken);
+        state.Calls.Clear();
+        var skill = LoadDynamicDemo();
+        var root = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using var memory = new FileMemoryStore(root, 4);
+        var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
+        var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
+        var (runtime, chat, execution) = CreateRuntime(false, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        try
+        {
+            var session = new Session { Id = "nacos-replay-hit", SenderId = "test", ChannelId = "test" };
+            var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            await (Task<string>)method.Invoke(runtime, [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
+            await (Task<string>)method.Invoke(runtime, [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
+            var recordedHit = session.MetaRunHistory[1];
+            Assert.True(recordedHit.StepResults.Single(s => s.Id == "query").ExecutionEvidence!.CapabilityBinding!.CacheHit);
+
+            var json = JsonSerializer.Serialize(recordedHit, CoreJsonContext.Default.SessionMetaRunRecord);
+            var exported = JsonSerializer.Deserialize(json, CoreJsonContext.Default.SessionMetaRunRecord)!;
+
+            var result = await new CapabilityBindingReplay(CapabilityBindingReplayFixture.FromMetaRun(exported, session.Id))
+                .RunAsync(registry, new CapabilityBindingCache(), TestContext.Current.CancellationToken);
+
+            Assert.True(result.Passed, result.Message);
+            Assert.True(result.Reproduced!.CacheHit);
+            Assert.Equal("weather-mcp", result.Reproduced.Server);
         }
         finally
         {
