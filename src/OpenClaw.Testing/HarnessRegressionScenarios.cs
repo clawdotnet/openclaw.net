@@ -26,6 +26,7 @@ public static class HarnessRegressionScenarios
         new HarnessContractSerializationScenario(),
         new EvidenceBundleSerializationScenario(),
         new GovernanceLedgerSerializationScenario(),
+        new CapabilityBindingTrajectorySerializationScenario(),
         new McpInitializeShapeScenario(),
         new OpenAiCompatRequestShapeScenario(),
         new LearningProposalReviewFirstScenario(),
@@ -758,6 +759,77 @@ internal sealed class HarnessRegressionDocsScenario()
         }
 
         return null;
+    }
+}
+
+internal sealed class CapabilityBindingTrajectorySerializationScenario()
+    : HarnessRegressionScenarioBase(
+        "harness.capability_binding_trajectory_serialization",
+        "Capability Binding Trajectory serialization",
+        HarnessRegressionCategory.Harness)
+{
+    protected override ValueTask<HarnessRegressionScenarioResult> EvaluateAsync(
+        HarnessRegressionContext context,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var run = new SessionMetaRunRecord
+        {
+            RunId = "meta_binding_regression",
+            SkillName = "meta-capability",
+            Status = "completed",
+            StepResults =
+            {
+                new SessionMetaStepResult
+                {
+                    Id = "query",
+                    Kind = "tool_call",
+                    Status = "completed",
+                    ExecutionEvidence = new SessionMetaStepExecutionEvidence
+                    {
+                        CapabilityBinding = new CapabilityBindingTrajectory
+                        {
+                            Binding = "dynamic",
+                            IntentKey = "a1b2c3",
+                            TaskDescription = "weather city",
+                            KeyWords = "weather,city",
+                            SelectionPolicy = "first",
+                            CacheHit = false,
+                            Server = "weather-mcp",
+                            Tool = "get_weather",
+                            ElapsedMs = 12.5,
+                            Candidates =
+                            {
+                                new CapabilityBindingCandidate { Name = "weather-mcp", Rank = 1 },
+                                new CapabilityBindingCandidate { Name = "amap-mcp-server", Rank = 2 }
+                            },
+                            Attempted =
+                            {
+                                new CapabilityBindingCandidate { Name = "weather-mcp", Rank = 1 }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(run, CoreJsonContext.Default.SessionMetaRunRecord);
+        var restored = JsonSerializer.Deserialize(json, CoreJsonContext.Default.SessionMetaRunRecord);
+        var binding = restored?.StepResults[0].ExecutionEvidence?.CapabilityBinding;
+
+        return binding is not null &&
+               binding.Binding == "dynamic" &&
+               binding.IntentKey == "a1b2c3" &&
+               binding.CacheHit == false &&
+               binding.Server == "weather-mcp" &&
+               binding.Tool == "get_weather" &&
+               binding.Candidates.Count == 2 &&
+               binding.Candidates[0] is { Name: "weather-mcp", Rank: 1 } &&
+               binding.Candidates[1] is { Name: "amap-mcp-server", Rank: 2 } &&
+               binding.Attempted.Count == 1
+            ? ValueTask.FromResult(Passed("Capability binding trajectory round-tripped through source-generated JSON."))
+            : ValueTask.FromResult(Failed("Capability binding trajectory did not round-trip correctly."));
     }
 }
 
