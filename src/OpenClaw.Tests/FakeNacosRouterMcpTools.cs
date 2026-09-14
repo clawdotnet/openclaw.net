@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using OpenClaw.Agent.Tools;
 
 namespace OpenClaw.Tests;
 
@@ -25,15 +26,15 @@ public sealed class FakeNacosRouterMcpTools(NacosRouterFixtureState state)
             i => i == 0 ? "weather-mcp" : $"candidate-{i}",
             i => new { name = i == 0 ? "weather-mcp" : $"candidate-{i}", description = "weather city" });
         return "## 获取" + task_description + "的步骤如下：\n"
-            + "### 1. 当前可用的mcp server列表为：" + JsonSerializer.Serialize(candidates)
-            + "\n### 2. 从当前可用的mcp server列表中选择你需要的mcp server调add_mcp_server工具安装mcp server";
+            + RouterProseContract.SearchListMarker + JsonSerializer.Serialize(candidates)
+            + "\n" + RouterProseContract.SearchStepMarker + "从当前可用的mcp server列表中选择你需要的mcp server调add_mcp_server工具安装mcp server";
     }
 
     [McpServerTool(Name = "add_mcp_server"), Description("Bind a registered server.")]
     public string Add(string mcp_server_name)
     {
         state.Calls.Add("add:" + mcp_server_name);
-        return "1. " + mcp_server_name + "安装完成, tool 列表为: "
+        return "1. " + mcp_server_name + RouterProseContract.AddSuccessMarker + ", " + RouterProseContract.AddToolListMarker
             + "[{\"name\":\"get_weather\",\"description\":\"weather city\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}]"
             + "\n2." + mcp_server_name + "的工具需要通过nacos-mcp-router的use_tool工具代理使用";
     }

@@ -52,8 +52,8 @@ public sealed class NacosRouterIntegrationTests
         // failure. Per upstream router.py, search emits a header line plus the
         // candidate list JSON between the two `###` markers.
         Assert.Contains("## 获取weather city的步骤如下：", search);
-        Assert.Contains("### 1. 当前可用的mcp server列表为：", search);
-        Assert.Contains("### 2. ", search);
+        Assert.Contains(RouterProseContract.SearchListMarker, search);
+        Assert.Contains(RouterProseContract.SearchStepMarker, search);
         Assert.Contains("weather-mcp", search);
         Assert.DoesNotContain("score", search);
         if (fail)

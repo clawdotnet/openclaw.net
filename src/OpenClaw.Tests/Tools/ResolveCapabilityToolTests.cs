@@ -324,7 +324,8 @@ public sealed class ResolveCapabilityToolTests
     private sealed class EmptyFakeNacosRouter
     {
         [McpServerTool(Name = "search_mcp_server")]
-        public string Search(string task_description, string key_words) => "### 1. 当前可用的mcp server列表为：{}\n### 2. ";
+        public string Search(string task_description, string key_words) =>
+            RouterProseContract.SearchListMarker + "{}\n" + RouterProseContract.SearchStepMarker;
     }
 
     [McpServerToolType]
@@ -340,11 +341,11 @@ public sealed class ResolveCapabilityToolTests
     {
         [McpServerTool(Name = "search_mcp_server")]
         public string Search(string task_description, string key_words) =>
-            """
-            ## 获取weather city的步骤如下：
-            ### 1. 当前可用的mcp server列表为：{"weather-mcp":{"name":"weather-mcp","description":"weather city"}}
-            ### 2. 从当前可用的mcp server列表中选择你需要的mcp server调add_mcp_server工具安装mcp server
-            """;
+            "## 获取weather city的步骤如下：\n"
+            + RouterProseContract.SearchListMarker
+            + """{"weather-mcp":{"name":"weather-mcp","description":"weather city"}}"""
+            + "\n" + RouterProseContract.SearchStepMarker
+            + "从当前可用的mcp server列表中选择你需要的mcp server调add_mcp_server工具安装mcp server";
 
         // IsError=true even though the prose says 安装完成 and carries a valid
         // tool list: protocol error must win over prose inspection.
@@ -357,7 +358,8 @@ public sealed class ResolveCapabilityToolTests
                 [
                     new TextContentBlock
                     {
-                        Text = "1. " + mcp_server_name + "安装完成, tool 列表为: [{\"name\":\"get_weather\",\"description\":\"weather city\",\"inputSchema\":{\"type\":\"object\"}}]\n2. 后续通过use_tool代理使用",
+                        Text = "1. " + mcp_server_name + RouterProseContract.AddSuccessMarker + ", " + RouterProseContract.AddToolListMarker
+                            + "[{\"name\":\"get_weather\",\"description\":\"weather city\",\"inputSchema\":{\"type\":\"object\"}}]\n2. 后续通过use_tool代理使用",
                     },
                 ],
             };

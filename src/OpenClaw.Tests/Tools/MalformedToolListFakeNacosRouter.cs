@@ -1,4 +1,5 @@
 using ModelContextProtocol.Server;
+using OpenClaw.Agent.Tools;
 
 namespace OpenClaw.Tests.Tools;
 
@@ -16,15 +17,15 @@ public sealed class MalformedToolListFakeNacosRouter(NacosRouterFixtureState sta
     {
         state.Calls.Add("search");
         return "## 获取" + task_description + "的步骤如下：\n"
-            + "### 1. 当前可用的mcp server列表为："
+            + RouterProseContract.SearchListMarker
             + "{\"weather-mcp\":{\"name\":\"weather-mcp\",\"description\":\"weather\"}}\n"
-            + "### 2. 从当前可用的mcp server列表中选择你需要的mcp server调add_mcp_server工具安装mcp server";
+            + RouterProseContract.SearchStepMarker + "从当前可用的mcp server列表中选择你需要的mcp server调add_mcp_server工具安装mcp server";
     }
 
     [McpServerTool(Name = "add_mcp_server")]
     public string Add(string mcp_server_name)
     {
         state.Calls.Add("add:" + mcp_server_name);
-        return "安装完成\ntool 列表为: [{\"description\":\"x\"}]";
+        return RouterProseContract.AddSuccessMarker + "\n" + RouterProseContract.AddToolListMarker + "[{\"description\":\"x\"}]";
     }
 }

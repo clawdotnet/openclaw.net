@@ -100,11 +100,11 @@ public sealed class ResolveCapabilityTool : ITool
     {
         toolName = "";
         schema = "";
-        if (string.IsNullOrEmpty(addResponse) || !addResponse.Contains("安装完成"))
+        if (string.IsNullOrEmpty(addResponse) || !addResponse.Contains(RouterProseContract.AddSuccessMarker))
             return false;
 
         var match = Regex.Match(
-            addResponse, @"tool 列表为: (\[.*\])", RegexOptions.Singleline);
+            addResponse, Regex.Escape(RouterProseContract.AddToolListMarker) + @"(\[.*\])", RegexOptions.Singleline);
         if (!match.Success) return false;
 
         try
