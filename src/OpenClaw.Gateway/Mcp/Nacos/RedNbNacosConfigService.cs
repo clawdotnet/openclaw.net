@@ -1,3 +1,4 @@
+using OpenClaw.Core.Models;
 using RedNb.Nacos.Config;
 
 namespace OpenClaw.Gateway.Mcp.Nacos;

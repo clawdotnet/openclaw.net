@@ -1,8 +1,8 @@
-namespace OpenClaw.Gateway.Mcp.Nacos;
+namespace OpenClaw.Core.Models;
 
 /// <summary>
 /// Configuration block that enables Nacos config event subscription on the Gateway
-/// (issue #238). Bind from <c>GatewayConfig.Nacos</c>; the subscription service is
+/// (issue #238). Bound from <c>GatewayConfig.Nacos</c>; the subscription service is
 /// a no-op when <see cref="ServerAddr"/> is empty / whitespace, which keeps the
 /// TTL + reload fallback from <c>#232</c> active in deployments that do not run Nacos.
 /// </summary>

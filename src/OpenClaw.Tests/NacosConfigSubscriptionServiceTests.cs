@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using OpenClaw.Core.Models;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Mcp;
 using OpenClaw.Gateway.Mcp.Nacos;

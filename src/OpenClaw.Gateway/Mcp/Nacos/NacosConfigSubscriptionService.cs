@@ -1,3 +1,5 @@
+using OpenClaw.Core.Models;
+
 namespace OpenClaw.Gateway.Mcp.Nacos;
 
 /// <summary>

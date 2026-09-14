@@ -48,6 +48,12 @@ public sealed class GatewayConfig
     public GmailPubSubConfig GmailPubSub { get; set; } = new();
     public MdnsConfig Mdns { get; set; } = new();
     public DiagnosticsConfig Diagnostics { get; set; } = new();
+
+    /// <summary>
+    /// Nacos config event subscription (issue #238). Empty ServerAddr disables
+    /// the subscription; the TTL/reload invalidation fallback stays active.
+    /// </summary>
+    public NacosOptions Nacos { get; set; } = new();
     public string UsageFooter { get; set; } = "off"; // "off", "tokens", "full"
 
     public int MaxConcurrentSessions { get; set; } = 64;

@@ -210,6 +210,7 @@ internal static partial class RuntimeInitializationExtensions
             skills => artifactRuntime.ReplaceSkills(skills));
         skillWatcher.Start(app.Lifetime.ApplicationStopping);
         var mcpWatcher = StartMcpWorkspaceWatcher(app, services, startup, agentRuntime);
+        var nacosSubscription = StartNacosConfigSubscription(app);
 
         await services.AutomationService.RefreshCacheAsync(app.Lifetime.ApplicationStopping);
         var cronScheduler = app.Services.GetRequiredService<CronScheduler>();
@@ -219,6 +220,7 @@ internal static partial class RuntimeInitializationExtensions
         var shutdownCoordinator = app.Services.GetRequiredService<GatewayRuntimeShutdownCoordinator>();
         shutdownCoordinator.RegisterAsyncCleanup("mcp registry", _ => services.McpRegistry.DisposeAsync());
         shutdownCoordinator.RegisterAsyncCleanup("mcp workspace watcher", _ => mcpWatcher.DisposeAsync());
+        shutdownCoordinator.RegisterAsyncCleanup("nacos config subscription", _ => nacosSubscription.DisposeAsync());
         shutdownCoordinator.RegisterAsyncCleanup("mcpapp registry", _ => services.McpAppRegistry.DisposeAsync());
         mcpAppStartupCleanup.Cancel();
         var runtime = CreateGatewayRuntime(

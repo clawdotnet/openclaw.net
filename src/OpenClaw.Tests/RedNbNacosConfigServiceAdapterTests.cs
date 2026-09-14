@@ -1,3 +1,4 @@
+using OpenClaw.Core.Models;
 using OpenClaw.Gateway.Mcp.Nacos;
 using Xunit;
 

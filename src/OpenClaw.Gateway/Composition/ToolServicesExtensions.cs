@@ -1,8 +1,12 @@
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Agent.Tools;
+using OpenClaw.Core.Models;
 using OpenClaw.Gateway.Bootstrap;
+using OpenClaw.Gateway.Mcp;
+using OpenClaw.Gateway.Mcp.Nacos;
 using OpenClaw.McpApp;
 using OpenClaw.Protocols.Mqtt.Tools;
+using RedNb.Nacos.DependencyInjection;
 
 namespace OpenClaw.Gateway.Composition;
 
@@ -48,6 +52,41 @@ internal static class ToolServicesExtensions
             new CapabilitySlotExecutor(
                 sp.GetRequiredService<McpServerToolRegistry>(),
                 sp.GetRequiredService<CapabilityBindingCache>()));
+
+        // Nacos config event subscription (#238): the SDK client is only built
+        // when a Nacos server address is configured; otherwise the in-memory
+        // no-op double keeps the subscription service inert (TTL/reload
+        // fallback from #232 stays the only invalidation path).
+        var nacosOptions = startup.Config.Nacos;
+        services.AddSingleton(nacosOptions);
+        if (!string.IsNullOrWhiteSpace(nacosOptions.ServerAddr))
+        {
+            services.AddNacosConfig(o =>
+            {
+                o.ServerAddresses = nacosOptions.ServerAddr!;
+                o.Username = nacosOptions.Username;
+                o.Password = nacosOptions.Password;
+                o.LongPollTimeout = nacosOptions.LongPollingTimeoutMs;
+                o.DefaultTimeout = nacosOptions.LongPollingTimeoutMs;
+            });
+            services.AddSingleton(sp => new RedNbNacosConfigService(
+                sp.GetRequiredService<RedNb.Nacos.Config.IConfigService>(),
+                nacosOptions,
+                sp.GetRequiredService<ILogger<RedNbNacosConfigService>>()));
+            services.AddSingleton<INacosConfigService>(sp => sp.GetRequiredService<RedNbNacosConfigService>());
+        }
+        else
+        {
+            services.AddSingleton<INacosConfigService, FakeNacosConfigService>();
+        }
+        services.AddSingleton<IMcpWorkspaceReloadTrigger>(sp =>
+            sp.GetRequiredService<McpWatcherHolder>().Watcher
+            ?? throw new InvalidOperationException("McpWorkspaceWatcherService has not been started."));
+        services.AddSingleton(sp => new NacosConfigSubscriptionService(
+            sp.GetRequiredService<INacosConfigService>(),
+            nacosOptions,
+            sp.GetRequiredService<IMcpWorkspaceReloadTrigger>(),
+            sp.GetRequiredService<ILogger<NacosConfigSubscriptionService>>()));
 
         // MCP App support — discovery and hosting
         services.AddOpenClawMcpAppServices(startup.Config.McpApps);
