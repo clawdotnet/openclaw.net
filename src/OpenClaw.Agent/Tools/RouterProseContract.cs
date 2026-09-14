@@ -20,4 +20,10 @@ internal static class RouterProseContract
 
     /// <summary>"tool 列表为: " — precedes the installed tool-list JSON in add prose.</summary>
     public const string AddToolListMarker = "tool 列表为: ";
+
+    /// <summary>"failed to install mcp server: " — plain-text add failure prefix (live capture 2026-09-14).</summary>
+    public const string AddFailureMarker = "failed to install mcp server: ";
+
+    /// <summary>"failed to use tool: " — plain-text use failure prefix (live capture 2026-09-14).</summary>
+    public const string UseFailureMarker = "failed to use tool: ";
 }

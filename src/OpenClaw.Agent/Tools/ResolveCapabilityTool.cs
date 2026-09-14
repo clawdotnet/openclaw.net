@@ -35,9 +35,24 @@ public sealed class ResolveCapabilityTool : ITool
     public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
     {
         var request = ParseRequest(argumentsJson);
-        var client = _registry.GetClientByServerId("nacos-mcp-router");
+        var (binding, failure) = await ResolveCoreAsync(_registry, request, ct);
+        if (binding is not null)
+            return JsonBinding(binding);
+        return JsonFail(failure?.FailureCode ?? ResolveCapabilityFailureCodes.RouterUnavailable, failure?.TriedCandidates ?? []);
+    }
+
+    /// <summary>
+    /// Shared resolver core: search → pick → rotate adds → binding. Also used by
+    /// the capability slot executor (issue #231) so dynamic slots and the
+    /// <c>resolve_capability</c> tool share one implementation and one contract.
+    /// Never calls use_tool and never touches an LLM.
+    /// </summary>
+    internal static async Task<(ResolveCapabilityBinding? Binding, ResolveCapabilityFailure? Failure)> ResolveCoreAsync(
+        McpServerToolRegistry registry, ResolveCapabilityRequest request, CancellationToken ct)
+    {
+        var client = registry.GetClientByServerId("nacos-mcp-router");
         if (client is null)
-            return JsonFail(ResolveCapabilityFailureCodes.RouterUnavailable, Array.Empty<RouterCandidate>());
+            return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.RouterUnavailable, []));
 
         var search = await CallToolAsync(client, "search_mcp_server",
             new Dictionary<string, JsonElement>
@@ -48,15 +63,15 @@ public sealed class ResolveCapabilityTool : ITool
         // A search that never reaches the Router (transport) or reports a
         // protocol-level error is a router failure, not "no candidates".
         if (!search.Reached || search.IsError)
-            return JsonFail(ResolveCapabilityFailureCodes.RouterUnavailable, Array.Empty<RouterCandidate>());
+            return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.RouterUnavailable, []));
 
         var candidates = RouterCandidateParser.Parse(search.Text);
         if (candidates.Count == 0)
-            return JsonFail(ResolveCapabilityFailureCodes.NoCandidates, Array.Empty<RouterCandidate>());
+            return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.NoCandidates, []));
 
         var picked = PickCandidates(candidates, request).ToList();
         if (picked.Count == 0)
-            return JsonFail(ResolveCapabilityFailureCodes.SelectionPolicyNoMatch, Array.Empty<RouterCandidate>());
+            return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.SelectionPolicyNoMatch, []));
 
         var tried = new List<RouterCandidate>();
         foreach (var candidate in picked)
@@ -71,17 +86,17 @@ public sealed class ResolveCapabilityTool : ITool
             // The Router dying mid-chain stops the rotation: further adds would
             // hit the same dead transport.
             if (!add.Reached)
-                return JsonFail(ResolveCapabilityFailureCodes.RouterUnavailable, tried);
+                return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.RouterUnavailable, tried));
             // A protocol-level error on this install fails only this candidate,
             // even when the prose claims installation succeeded.
             if (add.IsError)
                 continue;
 
             if (TryExtractTool(add.Text, out var toolName, out var schema))
-                return JsonBinding(candidate, toolName, schema, tried);
+                return (new ResolveCapabilityBinding(candidate.Name, toolName, schema, tried), null);
         }
 
-        return JsonFail(ResolveCapabilityFailureCodes.AllAddsFailed, tried);
+        return (null, new ResolveCapabilityFailure(ResolveCapabilityFailureCodes.AllAddsFailed, tried));
     }
 
     private static IEnumerable<RouterCandidate> PickCandidates(
@@ -149,7 +164,7 @@ public sealed class ResolveCapabilityTool : ITool
         return new ResolveCapabilityRequest(task, keywords, policy);
     }
 
-    private readonly record struct ToolCallOutcome(bool Reached, bool IsError, string Text);
+    internal readonly record struct ToolCallOutcome(bool Reached, bool IsError, string Text);
 
     /// <summary>
     /// Invokes a Router tool and normalises failures instead of letting them
@@ -157,7 +172,7 @@ public sealed class ResolveCapabilityTool : ITool
     /// protocol-level error result becomes <c>IsError=true</c>, and only
     /// caller-initiated cancellation propagates.
     /// </summary>
-    private static async Task<ToolCallOutcome> CallToolAsync(
+    internal static async Task<ToolCallOutcome> CallToolAsync(
         McpClient client, string toolName, Dictionary<string, JsonElement> args, CancellationToken ct)
     {
         try
@@ -188,8 +203,8 @@ public sealed class ResolveCapabilityTool : ITool
     private static string JsonFail(string code, IReadOnlyList<RouterCandidate> tried) =>
         JsonSerializer.Serialize(new ResolveCapabilityFailure(code, tried), ResolveCapabilitySerializerContext.Default.ResolveCapabilityFailure);
 
-    private static string JsonBinding(RouterCandidate chosen, string tool, string schema, IReadOnlyList<RouterCandidate> tried) =>
-        JsonSerializer.Serialize(new ResolveCapabilityBinding(chosen.Name, tool, schema, tried), ResolveCapabilitySerializerContext.Default.ResolveCapabilityBinding);
+    private static string JsonBinding(ResolveCapabilityBinding binding) =>
+        JsonSerializer.Serialize(binding, ResolveCapabilitySerializerContext.Default.ResolveCapabilityBinding);
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]

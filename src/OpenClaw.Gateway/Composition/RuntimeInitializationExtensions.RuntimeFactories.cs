@@ -368,7 +368,8 @@ internal static partial class RuntimeInitializationExtensions
             IsContractRuntimeBudgetExceeded = contractGovernance.IsRuntimeBudgetExceeded,
             RecordContractTurnUsage = contractGovernance.RecordTurnUsage,
             AppendContractSnapshot = (session, status) => contractGovernance.AppendSnapshot(session, status),
-            Interceptors = interceptors
+            Interceptors = interceptors,
+            CapabilitySlotExecutor = services.GetService<CapabilitySlotExecutor>()
         });
     }
 

@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.AI;
@@ -32,7 +31,7 @@ public sealed class NacosRouterIntegrationTests
     [InlineData(true, true, false)]
     [InlineData(false, true, true)]
     [InlineData(true, true, true)]
-    public async Task StaticDemo_UsesOnlyThreeRouterTools_AndHandlesProtocolFailures(bool maf, bool fail, bool plainText)
+    public async Task StaticSlot_UsesOnlyThreeRouterTools_AndHandlesProtocolFailures(bool maf, bool fail, bool plainText)
     {
         var state = new NacosRouterFixtureState { FailUse = fail, PlainTextFailure = plainText };
         var builder = WebApplication.CreateSlimBuilder();
@@ -66,34 +65,14 @@ public sealed class NacosRouterIntegrationTests
             Assert.Equal(plainText ? "failed to use tool: get_weather" : "Error: failed to use tool: get_weather", direct);
         }
         state.Calls.Clear();
-        var skill = LoadDemo();
+        var skill = LoadStaticDemo();
         // Use a unique sibling dir under TEMP directly to avoid leaving an empty
         // `nacos-poc-tests` parent behind across CI runs.
         var root = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         using var memory = new FileMemoryStore(root, 4);
-        using var services = new ServiceCollection().BuildServiceProvider();
-        var chat = Substitute.For<IChatClient>();
-        var execution = Substitute.For<ILlmExecutionService>();
-        var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
-        object runtime;
-        if (maf)
-        {
-            var options = new MafOptions();
-            runtime = new MafAgentRuntime(new AgentRuntimeFactoryContext
-            {
-                Services = services, Config = gatewayConfig,
-                RuntimeState = new GatewayRuntimeState { RequestedMode = "jit", EffectiveMode = GatewayRuntimeMode.Jit, DynamicCodeSupported = true },
-                ChatClient = chat, Tools = tools, MemoryStore = memory,
-                RuntimeMetrics = new RuntimeMetrics(), ProviderUsage = new ProviderUsageTracker(),
-                LlmExecutionService = execution, Skills = [skill], SkillsConfig = new SkillsConfig(),
-                WorkspacePath = null, PluginSkillDirs = [], Logger = NullLogger.Instance,
-                Hooks = [], RequireToolApproval = false, ApprovalRequiredTools = []
-            }, options, new MafAgentFactory(Options.Create(options), NullLoggerFactory.Instance, services),
-                new MafSessionStateStore(gatewayConfig, Options.Create(options), NullLogger<MafSessionStateStore>.Instance),
-                new MafTelemetryAdapter(), NullLogger<MafAgentRuntime>.Instance);
-        }
-        else runtime = new AgentRuntime(chat, tools, memory, gatewayConfig.Llm, maxHistoryTurns: 5, skills: [skill]);
+        var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
+        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry));
         try
         {
             for (var i = 0; i < 2; i++)
@@ -101,18 +80,80 @@ public sealed class NacosRouterIntegrationTests
                 var session = new Session { Id = "nacos-poc-" + i, SenderId = "test", ChannelId = "test" };
                 var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
                 var result = await (Task<string>)method.Invoke(runtime, [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
-                Assert.Equal(fail ? (plainText ? "failed to use tool: get_weather" : "weather-mcp unavailable; check Nacos registration and Router logs.") : "Weather for Oslo: sunny", result);
+                // The capability slot normalises both plain-text and protocol use
+                // failures into a typed failure code, so the fallback branch fires
+                // for both modes.
+                Assert.Equal(fail ? "weather-mcp unavailable; check Nacos registration and Router logs." : "Weather for Oslo: sunny", result);
                 var run = Assert.Single(session.MetaRunHistory);
                 var query = Assert.Single(run.StepResults, step => step.Id == "query");
-                if (fail && !plainText) Assert.Equal("mcp_tool_error", query.FailureCode);
+                if (fail) Assert.Equal("capability_use_tool_failed", query.FailureCode);
                 else Assert.Equal("completed", query.Status);
             }
-            Assert.Equal(new[] { "add:weather-mcp", "use:weather-mcp:get_weather", "add:weather-mcp", "use:weather-mcp:get_weather" }, state.Calls);
+            // The static slot auto-adds once per runtime (idempotent, cached);
+            // each invocation still proxies through use_tool.
+            Assert.Equal(new[] { "add:weather-mcp", "use:weather-mcp:get_weather", "use:weather-mcp:get_weather" }, state.Calls);
             Assert.Empty(chat.ReceivedCalls());
             Assert.Empty(execution.ReceivedCalls());
             var unchanged = await registry.ReloadWorkspaceServersAsync(config, TestContext.Current.CancellationToken);
             Assert.Empty(unchanged.AddedTools);
             Assert.Empty(unchanged.RemovedToolNames);
+        }
+        finally
+        {
+            if (runtime is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
+            else if (runtime is IDisposable disposable) disposable.Dispose();
+            memory.Dispose();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task DynamicSlot_ResolvesThenUses_AndFallsBackOnUseFailure(bool maf, bool fail)
+    {
+        var state = new NacosRouterFixtureState { FailUse = fail, PlainTextFailure = true };
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton(state);
+        builder.Services.AddMcpServer().WithHttpTransport(options => options.Stateless = true).WithTools<FakeNacosRouterMcpTools>();
+        await using var server = builder.Build();
+        server.MapMcp("/mcp");
+        await server.StartAsync(TestContext.Current.CancellationToken);
+        await using var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
+        var config = ServerConfig(server.Urls.Single() + "/mcp");
+        var reload = await registry.ReloadWorkspaceServersAsync(config, TestContext.Current.CancellationToken);
+        state.Calls.Clear();
+        var skill = LoadDynamicDemo();
+        var root = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using var memory = new FileMemoryStore(root, 4);
+        var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
+        var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
+        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry));
+        try
+        {
+            for (var i = 0; i < 2; i++)
+            {
+                var session = new Session { Id = "nacos-dyn-" + i, SenderId = "test", ChannelId = "test" };
+                var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                var result = await (Task<string>)method.Invoke(runtime, [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
+                Assert.Equal(fail ? "no weather capability bound; check Nacos registration and Router logs." : "Weather for Oslo: sunny", result);
+                var run = Assert.Single(session.MetaRunHistory);
+                var query = Assert.Single(run.StepResults, step => step.Id == "query");
+                if (fail) Assert.Equal("capability_use_tool_failed", query.FailureCode);
+                else Assert.Equal("completed", query.Status);
+            }
+            // Dynamic slots resolve per invocation (search → add → use); the
+            // resolution itself is deterministic and model-free.
+            Assert.Equal(new[]
+            {
+                "search", "add:weather-mcp", "use:weather-mcp:get_weather",
+                "search", "add:weather-mcp", "use:weather-mcp:get_weather"
+            }, state.Calls);
+            Assert.Empty(chat.ReceivedCalls());
+            Assert.Empty(execution.ReceivedCalls());
         }
         finally
         {
@@ -141,12 +182,45 @@ public sealed class NacosRouterIntegrationTests
         Assert.DoesNotContain("Error:", result);
     }
 
+    private static (object Runtime, IChatClient Chat, ILlmExecutionService Execution) CreateRuntime(
+        bool maf, IReadOnlyList<ITool> tools, IMemoryStore memory, SkillDefinition skill, GatewayConfig gatewayConfig,
+        CapabilitySlotExecutor capabilitySlotExecutor)
+    {
+        var services = new ServiceCollection().BuildServiceProvider();
+        var chat = Substitute.For<IChatClient>();
+        var execution = Substitute.For<ILlmExecutionService>();
+        if (maf)
+        {
+            var options = new MafOptions();
+            var runtime = new MafAgentRuntime(new AgentRuntimeFactoryContext
+            {
+                Services = services, Config = gatewayConfig,
+                RuntimeState = new GatewayRuntimeState { RequestedMode = "jit", EffectiveMode = GatewayRuntimeMode.Jit, DynamicCodeSupported = true },
+                ChatClient = chat, Tools = tools, MemoryStore = memory,
+                RuntimeMetrics = new RuntimeMetrics(), ProviderUsage = new ProviderUsageTracker(),
+                LlmExecutionService = execution, Skills = [skill], SkillsConfig = new SkillsConfig(),
+                WorkspacePath = null, PluginSkillDirs = [], Logger = NullLogger.Instance,
+                Hooks = [], RequireToolApproval = false, ApprovalRequiredTools = [],
+                CapabilitySlotExecutor = capabilitySlotExecutor
+            }, options, new MafAgentFactory(Options.Create(options), NullLoggerFactory.Instance, services),
+                new MafSessionStateStore(gatewayConfig, Options.Create(options), NullLogger<MafSessionStateStore>.Instance),
+                new MafTelemetryAdapter(), NullLogger<MafAgentRuntime>.Instance);
+            return (runtime, chat, execution);
+        }
+        var native = new AgentRuntime(chat, tools, memory, gatewayConfig.Llm, maxHistoryTurns: 5, skills: [skill], capabilitySlotExecutor: capabilitySlotExecutor);
+        return (native, chat, execution);
+    }
+
     private static Dictionary<string, McpServerConfig> ServerConfig(string url) => new()
     {
         ["nacos-mcp-router"] = new McpServerConfig { Enabled = true, Transport = "http", Url = url, ToolNamePrefix = "nacos_mcp_router_" }
     };
 
-    private static SkillDefinition LoadDemo()
+    private static SkillDefinition LoadStaticDemo() => LoadSkill("nacos-router-weather");
+
+    private static SkillDefinition LoadDynamicDemo() => LoadSkill("nacos-router-weather-dynamic");
+
+    private static SkillDefinition LoadSkill(string name)
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Join(root.FullName, "OpenClaw.Net.slnx"))) root = root.Parent;
@@ -155,9 +229,10 @@ public sealed class NacosRouterIntegrationTests
         {
             Load = new SkillLoadConfig { IncludeBundled = false, IncludeManaged = false, IncludeWorkspace = false,
                 ExtraDirs = [Path.Join(root.FullName, "examples", "skills", "nacos-router-weather"),
-                    Path.Join(root.FullName, "examples", "skills", "nacos-router-weather-explore")] }
+                    Path.Join(root.FullName, "examples", "skills", "nacos-router-weather-explore"),
+                    Path.Join(root.FullName, "examples", "skills", "nacos-router-weather-dynamic")] }
         }, null, NullLogger.Instance);
         Assert.Equal(SkillKind.Standard, Assert.Single(skills, skill => skill.Name == "nacos-router-weather-explore").Kind);
-        return Assert.Single(skills, skill => skill.Name == "nacos-router-weather");
+        return Assert.Single(skills, skill => skill.Name == name);
     }
 }

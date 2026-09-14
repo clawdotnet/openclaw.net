@@ -6,29 +6,20 @@ final_text_mode: "step:query"
 triggers: ["nacos weather"]
 composition:
   steps:
-    - id: bind
-      kind: tool_call
-      tool: nacos_mcp_router_add_mcp_server
-      tool_args:
-        mcp_server_name: weather-mcp
-      on_failure: fallback_bind
-    - id: fallback_bind
-      kind: tool_call
-      tool: emit_text
-      tool_args:
-        text: "weather-mcp could not be bound; register it via Nacos and confirm the Router can reach it before retrying."
     - id: query
       kind: tool_call
-      tool: nacos_mcp_router_use_tool
-      depends_on: [bind]
+      # Static capability slot (issue #231): the runtime auto-adds the pinned
+      # server once per process, then proxies every call through use_tool.
+      # tool_args are the inner tool's arguments; the executor serialises them
+      # for the Router's `params` wire field.
+      capability_ref:
+        binding: static
+        static:
+          mcp_server_name: weather-mcp
+          tool_name: get_weather
+        fallback: fallback_notice
       tool_args:
-        mcp_server_name: weather-mcp
-        mcp_tool_name: get_weather
-        # Upstream Router declares `params` as type "string" and does
-        # `params = json.loads(arguments["params"])` before dispatching.
-        # Pass an inline JSON-encoded string, NOT a YAML mapping.
-        params: '{"city": "{{ input }}"}'
-      on_failure: fallback_notice
+        city: "{{ input }}"
     - id: fallback_notice
       kind: tool_call
       tool: emit_text

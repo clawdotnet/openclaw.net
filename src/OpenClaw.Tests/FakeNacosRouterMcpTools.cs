@@ -11,6 +11,8 @@ public sealed class NacosRouterFixtureState
     public List<string> Calls { get; } = [];
     public bool FailUse { get; set; }
     public bool PlainTextFailure { get; set; }
+    public bool FailAdd { get; set; }
+    public bool EmptySearch { get; set; }
 }
 
 // Parameters and prose envelopes follow the pinned upstream Python Router.
@@ -22,9 +24,11 @@ public sealed class FakeNacosRouterMcpTools(NacosRouterFixtureState state)
     public string Search(string task_description, string key_words)
     {
         state.Calls.Add("search");
-        var candidates = Enumerable.Range(0, 5).ToDictionary(
-            i => i == 0 ? "weather-mcp" : $"candidate-{i}",
-            i => new { name = i == 0 ? "weather-mcp" : $"candidate-{i}", description = "weather city" });
+        var candidates = state.EmptySearch
+            ? new Dictionary<string, object>()
+            : Enumerable.Range(0, 5).ToDictionary(
+                i => i == 0 ? "weather-mcp" : $"candidate-{i}",
+                i => (object)new { name = i == 0 ? "weather-mcp" : $"candidate-{i}", description = "weather city" });
         return "## 获取" + task_description + "的步骤如下：\n"
             + RouterProseContract.SearchListMarker + JsonSerializer.Serialize(candidates)
             + "\n" + RouterProseContract.SearchStepMarker + "从当前可用的mcp server列表中选择你需要的mcp server调add_mcp_server工具安装mcp server";
@@ -34,6 +38,8 @@ public sealed class FakeNacosRouterMcpTools(NacosRouterFixtureState state)
     public string Add(string mcp_server_name)
     {
         state.Calls.Add("add:" + mcp_server_name);
+        if (state.FailAdd)
+            return "failed to install mcp server: " + mcp_server_name;
         return "1. " + mcp_server_name + RouterProseContract.AddSuccessMarker + ", " + RouterProseContract.AddToolListMarker
             + "[{\"name\":\"get_weather\",\"description\":\"weather city\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}]"
             + "\n2." + mcp_server_name + "的工具需要通过nacos-mcp-router的use_tool工具代理使用";

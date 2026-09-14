@@ -41,3 +41,26 @@ public static class ResolveCapabilityFailureCodes
     public const string SelectionPolicyNoMatch = "selection_policy_no_match";
     public const string RouterUnavailable = "router_unavailable";
 }
+
+/// <summary>
+/// Typed failure codes for capability slot execution (issue #231). Slots
+/// normalise Router prose failures and protocol failures alike into these
+/// codes so the meta failure-branch machinery can route them deterministically.
+/// </summary>
+public static class CapabilitySlotFailureCodes
+{
+    /// <summary>The runtime has no capability executor wired (no Router registry).</summary>
+    public const string NotConfigured = "capability_not_configured";
+
+    /// <summary>No nacos-mcp-router client is registered, or a Router call never reached it.</summary>
+    public const string RouterUnavailable = "capability_router_unavailable";
+
+    /// <summary>add_mcp_server failed (prose or protocol) for the static binding.</summary>
+    public const string AddFailed = "capability_add_failed";
+
+    /// <summary>use_tool failed (prose or protocol) for the bound tool.</summary>
+    public const string UseToolFailed = "capability_use_tool_failed";
+
+    /// <summary>The dynamic resolve step failed; the resolver failure code is in the failure message.</summary>
+    public const string ResolveFailed = "capability_resolve_failed";
+}

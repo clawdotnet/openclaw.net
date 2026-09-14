@@ -212,6 +212,12 @@ public sealed class MetaSkillStepDefinition
     /// <summary>Optional delegated tool name.</summary>
     public string? Tool { get; init; }
 
+    /// <summary>
+    /// Optional capability slot binding for tool_call steps. Replaces <see cref="Tool"/>
+    /// with an Nacos MCP Router capability reference resolved at execution time.
+    /// </summary>
+    public MetaCapabilityRefDefinition? CapabilityRef { get; init; }
+
     /// <summary>Optional skill_exec entrypoint name for deterministic subprocess execution.</summary>
     public string? SkillExecEntrypoint { get; init; }
 
@@ -289,6 +295,60 @@ public sealed class MetaSkillStepDefinition
     /// <c>"last"</c> — return last child output.
     /// </summary>
     public string FanOutMergeMode { get; init; } = "concat";
+}
+
+/// <summary>
+/// Capability slot binding for a tool_call step (Nacos MCP Router). Binding is
+/// <c>static</c> (pinned server + tool) or <c>dynamic</c> (resolved from an
+/// intent via the capability resolver).
+/// </summary>
+public sealed class MetaCapabilityRefDefinition
+{
+    /// <summary>Binding mode: <c>static</c> or <c>dynamic</c>.</summary>
+    public required string Binding { get; init; }
+
+    /// <summary>Pinned server/tool pair. Only set when <see cref="Binding"/> is <c>static</c>.</summary>
+    public MetaCapabilityStaticBinding? Static { get; init; }
+
+    /// <summary>Intent used to resolve the capability. Only set when <see cref="Binding"/> is <c>dynamic</c>.</summary>
+    public MetaCapabilityIntent? Intent { get; init; }
+
+    /// <summary>Resolver selection policy: <c>first</c> (default) or <c>exact_name</c>.</summary>
+    public string SelectionPolicy { get; init; } = "first";
+
+    /// <summary>
+    /// Optional fallback step. Folded into <see cref="MetaSkillStepDefinition.OnFailure"/>
+    /// at parse time so the existing failure-branch machinery validates and routes it.
+    /// </summary>
+    public string? Fallback { get; init; }
+}
+
+/// <summary>
+/// Pinned binding for a static capability slot.
+/// </summary>
+public sealed class MetaCapabilityStaticBinding
+{
+    /// <summary>Registered MCP server name in the Nacos registry.</summary>
+    public required string McpServerName { get; init; }
+
+    /// <summary>Tool name on the bound server.</summary>
+    public required string ToolName { get; init; }
+}
+
+/// <summary>
+/// Intent describing the capability a dynamic slot needs. Fed to the Router's
+/// capability resolver (same shape as the search wire contract).
+/// </summary>
+public sealed class MetaCapabilityIntent
+{
+    /// <summary>Optional capability type URI, e.g. <c>cap:WeatherQuery</c>.</summary>
+    public string? Type { get; init; }
+
+    /// <summary>Task description fed to the resolver (same shape as the Router search).</summary>
+    public required string TaskDescription { get; init; }
+
+    /// <summary>Optional keyword list for resolution.</summary>
+    public IReadOnlyList<string> Keywords { get; init; } = [];
 }
 
 /// <summary>

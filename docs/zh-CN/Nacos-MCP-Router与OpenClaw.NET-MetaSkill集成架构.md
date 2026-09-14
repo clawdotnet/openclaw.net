@@ -119,8 +119,8 @@ flowchart TB
 
 MetaSkill 节点不直接引用工具，而是声明一个能力槽位。槽位支持两种绑定模式：
 
-- **静态绑定**：节点直接写死 `mcp_server_name + tool_name`，启动时一次性 `add_mcp_server` 解析并缓存。适用于核心链路、对稳定性要求高的节点。
-- **动态绑定（延迟绑定）**：节点只携带 intent（`task_description` + `key_words`），DAG 执行到该节点时才走 `search → add → use` 完成晚绑定。适用于长尾能力、跨系统能力——这正是 Router Top-5 语义检索的价值场景。
+- **静态绑定**：节点直接写死 `mcp_server_name + tool_name`；槽位首次执行时自动 `add_mcp_server`，成功后记入运行时级幂等缓存（失败不缓存，下次调用重试），此后每次调用直接 `use_tool`。适用于核心链路、对稳定性要求高的节点。
+- **动态绑定（延迟绑定）**：节点只携带 intent（`task_description` + `key_words`），槽位执行时才走 `search → add` 完成晚绑定、再 `use_tool` 执行；整条链路是确定性代码路径，零 LLM 往返。适用于长尾能力、跨系统能力——这正是 Router Top-5 语义检索的价值场景。
 
 ### 5.2 节点 Schema 示例（JSON-LD 投影）
 
@@ -147,9 +147,37 @@ MetaSkill 节点不直接引用工具，而是声明一个能力槽位。槽位�
 }
 ```
 
-> 契约对齐（#230 已实现）：`ms:keywords` 为**逗号分隔字符串**（对应 `resolve_capability` 的 `key_words` wire 参数），`ms:selectionPolicy` 为 `first` / `exact_name` 字符串枚举（对应 `selection_policy`）。`topK` / `preferVersion` 是 #231 预留扩展，Resolver 支持前不得写入节点 schema。
+> 契约对齐（#230/#231 已实现）：`ms:keywords` 为**逗号分隔字符串**（SKILL.md 中写作数组，解析层拼接后对应 `resolve_capability` 的 `key_words` wire 参数），`ms:selectionPolicy` 为 `first` / `exact_name` 字符串枚举（对应 `selection_policy`）。`ms:fallback` 在解析层折叠为步骤的 `on_failure`，复用既有失败分支校验与路由。`topK` / `preferVersion` 仍是预留扩展，Resolver 支持前写入节点 schema 会以 `capabilityref_reserved_field` 拒绝。
 
 领域对象（DDD）经 JSON-LD Framing 投影为 MetaSkill 节点时，`@type`（如 `cap:WeatherQuery`）同时作为语义检索的关键词来源，保证「本体词汇 → 检索查询 → 注册描述」三者处于同一向量空间。
+
+### 5.3 capability_ref 字段映射与执行语义（#231 已实现）
+
+SKILL.md 中的 `capability_ref` 与 JSON-LD 投影的字段对应，以及槽位执行器的运行时语义：
+
+| SKILL.md 字段 | JSON-LD 术语 | 执行语义 |
+|---|---|---|
+| `binding: static` | `ms:binding = "static"` | 槽位首次执行自动 `add_mcp_server`；运行时级幂等缓存只记成功，失败下次重试；此后每次调用 `use_tool` |
+| `binding: dynamic` | `ms:binding = "dynamic"` | 执行时经 #230 Resolver 核心 `search → add` 解析绑定，再 `use_tool`；零 LLM 往返 |
+| `static.mcp_server_name` / `static.tool_name` | `ms:mcpServerName` / `ms:toolName` | 固定目标，直接决定 Router `add` / `use_tool` 的参数 |
+| `intent.type` | `@type`（如 `cap:WeatherQuery`） | 本体类型标识，与注册描述共用同一向量空间词汇 |
+| `intent.task_description` | `ms:taskDescription` | Router `search_mcp_server` 的 `task_description` wire 参数 |
+| `intent.keywords` | `ms:keywords`（逗号分隔字符串） | Router `key_words` wire 参数；数组在解析层规范化拼接 |
+| `selection_policy` | `ms:selectionPolicy` | `first`（缺省）/ `exact_name`，与 `resolve_capability` 同一枚举 |
+| `fallback` | `ms:fallback`（节点引用） | 解析层折叠为步骤 `on_failure`，走既有失败分支校验与路由 |
+| 步骤级 `tool_args` | —（运行时细节，不进本体） | 内层工具参数；执行器自动序列化为 Router `params` JSON 字符串 wire 字段 |
+
+槽位执行失败一律以 `failure_code` 归一化返回，不抛异常：
+
+| failure_code | 场景 |
+|---|---|
+| `capability_not_configured` | 运行时未注入槽位执行器 |
+| `capability_router_unavailable` | Router 客户端缺失或不可达 |
+| `capability_add_failed` | 静态 `add_mcp_server` 失败（明面 prose 或协议级） |
+| `capability_use_tool_failed` | `use_tool` 失败（含 `failed to use tool:` prose 与协议级） |
+| `capability_resolve_failed` | 动态解析失败（`no_candidates`、`selection_policy_no_match`、`all_adds_failed` 等，上游 `failure_code` 并入消息） |
+
+另外：`use_tool` 返回的 Python repr 外壳（如 `[TextContent(type='text', text='...', ...)]`）在执行器内剥除后才进入模型上下文；`tool_args` 写作 YAML 映射即可，无需作者手工内嵌 JSON 字符串。
 
 ## 6. 执行时序
 
@@ -193,6 +221,8 @@ sequenceDiagram
 2. **Token 最小化**：模型只接触 MetaSkill DAG 结构与 Router 的少量工具描述，而非全部后端服务的 Schema。
 3. **绑定可演进**：更换/升级后端服务只需修改 Nacos 注册信息，MetaSkill 定义不变。
 
+> 实现对照（2026-09-14，#230/#231 已落地）：上图中动态槽位的 `search → add → use` 与静态槽位的 `add`（首次，幂等缓存）→ `use` 均为确定性代码路径；会话级绑定缓存与 Nacos 变更事件订阅的失效联动仍属后续项。
+
 ## 7. 关键工程决策
 
 ### 7.1 三步链下沉：从 LLM 决策到确定性代码
@@ -204,6 +234,8 @@ resolve_capability(intent) → binding { server, tool, schema }
 ```
 
 内部程序化调用 Router 的三个端点，把绑定过程变成确定性代码路径；模型只负责产出 intent 参数。解析失败时再降级回 LLM 逐步模式。同时配合工具输出裁剪（如 TokenJuice 思路），对 search 返回的 Top-5 结果只保留 `name / description / rank`（rank 为候选在上游确定性排序中的位置；上游不返回 score，不做本地伪造）。
+
+**已落地**（#230）：`resolve_capability` 原生工具实现上述路径，失败以 `failure_code` 归一化返回而非抛异常；LLM 逐步降级与会话级绑定缓存仍属后续项。
 
 ### 7.2 注册描述与本体对齐
 
@@ -246,6 +278,8 @@ Router 语义检索的质量完全取决于 Nacos 中 MCP Server 的 `descriptio
 |---|---|---|
 | **Agent 级（PoC）** | Gateway 作为 MCP Client 直连 Router 的 streamableHTTP 端点，Agent 看到 3 个工具，三步链由模型完成；MetaSkill 先全部使用静态绑定 | 一周内跑通验证 |
 | **Runtime 级（生产）** | 实现原生 Capability Resolver + 绑定缓存 + 变更事件订阅；MetaSkill 节点支持动态槽位；三步链确定性化 | 正式架构 |
+
+> 实现状态（2026-09-14）：原生 Resolver（#230）与槽位执行（#231，静态 + 动态）已落地，三步链确定性化完成；会话级绑定缓存、Nacos 变更事件订阅仍待实现。
 
 ## 9. 附录：最小配置示例
 

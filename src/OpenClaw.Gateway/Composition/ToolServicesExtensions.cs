@@ -38,6 +38,11 @@ internal static class ToolServicesExtensions
                 startup.Config.Plugins.Mcp,
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger<McpServerToolRegistry>()));
 
+        // Capability slot executor (#231): executes capability_ref steps in the
+        // meta DAG through the same Router registry as resolve_capability.
+        services.AddSingleton(sp =>
+            new CapabilitySlotExecutor(sp.GetRequiredService<McpServerToolRegistry>()));
+
         // MCP App support — discovery and hosting
         services.AddOpenClawMcpAppServices(startup.Config.McpApps);
 

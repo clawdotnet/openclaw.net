@@ -2,12 +2,14 @@
 
 Status: **live wire-contract verified (2026-09-14); model-token baseline measured
 (2026-09-14)** for
-[#229](https://github.com/clawdotnet/openclaw.net/issues/229). The wire contract
+[#229](https://github.com/clawdotnet/openclaw.net/issues/229); **capability
+slots implemented (2026-09-14)** for #231. The wire contract
 (envelopes, tool schemas, failure prose) was captured from a real Router 0.2.2
 against a local Nacos 3.2.4 test bed, and both example skills were measured five
 times against a live model (MiniMax-M2.1 via an OpenAI-compatible endpoint) with
 fresh sessions; the medians and the discovery-quality caveats are recorded
-below. The resolver/schema/cache work in #230–#234 can proceed on this evidence.
+below. The resolver (#230) and capability slots (#231) are implemented on this
+evidence; the remaining cache/retry/replay work (#232–#234) builds on it.
 
 ## Contract observations
 
@@ -117,23 +119,28 @@ temporary configuration. Invoke `meta_invoke` with:
 {"skill":"nacos-router-weather","input":"Oslo"}
 ```
 
-The static example binds on each invocation, then calls `use_tool`; it adds no
-LLM turn. Its final output is the raw tool result. The exploration example lets
-the model discover/bind/use and serves as a separate token baseline. Confirm the
-registered tool names rather than assuming the mock's weather schema exists.
+Both examples are capability slots (see "Capability slots" below). The static
+example auto-adds the pinned server once per runtime, then calls `use_tool` on
+every invocation; the dynamic example resolves the intent through the Router's
+search/add chain in code, then calls `use_tool`. Neither adds an LLM turn, and
+the final output is the raw tool result. Confirm the registered tool names
+rather than assuming the mock's weather schema exists.
 
 ## Reproducible local checks
 
 From the repository root:
 
 ```sh
-dotnet test src/OpenClaw.Tests -c Release --filter FullyQualifiedName~NacosRouterIntegrationTests
+dotnet test src/OpenClaw.Tests -c Release --filter FullyQualifiedName~CapabilitySlot|FullyQualifiedName~NacosRouterIntegrationTests
 ```
 
 The tests start a real in-process HTTP MCP endpoint. They check exact three-tool
-registration, source-shaped discovery text, sequential bind/use execution in both
-runtimes, repeated execution without adding backend tools, and protocol-error
-fallback. They use no external credentials, model calls, Nacos server, or Docker.
+registration, source-shaped discovery text, capability-slot execution in both
+runtimes (static: one cached `add`, then `use_tool` per call; dynamic:
+`search → add → use`), typed failure codes (`capability_add_failed`,
+`capability_use_tool_failed`, `capability_resolve_failed`), fallback routing,
+and protocol-error handling. They use no external credentials, model calls,
+Nacos server, or Docker.
 
 For a provisioned Router with a registered weather server:
 
@@ -193,6 +200,68 @@ Behaviour contract:
 4. `tried` lists the candidates the resolver actually attempted to add, not all returned candidates.
 5. `rank` is the candidate's position in the upstream's deterministic top-N ordering. Upstream search returns no scores, so none are fabricated.
 
+## Capability slots (issue #231)
+
+A meta-skill `tool_call` step can declare a `capability_ref` instead of a
+`tool`. The runtime executes the slot deterministically — the model never sees
+the Router's tool schemas and adds no LLM round-trips.
+
+```yaml
+steps:
+  - id: query
+    kind: tool_call
+    capability_ref:
+      binding: static                # or: dynamic
+      static:                        # static only
+        mcp_server_name: weather-mcp
+        tool_name: get_weather
+      # intent:                      # dynamic only
+      #   task_description: weather city
+      #   keywords: [weather, city]
+      selection_policy: first        # dynamic only: first | exact_name
+      fallback: fallback_notice      # folded into on_failure
+    tool_args:
+      city: "{{ input }}"
+```
+
+Binding modes:
+
+- **static** — the executor auto-calls `add_mcp_server` once per executor
+  instance (an idempotent cache records successes only; a failed add is
+  retried on the next call), then proxies every invocation through `use_tool`.
+- **dynamic** — the executor resolves the intent through the same
+  `resolve_capability` core as #230 (`search → add`, no LLM, no `use_tool`
+  inside the resolver), then calls `use_tool` on the bound tool.
+
+Semantics shared with the resolver:
+
+- `selection_policy` is `first` (default) or `exact_name`, the same enum as
+  `resolve_capability`.
+- `tool_args` are the *inner* tool's arguments; the executor serialises them to
+  the Router's `params` JSON-string wire field, so SKILL.md authors write a
+  YAML mapping, never an inline JSON string.
+- `fallback` is folded into the step's `on_failure` at parse time and validates
+  through the existing failure-branch rules.
+- The `use_tool` repr shell (see above) is stripped before the payload reaches
+  the model.
+
+Failure codes (all in `failure_code`):
+
+| Code | Scenario |
+| --- | --- |
+| `capability_not_configured` | runtime has no capability slot executor |
+| `capability_router_unavailable` | Router client missing or unreachable |
+| `capability_add_failed` | static `add_mcp_server` failed (prose or protocol) |
+| `capability_use_tool_failed` | `use_tool` failed, including `failed to use tool:` prose |
+| `capability_resolve_failed` | dynamic resolution failed (`no_candidates`, `selection_policy_no_match`, `all_adds_failed`, ...) |
+
+Schema validation rejects `top_k` / `prefer_version` with
+`capabilityref_reserved_field` until the resolver supports them.
+
+Examples: `examples/skills/nacos-router-weather` (static) and
+`examples/skills/nacos-router-weather-dynamic` (dynamic). Both add an
+`emit_text` fallback step and stay opt-in, not bundled by default.
+
 ## Remaining live acceptance and downstream decisions
 
 Before closing #229 or proceeding with the dependent runtime changes:
@@ -241,5 +310,7 @@ Before closing #229 or proceeding with the dependent runtime changes:
 | Median input + output tokens (5 runs) | 0 + 0 (no LLM turn) | 17479 + 1181 (traced batch; untraced batch at the iteration cap: 29763 + 1870) |
 | Router version / deployment | 0.2.2 (`@latest`, requires `mcp<2`) / local Nacos 3.2.4, streamable_http :8000 | same |
 
-No cache, capability slots, retry policy, or binding replay is implemented by this
-PoC. Those remain separately tracked by #230–#234.
+Capability slots (#231) and the capability resolver (#230) are implemented. The
+static slot's auto-add cache is runtime-scoped idempotency only — no
+session-level binding cache, retry policy, or binding replay yet; those remain
+tracked by #232–#234.

@@ -1087,6 +1087,9 @@ public static class SkillLoader
                 if (!TryParseOnFailure(stepElement, out var onFailure, out errorCode))
                     return null;
 
+                if (!TryParseCapabilityRef(stepElement, onFailure, out var capabilityRef, out errorCode))
+                    return null;
+
                 if (!TryParseTimeoutSeconds(stepElement, out var timeoutSeconds, out errorCode))
                     return null;
 
@@ -1124,6 +1127,7 @@ public static class SkillLoader
                     Kind = kind,
                     Skill = skill,
                     Tool = tool,
+                    CapabilityRef = capabilityRef,
                     SkillExecEntrypoint = skillExecEntrypoint,
                     SkillExecArgs = skillExecArgs,
                     SkillExecStdin = skillExecStdin,
@@ -1137,7 +1141,7 @@ public static class SkillLoader
                     Clarify = clarify,
                     Routes = routes,
                     DependsOn = dependsOn,
-                    OnFailure = onFailure,
+                    OnFailure = onFailure ?? capabilityRef?.Fallback,
                     TimeoutSeconds = timeoutSeconds,
                     Retry = retry,
                     OutputContract = outputContract,
@@ -1203,7 +1207,21 @@ public static class SkillLoader
                 return false;
             }
 
-            if (step.Kind.Equals("tool_call", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(step.Tool))
+            if (step.CapabilityRef is not null && !step.Kind.Equals("tool_call", StringComparison.OrdinalIgnoreCase))
+            {
+                errorCode = "invalid_capability_ref";
+                return false;
+            }
+
+            if (step.CapabilityRef is not null && !string.IsNullOrWhiteSpace(step.Tool))
+            {
+                errorCode = "invalid_capability_ref";
+                return false;
+            }
+
+            if (step.Kind.Equals("tool_call", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(step.Tool) &&
+                step.CapabilityRef is null)
             {
                 errorCode = "invalid_step_kind_fields";
                 return false;
@@ -1331,6 +1349,175 @@ public static class SkillLoader
         if (!ValidateFailureBranches(steps, ids, out errorCode))
             return false;
 
+        return true;
+    }
+
+    private static bool TryParseCapabilityRef(JsonElement stepElement, string? onFailure, out MetaCapabilityRefDefinition? capabilityRef, out string? errorCode)
+    {
+        capabilityRef = null;
+        errorCode = null;
+
+        if (!stepElement.TryGetProperty("capability_ref", out var refElement) ||
+            refElement.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (refElement.ValueKind != JsonValueKind.Object)
+        {
+            errorCode = "invalid_capability_ref";
+            return false;
+        }
+
+        // Reserved for the capability resolver: writing these fields is rejected
+        // until the Resolver supports them (issue #231).
+        if (refElement.TryGetProperty("top_k", out var topK) && topK.ValueKind != JsonValueKind.Null)
+        {
+            errorCode = "capabilityref_reserved_field";
+            return false;
+        }
+
+        if (refElement.TryGetProperty("prefer_version", out var preferVersion) && preferVersion.ValueKind != JsonValueKind.Null)
+        {
+            errorCode = "capabilityref_reserved_field";
+            return false;
+        }
+
+        if (!refElement.TryGetProperty("binding", out var bindingElement) ||
+            bindingElement.ValueKind != JsonValueKind.String ||
+            bindingElement.GetString() is not { Length: > 0 } binding)
+        {
+            errorCode = "invalid_capability_ref";
+            return false;
+        }
+
+        binding = binding.Trim().ToLowerInvariant();
+        if (binding is not ("static" or "dynamic"))
+        {
+            errorCode = "invalid_capability_ref";
+            return false;
+        }
+
+        MetaCapabilityStaticBinding? staticBinding = null;
+        MetaCapabilityIntent? intent = null;
+
+        if (binding == "static")
+        {
+            if (!refElement.TryGetProperty("static", out var staticElement) ||
+                staticElement.ValueKind != JsonValueKind.Object)
+            {
+                errorCode = "invalid_capability_ref";
+                return false;
+            }
+
+            if (!staticElement.TryGetProperty("mcp_server_name", out var serverName) ||
+                serverName.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(serverName.GetString()))
+            {
+                errorCode = "invalid_capability_ref";
+                return false;
+            }
+
+            if (!staticElement.TryGetProperty("tool_name", out var toolName) ||
+                toolName.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(toolName.GetString()))
+            {
+                errorCode = "invalid_capability_ref";
+                return false;
+            }
+
+            staticBinding = new MetaCapabilityStaticBinding
+            {
+                McpServerName = serverName.GetString()!.Trim(),
+                ToolName = toolName.GetString()!.Trim(),
+            };
+        }
+        else
+        {
+            if (!refElement.TryGetProperty("intent", out var intentElement) ||
+                intentElement.ValueKind != JsonValueKind.Object)
+            {
+                errorCode = "invalid_capability_ref";
+                return false;
+            }
+
+            if (!intentElement.TryGetProperty("task_description", out var taskDescription) ||
+                taskDescription.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(taskDescription.GetString()))
+            {
+                errorCode = "invalid_capability_ref";
+                return false;
+            }
+
+            string? intentType = null;
+            if (intentElement.TryGetProperty("type", out var typeElement) &&
+                typeElement.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(typeElement.GetString()))
+            {
+                intentType = typeElement.GetString()!.Trim();
+            }
+
+            var keywords = new List<string>();
+            if (intentElement.TryGetProperty("keywords", out var keywordsElement) &&
+                keywordsElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var keyword in keywordsElement.EnumerateArray())
+                {
+                    if (keyword.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(keyword.GetString()))
+                        keywords.Add(keyword.GetString()!.Trim());
+                }
+            }
+
+            intent = new MetaCapabilityIntent
+            {
+                Type = intentType,
+                TaskDescription = taskDescription.GetString()!.Trim(),
+                Keywords = keywords,
+            };
+        }
+
+        var selectionPolicy = "first";
+        if (refElement.TryGetProperty("selection_policy", out var policyElement))
+        {
+            if (policyElement.ValueKind != JsonValueKind.String ||
+                policyElement.GetString() is not { Length: > 0 } policy ||
+                (policy = policy.Trim().ToLowerInvariant()) is not ("first" or "exact_name"))
+            {
+                errorCode = "invalid_capability_ref";
+                return false;
+            }
+
+            selectionPolicy = policy;
+        }
+
+        string? fallback = null;
+        if (refElement.TryGetProperty("fallback", out var fallbackElement))
+        {
+            if (fallbackElement.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(fallbackElement.GetString()))
+            {
+                errorCode = "invalid_capability_ref";
+                return false;
+            }
+
+            fallback = fallbackElement.GetString()!.Trim();
+        }
+
+        // capability_ref.fallback and step-level on_failure are the same failure
+        // branch; declaring both is ambiguous.
+        if (fallback is not null && !string.IsNullOrWhiteSpace(onFailure))
+        {
+            errorCode = "invalid_capability_ref";
+            return false;
+        }
+
+        capabilityRef = new MetaCapabilityRefDefinition
+        {
+            Binding = binding,
+            Static = staticBinding,
+            Intent = intent,
+            SelectionPolicy = selectionPolicy,
+            Fallback = fallback,
+        };
         return true;
     }
 
