@@ -263,6 +263,61 @@ public sealed class NacosRouterIntegrationTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task DynamicSlot_UseToolFailureRetries_ThenFallsBack(bool maf)
+    {
+        var state = new NacosRouterFixtureState { FailUse = true, PlainTextFailure = true };
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton(state);
+        builder.Services.AddMcpServer().WithHttpTransport(options => options.Stateless = true).WithTools<FakeNacosRouterMcpTools>();
+        await using var server = builder.Build();
+        server.MapMcp("/mcp");
+        await server.StartAsync(TestContext.Current.CancellationToken);
+        await using var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
+        var config = ServerConfig(server.Urls.Single() + "/mcp");
+        var reload = await registry.ReloadWorkspaceServersAsync(config, TestContext.Current.CancellationToken);
+        state.Calls.Clear();
+        var skill = LoadRetryDemo();
+        var root = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using var memory = new FileMemoryStore(root, 4);
+        var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
+        var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
+        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        try
+        {
+            var session = new Session { Id = "nacos-retry-" + (maf ? "maf" : "native"), SenderId = "test", ChannelId = "test" };
+            var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var result = await (Task<string>)method.Invoke(runtime, [session, skill.Name, "Oslo", TestContext.Current.CancellationToken])!;
+            // Three attempts (resolve once, then cached-binding retries), then the
+            // fallback branch fires.
+            Assert.Equal("no weather capability bound; check Nacos registration and Router logs.", result);
+            Assert.Equal(new[] { "search", "add:weather-mcp", "use:weather-mcp:get_weather", "use:weather-mcp:get_weather", "use:weather-mcp:get_weather" }, state.Calls);
+            var timestamps = state.UseTimestamps;
+            Assert.Equal(3, timestamps.Count);
+            Assert.True((timestamps[1] - timestamps[0]).TotalMilliseconds >= 60,
+                $"expected >= 100 ms backoff between attempts 1 and 2, got {(timestamps[1] - timestamps[0]).TotalMilliseconds:0} ms");
+            Assert.True((timestamps[2] - timestamps[1]).TotalMilliseconds >= 60,
+                $"expected >= 100 ms backoff between attempts 2 and 3, got {(timestamps[2] - timestamps[1]).TotalMilliseconds:0} ms");
+            var run = Assert.Single(session.MetaRunHistory);
+            var query = Assert.Single(run.StepResults, step => step.Id == "query");
+            Assert.Equal("capability_use_tool_failed", query.FailureCode);
+            var fallback = Assert.Single(run.StepResults, step => step.Id == "fallback_notice");
+            Assert.Equal("completed", fallback.Status);
+            Assert.Empty(chat.ReceivedCalls());
+            Assert.Empty(execution.ReceivedCalls());
+        }
+        finally
+        {
+            if (runtime is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
+            else if (runtime is IDisposable disposable) disposable.Dispose();
+            memory.Dispose();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task DynamicSlot_SameSession_ResolvesOnceThenReusesBinding(bool maf)
     {
         var state = new NacosRouterFixtureState();
@@ -366,6 +421,8 @@ public sealed class NacosRouterIntegrationTests
 
     private static SkillDefinition LoadDynamicDemo() => LoadSkill("nacos-router-weather-dynamic");
 
+    private static SkillDefinition LoadRetryDemo() => LoadSkill("nacos-router-weather-retry");
+
     private static SkillDefinition LoadSkill(string name)
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
@@ -376,7 +433,8 @@ public sealed class NacosRouterIntegrationTests
             Load = new SkillLoadConfig { IncludeBundled = false, IncludeManaged = false, IncludeWorkspace = false,
                 ExtraDirs = [Path.Join(root.FullName, "examples", "skills", "nacos-router-weather"),
                     Path.Join(root.FullName, "examples", "skills", "nacos-router-weather-explore"),
-                    Path.Join(root.FullName, "examples", "skills", "nacos-router-weather-dynamic")] }
+                    Path.Join(root.FullName, "examples", "skills", "nacos-router-weather-dynamic"),
+                    Path.Join(root.FullName, "examples", "skills", "nacos-router-weather-retry")] }
         }, null, NullLogger.Instance);
         Assert.Equal(SkillKind.Standard, Assert.Single(skills, skill => skill.Name == "nacos-router-weather-explore").Kind);
         return Assert.Single(skills, skill => skill.Name == name);
