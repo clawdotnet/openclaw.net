@@ -101,9 +101,10 @@ console/API. Verified on the referenced deployment (2026-09-14): a console
 registration with a non-empty bilingual description and a stdio local config
 wrapped as `{"mcpServers": {"weather-mcp": {"command": "uvx", "args": ["mcp-server-time"]}}}`.
 `mcp-server-time` is a test-bed stand-in so the full `add_mcp_server` chain runs;
-replace it with a real weather server. Verify its registration and
-`add_mcp_server` output before running the static example — a live add success
-envelope is `1. <name>安装完成, tool 列表为: [{name, description, inputSchema}]...`.
+replace it with a real weather server. Verified 2026-09-14: with this config the
+live chain `search → add → use_tool` completed for `weather-mcp` (add success
+envelope `1. <name>安装完成, tool 列表为: [{name, description, inputSchema}]...`,
+then `use_tool` returned the backend tool result).
 
 The examples stay under `examples/skills/` and are not bundled or enabled by
 default. Copy the two example directories into an isolated gateway workspace's
