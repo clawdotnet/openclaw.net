@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Security.Vault;
 
@@ -85,6 +86,10 @@ public sealed class VaultRefCache
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                // Typed resolution errors (path/key not found, auth) propagate as-is;
+                // unknown failures are wrapped as transient unavailability.
+                if (ex is SecretResolutionException)
+                    throw;
                 _logger.LogError(ex, "Vault fetch failed for key {Key}.", ck);
                 throw new VaultUnavailableException($"Vault fetch failed: {ex.Message}", retryable: true);
             }
