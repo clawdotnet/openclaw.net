@@ -126,16 +126,12 @@ Exception messages contain only path, key, HTTP status codes, and error type nam
 docker compose -f deploy/docker-compose/openbao.yml up -d
 ```
 
-Then configure the gateway:
+Direct resolver integration tests construct the Vault client without gateway configuration validation and may use the following loopback-only HTTP settings. Do not copy this block into gateway configuration: an enabled gateway requires an HTTPS Vault address. Production and shared environments must use HTTPS.
 
-The local OpenBao container is an integration-test-only exception to the normal HTTPS requirement. Production and shared environments must use HTTPS.
-
-```jsonc
-"OpenClaw": { "Security": { "Vault": {
-  "Enabled": true,
-  "Address": "http://127.0.0.1:8200",
-  "TokenRef": "raw:root"
-} } }
+```bash
+OPENBAO_ADDR=http://127.0.0.1:8200 OPENBAO_TOKEN=root \
+  dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj \
+  --filter "Category=Integration"
 ```
 
 See `docs/security/vault-integration-tests.md` for running the integration test suite.

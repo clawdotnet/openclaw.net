@@ -126,16 +126,12 @@ vault:<mount>/data/<path>#<key>
 docker compose -f deploy/docker-compose/openbao.yml up -d
 ```
 
-然后配置网关：
+直接解析器集成测试会绕过网关配置校验来构造 Vault 客户端，因此可以使用下面仅限回环地址的 HTTP 设置。不要将此配置块复制到网关配置中：启用 Vault 的网关要求 HTTPS 地址。生产或共享环境必须使用 HTTPS。
 
-本地 OpenBao 容器是常规 HTTPS 要求之外、仅供集成测试使用的例外。生产或共享环境必须使用 HTTPS。
-
-```jsonc
-"OpenClaw": { "Security": { "Vault": {
-  "Enabled": true,
-  "Address": "http://127.0.0.1:8200",
-  "TokenRef": "raw:root"
-} } }
+```bash
+OPENBAO_ADDR=http://127.0.0.1:8200 OPENBAO_TOKEN=root \
+  dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj \
+  --filter "Category=Integration"
 ```
 
 集成测试套件的运行方式见 `docs/zh-CN/security/vault-integration-tests.md`。
