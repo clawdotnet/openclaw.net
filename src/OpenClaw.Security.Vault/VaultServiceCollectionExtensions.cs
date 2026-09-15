@@ -14,7 +14,8 @@ public static class VaultServiceCollectionExtensions
         this IServiceCollection services, IConfiguration config)
     {
         var opts = new VaultSecurityOptions();
-        config.GetSection("Security:Vault").Bind(opts);
+        // Same section the validator checks via GatewayConfig (bound from the "OpenClaw" section).
+        config.GetSection("OpenClaw:Security:Vault").Bind(opts);
 
         if (!opts.Enabled)
             return services; // No-op when vault disabled
