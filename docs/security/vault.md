@@ -71,7 +71,7 @@ Refs work anywhere a secret value is configured: `env:`/`raw:` refs and `vault:`
 | `PrewarmRequired` | `true` | Fail startup when a pre-warm ref fails to resolve. `false` logs and continues. |
 | `PrewarmRefs` | `[]` | Refs resolved at startup. The gateway config tree is also scanned automatically for `vault:` values. |
 | `Tls.SkipVerify` | `false` | Accept any server certificate. Integration/dev only. |
-| `Tls.CaCertPath` | — | Reserved for custom CA bundles (not yet wired to the client). |
+| `Tls.CaCertPath` | — | Custom CA bundle (a PEM file, or a directory of `.pem`/`.crt`/`.cer` files). Loaded roots are trusted as custom roots while hostname checks stay enforced. Mutually exclusive with `SkipVerify`. |
 
 Configuration is read from the existing `IConfiguration` sources: `appsettings.json`, environment variables (`OpenClaw__Security__Vault__Address`), command line, and files encrypted via `SecurityPostureBuilder`. No new configuration provider is introduced.
 
@@ -99,7 +99,7 @@ Pre-warm concurrency is capped by `RateLimit.RequestsPerSecond`.
 ## TLS
 
 - `Tls.SkipVerify=true` accepts any server certificate (integration/dev only; produces a validation warning unless `Security.AllowInsecureTls=true`).
-- `Tls.CaCertPath` is reserved for custom CA bundles; it is not yet wired to the Vault client.
+- `Tls.CaCertPath` loads a custom CA bundle used as custom root trust (`CustomRootTrust`) for Vault TLS validation; hostname verification remains enforced. Missing or invalid certificate files fail startup.
 
 ## Token Recursion Guard
 

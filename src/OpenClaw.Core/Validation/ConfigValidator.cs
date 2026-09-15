@@ -996,6 +996,9 @@ public static class ConfigValidator
             errors.Add($"Security.Vault.Address must not point to loopback when binding to a non-loopback address (got '{uri.Host}').");
         }
 
+        if (v.Tls.SkipVerify && !string.IsNullOrWhiteSpace(v.Tls.CaCertPath))
+            errors.Add("Security.Vault.Tls.SkipVerify and Security.Vault.Tls.CaCertPath are mutually exclusive; set at most one.");
+
         if (string.IsNullOrWhiteSpace(v.TokenRef))
             errors.Add("Security.Vault.TokenRef is required when Vault is enabled.");
         else if (v.TokenRef.StartsWith("vault:", StringComparison.OrdinalIgnoreCase))

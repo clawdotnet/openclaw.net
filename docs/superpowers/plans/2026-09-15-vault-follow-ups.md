@@ -269,7 +269,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `VaultTlsOptions { SkipVerify, CaCertPath }`、`SecretResolutionException`（Core）、`VaultClientSettings.PostProcessHttpClientHandlerAction`
-- Produces: `public static class VaultCaCertLoader`：`X509Certificate2Collection Load(string? path)`、`RemoteCertificateValidationCallback BuildServerCertificateValidator(X509Certificate2Collection roots)`；`VaultSharpClient` 构造函数在 `CaCertPath` 非空时挂接该回调
+- Produces: `public static class VaultCaCertLoader`：`X509Certificate2Collection Load(string? path)`、`Func<HttpRequestMessage, X509Certificate2?, X509Chain?, SslPolicyErrors, bool> BuildServerCertificateValidator(X509Certificate2Collection roots)`（匹配 `HttpClientHandler.ServerCertificateCustomValidationCallback` 的委托签名）；`VaultSharpClient` 构造函数在 `CaCertPath` 非空时挂接该回调
 
 - [ ] **Step 1: 写失败测试**
 
@@ -466,9 +466,13 @@ public static class VaultCaCertLoader
                 throw new SecretResolutionException($"Vault TLS CA bundle file not found: '{file}'.");
             try
             {
+                var before = bundle.Count;
                 bundle.ImportFromPemFile(file);
+                if (bundle.Count == before)
+                    throw new SecretResolutionException(
+                        $"Vault TLS CA bundle file contains no PEM certificates: '{file}'.");
             }
-            catch (CryptographicException ex)
+            catch (Exception ex) when (ex is not SecretResolutionException)
             {
                 throw new SecretResolutionException($"Vault TLS CA bundle file is not a valid PEM certificate: '{file}'.", ex);
             }
@@ -476,7 +480,8 @@ public static class VaultCaCertLoader
         return bundle;
     }
 
-    public static RemoteCertificateValidationCallback BuildServerCertificateValidator(X509Certificate2Collection roots)
+    public static Func<HttpRequestMessage, X509Certificate2?, X509Chain?, SslPolicyErrors, bool> BuildServerCertificateValidator(
+        X509Certificate2Collection roots)
     {
         return (_, serverCertificate, _, errors) =>
         {

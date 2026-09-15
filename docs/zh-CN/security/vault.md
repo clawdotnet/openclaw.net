@@ -71,7 +71,7 @@ vault:<mount>/data/<path>#<key>
 | `PrewarmRequired` | `true` | 预热引用解析失败时阻止启动。`false` 则记录日志并继续。 |
 | `PrewarmRefs` | `[]` | 启动时解析的引用。网关配置树中所有 `vault:` 值也会被自动扫描。 |
 | `Tls.SkipVerify` | `false` | 接受任意服务器证书。仅限集成/开发环境。 |
-| `Tls.CaCertPath` | — | 预留给自定义 CA 证书包（尚未接入客户端）。 |
+| `Tls.CaCertPath` | — | 自定义 CA 证书包（单个 PEM 文件，或含 `.pem`/`.crt`/`.cer` 文件的目录）。加载的根证书作为自定义根信任，主机名校验保留。与 `SkipVerify` 互斥。 |
 
 配置读取自既有 `IConfiguration` 来源：`appsettings.json`、环境变量（`OpenClaw__Security__Vault__Address`）、命令行，以及经 `SecurityPostureBuilder` 加密的文件。不新增独立配置提供程序。
 
@@ -99,7 +99,7 @@ vault:<mount>/data/<path>#<key>
 ## TLS
 
 - `Tls.SkipVerify=true` 接受任意服务器证书（仅限集成/开发环境；除非 `Security.AllowInsecureTls=true`，否则产生校验警告）。
-- `Tls.CaCertPath` 预留给自定义 CA 证书包；尚未接入 Vault 客户端。
+- `Tls.CaCertPath` 加载自定义 CA 证书包，作为 Vault TLS 校验的自定义根信任（`CustomRootTrust`）；主机名校验仍然生效。文件缺失或无效时启动失败。
 
 ## Token 递归防护
 

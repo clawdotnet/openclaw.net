@@ -52,6 +52,22 @@ public sealed class VaultSecurityOptionsTests
         Assert.DoesNotContain(errors, e => e.Contains("Vault", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public void ConfigValidator_SkipVerifyAndCaCertPath_Rejects()
+    {
+        var cfg = MakeValidConfig();
+        cfg.Security.Vault = new VaultSecurityOptions
+        {
+            Enabled = true,
+            Address = "https://vault.example.com",
+            TokenRef = "env:X",
+            Tls = new VaultTlsOptions { SkipVerify = true, CaCertPath = "/etc/ssl/ca.pem" }
+        };
+        var errors = ConfigValidator.Validate(cfg).ToList();
+        Assert.Contains(errors, e => e.Contains("SkipVerify", StringComparison.OrdinalIgnoreCase) &&
+                                    e.Contains("CaCertPath", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static GatewayConfig MakeValidConfig()
     {
         var cfg = new GatewayConfig

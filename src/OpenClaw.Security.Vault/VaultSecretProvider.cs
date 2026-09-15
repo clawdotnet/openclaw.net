@@ -96,6 +96,7 @@ public sealed class VaultSharpClient : IVaultClient
         {
             Namespace = ns,
         };
+        var caCerts = VaultCaCertLoader.Load(tls.CaCertPath);
         if (tls.SkipVerify)
         {
             // VaultSharp 1.x exposes TLS customization via the handler post-processing hook.
@@ -106,8 +107,16 @@ public sealed class VaultSharpClient : IVaultClient
                         HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
             };
         }
-        // CaCertPath: future work — would require a custom HttpClientHandler with
-        // ClientCertificates/SslOptions wired through the same hook.
+        else if (caCerts.Count > 0)
+        {
+            // Custom CA bundle: trust exactly the loaded roots, keep hostname checks.
+            var validator = VaultCaCertLoader.BuildServerCertificateValidator(caCerts);
+            settings.PostProcessHttpClientHandlerAction = handler =>
+            {
+                if (handler is HttpClientHandler clientHandler)
+                    clientHandler.ServerCertificateCustomValidationCallback = validator;
+            };
+        }
         _client = new VaultSharp.VaultClient(settings);
     }
 
