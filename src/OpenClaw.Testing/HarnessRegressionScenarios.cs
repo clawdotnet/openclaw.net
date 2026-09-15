@@ -821,7 +821,7 @@ internal sealed class CapabilityBindingTrajectorySerializationScenario()
         return binding is not null &&
                binding.Binding == "dynamic" &&
                binding.IntentKey == "a1b2c3" &&
-               binding.CacheHit == false &&
+               !binding.CacheHit &&
                binding.Server == "weather-mcp" &&
                binding.Tool == "get_weather" &&
                binding.Candidates.Count == 2 &&

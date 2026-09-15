@@ -203,4 +203,18 @@ public sealed class VendorNeutralCapabilityTests
         Assert.False(SkillLoader.TryParseSkillContent(content, "/skills/invalid", SkillSource.Workspace, out _, out var error));
         Assert.Equal("invalid_capability_ref", error);
     }
+
+    [Theory]
+    [InlineData("static")]
+    [InlineData("dynamic")]
+    [InlineData("unsupported")]
+    public async Task ProgrammaticReference_RequiresModePayloadBeforeBinding(string mode)
+    {
+        var provider = new Provider(new());
+        var executor = new CapabilitySlotExecutor(new([provider]), new());
+        var result = await executor.ExecuteAsync(new() { Binding = mode }, "{}", "s", TestContext.Current.CancellationToken);
+        Assert.Equal("invalid_capability_ref", result.FailureCode);
+        Assert.Equal(0, provider.Binds);
+        Assert.Equal(0, provider.Searches);
+    }
 }

@@ -28,7 +28,7 @@ if dotnet build "$project" "${fast[@]}" -p:OpenClawEnableNacos=true -p:OpenClawE
   echo 'NativeAOT SDK events unexpectedly succeeded' >&2
   exit 1
 fi
-if ! rg -q 'Nacos.*(JIT|NativeAOT)' "$log"; then
+if ! grep -Eq 'Nacos.*(JIT|NativeAOT)' "$log"; then
   cat "$log"
   exit 1
 fi

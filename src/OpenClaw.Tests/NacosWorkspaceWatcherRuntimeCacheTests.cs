@@ -28,6 +28,12 @@ public sealed class NacosWorkspaceWatcherRuntimeCacheTests
         {
             var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
             var runtime = Substitute.For<IAgentRuntime>();
+            var reloaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            runtime.ClearCapabilitySlotRuntimeCacheAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            {
+                reloaded.TrySetResult();
+                return Task.CompletedTask;
+            });
             var bindingCache = new CapabilityBindingCache();
             // Real McpConfigStore (internal sealed → NSubstitute/Castle cannot proxy it)
             // pointing at an empty temp dir: TryLoadServersAsync returns null and the
@@ -38,22 +44,21 @@ public sealed class NacosWorkspaceWatcherRuntimeCacheTests
             bindingCache.Set("s1", intentKey, "weather-mcp", "get_weather");
             Assert.True(bindingCache.TryGet("s1", intentKey, out _, out _));
 
-            var watcher = new McpWorkspaceWatcherService(
+            await using var watcher = new McpWorkspaceWatcherService(
                 registry, runtime, workspacePath: null,
                 NullLogger<McpWorkspaceWatcherService>.Instance,
                 configStore, bindingCache);
 
             watcher.Start(CancellationToken.None);
-            // Start() fires the initial reload; give the reload loop time to drain.
-            await Task.Delay(100, TestContext.Current.CancellationToken);
-            await watcher.DisposeAsync();
+            // Observe completion of the actual reload instead of relying on scheduler timing.
+            await reloaded.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
             Assert.False(bindingCache.TryGet("s1", intentKey, out _, out _));
             await runtime.Received().ClearCapabilitySlotRuntimeCacheAsync(Arg.Any<CancellationToken>());
         }
         finally
         {
-            try { Directory.Delete(tempDir, recursive: true); } catch { /* best-effort */ }
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true);
         }
     }
 }

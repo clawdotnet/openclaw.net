@@ -54,6 +54,10 @@ public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers,
         if (provider is null) return Fail(CapabilitySlotFailureCodes.ProviderUnavailable, "Capability provider is not configured", arguments, trajectory);
         var generation = cache.Generation;
         var intent = capabilityRef.Intent;
+        if (capabilityRef.Binding is not ("static" or "dynamic") ||
+            (capabilityRef.Binding == "static" && (capabilityRef.Static is null || intent is not null)) ||
+            (capabilityRef.Binding == "dynamic" && (intent is null || capabilityRef.Static is not null)))
+            return Fail("invalid_capability_ref", "Capability binding mode and payload must agree", arguments, trajectory);
         var intentKey = intent is null
             ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Scope(capabilityRef.Static!.Target, capabilityRef.Static.ToolName))))
             : CapabilityBindingCache.ComputeIntentKey(intent.TaskDescription, string.Join(",", intent.Keywords), capabilityRef.SelectionPolicy);
@@ -83,7 +87,9 @@ public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers,
                     }
                     else
                     {
-                        var result = await providers.ResolveAsync(new(intent!.TaskDescription, string.Join(",", intent.Keywords),
+                        if (intent is null)
+                            return Fail("invalid_capability_ref", "Dynamic binding requires an intent", arguments, trajectory);
+                        var result = await providers.ResolveAsync(new(intent.TaskDescription, string.Join(",", intent.Keywords),
                             capabilityRef.SelectionPolicy == "exact_name" ? ResolveCapabilitySelectionPolicy.ExactName : ResolveCapabilitySelectionPolicy.First)
                         { Provider = provider.Id, CapabilityType = intent.Type }, ct);
                         trajectory.Candidates = result.Candidates.Select(c => new CapabilityBindingCandidate { Name = c.Name, Rank = c.Rank }).ToList();
