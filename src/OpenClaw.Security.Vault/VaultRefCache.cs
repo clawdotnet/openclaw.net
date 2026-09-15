@@ -14,16 +14,22 @@ public sealed class VaultRefCache
     private readonly IMemoryCache _cache;
     private readonly ILogger<VaultRefCache> _logger;
     private readonly TimeSpan _ttl;
+    private readonly CancellationToken _lifetimeToken;
     private readonly Dictionary<string, SemaphoreSlim> _locks = new(StringComparer.Ordinal);
     private readonly object _locksLock = new();
 
     private sealed record Entry(string Value, DateTimeOffset FetchedAt, bool Refreshing);
 
-    public VaultRefCache(IMemoryCache cache, ILogger<VaultRefCache> logger, TimeSpan ttl)
+    public VaultRefCache(
+        IMemoryCache cache,
+        ILogger<VaultRefCache> logger,
+        TimeSpan ttl,
+        CancellationToken lifetimeToken = default)
     {
         _cache = cache;
         _logger = logger;
         _ttl = ttl;
+        _lifetimeToken = lifetimeToken;
     }
 
     public bool TryGet(VaultRef key, out string value)
@@ -65,7 +71,7 @@ public sealed class VaultRefCache
                         {
                             // Refresh-ahead outlives the request that observed the stale
                             // entry, so it must not inherit that caller's cancellation.
-                            var v = await fetch(CancellationToken.None).ConfigureAwait(false);
+                            var v = await fetch(_lifetimeToken).ConfigureAwait(false);
                             Set(captured, v);
                         }
                         catch (Exception ex)

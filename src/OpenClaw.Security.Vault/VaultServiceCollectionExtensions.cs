@@ -45,7 +45,8 @@ public static class VaultServiceCollectionExtensions
             new VaultRefCache(
                 sp.GetRequiredService<IMemoryCache>(),
                 sp.GetRequiredService<ILogger<VaultRefCache>>(),
-                opts.CacheTtl));
+                opts.CacheTtl,
+                sp.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping));
 
         services.AddSingleton<ISecretResolver>(sp =>
             new CompositeSecretResolver(
