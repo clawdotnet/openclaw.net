@@ -12,6 +12,7 @@ using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using OpenClaw.Agent.Plugins;
+using OpenClaw.Agent.Tools;
 using NSubstitute;
 using OpenClaw.Agent;
 using OpenClaw.Core.Models;
@@ -116,7 +117,8 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
                 runtime,
                 workspacePath,
                 NullLogger<McpWorkspaceWatcherService>.Instance,
-                store);
+                store,
+                new CapabilityBindingCache());
 
             using var cts = new CancellationTokenSource();
             service.Start(cts.Token);
@@ -162,7 +164,8 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
                 runtime,
                 workspacePath,
                 NullLogger<McpWorkspaceWatcherService>.Instance,
-                store);
+                store,
+                new CapabilityBindingCache());
 
             using var cts = new CancellationTokenSource();
             service.Start(cts.Token);

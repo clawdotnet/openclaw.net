@@ -19,6 +19,8 @@
     <Project Path="samples/OpenClaw.TrajectoryReplay/OpenClaw.TrajectoryReplay.csproj" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/OpenClaw.Adapters.Nacos.Events/OpenClaw.Adapters.Nacos.Events.csproj" />
+    <Project Path="src/OpenClaw.Adapters.Nacos/OpenClaw.Adapters.Nacos.csproj" />
     <Project Path="src/OpenClaw.Cli/OpenClaw.Cli.csproj" />
     <Project Path="src/OpenClaw.Client/OpenClaw.Client.csproj" />
     <Project Path="src/OpenClaw.Companion/OpenClaw.Companion.csproj" />

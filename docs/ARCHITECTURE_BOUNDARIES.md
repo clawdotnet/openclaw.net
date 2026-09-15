@@ -22,6 +22,12 @@ The current rule is therefore to keep runtime capabilities in OpenClaw.NET, use 
 | Documentation and ecosystem navigation | **AgentQi** and **AgentQi.dev** |
 | Future runtime references | Keep **AgentQiX** reserved until an explicit migration decision and compatibility plan exist |
 
+## Capability resolution and optional registries
+
+OpenClaw.NET owns vendor-neutral capability contracts, deterministic resolution and execution, cache invalidation, reliability, and trajectory/replay. Nacos Router and Nacos SDK events are separate optional adapters; no Nacos SDK or configuration type belongs in Core or the default Gateway graph. SDK-backed events currently require an explicit JIT host; NativeAOT event support remains #239.
+
+AgentQi owns ecosystem documentation, catalog/trust assessment, and operational UX. Runtime authorization and approvals remain enforced locally on every selected tool, including cache hits. See [capability resolution](capability-resolution.md) for contracts, build choices, migration, and acceptance boundaries.
+
 ## OpenClaw.NET Core
 
 Core owns the stable runtime contracts and minimal behavior required to run agent workloads safely.

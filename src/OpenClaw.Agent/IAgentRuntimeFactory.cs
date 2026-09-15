@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
@@ -37,6 +38,7 @@ public sealed class AgentRuntimeFactoryContext
     public Action<Session, string, string, long, long>? RecordContractTurnUsage { get; init; }
     public Action<Session, string>? AppendContractSnapshot { get; init; }
     public IReadOnlyList<IToolResultInterceptor>? Interceptors { get; init; }
+    public CapabilitySlotExecutor? CapabilitySlotExecutor { get; init; }
 }
 
 public interface IAgentRuntimeFactory

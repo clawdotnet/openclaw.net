@@ -267,6 +267,99 @@ public sealed class SkillCommandsGlobalMetaRunsTests
         }, TestContext.Current.CancellationToken);
     }
 
+    [Fact]
+    public async Task RunAsync_MetaRuns_Json_IncludesCapabilityBindingTrajectory()
+    {
+        var root = CreateTempRoot();
+        var previousOut = Console.Out;
+        var previousError = Console.Error;
+
+        try
+        {
+            var memoryPath = Path.Combine(root, "memory");
+            await using (var store = new FileMemoryStore(memoryPath))
+            {
+                await store.SaveSessionAsync(new Session
+                {
+                    Id = "sess-capability",
+                    ChannelId = "cli",
+                    SenderId = "tester-cap",
+                    MetaRunHistory =
+                    {
+                        new SessionMetaRunRecord
+                        {
+                            RunId = "run-cap-001",
+                            SkillName = "meta-capability",
+                            Status = "completed",
+                            StepResults =
+                            {
+                                new SessionMetaStepResult
+                                {
+                                    Id = "query",
+                                    Kind = "tool_call",
+                                    Status = "completed",
+                                    ExecutionEvidence = new SessionMetaStepExecutionEvidence
+                                    {
+                                        CapabilityBinding = new CapabilityBindingTrajectory
+                                        {
+                                            Binding = "dynamic",
+                                            IntentKey = "a1b2c3",
+                                            TaskDescription = "weather city",
+                                            KeyWords = "weather,city",
+                                            SelectionPolicy = "first",
+                                            CacheHit = false,
+                                            Server = "weather-mcp",
+                                            Tool = "get_weather",
+                                            ElapsedMs = 12.5,
+                                            Candidates = { new CapabilityBindingCandidate { Name = "weather-mcp", Rank = 1 } },
+                                            Attempted = { new CapabilityBindingCandidate { Name = "weather-mcp", Rank = 1 } }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }, TestContext.Current.CancellationToken);
+            }
+
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            Console.SetOut(output);
+            Console.SetError(error);
+
+            var exitCode = await SkillCommands.RunAsync(["meta-runs", "sess-capability", "--storage", memoryPath, "--json"]);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(string.Empty, error.ToString());
+
+            var raw = output.ToString();
+            using var document = JsonDocument.Parse(raw);
+            var run = document.RootElement.GetProperty("runs")[0];
+            // CoreJsonContext applies camelCase naming to nested run/step/evidence objects;
+            // the outer envelope (sessionId/totalCount/shownCount/runs) is hand-written camelCase.
+            var binding = run.GetProperty("stepResults")[0].GetProperty("executionEvidence").GetProperty("capabilityBinding");
+            Assert.Equal("dynamic", binding.GetProperty("binding").GetString());
+            Assert.Equal("a1b2c3", binding.GetProperty("intentKey").GetString());
+            Assert.Equal("weather city", binding.GetProperty("taskDescription").GetString());
+            Assert.Equal("weather,city", binding.GetProperty("keyWords").GetString());
+            Assert.Equal("first", binding.GetProperty("selectionPolicy").GetString());
+            Assert.False(binding.GetProperty("cacheHit").GetBoolean());
+            Assert.Equal("weather-mcp", binding.GetProperty("server").GetString());
+            Assert.Equal("get_weather", binding.GetProperty("tool").GetString());
+            Assert.Equal(12.5, binding.GetProperty("elapsedMs").GetDouble());
+            Assert.Equal(1, binding.GetProperty("candidates").GetArrayLength());
+            Assert.Equal("weather-mcp", binding.GetProperty("candidates")[0].GetProperty("name").GetString());
+            Assert.Equal(1, binding.GetProperty("candidates")[0].GetProperty("rank").GetInt32());
+            Assert.Equal(1, binding.GetProperty("attempted").GetArrayLength());
+        }
+        finally
+        {
+            Console.SetOut(previousOut);
+            Console.SetError(previousError);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTempRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "openclaw-skill-command-global-meta-runs-tests", Guid.NewGuid().ToString("n"));

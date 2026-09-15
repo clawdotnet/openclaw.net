@@ -149,4 +149,21 @@
     </ItemGroup>
     <Copy SourceFiles="@(_DotNetBootScriptPub)" DestinationFiles="$(PublishDir)wwwroot\dashboard\_framework\dotnet.js" SkipUnchangedFiles="true" Condition="'@(_DotNetBootScriptPub)' != ''" />
   </Target>
+  <PropertyGroup Condition="'$(OpenClawEnableNacos)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENCLAW_NACOS</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(OpenClawEnableNacosEvents)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENCLAW_NACOS_EVENTS</DefineConstants>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenClawEnableNacos)' == 'true'">
+    <ProjectReference Include="../OpenClaw.Adapters.Nacos/OpenClaw.Adapters.Nacos.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(OpenClawEnableNacosEvents)' == 'true'">
+    <ProjectReference Include="../OpenClaw.Adapters.Nacos.Events/OpenClaw.Adapters.Nacos.Events.csproj" />
+  </ItemGroup>
+  <Target Name="ValidateNacosAdapterSelection" BeforeTargets="PrepareForBuild" Condition="'$(OpenClawEnableNacosEvents)' == 'true'">
+    <Error Condition="'$(OpenClawEnableNacos)' != 'true'" Text="Nacos events require OpenClawEnableNacos=true." />
+    <Error Condition="'$(PublishAot)' == 'true'" Text="Nacos SDK events require an explicit JIT build with PublishAot=false. See issue #239." />
+  </Target>
 </Project>

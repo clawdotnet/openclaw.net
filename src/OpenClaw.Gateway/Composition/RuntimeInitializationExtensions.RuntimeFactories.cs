@@ -16,6 +16,7 @@ using OpenClaw.Core.Skills;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Mcp;
+using OpenClaw.Core.Skills.Meta;
 using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Tools;
 using OpenClaw.Plugins.Payment;
@@ -37,7 +38,8 @@ internal static partial class RuntimeInitializationExtensions
             agentRuntime,
             startup.WorkspacePath,
             app.Services.GetRequiredService<ILogger<McpWorkspaceWatcherService>>(),
-            app.Services.GetRequiredService<McpConfigStore>());
+            app.Services.GetRequiredService<McpConfigStore>(),
+            app.Services.GetRequiredService<CapabilityBindingCache>());
         app.Services.GetRequiredService<McpWatcherHolder>().Watcher = watcher;
         watcher.Start(app.Lifetime.ApplicationStopping);
         return watcher;
@@ -339,6 +341,7 @@ internal static partial class RuntimeInitializationExtensions
             config.Runtime.Orchestrator);
         var contractGovernance = services.GetRequiredService<ContractGovernanceService>();
 
+        services.GetService<LocalCapabilityProvider>()?.SetTools(tools);
         return factory.Create(new AgentRuntimeFactoryContext
         {
             Services = services,
@@ -368,7 +371,8 @@ internal static partial class RuntimeInitializationExtensions
             IsContractRuntimeBudgetExceeded = contractGovernance.IsRuntimeBudgetExceeded,
             RecordContractTurnUsage = contractGovernance.RecordTurnUsage,
             AppendContractSnapshot = (session, status) => contractGovernance.AppendSnapshot(session, status),
-            Interceptors = interceptors
+            Interceptors = interceptors,
+            CapabilitySlotExecutor = services.GetService<CapabilitySlotExecutor>()
         });
     }
 

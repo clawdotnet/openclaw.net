@@ -1,21 +1,22 @@
 # Nacos MCP Router PoC
 
-Status: **mock-verified integration foundation; live acceptance pending** for
-[#229](https://github.com/clawdotnet/openclaw.net/issues/229). This guide does not
-claim that the Nacos deployment, discovery quality, or model-token baseline has
-been validated. The resolver/schema/cache work in #230–#234 depends on that evidence.
+The current architecture and build contract is [vendor-neutral capability resolution](capability-resolution.md). Select `provider: nacos` explicitly. The Router adapter and SDK event adapter are independent optional components.
+
+The live observations below were supplied with the contributor's `nacos` branch on 2026-09-14. They preserve its protocol evidence and measurement caveats; they are not a fresh live validation of the vendor-neutral refactor. In particular, successful weather discovery was not demonstrated on the misregistered test backend.
 
 ## Contract observations
 
 The reference is the upstream Python Router at commit
 [`0ee95f4f353d6f66184dafdb3e0ffd342c4edb09`](https://github.com/nacos-group/nacos-mcp-router-python/blob/0ee95f4f353d6f66184dafdb3e0ffd342c4edb09/src/nacos_mcp_router/router.py).
-These are source observations, **not a live deployment capture**:
+Originally source observations, re-verified on 2026-09-14 against a live capture
+from Router **0.2.2** (`@latest` at capture time) on a local Nacos 3.2.4 test bed
+— the envelope shapes below matched verbatim:
 
 | Tool | Arguments | Returned text |
 | --- | --- | --- |
 | `search_mcp_server` | `task_description`, `key_words` (comma-separated string) | Prose containing a JSON object keyed by server name; entries have `name` and `description`, no score |
 | `add_mcp_server` | `mcp_server_name` | Prose containing a tool list with `name`, `description`, `inputSchema` |
-| `use_tool` | `mcp_server_name`, `mcp_tool_name`, `params` | String representation of downstream MCP content |
+| `use_tool` | `mcp_server_name`, `mcp_tool_name`, `params` (JSON-encoded string) | String representation of downstream MCP content |
 
 Do not substitute `tool_name` for `mcp_tool_name`, assume search is a bare JSON
 array, fabricate scores, or assume every failure sets MCP `isError`. The Python
@@ -24,10 +25,40 @@ text. Such responses cannot safely drive generic protocol-level fallback without
 a Router-specific normalization contract. The mock suite distinguishes these
 plain-text results from explicit MCP protocol failures.
 
+`use_tool`'s `params` argument is declared by upstream as a JSON-encoded
+string and decoded server-side via `json.loads(arguments["params"])` before
+dispatch to the inner MCP tool. Callers MUST serialize the inner object to a
+string before invoking — passing a nested object causes `TypeError`, which the
+Router catches and returns as the plain text `failed to use tool: <tool_name>`.
+SKILL.md authors: use `params: '{"key": "value"}'` (inline JSON string), never
+a YAML mapping.
+
 The server ID `nacos-mcp-router` retains its hyphens in default tool names.
 Configure `toolNamePrefix` explicitly to obtain the underscore names below.
 
+Live-capture findings (2026-09-14):
+
+- **Dependency pin**: 0.2.2 declares `mcp>=1.9.4` with no upper bound; current
+  mcp 2.x renamed the `streamablehttp_client` import and the Router crashes on
+  startup. Run with `--with "mcp<2"` (see the opt-in command below). Report the
+  break upstream if it still exists when you read this.
+- **`use_tool` wraps its result in a Python repr**: the returned text is
+  `str(response.content)` of the downstream MCP result, e.g.
+  `[TextContent(type='text', text='{...}', annotations=None, meta=None)]`.
+  Consumers that wrap `use_tool` must strip this shell before presenting the
+  payload to a model. `resolve_capability` never calls `use_tool`, so #230 is
+  unaffected.
+- **Registration hard requirements** (the Router silently skips anything else):
+  the registry entry must have a **non-empty `description`** (keyword search is
+  a normalized substring match against it, so bilingual descriptions serve both
+  Chinese intents and English test keywords) and the local server config must be
+  **`mcpServers`-wrapped**: `{"mcpServers": {"<name>": {"command": ..., "args": [...]}}}`.
+  A flat `{"command", "args"}` config installs fail with the plain text
+  `failed to install mcp server: <name>`.
+
 ## Opt-in configuration
+
+Build Gateway with `-p:OpenClawEnableNacos=true` to enable the provider. SDK events require the additional explicit JIT options below.
 
 Keep Nacos and Router on the same host when Nacos binds only to loopback. Do not
 change an existing deployment's networking or authentication for this example.
@@ -40,8 +71,11 @@ Router version using the upstream transport spelling:
 : "${NACOS_PASSWORD:?Supply through your secret environment}"
 : "${NACOS_ROUTER_VERSION:?Pin the Router version tested against your deployment}"
 export TRANSPORT_TYPE=streamable_http
-uvx "nacos-mcp-router@${NACOS_ROUTER_VERSION}"
+uvx --with "mcp<2" "nacos-mcp-router@${NACOS_ROUTER_VERSION}"
 ```
+
+`--with "mcp<2"` upper-bounds the mcp SDK: Router 0.2.2 declares `mcp>=1.9.4`
+unbounded, and mcp 2.x breaks its import (verified 2026-09-14).
 
 Set `NACOS_ROUTER_VERSION` to an explicitly validated package version, not an
 unverified moving `latest`. Inspect startup output for the actual endpoint.
@@ -61,12 +95,15 @@ Merge this entry into `<storagePath>/mcp/mcp.json`; preserve existing servers:
 }
 ```
 
-Register a test server named `weather-mcp` exposing `get_weather` with required
-string argument `city` using the deployment's supported Nacos console/API. Verify
-its registration and `add_mcp_server` output before running the static example.
-The referenced Windows compose deployment and architecture document are not in
-this repository, so this guide deliberately does not invent administrator-init
-commands or a version-specific registration payload.
+Register a test server named `weather-mcp` using the deployment's Nacos
+console/API. Verified on the referenced deployment (2026-09-14): a console
+registration with a non-empty bilingual description and a stdio local config
+wrapped as `{"mcpServers": {"weather-mcp": {"command": "uvx", "args": ["mcp-server-time"]}}}`.
+`mcp-server-time` is a test-bed stand-in so the full `add_mcp_server` chain runs;
+replace it with a real weather server. Verified 2026-09-14: with this config the
+live chain `search → add → use_tool` completed for `weather-mcp` (add success
+envelope `1. <name>安装完成, tool 列表为: [{name, description, inputSchema}]...`,
+then `use_tool` returned the backend tool result).
 
 The examples stay under `examples/skills/` and are not bundled or enabled by
 default. Copy the two example directories into an isolated gateway workspace's
@@ -77,23 +114,28 @@ temporary configuration. Invoke `meta_invoke` with:
 {"skill":"nacos-router-weather","input":"Oslo"}
 ```
 
-The static example binds on each invocation, then calls `use_tool`; it adds no
-LLM turn. Its final output is the raw tool result. The exploration example lets
-the model discover/bind/use and serves as a separate token baseline. Confirm the
-registered tool names rather than assuming the mock's weather schema exists.
+Both examples are capability slots (see "Capability slots" below). The static
+example auto-adds the pinned server once per runtime, then calls `use_tool` on
+every invocation; the dynamic example resolves the intent through the Router's
+search/add chain in code, then calls `use_tool`. Neither adds an LLM turn, and
+the final output is the raw tool result. Confirm the registered tool names
+rather than assuming the mock's weather schema exists.
 
 ## Reproducible local checks
 
 From the repository root:
 
 ```sh
-dotnet test src/OpenClaw.Tests -c Release --filter FullyQualifiedName~NacosRouterIntegrationTests
+dotnet test src/OpenClaw.Tests -c Release --filter 'FullyQualifiedName~CapabilitySlot|FullyQualifiedName~NacosRouterIntegrationTests'
 ```
 
 The tests start a real in-process HTTP MCP endpoint. They check exact three-tool
-registration, source-shaped discovery text, sequential bind/use execution in both
-runtimes, repeated execution without adding backend tools, and protocol-error
-fallback. They use no external credentials, model calls, Nacos server, or Docker.
+registration, source-shaped discovery text, capability-slot execution in both
+runtimes (static: one cached `add`, then `use_tool` per call; dynamic:
+`search → add → use`), typed failure codes (`capability_binding_failed`,
+`capability_execution_failed`, `capability_resolve_failed`), fallback routing,
+and protocol-error handling. They use no external credentials, model calls,
+Nacos server, or Docker.
 
 For a provisioned Router with a registered weather server:
 
@@ -105,27 +147,222 @@ dotnet test src/OpenClaw.Tests -c Release --filter FullyQualifiedName~LiveRouter
 
 Unset `OPENCLAW_NACOS_LIVE` for normal CI; the live check is skipped.
 
-## Remaining live acceptance and downstream decisions
+## Capability resolver (issue #230)
+
+The `resolve_capability` native tool turns the model-driven three-step
+chain into a deterministic code path. The model only needs to emit an
+intent; binding happens in code.
+
+Inputs:
+
+- `provider: "nacos"` (required for this adapter; default is `local`).
+- `task_description` (required) — the same shape the Router `search_mcp_server` accepts.
+- `key_words` (optional) — comma-separated string, same wire shape as the Router.
+- `selection_policy` (optional) — `first` (default) or `exact_name` (case-insensitive name match against `task_description`); a name with no exact match fails with `failure_code: "selection_policy_no_match"` and an empty `tried`. Under `first`, candidates are attempted in the upstream's deterministic top-N order and a failed add rotates to the next candidate; the first successful add wins.
+
+Output (success):
+
+```json
+{
+  "server": "weather-mcp",
+  "tool": "get_weather",
+  "schema": "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}",
+  "tried": [
+    {"name": "weather-mcp", "description": "...", "rank": 1}
+  ]
+}
+```
+
+`schema` is the upstream tool schema delivered as a JSON-encoded string — parse it before use.
+
+Output (failure — Router failure prose is returned as JSON, not thrown):
+
+```text
+{ "failure_code": "no_candidates", "tried": [] }
+{ "failure_code": "selection_policy_no_match", "tried": [] }
+{ "failure_code": "all_bindings_failed", "tried": [{"name":"...","description":"...","rank":1}, ...] }
+{ "failure_code": "provider_unavailable", "tried": [] }
+```
+
+Behaviour contract:
+
+1. The tool never invokes `use_tool`; downstream DAG nodes execute the bound tool.
+2. The tool never calls any LLM; round-trips are zero (test: `chat.ReceivedCalls()` empty).
+3. The tool never throws on Router failures; prose failures, transport failures, and protocol-level `isError` results are all normalised to a `failure_code`.
+   - search that fails to reach the Router (transport) or reports `isError` → `provider_unavailable`.
+   - add that reports `isError` fails only that candidate and continues rotation; `isError` wins over prose inspection, so a "安装完成" message inside an error result cannot bind a tool.
+   - add that fails to reach the Router stops rotation → `provider_unavailable` with the candidates attempted so far.
+   - caller cancellation still propagates as `OperationCanceledException`.
+4. `tried` lists the candidates the resolver actually attempted to add, in rank order, not all returned candidates. Rotation applies to every attempted candidate: a failed add (prose or protocol) moves to the next one, and only a dead transport stops the rotation.
+5. `rank` is the candidate's position in the upstream's deterministic top-N ordering. Upstream search returns no scores, so none are fabricated.
+
+## Capability slots (issue #231)
+
+A meta-skill `tool_call` step can declare a `capability_ref` instead of a
+`tool`. The runtime executes the slot deterministically — the model never sees
+the Router's tool schemas and adds no LLM round-trips.
+
+```yaml
+steps:
+  - id: query
+    kind: tool_call
+    capability_ref:
+      provider: nacos
+      binding: static                # or: dynamic
+      static:                        # static only
+        target: weather-mcp
+        tool_name: get_weather
+      # intent:                      # dynamic only
+      #   task_description: weather city
+      #   keywords: [weather, city]
+      selection_policy: first        # dynamic only: first | exact_name
+      fallback: fallback_notice      # folded into on_failure
+    tool_args:
+      city: "{{ input }}"
+```
+
+Binding modes:
+
+- **static** — the executor auto-calls `add_mcp_server` once per cached binding and security scope
+  (the bounded cache records successes only; a failed add is
+  retried on the next call), then proxies every invocation through `use_tool`.
+- **dynamic** — the executor resolves the intent through the same
+  `resolve_capability` core as #230 (`search → add`, no LLM, no `use_tool`
+  inside the resolver), then calls `use_tool` on the bound tool. Successful
+  bindings are cached per session, keyed by a SHA-256 hash of the normalised
+  intent (task_description + keywords + selection_policy); later slots in the
+  same session reuse the binding until its TTL (default 300 s) expires or the
+  workspace MCP config reloads. `resolve_capability` itself is never cached.
+- **degradation** — a failed slot routes to the step's `fallback` (folded into
+  `on_failure` at parse time; declaring both `capability_ref.fallback` and a
+  step-level `on_failure` is rejected as `invalid_capability_ref`). `use_tool`
+  failures retry only for explicitly retry-safe targets under the step's `retry` policy (`max_attempts` + `backoff_ms`)
+  before the fallback fires, and the failed step records its `failure_code` in
+  the run's step results.
+
+Semantics shared with the resolver:
+
+- `selection_policy` is `first` (default) or `exact_name`, the same enum as
+  `resolve_capability`.
+- `tool_args` are the *inner* tool's arguments; the executor serialises them to
+  the Router's `params` JSON-string wire field, so SKILL.md authors write a
+  YAML mapping, never an inline JSON string.
+- `fallback` is folded into the step's `on_failure` at parse time and validates
+  through the existing failure-branch rules.
+- The `use_tool` repr shell (see above) is stripped before the payload reaches
+  the model.
+
+Failure codes (all in `failure_code`):
+
+| Code | Scenario |
+| --- | --- |
+| `capability_not_configured` | runtime has no capability slot executor |
+| `capability_provider_unavailable` | Router client missing or unreachable |
+| `capability_binding_failed` | static `add_mcp_server` failed (prose or protocol) |
+| `capability_execution_failed` | `use_tool` failed, including `failed to use tool:` prose |
+| `capability_resolve_failed` | dynamic resolution failed (`no_candidates`, `selection_policy_no_match`, `all_bindings_failed`, ...) |
+
+Schema validation rejects `top_k` / `prefer_version` with
+`capabilityref_reserved_field` until the resolver supports them.
+
+Examples: `examples/skills/nacos-router-weather` (static),
+`examples/skills/nacos-router-weather-dynamic` (dynamic), and
+`examples/skills/nacos-router-weather-retry` (dynamic + `retry` policy).
+Each adds an `emit_text` fallback step and stays opt-in, not bundled by default.
+
+## Binding trajectory observability (issue #234)
+
+Every capability slot execution records a binding trajectory on the run's
+step evidence (under `stepResults[].executionEvidence.capabilityBinding` in
+`meta-runs --json`):
+
+- `binding` — `static` or `dynamic`;
+- intent fields (dynamic): `taskDescription`, `keyWords`, `selectionPolicy`
+  (wire values `first` / `exact_name`) and `intentKey` (SHA-256 of the
+  normalised intent, the session cache key);
+- `cacheHit` — whether the session binding cache supplied the binding;
+- `server` / `tool` — the bound pair (null when binding failed);
+- `elapsedMs` — the binding phase only (excludes `use_tool`);
+- `candidates` — the search Top-N in upstream rank order, and `attempted` —
+  the candidates the resolver actually tried to add, as `name` + `rank`.
+
+Upstream search returns no scores (#230), so the trajectory records the
+positional `rank` — none are fabricated. Failure trajectories are recorded
+too (empty candidates, null server/tool, the step's `failure_code`).
+
+The exported run JSON deserialises through `CoreJsonContext` and replays
+offline through `OpenClaw.Testing`: `CapabilityBindingReplayFixture.FromMetaRun`
+extracts the recorded trajectory, and `CapabilityBindingReplay` re-executes
+binding selection against a recorded provider without live tool execution and asserts the same binding
+(same-input → same-binding; cache-hit fixtures are reproduced by seeding the
+cache with the recorded binding). See
+`src/OpenClaw.Tests/NacosRouterIntegrationTests.cs` for the loop.
+
+## Nacos event subscription (issue #238)
+
+Build with `-p:OpenClawEnableNacos=true -p:OpenClawEnableNacosEvents=true -p:PublishAot=false` and configure `adapterSettings.nacos`. See the [configuration example](capability-resolution.md#optional-adapter-builds).
+
+The optional SDK adapter registers in the background, retries failed setup, and reports `starting`, `degraded`, `active`, or `stopped`. Events publish generic invalidation signals that advance the cache generation. They do not overwrite the local workspace configuration. With no adapter or no address, TTL and explicit workspace reload remain available. NativeAOT SDK-event builds are rejected explicitly; #239 remains open.
+
+## Historical contributor evidence and outstanding live acceptance
+
+The following describes the original branch, before adapter isolation. Repeat live acceptance against the refactor before claiming deployment readiness. In particular, the old dual-cache/watcher implementation below has been replaced by generic generation invalidation.
 
 Before closing #229 or proceeding with the dependent runtime changes:
 
-1. Capture the real three tool schemas, success/error responses, and Router
-   package version from the intended Nacos 3.2.4 deployment. Redact credentials.
-2. Record the actual weather-server registration payload and reproducible startup
-   commands from that deployment; the issue's Windows path is not portable.
-3. Run both examples five times with the same city, model, fresh session, and
+1. ~~Capture the real three tool schemas, success/error responses, and Router
+   package version from the intended Nacos 3.2.4 deployment. Redact credentials.~~
+   **Done 2026-09-14**: schemas, search/add/use envelopes and failure prose
+   captured from Router 0.2.2 on the local Nacos 3.2.4 test bed; matches the
+   pinned contract. No credentials in this guide or the captures.
+2. ~~Record the actual weather-server registration payload and reproducible startup
+   commands from that deployment; the issue's Windows path is not portable.~~
+   **Done 2026-09-14**: registration payload and startup command recorded above
+   (`--with "mcp<2"` pin included).
+3. ~~Run both examples five times with the same city, model, fresh session, and
    configuration. Read actual session input/output usage; take the median of the
    five per-run totals. Record discovery quality separately. Do not use invented
-   fixture token counts as a model measurement.
-4. Decide how resolver results get ranking/version metadata (upstream search
-   provides neither score nor version), and how prose failures become typed
-   failures before implementing fallback, retries, caching, or replay.
+   fixture token counts as a model measurement.~~
+   **Done 2026-09-14**: MiniMax-M2.1 (OpenAI-compatible endpoint) × Oslo ×
+   5 runs each, live Router 0.2.2, fresh `Session` per run, real session
+   usage counters. Static example: 0 input / 0 output tokens × 5 (the DAG is
+   deterministic — zero LLM confirmed live). Exploration example: median
+   input **17479** / output **1181** tokens per run in the traced batch; an
+   earlier untraced batch hit the 12-iteration cap with medians 29763 / 1870,
+   so treat the cost as a range whose spread comes from the model's loop
+   behaviour (repeated re-searches), not from the Router.
+   Discovery quality was **0/5** for environmental reasons: the test-bed
+   `weather-mcp` backend is `mcp-server-time` (its real tools are
+   `get_current_time`/`convert_time` while its description promises weather),
+   and `cn.pianam.mcp/weather-mcp-china` add intermittently returned
+   `failed to install mcp server` during the measurement windows although
+   serial Python probes against the same Router before and after succeeded
+   (10/10). The cause is not yet pinned — Router-side registry/install
+   suspicion; the Router's warning traceback would settle it. The model never
+   fabricated weather: every run reported the failure per SKILL.md, and it
+   self-corrected after one hallucinated `use_tool` call and one
+   `meta_invoke` misuse. Tool-call traces per run are kept next to the
+   measurement driver (throwaway, not in the repo).
+4. Ranking metadata is the upstream positional `rank` (see above); version
+   metadata remains open (upstream search provides none). Prose failures are
+   now typed via the #230 `failure_code` envelope; fallback routing, candidate
+   rotation, retry, and caching build on that (#231/#232/#233). Binding
+   trajectory observability and offline replay are implemented (#234).
+5. ~~Subscribe to Nacos config change events and wire them into binding
+   invalidation (dual cache clear + workspace reload).~~
+   **Done 2026-09-14**: `RedNb.Nacos.All 2.0.0` long-polling subscription on
+   the mcp.json dataId; onChange clears the session binding cache and the
+   runtime added-server cache and triggers the workspace watcher reload.
+   Graceful no-op without `Nacos:ServerAddr`; the TTL/reload fallback stays
+   active. Hand-verified live on the local Nacos 3.2.4 test bed (JIT):
+   publish via `POST /nacos/v3/admin/cs/config` → `Nacos config change
+   received …; triggering MCP workspace reload` plus the dual-cache clear
+   logged at **+310 ms** (DoD: ≤ 2 s).
 
 | Measurement | Static binding | Model-driven exploration |
 | --- | --- | --- |
-| Live recall / selected server | Not measured | Not measured |
-| Median input + output tokens (5 runs) | Not measured | Not measured |
-| Router version / deployment | Not provided | Not provided |
+| Live recall / selected server | `weather-mcp` bound; pinned `get_weather` does not exist on the test-bed backend (`mcp-server-time` has `get_current_time`/`convert_time`) → plain-text tool error | 0/5: `weather-mcp` exposes time tools only; `weather-mcp-china` add failed during the measurement window (intermittent, cause not yet pinned) |
+| Median input + output tokens (5 runs) | 0 + 0 (no LLM turn) | 17479 + 1181 (traced batch; untraced batch at the iteration cap: 29763 + 1870) |
+| Router version / deployment | 0.2.2 (`@latest`, requires `mcp<2`) / local Nacos 3.2.4, streamable_http :8000 | same |
 
-No cache, capability slots, retry policy, or binding replay is implemented by this
-PoC. Those remain separately tracked by #230–#234.
+For current runtime/cache/retry/replay behavior and remaining acceptance, use [capability resolution](capability-resolution.md).

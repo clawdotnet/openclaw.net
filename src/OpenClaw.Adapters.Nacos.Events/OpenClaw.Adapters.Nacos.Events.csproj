@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsAotCompatible>false</IsAotCompatible></PropertyGroup>
+  <ItemGroup><InternalsVisibleTo Include="OpenClaw.Tests" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../OpenClaw.Core/OpenClaw.Core.csproj" />
+    <PackageReference Include="RedNb.Nacos.All" Version="2.0.0" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <Target Name="RejectUnsupportedNativeEvents" BeforeTargets="PrepareForBuild" Condition="'$(PublishAot)' == 'true'">
+    <Error Text="Nacos SDK event subscriptions require a JIT host. Omit OpenClawEnableNacosEvents for NativeAOT; TTL/reload remains available. See issue #239." />
+  </Target>
+</Project>

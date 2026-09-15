@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsAotCompatible>true</IsAotCompatible><NoWarn>$(NoWarn);MCP9005</NoWarn></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../OpenClaw.Agent/OpenClaw.Agent.csproj" /></ItemGroup>
+  <ItemGroup><InternalsVisibleTo Include="OpenClaw.Tests" /></ItemGroup>
+</Project>
