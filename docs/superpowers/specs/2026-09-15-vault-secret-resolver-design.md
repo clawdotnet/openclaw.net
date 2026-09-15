@@ -501,7 +501,7 @@ SecretResolutionException                  （基类，在 OpenClaw.Core）
 public sealed class VaultIntegrationTests
 {
     // 除非 OPENBAO_ADDR 与 OPENBAO_TOKEN 已设置，否则跳过。
-    // eng/compose/openbao.yml 为 CI 提供 OpenBao 实例。
+    // deploy/docker-compose/openbao.yml 为 CI 提供 OpenBao 实例。
 }
 ```
 
