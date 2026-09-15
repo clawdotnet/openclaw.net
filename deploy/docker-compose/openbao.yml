@@ -1,0 +1,16 @@
+services:
+  openbao:
+    image: openbao/openbao:2.0.0
+    container_name: openclaw-openbao
+    command: server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    environment:
+      BAO_DEV_ROOT_TOKEN_ID: root
+      BAO_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    healthcheck:
+      test: ["CMD", "bao", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
