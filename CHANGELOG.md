@@ -50,6 +50,7 @@ All notable changes to this project are tracked in this file.
 - Hardened `inbox_zero` IMAP command construction:
   - Quoted IMAP credentials and folders.
   - Sanitized user-provided folder names for analyze/cleanup/trash-sender actions.
+- Added Vault / OpenBao secret resolver backend (`OpenClaw.Security.Vault`): KV v2 read with token auth, TTL cache with single-flight and refresh-ahead, startup pre-warm via `IHostedService`, and `vault:<mount>/data/<path>#<key>` reference syntax. See `docs/security/vault.md`.
 
 ### Memory Retention and Hardening
 
