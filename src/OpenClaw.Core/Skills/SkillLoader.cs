@@ -1363,6 +1363,12 @@ public static class SkillLoader
             return true;
         }
 
+        if (stepElement.TryGetProperty("tool_allowlist", out _))
+        {
+            errorCode = "invalid_capability_ref";
+            return false;
+        }
+
         if (refElement.ValueKind != JsonValueKind.Object)
         {
             errorCode = "invalid_capability_ref";
@@ -1535,7 +1541,7 @@ public static class SkillLoader
 
         capabilityRef = new MetaCapabilityRefDefinition
         {
-            Provider = refElement.TryGetProperty("provider", out var providerElement) && providerElement.ValueKind == JsonValueKind.String ? providerElement.GetString() ?? "" : "",
+            Provider = refElement.TryGetProperty("provider", out var providerElement) && providerElement.ValueKind == JsonValueKind.String ? providerElement.GetString()?.Trim() ?? "" : "",
             Binding = binding,
             Static = staticBinding,
             Intent = intent,

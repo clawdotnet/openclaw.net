@@ -130,6 +130,7 @@ Guides
 Reference
   Compatibility
   Capability Matrix
+  Capability Resolution
   Architecture Boundaries
   Sessions and Token Accounting
   Canvas and A2UI

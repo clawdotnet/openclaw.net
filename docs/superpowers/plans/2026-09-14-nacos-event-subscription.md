@@ -1,5 +1,7 @@
 # Nacos 配置变更事件订阅 Implementation Plan (issue #238)
 
+> Historical implementation plan. Retained task snippets and checkboxes are non-normative; the implementation has since been refactored. See [the current capability-resolution contract](../../capability-resolution.md) for supported behavior and remaining live/NativeAOT acceptance.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 通过 `RedNb.Nacos.All 2.0.0` LongPolling 订阅 mcp.json dataId，在 Nacos 配置变更到达时即时清空 `CapabilityBindingCache` 与运行时级 `_addedServers`，并触发现有 `McpWorkspaceWatcherService` reload。

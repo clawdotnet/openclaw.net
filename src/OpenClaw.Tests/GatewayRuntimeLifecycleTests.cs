@@ -70,7 +70,7 @@ public sealed class GatewayRuntimeLifecycleTests
             var store = new McpConfigStore(root, NullLogger<McpConfigStore>.Instance);
             await store.SaveAsync("""{"enabled":true,"servers":{}}""", TestContext.Current.CancellationToken);
 
-            using var service = new McpWorkspaceWatcherService(
+            await using var service = new McpWorkspaceWatcherService(
                 registry,
                 runtime,
                 workspacePath: null,
@@ -79,8 +79,19 @@ public sealed class GatewayRuntimeLifecycleTests
                 new CapabilityBindingCache());
 
             using var cts = new CancellationTokenSource();
+            var reloaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            runtime.ClearCapabilitySlotRuntimeCacheAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            {
+                reloaded.TrySetResult();
+                return Task.CompletedTask;
+            });
             service.Start(cts.Token);
+            await reloaded.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            runtime.ClearReceivedCalls();
+            reloaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
             service.TriggerReload();
+            await reloaded.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await runtime.Received(1).ClearCapabilitySlotRuntimeCacheAsync(Arg.Any<CancellationToken>());
 
             await WaitForConditionAsync(
                 () => runtime.ReceivedCalls().Any(call =>
@@ -115,7 +126,7 @@ public sealed class GatewayRuntimeLifecycleTests
             var key = CapabilityBindingCache.ComputeIntentKey("weather city", "weather,city", "First");
             cache.Set("sess-1", key, "weather-mcp", "get_weather");
 
-            using var service = new McpWorkspaceWatcherService(
+            await using var service = new McpWorkspaceWatcherService(
                 registry,
                 runtime,
                 workspacePath: null,
@@ -124,8 +135,20 @@ public sealed class GatewayRuntimeLifecycleTests
                 cache);
 
             using var cts = new CancellationTokenSource();
+            var reloaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            runtime.ClearCapabilitySlotRuntimeCacheAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            {
+                reloaded.TrySetResult();
+                return Task.CompletedTask;
+            });
             service.Start(cts.Token);
+            await reloaded.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            runtime.ClearReceivedCalls();
+            reloaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            cache.Set("sess-1", key, "weather-mcp", "get_weather");
             service.TriggerReload();
+            await reloaded.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await runtime.Received(1).ClearCapabilitySlotRuntimeCacheAsync(Arg.Any<CancellationToken>());
 
             await WaitForConditionAsync(
                 () => !cache.TryGet("sess-1", key, out _, out _),

@@ -217,4 +217,75 @@ public sealed class VendorNeutralCapabilityTests
         Assert.Equal(0, provider.Binds);
         Assert.Equal(0, provider.Searches);
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SkillProvider_IsTrimmed_AndCapabilityAllowlistIsRejected(bool allowlist)
+    {
+        var extra = allowlist ? ",\"tool_allowlist\":[\"weather\"]" : "";
+        var composition = "{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\"" + extra
+            + ",\"capability_ref\":{\"provider\":\" local \",\"binding\":\"static\",\"static\":{\"target\":\"weather\",\"tool_name\":\"weather\"}}}]}";
+        var content = "---\nname: test\ndescription: test\nkind: meta\ncomposition: " + composition + "\n---\ntest";
+        var parsed = SkillLoader.TryParseSkillContent(content, "/skills/test", SkillSource.Workspace, out var skill, out var error);
+        Assert.Equal(!allowlist, parsed);
+        if (allowlist) Assert.Equal("invalid_capability_ref", error);
+        else Assert.Equal("local", skill!.Composition!.Steps.Single().CapabilityRef!.Provider);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("broken")]
+    [InlineData("[]")]
+    [InlineData("{}")]
+    [InlineData("{\"city\":42}")]
+    public void RouterFixture_InvalidParametersHaveProtocolError(string input)
+    {
+        var state = new NacosRouterFixtureState();
+        var tool = new FakeNacosRouterMcpTools(state);
+        Assert.True(tool.Use("weather-mcp", "get_weather", input).IsError);
+        state.PlainTextFailure = true;
+        Assert.False(tool.Use("weather-mcp", "get_weather", input).IsError);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Resume_PreservesPersistedBindingEvidenceAndReplay(bool maf)
+    {
+        var tool = new Probe();
+        var skill = new SkillDefinition
+        {
+            Name = "resume-weather", Description = "weather", Instructions = "", Location = "test",
+            Kind = SkillKind.Meta, FinalTextMode = "step:query",
+            Composition = new() { Steps = [
+                new() { Id = "query", Kind = "tool_call", CapabilityRef = Ref(), ToolArgsJson = "{}" },
+                new() { Id = "ask", Kind = "user_input", DependsOn = ["query"], WithJson = "{\"prompt\":\"Continue?\"}" }
+            ] }
+        };
+        var path = Path.Join(Path.GetTempPath(), "capability-resume-" + Guid.NewGuid().ToString("N"));
+        using var memory = new FileMemoryStore(path, 4);
+        var (runtime, _, _) = CapabilityRuntimeTestFactory.Create(maf, [tool], memory, skill,
+            new GatewayConfig { Memory = new() { StoragePath = path } }, new(new([new Provider(tool)]), new()));
+        try
+        {
+            var session = new Session { Id = "s", SenderId = "user", ChannelId = "test" };
+            var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            await (Task<string>)method.Invoke(runtime, [session, skill.Name, "", TestContext.Current.CancellationToken])!;
+            Assert.NotNull(session.MetaExecutionCheckpoint);
+            session = System.Text.Json.JsonSerializer.Deserialize(
+                System.Text.Json.JsonSerializer.Serialize(session, CoreJsonContext.Default.Session), CoreJsonContext.Default.Session)!;
+            await (Task<string>)method.Invoke(runtime, [session, skill.Name, "yes", TestContext.Current.CancellationToken])!;
+            Assert.Null(session.MetaExecutionCheckpoint);
+            Assert.Equal(1, tool.Calls);
+            var fixture = OpenClaw.Testing.CapabilityBindingReplayFixture.FromMetaRun(session.MetaRunHistory.Last(), session.Id);
+            Assert.Equal("local", fixture.Recorded.Provider);
+            Assert.True((await new OpenClaw.Testing.CapabilityBindingReplay(fixture).RunAsync(TestContext.Current.CancellationToken)).Passed);
+        }
+        finally
+        {
+            if (runtime is IAsyncDisposable a) await a.DisposeAsync(); else if (runtime is IDisposable d) d.Dispose();
+            memory.Dispose(); Directory.Delete(path, true);
+        }
+    }
+
 }

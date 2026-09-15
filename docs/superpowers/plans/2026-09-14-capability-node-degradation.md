@@ -1,5 +1,7 @@
 # Capability Node-Level Degradation and Retry (#233) Implementation Plan
 
+> Historical implementation plan. Retained task snippets and checkboxes are non-normative; the implementation has since been refactored. See [the current capability-resolution contract](../../capability-resolution.md) for supported behavior and remaining live/NativeAOT acceptance.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement node-level degradation and fault tolerance for capability slots: fallback routing on empty search, Top-5 candidate rotation on add failure, and use_tool retry with backoff and circuit-style exhaustion.
@@ -537,9 +539,9 @@ Add the theory after `DynamicSlot_FirstCandidateAddFails_BindsToNextCandidate`:
             Assert.Equal(new[] { "search", "add:weather-mcp", "use:weather-mcp:get_weather", "use:weather-mcp:get_weather", "use:weather-mcp:get_weather" }, state.Calls);
             var timestamps = state.UseTimestamps;
             Assert.Equal(3, timestamps.Count);
-            Assert.True((timestamps[1] - timestamps[0]).TotalMilliseconds >= 60,
+            Assert.True((timestamps[1] - timestamps[0]).TotalMilliseconds >= 100,
                 $"expected >= 100 ms backoff between attempts 1 and 2, got {(timestamps[1] - timestamps[0]).TotalMilliseconds:0} ms");
-            Assert.True((timestamps[2] - timestamps[1]).TotalMilliseconds >= 60,
+            Assert.True((timestamps[2] - timestamps[1]).TotalMilliseconds >= 100,
                 $"expected >= 100 ms backoff between attempts 2 and 3, got {(timestamps[2] - timestamps[1]).TotalMilliseconds:0} ms");
             var run = Assert.Single(session.MetaRunHistory);
             var query = Assert.Single(run.StepResults, step => step.Id == "query");

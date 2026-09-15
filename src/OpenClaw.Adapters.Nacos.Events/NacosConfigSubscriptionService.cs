@@ -37,12 +37,18 @@ public sealed class NacosConfigSubscriptionService(
     {
         while (!ct.IsCancellationRequested)
         {
+            IDisposable? pendingHandle = null;
             try
             {
                 using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 attempt.CancelAfter(TimeSpan.FromMilliseconds(Math.Clamp(options.LongPollingTimeoutMs, 100, 60_000)));
-                await config.GetConfigAsync(options.DataId, options.Group, attempt.Token);
-                _handle = await config.AddListenerAsync(options.DataId, options.Group, OnChange, attempt.Token);
+                pendingHandle = await config.AddListenerAsync(options.DataId, options.Group, OnChange, attempt.Token);
+                var snapshot = await config.GetConfigAsync(options.DataId, options.Group, attempt.Token);
+                attempt.Token.ThrowIfCancellationRequested();
+                // Reconcile even an absent snapshot: bindings may predate registration or a deletion.
+                OnChange(snapshot ?? new NacosConfig(options.DataId, options.Group, ""));
+                _handle = pendingHandle;
+                pendingHandle = null;
                 _status = "active";
                 return;
             }
@@ -52,6 +58,7 @@ public sealed class NacosConfigSubscriptionService(
                 _status = "degraded";
                 logger.LogWarning(ex, "Nacos subscription unavailable; retrying. TTL and explicit reload remain available.");
             }
+            finally { pendingHandle?.Dispose(); }
             try { await Task.Delay(TimeSpan.FromMilliseconds(Math.Clamp(options.ReconnectDelayMs, 10, 60_000)), ct); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
         }

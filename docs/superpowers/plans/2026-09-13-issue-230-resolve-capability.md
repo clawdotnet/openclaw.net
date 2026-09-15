@@ -1,5 +1,7 @@
 # Issue #230 — Native `resolve_capability` Tool Implementation Plan
 
+> Historical implementation plan. Retained task snippets and checkboxes are non-normative; the implementation has since been refactored. See [the current capability-resolution contract](../../capability-resolution.md) for supported behavior and remaining live/NativeAOT acceptance.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a deterministic `resolve_capability` native tool that turns the model-driven three-step Router chain (search → add → use) into a single code-path call, returning a `binding { server, tool, schema }` for downstream DAG `use_tool` nodes — zero LLM round-trips per call.

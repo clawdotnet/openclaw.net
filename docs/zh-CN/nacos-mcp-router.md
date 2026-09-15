@@ -45,7 +45,8 @@ dotnet test src/OpenClaw.Tests -c Release --filter FullyQualifiedName~NacosRoute
 输入：
 
 - `task_description`（必填）— 与 Router `search_mcp_server` 接受的形式一致。
-- `key_words`（可选）— 逗号分隔字符串，与 Router 的线上形式一致。
+- `keywords`（可选，推荐）— 字符串数组。
+- `key_words`（可选，旧版兼容）— 逗号分隔字符串，与 Router 的线上形式一致；不能与 `keywords` 同时指定。
 - `selection_policy`（可选）— `first`（默认）或 `exact_name`（对
   `task_description` 做大小写不敏感的名称匹配）；精确匹配无结果时返回
   `failure_code: "selection_policy_no_match"` 且 `tried` 为空。

@@ -1,5 +1,7 @@
 # Binding Trajectory Observability (#234) Implementation Plan
 
+> Historical implementation plan. Retained task snippets and checkboxes are non-normative; the implementation has since been refactored. See [the current capability-resolution contract](../../capability-resolution.md) for supported behavior and remaining live/NativeAOT acceptance.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Record the complete binding path of every capability-slot execution (intent → candidates → selected server/tool → cache hit → elapsed) into the persisted meta-run step evidence, so `openclaw skills meta-runs --json` exports it and the `OpenClaw.Testing` harness replays it offline with same-input → same-binding assertions.

@@ -276,14 +276,24 @@ public sealed class ResolveCapabilityToolTests
         Assert.Contains("selection_policy", doc.RootElement.GetProperty("properties").EnumerateObject().Select(p => p.Name));
     }
 
-    private static async Task<(ResolveCapabilityTool tool, McpServerToolRegistry registry, NacosRouterFixtureState state, WebApplication server)> BuildAsync()
+    private sealed class RouterLifetime(WebApplication server, McpServerToolRegistry registry) : IAsyncDisposable
+    {
+        public Task StopAsync(CancellationToken ct) => server.StopAsync(ct);
+        public async ValueTask DisposeAsync()
+        {
+            try { await registry.DisposeAsync(); }
+            finally { await server.DisposeAsync(); }
+        }
+    }
+
+    private static async Task<(ResolveCapabilityTool tool, McpServerToolRegistry registry, NacosRouterFixtureState state, RouterLifetime server)> BuildAsync()
         => await BuildWithAsync<FakeNacosRouterMcpTools>();
 
     private static async Task<(
         ResolveCapabilityTool tool,
         McpServerToolRegistry registry,
         NacosRouterFixtureState state,
-        WebApplication server)>
+        RouterLifetime server)>
         BuildWithAsync<TTools>() where TTools : class
     {
         var state = new NacosRouterFixtureState();
@@ -295,28 +305,37 @@ public sealed class ResolveCapabilityToolTests
             .WithTools<TTools>();
         var server = builder.Build();
         server.MapMcp("/mcp");
-        await server.StartAsync(TestContext.Current.CancellationToken);
         // Real registry: configured above via ReloadWorkspaceServersAsync against the test MCP server.
         var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
-        await registry.ReloadWorkspaceServersAsync(
-            new Dictionary<string, McpServerConfig>
-            {
-                ["nacos-mcp-router"] = new()
+        var lifetime = new RouterLifetime(server, registry);
+        try
+        {
+            await server.StartAsync(TestContext.Current.CancellationToken);
+            await registry.ReloadWorkspaceServersAsync(
+                new Dictionary<string, McpServerConfig>
                 {
-                    Enabled = true,
-                    Transport = "http",
-                    Url = server.Urls.Single() + "/mcp",
-                    ToolNamePrefix = "nacos_mcp_router_",
-                },
-            }, TestContext.Current.CancellationToken);
-        return (new ResolveCapabilityTool(NacosTestProviders.Create(registry)), registry, state, server);
+                    ["nacos-mcp-router"] = new()
+                    {
+                        Enabled = true,
+                        Transport = "http",
+                        Url = server.Urls.Single() + "/mcp",
+                        ToolNamePrefix = "nacos_mcp_router_",
+                    },
+                }, TestContext.Current.CancellationToken);
+            return (new ResolveCapabilityTool(NacosTestProviders.Create(registry)), registry, state, lifetime);
+        }
+        catch
+        {
+            await lifetime.DisposeAsync();
+            throw;
+        }
     }
 
     private static async Task<(
         ResolveCapabilityTool tool,
         McpServerToolRegistry registry,
         NacosRouterFixtureState state,
-        WebApplication server)>
+        RouterLifetime server)>
         BuildEmptyAsync()
         => await BuildWithAsync<EmptyFakeNacosRouter>();
 
@@ -324,7 +343,7 @@ public sealed class ResolveCapabilityToolTests
         ResolveCapabilityTool tool,
         McpServerToolRegistry registry,
         NacosRouterFixtureState state,
-        WebApplication server)>
+        RouterLifetime server)>
         BuildAllFailAsync()
         => await BuildWithAsync<AllFailFakeNacosRouter>();
 
@@ -332,7 +351,7 @@ public sealed class ResolveCapabilityToolTests
         ResolveCapabilityTool tool,
         McpServerToolRegistry registry,
         NacosRouterFixtureState state,
-        WebApplication server)>
+        RouterLifetime server)>
         BuildMalformedAsync()
         => await BuildWithAsync<MalformedToolListFakeNacosRouter>();
 

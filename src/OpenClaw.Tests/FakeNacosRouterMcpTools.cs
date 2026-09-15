@@ -84,14 +84,16 @@ public sealed class FakeNacosRouterMcpTools(NacosRouterFixtureState state)
 
     private static bool TryDecodeCity(string @params, string mcp_tool_name, out bool failed)
     {
-        failed = false;
+        failed = true;
         if (string.IsNullOrWhiteSpace(@params)) return false;
         try
         {
             using var doc = JsonDocument.Parse(@params);
-            return doc.RootElement.ValueKind == JsonValueKind.Object
+            var valid = doc.RootElement.ValueKind == JsonValueKind.Object
                 && doc.RootElement.TryGetProperty("city", out var cityNode)
                 && cityNode.ValueKind == JsonValueKind.String;
+            failed = !valid;
+            return valid;
         }
         catch (JsonException)
         {

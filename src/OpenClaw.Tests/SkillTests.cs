@@ -799,16 +799,16 @@ public class SkillLoaderTests
     }
 
     [Theory]
-    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"capability_ref\":\"static\"}]}", "invalid_capability_ref")]
-    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"capability_ref\":{\"binding\":\"quantum\"}}]}", "invalid_capability_ref")]
-    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"capability_ref\":{\"binding\":\"static\"}}]}", "invalid_capability_ref")]
-    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"tool_name\":\"get_weather\"}}}]}", "invalid_capability_ref")]
-    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"weather-mcp\"}}}]}", "invalid_capability_ref")]
-    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"capability_ref\":{\"binding\":\"dynamic\"}}]}", "invalid_capability_ref")]
-    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"capability_ref\":{\"binding\":\"dynamic\",\"intent\":{\"keywords\":[\"weather\"]}}}]}", "invalid_capability_ref")]
-    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"capability_ref\":{\"binding\":\"dynamic\",\"intent\":{\"task_description\":\"weather\"},\"selection_policy\":\"nearest\"}}]}", "invalid_capability_ref")]
-    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"},\"top_k\":5}}]}", "capabilityref_reserved_field")]
-    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"},\"prefer_version\":\">=1.0.0\"}}]}", "capabilityref_reserved_field")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":\"static\"}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"quantum\"}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\"}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"tool_name\":\"get_weather\"}}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"weather-mcp\"}}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"dynamic\"}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"dynamic\",\"intent\":{\"keywords\":[\"weather\"]}}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"dynamic\",\"intent\":{\"task_description\":\"weather\"},\"selection_policy\":\"nearest\"}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"},\"top_k\":5}}]}", "capabilityref_reserved_field")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"},\"prefer_version\":\">=1.0.0\"}}]}", "capabilityref_reserved_field")]
     // capability_ref must not coexist with tool:
     [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"}}}]}", "invalid_capability_ref")]
     // capability_ref is only legal on tool_call steps:

@@ -1,5 +1,7 @@
 # Capability Binding Cache (会话级 intent 哈希 + TTL/reload 失效) Implementation Plan
 
+> Historical implementation plan. Retained task snippets and checkboxes are non-normative; the implementation has since been refactored. See [the current capability-resolution contract](../../capability-resolution.md) for supported behavior and remaining live/NativeAOT acceptance.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 动态能力槽位的绑定结果按会话缓存（键 = SHA256(intent 规范化串)），TTL 过期与 mcp.json reload 成功时失效，避免每次动态节点重复 `search → add` 两次 Router 往返。

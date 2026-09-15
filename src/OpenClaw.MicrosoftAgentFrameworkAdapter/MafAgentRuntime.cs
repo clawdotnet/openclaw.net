@@ -2397,7 +2397,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 result.Status,
                 result.FailureCode,
                 result.DurationMs,
-                result.Continued));
+                result.Continued,
+                result.ExecutionEvidence));
         }
 
         checkpoint.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
