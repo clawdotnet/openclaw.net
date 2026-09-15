@@ -1,74 +1,74 @@
-# Vault / OpenBao Secret Resolver Backend Design
+# Vault / OpenBao 密钥解析后端设计
 
-Date: 2026-09-15
-Status: Draft
+日期：2026-09-15
+状态：草案
 
-## Summary
+## 摘要
 
-Extend [`SecretResolver`](../../src/OpenClaw.Core/Security/SecretResolver.cs) — currently the single sync, static choke point for all secret resolution (`env:`, `raw:`, bare string → env var name → literal) — with an external Vault / OpenBao backend. The new backend is delivered as a new project `OpenClaw.Security.Vault` using [VaultSharp](https://github.com/rajanadar/VaultSharp), wired through a new `ISecretResolver` abstraction in `OpenClaw.Core`. Existing 67 call sites remain unchanged.
+扩展 [`SecretResolver`](../../src/OpenClaw.Core/Security/SecretResolver.cs)——目前唯一的同步、静态密钥解析咽喉点（支持 `env:`、`raw:`、裸串当作环境变量名/字面量回退）——加入外部 Vault / OpenBao 后端。新后端作为独立项目 `OpenClaw.Security.Vault` 交付，通过 [VaultSharp](https://github.com/rajanadar/VaultSharp) 对接 Vault / OpenBao HTTP API，并在 `OpenClaw.Core` 中新增 `ISecretResolver` 抽象进行编排。现有 67 个调用点保持零改动。
 
-This brings OpenClaw.NET in line with [docs/security/payments.md:49](../../docs/security/payments.md) which already lists HashiCorp Vault (and OpenBao, AWS Secrets Manager, Azure Key Vault, DPAPI) as reserved extension points.
+本设计与 [docs/security/payments.md:49](../../docs/security/payments.md) 已列出的"保留扩展点"对齐（HashiCorp Vault、OpenBao、AWS Secrets Manager、Azure Key Vault、DPAPI），将 Vault / OpenBao 从"占位声明"落地为"已实现"。
 
-## Goals
+## 目标
 
-### P0: Pluggable secret resolver
+### P0：可插拔的密钥解析器
 
-- `ISecretResolver` interface in `OpenClaw.Core.Security` exposes both `ResolveAsync(string?, CancellationToken)` and sync `Resolve(string?)`.
-- A scheme-based dispatch (`ISecretProvider.Scheme`) selects the implementation per prefix.
-- The existing `SecretResolver` static class remains as a thin facade that delegates to a DI-registered `ISecretResolver` instance, with a legacy fallback when DI is not yet bootstrapped.
-- `EnvRawSecretProvider` preserves the current behavior for `env:`, `raw:`, and bare strings exactly (100% behavior parity).
+- `OpenClaw.Core.Security` 中的 `ISecretResolver` 接口同时暴露 `ResolveAsync(string?, CancellationToken)` 与同步 `Resolve(string?)`。
+- 基于 scheme 的派发（`ISecretProvider.Scheme`）按前缀选择实现。
+- 现有静态类 `SecretResolver` 保留为薄门面，委托给 DI 注册的 `ISecretResolver` 实例；当 DI 尚未引导时回退到原有逻辑。
+- `EnvRawSecretProvider` 完全保留 `env:`、`raw:`、裸串三种解析的现行行为（100% 行为兼容）。
 
-### P0: Vault / OpenBao backend (v1)
+### P0：Vault / OpenBao 后端（v1）
 
-- New project `OpenClaw.Security.Vault` (`IsAotCompatible=false`) wraps VaultSharp.
-- KV v2 read only (`secret/data/<path>#<key>`). Transit, PKI, dynamic creds, AWS/Azure/GCP backends are out of scope for v1.
-- Token-only authentication in v1; Kubernetes / AWS IAM / Azure / GCP / JWT auth are v2.
-- TTL cache (default 5 minutes) with lazy refresh and single-flight to avoid stampede.
-- Sync `Resolve("vault:...")` returns cached values; cache miss fails fast with `SecretResolutionException` (no sync-over-async, no deadlock risk).
-- Async `ResolveAsync("vault:...")` fetches on miss, populates cache, returns.
-- `IHostedService` (`VaultRefPrewarmService`) pre-warms `Security.Vault.PrewarmRefs` plus any `vault:`-prefixed `*Ref` fields discovered in config.
-- `PrewarmRequired` flag controls hard-fail vs soft-fail startup semantics.
+- 新项目 `OpenClaw.Security.Vault`（`IsAotCompatible=false`）包装 VaultSharp。
+- v1 仅支持 KV v2 读取（`secret/data/<path>#<key>`）。Transit、PKI、动态凭证、AWS / Azure / GCP 后端列入 v2。
+- v1 仅支持 Token 认证；Kubernetes / AWS IAM / Azure / GCP / JWT 认证列入 v2。
+- TTL 缓存（默认 5 分钟）+ 懒刷新 + 单飞（single-flight）防雪崩。
+- 同步 `Resolve("vault:...")` 仅在缓存命中时返回；缓存未命中时**快速失败**抛 `SecretResolutionException`（不做 sync-over-async，避免死锁风险）。
+- 异步 `ResolveAsync("vault:...")` 在缓存未命中时拉取、写入缓存、返回。
+- `IHostedService`（`VaultRefPrewarmService`）启动时预热 `Security.Vault.PrewarmRefs` + 扫描配置中所有 `vault:` 前缀的 `*Ref` 字段。
+- `PrewarmRequired` 标志控制启动期"硬失败 / 软失败"语义。
 
-### P0: Backward compatibility
+### P0：向后兼容
 
-- All 67 existing call sites continue to work without modification.
-- Existing 9 `SecretResolver` unit tests in `SecurityTests.cs` remain green unchanged.
-- `Vault.Enabled=false` by default; deployments that do not opt in see no behavior change.
-- The vault prefix `vault:` does not collide with `env:` or `raw:`.
+- 现有 67 个调用点继续工作，**零修改**。
+- 现有 11 个 `SecurityTests.cs` 中的 `SecretResolver.*` 单测保持全绿，不修改。
+- `Vault.Enabled=false` 为默认值；未启用的部署看不到任何行为变化。
+- `vault:` 前缀与 `env:` / `raw:` 不冲突。
 
-### P1: Operational safety
+### P1：运维安全
 
-- No secret value may appear in any log line, exception message, or stack trace. Exception messages contain only the path, key name, and HTTP status / error code.
-- `RedactionPipeline` is invoked on all log output that touches vault lookups.
-- `Address` validation rejects `localhost` / `127.0.0.1` / `::1` when `Security.PublicBind=true` (SSRF guard).
-- Token recursion guard: `Security.Vault.TokenRef` is rejected by config validation if it starts with `vault:`.
+- 任何日志行、异常消息、堆栈跟踪中**禁止**出现密钥 value。异常消息仅含 path、key 名、HTTP 状态码 / 错误码。
+- 所有涉及 vault 查找的日志输出经过 `RedactionPipeline`（[RedactionPipeline.cs](../../src/OpenClaw.Core/Security/RedactionPipeline.cs)）。
+- 当 `Security.PublicBind=true` 时，`Address` 校验拒绝 `localhost` / `127.0.0.1` / `::1`（SSRF 防御）。
+- Token 递归防护：`Security.Vault.TokenRef` 若以 `vault:` 开头，配置校验直接拒绝。
 
-## Non-Goals (v1)
+## 非目标（v1 不做）
 
-- Kubernetes, AWS IAM, Azure managed identity, GCP, JWT auth methods (v2).
-- Vault Transit, PKI, dynamic database / AWS credentials engines (v2).
-- NativeAOT-compatible Vault build (`OpenClaw.Security.Vault` ships as `IsAotCompatible=false`).
-- Persistent encrypted cache across restarts.
-- Cross-process secret sharing.
+- Kubernetes、AWS IAM、Azure managed identity、GCP、JWT 认证方式（v2）。
+- Vault Transit、PKI、动态数据库 / AWS 凭证引擎（v2）。
+- NativeAOT 兼容的 Vault 构建（`OpenClaw.Security.Vault` 出厂即 `IsAotCompatible=false`）。
+- 跨进程持久加密缓存。
+- 跨进程密钥共享。
 
-## Architecture
+## 架构
 
 ```
 src/
 ├── OpenClaw.Core/
 │   └── Security/
-│       ├── ISecretProvider.cs              (new)
-│       ├── ISecretResolver.cs              (new)
-│       ├── CompositeSecretResolver.cs      (new)
-│       ├── EnvRawSecretProvider.cs         (new — extracted from SecretResolver)
-│       ├── ResolverAccessor.cs             (new — bridges IServiceProvider)
-│       ├── SecretResolutionException.cs    (new)
-│       ├── SecretResolver.cs               (refactored — now a facade)
-│       ├── AllowlistManager.cs             (unchanged)
-│       ├── RedactionPipeline.cs            (unchanged)
+│       ├── ISecretProvider.cs              （新增）
+│       ├── ISecretResolver.cs              （新增）
+│       ├── CompositeSecretResolver.cs      （新增）
+│       ├── EnvRawSecretProvider.cs         （新增——从 SecretResolver 抽出）
+│       ├── ResolverAccessor.cs             （新增——桥接 IServiceProvider）
+│       ├── SecretResolutionException.cs    （新增）
+│       ├── SecretResolver.cs               （重构——改为门面）
+│       ├── AllowlistManager.cs             （不变）
+│       ├── RedactionPipeline.cs            （不变）
 │       └── ...
-├── OpenClaw.Security.Vault/                (NEW project)
-│   ├── OpenClaw.Security.Vault.csproj      (IsAotCompatible=false)
+├── OpenClaw.Security.Vault/                （新增项目）
+│   ├── OpenClaw.Security.Vault.csproj      （IsAotCompatible=false）
 │   ├── VaultSecretProvider.cs
 │   ├── VaultSecurityOptions.cs
 │   ├── VaultRefParser.cs
@@ -79,18 +79,18 @@ src/
 │   └── README.md
 ├── OpenClaw.Gateway/
 │   └── Bootstrap/
-│       └── GatewayBootstrapExtensions.cs   (modified — register Vault)
+│       └── GatewayBootstrapExtensions.cs   （修改——注册 Vault）
 └── OpenClaw.Tests/
     └── Security/
-        ├── SecretResolverFacadeTests.cs    (new)
-        ├── VaultSecretProviderTests.cs     (new)
-        ├── VaultRefParserTests.cs          (new)
-        ├── VaultRefCacheTests.cs           (new)
-        ├── VaultRefPrewarmServiceTests.cs  (new)
-        └── VaultIntegrationTests.cs        (new — [Trait("Category","Integration")])
+        ├── SecretResolverFacadeTests.cs    （新增）
+        ├── VaultSecretProviderTests.cs     （新增）
+        ├── VaultRefParserTests.cs          （新增）
+        ├── VaultRefCacheTests.cs           （新增）
+        ├── VaultRefPrewarmServiceTests.cs  （新增）
+        └── VaultIntegrationTests.cs        （新增——[Trait("Category","Integration")]）
 ```
 
-## Components
+## 组件
 
 ### `OpenClaw.Core/Security/ISecretProvider.cs`
 
@@ -109,17 +109,17 @@ public interface ISecretProvider
 public interface ISecretResolver
 {
     ValueTask<string?> ResolveAsync(string? secretRef, CancellationToken ct = default);
-    string? Resolve(string? secretRef);     // sync facade — cache hit OR throw
+    string? Resolve(string? secretRef);     // 同步门面：缓存命中即返回；否则抛
     bool IsRawRef(string? secretRef);
 }
 ```
 
 ### `OpenClaw.Core/Security/CompositeSecretResolver.cs`
 
-- Constructor takes `IEnumerable<ISecretProvider>` ordered by precedence.
-- `ResolveAsync`: detects scheme → routes to first `CanResolve(ref)` provider → returns its result.
-- Unrecognized prefix with no provider: logs warning (same heuristic as current `LooksLikeEnvVarName`), returns the literal fallback.
-- `Resolve` (sync): same routing, but if the matched provider is `VaultSecretProvider` and the cache miss occurs, throws `SecretResolutionException`.
+- 构造函数接收按优先级排序的 `IEnumerable<ISecretProvider>`。
+- `ResolveAsync`：识别 scheme → 路由到首个 `CanResolve(ref)` 为 true 的 provider → 返回其结果。
+- 未识别前缀且无 provider 命中：沿用现有 `LooksLikeEnvVarName` 启发式记 warning，返回字面量回退（与现行行为一致）。
+- 同步 `Resolve`：相同路由；若匹配的 provider 是 `VaultSecretProvider` 且缓存未命中，抛 `SecretResolutionException`。
 
 ### `OpenClaw.Core/Security/ResolverAccessor.cs`
 
@@ -139,7 +139,7 @@ public static class ResolverAccessor
 }
 ```
 
-### `OpenClaw.Core/Security/SecretResolver.cs` (refactored facade)
+### `OpenClaw.Core/Security/SecretResolver.cs`（重构后的门面）
 
 ```csharp
 public static class SecretResolver
@@ -153,7 +153,7 @@ public static class SecretResolver
         if (resolver is not null)
             return resolver.Resolve(secretRef);
 
-        // Legacy fallback when DI has not been bootstrapped (e.g. early CLI startup)
+        // DI 尚未引导时的 legacy 回退（如 CLI 启动早期）
         return LegacyResolve(secretRef, logger);
     }
 
@@ -168,16 +168,16 @@ public static class SecretResolver
     public static bool IsRawRef(string? secretRef)
         => secretRef is not null && secretRef.StartsWith("raw:", StringComparison.OrdinalIgnoreCase);
 
-    private static string? LegacyResolve(string? secretRef, ILogger? logger) { /* original logic */ }
-    private static bool LooksLikeEnvVarName(string value) { /* original logic */ }
+    private static string? LegacyResolve(string? secretRef, ILogger? logger) { /* 原逻辑 */ }
+    private static bool LooksLikeEnvVarName(string value) { /* 原逻辑 */ }
 }
 ```
 
-Behavior invariants for the legacy path:
-- `Resolve(null | whitespace)` → `null`
-- `Resolve("env:X")` → `Environment.GetEnvironmentVariable("X")` → `null` if unset
+legacy 路径行为不变式：
+- `Resolve(null | 全空白)` → `null`
+- `Resolve("env:X")` → `Environment.GetEnvironmentVariable("X")`，未设置时返回 `null`
 - `Resolve("raw:X")` → `"X"`
-- `Resolve("bare")` → env var lookup → fallback to literal with warning
+- `Resolve("裸串")` → 先查 env，未命中回退到字面量并记 warning
 
 ### `OpenClaw.Security.Vault/VaultSecretProvider.cs`
 
@@ -199,11 +199,11 @@ public sealed class VaultSecretProvider : ISecretProvider
         return new ValueTask<string?>(ResolveInternalAsync(parsed, ct));
     }
 
-    private async Task<string?> ResolveInternalAsync(VaultRef parsed, CancellationToken ct) { /* see Data Flow */ }
+    private async Task<string?> ResolveInternalAsync(VaultRef parsed, CancellationToken ct) { /* 见数据流 */ }
 }
 ```
 
-`IVaultClient` is a thin internal abstraction wrapping VaultSharp's `IVaultClient` so unit tests can substitute without spinning up Vault.
+`IVaultClient` 是对 VaultSharp 自带 `IVaultClient` 的薄包装，便于单测用 NSubstitute 替换，避免真实 Vault 依赖。
 
 ### `OpenClaw.Security.Vault/VaultRefParser.cs`
 
@@ -212,45 +212,45 @@ public readonly record struct VaultRef(string Path, string Key, int KvVersion, s
 
 public static class VaultRefParser
 {
-    public static VaultRef Parse(string secretRef);   // throws VaultRefParseException on malformed input
+    public static VaultRef Parse(string secretRef);   // 解析失败抛 VaultRefParseException
 }
 ```
 
-Grammar: `vault:<mount>/data/<path>#<key>` where `<mount>` defaults to `"secret"` (configurable via `VaultSecurityOptions.KvMount`).
+语法：`vault:<mount>/data/<path>#<key>`，其中 `<mount>` 缺省时使用 `"secret"`（可由 `VaultSecurityOptions.KvMount` 配置）。
 - `vault:secret/data/openclaw/openai#api_key` → `{ Mount="secret", Path="openclaw/openai", Key="api_key", KvVersion=2 }`
-- `vault:data/openclaw/openai#api_key` (no mount segment) → `{ Mount=KvMount, Path="openclaw/openai", Key="api_key", KvVersion=2 }` — when the ref does not contain a `/data/` segment, the entire pre-`#` portion is treated as the path and `KvMount` is applied as the mount.
-- Empty path (`vault:#key`, `vault:secret/data/#key`) or missing `#` separator (`vault:secret/data/openclaw/openai`) → `VaultRefParseException`.
+- `vault:data/openclaw/openai#api_key`（无 mount 段） → `{ Mount=KvMount, Path="openclaw/openai", Key="api_key", KvVersion=2 }`——当 ref 不含 `/data/` 段时，`#` 之前的整段视为 path，mount 取 `KvMount`。
+- 空 path（`vault:#key`、`vault:secret/data/#key`）或缺 `#` 分隔符（`vault:secret/data/openclaw/openai`） → 抛 `VaultRefParseException`。
 
 ### `OpenClaw.Security.Vault/VaultRefCache.cs`
 
 ```csharp
 public sealed class VaultRefCache
 {
-    public bool TryGet(VaultRef key, out string value);   // sync read; used by sync Resolve
+    public bool TryGet(VaultRef key, out string value);   // 同步读取；供 sync Resolve 使用
     public Task<string> GetOrFetchAsync(VaultRef key, Func<CancellationToken, Task<string>> fetch, CancellationToken ct);
     public void Invalidate(VaultRef key);
 }
 ```
 
-- Backed by `IMemoryCache` with `AbsoluteExpirationRelativeToNow = options.CacheTtl`.
-- Single-flight via `SemaphoreSlim` per cache key.
-- On TTL expiry: subsequent `ResolveAsync` returns the stale value synchronously and triggers a background refresh task (refresh-ahead).
-- On fetch failure with stale value present: returns stale + warning log.
-- On fetch failure with no cached value: throws `VaultUnavailableException` (async) or `SecretResolutionException` (sync).
+- 基于 `IMemoryCache`，`AbsoluteExpirationRelativeToNow = options.CacheTtl`。
+- 单飞：`SemaphoreSlim` 按 cache key 维度加锁，防止并发击穿。
+- TTL 到期后：下一次 `ResolveAsync` 同步返回旧值，同时后台异步刷新（refresh-ahead），热路径不阻塞。
+- 拉取失败 + 存在旧值：返回旧值 + warning 日志。
+- 拉取失败 + 无缓存值：异步抛 `VaultUnavailableException`，同步抛 `SecretResolutionException`。
 
 ### `OpenClaw.Security.Vault/VaultRefPrewarmService.cs`
 
 ```csharp
 public sealed class VaultRefPrewarmService : IHostedService
 {
-    public Task StartAsync(CancellationToken cancellationToken);   // resolves PrewarmRefs + scanned refs
+    public Task StartAsync(CancellationToken cancellationToken);   // 解析 PrewarmRefs + 扫描出的引用
     public Task StopAsync(CancellationToken cancellationToken);    // no-op
 }
 ```
 
-- Concurrency cap from `options.RateLimit.RequestsPerSecond`.
-- Per-ref timeout from `options.RequestTimeout`.
-- Aggregates failures; honors `options.PrewarmRequired`.
+- 并发上限：`options.RateLimit.RequestsPerSecond`。
+- 单引用超时：`options.RequestTimeout`。
+- 汇总失败；遵守 `options.PrewarmRequired`。
 
 ### `OpenClaw.Security.Vault/VaultServiceCollectionExtensions.cs`
 
@@ -261,16 +261,16 @@ public static class VaultServiceCollectionExtensions
 }
 ```
 
-- Only registers when `config.Security.Vault?.Enabled == true`.
-- Binds `VaultSecurityOptions` from `services.Configuration`.
-- Registers `VaultSecretProvider` as `ISecretProvider` with `Scheme = "vault"`.
-- Registers `VaultRefCache` as singleton.
-- Registers `VaultRefPrewarmService` as `IHostedService`.
-- Validates options; throws on invalid config.
+- 仅在 `config.Security.Vault?.Enabled == true` 时注册。
+- 从 `services.Configuration` 绑定 `VaultSecurityOptions`。
+- 将 `VaultSecretProvider` 注册为 `ISecretProvider`（`Scheme = "vault"`）。
+- 将 `VaultRefCache` 注册为单例。
+- 将 `VaultRefPrewarmService` 注册为 `IHostedService`。
+- 启动时校验 options，校验失败抛异常。
 
-## Data Flow
+## 数据流
 
-### Async happy path
+### 异步正常路径
 
 ```
 caller → ResolveAsync("vault:secret/data/openclaw/openai#api_key", ct)
@@ -279,72 +279,72 @@ caller → ResolveAsync("vault:secret/data/openclaw/openai#api_key", ct)
     → VaultRefParser.Parse → VaultRef{ Mount="secret", Path="openclaw/openai", Key="api_key" }
     → VaultRefCache.TryGet → miss
     → VaultRefCache.GetOrFetchAsync
-      → acquire per-key SemaphoreSlim
+      → 获取该 key 的 SemaphoreSlim
       → IVaultClient.ReadSecretAsync("secret/data/openclaw/openai") → Secret<Dictionary<string,object>>
-      → extract "api_key" → "sk-..."
-      → IMemoryCache.Set with TTL = 5 min
-      → return value
-    → return value
+      → 提取 "api_key" → "sk-..."
+      → IMemoryCache.Set，TTL = 5 分钟
+      → 返回 value
+    → 返回 value
 ```
 
-### Sync happy path (post-prewarm)
+### 同步正常路径（预热后）
 
 ```
 caller → SecretResolver.Resolve("vault:secret/data/openclaw/openai#api_key")
-  → ResolverAccessor.Current is set → CompositeSecretResolver.Resolve
+  → ResolverAccessor.Current 已设置 → CompositeSecretResolver.Resolve
     → VaultSecretProvider.CanResolve → true
     → VaultRefCache.TryGet → hit
-    → return cached value
+    → 返回缓存 value
 ```
 
-### Sync fail-fast path
+### 同步快速失败路径
 
 ```
 caller → SecretResolver.Resolve("vault:secret/data/openclaw/openai#api_key")
   → CompositeSecretResolver.Resolve
     → VaultSecretProvider.CanResolve → true
     → VaultRefCache.TryGet → miss
-    → throw SecretResolutionException(
+    → 抛 SecretResolutionException(
         "vault: ref 'secret/data/openclaw/openai#api_key' requires async path or pre-warm. " +
         "Configure Security.Vault.PrewarmRefs or call SecretResolver.ResolveAsync.")
 ```
 
-### Pre-warm flow (startup)
+### 启动预热流程
 
 ```
 VaultRefPrewarmService.StartAsync(ct)
-  → resolve options.TokenRef via ResolveAsync (env:/raw: only)
-  → build IVaultClient with token + address + namespace + tls
-  → collect refs = options.PrewarmRefs ∪ ScanConfigForVaultRefs(gatewayConfig)
-  → parallel-for (rate-limited) each ref:
-      → ResolveAsync(ref, ct) → success count++
-                                  → failure count++ (record path + error code, NEVER value)
-  → if failureCount > 0:
-      if options.PrewarmRequired: throw HostedServiceStartupException("N vault refs failed pre-warm: ...")
-      else: log error summary, continue
+  → 通过 ResolveAsync 解析 options.TokenRef（仅支持 env:/raw:）
+  → 用 token + address + namespace + tls 构造 IVaultClient
+  → 收集 refs = options.PrewarmRefs ∪ ScanConfigForVaultRefs(gatewayConfig)
+  → 并行 for（限流）每个 ref：
+      → ResolveAsync(ref, ct) → successCount++
+                                  → failureCount++（仅记录 path + 错误码，永不记 value）
+  → 若 failureCount > 0：
+      若 options.PrewarmRequired：抛 HostedServiceStartupException("N vault refs failed pre-warm: ...")
+      否则：记 error summary 日志，继续
 ```
 
-### Refresh-ahead flow
+### 懒刷新（refresh-ahead）流程
 
 ```
 VaultRefCache.GetOrFetchAsync(key)
   → TryGet → hit
-    → if entry.Age > options.CacheTtl:
-        → _ = Task.Run(() => RefreshAsync(key, ct))   // fire-and-forget background refresh
-        → return stale value (do NOT await)
-    → else:
-        → return fresh value
+    → 若 entry.Age > options.CacheTtl：
+        → _ = Task.Run(() => RefreshAsync(key, ct))   // fire-and-forget 后台刷新
+        → 返回旧值（不 await）
+    → 否则：
+        → 返回新值
   → TryGet → miss
-    → fetch + cache + return
+    → 拉取 + 写缓存 + 返回
 ```
 
-### Config scanning
+### 配置扫描
 
-`ScanConfigForVaultRefs(GatewayConfig config)` walks the gateway config tree (channels, tools, model profiles, plugin configs) collecting all `*Ref` properties whose value starts with `"vault:"`. Reflection-based, single pass, cached for the lifetime of the prewarm service.
+`ScanConfigForVaultRefs(GatewayConfig config)` 遍历 gateway config 树（channels、tools、model profiles、plugin configs），收集所有值以 `"vault:"` 开头的 `*Ref` 属性。基于反射、单遍扫描，结果在预热服务生命周期内缓存。
 
-## Configuration
+## 配置
 
-### `appsettings.json` (additive)
+### `appsettings.json`（追加节）
 
 ```jsonc
 {
@@ -373,7 +373,7 @@ VaultRefCache.GetOrFetchAsync(key)
 }
 ```
 
-### C# binding
+### C# 绑定
 
 ```csharp
 public sealed class VaultSecurityOptions
@@ -404,175 +404,175 @@ public sealed class VaultTlsOptions
 }
 ```
 
-Added to existing [`SecurityOptions`](../../src/OpenClaw.Core/Models/ConfigurationModels.cs) as `public VaultSecurityOptions? Vault { get; set; }`.
+追加到既有 [`SecurityOptions`](../../src/OpenClaw.Core/Models/ConfigurationModels.cs) 作为 `public VaultSecurityOptions? Vault { get; set; }`。
 
-### Configuration validation (`ConfigValidator` additions)
+### 配置校验（`ConfigValidator` 新增）
 
-When `Vault.Enabled == true`:
-- `Address` required, must be HTTPS, must be a valid URI.
-- `TokenRef` required, must not start with `"vault:"`.
-- `CacheTtl` ∈ [30s, 24h].
-- `RequestTimeout` ∈ [1s, 60s].
-- `RateLimit.RequestsPerSecond` ∈ [1, 1000].
-- If `Security.PublicBind == true`: reject `Address` whose host is `localhost`, `127.0.0.1`, or `::1`.
-- `Tls.SkipVerify == true` produces a warning unless `Security.AllowInsecureTls == true` (global opt-in).
+当 `Vault.Enabled == true` 时：
+- `Address` 必填，必须是 HTTPS，必须是合法 URI。
+- `TokenRef` 必填，**禁止**以 `"vault:"` 开头。
+- `CacheTtl` ∈ [30s, 24h]。
+- `RequestTimeout` ∈ [1s, 60s]。
+- `RateLimit.RequestsPerSecond` ∈ [1, 1000]。
+- 若 `Security.PublicBind == true`：拒绝 host 为 `localhost`、`127.0.0.1`、`::1` 的 `Address`。
+- `Tls.SkipVerify == true` 产生 warning，除非 `Security.AllowInsecureTls == true`（全局 opt-in）。
 
-### Configuration sources
+### 配置来源
 
-Reuses existing `IConfiguration` sources: `appsettings.json`, environment variables (`Security__Vault__Address`), command-line (`--security:vault:address=...`), encrypted files via `SecurityPostureBuilder`. No new configuration provider.
+复用现有 `IConfiguration` 来源：`appsettings.json`、环境变量（`Security__Vault__Address`）、命令行（`--security:vault:address=...`）、经 `SecurityPostureBuilder` 加密的文件。**不**新增独立的 configuration provider。
 
-## Error Handling
+## 错误处理
 
-### Exception hierarchy
+### 异常层次
 
 ```
-SecretResolutionException                  (base, in OpenClaw.Core)
-├── VaultRefParseException                 (Vault project)
-├── VaultAuthException                     (Vault project, 401/403)
-├── VaultUnavailableException              (Vault project, 5xx/timeout/network, has Retryable flag)
-├── VaultPathNotFoundException             (Vault project, 404 on path)
-└── VaultKeyNotFoundException              (Vault project, 404 on key)
+SecretResolutionException                  （基类，在 OpenClaw.Core）
+├── VaultRefParseException                 （Vault 项目）
+├── VaultAuthException                     （Vault 项目，401/403）
+├── VaultUnavailableException              （Vault 项目，5xx/超时/网络，含 Retryable 标记）
+├── VaultPathNotFoundException             （Vault 项目，path 级 404）
+└── VaultKeyNotFoundException              （Vault 项目，key 级 404）
 ```
 
-`SecretResolutionException` lives in `OpenClaw.Core` because the legacy fallback path may throw it before Vault types load.
+`SecretResolutionException` 放在 `OpenClaw.Core`：legacy 回退路径在 Vault 类型加载前就可能抛出。
 
-### Error matrix
+### 错误矩阵
 
-| Scenario | Sync path | Async path |
+| 场景 | 同步路径 | 异步路径 |
 |---|---|---|
-| `vault:` cache hit | return value | return value |
-| `vault:` cache miss, async caller | n/a (sync can't fetch) | fetch → cache → return |
-| `vault:` cache miss, sync caller | throw `SecretResolutionException` | n/a |
-| TokenRef itself unresolvable | throw `SecretResolutionException` | throw `SecretResolutionException` |
-| Vault 401/403 | throw `VaultAuthException` (no value in message) | throw `VaultAuthException` |
-| Vault 5xx, network, timeout | throw `VaultUnavailableException` | throw; if stale cached, return stale + warning |
-| Vault 404 on path | throw `VaultPathNotFoundException` | throw |
-| Vault 404 on key | throw `VaultKeyNotFoundException` | throw |
-| Vault section disabled but `vault:` prefix used | throw `VaultNotConfiguredException` | throw |
+| `vault:` 缓存命中 | 返回 value | 返回 value |
+| `vault:` 缓存未命中，异步调用方 | n/a（同步不能拉取） | 拉取 → 缓存 → 返回 |
+| `vault:` 缓存未命中，同步调用方 | 抛 `SecretResolutionException` | n/a |
+| TokenRef 本身不可解析 | 抛 `SecretResolutionException` | 抛 `SecretResolutionException` |
+| Vault 401/403 | 抛 `VaultAuthException`（消息中不含 value） | 抛 `VaultAuthException` |
+| Vault 5xx、网络、超时 | 抛 `VaultUnavailableException` | 抛；若缓存有旧值则返回旧值 + warning |
+| Vault path 级 404 | 抛 `VaultPathNotFoundException` | 抛 |
+| Vault key 级 404 | 抛 `VaultKeyNotFoundException` | 抛 |
+| Vault 节未启用但使用了 `vault:` 前缀 | 抛 `VaultNotConfiguredException` | 抛 |
 
-### No-leak guarantees
+### 不泄漏保证
 
-- Exception messages: `path`, `key`, HTTP status code, error code name only. Never the resolved value.
-- `ToString()` of exceptions does not include `Data["value"]` or any other payload field.
-- `ILogger.Log*` calls never include the resolved value as a parameter.
-- Log output passes through `RedactionPipeline` for double-safety.
-- `VaultSecretProvider` does not store the token beyond the `IVaultClient` construction; no log captures it.
+- 异常消息：仅含 path、key、HTTP 状态码、错误码名称。绝不包含解析后的 value。
+- 异常的 `ToString()` 不暴露 `Data["value"]` 或任何承载 payload 的字段。
+- `ILogger.Log*` 调用永不以参数形式传入解析后的 value。
+- 日志输出统一经 `RedactionPipeline` 做二次防护。
+- `VaultSecretProvider` 不在 `IVaultClient` 构造之外持久化 token；无日志捕获 token。
 
-## Testing
+## 测试
 
-### Unit tests (`OpenClaw.Tests/Security/Vault*Tests.cs`)
+### 单元测试（`OpenClaw.Tests/Security/Vault*Tests.cs`）
 
-| Test | Asserts |
+| 测试 | 断言 |
 |---|---|
-| `Parse_ValidRef_ReturnsMountPathKey` | Grammar parse |
-| `Parse_MissingKey_Throws_VaultRefParseException` | Malformed input |
-| `Parse_EmptyPath_Throws_VaultRefParseException` | Malformed input |
-| `Parse_DefaultMount_Applied_WhenMissing` | `vault:data/x#k` defaults mount to "secret" |
-| `ResolveAsync_CacheHit_NoHttpCall` | NSubstitute verifies `IVaultClient` not called |
-| `ResolveAsync_CacheMiss_OneHttpCall_CachesAndReturns` | Fetch → cache → return |
-| `ResolveAsync_Vault401_Throws_VaultAuthException_NoValueInMessage` | No value leak |
-| `ResolveAsync_VaultTimeout_Throws_VaultUnavailableException_RetryableTrue` | Timeout path |
-| `ResolveAsync_Vault404_Path_Throws_VaultPathNotFoundException` | 404 path |
-| `ResolveAsync_Vault404_Key_Throws_VaultKeyNotFoundException` | 404 key |
-| `ResolveAsync_CtsCancelled_Throws_OperationCanceledException` | Cancellation |
-| `SyncResolve_VaultCacheHit_Returns` | Sync happy path |
-| `SyncResolve_VaultCacheMiss_Throws_SecretResolutionException_MessageMentionsAsyncOrPrewarm` | Sync fail-fast |
-| `LegacyResolve_BehavesIdenticalToPreRefactor` | Backward compat (snapshot 9 existing tests) |
-| `Cache_ConcurrentMisses_SingleFlight_OneHttpCall` | Stampede prevention |
-| `Cache_Expire_TriggersRefreshAhead_StaleValueReturned` | Refresh-ahead |
-| `Cache_FetchFailureWithStale_ReturnsStaleAndLogs` | Failure fallback |
-| `Cache_FetchFailureNoStale_Throws_VaultUnavailable` | Cold failure |
-| `PrewarmService_AllSucceed_Starts` | Happy prewarm |
-| `PrewarmService_OneFails_PrewarmRequired_Throws_HostStartupException` | Hard fail |
-| `PrewarmService_OneFails_PrewarmNotRequired_Logs_NoThrow` | Soft fail |
-| `PrewarmService_RateLimit_CapsConcurrency` | Throughput cap |
-| `ConfigValidator_VaultEnabled_MissingAddress_Rejects` | Config validation |
-| `ConfigValidator_TokenRefStartsWithVault_Rejects` | Recursion guard |
-| `ConfigValidator_CacheTtlOutOfRange_Rejects` | Bounds |
-| `ConfigValidator_PublicBind_RejectsLoopbackAddress` | SSRF guard |
-| `RedactionPipeline_VaultRefValue_NeverAppearsInLog` | Cross-cutting no-leak |
-| `ResolverAccessor_NotBootstrapped_LegacyFallbackUsed` | DI-not-ready path |
-| `ResolverAccessor_Bootstrapped_RoutesToInstance` | DI-ready path |
+| `Parse_ValidRef_ReturnsMountPathKey` | 语法解析 |
+| `Parse_MissingKey_Throws_VaultRefParseException` | 格式错误 |
+| `Parse_EmptyPath_Throws_VaultRefParseException` | 格式错误 |
+| `Parse_DefaultMount_Applied_WhenMissing` | `vault:data/x#k` 默认 mount 为 "secret" |
+| `ResolveAsync_CacheHit_NoHttpCall` | NSubstitute 验证 `IVaultClient` 未被调用 |
+| `ResolveAsync_CacheMiss_OneHttpCall_CachesAndReturns` | 拉取 → 缓存 → 返回 |
+| `ResolveAsync_Vault401_Throws_VaultAuthException_NoValueInMessage` | 不泄漏 value |
+| `ResolveAsync_VaultTimeout_Throws_VaultUnavailableException_RetryableTrue` | 超时路径 |
+| `ResolveAsync_Vault404_Path_Throws_VaultPathNotFoundException` | path 级 404 |
+| `ResolveAsync_Vault404_Key_Throws_VaultKeyNotFoundException` | key 级 404 |
+| `ResolveAsync_CtsCancelled_Throws_OperationCanceledException` | 取消传播 |
+| `SyncResolve_VaultCacheHit_Returns` | 同步正常路径 |
+| `SyncResolve_VaultCacheMiss_Throws_SecretResolutionException_MessageMentionsAsyncOrPrewarm` | 同步快速失败 |
+| `LegacyResolve_BehavesIdenticalToPreRefactor` | 向后兼容（11 个既有测试的快照） |
+| `Cache_ConcurrentMisses_SingleFlight_OneHttpCall` | 防雪崩 |
+| `Cache_Expire_TriggersRefreshAhead_StaleValueReturned` | refresh-ahead |
+| `Cache_FetchFailureWithStale_ReturnsStaleAndLogs` | 失败回退 |
+| `Cache_FetchFailureNoStale_Throws_VaultUnavailable` | 冷启动失败 |
+| `PrewarmService_AllSucceed_Starts` | 预热正常 |
+| `PrewarmService_OneFails_PrewarmRequired_Throws_HostStartupException` | 硬失败 |
+| `PrewarmService_OneFails_PrewarmNotRequired_Logs_NoThrow` | 软失败 |
+| `PrewarmService_RateLimit_CapsConcurrency` | 吞吐上限 |
+| `ConfigValidator_VaultEnabled_MissingAddress_Rejects` | 配置校验 |
+| `ConfigValidator_TokenRefStartsWithVault_Rejects` | 递归防护 |
+| `ConfigValidator_CacheTtlOutOfRange_Rejects` | 边界校验 |
+| `ConfigValidator_PublicBind_RejectsLoopbackAddress` | SSRF 防护 |
+| `RedactionPipeline_VaultRefValue_NeverAppearsInLog` | 横切不泄漏 |
+| `ResolverAccessor_NotBootstrapped_LegacyFallbackUsed` | DI 未引导路径 |
+| `ResolverAccessor_Bootstrapped_RoutesToInstance` | DI 已引导路径 |
 
-### Integration tests (`VaultIntegrationTests.cs`)
+### 集成测试（`VaultIntegrationTests.cs`）
 
 ```csharp
 [Trait("Category", "Integration")]
 public sealed class VaultIntegrationTests
 {
-    // Skipped unless OPENBAO_ADDR and OPENBAO_TOKEN are set.
-    // eng/compose/openbao.yml spins up OpenBao for CI.
+    // 除非 OPENBAO_ADDR 与 OPENBAO_TOKEN 已设置，否则跳过。
+    // eng/compose/openbao.yml 为 CI 提供 OpenBao 实例。
 }
 ```
 
-| Test | Asserts |
+| 测试 | 断言 |
 |---|---|
-| `End2End_PutAndResolve_KvV2` | Real OpenBao round-trip |
-| `End2End_TtlExpiry_FetchesAgain` | Real cache invalidation |
-| `End2End_TokenUnauth_Throws_VaultAuthException` | Real auth failure |
-| `End2End_RotatedValue_PickedUpAfterTtl` | Real rotation scenario |
+| `End2End_PutAndResolve_KvV2` | 真实 OpenBao 端到端往返 |
+| `End2End_TtlExpiry_FetchesAgain` | 真实缓存失效 |
+| `End2End_TokenUnauth_Throws_VaultAuthException` | 真实认证失败 |
+| `End2End_RotatedValue_PickedUpAfterTtl` | 真实轮换场景 |
 
-CI workflow: optional job in `ci.yml` triggered by `[Category("Integration")]` filter, gated by repository variable `RUN_VAULT_INTEGRATION`. The compose file at `eng/compose/openbao.yml` is the source of truth for the OpenBao image and bootstrap script; it is new and lands in Phase 3.
+CI 工作流：`ci.yml` 中可选 job，通过 `[Category("Integration")]` filter 触发，由仓库变量 `RUN_VAULT_INTEGRATION` 控制开关。`deploy/docker-compose/openbao.yml` 是 OpenBao 镜像与引导脚本的单一事实源；该文件在 Phase 3 新建。
 
-### Coverage targets
+### 覆盖率目标
 
-- `OpenClaw.Security.Vault` line coverage ≥ 85%, branch coverage ≥ 75%.
-- `OpenClaw.Core/Security/*` additions: 100% line coverage.
-- No-leak property test (FsCheck or hand-written): generated random ref → resolved value, assert value never appears in any captured log message.
+- `OpenClaw.Security.Vault` 行覆盖率 ≥ 85%，分支覆盖率 ≥ 75%。
+- `OpenClaw.Core/Security/*` 新增部分：行覆盖率 100%。
+- 不泄漏属性测试（FsCheck 或手写）：生成随机 ref → 解析 value，断言任何捕获到的日志消息中均不出现该 value。
 
-## Migration
+## 迁移
 
-### Phase 1 — Abstraction + facade (zero behavior change)
+### 阶段 1——抽象 + 门面（零行为变化）
 
-- Add `ISecretProvider`, `ISecretResolver`, `CompositeSecretResolver`, `EnvRawSecretProvider`, `ResolverAccessor`.
-- Refactor `SecretResolver` to delegate to `ResolverAccessor.Current`, with `LegacyResolve` fallback.
-- Add `SecretResolver.StartAsync(IServiceProvider)` extension called from `GatewayBootstrapExtensions` and from `CliProgram` startup.
-- All 11 existing `SecretResolver.*` tests in `SecurityTests.cs` pass unmodified.
-- No call site changes.
+- 新增 `ISecretProvider`、`ISecretResolver`、`CompositeSecretResolver`、`EnvRawSecretProvider`、`ResolverAccessor`。
+- 重构 `SecretResolver`，委托到 `ResolverAccessor.Current`，提供 `LegacyResolve` 回退。
+- 增加 `SecretResolver.StartAsync(IServiceProvider)` 扩展，由 `GatewayBootstrapExtensions` 与 `CliProgram` 启动流程调用。
+- 既有 11 个 `SecretResolver.*` 测试**不修改**全部通过。
+- 调用点零变更。
 
-### Phase 2 — Vault implementation
+### 阶段 2——Vault 实现
 
-- Create `OpenClaw.Security.Vault` project (`IsAotCompatible=false`, references `VaultSharp`).
-- Implement `VaultSecretProvider`, `VaultRefParser`, `VaultRefCache`, `VaultExceptions`.
-- Unit tests as above.
+- 创建项目 `OpenClaw.Security.Vault`（`IsAotCompatible=false`，引用 `VaultSharp`）。
+- 实现 `VaultSecretProvider`、`VaultRefParser`、`VaultRefCache`、`VaultExceptions`。
+- 按上表编写单测。
 
-### Phase 3 — Wiring + config + prewarm
+### 阶段 3——接线 + 配置 + 预热
 
-- Add `VaultSecurityOptions` to `SecurityOptions`; update `ConfigValidator`; add `GatewayConfig.Security.Vault` binding.
-- Add `AddOpenClawVaultSecrets(IConfiguration)` extension; call from `GatewayBootstrapExtensions` when `Enabled == true`.
-- Register `VaultRefPrewarmService` as `IHostedService`.
-- Create `eng/compose/openbao.yml` (new directory; mirrors existing `eng/` testing convention); add optional integration test job in `ci.yml`.
-- Write `docs/security/vault.md` (English) and `docs/zh-CN/security/vault.md` (Chinese).
-- Update `CHANGELOG.md`.
-- Update [`docs/security/payments.md:49`](../../docs/security/payments.md) from "reserved extension point" to "implemented (KV v2)".
+- 在 `SecurityOptions` 中新增 `VaultSecurityOptions`；更新 `ConfigValidator`；在 `GatewayConfig.Security.Vault` 增加绑定。
+- 增加 `AddOpenClawVaultSecrets(IConfiguration)` 扩展；在 `GatewayBootstrapExtensions` 中当 `Enabled == true` 时调用。
+- 将 `VaultRefPrewarmService` 注册为 `IHostedService`。
+- 创建 `deploy/docker-compose/openbao.yml`；在 `ci.yml` 中加入可选集成测试 job。
+- 撰写 `docs/security/vault.md`（英文）与 `docs/zh-CN/security/vault.md`（中文）。
+- 更新 `CHANGELOG.md`。
+- 将 [docs/security/payments.md:49](../../docs/security/payments.md) 从"保留扩展点"更新为"已实现（KV v2）"。
 
-### Phase 4 — Out of scope (deferred)
+### 阶段 4——越界（推迟）
 
-- Kubernetes / AWS IAM / Azure / GCP / JWT auth.
-- Transit, PKI, dynamic credentials.
-- Persistent encrypted cache.
+- Kubernetes / AWS IAM / Azure / GCP / JWT 认证。
+- Transit、PKI、动态凭证。
+- 持久加密缓存。
 
-## Documentation Deliverables
+## 文档交付
 
-- `docs/security/vault.md` — user-facing reference: config schema, ref grammar, operational guide.
-- `docs/security/vault-integration-tests.md` — running integration tests locally + CI.
-- `src/OpenClaw.Security.Vault/README.md` — AOT compatibility note.
-- `CHANGELOG.md` entry.
-- Chinese translations in `docs/zh-CN/security/`.
+- `docs/security/vault.md`——用户参考：配置 schema、引用语法、运维手册。
+- `docs/security/vault-integration-tests.md`——本地 + CI 跑集成测试。注：OpenBao compose 文件位于 `deploy/docker-compose/openbao.yml`，跑 `[Category("Integration")]` 测试前先 `docker compose -f deploy/docker-compose/openbao.yml up -d`。
+- `src/OpenClaw.Security.Vault/README.md`——AOT 兼容性说明。
+- `CHANGELOG.md` 条目。
+- `docs/zh-CN/security/` 下中文翻译。
 
-## Risks
+## 风险
 
-| Risk | Mitigation |
+| 风险 | 缓解 |
 |---|---|
-| VaultSharp heavy reflection bloats AOT binary | `IsAotCompatible=false`; only linked when `Vault.Enabled=true`; documented in vault README |
-| 67 callers currently sync-resolve; new `vault:` throws on cold sync cache | Phase 1 introduces no `vault:` semantics; Phase 3 sync fail-fast is documented and prewarm is opt-in/opt-out via `PrewarmRequired` |
-| Pre-warm blocks startup on Vault outage | `PrewarmRequired` switch; per-ref timeout; rate-limited concurrency |
-| Vault single point of failure | TTL cache returns stale values on failure; refresh-ahead hides latency; ops runbook documents HA Vault topology |
-| Recursive `vault:TokenRef` causes deadlock / loop | `ConfigValidator` rejects `TokenRef` starting with `"vault:"` at config load time |
-| Misconfigured `Address` exfiltrates to attacker-controlled host | HTTPS required; loopback rejected when `PublicBind=true`; warning on `SkipVerify=true` |
-| Log re-introduction of secret value via future refactor | Property test `RedactionPipeline_VaultRefValue_NeverAppearsInLog` runs in CI |
-| Token leak via exception message | `VaultAuthException` includes only path + status, never token bytes; reviewed in PR checklist |
+| VaultSharp 重依赖反射使 AOT 二进制膨胀 | `IsAotCompatible=false`；仅在 `Vault.Enabled=true` 时链接进产物；vault README 中文档化 |
+| 67 个调用方当前 sync resolve；新 `vault:` 在冷缓存同步路径抛异常 | Phase 1 不引入 `vault:` 语义；Phase 3 同步快速失败有文档 + `PrewarmRequired` 显式开关 |
+| 启动预热被 Vault 故障阻塞 | `PrewarmRequired` 开关；单引用超时；限流并发 |
+| Vault 单点故障 | TTL 缓存失败回退旧值；refresh-ahead 隐藏延迟；运维 runbook 文档化 HA Vault 拓扑 |
+| `vault:TokenRef` 递归导致死锁 / 环路 | `ConfigValidator` 在配置加载期直接拒绝 `vault:` 开头的 `TokenRef` |
+| `Address` 误配导致流量外泄到攻击者控制的主机 | 强制 HTTPS；`PublicBind=true` 时拒绝 loopback；`SkipVerify=true` 触发 warning |
+| 日志中重新出现 secret value（未来重构回归） | 属性测试 `RedactionPipeline_VaultRefValue_NeverAppearsInLog` 在 CI 中执行 |
+| 异常消息泄漏 token | `VaultAuthException` 仅含 path + 状态码，永不含 token 字节；PR 检查清单覆盖 |
 
-## Open Questions
+## 开放问题
 
-None at design freeze. Items deferred to Phase 4 are explicitly non-goals for v1.
+无（v1 设计冻结）。推迟到阶段 4 的项目已显式列为非目标。
