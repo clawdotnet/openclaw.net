@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -112,6 +113,10 @@ public sealed class VaultRefPrewarmService : IHostedService
             yield return item;
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2075",
+        Justification = "Values reached by this walk are instances of the strongly-typed GatewayConfig model. " +
+                        "CoreJsonContext ([JsonSerializable(typeof(GatewayConfig))]) roots the entire config graph " +
+                        "via System.Text.Json source generation, so their public properties are preserved in AOT builds.")]
     private static IEnumerable<(string Path, string Value)> WalkStringsInner(object? root, string path, HashSet<object> visited)
     {
         if (root is null || !visited.Add(root))

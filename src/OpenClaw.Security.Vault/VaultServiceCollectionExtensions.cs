@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -11,16 +10,15 @@ namespace OpenClaw.Security.Vault;
 public static class VaultServiceCollectionExtensions
 {
     public static IServiceCollection AddOpenClawVaultSecrets(
-        this IServiceCollection services, IConfiguration config)
+        this IServiceCollection services, VaultSecurityOptions? vaultOptions)
     {
-        var opts = new VaultSecurityOptions();
-        // Same section the validator checks via GatewayConfig (bound from the "OpenClaw" section).
-        config.GetSection("OpenClaw:Security:Vault").Bind(opts);
-
-        if (!opts.Enabled)
+        // Consume the options already bound by the gateway as GatewayConfig.Security.Vault —
+        // the same instance the validator checks. Re-binding here via ConfigurationBinder.Bind
+        // would require dynamic code (AOT/trimming unfriendly) and could drift from the bound copy.
+        if (vaultOptions is null || !vaultOptions.Enabled)
             return services; // No-op when vault disabled
 
-        services.AddSingleton(opts);
+        services.AddSingleton(vaultOptions);
 
         // Core abstractions. EnvRaw must be registered first: bare/env/raw refs
         // resolve through it; vault refs fall through to the vault provider.
@@ -30,13 +28,13 @@ public static class VaultServiceCollectionExtensions
         // Resolve token via the secret resolver facade (env:/raw:) at client construction.
         services.AddSingleton<IVaultClient>(sp =>
         {
-            var token = SecretResolver.Resolve(opts.TokenRef)
+            var token = SecretResolver.Resolve(vaultOptions.TokenRef)
                 ?? throw new VaultAuthException("Vault token ref resolved to null.");
             var client = new VaultSharpClient(
-                opts.Address ?? throw new VaultAuthException("Vault address missing."),
+                vaultOptions.Address ?? throw new VaultAuthException("Vault address missing."),
                 token,
-                string.IsNullOrEmpty(opts.Namespace) ? null : opts.Namespace,
-                opts.Tls);
+                string.IsNullOrEmpty(vaultOptions.Namespace) ? null : vaultOptions.Namespace,
+                vaultOptions.Tls);
             return client;
         });
 
@@ -44,7 +42,7 @@ public static class VaultServiceCollectionExtensions
             new VaultRefCache(
                 sp.GetRequiredService<IMemoryCache>(),
                 sp.GetRequiredService<ILogger<VaultRefCache>>(),
-                opts.CacheTtl));
+                vaultOptions.CacheTtl));
 
         services.AddSingleton<ISecretResolver>(sp =>
             new CompositeSecretResolver(

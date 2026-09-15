@@ -72,7 +72,7 @@ while (true)
         builder.Services.AddOpenClawToolServices(startup);
         builder.Services.AddOpenClawBackendServices(startup);
         builder.Services.AddOpenClawSecurityServices(startup);
-        builder.Services.AddOpenClawVaultSecrets(builder.Configuration);
+        builder.Services.AddOpenClawVaultSecrets(startup.Config.Security.Vault);
         builder.Services.AddOpenClawMcpServices(startup);
         builder.Services.ApplyOpenClawRuntimeProfile(startup);
         builder.Services.AddMicrosoftAgentFramework(builder.Configuration);

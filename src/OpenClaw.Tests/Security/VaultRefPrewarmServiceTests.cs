@@ -38,6 +38,23 @@ public sealed class VaultRefPrewarmServiceTests
     }
 
     [Fact]
+    public async Task StartAsync_ScansGatewayConfigForVaultRefs()
+    {
+        var config = new GatewayConfig();
+        config.Channels.Telegram.BotTokenRef = "vault:secret/data/telegram#bot_token";
+        var opts = new VaultSecurityOptions { Enabled = true, Address = "https://v", TokenRef = "env:X" };
+        var resolver = Substitute.For<ISecretResolver>();
+        resolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<string?>("value"));
+        var sp = new ServiceCollection().AddSingleton(config).BuildServiceProvider();
+        var svc = new VaultRefPrewarmService(opts, resolver, sp, Substitute.For<ILogger<VaultRefPrewarmService>>());
+
+        await svc.StartAsync(CancellationToken.None);
+
+        await resolver.Received(1).ResolveAsync("vault:secret/data/telegram#bot_token", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task StartAsync_OneFail_PrewarmRequired_Throws()
     {
         var opts = new VaultSecurityOptions { Enabled = true, Address = "https://v", TokenRef = "env:X", PrewarmRefs = ["vault:secret/data/x#k"], PrewarmRequired = true };
