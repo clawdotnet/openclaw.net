@@ -214,7 +214,7 @@ public sealed class MetaSkillStepDefinition
 
     /// <summary>
     /// Optional capability slot binding for tool_call steps. Replaces <see cref="Tool"/>
-    /// with an Nacos MCP Router capability reference resolved at execution time.
+    /// with an configured capability provider capability reference resolved at execution time.
     /// </summary>
     public MetaCapabilityRefDefinition? CapabilityRef { get; init; }
 
@@ -298,12 +298,13 @@ public sealed class MetaSkillStepDefinition
 }
 
 /// <summary>
-/// Capability slot binding for a tool_call step (Nacos MCP Router). Binding is
+/// Capability slot binding for a tool_call step (configured capability provider). Binding is
 /// <c>static</c> (pinned server + tool) or <c>dynamic</c> (resolved from an
 /// intent via the capability resolver).
 /// </summary>
 public sealed class MetaCapabilityRefDefinition
 {
+    public string Provider { get; init; } = "";
     /// <summary>Binding mode: <c>static</c> or <c>dynamic</c>.</summary>
     public required string Binding { get; init; }
 
@@ -328,15 +329,15 @@ public sealed class MetaCapabilityRefDefinition
 /// </summary>
 public sealed class MetaCapabilityStaticBinding
 {
-    /// <summary>Registered MCP server name in the Nacos registry.</summary>
-    public required string McpServerName { get; init; }
+    /// <summary>Registered MCP server name in the provider registry.</summary>
+    public required string Target { get; init; }
 
     /// <summary>Tool name on the bound server.</summary>
     public required string ToolName { get; init; }
 }
 
 /// <summary>
-/// Intent describing the capability a dynamic slot needs. Fed to the Router's
+/// Intent describing the capability a dynamic slot needs. Fed to the selected provider's
 /// capability resolver (same shape as the search wire contract).
 /// </summary>
 public sealed class MetaCapabilityIntent
@@ -344,7 +345,7 @@ public sealed class MetaCapabilityIntent
     /// <summary>Optional capability type URI, e.g. <c>cap:WeatherQuery</c>.</summary>
     public string? Type { get; init; }
 
-    /// <summary>Task description fed to the resolver (same shape as the Router search).</summary>
+    /// <summary>Task description fed to the resolver (provider-neutral text).</summary>
     public required string TaskDescription { get; init; }
 
     /// <summary>Optional keyword list for resolution.</summary>

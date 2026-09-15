@@ -23,7 +23,7 @@ public sealed class CapabilitySlotExecutorTests
     private static MetaCapabilityRefDefinition StaticRef(string server = "weather-mcp", string tool = "get_weather") => new()
     {
         Binding = "static",
-        Static = new MetaCapabilityStaticBinding { McpServerName = server, ToolName = tool },
+        Static = new MetaCapabilityStaticBinding { Target = server, ToolName = tool },
     };
 
     private static MetaCapabilityRefDefinition DynamicRef(string task = "weather city", string policy = "first") => new()
@@ -62,7 +62,7 @@ public sealed class CapabilitySlotExecutorTests
         {
             ["nacos-mcp-router"] = new() { Enabled = true, Transport = "http", Url = server.Urls.Single() + "/mcp", ToolNamePrefix = "nacos_mcp_router_" }
         }, TestContext.Current.CancellationToken);
-        return new RouterFixture { State = state, Executor = new CapabilitySlotExecutor(registry, new CapabilityBindingCache()), Server = server, Registry = registry };
+        return new RouterFixture { State = state, Executor = new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()), Server = server, Registry = registry };
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public sealed class CapabilitySlotExecutorTests
 
         var failed = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
         Assert.Equal(ToolResultStatuses.Failed, failed.ResultStatus);
-        Assert.Equal("capability_add_failed", failed.FailureCode);
+        Assert.Equal("capability_binding_failed", failed.FailureCode);
 
         // The failure must not be cached: a later healthy Router still gets an add.
         fixture.State.FailAdd = false;
@@ -107,7 +107,7 @@ public sealed class CapabilitySlotExecutorTests
 
         var result = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
         Assert.Equal(ToolResultStatuses.Failed, result.ResultStatus);
-        Assert.Equal("capability_use_tool_failed", result.FailureCode);
+        Assert.Equal("capability_execution_failed", result.FailureCode);
         Assert.Contains("failed to use tool", result.ResultText);
     }
 
@@ -119,18 +119,18 @@ public sealed class CapabilitySlotExecutorTests
 
         var result = await fixture.Executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
         Assert.Equal(ToolResultStatuses.Failed, result.ResultStatus);
-        Assert.Equal("capability_use_tool_failed", result.FailureCode);
+        Assert.Equal("capability_execution_failed", result.FailureCode);
     }
 
     [Fact]
     public async Task Execute_NoRouterClient_ReturnsCapabilityRouterUnavailable()
     {
         await using var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
-        var executor = new CapabilitySlotExecutor(registry, new CapabilityBindingCache());
+        var executor = new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache());
 
         var result = await executor.ExecuteAsync(StaticRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
         Assert.Equal(ToolResultStatuses.Failed, result.ResultStatus);
-        Assert.Equal("capability_router_unavailable", result.FailureCode);
+        Assert.Equal("capability_provider_unavailable", result.FailureCode);
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public sealed class CapabilitySlotExecutorTests
         var result = await fixture.Executor.ExecuteAsync(DynamicRef(), """{"city":"Oslo"}""", "sess-1", TestContext.Current.CancellationToken);
         Assert.Equal(ToolResultStatuses.Failed, result.ResultStatus);
         Assert.Equal("capability_resolve_failed", result.FailureCode);
-        Assert.Contains("all_adds_failed", result.FailureMessage);
+        Assert.Contains("all_bindings_failed", result.FailureMessage);
         // Every Top-5 candidate is attempted in rank order before giving up.
         Assert.Equal(new[]
         {
@@ -243,7 +243,7 @@ public sealed class CapabilitySlotExecutorTests
     [InlineData("", "")]
     public void StripUseToolShell_StripsLiveCapturedEnvelope(string raw, string expected)
     {
-        Assert.Equal(expected, CapabilitySlotExecutor.StripUseToolShell(raw));
+        Assert.Equal(expected, NacosCapabilityProvider.StripUseToolShell(raw));
     }
 
     [Fact]
@@ -288,8 +288,8 @@ public sealed class CapabilitySlotExecutorTests
         Assert.True(trajectory.CacheHit);
         Assert.Equal("weather-mcp", trajectory.Server);
         Assert.Equal("get_weather", trajectory.Tool);
-        Assert.Empty(trajectory.Candidates);
-        Assert.Empty(trajectory.Attempted);
+        Assert.NotEmpty(trajectory.Candidates);
+        Assert.NotEmpty(trajectory.Attempted);
         // A cache hit resolves without touching the Router; only use_tool fires.
         Assert.Equal(new[] { "use:weather-mcp:get_weather" }, fixture.State.Calls.Skip(callsAfterFirst).ToArray());
     }
@@ -337,7 +337,7 @@ public sealed class CapabilitySlotExecutorTests
         var trajectory = Assert.IsType<CapabilityBindingTrajectory>(result.BindingTrajectory);
         Assert.Equal("static", trajectory.Binding);
         Assert.Null(trajectory.TaskDescription);
-        Assert.Null(trajectory.IntentKey);
+        Assert.NotNull(trajectory.IntentKey);
         Assert.False(trajectory.CacheHit);
         Assert.Equal("weather-mcp", trajectory.Server);
         Assert.Equal("get_weather", trajectory.Tool);
@@ -353,7 +353,7 @@ public sealed class CapabilitySlotExecutorTests
     public void ClearRuntimeCache_InitialCount_IsZero()
     {
         var executor = new CapabilitySlotExecutor(
-            new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance),
+            new CapabilityProviderRegistry([]),
             new CapabilityBindingCache());
         Assert.Equal(0, executor.AddedServerCount);
     }

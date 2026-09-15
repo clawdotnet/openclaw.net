@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using OpenClaw.Core.Skills.Meta;
 
-namespace OpenClaw.Agent.Tools;
+namespace OpenClaw.Adapters.Nacos;
 
 /// <summary>
 /// Parses the prose envelope emitted by the upstream Nacos MCP Router's
@@ -19,20 +19,20 @@ public static class RouterCandidateParser
         + Regex.Escape(RouterProseContract.SearchStepMarker),
         RegexOptions.Singleline | RegexOptions.Compiled);
 
-    public static IReadOnlyList<RouterCandidate> Parse(string prose)
+    public static IReadOnlyList<CapabilityCandidate> Parse(string prose)
     {
-        if (string.IsNullOrWhiteSpace(prose)) return Array.Empty<RouterCandidate>();
+        if (string.IsNullOrWhiteSpace(prose)) return Array.Empty<CapabilityCandidate>();
 
         var match = JsonBlock.Match(prose);
-        if (!match.Success) return Array.Empty<RouterCandidate>();
+        if (!match.Success) return Array.Empty<CapabilityCandidate>();
 
         try
         {
             using var doc = JsonDocument.Parse(match.Groups[1].Value);
             if (doc.RootElement.ValueKind != JsonValueKind.Object)
-                return Array.Empty<RouterCandidate>();
+                return Array.Empty<CapabilityCandidate>();
 
-            var results = new List<RouterCandidate>(MaxCandidates);
+            var results = new List<CapabilityCandidate>(MaxCandidates);
             var rank = 1;
             foreach (var property in doc.RootElement.EnumerateObject())
             {
@@ -47,14 +47,14 @@ public static class RouterCandidateParser
                     description = descNode.GetString() ?? "";
                 }
 
-                results.Add(new RouterCandidate(name, description, rank));
+                results.Add(new CapabilityCandidate(name, description, rank));
                 rank++;
             }
             return results;
         }
         catch (JsonException)
         {
-            return Array.Empty<RouterCandidate>();
+            return Array.Empty<CapabilityCandidate>();
         }
     }
 }

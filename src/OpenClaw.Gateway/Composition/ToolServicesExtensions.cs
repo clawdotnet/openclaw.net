@@ -3,10 +3,10 @@ using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Models;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Mcp;
-using OpenClaw.Gateway.Mcp.Nacos;
+using OpenClaw.Core.Skills.Meta;
 using OpenClaw.McpApp;
 using OpenClaw.Protocols.Mqtt.Tools;
-using RedNb.Nacos.DependencyInjection;
+
 
 namespace OpenClaw.Gateway.Composition;
 
@@ -32,7 +32,7 @@ internal static class ToolServicesExtensions
             // no built-in duplicate to shadow it (#230, pinned by
             // ResolvePreference_IncludesResolveCapabilityFromNativeRegistry).
             registry.RegisterExternalTool(
-                new ResolveCapabilityTool(sp.GetRequiredService<McpServerToolRegistry>()),
+                new ResolveCapabilityTool(sp.GetRequiredService<CapabilityProviderRegistry>()),
                 pluginId: "agent.resolve-capability");
 
             return registry;
@@ -42,51 +42,18 @@ internal static class ToolServicesExtensions
                 startup.Config.Plugins.Mcp,
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger<McpServerToolRegistry>()));
 
-        // Capability binding cache (#232): session-scoped dynamic bindings, cleared
-        // on workspace MCP reload by McpWorkspaceWatcherService.
         services.AddSingleton<CapabilityBindingCache>();
-
-        // Capability slot executor (#231): executes capability_ref steps in the
-        // meta DAG through the same Router registry as resolve_capability.
-        services.AddSingleton(sp =>
-            new CapabilitySlotExecutor(
-                sp.GetRequiredService<McpServerToolRegistry>(),
-                sp.GetRequiredService<CapabilityBindingCache>()));
-
-        // Nacos config event subscription (#238): the SDK client is only built
-        // when a Nacos server address is configured; otherwise the in-memory
-        // no-op double keeps the subscription service inert (TTL/reload
-        // fallback from #232 stays the only invalidation path).
-        var nacosOptions = startup.Config.Nacos;
-        services.AddSingleton(nacosOptions);
-        if (!string.IsNullOrWhiteSpace(nacosOptions.ServerAddr))
-        {
-            services.AddNacosConfig(o =>
-            {
-                o.ServerAddresses = nacosOptions.ServerAddr!;
-                o.Username = nacosOptions.Username;
-                o.Password = nacosOptions.Password;
-                o.LongPollTimeout = nacosOptions.LongPollingTimeoutMs;
-                o.DefaultTimeout = nacosOptions.LongPollingTimeoutMs;
-            });
-            services.AddSingleton(sp => new RedNbNacosConfigService(
-                sp.GetRequiredService<RedNb.Nacos.Config.IConfigService>(),
-                nacosOptions,
-                sp.GetRequiredService<ILogger<RedNbNacosConfigService>>()));
-            services.AddSingleton<INacosConfigService>(sp => sp.GetRequiredService<RedNbNacosConfigService>());
-        }
-        else
-        {
-            services.AddSingleton<INacosConfigService, FakeNacosConfigService>();
-        }
-        services.AddSingleton<IMcpWorkspaceReloadTrigger>(sp =>
-            sp.GetRequiredService<McpWatcherHolder>().Watcher
-            ?? throw new InvalidOperationException("McpWorkspaceWatcherService has not been started."));
-        services.AddSingleton(sp => new NacosConfigSubscriptionService(
-            sp.GetRequiredService<INacosConfigService>(),
-            nacosOptions,
-            sp.GetRequiredService<IMcpWorkspaceReloadTrigger>(),
-            sp.GetRequiredService<ILogger<NacosConfigSubscriptionService>>()));
+        services.AddSingleton<ICapabilityInvalidationSink>(sp => sp.GetRequiredService<CapabilityBindingCache>());
+        services.AddSingleton<LocalCapabilityProvider>(sp => new(() => sp.GetRequiredService<NativePluginRegistry>().Tools));
+        services.AddSingleton<ICapabilityProvider>(sp => sp.GetRequiredService<LocalCapabilityProvider>());
+#if OPENCLAW_NACOS
+        services.AddSingleton<ICapabilityProvider>(sp => new OpenClaw.Adapters.Nacos.NacosCapabilityProvider(sp.GetRequiredService<McpServerToolRegistry>()));
+#endif
+#if OPENCLAW_NACOS_EVENTS
+        OpenClaw.Adapters.Nacos.Events.NacosEventRegistration.Add(services, startup.Config.AdapterSettings);
+#endif
+        services.AddSingleton(sp => new CapabilityProviderRegistry(sp.GetServices<ICapabilityProvider>()));
+        services.AddSingleton<CapabilitySlotExecutor>();
 
         // MCP App support — discovery and hosting
         services.AddOpenClawMcpAppServices(startup.Config.McpApps);

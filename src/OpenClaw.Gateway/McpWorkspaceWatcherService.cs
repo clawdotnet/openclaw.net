@@ -128,11 +128,9 @@ internal sealed class McpWorkspaceWatcherService : IMcpWorkspaceReloadTrigger, I
                 var reload = await _registry.ReloadWorkspaceServersAsync(servers, ct);
                 await _agentRuntime.ApplyMcpToolChangesAsync(reload.AddedTools, reload.RemovedToolNames, ct);
                 _bindingCache.Clear();
-                // Issue #238: a reload (workspace file change or Nacos publish
-                // event) must also invalidate the runtime-level "already added"
-                // cache so statically bound slots re-add against the new registry.
+                // Clear circuit state as well as bindings; both runtime implementations share this contract.
                 await _agentRuntime.ClearCapabilitySlotRuntimeCacheAsync(ct);
-                _logger.LogDebug("Cleared capability binding cache and runtime added-server cache after workspace MCP reload.");
+                _logger.LogDebug("Invalidated capability bindings and circuit state after workspace MCP reload.");
                 _logger.LogInformation(
                     "Workspace MCP reload applied. Added {AddedCount} tools, removed {RemovedCount} tools.",
                     reload.AddedTools.Count,

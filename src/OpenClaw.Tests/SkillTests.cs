@@ -856,7 +856,7 @@ public class SkillLoaderTests
         Assert.Null(slot.Tool);
         Assert.NotNull(slot.CapabilityRef);
         Assert.Equal("static", slot.CapabilityRef.Binding);
-        Assert.Equal("weather-mcp", slot.CapabilityRef.Static!.McpServerName);
+        Assert.Equal("weather-mcp", slot.CapabilityRef.Static!.Target);
         Assert.Equal("get_weather", slot.CapabilityRef.Static.ToolName);
         Assert.Equal("first", slot.CapabilityRef.SelectionPolicy);
     }

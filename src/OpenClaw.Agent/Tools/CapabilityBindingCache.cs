@@ -1,65 +1,52 @@
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
-
+using System.Text.Json;
+using OpenClaw.Core.Skills.Meta;
 namespace OpenClaw.Agent.Tools;
 
-/// <summary>
-/// Session-scoped cache of resolved capability bindings (issue #232). Entries
-/// are keyed by (session id, SHA-256 of the normalised intent); they expire
-/// lazily after a configurable TTL (default 300s) and are cleared wholesale
-/// when the workspace MCP config reloads. Only successful resolutions are
-/// stored — failures are never cached, so the next execution retries.
-/// </summary>
-public sealed class CapabilityBindingCache
+public sealed class CapabilityBindingCache(TimeSpan? ttl = null, TimeProvider? clock = null, int capacity = 1024) : ICapabilityInvalidationSink
 {
     public static readonly TimeSpan DefaultTtl = TimeSpan.FromSeconds(300);
-
-    private sealed class CacheEntry(string server, string tool, DateTimeOffset storedAt)
-    {
-        public string Server { get; } = server;
-        public string Tool { get; } = tool;
-        public DateTimeOffset StoredAt { get; } = storedAt;
-    }
-
-    private readonly ConcurrentDictionary<(string SessionId, string IntentKey), CacheEntry> _entries = new();
-    private readonly TimeSpan _ttl;
-
-    public CapabilityBindingCache(TimeSpan? ttl = null)
-    {
-        _ttl = ttl ?? DefaultTtl;
-    }
-
-    /// <summary>
-    /// SHA-256 hex of the normalised intent: task_description + keywords +
-    /// selection policy. Same fields, same key; any field change, new key.
-    /// </summary>
+    private sealed record Entry(object Value, DateTimeOffset At, bool Persistent);
+    private readonly Dictionary<(string Scope, string Key), Entry> _entries = new();
+    private readonly object _gate = new();
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    private readonly TimeSpan _ttl = ttl ?? DefaultTtl;
+    private long _generation;
+    public int Count { get { lock (_gate) return _entries.Count; } }
+    public long Generation { get { lock (_gate) return _generation; } }
     public static string ComputeIntentKey(string taskDescription, string? keywords, string selectionPolicy)
     {
-        var raw = string.Concat(taskDescription, "\n", keywords ?? string.Empty, "\n", selectionPolicy);
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
+        // Length-prefixing avoids delimiter collisions. Keep text unchanged; normalization must not change intent semantics.
+        var words = (keywords ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal);
+        var parts = new[] { taskDescription, string.Join(",", words), selectionPolicy.Replace("_", "", StringComparison.Ordinal).ToLowerInvariant() };
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Concat(parts.Select(p => $"{p.Length}:{p}")))));
     }
-
-    public bool TryGet(string sessionId, string intentKey, out string server, out string tool)
+    public bool TryGetValue<T>(string scope, string key, out T? value)
     {
-        if (_entries.TryGetValue((sessionId, intentKey), out var entry))
+        lock (_gate)
         {
-            if (DateTimeOffset.UtcNow - entry.StoredAt <= _ttl)
-            {
-                server = entry.Server;
-                tool = entry.Tool;
-                return true;
-            }
-            _entries.TryRemove((sessionId, intentKey), out _);
+            if (_entries.TryGetValue((scope, key), out var entry) && (entry.Persistent || _clock.GetUtcNow() - entry.At < _ttl) && entry.Value is T match)
+            { value = match; return true; }
+            _entries.Remove((scope, key)); value = default; return false;
         }
-
-        server = string.Empty;
-        tool = string.Empty;
-        return false;
     }
-
-    public void Set(string sessionId, string intentKey, string server, string tool)
-        => _entries[(sessionId, intentKey)] = new CacheEntry(server, tool, DateTimeOffset.UtcNow);
-
-    public void Clear() => _entries.Clear();
+    public bool Store(string scope, string key, object value, long generation, bool persistent = false)
+    {
+        lock (_gate)
+        {
+            if (generation != _generation) return false;
+            foreach (var expired in _entries.Where(x => !x.Value.Persistent && _clock.GetUtcNow() - x.Value.At >= _ttl).Select(x => x.Key).ToArray()) _entries.Remove(expired);
+            if (_entries.Count >= Math.Max(1, capacity)) _entries.Remove(_entries.MinBy(x => x.Value.At).Key);
+            _entries[(scope, key)] = new(value, _clock.GetUtcNow(), persistent); return true;
+        }
+    }
+    public bool TryGet(string sessionId, string key, out string server, out string tool)
+    {
+        if (TryGetValue<(string Server, string Tool)>(sessionId, key, out var entry)) { server = entry.Server; tool = entry.Tool; return true; }
+        server = tool = ""; return false;
+    }
+    public void Set(string sessionId, string key, string server, string tool) => Store(sessionId, key, (server, tool), Generation);
+    public void Clear() { lock (_gate) { _generation++; _entries.Clear(); } }
+    public void Invalidate(CapabilityChange change) => Clear(); // Conservative full invalidation is intentional.
 }

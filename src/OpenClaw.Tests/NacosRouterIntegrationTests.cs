@@ -74,7 +74,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()));
         try
         {
             for (var i = 0; i < 2; i++)
@@ -88,7 +88,7 @@ public sealed class NacosRouterIntegrationTests
                 Assert.Equal(fail ? "weather-mcp unavailable; check Nacos registration and Router logs." : "Weather for Oslo: sunny", result);
                 var run = Assert.Single(session.MetaRunHistory);
                 var query = Assert.Single(run.StepResults, step => step.Id == "query");
-                if (fail) Assert.Equal("capability_use_tool_failed", query.FailureCode);
+                if (fail) Assert.Equal("capability_execution_failed", query.FailureCode);
                 else Assert.Equal("completed", query.Status);
             }
             // The static slot auto-adds once per runtime (idempotent, cached);
@@ -133,7 +133,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()));
         try
         {
             for (var i = 0; i < 2; i++)
@@ -144,7 +144,7 @@ public sealed class NacosRouterIntegrationTests
                 Assert.Equal(fail ? "no weather capability bound; check Nacos registration and Router logs." : "Weather for Oslo: sunny", result);
                 var run = Assert.Single(session.MetaRunHistory);
                 var query = Assert.Single(run.StepResults, step => step.Id == "query");
-                if (fail) Assert.Equal("capability_use_tool_failed", query.FailureCode);
+                if (fail) Assert.Equal("capability_execution_failed", query.FailureCode);
                 else Assert.Equal("completed", query.Status);
             }
             // Dynamic slots resolve per invocation (search → add → use); the
@@ -188,7 +188,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()));
         try
         {
             var session = new Session { Id = "nacos-empty-" + (maf ? "maf" : "native"), SenderId = "test", ChannelId = "test" };
@@ -238,7 +238,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()));
         try
         {
             var session = new Session { Id = "nacos-rotate-" + (maf ? "maf" : "native"), SenderId = "test", ChannelId = "test" };
@@ -284,7 +284,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()));
         try
         {
             var session = new Session { Id = "nacos-retry-" + (maf ? "maf" : "native"), SenderId = "test", ChannelId = "test" };
@@ -302,7 +302,7 @@ public sealed class NacosRouterIntegrationTests
                 $"expected >= 100 ms backoff between attempts 2 and 3, got {(timestamps[2] - timestamps[1]).TotalMilliseconds:0} ms");
             var run = Assert.Single(session.MetaRunHistory);
             var query = Assert.Single(run.StepResults, step => step.Id == "query");
-            Assert.Equal("capability_use_tool_failed", query.FailureCode);
+            Assert.Equal("capability_execution_failed", query.FailureCode);
             var fallback = Assert.Single(run.StepResults, step => step.Id == "fallback_notice");
             Assert.Equal("completed", fallback.Status);
             Assert.Empty(chat.ReceivedCalls());
@@ -372,7 +372,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()));
         try
         {
             var session = new Session { Id = "nacos-iserror-" + (maf ? "maf" : "native"), SenderId = "test", ChannelId = "test" };
@@ -421,8 +421,8 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig,
-            new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(maf, tools, memory, skill, gatewayConfig,
+            new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()));
         try
         {
             // One session, two invocations: the first resolves, the second reuses.
@@ -471,7 +471,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()));
         try
         {
             var session = new Session { Id = "nacos-traj-" + (maf ? "maf" : "native"), SenderId = "test", ChannelId = "test" };
@@ -528,7 +528,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()));
         try
         {
             var session = new Session { Id = "nacos-traj-static-" + (maf ? "maf" : "native"), SenderId = "test", ChannelId = "test" };
@@ -544,7 +544,7 @@ public sealed class NacosRouterIntegrationTests
             Assert.Equal("weather-mcp", binding.Server);
             Assert.Equal("get_weather", binding.Tool);
             Assert.Null(binding.TaskDescription);
-            Assert.Null(binding.IntentKey);
+            Assert.NotNull(binding.IntentKey);
             Assert.False(binding.CacheHit);
             Assert.Empty(binding.Candidates);
             Assert.Empty(binding.Attempted);
@@ -580,7 +580,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()));
         try
         {
             var session = new Session { Id = "nacos-traj-empty-" + (maf ? "maf" : "native"), SenderId = "test", ChannelId = "test" };
@@ -631,7 +631,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(maf, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()));
         try
         {
             var session = new Session { Id = "nacos-cache-" + (maf ? "maf" : "native"), SenderId = "test", ChannelId = "test" };
@@ -650,8 +650,8 @@ public sealed class NacosRouterIntegrationTests
             var secondBinding = session.MetaRunHistory[1].StepResults.Single(s => s.Id == "query").ExecutionEvidence!.CapabilityBinding!;
             Assert.False(firstBinding.CacheHit);
             Assert.True(secondBinding.CacheHit);
-            Assert.Empty(secondBinding.Candidates);
-            Assert.Empty(secondBinding.Attempted);
+            Assert.Equal(firstBinding.Candidates.Select(c => c.Name), secondBinding.Candidates.Select(c => c.Name));
+            Assert.Equal(firstBinding.Attempted.Select(c => c.Name), secondBinding.Attempted.Select(c => c.Name));
             Assert.Equal(firstBinding.Server, secondBinding.Server);
             Assert.Equal(firstBinding.Tool, secondBinding.Tool);
         }
@@ -684,7 +684,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(false, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(false, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()));
         try
         {
             var session = new Session { Id = "nacos-replay", SenderId = "test", ChannelId = "test" };
@@ -698,7 +698,7 @@ public sealed class NacosRouterIntegrationTests
 
             var fixture = CapabilityBindingReplayFixture.FromMetaRun(exported, session.Id);
             var replay = new CapabilityBindingReplay(fixture);
-            var result = await replay.RunAsync(registry, new CapabilityBindingCache(), TestContext.Current.CancellationToken);
+            var result = await replay.RunAsync(TestContext.Current.CancellationToken);
 
             Assert.True(result.Passed, result.Message);
             Assert.Equal("weather-mcp", result.Reproduced!.Server);
@@ -737,7 +737,7 @@ public sealed class NacosRouterIntegrationTests
         using var memory = new FileMemoryStore(root, 4);
         var gatewayConfig = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
         var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
-        var (runtime, chat, execution) = CreateRuntime(false, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(registry, new CapabilityBindingCache()));
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(false, tools, memory, skill, gatewayConfig, new CapabilitySlotExecutor(NacosTestProviders.Create(registry), new CapabilityBindingCache()));
         try
         {
             var session = new Session { Id = "nacos-replay-hit", SenderId = "test", ChannelId = "test" };
@@ -751,7 +751,7 @@ public sealed class NacosRouterIntegrationTests
             var exported = JsonSerializer.Deserialize(json, CoreJsonContext.Default.SessionMetaRunRecord)!;
 
             var result = await new CapabilityBindingReplay(CapabilityBindingReplayFixture.FromMetaRun(exported, session.Id))
-                .RunAsync(registry, new CapabilityBindingCache(), TestContext.Current.CancellationToken);
+                .RunAsync(TestContext.Current.CancellationToken);
 
             Assert.True(result.Passed, result.Message);
             Assert.True(result.Reproduced!.CacheHit);
@@ -782,35 +782,6 @@ public sealed class NacosRouterIntegrationTests
         var result = await search.ExecuteAsync("""{"task_description":"weather city","key_words":"weather,city"}""", timeout.Token);
         Assert.Contains("weather-mcp", result);
         Assert.DoesNotContain("Error:", result);
-    }
-
-    private static (object Runtime, IChatClient Chat, ILlmExecutionService Execution) CreateRuntime(
-        bool maf, IReadOnlyList<ITool> tools, IMemoryStore memory, SkillDefinition skill, GatewayConfig gatewayConfig,
-        CapabilitySlotExecutor capabilitySlotExecutor)
-    {
-        var services = new ServiceCollection().BuildServiceProvider();
-        var chat = Substitute.For<IChatClient>();
-        var execution = Substitute.For<ILlmExecutionService>();
-        if (maf)
-        {
-            var options = new MafOptions();
-            var runtime = new MafAgentRuntime(new AgentRuntimeFactoryContext
-            {
-                Services = services, Config = gatewayConfig,
-                RuntimeState = new GatewayRuntimeState { RequestedMode = "jit", EffectiveMode = GatewayRuntimeMode.Jit, DynamicCodeSupported = true },
-                ChatClient = chat, Tools = tools, MemoryStore = memory,
-                RuntimeMetrics = new RuntimeMetrics(), ProviderUsage = new ProviderUsageTracker(),
-                LlmExecutionService = execution, Skills = [skill], SkillsConfig = new SkillsConfig(),
-                WorkspacePath = null, PluginSkillDirs = [], Logger = NullLogger.Instance,
-                Hooks = [], RequireToolApproval = false, ApprovalRequiredTools = [],
-                CapabilitySlotExecutor = capabilitySlotExecutor
-            }, options, new MafAgentFactory(Options.Create(options), NullLoggerFactory.Instance, services),
-                new MafSessionStateStore(gatewayConfig, Options.Create(options), NullLogger<MafSessionStateStore>.Instance),
-                new MafTelemetryAdapter(), NullLogger<MafAgentRuntime>.Instance);
-            return (runtime, chat, execution);
-        }
-        var native = new AgentRuntime(chat, tools, memory, gatewayConfig.Llm, maxHistoryTurns: 5, skills: [skill], capabilitySlotExecutor: capabilitySlotExecutor);
-        return (native, chat, execution);
     }
 
     private static Dictionary<string, McpServerConfig> ServerConfig(string url) => new()

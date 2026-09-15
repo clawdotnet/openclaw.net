@@ -1,4 +1,4 @@
-namespace OpenClaw.Gateway.Mcp.Nacos;
+namespace OpenClaw.Adapters.Nacos.Events;
 
 /// <summary>
 /// Immutable snapshot of one Nacos config blob, scoped to its (dataId, group) tuple.

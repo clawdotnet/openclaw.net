@@ -25,15 +25,6 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);skills\**</DefaultItemExcludes>
     <!-- Optional protocol packages can carry transitive AOT warnings; keep package-level warnings suppressed while surfacing project-owned trim diagnostics. -->
     <NoWarn>$(NoWarn);IL2104;IL3000;IL3002;IL3053</NoWarn>
-    <!-- Issue #238: the RedNb.Nacos SDK serializes its gRPC payloads with
-         reflection-based System.Text.Json, which PublishAot disables process-
-         wide (the SDK injects System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault=false
-         into every runtimeconfig). Re-enable it in JIT builds so the Nacos
-         subscription can connect; gateway-owned paths use source-generated
-         contexts and are unaffected. NativeAOT builds keep the default false:
-         the SDK's payload types are trimmed there and the subscription degrades
-         to the TTL/reload fallback (see follow-up issue). -->
-    <JsonSerializerIsReflectionEnabledByDefault Condition="'$(RuntimeIdentifier)' == ''">true</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
@@ -85,8 +76,6 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
-    <!-- Issue #238: Nacos config event subscription (LongPolling) SDK. -->
-    <PackageReference Include="RedNb.Nacos.All" Version="2.0.0" />
     <PackageReference Include="TickerQ" Version="10.4.0" />
   </ItemGroup>
 
@@ -159,5 +148,22 @@
       <_DotNetBootScriptPub Include="$(PublishDir)wwwroot\dashboard\_framework\dotnet.*.js" Exclude="$(PublishDir)wwwroot\dashboard\_framework\dotnet.runtime.*.js;$(PublishDir)wwwroot\dashboard\_framework\dotnet.native.*.js;$(PublishDir)wwwroot\dashboard\_framework\dotnet.*.js.gz;$(PublishDir)wwwroot\dashboard\_framework\dotnet.*.js.br;$(PublishDir)wwwroot\dashboard\_framework\dotnet.js" />
     </ItemGroup>
     <Copy SourceFiles="@(_DotNetBootScriptPub)" DestinationFiles="$(PublishDir)wwwroot\dashboard\_framework\dotnet.js" SkipUnchangedFiles="true" Condition="'@(_DotNetBootScriptPub)' != ''" />
+  </Target>
+  <PropertyGroup Condition="'$(OpenClawEnableNacos)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENCLAW_NACOS</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(OpenClawEnableNacosEvents)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENCLAW_NACOS_EVENTS</DefineConstants>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenClawEnableNacos)' == 'true'">
+    <ProjectReference Include="../OpenClaw.Adapters.Nacos/OpenClaw.Adapters.Nacos.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(OpenClawEnableNacosEvents)' == 'true'">
+    <ProjectReference Include="../OpenClaw.Adapters.Nacos.Events/OpenClaw.Adapters.Nacos.Events.csproj" />
+  </ItemGroup>
+  <Target Name="ValidateNacosAdapterSelection" BeforeTargets="PrepareForBuild" Condition="'$(OpenClawEnableNacosEvents)' == 'true'">
+    <Error Condition="'$(OpenClawEnableNacos)' != 'true'" Text="Nacos events require OpenClawEnableNacos=true." />
+    <Error Condition="'$(PublishAot)' == 'true'" Text="Nacos SDK events require an explicit JIT build with PublishAot=false. See issue #239." />
   </Target>
 </Project>

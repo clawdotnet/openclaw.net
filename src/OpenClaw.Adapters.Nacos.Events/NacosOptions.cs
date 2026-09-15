@@ -1,8 +1,8 @@
-namespace OpenClaw.Core.Models;
+namespace OpenClaw.Adapters.Nacos.Events;
 
 /// <summary>
 /// Configuration block that enables Nacos config event subscription on the Gateway
-/// (issue #238). Bound from <c>GatewayConfig.Nacos</c>; the subscription service is
+/// (issue #238). Bound from <c>GatewayConfig.AdapterSettings["nacos"]</c>; the subscription service is
 /// a no-op when <see cref="ServerAddr"/> is empty / whitespace, which keeps the
 /// TTL + reload fallback from <c>#232</c> active in deployments that do not run Nacos.
 /// </summary>
@@ -37,4 +37,6 @@ public sealed class NacosOptions
 
     /// <summary>Opt-out switch; <c>false</c> disables subscription without un-configuring the block.</summary>
     public bool Enabled { get; set; } = true;
+
+    public int ReconnectDelayMs { get; set; } = 5_000;
 }

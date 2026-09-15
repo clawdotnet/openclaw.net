@@ -1,5 +1,7 @@
 # Nacos MCP Router 概念验证
 
+> 当前实现以[供应商无关能力解析契约](../capability-resolution.md)为准：默认 `local`；Nacos 需显式 `provider: nacos` 和 `OpenClawEnableNacos=true`。事件 SDK 需额外 `OpenClawEnableNacosEvents=true`、`PublishAot=false`，配置迁移到 `adapterSettings.nacos`。NativeAOT 事件支持仍由 #239 跟踪。下文保留原分支的历史协议和现场记录，不代表重构后的新现场验收。
+
 状态：**已提供可复现 mock 集成基础；真实部署验收尚未完成**。对应
 [#229](https://github.com/clawdotnet/openclaw.net/issues/229)，完整配置和命令见
 [英文指南](../nacos-mcp-router.md)。没有宣称已验证真实召回率或模型 token 基线。

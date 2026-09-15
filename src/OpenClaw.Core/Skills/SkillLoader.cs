@@ -1369,6 +1369,9 @@ public static class SkillLoader
             return false;
         }
 
+        if (refElement.TryGetProperty("provider", out var provider) && (provider.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(provider.GetString())))
+        { errorCode = "invalid_capability_provider"; return false; }
+
         // Reserved for the capability resolver: writing these fields is rejected
         // until the Resolver supports them (issue #231).
         if (refElement.TryGetProperty("top_k", out var topK) && topK.ValueKind != JsonValueKind.Null)
@@ -1410,7 +1413,7 @@ public static class SkillLoader
                 return false;
             }
 
-            if (!staticElement.TryGetProperty("mcp_server_name", out var serverName) ||
+            if (!(staticElement.TryGetProperty("target", out var serverName) || staticElement.TryGetProperty("mcp_server_name", out serverName)) ||
                 serverName.ValueKind != JsonValueKind.String ||
                 string.IsNullOrWhiteSpace(serverName.GetString()))
             {
@@ -1428,7 +1431,7 @@ public static class SkillLoader
 
             staticBinding = new MetaCapabilityStaticBinding
             {
-                McpServerName = serverName.GetString()!.Trim(),
+                Target = serverName.GetString()!.Trim(),
                 ToolName = toolName.GetString()!.Trim(),
             };
         }
@@ -1512,6 +1515,7 @@ public static class SkillLoader
 
         capabilityRef = new MetaCapabilityRefDefinition
         {
+            Provider = refElement.TryGetProperty("provider", out var providerElement) && providerElement.ValueKind == JsonValueKind.String ? providerElement.GetString() ?? "" : "",
             Binding = binding,
             Static = staticBinding,
             Intent = intent,

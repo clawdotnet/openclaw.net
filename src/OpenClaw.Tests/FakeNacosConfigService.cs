@@ -1,4 +1,4 @@
-namespace OpenClaw.Gateway.Mcp.Nacos;
+namespace OpenClaw.Adapters.Nacos.Events;
 
 /// <summary>
 /// In-memory test double for <see cref="INacosConfigService"/>. Tests call
@@ -22,6 +22,9 @@ public sealed class FakeNacosConfigService : INacosConfigService
             return Task.FromResult<NacosConfig?>(null);
         }
     }
+
+    public Task<IDisposable> AddListenerAsync(string dataId, string group, Action<NacosConfig> onChange, CancellationToken ct)
+        => Task.FromResult(AddListener(dataId, group, onChange));
 
     public IDisposable AddListener(string dataId, string group, Action<NacosConfig> onChange)
     {

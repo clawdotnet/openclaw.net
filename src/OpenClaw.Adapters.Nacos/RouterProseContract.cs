@@ -1,4 +1,4 @@
-namespace OpenClaw.Agent.Tools;
+namespace OpenClaw.Adapters.Nacos;
 
 /// <summary>
 /// Literal prose markers emitted by the upstream Nacos MCP Router, pinned to

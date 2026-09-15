@@ -12,6 +12,7 @@ composition:
       # proxies the call through use_tool. tool_args are the inner tool's
       # arguments.
       capability_ref:
+        provider: nacos
         binding: dynamic
         intent:
           type: cap:WeatherQuery

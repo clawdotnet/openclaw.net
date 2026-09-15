@@ -183,3 +183,5 @@ International
 - Keep [docs/README.md](README.md) as the source-index page for GitHub browsing.
 - Add redirects or aliases for lower-case route names if the website framework normalizes slugs.
 - Keep security and contribution pages at the repository root in source control even if the website renders them under an operations or project section.
+
+- [Vendor-neutral capability resolution and optional Nacos adapters](capability-resolution.md)

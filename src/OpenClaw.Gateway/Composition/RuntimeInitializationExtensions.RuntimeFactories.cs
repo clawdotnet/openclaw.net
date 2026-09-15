@@ -16,7 +16,7 @@ using OpenClaw.Core.Skills;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Mcp;
-using OpenClaw.Gateway.Mcp.Nacos;
+using OpenClaw.Core.Skills.Meta;
 using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Tools;
 using OpenClaw.Plugins.Payment;
@@ -43,22 +43,6 @@ internal static partial class RuntimeInitializationExtensions
         app.Services.GetRequiredService<McpWatcherHolder>().Watcher = watcher;
         watcher.Start(app.Lifetime.ApplicationStopping);
         return watcher;
-    }
-
-    /// <summary>
-    /// Starts the Nacos config event subscription (#238). Must run after
-    /// <see cref="StartMcpWorkspaceWatcher"/> so the reload trigger resolves;
-    /// the subscription itself degrades to a no-op when NacosOptions.ServerAddr
-    /// is empty. Faults are logged without blocking Gateway startup.
-    /// </summary>
-    private static NacosConfigSubscriptionService StartNacosConfigSubscription(WebApplication app)
-    {
-        var subscription = app.Services.GetRequiredService<NacosConfigSubscriptionService>();
-        var logger = app.Services.GetRequiredService<ILogger<NacosConfigSubscriptionService>>();
-        _ = subscription.StartAsync(app.Lifetime.ApplicationStopping).ContinueWith(
-            t => logger.LogError(t.Exception!.InnerException, "Nacos config event subscription failed to start"),
-            TaskContinuationOptions.OnlyOnFaulted);
-        return subscription;
     }
 
     private static GatewayAppRuntime CreateGatewayRuntime(
@@ -357,6 +341,7 @@ internal static partial class RuntimeInitializationExtensions
             config.Runtime.Orchestrator);
         var contractGovernance = services.GetRequiredService<ContractGovernanceService>();
 
+        services.GetService<LocalCapabilityProvider>()?.SetTools(tools);
         return factory.Create(new AgentRuntimeFactoryContext
         {
             Services = services,

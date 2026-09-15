@@ -24,7 +24,8 @@ public sealed class ToolExecutionResult
     public string? FailureCode { get; init; }
     public string? FailureMessage { get; init; }
     public string? NextStep { get; init; }
-    public CapabilityBindingTrajectory? BindingTrajectory { get; init; }
+    public CapabilityBindingTrajectory? BindingTrajectory { get; set; }
+    public bool RetrySafe { get; set; }
 
     public FunctionResultContent ToFunctionResultContent(string callId)
         => new(callId, ResultText);
@@ -198,7 +199,7 @@ public sealed class OpenClawToolExecutor
         ToolApprovalCallback? approvalCallback,
         CancellationToken ct,
         Func<string, ValueTask>? onDelta = null,
-        int toolCallCount = 1)
+        int toolCallCount = 1, ITool? boundCapabilityTool = null)
     {
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.ExecuteTool");
         activity?.SetTag("tool.name", toolName);
@@ -215,6 +216,8 @@ public sealed class OpenClawToolExecutor
         {
             _toolsByName.TryGetValue(toolName, out tool);
         }
+
+        if (boundCapabilityTool is not null && boundCapabilityTool.Name == toolName) tool = boundCapabilityTool;
 
         if (tool is null)
         {

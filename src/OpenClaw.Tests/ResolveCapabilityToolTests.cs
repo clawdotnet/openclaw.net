@@ -56,7 +56,7 @@ public sealed class ResolveCapabilityToolTests
         await using var fixture = await CreateFixtureAsync();
         fixture.State.FailAddNames.Add("weather-mcp");
 
-        var tool = new ResolveCapabilityTool(fixture.Registry);
+        var tool = new ResolveCapabilityTool(NacosTestProviders.Create(fixture.Registry));
         var json = await tool.ExecuteAsync(
             """{"task_description":"weather city","key_words":"weather,city","selection_policy":"first"}""",
             TestContext.Current.CancellationToken);

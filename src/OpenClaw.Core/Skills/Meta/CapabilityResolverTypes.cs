@@ -1,66 +1,71 @@
 using System.Text.Json.Serialization;
-
+using OpenClaw.Core.Abstractions;
 namespace OpenClaw.Core.Skills.Meta;
 
 [JsonConverter(typeof(JsonStringEnumConverter<ResolveCapabilitySelectionPolicy>))]
-public enum ResolveCapabilitySelectionPolicy
-{
-    First = 0,
-    ExactName = 1,
-}
+public enum ResolveCapabilitySelectionPolicy { First, ExactName }
 
 public sealed record ResolveCapabilityRequest(
     [property: JsonPropertyName("task_description")] string TaskDescription,
     [property: JsonPropertyName("key_words")] string? KeyWords,
-    [property: JsonPropertyName("selection_policy")] ResolveCapabilitySelectionPolicy SelectionPolicy);
+    [property: JsonPropertyName("selection_policy")] ResolveCapabilitySelectionPolicy SelectionPolicy)
+{
+    public string Provider { get; init; } = "";
+    public string? CapabilityType { get; init; }
+}
 
-/// <summary>
-/// A single candidate server emitted by the upstream Nacos MCP Router. The
-/// <see cref="Rank"/> is the candidate's position in the upstream's deterministic
-/// top-N ordering. Upstream supplies no scores; none are fabricated here.
-/// </summary>
-public sealed record RouterCandidate(
-    [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("description")] string Description,
-    [property: JsonPropertyName("rank")] int Rank);
-
-public sealed record ResolveCapabilityBinding(
-    [property: JsonPropertyName("server")] string Server,
-    [property: JsonPropertyName("tool")] string Tool,
-    [property: JsonPropertyName("schema")] string Schema,
-    [property: JsonPropertyName("tried")] IReadOnlyList<RouterCandidate> TriedCandidates);
-
-public sealed record ResolveCapabilityFailure(
-    [property: JsonPropertyName("failure_code")] string FailureCode,
-    [property: JsonPropertyName("tried")] IReadOnlyList<RouterCandidate> TriedCandidates);
-
+public sealed record CapabilityCandidate(string Name, string Description, int Rank)
+{
+    public string? Version { get; init; }
+    public double? Score { get; init; }
+}
+public sealed record ResolveCapabilityBinding(string Server, string Tool, string Schema, [property: JsonPropertyName("tried")] IReadOnlyList<CapabilityCandidate> TriedCandidates)
+{
+    public string Provider { get; init; } = "";
+    public string SchemaFingerprint { get; init; } = "";
+    public long Revision { get; init; }
+}
+public sealed record ResolveCapabilityFailure(string FailureCode, [property: JsonPropertyName("tried")] IReadOnlyList<CapabilityCandidate> TriedCandidates);
 public static class ResolveCapabilityFailureCodes
 {
     public const string NoCandidates = "no_candidates";
-    public const string AllAddsFailed = "all_adds_failed";
+    public const string AllAddsFailed = "all_bindings_failed";
     public const string SelectionPolicyNoMatch = "selection_policy_no_match";
-    public const string RouterUnavailable = "router_unavailable";
+    public const string ProviderUnavailable = "provider_unavailable";
 }
-
-/// <summary>
-/// Typed failure codes for capability slot execution (issue #231). Slots
-/// normalise Router prose failures and protocol failures alike into these
-/// codes so the meta failure-branch machinery can route them deterministically.
-/// </summary>
 public static class CapabilitySlotFailureCodes
 {
-    /// <summary>The runtime has no capability executor wired (no Router registry).</summary>
     public const string NotConfigured = "capability_not_configured";
-
-    /// <summary>No nacos-mcp-router client is registered, or a Router call never reached it.</summary>
-    public const string RouterUnavailable = "capability_router_unavailable";
-
-    /// <summary>add_mcp_server failed (prose or protocol) for the static binding.</summary>
-    public const string AddFailed = "capability_add_failed";
-
-    /// <summary>use_tool failed (prose or protocol) for the bound tool.</summary>
-    public const string UseToolFailed = "capability_use_tool_failed";
-
-    /// <summary>The dynamic resolve step failed; the resolver failure code is in the failure message.</summary>
+    public const string ProviderUnavailable = "capability_provider_unavailable";
+    public const string BindingFailed = "capability_binding_failed";
+    public const string ExecutionFailed = "capability_execution_failed";
     public const string ResolveFailed = "capability_resolve_failed";
 }
+
+/// <summary>Vendor-specific discovery and binding. Selection and execution policy belong to the runtime.</summary>
+public interface ICapabilityProvider
+{
+    string Id { get; }
+    Task<IReadOnlyList<CapabilityCandidate>> DiscoverAsync(ResolveCapabilityRequest request, CancellationToken ct);
+    Task<CapabilityTarget?> BindAsync(string target, string? tool, CancellationToken ct);
+}
+
+/// <summary>A tool handle, never permission to execute. The runtime applies its tool policies on every invocation.</summary>
+public sealed record CapabilityTarget(string Server, ITool Tool, bool RetrySafe = false)
+{
+    public string ToolId { get; init; } = Tool.Name;
+}
+
+public sealed record CapabilityChange(string Provider, string Scope, string Revision);
+public interface ICapabilityInvalidationSink { void Invalidate(CapabilityChange change); }
+
+/// <summary>Optional adapter lifecycle; no SDK-specific types cross this boundary.</summary>
+public interface ICapabilityChangeSource : IAsyncDisposable
+{
+    string ProviderId { get; }
+    string Status { get; }
+    Task StartAsync(CancellationToken ct);
+}
+
+public sealed record CapabilityProviderStatus(string Id, string Events);
+public sealed record CapabilityRuntimeStatus(string DefaultProvider, CapabilityProviderStatus[] Providers, long CacheGeneration, int CachedBindings);

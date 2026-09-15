@@ -71,7 +71,7 @@ public sealed class ResolveCapabilityToolTests
         var result = await tool.ExecuteAsync(args, CancellationToken.None);
 
         using var doc = JsonDocument.Parse(result);
-        Assert.Equal("all_adds_failed", doc.RootElement.GetProperty("failure_code").GetString());
+        Assert.Equal("all_bindings_failed", doc.RootElement.GetProperty("failure_code").GetString());
         var tried = doc.RootElement.GetProperty("tried").EnumerateArray().ToList();
         Assert.NotEmpty(tried);
     }
@@ -87,7 +87,7 @@ public sealed class ResolveCapabilityToolTests
         var result = await tool.ExecuteAsync(args, CancellationToken.None);
 
         using var doc = JsonDocument.Parse(result);
-        Assert.Equal("all_adds_failed", doc.RootElement.GetProperty("failure_code").GetString());
+        Assert.Equal("all_bindings_failed", doc.RootElement.GetProperty("failure_code").GetString());
         var tried = doc.RootElement.GetProperty("tried").EnumerateArray().ToList();
         var attempted = Assert.Single(tried);
         Assert.Equal("weather-mcp", attempted.GetProperty("name").GetString());
@@ -123,7 +123,7 @@ public sealed class ResolveCapabilityToolTests
 
             using var doc = JsonDocument.Parse(result);
             // Zero match under exact_name is a selection failure, not an add
-            // failure: no add was ever attempted, so "all_adds_failed" would lie.
+            // failure: no add was ever attempted, so "all_bindings_failed" would lie.
             Assert.Equal("selection_policy_no_match", doc.RootElement.GetProperty("failure_code").GetString());
             Assert.Empty(doc.RootElement.GetProperty("tried").EnumerateArray().ToList());
             Assert.Empty(state.Calls.FindAll(c => c.StartsWith("add:")));
@@ -140,7 +140,7 @@ public sealed class ResolveCapabilityToolTests
 
             using var doc = JsonDocument.Parse(result);
             // A protocol-level search failure is a router failure, not "no candidates".
-            Assert.Equal("router_unavailable", doc.RootElement.GetProperty("failure_code").GetString());
+            Assert.Equal("provider_unavailable", doc.RootElement.GetProperty("failure_code").GetString());
             Assert.Empty(doc.RootElement.GetProperty("tried").EnumerateArray().ToList());
         }
     }
@@ -157,7 +157,7 @@ public sealed class ResolveCapabilityToolTests
             // The add response carries IsError=true even though its prose contains
             // "安装完成" and a parseable tool list — the protocol error must win
             // over prose inspection, otherwise a failed install binds successfully.
-            Assert.Equal("all_adds_failed", doc.RootElement.GetProperty("failure_code").GetString());
+            Assert.Equal("all_bindings_failed", doc.RootElement.GetProperty("failure_code").GetString());
             var tried = doc.RootElement.GetProperty("tried").EnumerateArray().ToList();
             Assert.Single(tried);
         }
@@ -176,7 +176,7 @@ public sealed class ResolveCapabilityToolTests
             var result = await tool.ExecuteAsync("""{"task_description":"weather city"}""", CancellationToken.None);
 
             using var doc = JsonDocument.Parse(result);
-            Assert.Equal("router_unavailable", doc.RootElement.GetProperty("failure_code").GetString());
+            Assert.Equal("provider_unavailable", doc.RootElement.GetProperty("failure_code").GetString());
             Assert.Empty(doc.RootElement.GetProperty("tried").EnumerateArray().ToList());
         }
     }
@@ -262,16 +262,14 @@ public sealed class ResolveCapabilityToolTests
     public void ToolName_IsResolveCapability()
     {
         Assert.Equal("resolve_capability", new ResolveCapabilityTool(
-            new McpServerToolRegistry(
-                new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance)).Name);
+            new CapabilityProviderRegistry([])).Name);
     }
 
     [Fact]
     public void ParameterSchema_DeclaresIntentFields()
     {
         var schema = new ResolveCapabilityTool(
-            new McpServerToolRegistry(
-                new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance)).ParameterSchema;
+            new CapabilityProviderRegistry([])).ParameterSchema;
         using var doc = JsonDocument.Parse(schema);
         var required = doc.RootElement.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ToList();
         Assert.Contains("task_description", required);
@@ -311,7 +309,7 @@ public sealed class ResolveCapabilityToolTests
                     ToolNamePrefix = "nacos_mcp_router_",
                 },
             }, TestContext.Current.CancellationToken);
-        return (new ResolveCapabilityTool(registry), registry, state, server);
+        return (new ResolveCapabilityTool(NacosTestProviders.Create(registry)), registry, state, server);
     }
 
     private static async Task<(

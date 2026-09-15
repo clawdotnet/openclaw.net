@@ -13,6 +13,7 @@ composition:
       # tool_args are the inner tool's arguments; the executor serialises them
       # for the Router's `params` wire field.
       capability_ref:
+        provider: nacos
         binding: static
         static:
           mcp_server_name: weather-mcp

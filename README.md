@@ -183,3 +183,5 @@ See [project governance](docs/project/governance.md), [maintainer roles](docs/pr
 ## License
 
 [MIT](LICENSE)
+
+- [Vendor-neutral capability resolution and optional Nacos adapters](docs/capability-resolution.md)

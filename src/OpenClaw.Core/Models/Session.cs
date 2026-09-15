@@ -331,6 +331,10 @@ public sealed class SessionMetaStepExecutionEvidence
 /// </summary>
 public sealed class CapabilityBindingTrajectory
 {
+    public string Provider { get; set; } = "";
+    public long Revision { get; set; }
+    public string? SchemaFingerprint { get; set; }
+    public string? Schema { get; set; }
     /// <summary>Binding mode: <c>static</c> or <c>dynamic</c>.</summary>
     public string Binding { get; set; } = "";
 
@@ -914,6 +918,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(MetaRunDerivedProposalStepDetail[]))]
 [JsonSerializable(typeof(WsClientEnvelope))]
 [JsonSerializable(typeof(WsServerEnvelope))]
+[JsonSerializable(typeof(OpenClaw.Core.Skills.Meta.CapabilityRuntimeStatus))]
 [JsonSerializable(typeof(GatewayConfig))]
 [JsonSerializable(typeof(BackgroundExecutionConfig))]
 [JsonSerializable(typeof(RuntimeConfig))]

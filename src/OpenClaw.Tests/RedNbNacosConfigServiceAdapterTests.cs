@@ -1,5 +1,5 @@
 using OpenClaw.Core.Models;
-using OpenClaw.Gateway.Mcp.Nacos;
+using OpenClaw.Adapters.Nacos.Events;
 using Xunit;
 
 namespace OpenClaw.Tests;

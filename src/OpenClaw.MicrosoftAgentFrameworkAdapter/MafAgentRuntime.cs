@@ -2643,7 +2643,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 "capability",
                 toolArgsJson,
                 CapabilitySlotFailureCodes.NotConfigured,
-                $"Meta step '{step.Id}' declares a capability slot but no capability executor is wired (no Nacos MCP Router registry).");
+                $"Meta step '{step.Id}' declares a capability slot but no capability executor is wired (no capability provider registry).");
         }
 
         var maxAttempts = Math.Max(1, step.Retry.MaxAttempts);
@@ -2655,7 +2655,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
             var effectiveCt = timeoutCts?.Token ?? ct;
             try
             {
-                lastResult = await _capabilitySlotExecutor.ExecuteAsync(capabilityRef, toolArgsJson, session.Id, effectiveCt);
+                lastResult = await _capabilitySlotExecutor.ExecuteGovernedAsync(capabilityRef, toolArgsJson, session, turnCtx,
+                    _toolExecutor, $"meta:{metaSkill.Name}:{step.Id}:attempt:{attempt}", effectiveCt);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
@@ -2666,7 +2667,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                     $"Meta step '{step.Id}' timed out after {step.TimeoutSeconds} second(s).");
             }
 
-            if (string.Equals(lastResult.ResultStatus, ToolResultStatuses.Completed, StringComparison.Ordinal) || attempt == maxAttempts)
+            if (string.Equals(lastResult.ResultStatus, ToolResultStatuses.Completed, StringComparison.Ordinal) || !lastResult.RetrySafe || attempt == maxAttempts)
                 return lastResult;
 
             if (step.Retry.BackoffMs > 0)

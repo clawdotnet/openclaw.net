@@ -237,7 +237,7 @@ public sealed class AgentRuntimeProjectionTests
                         CapabilityRef = new MetaCapabilityRefDefinition
                         {
                             Binding = "static",
-                            Static = new MetaCapabilityStaticBinding { McpServerName = "weather-mcp", ToolName = "get_weather" },
+                            Static = new MetaCapabilityStaticBinding { Target = "weather-mcp", ToolName = "get_weather" },
                             Fallback = "fb"
                         },
                         OnFailure = "fb"
@@ -273,7 +273,7 @@ public sealed class AgentRuntimeProjectionTests
             var pinned = steps[0];
             Assert.NotNull(pinned.CapabilityRef);
             Assert.Equal("static", pinned.CapabilityRef.Binding);
-            Assert.Equal("weather-mcp", pinned.CapabilityRef.Static!.McpServerName);
+            Assert.Equal("weather-mcp", pinned.CapabilityRef.Static!.Target);
             Assert.Equal("get_weather", pinned.CapabilityRef.Static.ToolName);
             Assert.Equal("fb", pinned.CapabilityRef.Fallback);
             Assert.Equal("fb", pinned.OnFailure);

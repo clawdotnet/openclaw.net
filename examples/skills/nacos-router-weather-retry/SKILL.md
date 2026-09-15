@@ -12,6 +12,7 @@ composition:
       # the fallback branch fires. The resolver itself is deterministic and
       # adds no LLM turn.
       capability_ref:
+        provider: nacos
         binding: dynamic
         intent:
           type: cap:WeatherQuery
