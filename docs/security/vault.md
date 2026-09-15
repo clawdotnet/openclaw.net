@@ -24,7 +24,7 @@ Examples:
 - `vault:openclaw/data/payments/stripe#sk_live` (custom mount `openclaw`)
 - `vault:data/config#nested_key` (default mount `secret`)
 
-Refs work anywhere a secret value is configured: `env:`/`raw:` refs and `vault:` refs are interchangeable config values (channel credentials, LLM API keys, plugin configs, ...).
+Refs work in settings whose consumers call `SecretResolver`. Existing secret-valued settings that have not been migrated to that resolver continue to use their documented formats.
 
 ## Configuration
 
@@ -98,7 +98,7 @@ Pre-warm concurrency is capped by `RateLimit.RequestsPerSecond`.
 
 ## TLS
 
-- `Tls.SkipVerify=true` accepts any server certificate (integration/dev only; produces a validation warning unless `Security.AllowInsecureTls=true`).
+- `Tls.SkipVerify=true` accepts any server certificate and is only appropriate for isolated integration environments. The current configuration model does not yet enforce a separate insecure-TLS opt-in.
 - `Tls.CaCertPath` loads a custom CA bundle used as custom root trust (`CustomRootTrust`) for Vault TLS validation; hostname verification remains enforced. Missing or invalid certificate files fail startup.
 
 ## Token Recursion Guard
@@ -126,14 +126,12 @@ Exception messages contain only path, key, HTTP status codes, and error type nam
 docker compose -f deploy/docker-compose/openbao.yml up -d
 ```
 
-Then configure the gateway:
+Direct resolver integration tests construct the Vault client without gateway configuration validation and may use the following loopback-only HTTP settings. Do not copy this block into gateway configuration: an enabled gateway requires an HTTPS Vault address. Production and shared environments must use HTTPS.
 
-```jsonc
-"OpenClaw": { "Security": { "Vault": {
-  "Enabled": true,
-  "Address": "http://127.0.0.1:8200",
-  "TokenRef": "raw:root"
-} } }
+```bash
+OPENBAO_ADDR=http://127.0.0.1:8200 OPENBAO_TOKEN=root \
+  dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj \
+  --filter "Category=Integration"
 ```
 
 See `docs/security/vault-integration-tests.md` for running the integration test suite.

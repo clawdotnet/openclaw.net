@@ -16,7 +16,7 @@ public sealed class EnvRawSecretProvider : ISecretProvider, ISyncSecretProvider
         !string.IsNullOrWhiteSpace(secretRef) && (
             secretRef.StartsWith(EnvPrefix, StringComparison.OrdinalIgnoreCase) ||
             secretRef.StartsWith(RawPrefix, StringComparison.OrdinalIgnoreCase) ||
-            LooksLikeEnvVarName(secretRef));
+            !secretRef.Contains(':'));
 
     public ValueTask<string?> ResolveAsync(string secretRef, CancellationToken ct)
         => new(ResolveInternal(secretRef));
@@ -38,6 +38,4 @@ public sealed class EnvRawSecretProvider : ISecretProvider, ISyncSecretProvider
         return envValue ?? secretRef;
     }
 
-    private static bool LooksLikeEnvVarName(string value)
-        => value.Length >= 3 && value.All(c => c is (>= 'A' and <= 'Z') or (>= '0' and <= '9') or '_');
 }

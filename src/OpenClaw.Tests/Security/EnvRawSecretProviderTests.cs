@@ -21,8 +21,16 @@ public sealed class EnvRawSecretProviderTests
         => Assert.True(new EnvRawSecretProvider().CanResolve("MY_VAR"));
 
     [Fact]
+    public void CanResolve_MixedCaseBareString_True()
+        => Assert.True(new EnvRawSecretProvider().CanResolve("MySecretName"));
+
+    [Fact]
     public void CanResolve_VaultPrefix_False()
         => Assert.False(new EnvRawSecretProvider().CanResolve("vault:secret/x"));
+
+    [Fact]
+    public void CanResolve_UnknownScheme_False()
+        => Assert.False(new EnvRawSecretProvider().CanResolve("aws-sm:value"));
 
     [Fact]
     public async Task ResolveAsync_EnvPrefix_ReadsEnvironment()

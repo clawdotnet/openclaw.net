@@ -24,7 +24,7 @@ vault:<mount>/data/<path>#<key>
 - `vault:openclaw/data/payments/stripe#sk_live`（自定义挂载点 `openclaw`）
 - `vault:data/config#nested_key`（默认挂载点 `secret`）
 
-引用可用于任何配置密钥值的位置：`env:`/`raw:` 与 `vault:` 引用是等价的配置值形式（频道凭据、LLM API key、插件配置……）。
+引用可用于其消费者调用 `SecretResolver` 的配置项。尚未迁移到该解析器的密钥配置仍使用各自文档中说明的格式。
 
 ## 配置
 
@@ -98,7 +98,7 @@ vault:<mount>/data/<path>#<key>
 
 ## TLS
 
-- `Tls.SkipVerify=true` 接受任意服务器证书（仅限集成/开发环境；除非 `Security.AllowInsecureTls=true`，否则产生校验警告）。
+- `Tls.SkipVerify=true` 接受任意服务器证书，仅适用于隔离的集成测试环境。当前配置模型尚未强制要求单独的不安全 TLS 许可开关。
 - `Tls.CaCertPath` 加载自定义 CA 证书包，作为 Vault TLS 校验的自定义根信任（`CustomRootTrust`）；主机名校验仍然生效。文件缺失或无效时启动失败。
 
 ## Token 递归防护
@@ -126,14 +126,12 @@ vault:<mount>/data/<path>#<key>
 docker compose -f deploy/docker-compose/openbao.yml up -d
 ```
 
-然后配置网关：
+直接解析器集成测试会绕过网关配置校验来构造 Vault 客户端，因此可以使用下面仅限回环地址的 HTTP 设置。不要将此配置块复制到网关配置中：启用 Vault 的网关要求 HTTPS 地址。生产或共享环境必须使用 HTTPS。
 
-```jsonc
-"OpenClaw": { "Security": { "Vault": {
-  "Enabled": true,
-  "Address": "http://127.0.0.1:8200",
-  "TokenRef": "raw:root"
-} } }
+```bash
+OPENBAO_ADDR=http://127.0.0.1:8200 OPENBAO_TOKEN=root \
+  dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj \
+  --filter "Category=Integration"
 ```
 
 集成测试套件的运行方式见 `docs/zh-CN/security/vault-integration-tests.md`。

@@ -34,7 +34,8 @@ public static class VaultServiceCollectionExtensions
                 vaultOptions.Address ?? throw new VaultAuthException("Vault address missing."),
                 token,
                 string.IsNullOrEmpty(vaultOptions.Namespace) ? null : vaultOptions.Namespace,
-                vaultOptions.Tls);
+                vaultOptions.Tls,
+                vaultOptions.RequestTimeout);
             return client;
         });
 
@@ -42,7 +43,8 @@ public static class VaultServiceCollectionExtensions
             new VaultRefCache(
                 sp.GetRequiredService<IMemoryCache>(),
                 sp.GetRequiredService<ILogger<VaultRefCache>>(),
-                vaultOptions.CacheTtl));
+                vaultOptions.CacheTtl,
+                sp.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping));
 
         services.AddSingleton<ISecretResolver>(sp =>
             new CompositeSecretResolver(

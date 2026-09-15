@@ -120,6 +120,40 @@ public sealed class VaultRefCacheTests
     }
 
     [Fact]
+    public async Task GetOrFetchAsync_RefreshAhead_DoesNotInheritCallerCancellation()
+    {
+        var cache = NewCache(TimeSpan.FromMilliseconds(250));
+        var key = Key();
+        await cache.GetOrFetchAsync(key, _ => Task.FromResult("v1"), CancellationToken.None);
+        await Task.Delay(275);
+
+        using var callerCts = new CancellationTokenSource();
+        var refreshStarted = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRefresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task<string> Refresh(CancellationToken token)
+        {
+            refreshStarted.TrySetResult(token);
+            await releaseRefresh.Task.WaitAsync(token);
+            return "v2";
+        }
+
+        Assert.Equal("v1", await cache.GetOrFetchAsync(key, Refresh, callerCts.Token));
+        var refreshToken = await refreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        callerCts.Cancel();
+        Assert.False(refreshToken.IsCancellationRequested);
+
+        releaseRefresh.SetResult();
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        string observed = "v1";
+        while (observed != "v2" && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+            Assert.True(cache.TryGet(key, out observed));
+        }
+        Assert.Equal("v2", observed);
+    }
+
+    [Fact]
     public async Task GetOrFetchAsync_FetchFailsNoStale_Throws()
     {
         var cache = NewCache();

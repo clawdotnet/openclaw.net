@@ -85,4 +85,16 @@ public sealed class VaultRefPrewarmServiceTests
             Arg.Any<Exception?>(),
             Arg.Any<Func<object, Exception?, string>>());
     }
+
+    [Fact]
+    public async Task StartAsync_HostCancellation_Propagates()
+    {
+        var (svc, resolver, _) = Build(prewarmRequired: false, "vault:secret/data/x#k");
+        using var cts = new CancellationTokenSource();
+        resolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<string?>(Task.FromCanceled<string?>(cts.Token)));
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => svc.StartAsync(cts.Token));
+    }
 }
