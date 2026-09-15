@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
@@ -49,7 +50,7 @@ public static class VaultServiceCollectionExtensions
                 sp.GetServices<ISecretProvider>(),
                 sp.GetRequiredService<ILogger<CompositeSecretResolver>>()));
 
-        // VaultRefPrewarmService is registered here once it exists (Task 10).
+        services.AddHostedService<VaultRefPrewarmService>();
 
         return services;
     }
