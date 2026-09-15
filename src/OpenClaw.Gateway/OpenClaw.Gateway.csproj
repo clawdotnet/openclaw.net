@@ -40,6 +40,7 @@
     <ProjectReference Include="..\OpenClaw.Payments.StripeLink\OpenClaw.Payments.StripeLink.csproj" />
     <ProjectReference Include="..\OpenClaw.Plugins.Payment\OpenClaw.Plugins.Payment.csproj" />
     <ProjectReference Include="..\OpenClaw.Plugins.TokenJuice\OpenClaw.Plugins.TokenJuice.csproj" />
+    <ProjectReference Include="..\OpenClaw.Security.Vault\OpenClaw.Security.Vault.csproj" />
   </ItemGroup>
   <!-- Dashboard Blazor WASM is integrated via CopyDashboardFiles targets below.
        Keep it out of ProjectReference to avoid Static Web Assets cross-project

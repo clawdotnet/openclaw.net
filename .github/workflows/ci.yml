@@ -378,3 +378,50 @@ jobs:
           path: |
             **/public-smoke.trx
             **/latest-plugin-canary.trx
+
+  vault-integration:
+    name: Vault integration tests (opt-in)
+    runs-on: ubuntu-latest
+    if: github.event.repository.fork == false && vars.RUN_VAULT_INTEGRATION == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('OpenClaw.Net.slnx', '**/*.csproj', '**/*.props', '**/*.targets') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Start OpenBao
+        run: docker compose -f deploy/docker-compose/openbao.yml up -d
+
+      - name: Wait for OpenBao
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://127.0.0.1:8200/v1/sys/health >/dev/null; then
+              echo "OpenBao is healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::OpenBao did not become healthy within 30s"
+          exit 1
+
+      - name: Run integration tests
+        env:
+          OPENBAO_ADDR: http://127.0.0.1:8200
+          OPENBAO_TOKEN: root
+        run: dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter "Category=Integration"
+
+      - name: Tear down OpenBao
+        if: always()
+        run: docker compose -f deploy/docker-compose/openbao.yml down -v

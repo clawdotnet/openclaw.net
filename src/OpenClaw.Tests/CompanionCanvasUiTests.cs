@@ -238,7 +238,9 @@ public sealed class CompanionCanvasUiTests : IDisposable
             Assert.True(composer.IsFocused);
             window.KeyPress(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, null);
             window.KeyRelease(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, null);
-            Assert.Equal("A draft\n", vm.InputText); // Disconnected: do not submit or discard it.
+            // Shift+Enter inserts the platform newline into the TextBox; assert the draft
+            // survives verbatim (not submitted, not discarded) without hard-coding "\n".
+            Assert.Equal("A draft" + Environment.NewLine, vm.InputText);
             vm.IsConnected = true;
             window.KeyPress(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, null);
             window.KeyRelease(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, null);

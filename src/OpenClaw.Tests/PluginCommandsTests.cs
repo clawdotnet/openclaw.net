@@ -442,6 +442,43 @@ public sealed class PluginCommandsTests
     }
 
     [Fact]
+    public void ResolveNpmCmdPath_FindsNpmCmdOnPath()
+    {
+        var fakeDir = CreateTempRoot();
+        try
+        {
+            File.WriteAllText(Path.Combine(fakeDir, "npm.cmd"), "@echo off");
+            var pathEnv = fakeDir + Path.PathSeparator + "C:\\definitely-not-a-real-dir";
+
+            Assert.Equal(Path.Combine(fakeDir, "npm.cmd"), PluginCommands.ResolveNpmCmdPath(pathEnv));
+        }
+        finally { Directory.Delete(fakeDir, recursive: true); }
+    }
+
+    [Fact]
+    public void ResolveNpmCmdPath_SkipsEmptyPathEntries()
+    {
+        var fakeDir = CreateTempRoot();
+        try
+        {
+            File.WriteAllText(Path.Combine(fakeDir, "npm.cmd"), "@echo off");
+            var separator = Path.PathSeparator.ToString();
+            var pathEnv = separator + fakeDir + separator + separator;
+
+            Assert.Equal(Path.Combine(fakeDir, "npm.cmd"), PluginCommands.ResolveNpmCmdPath(pathEnv));
+        }
+        finally { Directory.Delete(fakeDir, recursive: true); }
+    }
+
+    [Fact]
+    public void ResolveNpmCmdPath_NotFound_FallsBackToBareName()
+    {
+        Assert.Equal("npm.cmd", PluginCommands.ResolveNpmCmdPath("C:\\definitely-not-a-real-dir"));
+        Assert.Equal("npm.cmd", PluginCommands.ResolveNpmCmdPath(null));
+        Assert.Equal("npm.cmd", PluginCommands.ResolveNpmCmdPath(""));
+    }
+
+    [Fact]
     public async Task InstallPreparedDirectoryAsync_InvalidBundlePreservesExistingInstall()
     {
         var root = CreateTempRoot();
