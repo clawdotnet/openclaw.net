@@ -62,6 +62,28 @@ public sealed class VaultSecretProviderTests
     }
 
     [Fact]
+    public async Task ResolveSync_CacheHit_ReturnsWithoutHttpCall()
+    {
+        var (provider, client, _) = Build();
+        client.ReadSecretV2Async("secret", "openclaw/openai", Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, object> { ["api_key"] = "sk-xyz" });
+        await provider.ResolveAsync("vault:secret/data/openclaw/openai#api_key", CancellationToken.None);
+
+        Assert.Equal("sk-xyz", provider.ResolveSync("vault:secret/data/openclaw/openai#api_key"));
+        await client.Received(1).ReadSecretV2Async("secret", "openclaw/openai", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void ResolveSync_CacheMiss_FailsWithoutHttpCall()
+    {
+        var (provider, client, _) = Build();
+
+        Assert.Throws<SecretResolutionException>(() =>
+            provider.ResolveSync("vault:secret/data/openclaw/openai#api_key"));
+        client.DidNotReceiveWithAnyArgs().ReadSecretV2Async(default!, default!, default);
+    }
+
+    [Fact]
     public async Task ResolveAsync_VaultReturnsNull_Throws_PathNotFound()
     {
         var (provider, client, _) = Build();

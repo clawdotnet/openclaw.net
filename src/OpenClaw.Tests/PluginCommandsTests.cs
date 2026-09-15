@@ -462,7 +462,8 @@ public sealed class PluginCommandsTests
         try
         {
             File.WriteAllText(Path.Combine(fakeDir, "npm.cmd"), "@echo off");
-            var pathEnv = ";" + fakeDir + ";;";
+            var separator = Path.PathSeparator.ToString();
+            var pathEnv = separator + fakeDir + separator + separator;
 
             Assert.Equal(Path.Combine(fakeDir, "npm.cmd"), PluginCommands.ResolveNpmCmdPath(pathEnv));
         }

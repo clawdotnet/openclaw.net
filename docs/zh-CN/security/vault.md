@@ -24,7 +24,7 @@ vault:<mount>/data/<path>#<key>
 - `vault:openclaw/data/payments/stripe#sk_live`（自定义挂载点 `openclaw`）
 - `vault:data/config#nested_key`（默认挂载点 `secret`）
 
-引用可用于任何配置密钥值的位置：`env:`/`raw:` 与 `vault:` 引用是等价的配置值形式（频道凭据、LLM API key、插件配置……）。
+引用可用于其消费者调用 `SecretResolver` 的配置项。尚未迁移到该解析器的密钥配置仍使用各自文档中说明的格式。
 
 ## 配置
 
@@ -98,7 +98,7 @@ vault:<mount>/data/<path>#<key>
 
 ## TLS
 
-- `Tls.SkipVerify=true` 接受任意服务器证书（仅限集成/开发环境；除非 `Security.AllowInsecureTls=true`，否则产生校验警告）。
+- `Tls.SkipVerify=true` 接受任意服务器证书，仅适用于隔离的集成测试环境。当前配置模型尚未强制要求单独的不安全 TLS 许可开关。
 - `Tls.CaCertPath` 加载自定义 CA 证书包，作为 Vault TLS 校验的自定义根信任（`CustomRootTrust`）；主机名校验仍然生效。文件缺失或无效时启动失败。
 
 ## Token 递归防护
@@ -127,6 +127,8 @@ docker compose -f deploy/docker-compose/openbao.yml up -d
 ```
 
 然后配置网关：
+
+本地 OpenBao 容器是常规 HTTPS 要求之外、仅供集成测试使用的例外。生产或共享环境必须使用 HTTPS。
 
 ```jsonc
 "OpenClaw": { "Security": { "Vault": {

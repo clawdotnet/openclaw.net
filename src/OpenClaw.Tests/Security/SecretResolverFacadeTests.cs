@@ -4,6 +4,7 @@ using Xunit;
 
 namespace OpenClaw.Tests.Security;
 
+[Collection(ResolverAccessorCollection.Name)]
 public sealed class SecretResolverFacadeTests : IDisposable
 {
     public SecretResolverFacadeTests() => ResolverAccessor.Reset();
@@ -42,6 +43,16 @@ public sealed class SecretResolverFacadeTests : IDisposable
     {
         Assert.Equal("legacy-literal", await SecretResolver.ResolveAsync("raw:legacy-literal"));
     }
+
+    [Fact]
+    public void Resolve_VaultRefBeforeDIBootstrap_FailsClosed()
+        => Assert.Throws<VaultNotConfiguredException>(() =>
+            SecretResolver.Resolve("vault:secret/data/openclaw#key"));
+
+    [Fact]
+    public async Task ResolveAsync_VaultRefBeforeDIBootstrap_FailsClosed()
+        => await Assert.ThrowsAsync<VaultNotConfiguredException>(() =>
+            SecretResolver.ResolveAsync("vault:secret/data/openclaw#key").AsTask());
 
     private sealed class FakeResolver : ISecretResolver
     {

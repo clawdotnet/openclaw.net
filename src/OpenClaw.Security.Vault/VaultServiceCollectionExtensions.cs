@@ -36,7 +36,8 @@ public static class VaultServiceCollectionExtensions
                 opts.Address ?? throw new VaultAuthException("Vault address missing."),
                 token,
                 string.IsNullOrEmpty(opts.Namespace) ? null : opts.Namespace,
-                opts.Tls);
+                opts.Tls,
+                opts.RequestTimeout);
             return client;
         });
 

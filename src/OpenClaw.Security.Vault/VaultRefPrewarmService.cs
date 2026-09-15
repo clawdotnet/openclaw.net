@@ -64,6 +64,10 @@ public sealed class VaultRefPrewarmService : IHostedService
                     _logger.LogError("Vault pre-warm: ref {Ref} resolved to null.", r);
                 }
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 lock (failures) failures.Add((r, ex.GetType().Name));
@@ -180,8 +184,8 @@ public sealed class VaultRefPrewarmService : IHostedService
 
         public async Task<Lease> AcquireAsync(CancellationToken ct)
         {
-            var ok = await _sem.WaitAsync(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
-            return new Lease(ok);
+            await _sem.WaitAsync(ct).ConfigureAwait(false);
+            return new Lease(acquired: true);
         }
 
         public void Dispose()

@@ -63,7 +63,9 @@ public sealed class VaultRefCache
                     {
                         try
                         {
-                            var v = await fetch(ct).ConfigureAwait(false);
+                            // Refresh-ahead outlives the request that observed the stale
+                            // entry, so it must not inherit that caller's cancellation.
+                            var v = await fetch(CancellationToken.None).ConfigureAwait(false);
                             Set(captured, v);
                         }
                         catch (Exception ex)

@@ -7,7 +7,7 @@ using VaultSharp.Core;
 
 namespace OpenClaw.Security.Vault;
 
-public sealed class VaultSecretProvider : ISecretProvider
+public sealed class VaultSecretProvider : ISecretProvider, ISyncSecretProvider
 {
     private readonly IVaultClient _client;
     private readonly VaultRefCache _cache;
@@ -30,6 +30,16 @@ public sealed class VaultSecretProvider : ISecretProvider
 
     public ValueTask<string?> ResolveAsync(string secretRef, CancellationToken ct)
         => new(ResolveInternalAsync(secretRef, ct));
+
+    public string? ResolveSync(string secretRef)
+    {
+        var parsed = VaultRefParser.Parse(secretRef, defaultMount: _options.KvMount);
+        if (_cache.TryGet(parsed, out var value))
+            return value;
+
+        throw new SecretResolutionException(
+            "Vault secret is not cached; call ResolveAsync or configure startup pre-warm.");
+    }
 
     private async Task<string?> ResolveInternalAsync(string secretRef, CancellationToken ct)
     {
@@ -88,13 +98,19 @@ public sealed class VaultSharpClient : IVaultClient
 {
     private readonly VaultSharp.VaultClient _client;
 
-    public VaultSharpClient(string address, string token, string? ns, VaultTlsOptions tls)
+    public VaultSharpClient(
+        string address,
+        string token,
+        string? ns,
+        VaultTlsOptions tls,
+        TimeSpan? requestTimeout = null)
     {
         var settings = new VaultClientSettings(
             address,
             new VaultSharp.V1.AuthMethods.Token.TokenAuthMethodInfo(token))
         {
             Namespace = ns,
+            VaultServiceTimeout = requestTimeout ?? TimeSpan.FromSeconds(10),
         };
         var caCerts = VaultCaCertLoader.Load(tls.CaCertPath);
         if (tls.SkipVerify)

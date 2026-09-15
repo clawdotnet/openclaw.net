@@ -4,6 +4,7 @@ using Xunit;
 
 namespace OpenClaw.Tests.Security;
 
+[Collection(ResolverAccessorCollection.Name)]
 public sealed class ResolverAccessorTests : IDisposable
 {
     public ResolverAccessorTests()

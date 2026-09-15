@@ -69,8 +69,8 @@ public sealed class CompositeSecretResolver : ISecretResolver
 }
 
 /// <summary>
-/// Optional sync path for providers that can resolve without I/O. EnvRawSecretProvider
-/// implements this; vault providers do not.
+/// Optional sync path for providers that can resolve without I/O. Providers may
+/// use this for cache-only lookups and must never block on network I/O.
 /// </summary>
 public interface ISyncSecretProvider : ISecretProvider
 {

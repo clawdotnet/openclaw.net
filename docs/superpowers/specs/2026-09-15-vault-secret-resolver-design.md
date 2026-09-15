@@ -5,9 +5,9 @@
 
 ## 摘要
 
-扩展 [`SecretResolver`](../../src/OpenClaw.Core/Security/SecretResolver.cs)——目前唯一的同步、静态密钥解析咽喉点（支持 `env:`、`raw:`、裸串当作环境变量名/字面量回退）——加入外部 Vault / OpenBao 后端。新后端作为独立项目 `OpenClaw.Security.Vault` 交付，通过 [VaultSharp](https://github.com/rajanadar/VaultSharp) 对接 Vault / OpenBao HTTP API，并在 `OpenClaw.Core` 中新增 `ISecretResolver` 抽象进行编排。现有 67 个调用点保持零改动。
+扩展 [`SecretResolver`](../../../src/OpenClaw.Core/Security/SecretResolver.cs)——目前唯一的同步、静态密钥解析咽喉点（支持 `env:`、`raw:`、裸串当作环境变量名/字面量回退）——加入外部 Vault / OpenBao 后端。新后端作为独立项目 `OpenClaw.Security.Vault` 交付，通过 [VaultSharp](https://github.com/rajanadar/VaultSharp) 对接 Vault / OpenBao HTTP API，并在 `OpenClaw.Core` 中新增 `ISecretResolver` 抽象进行编排。现有 67 个调用点保持零改动。
 
-本设计与 [docs/security/payments.md:49](../../docs/security/payments.md) 已列出的"保留扩展点"对齐（HashiCorp Vault、OpenBao、AWS Secrets Manager、Azure Key Vault、DPAPI），将 Vault / OpenBao 从"占位声明"落地为"已实现"。
+本设计与 [docs/security/payments.md:49](../../security/payments.md) 已列出的"保留扩展点"对齐（HashiCorp Vault、OpenBao、AWS Secrets Manager、Azure Key Vault、DPAPI），将 Vault / OpenBao 从"占位声明"落地为"已实现"。
 
 ## 目标
 
@@ -39,7 +39,7 @@
 ### P1：运维安全
 
 - 任何日志行、异常消息、堆栈跟踪中**禁止**出现密钥 value。异常消息仅含 path、key 名、HTTP 状态码 / 错误码。
-- 所有涉及 vault 查找的日志输出经过 `RedactionPipeline`（[RedactionPipeline.cs](../../src/OpenClaw.Core/Security/RedactionPipeline.cs)）。
+- 所有涉及 vault 查找的日志输出经过 `RedactionPipeline`（[RedactionPipeline.cs](../../../src/OpenClaw.Core/Security/RedactionPipeline.cs)）。
 - 当 `Security.PublicBind=true` 时，`Address` 校验拒绝 `localhost` / `127.0.0.1` / `::1`（SSRF 防御）。
 - Token 递归防护：`Security.Vault.TokenRef` 若以 `vault:` 开头，配置校验直接拒绝。
 
@@ -404,7 +404,7 @@ public sealed class VaultTlsOptions
 }
 ```
 
-追加到既有 [`SecurityOptions`](../../src/OpenClaw.Core/Models/ConfigurationModels.cs) 作为 `public VaultSecurityOptions? Vault { get; set; }`。
+追加到既有 [`SecurityOptions`](../../../src/OpenClaw.Core/Models/GatewayConfig.cs) 作为 `public VaultSecurityOptions? Vault { get; set; }`。
 
 ### 配置校验（`ConfigValidator` 新增）
 
@@ -544,7 +544,7 @@ CI 工作流：`ci.yml` 中可选 job，通过 `[Category("Integration")]` filte
 - 创建 `deploy/docker-compose/openbao.yml`；在 `ci.yml` 中加入可选集成测试 job。
 - 撰写 `docs/security/vault.md`（英文）与 `docs/zh-CN/security/vault.md`（中文）。
 - 更新 `CHANGELOG.md`。
-- 将 [docs/security/payments.md:49](../../docs/security/payments.md) 从"保留扩展点"更新为"已实现（KV v2）"。
+- 将 [docs/security/payments.md:49](../../security/payments.md) 从"保留扩展点"更新为"已实现（KV v2）"。
 
 ### 阶段 4——越界（推迟）
 
@@ -564,7 +564,7 @@ CI 工作流：`ci.yml` 中可选 job，通过 `[Category("Integration")]` filte
 
 | 风险 | 缓解 |
 |---|---|
-| VaultSharp 重依赖反射使 AOT 二进制膨胀 | `IsAotCompatible=false`；仅在 `Vault.Enabled=true` 时链接进产物；vault README 中文档化 |
+| VaultSharp 重依赖反射且当前 gateway 无条件引用该项目 | `IsAotCompatible=false`；当前依赖会进入标准发布产物，需通过条件构建边界或 AOT 安全实现解决；vault README 中文档化 |
 | 67 个调用方当前 sync resolve；新 `vault:` 在冷缓存同步路径抛异常 | Phase 1 不引入 `vault:` 语义；Phase 3 同步快速失败有文档 + `PrewarmRequired` 显式开关 |
 | 启动预热被 Vault 故障阻塞 | `PrewarmRequired` 开关；单引用超时；限流并发 |
 | Vault 单点故障 | TTL 缓存失败回退旧值；refresh-ahead 隐藏延迟；运维 runbook 文档化 HA Vault 拓扑 |

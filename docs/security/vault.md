@@ -24,7 +24,7 @@ Examples:
 - `vault:openclaw/data/payments/stripe#sk_live` (custom mount `openclaw`)
 - `vault:data/config#nested_key` (default mount `secret`)
 
-Refs work anywhere a secret value is configured: `env:`/`raw:` refs and `vault:` refs are interchangeable config values (channel credentials, LLM API keys, plugin configs, ...).
+Refs work in settings whose consumers call `SecretResolver`. Existing secret-valued settings that have not been migrated to that resolver continue to use their documented formats.
 
 ## Configuration
 
@@ -98,7 +98,7 @@ Pre-warm concurrency is capped by `RateLimit.RequestsPerSecond`.
 
 ## TLS
 
-- `Tls.SkipVerify=true` accepts any server certificate (integration/dev only; produces a validation warning unless `Security.AllowInsecureTls=true`).
+- `Tls.SkipVerify=true` accepts any server certificate and is only appropriate for isolated integration environments. The current configuration model does not yet enforce a separate insecure-TLS opt-in.
 - `Tls.CaCertPath` loads a custom CA bundle used as custom root trust (`CustomRootTrust`) for Vault TLS validation; hostname verification remains enforced. Missing or invalid certificate files fail startup.
 
 ## Token Recursion Guard
@@ -127,6 +127,8 @@ docker compose -f deploy/docker-compose/openbao.yml up -d
 ```
 
 Then configure the gateway:
+
+The local OpenBao container is an integration-test-only exception to the normal HTTPS requirement. Production and shared environments must use HTTPS.
 
 ```jsonc
 "OpenClaw": { "Security": { "Vault": {

@@ -33,6 +33,7 @@ public static class SecretResolver
         var resolver = ResolverAccessor.Current;
         if (resolver is not null)
             return resolver.Resolve(secretRef);
+        ThrowIfVaultIsUnavailable(secretRef);
         return LegacyResolve(secretRef, logger);
     }
 
@@ -44,6 +45,7 @@ public static class SecretResolver
         var resolver = ResolverAccessor.Current;
         if (resolver is not null)
             return resolver.ResolveAsync(secretRef, ct);
+        ThrowIfVaultIsUnavailable(secretRef);
         return ValueTask.FromResult<string?>(LegacyResolve(secretRef, logger: null));
     }
 
@@ -77,6 +79,15 @@ public static class SecretResolver
                 secretRef.Length);
 
         return secretRef;
+    }
+
+    private static void ThrowIfVaultIsUnavailable(string? secretRef)
+    {
+        if (secretRef?.StartsWith("vault:", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            throw new VaultNotConfiguredException(
+                "Vault secret reference was used before a vault provider was configured (Security.Vault.Enabled).");
+        }
     }
 
     private static bool LooksLikeEnvVarName(string value)
