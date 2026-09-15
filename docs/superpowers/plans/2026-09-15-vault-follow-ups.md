@@ -49,7 +49,7 @@
 - Modify: `src/OpenClaw.Tests/Security/VaultIntegrationTests.cs`
 
 **Interfaces:**
-- Consumes: `VaultSharpClient`（public ctor `(string address, string token, string? ns, VaultTlsOptions tls)`）、`IVaultClient.ReadSecretV2Async`、`VaultRefCache`（ctor `(IMemoryCache, ILogger<VaultRefCache>, TimeSpan ttl)`）、`VaultSecretProvider`（ctor `(IVaultClient, VaultRefCache, VaultSecurityOptions, ILogger<VaultSecretProvider>)`）、VaultSharp 直连写 API（反射核实 1.17.5.1）：`IVaultClient.V1.Secrets.KeyValue.V2.WriteSecretAsync<T>(string path, T data, int? cas, string mountPoint)` 与 `DeleteSecretAsync(string path, string mountPoint)`
+- Consumes: `VaultSharpClient`（public ctor `(string address, string token, string? ns, VaultTlsOptions tls)`）、`IVaultClient.ReadSecretV2Async`、`VaultRefCache`（ctor `(IMemoryCache, ILogger<VaultRefCache>, TimeSpan ttl)`）、`VaultSecretProvider`（ctor `(IVaultClient, VaultRefCache, VaultSecurityOptions, ILogger<VaultSecretProvider>)`）、VaultSharp 直连写 API（反射核实 1.17.5.1）：`IVaultClient.V1.Secrets.KeyValue.V2.WriteSecretAsync<T>(string path, T data, int? checkAndSet, string mountPoint)` 与 `DeleteSecretAsync(string path, string mountPoint)`
 - Produces: 4 个 `[Fact]` + `[Trait("Category","Integration")]` 测试；本地私有辅助 `CreateResolverAsync(ttl)`、`WriteSecretAsync(path, data)`、`DeleteSecretAsync(path)`、`CountingClient` 装饰器
 
 - [ ] **Step 1: 写 4 个失败测试（无 OPENBAO_ADDR 时编译通过、运行跳过）**
@@ -203,7 +203,7 @@ public sealed class VaultIntegrationTests
     private static async Task WriteSecretAsync(string path, IDictionary<string, object> data)
     {
         var client = new VaultSharp.VaultClient(new VaultClientSettings(Addr, new TokenAuthMethodInfo(Token)));
-        await client.V1.Secrets.KeyValue.V2.WriteSecretAsync(path, data, cas: null, mountPoint: DefaultMount);
+        await client.V1.Secrets.KeyValue.V2.WriteSecretAsync(path, data, checkAndSet: null, mountPoint: DefaultMount);
     }
 
     private static async Task DeleteSecretAsync(string path)
