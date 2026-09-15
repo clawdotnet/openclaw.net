@@ -322,7 +322,12 @@ public sealed class ToolGovernanceTests
             config ?? new ToolGovernanceConfig
             {
                 Enabled = true,
-                SidecarBaseUrl = "http://127.0.0.1:8088"
+                SidecarBaseUrl = "http://127.0.0.1:8088",
+                // The stub responds in-process; the 300ms default timeout only makes these
+                // tests flaky under parallel-load thread-pool contention (the timeout
+                // token can win the race against the completed stub response). Timeout
+                // behavior is covered separately by the explicit TimeoutMs tests.
+                TimeoutMs = 0
             },
             NullLogger<HttpSidecarToolGovernanceService>.Instance);
     }

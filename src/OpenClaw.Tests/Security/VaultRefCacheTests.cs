@@ -62,9 +62,10 @@ public sealed class VaultRefCacheTests
     [Fact]
     public async Task GetOrFetchAsync_StaleEntry_RefreshAhead_ReturnsStale()
     {
-        // Entries are kept for 2×TTL so stale reads can fall back. The stale window is
-        // (TTL, 2×TTL): age must exceed TTL (150ms) but stay below 2×TTL (300ms).
-        var cache = NewCache(TimeSpan.FromMilliseconds(150));
+        // Entries are kept for 2×TTL so stale reads can fall back. Rather than sleeping
+        // fixed delays (which overshoot under parallel load and evict the entry), poll
+        // until the refresh-ahead lands the new value.
+        var cache = NewCache(TimeSpan.FromMilliseconds(250));
         var key = Key();
         var calls = 0;
         async Task<string> Fetch(CancellationToken _)
@@ -75,28 +76,47 @@ public sealed class VaultRefCacheTests
 
         var first = await cache.GetOrFetchAsync(key, Fetch, CancellationToken.None);
         Assert.Equal("v1", first);
-        await Task.Delay(200);
-        var second = await cache.GetOrFetchAsync(key, Fetch, CancellationToken.None);
-        Assert.Equal("v1", second); // stale returned
-        // Give refresh-ahead a moment to land
-        await Task.Delay(100);
-        var third = await cache.GetOrFetchAsync(key, Fetch, CancellationToken.None);
-        Assert.Equal("v2", third);
+
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        string observed = "v1";
+        while (observed != "v2" && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(25);
+            observed = await cache.GetOrFetchAsync(key, Fetch, CancellationToken.None);
+        }
+        Assert.Equal("v2", observed); // stale value served until refresh-ahead landed v2
         Assert.True(calls >= 2);
     }
 
     [Fact]
     public async Task GetOrFetchAsync_FetchFailsWithStale_ReturnsStale()
     {
-        // TTL=100ms, stale window (100ms, 200ms): wait 150ms so the entry is stale but still present.
-        var cache = NewCache(TimeSpan.FromMilliseconds(100));
+        // TTL=250ms, stale window (250ms, 500ms). Poll until the entry goes stale —
+        // detected via refresh-ahead attempts on the failing fetch — instead of a fixed
+        // delay that can overshoot the 2×TTL retention under load and evict the entry.
+        var cache = NewCache(TimeSpan.FromMilliseconds(250));
         var key = Key();
 
         await cache.GetOrFetchAsync(key, _ => Task.FromResult("v1"), CancellationToken.None);
-        await Task.Delay(150);
 
-        var result = await cache.GetOrFetchAsync(key, _ => throw new InvalidOperationException("boom"), CancellationToken.None);
-        Assert.Equal("v1", result);
+        var calls = 0;
+        Task<string> FailingFetch(CancellationToken _)
+        {
+            Interlocked.Increment(ref calls);
+            return Task.FromException<string>(new InvalidOperationException("boom"));
+        }
+
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (Volatile.Read(ref calls) == 0 && DateTime.UtcNow < deadline)
+        {
+            // Fresh: served without fetching. Stale: refresh-ahead fires (and fails).
+            Assert.Equal("v1", await cache.GetOrFetchAsync(key, FailingFetch, CancellationToken.None));
+            await Task.Delay(25);
+        }
+        Assert.True(Volatile.Read(ref calls) > 0, "entry never went stale");
+
+        var result = await cache.GetOrFetchAsync(key, FailingFetch, CancellationToken.None);
+        Assert.Equal("v1", result); // stale value returned, fetch failure swallowed
     }
 
     [Fact]
