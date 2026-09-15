@@ -51,6 +51,32 @@ public sealed class CompositeSecretResolverTests
     public void IsRawRef_False_Null()
         => Assert.False(new CompositeSecretResolver(Array.Empty<ISecretProvider>(), NullLogger<CompositeSecretResolver>.Instance).IsRawRef(null));
 
+    [Fact]
+    public async Task ResolveAsync_VaultPrefix_NoProvider_ThrowsVaultNotConfigured()
+    {
+        var resolver = new CompositeSecretResolver(Array.Empty<ISecretProvider>(), NullLogger<CompositeSecretResolver>.Instance);
+
+        await Assert.ThrowsAsync<VaultNotConfiguredException>(() =>
+            resolver.ResolveAsync("vault:secret/data/x#k", CancellationToken.None).AsTask());
+    }
+
+    [Fact]
+    public void Resolve_VaultPrefix_NoProvider_ThrowsVaultNotConfigured()
+    {
+        var resolver = new CompositeSecretResolver(Array.Empty<ISecretProvider>(), NullLogger<CompositeSecretResolver>.Instance);
+
+        Assert.Throws<VaultNotConfiguredException>(() => resolver.Resolve("vault:secret/data/x#k"));
+    }
+
+    [Fact]
+    public async Task ResolveAsync_NonRef_LiteralFallbackUnchanged()
+    {
+        var resolver = new CompositeSecretResolver(Array.Empty<ISecretProvider>(), NullLogger<CompositeSecretResolver>.Instance);
+
+        Assert.Equal("sk-plaintext-key", await resolver.ResolveAsync("sk-plaintext-key"));
+        Assert.Equal("https://api.example.com/v1", await resolver.ResolveAsync("https://api.example.com/v1"));
+    }
+
     private sealed class FakeProvider : ISecretProvider
     {
         private readonly string _matchRef;

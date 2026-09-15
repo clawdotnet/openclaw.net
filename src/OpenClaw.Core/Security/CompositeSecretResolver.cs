@@ -29,6 +29,10 @@ public sealed class CompositeSecretResolver : ISecretResolver
                 return await provider.ResolveAsync(secretRef, ct);
         }
 
+        if (secretRef.StartsWith("vault:", StringComparison.OrdinalIgnoreCase))
+            throw new VaultNotConfiguredException(
+                "Vault secret reference was used but no vault provider is configured (Security.Vault.Enabled).");
+
         // No provider claimed it — defer to the first provider that could plausibly handle
         // bare/env/raw, otherwise return the literal as a last-resort fallback (mirrors legacy).
         _logger.LogDebug("No provider claimed ref of length {Length}; returning literal fallback.", secretRef.Length);
@@ -52,6 +56,10 @@ public sealed class CompositeSecretResolver : ISecretResolver
                     $"Provider '{provider.Scheme}' is async-only; call ResolveAsync or pre-warm.");
             }
         }
+
+        if (secretRef.StartsWith("vault:", StringComparison.OrdinalIgnoreCase))
+            throw new VaultNotConfiguredException(
+                "Vault secret reference was used but no vault provider is configured (Security.Vault.Enabled).");
 
         return secretRef;
     }

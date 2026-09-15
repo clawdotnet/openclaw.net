@@ -59,7 +59,7 @@ vault:<mount>/data/<path>#<key>
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
-| `Enabled` | `false` | 启用 Vault 后端。禁用时，`vault:` 引用在解析链中被视为字面量字符串。 |
+| `Enabled` | `false` | 启用 Vault 后端。禁用时，`vault:` 引用故障关闭：解析时抛 `VaultNotConfiguredException`，而不是回退为字面量字符串。 |
 | `Address` | — | Vault 服务器 URL。启用时必填；必须是 HTTPS 且为合法 URI。 |
 | `TokenRef` | — | Vault token 的密钥引用（`env:`/`raw:`）。启用时必填。**禁止**以 `vault:` 开头（递归防护）。 |
 | `Namespace` | — | Vault Enterprise 命名空间（可选）。 |
@@ -116,7 +116,7 @@ vault:<mount>/data/<path>#<key>
 | Vault path 级 404 | 抛 `VaultPathNotFoundException` | 抛 `VaultPathNotFoundException` |
 | Vault key 级 404 | 抛 `VaultKeyNotFoundException` | 抛 `VaultKeyNotFoundException` |
 | 引用格式错误 | 抛 `VaultRefParseException` | 抛 `VaultRefParseException` |
-| Vault 未启用却使用 `vault:` 引用 | 视为字面量字符串 | 视为字面量字符串 |
+| Vault 未启用却使用 `vault:` 引用 | 抛 `VaultNotConfiguredException` | 抛 `VaultNotConfiguredException` |
 
 异常消息仅包含 path、key、HTTP 状态码和错误类型名——绝不包含解析后的 value。日志输出另经 `RedactionPipeline` 二次防护。
 
@@ -141,5 +141,5 @@ docker compose -f deploy/docker-compose/openbao.yml up -d
 ## 升级 / 回滚
 
 - **升级**：启用后端（`Enabled=true`），先设 `PrewarmRequired=false` 观察解析失败日志而不阻塞启动，待引用解析稳定后再改为 `true`。
-- **回滚**：设 `Enabled=false`；解析链对 `vault:` 引用回退为字面量处理，`env:`/`raw:` 行为不变。
+- **回滚**：设 `Enabled=false`；`vault:` 引用故障关闭（抛 `VaultNotConfiguredException`），`env:`/`raw:` 行为不变。
 - **轮换**：在 Vault 中轮换 value；缓存经 `CacheTtl` 过期后后台刷新（refresh-ahead），无需重启网关即可生效。

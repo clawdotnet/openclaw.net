@@ -30,8 +30,3 @@ public sealed class VaultKeyNotFoundException : SecretResolutionException
 {
     public VaultKeyNotFoundException(string message) : base(message) { }
 }
-
-public sealed class VaultNotConfiguredException : SecretResolutionException
-{
-    public VaultNotConfiguredException(string message) : base(message) { }
-}

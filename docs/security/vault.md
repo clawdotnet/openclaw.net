@@ -59,7 +59,7 @@ Refs work anywhere a secret value is configured: `env:`/`raw:` refs and `vault:`
 
 | Field | Default | Meaning |
 |---|---|---|
-| `Enabled` | `false` | Enable the Vault backend. When disabled, `vault:` refs are treated as literal strings by the resolver chain. |
+| `Enabled` | `false` | Enable the Vault backend. When disabled, `vault:` refs fail closed: resolving them throws `VaultNotConfiguredException` instead of falling back to a literal string. |
 | `Address` | — | Vault server URL. Required when enabled; must be HTTPS and a valid URI. |
 | `TokenRef` | — | Secret ref (`env:`/`raw:`) for the Vault token. Required when enabled. Must **not** start with `vault:` (recursion guard). |
 | `Namespace` | — | Vault Enterprise namespace (optional). |
@@ -116,7 +116,7 @@ Pre-warm concurrency is capped by `RateLimit.RequestsPerSecond`.
 | Vault path-level 404 | throws `VaultPathNotFoundException` | throws `VaultPathNotFoundException` |
 | Vault key-level 404 | throws `VaultKeyNotFoundException` | throws `VaultKeyNotFoundException` |
 | Malformed ref | throws `VaultRefParseException` | throws `VaultRefParseException` |
-| Vault disabled, `vault:` ref used | treated as literal string | treated as literal string |
+| Vault disabled, `vault:` ref used | throws `VaultNotConfiguredException` | throws `VaultNotConfiguredException` |
 
 Exception messages contain only path, key, HTTP status codes, and error type names — never the resolved value. Log output additionally passes through the `RedactionPipeline`.
 
@@ -141,5 +141,5 @@ See `docs/security/vault-integration-tests.md` for running the integration test 
 ## Upgrade / Rollback
 
 - **Upgrade**: enable the backend (`Enabled=true`), set `PrewarmRequired=false` first to observe resolution failures in logs without blocking startup, then flip to `true` once refs resolve cleanly.
-- **Rollback**: set `Enabled=false`; the resolver chain reverts to literal fallback for `vault:` refs and `env:`/`raw:` behavior is unchanged.
+- **Rollback**: set `Enabled=false`; `vault:` refs now fail closed (`VaultNotConfiguredException`) while `env:`/`raw:` behavior is unchanged.
 - **Rotation**: rotate values in Vault; caches expire after `CacheTtl` and are refreshed in the background (refresh-ahead), so rotation is picked up without a gateway restart.
