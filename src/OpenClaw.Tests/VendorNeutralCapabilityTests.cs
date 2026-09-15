@@ -185,4 +185,22 @@ public sealed class VendorNeutralCapabilityTests
         Assert.False(replay.Passed);
         Assert.Contains("schemaFingerprint", replay.Message);
     }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("42")]
+    [InlineData("[null]")]
+    [InlineData("[42]")]
+    [InlineData("[\"\"]")]
+    public async Task MalformedKeywords_AreRejectedByToolAndSkillLoader(string keywords)
+    {
+        var args = "{\"task_description\":\"weather\",\"keywords\":" + keywords + "}";
+        var exception = await Assert.ThrowsAsync<ToolOutcomeException>(async () =>
+            await new ResolveCapabilityTool(new([])).ExecuteAsync(args, TestContext.Current.CancellationToken));
+        Assert.Equal("invalid_capability_request", exception.FailureCode);
+        var composition = "{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"dynamic\",\"intent\":" + args + "}}]}";
+        var content = "---\nname: invalid\ndescription: test\nkind: meta\ncomposition: " + composition + "\n---\ntest";
+        Assert.False(SkillLoader.TryParseSkillContent(content, "/skills/invalid", SkillSource.Workspace, out _, out var error));
+        Assert.Equal("invalid_capability_ref", error);
+    }
 }

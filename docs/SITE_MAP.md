@@ -42,6 +42,7 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Guides | Codebase Harness Map | [CODEBASE_HARNESS_MAP.md](CODEBASE_HARNESS_MAP.md) |
 | Reference | Compatibility | [COMPATIBILITY.md](COMPATIBILITY.md) |
 | Reference | Capability Matrix | [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md) |
+| Reference | Capability Resolution | [capability-resolution.md](capability-resolution.md) |
 | Reference | Architecture Boundaries | [ARCHITECTURE_BOUNDARIES.md](ARCHITECTURE_BOUNDARIES.md) |
 | Reference | Sessions and Token Accounting | [SESSIONS.md](SESSIONS.md) |
 | Reference | Canvas and A2UI | [CANVAS_A2UI.md](CANVAS_A2UI.md) |
@@ -183,5 +184,3 @@ International
 - Keep [docs/README.md](README.md) as the source-index page for GitHub browsing.
 - Add redirects or aliases for lower-case route names if the website framework normalizes slugs.
 - Keep security and contribution pages at the repository root in source control even if the website renders them under an operations or project section.
-
-- [Vendor-neutral capability resolution and optional Nacos adapters](capability-resolution.md)

@@ -31,6 +31,8 @@ composition:
       tool_args:
         text: "no weather capability bound; check Nacos registration and Router logs."
 ---
-Opt-in contract fixture for #233: the capability step retries use_tool failures
-three times (100 ms backoff) before the fallback branch fires; no model call
-is needed.
+Opt-in contract fixture for #233: the capability step permits up to three attempts
+(100 ms backoff) only when the host marks weather-mcp/get_weather retry-safe.
+The test harness opts in for its read-only fixture. Default Nacos composition
+does not assume retry safety and takes the fallback after the first failure.
+No model call is needed.

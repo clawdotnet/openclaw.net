@@ -1404,6 +1404,13 @@ public static class SkillLoader
         MetaCapabilityStaticBinding? staticBinding = null;
         MetaCapabilityIntent? intent = null;
 
+        if ((binding == "static" && refElement.TryGetProperty("intent", out _)) ||
+            (binding == "dynamic" && refElement.TryGetProperty("static", out _)))
+        {
+            errorCode = "invalid_capability_ref";
+            return false;
+        }
+
         if (binding == "static")
         {
             if (!refElement.TryGetProperty("static", out var staticElement) ||
@@ -1460,6 +1467,19 @@ public static class SkillLoader
                 intentType = typeElement.GetString()!.Trim();
             }
 
+            if (intentElement.TryGetProperty("type", out var rawType) &&
+                (rawType.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(rawType.GetString())))
+            {
+                errorCode = "invalid_capability_ref";
+                return false;
+            }
+            if (intentElement.TryGetProperty("keywords", out var rawKeywords) &&
+                (rawKeywords.ValueKind != JsonValueKind.Array || rawKeywords.EnumerateArray().Any(k =>
+                    k.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(k.GetString()))))
+            {
+                errorCode = "invalid_capability_ref";
+                return false;
+            }
             var keywords = new List<string>();
             if (intentElement.TryGetProperty("keywords", out var keywordsElement) &&
                 keywordsElement.ValueKind == JsonValueKind.Array)

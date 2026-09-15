@@ -170,6 +170,7 @@ Browse [AgentQi.dev](https://agentqi.dev) or the [complete repository documentat
 | [Releases](docs/RELEASES.md) | Downloads, checksums, signing status, and release procedures. |
 | [Capability matrix](docs/CAPABILITY_MATRIX.md) | Core, optional, experimental, and JIT-only features. |
 | [Local models](docs/LOCAL_MODELS.md) | Embedded model packages, sidecars, and frame-based video support. |
+| [Capability resolution](docs/capability-resolution.md) | Local discovery, optional Nacos adapters, caches, and replay. |
 | [Architecture boundaries](docs/ARCHITECTURE_BOUNDARIES.md) | Runtime, gateway, extension, and AOT/JIT boundaries. |
 | [Roadmap](docs/ROADMAP.md) | Planned work and current priorities. |
 | [中文文档](docs/zh-CN/START_HERE.md) | Simplified Chinese first-run orientation. |
@@ -183,5 +184,3 @@ See [project governance](docs/project/governance.md), [maintainer roles](docs/pr
 ## License
 
 [MIT](LICENSE)
-
-- [Vendor-neutral capability resolution and optional Nacos adapters](docs/capability-resolution.md)

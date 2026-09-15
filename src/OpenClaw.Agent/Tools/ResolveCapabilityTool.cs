@@ -20,6 +20,15 @@ public sealed class ResolveCapabilityTool(CapabilityProviderRegistry providers) 
             var policy = r.TryGetProperty("selection_policy", out var p) ? p.GetString() : "first";
             if (policy is not ("first" or "exact_name")) throw new ArgumentException("Unsupported selection policy");
             if (r.TryGetProperty("prefer_version", out _) || r.TryGetProperty("top_k", out _)) throw new ArgumentException("Unsupported constraint");
+            if (r.TryGetProperty("provider", out var provider) &&
+                (provider.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(provider.GetString())))
+                throw new ArgumentException("provider must be a non-empty identifier");
+            if (r.TryGetProperty("keywords", out var rawKeywords) &&
+                (rawKeywords.ValueKind != JsonValueKind.Array || rawKeywords.EnumerateArray().Any(word =>
+                    word.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(word.GetString()))))
+                throw new ArgumentException("keywords must contain non-empty strings");
+            if (r.TryGetProperty("keywords", out _) && r.TryGetProperty("key_words", out _))
+                throw new ArgumentException("Specify keywords or legacy key_words, not both");
             var keywords = r.TryGetProperty("keywords", out var k) ? string.Join(",", k.EnumerateArray().Select(x => x.GetString()))
                 : r.TryGetProperty("key_words", out k) ? k.GetString() : null;
             var request = new ResolveCapabilityRequest(task, keywords, policy == "exact_name" ? ResolveCapabilitySelectionPolicy.ExactName : ResolveCapabilitySelectionPolicy.First)
