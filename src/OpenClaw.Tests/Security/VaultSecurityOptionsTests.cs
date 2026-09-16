@@ -68,6 +68,38 @@ public sealed class VaultSecurityOptionsTests
                                     e.Contains("CaCertPath", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public void ConfigValidator_SkipVerifyWithoutOptIn_Rejects()
+    {
+        var cfg = MakeValidConfig();
+        cfg.Security.Vault = new VaultSecurityOptions
+        {
+            Enabled = true,
+            Address = "https://vault.example.com",
+            TokenRef = "env:X",
+            Tls = new VaultTlsOptions { SkipVerify = true }
+        };
+        var errors = ConfigValidator.Validate(cfg).ToList();
+        Assert.Contains(errors, e => e.Contains("SkipVerify", StringComparison.OrdinalIgnoreCase) &&
+                                    e.Contains("AllowInsecureTls", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ConfigValidator_SkipVerifyWithOptIn_Accepted()
+    {
+        var cfg = MakeValidConfig();
+        cfg.Security.AllowInsecureTls = true;
+        cfg.Security.Vault = new VaultSecurityOptions
+        {
+            Enabled = true,
+            Address = "https://vault.example.com",
+            TokenRef = "env:X",
+            Tls = new VaultTlsOptions { SkipVerify = true }
+        };
+        var errors = ConfigValidator.Validate(cfg).ToList();
+        Assert.DoesNotContain(errors, e => e.Contains("SkipVerify", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static GatewayConfig MakeValidConfig()
     {
         var cfg = new GatewayConfig

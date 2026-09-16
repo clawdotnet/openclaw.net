@@ -225,7 +225,7 @@ public static class ConfigValidator
 
         // Security — Vault
         if (config.Security.Vault is not null)
-            ValidateVaultSecurity(config.Security.Vault, IsNonLoopbackBind(config.BindAddress), errors);
+            ValidateVaultSecurity(config.Security.Vault, IsNonLoopbackBind(config.BindAddress), config.Security.AllowInsecureTls, errors);
 
         // Plugin bridge transport
         var transportMode = (config.Plugins.Transport.Mode ?? "stdio").Trim();
@@ -977,7 +977,7 @@ public static class ConfigValidator
         }
     }
 
-    private static void ValidateVaultSecurity(VaultSecurityOptions v, bool publicBind, List<string> errors)
+    private static void ValidateVaultSecurity(VaultSecurityOptions v, bool publicBind, bool allowInsecureTls, List<string> errors)
     {
         if (!v.Enabled)
             return;
@@ -998,6 +998,9 @@ public static class ConfigValidator
 
         if (v.Tls.SkipVerify && !string.IsNullOrWhiteSpace(v.Tls.CaCertPath))
             errors.Add("Security.Vault.Tls.SkipVerify and Security.Vault.Tls.CaCertPath are mutually exclusive; set at most one.");
+
+        if (v.Tls.SkipVerify && !allowInsecureTls)
+            errors.Add("Security.Vault.Tls.SkipVerify requires the explicit opt-in Security.AllowInsecureTls (insecure TLS acceptance).");
 
         if (string.IsNullOrWhiteSpace(v.TokenRef))
             errors.Add("Security.Vault.TokenRef is required when Vault is enabled.");

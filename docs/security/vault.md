@@ -3,6 +3,7 @@
 OpenClaw.NET resolves secrets through `SecretResolver` (static facade) backed by a pluggable `ISecretProvider` chain. The Vault backend (`OpenClaw.Security.Vault`, built on VaultSharp) reads KV v2 secrets from HashiCorp Vault or OpenBao and caches them with TTL, single-flight, and refresh-ahead. The default posture is fail-closed:
 
 - vault is disabled unless `OpenClaw:Security:Vault:Enabled=true`
+- the NativeAOT gateway build excludes the Vault backend (VaultSharp is not trim-safe), so `vault:` refs fail closed in that build; JIT builds include the backend
 - resolved values never appear in exception messages, logs, traces, or stack traces
 - the token is referenced through the existing `env:`/`raw:` indirection, never written as plaintext config
 
@@ -70,12 +71,12 @@ Refs work in settings whose consumers call `SecretResolver`. Existing secret-val
 | `RateLimit.RequestsPerSecond` | `20` | Startup pre-warm concurrency cap (1–1000). |
 | `PrewarmRequired` | `true` | Fail startup when a pre-warm ref fails to resolve. `false` logs and continues. |
 | `PrewarmRefs` | `[]` | Refs resolved at startup. The gateway config tree is also scanned automatically for `vault:` values. |
-| `Tls.SkipVerify` | `false` | Accept any server certificate. Integration/dev only. |
+| `Tls.SkipVerify` | `false` | Accept any server certificate. Integration/dev only; validation rejects it unless the global opt-in `Security.AllowInsecureTls=true` is set. |
 | `Tls.CaCertPath` | — | Custom CA bundle (a PEM file, or a directory of `.pem`/`.crt`/`.cer` files). Loaded roots are trusted as custom roots while hostname checks stay enforced. Mutually exclusive with `SkipVerify`. |
 
 Configuration is read from the existing `IConfiguration` sources: `appsettings.json`, environment variables (`OpenClaw__Security__Vault__Address`), command line, and files encrypted via `SecurityPostureBuilder`. No new configuration provider is introduced.
 
-The same section is validated by `ConfigValidator`: when `Enabled=true`, `Address` and `TokenRef` are required, `Address` must be HTTPS, `CacheTtl`/`RequestTimeout`/`RequestsPerSecond` are range-checked, and a loopback `Address` is rejected when the gateway binds to a public (non-loopback) address.
+The same section is validated by `ConfigValidator`: when `Enabled=true`, `Address` and `TokenRef` are required, `Address` must be HTTPS, `CacheTtl`/`RequestTimeout`/`RequestsPerSecond` are range-checked, `Tls.SkipVerify` is rejected without the global opt-in `Security.AllowInsecureTls`, and a loopback `Address` is rejected when the gateway binds to a public (non-loopback) address.
 
 ## Sync vs Async Resolution
 
@@ -98,7 +99,7 @@ Pre-warm concurrency is capped by `RateLimit.RequestsPerSecond`.
 
 ## TLS
 
-- `Tls.SkipVerify=true` accepts any server certificate and is only appropriate for isolated integration environments. The current configuration model does not yet enforce a separate insecure-TLS opt-in.
+- `Tls.SkipVerify=true` accepts any server certificate and is only appropriate for isolated integration environments. Validation rejects it unless the global opt-in `Security.AllowInsecureTls=true` is set, so production configurations cannot install the insecure certificate validator.
 - `Tls.CaCertPath` loads a custom CA bundle used as custom root trust (`CustomRootTrust`) for Vault TLS validation; hostname verification remains enforced. Missing or invalid certificate files fail startup.
 
 ## Token Recursion Guard

@@ -6,7 +6,9 @@ using OpenClaw.Gateway.Endpoints;
 using OpenClaw.Gateway.Mcp;
 using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.Profiles;
+#if !OPENCLAW_VAULT_EXCLUDED
 using OpenClaw.Security.Vault;
+#endif
 using TickerQ.DependencyInjection;
 using OpenClaw.Gateway.A2A;
 using OpenClaw.MicrosoftAgentFrameworkAdapter;
@@ -72,7 +74,9 @@ while (true)
         builder.Services.AddOpenClawToolServices(startup);
         builder.Services.AddOpenClawBackendServices(startup);
         builder.Services.AddOpenClawSecurityServices(startup);
+#if !OPENCLAW_VAULT_EXCLUDED
         builder.Services.AddOpenClawVaultSecrets(startup.Config.Security.Vault);
+#endif
         builder.Services.AddOpenClawMcpServices(startup);
         builder.Services.ApplyOpenClawRuntimeProfile(startup);
         builder.Services.AddMicrosoftAgentFramework(builder.Configuration);

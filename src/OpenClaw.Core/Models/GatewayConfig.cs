@@ -399,6 +399,12 @@ public sealed class SecurityConfig
     /// </summary>
     public bool AllowRawSecretRefsOnPublicBind { get; set; } = false;
 
+    /// <summary>
+    /// Global opt-in for insecure TLS: permits Vault Tls.SkipVerify (accept any server
+    /// certificate). ConfigValidator rejects SkipVerify when this is false.
+    /// </summary>
+    public bool AllowInsecureTls { get; set; } = false;
+
     /// <summary>Idle timeout (minutes) for browser admin sessions. Default 60 minutes.</summary>
     public int BrowserSessionIdleMinutes { get; set; } = 60;
 

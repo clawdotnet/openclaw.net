@@ -5,7 +5,10 @@ Vault / OpenBao 后端密钥解析，基于 [VaultSharp](https://github.com/raja
 ## AOT 兼容性
 
 `IsAotCompatible=false`。VaultSharp 大量依赖反射（auth 方法、KV 响应反序列化），不适配 NativeAOT trim。
-引用此项目的 gateway 在做 `dotnet publish -p:PublishAot=true` 时会包含 VaultSharp 全部传递依赖。
 
-如使用 AOT 部署且未启用 Vault（`Security.Vault.Enabled=false`），可通过条件 ProjectReference
-或反射剔除减小产物——本仓库暂不实现，按需后续优化。
+Gateway 通过条件构建边界处理：AOT 发布构建（`dotnet publish`，`IsPublishing=true`）不引用本项目，
+并借助 `OPENCLAW_VAULT_EXCLUDED` 编译常量移除 `Program.cs` 中的 `AddOpenClawVaultSecrets` 注册；
+JIT 构建（`dotnet build` / `dotnet run` / `dotnet test`）保留完整 Vault 支持。
+
+注意：这是**发布期**的排除——运行时 `Security.Vault.Enabled` 不影响发布产物内容。
+AOT 发布产物中 `vault:` 引用按未配置处理（fail-closed，抛 `VaultNotConfiguredException`）。

@@ -3,6 +3,7 @@
 OpenClaw.NET 通过 `SecretResolver`（静态门面）解析密钥，其背后是可插拔的 `ISecretProvider` 链。Vault 后端（`OpenClaw.Security.Vault`，基于 VaultSharp）从 HashiCorp Vault 或 OpenBao 读取 KV v2 密钥，并以 TTL 缓存、单飞（single-flight）、提前刷新（refresh-ahead）方式管理。默认态势是故障关闭（fail-closed）：
 
 - 除非设置 `OpenClaw:Security:Vault:Enabled=true`，否则 vault 禁用
+- NativeAOT 网关构建不包含 Vault 后端（VaultSharp 不适配 trim），该构建中 `vault:` 引用故障关闭；JIT 构建包含后端
 - 解析后的 value 绝不出现在异常消息、日志、追踪或堆栈中
 - token 通过既有的 `env:`/`raw:` 间接引用，绝不作为明文配置写入
 
@@ -70,12 +71,12 @@ vault:<mount>/data/<path>#<key>
 | `RateLimit.RequestsPerSecond` | `20` | 启动预热的并发上限（1–1000）。 |
 | `PrewarmRequired` | `true` | 预热引用解析失败时阻止启动。`false` 则记录日志并继续。 |
 | `PrewarmRefs` | `[]` | 启动时解析的引用。网关配置树中所有 `vault:` 值也会被自动扫描。 |
-| `Tls.SkipVerify` | `false` | 接受任意服务器证书。仅限集成/开发环境。 |
+| `Tls.SkipVerify` | `false` | 接受任意服务器证书。仅限集成/开发环境；未设置全局 opt-in `Security.AllowInsecureTls=true` 时校验会拒绝。 |
 | `Tls.CaCertPath` | — | 自定义 CA 证书包（单个 PEM 文件，或含 `.pem`/`.crt`/`.cer` 文件的目录）。加载的根证书作为自定义根信任，主机名校验保留。与 `SkipVerify` 互斥。 |
 
 配置读取自既有 `IConfiguration` 来源：`appsettings.json`、环境变量（`OpenClaw__Security__Vault__Address`）、命令行，以及经 `SecurityPostureBuilder` 加密的文件。不新增独立配置提供程序。
 
-同一节由 `ConfigValidator` 校验：`Enabled=true` 时 `Address` 与 `TokenRef` 必填，`Address` 必须为 HTTPS，`CacheTtl`/`RequestTimeout`/`RequestsPerSecond` 有范围校验；当网关绑定公网（非回环）地址时，拒绝回环地址的 `Address`。
+同一节由 `ConfigValidator` 校验：`Enabled=true` 时 `Address` 与 `TokenRef` 必填，`Address` 必须为 HTTPS，`CacheTtl`/`RequestTimeout`/`RequestsPerSecond` 有范围校验；未设置全局 opt-in `Security.AllowInsecureTls` 时拒绝 `Tls.SkipVerify`；当网关绑定公网（非回环）地址时，拒绝回环地址的 `Address`。
 
 ## 同步 vs 异步解析
 
@@ -98,7 +99,7 @@ vault:<mount>/data/<path>#<key>
 
 ## TLS
 
-- `Tls.SkipVerify=true` 接受任意服务器证书，仅适用于隔离的集成测试环境。当前配置模型尚未强制要求单独的不安全 TLS 许可开关。
+- `Tls.SkipVerify=true` 接受任意服务器证书，仅适用于隔离的集成测试环境。校验会在未设置全局 opt-in `Security.AllowInsecureTls=true` 时拒绝它，使生产配置无法安装不安全的证书校验器。
 - `Tls.CaCertPath` 加载自定义 CA 证书包，作为 Vault TLS 校验的自定义根信任（`CustomRootTrust`）；主机名校验仍然生效。文件缺失或无效时启动失败。
 
 ## Token 递归防护
