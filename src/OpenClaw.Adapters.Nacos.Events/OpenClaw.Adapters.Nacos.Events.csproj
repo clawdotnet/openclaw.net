@@ -3,7 +3,7 @@
   <ItemGroup><InternalsVisibleTo Include="OpenClaw.Tests" /></ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../OpenClaw.Core/OpenClaw.Core.csproj" />
-    <PackageReference Include="RedNb.Nacos.All" Version="2.0.0" />
+    <PackageReference Include="RedNb.Nacos.All" Version="2.1.0" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <Target Name="RejectUnsupportedNativeEvents" BeforeTargets="PrepareForBuild" Condition="'$(PublishAot)' == 'true'">
