@@ -399,6 +399,12 @@ public sealed class SecurityConfig
     /// </summary>
     public bool AllowRawSecretRefsOnPublicBind { get; set; } = false;
 
+    /// <summary>
+    /// Global opt-in for insecure TLS: permits Vault Tls.SkipVerify (accept any server
+    /// certificate). ConfigValidator rejects SkipVerify when this is false.
+    /// </summary>
+    public bool AllowInsecureTls { get; set; } = false;
+
     /// <summary>Idle timeout (minutes) for browser admin sessions. Default 60 minutes.</summary>
     public int BrowserSessionIdleMinutes { get; set; } = 60;
 
@@ -424,6 +430,37 @@ public sealed class SecurityConfig
 
     /// <summary>Convenience: true when <see cref="AuthMode"/> is "oidc".</summary>
     public bool IsOidcMode => string.Equals(AuthMode, SecurityAuthModeNames.Oidc, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Vault / OpenBao backend configuration. Null disables the vault backend.</summary>
+    public VaultSecurityOptions? Vault { get; set; }
+}
+
+/// <summary>Vault / OpenBao secret backend options. See docs/security/vault.md.</summary>
+public sealed class VaultSecurityOptions
+{
+    public bool Enabled { get; set; }
+    public string? Address { get; set; }
+    public string? TokenRef { get; set; }
+    public string? Namespace { get; set; }
+    public string KvMount { get; set; } = "secret";
+    public int KvVersion { get; set; } = 2;
+    public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(10);
+    public TimeSpan CacheTtl { get; set; } = TimeSpan.FromMinutes(5);
+    public VaultRateLimitOptions RateLimit { get; set; } = new();
+    public bool PrewarmRequired { get; set; } = true;
+    public List<string> PrewarmRefs { get; set; } = [];
+    public VaultTlsOptions Tls { get; set; } = new();
+}
+
+public sealed class VaultRateLimitOptions
+{
+    public int RequestsPerSecond { get; set; } = 20;
+}
+
+public sealed class VaultTlsOptions
+{
+    public bool SkipVerify { get; set; }
+    public string? CaCertPath { get; set; }
 }
 
 /// <summary>Authentication mode names for <see cref="SecurityConfig.AuthMode"/>.</summary>
