@@ -31,7 +31,7 @@ public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers,
         {
             captured = await ExecuteAsync(reference, arguments, session.Id, token,
                 (tool, args, innerToken) => isSkillToolAllowed?.Invoke(tool.Name) == false
-                    ? Task.FromResult(Fail("metadata_capability_denied", "Resolved tool is not permitted by skill metadata capabilities", args, new()))
+                    ? Task.FromResult(Fail("metadata_capability_denied", "Resolved tool is not permitted by skill metadata capabilities", args, new(), ToolResultStatuses.Blocked))
                     : executor.ExecuteAsync(tool.Name, args, callId + ":target", session, turn,
                         false, null, innerToken, boundCapabilityTool: providers.Get(reference.Provider) is LocalCapabilityProvider ? null : tool),
                 securityScope: Scope(session.ChannelId, session.AuthenticatedUserId ?? session.SenderId));
@@ -187,11 +187,11 @@ public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers,
     }
     private static ToolExecutionResult Result(string text, string args) => new()
     { Invocation = new() { ToolName = "capability", Arguments = args, Result = text, ResultStatus = ToolResultStatuses.Completed }, ResultText = text, ResultStatus = ToolResultStatuses.Completed };
-    private static ToolExecutionResult Fail(string code, string message, string args, CapabilityBindingTrajectory trace) => new()
+    private static ToolExecutionResult Fail(string code, string message, string args, CapabilityBindingTrajectory trace, string status = ToolResultStatuses.Failed) => new()
     {
-        Invocation = new() { ToolName = "capability", Arguments = args, Result = message, ResultStatus = ToolResultStatuses.Failed, FailureCode = code, FailureMessage = message },
+        Invocation = new() { ToolName = "capability", Arguments = args, Result = message, ResultStatus = status, FailureCode = code, FailureMessage = message },
         ResultText = message,
-        ResultStatus = ToolResultStatuses.Failed,
+        ResultStatus = status,
         FailureCode = code,
         FailureMessage = message,
         BindingTrajectory = trace

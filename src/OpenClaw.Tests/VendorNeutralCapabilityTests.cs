@@ -350,7 +350,17 @@ public sealed class VendorNeutralCapabilityTests
             else
             {
                 Assert.Equal(0, tool.Calls);
+                Assert.Equal("blocked", step.Status);
                 Assert.Equal(scenario == "metadata" ? "metadata_capability_denied" : scenario == "approval" ? "approval_required" : "tool_failed", step.FailureCode);
+                if (scenario == "metadata")
+                {
+                    for (var i = 0; i < 2; i++)
+                        await (Task<string>)method.Invoke(runtime, [session, skill.Name, "", TestContext.Current.CancellationToken])!;
+                    skill.Metadata.Capabilities = [];
+                    await (Task<string>)method.Invoke(runtime, [session, skill.Name, "", TestContext.Current.CancellationToken])!;
+                    Assert.Equal("completed", session.MetaRunHistory.Last().StepResults.Single().Status);
+                    Assert.Equal(1, tool.Calls);
+                }
             }
         }
         finally
