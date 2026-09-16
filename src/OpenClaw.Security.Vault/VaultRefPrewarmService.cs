@@ -50,12 +50,6 @@ public sealed class VaultRefPrewarmService : IHostedService
         var tasks = refs.Select(async r =>
         {
             using var lease = await limiter.AcquireAsync(cancellationToken).ConfigureAwait(false);
-            if (!lease.IsAcquired)
-            {
-                lock (failures) failures.Add((r, "rate-limit timeout"));
-                _logger.LogError("Vault pre-warm: ref {Ref} skipped (rate-limit lease timeout).", r);
-                return;
-            }
             try
             {
                 var v = await _resolver.ResolveAsync(r, cancellationToken).ConfigureAwait(false);
@@ -65,8 +59,9 @@ public sealed class VaultRefPrewarmService : IHostedService
                     _logger.LogError("Vault pre-warm: ref {Ref} resolved to null.", r);
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
+                // Cancellation aborts pre-warm entirely; it is not a per-ref failure.
                 throw;
             }
             catch (Exception ex)
@@ -159,52 +154,29 @@ public sealed class VaultRefPrewarmService : IHostedService
 
     private sealed class RateLimiter : IDisposable
     {
-        private readonly int _perSecond;
         private readonly SemaphoreSlim _sem;
-        private readonly CancellationTokenSource _cts = new();
 
-        public RateLimiter(int perSecond)
+        public RateLimiter(int maxConcurrency)
         {
-            _perSecond = Math.Max(1, perSecond);
-            _sem = new SemaphoreSlim(_perSecond, _perSecond);
-            _ = RefillLoopAsync(_cts.Token);
-        }
-
-        private async Task RefillLoopAsync(CancellationToken ct)
-        {
-            try
-            {
-                while (!ct.IsCancellationRequested)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
-                    while (_sem.CurrentCount < _perSecond)
-                        _sem.Release();
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // disposed
-            }
+            _sem = new SemaphoreSlim(Math.Max(1, maxConcurrency), Math.Max(1, maxConcurrency));
         }
 
         public async Task<Lease> AcquireAsync(CancellationToken ct)
         {
             await _sem.WaitAsync(ct).ConfigureAwait(false);
-            return new Lease(acquired: true);
+            return new Lease(_sem);
         }
 
-        public void Dispose()
-        {
-            _cts.Cancel();
-            _sem.Dispose();
-            _cts.Dispose();
-        }
+        public void Dispose() => _sem.Dispose();
 
         public sealed class Lease : IDisposable
         {
-            public bool IsAcquired { get; }
-            public Lease(bool acquired) => IsAcquired = acquired;
-            public void Dispose() { }
+            private SemaphoreSlim? _sem;
+
+            internal Lease(SemaphoreSlim sem) => _sem = sem;
+
+            // Releases the permit exactly once, even if Dispose is called again.
+            public void Dispose() => Interlocked.Exchange(ref _sem, null)?.Release();
         }
     }
 }
