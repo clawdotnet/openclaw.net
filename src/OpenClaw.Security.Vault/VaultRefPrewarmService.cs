@@ -9,7 +9,7 @@ using OpenClaw.Core.Security;
 
 namespace OpenClaw.Security.Vault;
 
-public sealed class VaultRefPrewarmService : IHostedService
+public sealed class VaultRefPrewarmService : BackgroundService
 {
     private readonly VaultSecurityOptions _options;
     private readonly ISecretResolver _resolver;
@@ -28,7 +28,32 @@ public sealed class VaultRefPrewarmService : IHostedService
         _logger = logger;
     }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    private Task? _warmTask;
+    private readonly object _warmLock = new();
+    public Task WarmAsync(CancellationToken cancellationToken)
+    {
+        lock (_warmLock) return _warmTask ??= WarmCoreAsync(cancellationToken);
+    }
+
+    public override async Task StartAsync(CancellationToken cancellationToken)
+    {
+        await WarmAsync(cancellationToken).ConfigureAwait(false);
+        await base.StartAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (!_options.Enabled) return;
+        using var timer = new PeriodicTimer(_options.CacheTtl / 2);
+        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
+        {
+            try { await WarmCoreAsync(stoppingToken).ConfigureAwait(false); }
+            catch (HostingStartupException)
+            { _logger.LogWarning("Vault periodic refresh failed; expired cache entries remain unavailable."); }
+        }
+    }
+
+    private async Task WarmCoreAsync(CancellationToken cancellationToken)
     {
         if (!_options.Enabled)
             return;
@@ -67,7 +92,7 @@ public sealed class VaultRefPrewarmService : IHostedService
             catch (Exception ex)
             {
                 lock (failures) failures.Add((r, ex.GetType().Name));
-                _logger.LogError(ex, "Vault pre-warm: ref {Ref} failed: {Kind}", r, ex.GetType().Name);
+                _logger.LogError("Vault pre-warm: ref {Ref} failed: {Kind}", r, ex.GetType().Name);
             }
         }).ToArray();
 
@@ -90,7 +115,6 @@ public sealed class VaultRefPrewarmService : IHostedService
             failures.Count, refs.Count);
     }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     private IEnumerable<string> ScanConfigForVaultRefs()
     {
@@ -121,6 +145,12 @@ public sealed class VaultRefPrewarmService : IHostedService
         if (root is null || !visited.Add(root))
             yield break;
 
+        if (root is string text) { yield return (path, text); yield break; }
+        if (root is System.Text.Json.JsonElement json)
+        {
+            foreach (var item in WalkJson(json, path)) yield return item;
+            yield break;
+        }
         var t = root.GetType();
         foreach (var prop in t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
@@ -144,12 +174,23 @@ public sealed class VaultRefPrewarmService : IHostedService
                     i++;
                 }
             }
-            else if (val.GetType().IsClass)
+            else if (val is System.Text.Json.JsonElement || val.GetType().IsClass)
             {
                 foreach (var inner in WalkStringsInner(val, p, visited))
                     yield return inner;
             }
         }
+    }
+
+    private static IEnumerable<(string Path, string Value)> WalkJson(System.Text.Json.JsonElement json, string path)
+    {
+        if (json.ValueKind == System.Text.Json.JsonValueKind.String) yield return (path, json.GetString()!);
+        else if (json.ValueKind == System.Text.Json.JsonValueKind.Object)
+            foreach (var property in json.EnumerateObject())
+                foreach (var item in WalkJson(property.Value, path + "." + property.Name)) yield return item;
+        else if (json.ValueKind == System.Text.Json.JsonValueKind.Array)
+            foreach (var child in json.EnumerateArray())
+                foreach (var item in WalkJson(child, path)) yield return item;
     }
 
     private sealed class RateLimiter : IDisposable

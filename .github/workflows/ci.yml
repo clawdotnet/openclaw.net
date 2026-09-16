@@ -82,6 +82,9 @@ jobs:
       - name: Build solution
         run: dotnet build OpenClaw.Net.slnx --no-restore -c Release
 
+      - name: Verify Vault publish boundary
+        run: python3 eng/verify-vault-publish-boundary.py
+
       - name: Test standard targets
         run: dotnet test --no-build -c Release --verbosity normal --logger "trx;LogFileName=results.trx" src/OpenClaw.Tests
 

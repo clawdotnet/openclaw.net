@@ -43,7 +43,7 @@
     <!-- Vault integration (VaultSharp, IsAotCompatible=false) is not NativeAOT-safe.
          AOT publish builds drop the project reference and the Program.cs registration
          together (OPENCLAW_VAULT_EXCLUDED); JIT builds (build/run/test) keep it. -->
-    <ProjectReference Include="..\OpenClaw.Security.Vault\OpenClaw.Security.Vault.csproj" Condition="'$(IsPublishing)' != 'true'" />
+    <ProjectReference Include="..\OpenClaw.Security.Vault\OpenClaw.Security.Vault.csproj" Condition="'$(_IsPublishing)' != 'true' or '$(PublishAot)' != 'true'" />
   </ItemGroup>
   <!-- Dashboard Blazor WASM is integrated via CopyDashboardFiles targets below.
        Keep it out of ProjectReference to avoid Static Web Assets cross-project
@@ -62,9 +62,8 @@
   <PropertyGroup Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_OPENSANDBOX</DefineConstants>
   </PropertyGroup>
-  <!-- PublishAot is always true for this project, so any publish is an AOT publish.
-       Gate the Vault exclusion on IsPublishing so plain builds keep the integration. -->
-  <PropertyGroup Condition="'$(IsPublishing)' == 'true'">
+  <!-- Only NativeAOT publishing excludes Vault. Managed builds and JIT publishing retain it. -->
+  <PropertyGroup Condition="'$(_IsPublishing)' == 'true' and '$(PublishAot)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENCLAW_VAULT_EXCLUDED</DefineConstants>
   </PropertyGroup>
   <ItemGroup>

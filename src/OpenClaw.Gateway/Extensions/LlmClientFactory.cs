@@ -17,6 +17,10 @@ internal readonly record struct LlmClientTransportOptions(Uri? Endpoint, int Hid
 
 public static class LlmClientFactory
 {
+    private static string? ResolveProviderSecret(string? value)
+        => value?.StartsWith("vault:", StringComparison.OrdinalIgnoreCase) == true
+            ? OpenClaw.Core.Security.SecretResolver.Resolve(value) : value;
+
     private sealed class DynamicProviderRegistration
     {
         public required string OwnerId { get; init; }
@@ -111,7 +115,7 @@ public static class LlmClientFactory
                 .AsIChatClient(config.Model),
             "anthropic-vertex" => CreateAnthropicClient(new LlmProviderConfig
                 {
-                    ApiKey = config.ApiKey,
+                    ApiKey = ResolveProviderSecret(config.ApiKey),
                     Endpoint = config.Endpoint
                         ?? throw new InvalidOperationException(
                             "Endpoint must be set for provider 'anthropic-vertex'. " +
@@ -122,7 +126,7 @@ public static class LlmClientFactory
             "gemini" or "google" => CreateGeminiClient(config),
             "ollama" => new OllamaChatClient(new LlmProviderConfig
                 {
-                    ApiKey = config.ApiKey,
+                    ApiKey = ResolveProviderSecret(config.ApiKey),
                     Endpoint = OllamaEndpointNormalizer.NormalizeBaseUrl(config.Endpoint),
                     Model = config.Model
                 }),
@@ -138,7 +142,7 @@ public static class LlmClientFactory
                 CreateOpenAiCompatibleClient(new LlmProviderConfig
                 {
                     Provider = config.Provider,
-                    ApiKey = config.ApiKey,
+                    ApiKey = ResolveProviderSecret(config.ApiKey),
                     AuthMode = config.AuthMode,
                     SendRequestMetadata = config.SendRequestMetadata,
                     Model = config.Model,
@@ -152,7 +156,7 @@ public static class LlmClientFactory
                 }),
             "amazon-bedrock" => CreateAnthropicClient(new LlmProviderConfig
                 {
-                    ApiKey = config.ApiKey,
+                    ApiKey = ResolveProviderSecret(config.ApiKey),
                     Endpoint = config.Endpoint
                         ?? throw new InvalidOperationException(
                             "Endpoint must be set for provider 'amazon-bedrock'. " +
@@ -181,7 +185,7 @@ public static class LlmClientFactory
             "openai" or "azure-openai" => CreateOpenAiEmbeddingClient(config, embeddingModel!),
             "ollama" => new OllamaEmbeddingGenerator(new LlmProviderConfig
             {
-                ApiKey = config.ApiKey,
+                ApiKey = ResolveProviderSecret(config.ApiKey),
                 Endpoint = OllamaEndpointNormalizer.NormalizeBaseUrl(config.Endpoint),
                 Model = config.Model
             }, embeddingModel!),
@@ -190,7 +194,7 @@ public static class LlmClientFactory
                 CreateOpenAiEmbeddingClient(new LlmProviderConfig
                 {
                     Provider = config.Provider,
-                    ApiKey = config.ApiKey,
+                    ApiKey = ResolveProviderSecret(config.ApiKey),
                     AuthMode = config.AuthMode,
                     SendRequestMetadata = config.SendRequestMetadata,
                     Model = config.Model,
@@ -206,12 +210,13 @@ public static class LlmClientFactory
 
     private static IChatClient CreateGeminiClient(LlmProviderConfig llm)
     {
-        if (string.IsNullOrWhiteSpace(llm.ApiKey))
+        var apiKey = ResolveProviderSecret(llm.ApiKey);
+        if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("MODEL_PROVIDER_KEY must be set for the Gemini provider.");
 
         var options = new GeminiClientOptions
         {
-            ApiKey = llm.ApiKey
+            ApiKey = apiKey
         };
 
         if (!string.IsNullOrWhiteSpace(llm.Endpoint))
@@ -224,12 +229,13 @@ public static class LlmClientFactory
         LlmProviderConfig llm,
         string embeddingModel)
     {
-        if (string.IsNullOrWhiteSpace(llm.ApiKey))
+        var apiKey = ResolveProviderSecret(llm.ApiKey);
+        if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("MODEL_PROVIDER_KEY must be set for the Gemini provider.");
 
         var options = new GeminiClientOptions
         {
-            ApiKey = llm.ApiKey
+            ApiKey = apiKey
         };
 
         if (!string.IsNullOrWhiteSpace(llm.Endpoint))
@@ -246,18 +252,19 @@ public static class LlmClientFactory
 
         var transport = CreateTransportOptions(config.Endpoint);
         var client = new OpenAI.OpenAIClient(
-            new ApiKeyCredential(config.ApiKey ?? throw new InvalidOperationException("API key required for embeddings.")),
+            new ApiKeyCredential(ResolveProviderSecret(config.ApiKey) ?? throw new InvalidOperationException("API key required for embeddings.")),
             CreateOpenAiClientOptions(transport));
         return client.GetEmbeddingClient(embeddingModel).AsIEmbeddingGenerator();
     }
 
     private static OpenAI.OpenAIClient CreateOpenAiClient(LlmProviderConfig llm)
     {
-        if (string.IsNullOrWhiteSpace(llm.ApiKey))
+        var apiKey = ResolveProviderSecret(llm.ApiKey);
+        if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("MODEL_PROVIDER_KEY must be set for the OpenAI provider.");
 
         var transport = CreateTransportOptions(llm.Endpoint);
-        return new OpenAI.OpenAIClient(new ApiKeyCredential(llm.ApiKey), CreateOpenAiClientOptions(transport));
+        return new OpenAI.OpenAIClient(new ApiKeyCredential(apiKey), CreateOpenAiClientOptions(transport));
     }
 
     private static IChatClient CreateOpenAiCompatibleClient(LlmProviderConfig llm)
@@ -266,7 +273,7 @@ public static class LlmClientFactory
             ? new OpenClawProviderRequestPolicy(IsTailnetIdentityAuth(llm.AuthMode))
             : null;
 
-        var apiKey = llm.ApiKey;
+        var apiKey = ResolveProviderSecret(llm.ApiKey);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             if (!IsTailnetIdentityAuth(llm.AuthMode))
@@ -288,31 +295,33 @@ public static class LlmClientFactory
 
     private static OpenAI.OpenAIClient CreateAzureOpenAiClient(LlmProviderConfig llm)
     {
-        if (string.IsNullOrWhiteSpace(llm.ApiKey))
+        var apiKey = ResolveProviderSecret(llm.ApiKey);
+        if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("MODEL_PROVIDER_KEY must be set for the Azure OpenAI provider.");
         if (string.IsNullOrWhiteSpace(llm.Endpoint))
             throw new InvalidOperationException("MODEL_PROVIDER_ENDPOINT must be set for the Azure OpenAI provider (e.g. https://myresource.openai.azure.com/).");
 
         var transport = CreateTransportOptions(llm.Endpoint);
-        return new OpenAI.OpenAIClient(new ApiKeyCredential(llm.ApiKey), CreateOpenAiClientOptions(transport));
+        return new OpenAI.OpenAIClient(new ApiKeyCredential(apiKey), CreateOpenAiClientOptions(transport));
     }
 
     private static IAnthropicClient CreateAnthropicClient(LlmProviderConfig llm)
     {
-        if (string.IsNullOrWhiteSpace(llm.ApiKey))
+        var apiKey = ResolveProviderSecret(llm.ApiKey);
+        if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("MODEL_PROVIDER_KEY must be set for the Anthropic provider.");
 
         if (string.IsNullOrWhiteSpace(llm.Endpoint))
         {
             return new AnthropicClient
             {
-                ApiKey = llm.ApiKey
+                ApiKey = apiKey
             };
         }
 
         return new AnthropicClient
         {
-            ApiKey = llm.ApiKey,
+            ApiKey = apiKey,
             BaseUrl = llm.Endpoint
         };
     }

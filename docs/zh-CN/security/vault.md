@@ -99,7 +99,7 @@ vault:<mount>/data/<path>#<key>
 
 ## TLS
 
-- `Tls.SkipVerify=true` 接受任意服务器证书，仅适用于隔离的集成测试环境。校验会在未设置全局 opt-in `Security.AllowInsecureTls=true` 时拒绝它，使生产配置无法安装不安全的证书校验器。
+- `Tls.SkipVerify=true` 接受任意服务器证书，仅适用于隔离的集成测试环境。校验会在未设置全局 opt-in `Security.AllowInsecureTls=true` 时拒绝它，该显式开关在生产环境也会禁用证书校验；隔离开发环境之外应保持两个选项为 false。
 - `Tls.CaCertPath` 加载自定义 CA 证书包，作为 Vault TLS 校验的自定义根信任（`CustomRootTrust`）；主机名校验仍然生效。文件缺失或无效时启动失败。
 
 ## Token 递归防护
@@ -142,3 +142,7 @@ OPENBAO_ADDR=http://127.0.0.1:8200 OPENBAO_TOKEN=root \
 - **升级**：启用后端（`Enabled=true`），先设 `PrewarmRequired=false` 观察解析失败日志而不阻塞启动，待引用解析稳定后再改为 `true`。
 - **回滚**：设 `Enabled=false`；`vault:` 引用故障关闭（抛 `VaultNotConfiguredException`），`env:`/`raw:` 行为不变。
 - **轮换**：在 Vault 中轮换 value；缓存经 `CacheTtl` 过期后后台刷新（refresh-ahead），无需重启网关即可生效。
+
+Vault pre-warming runs before runtime initialization. The hosted service refreshes configured references every half cache TTL for synchronous consumers. Stale values are available for at most twice the TTL from the last successful fetch; failures do not extend that deadline. Existing clients that capture credentials at construction still require recreation to use a rotated value.
+
+Vault is available in JIT publishes (`-p:PublishAot=false`). NativeAOT publishes exclude the integration and reject `vault:` references.

@@ -564,7 +564,7 @@ CI 工作流：`ci.yml` 中可选 job，通过 `[Category("Integration")]` filte
 
 | 风险 | 缓解 |
 |---|---|
-| VaultSharp 重依赖反射且当前 gateway 无条件引用该项目 | `IsAotCompatible=false`。已通过条件构建边界解决：AOT 发布构建（`IsPublishing=true`）不引用本项目，并经 `OPENCLAW_VAULT_EXCLUDED` 常量移除 `Program.cs` 注册；JIT 构建保留完整支持。发布期排除与运行时 `Vault.Enabled` 相互独立（`Enabled=false` 不会将依赖从发布输出中剔除）；vault README 中文档化 |
+| VaultSharp 重依赖反射且当前 gateway 无条件引用该项目 | `IsAotCompatible=false`。已通过条件构建边界解决：AOT 发布构建（`_IsPublishing=true and PublishAot=true`）不引用本项目，并经 `OPENCLAW_VAULT_EXCLUDED` 常量移除 `Program.cs` 注册；JIT 构建保留完整支持。发布期排除与运行时 `Vault.Enabled` 相互独立（`Enabled=false` 不会将依赖从发布输出中剔除）；vault README 中文档化 |
 | 67 个调用方当前 sync resolve；新 `vault:` 在冷缓存同步路径抛异常 | Phase 1 不引入 `vault:` 语义；Phase 3 同步快速失败有文档 + `PrewarmRequired` 显式开关 |
 | 启动预热被 Vault 故障阻塞 | `PrewarmRequired` 开关；单引用超时；限流并发 |
 | Vault 单点故障 | TTL 缓存失败回退旧值；refresh-ahead 隐藏延迟；运维 runbook 文档化 HA Vault 拓扑 |
@@ -576,3 +576,5 @@ CI 工作流：`ci.yml` 中可选 job，通过 `[Category("Integration")]` filte
 ## 开放问题
 
 无（v1 设计冻结）。推迟到阶段 4 的项目已显式列为非目标。
+
+JIT publishing (`dotnet publish -p:PublishAot=false`) retains Vault support. NativeAOT publishing excludes it and `vault:` references fail closed with `VaultNotConfiguredException`.

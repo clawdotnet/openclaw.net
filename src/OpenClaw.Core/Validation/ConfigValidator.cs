@@ -310,7 +310,7 @@ public static class ConfigValidator
             errors.Add("Channels.WhatsApp.Type must be 'official', 'bridge', or 'first_party_worker'.");
         if (config.Channels.WhatsApp.ValidateSignature)
         {
-            var appSecret = SecretResolver.Resolve(config.Channels.WhatsApp.WebhookAppSecretRef)
+            var appSecret = ResolveSecretForValidation(config.Channels.WhatsApp.WebhookAppSecretRef)
                 ?? config.Channels.WhatsApp.WebhookAppSecret;
             if (string.IsNullOrWhiteSpace(appSecret))
                 errors.Add("Channels.WhatsApp.ValidateSignature is true but WebhookAppSecret/WebhookAppSecretRef is not configured.");
@@ -352,9 +352,9 @@ public static class ConfigValidator
             errors.Add($"Channels.Teams.TextChunkLimit must be >= 1 (got {config.Channels.Teams.TextChunkLimit}).");
         if (config.Channels.Teams.Enabled)
         {
-            var teamsAppId = SecretResolver.Resolve(config.Channels.Teams.AppIdRef) ?? config.Channels.Teams.AppId;
-            var teamsAppPassword = SecretResolver.Resolve(config.Channels.Teams.AppPasswordRef) ?? config.Channels.Teams.AppPassword;
-            var teamsTenantId = SecretResolver.Resolve(config.Channels.Teams.TenantIdRef) ?? config.Channels.Teams.TenantId;
+            var teamsAppId = ResolveSecretForValidation(config.Channels.Teams.AppIdRef) ?? config.Channels.Teams.AppId;
+            var teamsAppPassword = ResolveSecretForValidation(config.Channels.Teams.AppPasswordRef) ?? config.Channels.Teams.AppPassword;
+            var teamsTenantId = ResolveSecretForValidation(config.Channels.Teams.TenantIdRef) ?? config.Channels.Teams.TenantId;
             if (string.IsNullOrWhiteSpace(teamsAppId))
                 errors.Add("Channels.Teams.AppId/AppIdRef must be configured when Teams is enabled.");
             if (string.IsNullOrWhiteSpace(teamsAppPassword))
@@ -400,7 +400,7 @@ public static class ConfigValidator
                     errors.Add($"Webhook endpoint '{name}' MaxRequestBytes must be >= 1024 (got {endpoint.MaxRequestBytes}).");
                 if (endpoint.ValidateHmac)
                 {
-                    var secret = SecretResolver.Resolve(endpoint.Secret);
+                    var secret = ResolveSecretForValidation(endpoint.Secret);
                     if (string.IsNullOrWhiteSpace(secret))
                     {
                         errors.Add(
@@ -503,7 +503,7 @@ public static class ConfigValidator
         if (!config.Enabled)
             return;
 
-        if (string.IsNullOrWhiteSpace(SecretResolver.Resolve(config.ApiKeyRef)))
+        if (string.IsNullOrWhiteSpace(ResolveSecretForValidation(config.ApiKeyRef)))
             errors.Add("Plugins.Native.Notion.ApiKeyRef must resolve to a token when Notion is enabled.");
 
         if (!Uri.TryCreate(config.BaseUrl?.TrimEnd('/'), UriKind.Absolute, out _))
@@ -1071,4 +1071,8 @@ public static class ConfigValidator
 
         return false;
     }
+    private static string? ResolveSecretForValidation(string? value)
+        => value?.StartsWith("vault:", StringComparison.OrdinalIgnoreCase) == true
+            ? value : SecretResolver.Resolve(value);
+
 }

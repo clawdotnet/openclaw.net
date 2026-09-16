@@ -26,8 +26,7 @@ public sealed class VaultIntegrationTests
     [Fact]
     public async Task Smoke_PingOpenBao()
     {
-        if (!ShouldRun())
-            return;
+        Assert.SkipUnless(ShouldRun(), "Set OPENBAO_ADDR and OPENBAO_TOKEN for live Vault integration tests.");
 
         using var http = new HttpClient { BaseAddress = new Uri(Addr) };
         using var resp = await http.GetAsync("/v1/sys/health");
@@ -37,8 +36,7 @@ public sealed class VaultIntegrationTests
     [Fact]
     public async Task End2End_PutAndResolve_KvV2()
     {
-        if (!ShouldRun())
-            return;
+        Assert.SkipUnless(ShouldRun(), "Set OPENBAO_ADDR and OPENBAO_TOKEN for live Vault integration tests.");
 
         var path = $"openclaw-e2e/put-{Guid.NewGuid():n}";
         try
@@ -58,8 +56,7 @@ public sealed class VaultIntegrationTests
     [Fact]
     public async Task End2End_TtlExpiry_FetchesAgain()
     {
-        if (!ShouldRun())
-            return;
+        Assert.SkipUnless(ShouldRun(), "Set OPENBAO_ADDR and OPENBAO_TOKEN for live Vault integration tests.");
 
         var path = $"openclaw-e2e/ttl-{Guid.NewGuid():n}";
         try
@@ -88,8 +85,7 @@ public sealed class VaultIntegrationTests
     [Fact]
     public async Task End2End_TokenUnauth_Throws_VaultAuthException()
     {
-        if (!ShouldRun())
-            return;
+        Assert.SkipUnless(ShouldRun(), "Set OPENBAO_ADDR and OPENBAO_TOKEN for live Vault integration tests.");
 
         var client = new VaultSharpClient(Addr, "definitely-invalid-token", ns: null, new VaultTlsOptions());
         var memCache = new MemoryCache(new MemoryCacheOptions());
@@ -103,8 +99,7 @@ public sealed class VaultIntegrationTests
     [Fact]
     public async Task End2End_RotatedValue_PickedUpAfterTtl()
     {
-        if (!ShouldRun())
-            return;
+        Assert.SkipUnless(ShouldRun(), "Set OPENBAO_ADDR and OPENBAO_TOKEN for live Vault integration tests.");
 
         var path = $"openclaw-e2e/rotate-{Guid.NewGuid():n}";
         try

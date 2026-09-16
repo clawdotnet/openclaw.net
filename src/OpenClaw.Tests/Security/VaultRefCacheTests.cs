@@ -7,10 +7,15 @@ namespace OpenClaw.Tests.Security;
 
 public sealed class VaultRefCacheTests
 {
-    private static VaultRefCache NewCache(TimeSpan? ttl = null)
+    private sealed class Clock : TimeProvider
+    {
+        public DateTimeOffset Now = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+    private static VaultRefCache NewCache(TimeSpan? ttl = null, TimeProvider? clock = null)
     {
         var cache = new MemoryCache(new MemoryCacheOptions());
-        return new VaultRefCache(cache, NullLogger<VaultRefCache>.Instance, ttl ?? TimeSpan.FromMinutes(5));
+        return new VaultRefCache(cache, NullLogger<VaultRefCache>.Instance, ttl ?? TimeSpan.FromMinutes(5), clock: clock);
     }
 
     private static VaultRef Key(string path = "x", string key = "k")
@@ -62,10 +67,9 @@ public sealed class VaultRefCacheTests
     [Fact]
     public async Task GetOrFetchAsync_StaleEntry_RefreshAhead_ReturnsStale()
     {
-        // Entries are kept for 2×TTL so stale reads can fall back. Rather than sleeping
-        // fixed delays (which overshoot under parallel load and evict the entry), poll
-        // until the refresh-ahead lands the new value.
-        var cache = NewCache(TimeSpan.FromMilliseconds(250));
+        // Advance logical time without depending on the scheduler or real cache eviction.
+        var clock = new Clock();
+        var cache = NewCache(TimeSpan.FromMinutes(5), clock);
         var key = Key();
         var calls = 0;
         async Task<string> Fetch(CancellationToken _)
@@ -77,6 +81,7 @@ public sealed class VaultRefCacheTests
         var first = await cache.GetOrFetchAsync(key, Fetch, CancellationToken.None);
         Assert.Equal("v1", first);
 
+        clock.Now += TimeSpan.FromMinutes(6);
         var deadline = DateTime.UtcNow.AddSeconds(5);
         string observed = "v1";
         while (observed != "v2" && DateTime.UtcNow < deadline)
@@ -91,10 +96,9 @@ public sealed class VaultRefCacheTests
     [Fact]
     public async Task GetOrFetchAsync_FetchFailsWithStale_ReturnsStale()
     {
-        // TTL=250ms, stale window (250ms, 500ms). Poll until the entry goes stale —
-        // detected via refresh-ahead attempts on the failing fetch — instead of a fixed
-        // delay that can overshoot the 2×TTL retention under load and evict the entry.
-        var cache = NewCache(TimeSpan.FromMilliseconds(250));
+        // Enter the stale window deterministically, then observe the background refresh.
+        var clock = new Clock();
+        var cache = NewCache(TimeSpan.FromMinutes(5), clock);
         var key = Key();
 
         await cache.GetOrFetchAsync(key, _ => Task.FromResult("v1"), CancellationToken.None);
@@ -106,6 +110,7 @@ public sealed class VaultRefCacheTests
             return Task.FromException<string>(new InvalidOperationException("boom"));
         }
 
+        clock.Now += TimeSpan.FromMinutes(6);
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (Volatile.Read(ref calls) == 0 && DateTime.UtcNow < deadline)
         {
@@ -122,10 +127,11 @@ public sealed class VaultRefCacheTests
     [Fact]
     public async Task GetOrFetchAsync_RefreshAhead_DoesNotInheritCallerCancellation()
     {
-        var cache = NewCache(TimeSpan.FromMilliseconds(250));
+        var clock = new Clock();
+        var cache = NewCache(TimeSpan.FromMinutes(5), clock);
         var key = Key();
         await cache.GetOrFetchAsync(key, _ => Task.FromResult("v1"), CancellationToken.None);
-        await Task.Delay(275);
+        clock.Now += TimeSpan.FromMinutes(6);
 
         using var callerCts = new CancellationTokenSource();
         var refreshStarted = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -137,7 +143,8 @@ public sealed class VaultRefCacheTests
             return "v2";
         }
 
-        Assert.Equal("v1", await cache.GetOrFetchAsync(key, Refresh, callerCts.Token));
+        var resolution = cache.GetOrFetchAsync(key, Refresh, callerCts.Token);
+        Assert.Equal("v1", await resolution.WaitAsync(TimeSpan.FromSeconds(2)));
         var refreshToken = await refreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
         callerCts.Cancel();
         Assert.False(refreshToken.IsCancellationRequested);
@@ -189,4 +196,41 @@ public sealed class VaultRefCacheTests
         var result = await cache.GetOrFetchAsync(key, _ => Task.FromResult("v2"), CancellationToken.None);
         Assert.Equal("v2", result);
     }
+
+    [Fact]
+    public async Task StaleDeadline_IsNotExtendedByFailedRefresh()
+    {
+        var clock = new Clock();
+        var cache = NewCache(TimeSpan.FromMinutes(5), clock);
+        var key = Key();
+        await cache.GetOrFetchAsync(key, _ => Task.FromResult("old"), CancellationToken.None);
+        clock.Now += TimeSpan.FromMinutes(6);
+        var attempted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<string> Fail(CancellationToken _)
+        {
+            attempted.TrySetResult();
+            throw new InvalidOperationException("sensitive-response-body");
+        }
+        Assert.Equal("old", await cache.GetOrFetchAsync(key, Fail, CancellationToken.None));
+        await attempted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        clock.Now += TimeSpan.FromMinutes(5);
+        Assert.False(cache.TryGet(key, out _));
+        var exception = await Assert.ThrowsAsync<VaultUnavailableException>(() => cache.GetOrFetchAsync(key, Fail, CancellationToken.None));
+        Assert.DoesNotContain("sensitive-response-body", exception.ToString());
+    }
+
+    [Fact]
+    public async Task Invalidation_DuringFetch_DoesNotRepopulateCache()
+    {
+        var cache = NewCache();
+        var key = Key();
+        var release = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pending = cache.GetOrFetchAsync(key, _ => release.Task, CancellationToken.None);
+        cache.Invalidate(key);
+        release.SetResult("old");
+        await pending.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.False(cache.TryGet(key, out _));
+        Assert.Equal("new", await cache.GetOrFetchAsync(key, _ => Task.FromResult("new"), CancellationToken.None));
+    }
+
 }

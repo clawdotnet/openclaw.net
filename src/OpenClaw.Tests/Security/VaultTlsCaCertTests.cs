@@ -112,4 +112,17 @@ public sealed class VaultTlsCaCertTests : IDisposable
         var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
         return X509CertificateLoader.LoadPkcs12(cert.Export(X509ContentType.Pfx), password: null);
     }
+
+    [Fact]
+    public void Validator_RejectsClientOnlyCertificateFromTrustedRoot()
+    {
+        using var root = CreateSelfSigned();
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest("CN=vault", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+            new OidCollection { new("1.3.6.1.5.5.7.3.2") }, true));
+        using var clientOnly = request.Create(root, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddHours(1), [1, 2, 3]);
+        var validator = VaultCaCertLoader.BuildServerCertificateValidator(new(root));
+        Assert.False(validator(null!, clientOnly, null, SslPolicyErrors.RemoteCertificateChainErrors));
+    }
 }

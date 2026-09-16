@@ -80,9 +80,9 @@ public sealed class VaultSecretProvider : ISecretProvider, ISyncSecretProvider
                     throw new VaultAuthException($"Vault auth failed: {vex.HttpStatusCode}");
                 throw new VaultUnavailableException($"Vault error: {vex.HttpStatusCode}", retryable: true);
             }
-            catch (HttpRequestException hex)
+            catch (HttpRequestException)
             {
-                throw new VaultUnavailableException($"Vault network error: {hex.Message}", retryable: true);
+                throw new VaultUnavailableException("Vault network request failed.", retryable: true);
             }
         }, ct).ConfigureAwait(false);
 

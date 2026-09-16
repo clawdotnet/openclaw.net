@@ -14,9 +14,11 @@ public sealed class VaultRefCache
     private readonly IMemoryCache _cache;
     private readonly ILogger<VaultRefCache> _logger;
     private readonly TimeSpan _ttl;
+    private readonly TimeProvider _clock;
     private readonly CancellationToken _lifetimeToken;
     private readonly Dictionary<string, SemaphoreSlim> _locks = new(StringComparer.Ordinal);
     private readonly object _locksLock = new();
+    private readonly Dictionary<string, long> _versions = new(StringComparer.Ordinal);
 
     private sealed record Entry(string Value, DateTimeOffset FetchedAt, bool Refreshing);
 
@@ -24,18 +26,19 @@ public sealed class VaultRefCache
         IMemoryCache cache,
         ILogger<VaultRefCache> logger,
         TimeSpan ttl,
-        CancellationToken lifetimeToken = default)
+        CancellationToken lifetimeToken = default, TimeProvider? clock = null)
     {
         _cache = cache;
         _logger = logger;
         _ttl = ttl;
+        _clock = clock ?? TimeProvider.System;
         _lifetimeToken = lifetimeToken;
     }
 
     public bool TryGet(VaultRef key, out string value)
     {
         var ck = CacheKey(key);
-        if (_cache.TryGetValue<Entry>(ck, out var entry) && entry is not null)
+        if (_cache.TryGetValue<Entry>(ck, out var entry) && entry is not null && _clock.GetUtcNow() - entry.FetchedAt < _ttl * 2)
         {
             value = entry.Value;
             return true;
@@ -52,9 +55,11 @@ public sealed class VaultRefCache
         await sem.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (_cache.TryGetValue<Entry>(ck, out var existing) && existing is not null)
+            long version;
+            lock (_locksLock) version = _versions.GetValueOrDefault(ck);
+            if (_cache.TryGetValue<Entry>(ck, out var existing) && existing is not null && _clock.GetUtcNow() - existing.FetchedAt < _ttl * 2)
             {
-                var age = DateTimeOffset.UtcNow - existing.FetchedAt;
+                var age = _clock.GetUtcNow() - existing.FetchedAt;
                 if (age < _ttl)
                     return existing.Value;
 
@@ -64,7 +69,11 @@ public sealed class VaultRefCache
                 if (!existing.Refreshing)
                 {
                     var captured = key;
-                    _cache.Set(ck, existing with { Refreshing = true }, StaleEntryOptions);
+                    lock (_locksLock)
+                    {
+                        if (_versions.GetValueOrDefault(ck) != version) return existing.Value;
+                        _cache.Set(ck, existing with { Refreshing = true }, StaleEntryOptions);
+                    }
                     _ = Task.Run(async () =>
                     {
                         try
@@ -72,12 +81,14 @@ public sealed class VaultRefCache
                             // Refresh-ahead outlives the request that observed the stale
                             // entry, so it must not inherit that caller's cancellation.
                             var v = await fetch(_lifetimeToken).ConfigureAwait(false);
-                            Set(captured, v);
+                            Set(captured, v, version);
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogWarning(ex, "Vault refresh-ahead failed for key {Key}; keeping stale value.", ck);
-                            _cache.Set(ck, existing with { Refreshing = false }, StaleEntryOptions);
+                            _logger.LogWarning("Vault refresh-ahead failed for key {Key} ({Kind}); keeping stale value until its deadline.", ck, ex.GetType().Name);
+                            lock (_locksLock)
+                                if (_versions.GetValueOrDefault(ck) == version)
+                                    _cache.Set(ck, existing with { Refreshing = false }, StaleEntryOptions);
                         }
                     }, CancellationToken.None);
                 }
@@ -89,7 +100,7 @@ public sealed class VaultRefCache
             try
             {
                 var v = await fetch(ct).ConfigureAwait(false);
-                Set(key, v);
+                Set(key, v, version);
                 return v;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -98,8 +109,8 @@ public sealed class VaultRefCache
                 // unknown failures are wrapped as transient unavailability.
                 if (ex is SecretResolutionException)
                     throw;
-                _logger.LogError(ex, "Vault fetch failed for key {Key}.", ck);
-                throw new VaultUnavailableException($"Vault fetch failed: {ex.Message}", retryable: true);
+                _logger.LogError("Vault fetch failed for key {Key} ({Kind}).", ck, ex.GetType().Name);
+                throw new VaultUnavailableException("Vault fetch failed.", retryable: true);
             }
         }
         finally
@@ -110,7 +121,12 @@ public sealed class VaultRefCache
 
     public void Invalidate(VaultRef key)
     {
-        _cache.Remove(CacheKey(key));
+        lock (_locksLock)
+        {
+            var ck = CacheKey(key);
+            _versions[ck] = _versions.GetValueOrDefault(ck) + 1;
+            _cache.Remove(ck);
+        }
     }
 
     private MemoryCacheEntryOptions StaleEntryOptions => new()
@@ -118,10 +134,16 @@ public sealed class VaultRefCache
         AbsoluteExpirationRelativeToNow = _ttl * 2  // keep stale value beyond TTL for fallback
     };
 
-    private void Set(VaultRef key, string value)
+    private void Set(VaultRef key, string value, long version)
     {
-        var entry = new Entry(value, DateTimeOffset.UtcNow, Refreshing: false);
-        _cache.Set(CacheKey(key), entry, StaleEntryOptions);
+        lock (_locksLock)
+        {
+            var ck = CacheKey(key);
+            if (_versions.GetValueOrDefault(ck) != version) return;
+            _versions[ck] = version + 1;
+            var entry = new Entry(value, _clock.GetUtcNow(), Refreshing: false);
+            _cache.Set(ck, entry, StaleEntryOptions);
+        }
     }
 
     private SemaphoreSlim GetLock(string cacheKey)
@@ -138,5 +160,5 @@ public sealed class VaultRefCache
     }
 
     private static string CacheKey(VaultRef key) =>
-        $"vault:{key.Mount}:{key.Path}#{key.Key}";
+        $"vault:{key.Mount.Length}:{key.Mount}{key.Path.Length}:{key.Path}{key.Key.Length}:{key.Key}";
 }

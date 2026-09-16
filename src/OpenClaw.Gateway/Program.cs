@@ -89,6 +89,10 @@ while (true)
         // Route the static SecretResolver facade through the DI resolver
         // before the runtime initializes (which may resolve secret refs).
         ResolverAccessor.Use(app.Services);
+#if !OPENCLAW_VAULT_EXCLUDED
+        if (app.Services.GetService<VaultRefPrewarmService>() is { } vaultPrewarm)
+            await vaultPrewarm.WarmAsync(app.Lifetime.ApplicationStopping);
+#endif
         app.Lifetime.ApplicationStarted.Register(() => started = true);
         startupConsole.WritePhase("Initializing runtime");
         app.UseTickerQ();

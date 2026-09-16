@@ -33,7 +33,7 @@ public sealed class VaultRefPrewarmServiceTests
     public async Task StartAsync_AllSuccess_NoThrow()
     {
         var (svc, resolver, _) = Build(prewarmRequired: true, "vault:secret/data/x#k", "vault:secret/data/y#k");
-        await svc.StartAsync(CancellationToken.None);
+        await svc.WarmAsync(CancellationToken.None);
         await resolver.Received(2).ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
@@ -49,7 +49,7 @@ public sealed class VaultRefPrewarmServiceTests
         var sp = new ServiceCollection().AddSingleton(config).BuildServiceProvider();
         var svc = new VaultRefPrewarmService(opts, resolver, sp, Substitute.For<ILogger<VaultRefPrewarmService>>());
 
-        await svc.StartAsync(CancellationToken.None);
+        await svc.WarmAsync(CancellationToken.None);
 
         await resolver.Received(1).ResolveAsync("vault:secret/data/telegram#bot_token", Arg.Any<CancellationToken>());
     }
@@ -64,7 +64,7 @@ public sealed class VaultRefPrewarmServiceTests
         var svc = new VaultRefPrewarmService(opts, resolver, new ServiceCollection().BuildServiceProvider(),
             Substitute.For<ILogger<VaultRefPrewarmService>>());
 
-        await Assert.ThrowsAsync<HostingStartupException>(() => svc.StartAsync(CancellationToken.None));
+        await Assert.ThrowsAsync<HostingStartupException>(() => svc.WarmAsync(CancellationToken.None));
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public sealed class VaultRefPrewarmServiceTests
         var logger = Substitute.For<ILogger<VaultRefPrewarmService>>();
         var svc = new VaultRefPrewarmService(opts, resolver, new ServiceCollection().BuildServiceProvider(), logger);
 
-        await svc.StartAsync(CancellationToken.None); // no throw
+        await svc.WarmAsync(CancellationToken.None); // no throw
         logger.Received().Log(
             LogLevel.Error,
             Arg.Any<EventId>(),
@@ -95,6 +95,44 @@ public sealed class VaultRefPrewarmServiceTests
             .Returns(_ => new ValueTask<string?>(Task.FromCanceled<string?>(cts.Token)));
         cts.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => svc.StartAsync(cts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => svc.WarmAsync(cts.Token));
+    }
+
+    [Fact]
+    public async Task WarmBeforeRuntime_IsIdempotent_AndScansJsonSettingsAndArrays()
+    {
+        var config = new GatewayConfig();
+        config.Security.Vault = new() { Enabled = true, PrewarmRefs = ["vault:secret/data/array#key"] };
+        config.Plugins.Entries["probe"] = new() { Config = System.Text.Json.JsonDocument.Parse(
+            """{"nested":[{"credential":"vault:secret/data/plugin#key"}]}""").RootElement.Clone() };
+        var resolver = Substitute.For<ISecretResolver>();
+        resolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(ValueTask.FromResult<string?>("value"));
+        using var services = new ServiceCollection().AddSingleton(config).BuildServiceProvider();
+        using var service = new VaultRefPrewarmService(config.Security.Vault, resolver, services,
+            Substitute.For<ILogger<VaultRefPrewarmService>>());
+        await service.WarmAsync(CancellationToken.None);
+        await service.WarmAsync(CancellationToken.None);
+        await resolver.Received(1).ResolveAsync("vault:secret/data/plugin#key", Arg.Any<CancellationToken>());
+        await resolver.Received(1).ResolveAsync("vault:secret/data/array#key", Arg.Any<CancellationToken>());
+    }
+
+
+    [Fact]
+    public async Task HostedRefresh_KeepsWarmedReferencesActive_AndStopsCleanly()
+    {
+        var (service, resolver, options) = Build(true, "vault:secret/data/x#k");
+        using var owned = service;
+        options.CacheTtl = TimeSpan.FromMilliseconds(100);
+        var refreshed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        resolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            if (Interlocked.Increment(ref calls) > 1) refreshed.TrySetResult();
+            return ValueTask.FromResult<string?>("value");
+        });
+        await service.StartAsync(TestContext.Current.CancellationToken);
+        try { await refreshed.Task.WaitAsync(TimeSpan.FromSeconds(3)); }
+        finally { await service.StopAsync(CancellationToken.None); }
+        Assert.True(service.ExecuteTask!.IsCompleted);
     }
 }

@@ -99,7 +99,7 @@ Pre-warm concurrency is capped by `RateLimit.RequestsPerSecond`.
 
 ## TLS
 
-- `Tls.SkipVerify=true` accepts any server certificate and is only appropriate for isolated integration environments. Validation rejects it unless the global opt-in `Security.AllowInsecureTls=true` is set, so production configurations cannot install the insecure certificate validator.
+- `Tls.SkipVerify=true` accepts any server certificate and is only appropriate for isolated integration environments. Validation rejects it unless the global opt-in `Security.AllowInsecureTls=true` is set, and that opt-in also disables verification in production. Keep both settings false outside isolated development environments.
 - `Tls.CaCertPath` loads a custom CA bundle used as custom root trust (`CustomRootTrust`) for Vault TLS validation; hostname verification remains enforced. Missing or invalid certificate files fail startup.
 
 ## Token Recursion Guard
@@ -142,3 +142,7 @@ See `docs/security/vault-integration-tests.md` for running the integration test 
 - **Upgrade**: enable the backend (`Enabled=true`), set `PrewarmRequired=false` first to observe resolution failures in logs without blocking startup, then flip to `true` once refs resolve cleanly.
 - **Rollback**: set `Enabled=false`; `vault:` refs now fail closed (`VaultNotConfiguredException`) while `env:`/`raw:` behavior is unchanged.
 - **Rotation**: rotate values in Vault; caches expire after `CacheTtl` and are refreshed in the background (refresh-ahead), so rotation is picked up without a gateway restart.
+
+Vault pre-warming runs before runtime initialization. The hosted service refreshes configured references every half cache TTL for synchronous consumers. Stale values are available for at most twice the TTL from the last successful fetch; failures do not extend that deadline. Existing clients that capture credentials at construction still require recreation to use a rotated value.
+
+Vault is available in JIT publishes (`-p:PublishAot=false`). NativeAOT publishes exclude the integration and reject `vault:` references.

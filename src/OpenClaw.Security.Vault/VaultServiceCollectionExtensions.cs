@@ -18,6 +18,7 @@ public static class VaultServiceCollectionExtensions
         if (vaultOptions is null || !vaultOptions.Enabled)
             return services; // No-op when vault disabled
 
+        services.AddMemoryCache();
         services.AddSingleton(vaultOptions);
 
         // Core abstractions. EnvRaw must be registered first: bare/env/raw refs
@@ -51,7 +52,8 @@ public static class VaultServiceCollectionExtensions
                 sp.GetServices<ISecretProvider>(),
                 sp.GetRequiredService<ILogger<CompositeSecretResolver>>()));
 
-        services.AddHostedService<VaultRefPrewarmService>();
+        services.AddSingleton<VaultRefPrewarmService>();
+        services.AddHostedService(sp => sp.GetRequiredService<VaultRefPrewarmService>());
 
         return services;
     }
