@@ -410,7 +410,32 @@ public sealed class VendorNeutralCapabilityTests
         Assert.Equal("weather", (await registry.ResolveAsync(request, TestContext.Current.CancellationToken)).Binding!.Tool);
         var hidden = await registry.ResolveAsync(request, TestContext.Current.CancellationToken, name => name != "weather");
         Assert.Null(hidden.Binding);
+        Assert.Equal(ResolveCapabilityFailureCodes.ToolPolicyDenied, hidden.Failure!.FailureCode);
         Assert.DoesNotContain(hidden.Candidates, c => c.Name == "weather");
+    }
+
+    [Fact]
+    public async Task DynamicResolution_SkipsDeniedCandidateAndSelectsAllowedCandidate()
+    {
+        var denied = new Probe("denied");
+        var allowed = new Probe("allowed");
+        var provider = Substitute.For<ICapabilityProvider>();
+        provider.Id.Returns("remote");
+        provider.DiscoverAsync(Arg.Any<ResolveCapabilityRequest>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<CapabilityCandidate>>([new("denied", "weather", 1), new("allowed", "weather", 2)]);
+        provider.BindAsync("denied", null, Arg.Any<CancellationToken>())
+            .Returns(new CapabilityTarget("denied", denied));
+        provider.BindAsync("allowed", null, Arg.Any<CancellationToken>())
+            .Returns(new CapabilityTarget("allowed", allowed));
+        var executor = new CapabilitySlotExecutor(new([provider]), new());
+
+        var result = await executor.ExecuteAsync(Ref(provider: "remote"), "{}", "s", TestContext.Current.CancellationToken,
+            isToolAllowed: name => name == "allowed");
+
+        Assert.Equal(ToolResultStatuses.Completed, result.ResultStatus);
+        Assert.Equal(0, denied.Calls);
+        Assert.Equal(1, allowed.Calls);
+        Assert.Equal("allowed", result.BindingTrajectory!.Tool);
     }
 
     [Fact]

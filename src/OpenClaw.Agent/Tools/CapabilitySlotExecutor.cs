@@ -34,7 +34,8 @@ public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers,
                     ? Task.FromResult(Fail("metadata_capability_denied", "Resolved tool is not permitted by skill metadata capabilities", args, new(), ToolResultStatuses.Blocked))
                     : executor.ExecuteAsync(tool.Name, args, callId + ":target", session, turn,
                         false, null, innerToken, boundCapabilityTool: providers.Get(reference.Provider) is LocalCapabilityProvider ? null : tool),
-                securityScope: Scope(session.ChannelId, session.AuthenticatedUserId ?? session.SenderId));
+                securityScope: Scope(session.ChannelId, session.AuthenticatedUserId ?? session.SenderId),
+                isToolAllowed: isSkillToolAllowed);
             if (captured.ResultStatus != ToolResultStatuses.Completed)
                 throw new ToolOutcomeException(captured.ResultText, captured.ResultStatus, captured.FailureCode, captured.FailureMessage);
             return captured.ResultText;
@@ -56,7 +57,7 @@ public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers,
     private static string Scope(string channel, string user) => $"{channel.Length}:{channel}{user.Length}:{user}";
 
     internal async Task<ToolExecutionResult> ExecuteAsync(MetaCapabilityRefDefinition capabilityRef, string arguments, string sessionId, CancellationToken ct,
-        Func<ITool, string, CancellationToken, Task<ToolExecutionResult>>? invoke = null, string securityScope = "")
+        Func<ITool, string, CancellationToken, Task<ToolExecutionResult>>? invoke = null, string securityScope = "", Func<string, bool>? isToolAllowed = null)
     {
         var sw = Stopwatch.StartNew();
         var provider = providers.Get(capabilityRef.Provider);
@@ -112,11 +113,16 @@ public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers,
                             return Fail("invalid_capability_ref", "Dynamic binding requires an intent", arguments, trajectory);
                         var result = await providers.ResolveAsync(new(intent.TaskDescription, string.Join(",", intent.Keywords),
                             capabilityRef.SelectionPolicy == "exact_name" ? ResolveCapabilitySelectionPolicy.ExactName : ResolveCapabilitySelectionPolicy.First)
-                        { Provider = provider.Id, CapabilityType = intent.Type }, ct);
+                        { Provider = provider.Id, CapabilityType = intent.Type }, ct, isToolAllowed);
                         trajectory.Candidates = result.Candidates.Select(c => new CapabilityBindingCandidate { Name = c.Name, Rank = c.Rank }).ToList();
                         trajectory.Attempted = (result.Failure?.TriedCandidates ?? []).Select(c => new CapabilityBindingCandidate { Name = c.Name, Rank = c.Rank }).ToList();
-                        if (result.Target is null) return Fail(result.Failure?.FailureCode == ResolveCapabilityFailureCodes.ProviderUnavailable ? CapabilitySlotFailureCodes.ProviderUnavailable : CapabilitySlotFailureCodes.ResolveFailed,
-                            result.Failure?.FailureCode ?? "Resolution failed", arguments, trajectory);
+                        if (result.Target is null)
+                        {
+                            if (result.Failure?.FailureCode == ResolveCapabilityFailureCodes.ToolPolicyDenied)
+                                return Fail("metadata_capability_denied", "Resolved tools are not permitted by skill metadata capabilities", arguments, trajectory, ToolResultStatuses.Blocked);
+                            return Fail(result.Failure?.FailureCode == ResolveCapabilityFailureCodes.ProviderUnavailable ? CapabilitySlotFailureCodes.ProviderUnavailable : CapabilitySlotFailureCodes.ResolveFailed,
+                                result.Failure?.FailureCode ?? "Resolution failed", arguments, trajectory);
+                        }
                         found = new(result.Target, result.Binding!, result.Candidates);
                     }
                     if (capabilityRef.Binding == "static" || !string.IsNullOrEmpty(sessionId)) cache.Store(scope, key, found, generation, persistent: capabilityRef.Binding == "static");

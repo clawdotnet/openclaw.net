@@ -32,6 +32,7 @@ public static class ResolveCapabilityFailureCodes
     public const string AllAddsFailed = "all_bindings_failed";
     public const string SelectionPolicyNoMatch = "selection_policy_no_match";
     public const string ProviderUnavailable = "provider_unavailable";
+    public const string ToolPolicyDenied = "tool_policy_denied";
 }
 public static class CapabilitySlotFailureCodes
 {

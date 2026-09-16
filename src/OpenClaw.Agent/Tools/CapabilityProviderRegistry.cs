@@ -18,10 +18,16 @@ public sealed class CapabilityProviderRegistry(IEnumerable<ICapabilityProvider> 
         if (provider is null) return (null, new(ResolveCapabilityFailureCodes.ProviderUnavailable, []), [], null);
         try
         {
+            var policyDenied = false;
             var discovered = (await provider.DiscoverAsync(request, ct))
-                .Where(c => provider is not LocalCapabilityProvider || isToolAllowed?.Invoke(c.Name) != false)
+                .Where(c =>
+                {
+                    var allowed = provider is not LocalCapabilityProvider || isToolAllowed?.Invoke(c.Name) != false;
+                    policyDenied |= !allowed;
+                    return allowed;
+                })
                 .OrderBy(c => c.Rank).ThenBy(c => c.Name, StringComparer.Ordinal).ToArray();
-            if (discovered.Length == 0) return (null, new(ResolveCapabilityFailureCodes.NoCandidates, []), [], null);
+            if (discovered.Length == 0) return (null, new(policyDenied ? ResolveCapabilityFailureCodes.ToolPolicyDenied : ResolveCapabilityFailureCodes.NoCandidates, []), [], null);
             var selected = request.SelectionPolicy == ResolveCapabilitySelectionPolicy.ExactName
                 ? discovered.Where(c => string.Equals(c.Name, request.TaskDescription, StringComparison.OrdinalIgnoreCase)) : discovered;
             candidates = selected.Take(5).ToArray();
@@ -29,7 +35,8 @@ public sealed class CapabilityProviderRegistry(IEnumerable<ICapabilityProvider> 
             {
                 tried.Add(candidate);
                 var target = await provider.BindAsync(candidate.Name, null, ct);
-                if (target is null || isToolAllowed?.Invoke(target.Tool.Name) == false) continue;
+                if (target is null) continue;
+                if (isToolAllowed?.Invoke(target.Tool.Name) == false) { policyDenied = true; continue; }
                 var binding = new ResolveCapabilityBinding(target.Server, target.ToolId, target.Tool.ParameterSchema, tried.ToArray())
                 {
                     Provider = provider.Id,
@@ -37,7 +44,7 @@ public sealed class CapabilityProviderRegistry(IEnumerable<ICapabilityProvider> 
                 };
                 return (binding, null, candidates, target);
             }
-            return (null, new(tried.Count == 0 ? ResolveCapabilityFailureCodes.SelectionPolicyNoMatch : ResolveCapabilityFailureCodes.AllAddsFailed, tried), candidates, null);
+            return (null, new(policyDenied ? ResolveCapabilityFailureCodes.ToolPolicyDenied : tried.Count == 0 ? ResolveCapabilityFailureCodes.SelectionPolicyNoMatch : ResolveCapabilityFailureCodes.AllAddsFailed, tried), candidates, null);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex) when (ex is ToolOutcomeException or HttpRequestException or TimeoutException or OperationCanceledException)
