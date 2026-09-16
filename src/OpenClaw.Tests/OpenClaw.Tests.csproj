@@ -30,6 +30,7 @@
     <ProjectReference Include="..\OpenClaw.PluginKit\OpenClaw.PluginKit.csproj" />
     <ProjectReference Include="..\OpenClaw.Plugins.TokenJuice\OpenClaw.Plugins.TokenJuice.csproj" />
     <ProjectReference Include="..\OpenClaw.Testing\OpenClaw.Testing.csproj" />
+    <ProjectReference Include="..\OpenClaw.Security.Vault\OpenClaw.Security.Vault.csproj" />
 
     <Compile Include="../OpenClaw.Dashboard/Services/ApiService.cs" Link="Dashboard/ApiService.cs" />
     <Compile Include="../OpenClaw.Dashboard/Services/AuthService.cs" Link="Dashboard/AuthService.cs" />

@@ -491,8 +491,35 @@ internal static class PluginCommands
 
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunNpmAsync(string arguments, string workingDirectory)
     {
-        var npmCmd = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "npm.cmd" : "npm";
+        // On Windows, launching a batch file by bare name expands %~dp0 against the
+        // working directory instead of the batch file's own location. npm.cmd's shim
+        // locates npm-prefix.js/npm-cli.js via %~dp0, so a bare-name launch makes it
+        // point inside the working directory and fail with MODULE_NOT_FOUND. Launch
+        // by full path so %~dp0 is the shim's own directory.
+        var npmCmd = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? ResolveNpmCmdPath(Environment.GetEnvironmentVariable("PATH"))
+            : "npm";
         return await RunProcessAsync(npmCmd, arguments, workingDirectory);
+    }
+
+    internal static string ResolveNpmCmdPath(string? pathEnv)
+    {
+        if (!string.IsNullOrWhiteSpace(pathEnv))
+        {
+            foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var trimmed = dir.Trim().Trim('"');
+                if (trimmed.Length == 0)
+                    continue;
+                var candidate = Path.Combine(trimmed, "npm.cmd");
+                if (File.Exists(candidate))
+                    return Path.GetFullPath(candidate);
+            }
+        }
+
+        // Not found: fall back to the bare name; the file-not-found path below
+        // reports "Command not found" to the caller.
+        return "npm.cmd";
     }
 
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(

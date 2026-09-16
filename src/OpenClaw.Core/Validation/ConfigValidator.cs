@@ -223,6 +223,10 @@ public static class ConfigValidator
         if (config.SessionRateLimitPerMinute < 0)
             errors.Add($"SessionRateLimitPerMinute must be >= 0 (got {config.SessionRateLimitPerMinute}).");
 
+        // Security — Vault
+        if (config.Security.Vault is not null)
+            ValidateVaultSecurity(config.Security.Vault, IsNonLoopbackBind(config.BindAddress), config.Security.AllowInsecureTls, errors);
+
         // Plugin bridge transport
         var transportMode = (config.Plugins.Transport.Mode ?? "stdio").Trim();
         if (!transportMode.Equals("stdio", StringComparison.OrdinalIgnoreCase) &&
@@ -306,7 +310,7 @@ public static class ConfigValidator
             errors.Add("Channels.WhatsApp.Type must be 'official', 'bridge', or 'first_party_worker'.");
         if (config.Channels.WhatsApp.ValidateSignature)
         {
-            var appSecret = SecretResolver.Resolve(config.Channels.WhatsApp.WebhookAppSecretRef)
+            var appSecret = ResolveSecretForValidation(config.Channels.WhatsApp.WebhookAppSecretRef)
                 ?? config.Channels.WhatsApp.WebhookAppSecret;
             if (string.IsNullOrWhiteSpace(appSecret))
                 errors.Add("Channels.WhatsApp.ValidateSignature is true but WebhookAppSecret/WebhookAppSecretRef is not configured.");
@@ -348,9 +352,9 @@ public static class ConfigValidator
             errors.Add($"Channels.Teams.TextChunkLimit must be >= 1 (got {config.Channels.Teams.TextChunkLimit}).");
         if (config.Channels.Teams.Enabled)
         {
-            var teamsAppId = SecretResolver.Resolve(config.Channels.Teams.AppIdRef) ?? config.Channels.Teams.AppId;
-            var teamsAppPassword = SecretResolver.Resolve(config.Channels.Teams.AppPasswordRef) ?? config.Channels.Teams.AppPassword;
-            var teamsTenantId = SecretResolver.Resolve(config.Channels.Teams.TenantIdRef) ?? config.Channels.Teams.TenantId;
+            var teamsAppId = ResolveSecretForValidation(config.Channels.Teams.AppIdRef) ?? config.Channels.Teams.AppId;
+            var teamsAppPassword = ResolveSecretForValidation(config.Channels.Teams.AppPasswordRef) ?? config.Channels.Teams.AppPassword;
+            var teamsTenantId = ResolveSecretForValidation(config.Channels.Teams.TenantIdRef) ?? config.Channels.Teams.TenantId;
             if (string.IsNullOrWhiteSpace(teamsAppId))
                 errors.Add("Channels.Teams.AppId/AppIdRef must be configured when Teams is enabled.");
             if (string.IsNullOrWhiteSpace(teamsAppPassword))
@@ -396,7 +400,7 @@ public static class ConfigValidator
                     errors.Add($"Webhook endpoint '{name}' MaxRequestBytes must be >= 1024 (got {endpoint.MaxRequestBytes}).");
                 if (endpoint.ValidateHmac)
                 {
-                    var secret = SecretResolver.Resolve(endpoint.Secret);
+                    var secret = ResolveSecretForValidation(endpoint.Secret);
                     if (string.IsNullOrWhiteSpace(secret))
                     {
                         errors.Add(
@@ -499,7 +503,7 @@ public static class ConfigValidator
         if (!config.Enabled)
             return;
 
-        if (string.IsNullOrWhiteSpace(SecretResolver.Resolve(config.ApiKeyRef)))
+        if (string.IsNullOrWhiteSpace(ResolveSecretForValidation(config.ApiKeyRef)))
             errors.Add("Plugins.Native.Notion.ApiKeyRef must resolve to a token when Notion is enabled.");
 
         if (!Uri.TryCreate(config.BaseUrl?.TrimEnd('/'), UriKind.Absolute, out _))
@@ -973,6 +977,64 @@ public static class ConfigValidator
         }
     }
 
+    private static void ValidateVaultSecurity(VaultSecurityOptions v, bool publicBind, bool allowInsecureTls, List<string> errors)
+    {
+        if (!v.Enabled)
+            return;
+
+        if (string.IsNullOrWhiteSpace(v.Address))
+        {
+            errors.Add("Security.Vault.Address is required when Vault is enabled.");
+        }
+        else if (!Uri.TryCreate(v.Address, UriKind.Absolute, out var uri) ||
+                 uri.Scheme != Uri.UriSchemeHttps)
+        {
+            errors.Add($"Security.Vault.Address must be an HTTPS URI (got '{v.Address}').");
+        }
+        else if (publicBind && IsLoopbackHost(uri.Host))
+        {
+            errors.Add($"Security.Vault.Address must not point to loopback when binding to a non-loopback address (got '{uri.Host}').");
+        }
+
+        if (v.Tls.SkipVerify && !string.IsNullOrWhiteSpace(v.Tls.CaCertPath))
+            errors.Add("Security.Vault.Tls.SkipVerify and Security.Vault.Tls.CaCertPath are mutually exclusive; set at most one.");
+
+        if (v.Tls.SkipVerify && !allowInsecureTls)
+            errors.Add("Security.Vault.Tls.SkipVerify requires the explicit opt-in Security.AllowInsecureTls (insecure TLS acceptance).");
+
+        if (string.IsNullOrWhiteSpace(v.TokenRef))
+            errors.Add("Security.Vault.TokenRef is required when Vault is enabled.");
+        else if (v.TokenRef.StartsWith("vault:", StringComparison.OrdinalIgnoreCase))
+            errors.Add("Security.Vault.TokenRef must not use the 'vault:' prefix (recursion guard).");
+
+        if (v.CacheTtl < TimeSpan.FromSeconds(30) || v.CacheTtl > TimeSpan.FromHours(24))
+            errors.Add($"Security.Vault.CacheTtl must be between 00:00:30 and 1.00:00:00 (got {v.CacheTtl}).");
+
+        if (v.RequestTimeout < TimeSpan.FromSeconds(1) || v.RequestTimeout > TimeSpan.FromSeconds(60))
+            errors.Add($"Security.Vault.RequestTimeout must be between 00:00:01 and 00:01:00 (got {v.RequestTimeout}).");
+
+        if (v.RateLimit.RequestsPerSecond < 1 || v.RateLimit.RequestsPerSecond > 1000)
+            errors.Add($"Security.Vault.RateLimit.RequestsPerSecond must be between 1 and 1000 (got {v.RateLimit.RequestsPerSecond}).");
+
+        if (v.KvVersion != 2)
+            errors.Add($"Security.Vault.KvVersion must be 2 in v1 (got {v.KvVersion}).");
+    }
+
+    private static bool IsNonLoopbackBind(string bindAddress)
+    {
+        var normalized = (bindAddress ?? string.Empty).Trim();
+        return normalized.Length > 0 &&
+               !string.Equals(normalized, "127.0.0.1", StringComparison.OrdinalIgnoreCase) &&
+               !string.Equals(normalized, "localhost", StringComparison.OrdinalIgnoreCase) &&
+               !string.Equals(normalized, "::1", StringComparison.OrdinalIgnoreCase) &&
+               !string.Equals(normalized, "[::1]", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsLoopbackHost(string host) =>
+        host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+        host == "127.0.0.1" ||
+        host == "::1";
+
     private static bool IsValidProviderAuthMode(string? authMode)
     {
         var normalized = string.IsNullOrWhiteSpace(authMode) ? "bearer" : authMode.Trim().ToLowerInvariant();
@@ -1009,4 +1071,8 @@ public static class ConfigValidator
 
         return false;
     }
+    private static string? ResolveSecretForValidation(string? value)
+        => value?.StartsWith("vault:", StringComparison.OrdinalIgnoreCase) == true
+            ? value : SecretResolver.Resolve(value);
+
 }
