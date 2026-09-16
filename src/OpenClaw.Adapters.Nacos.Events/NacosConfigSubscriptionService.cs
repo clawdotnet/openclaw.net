@@ -3,7 +3,7 @@ using OpenClaw.Core.Skills.Meta;
 
 namespace OpenClaw.Adapters.Nacos.Events;
 
-/// <summary>Background subscription setup with bounded attempts and retry. SDK long polling owns reconnect after registration.</summary>
+/// <summary>Background subscription setup with time-limited setup attempts and indefinite retries. SDK long polling owns reconnect after registration.</summary>
 public sealed class NacosConfigSubscriptionService(
     INacosConfigService config, NacosOptions options, ICapabilityInvalidationSink invalidation,
     ILogger<NacosConfigSubscriptionService> logger) : ICapabilityChangeSource
@@ -35,6 +35,7 @@ public sealed class NacosConfigSubscriptionService(
 
     private async Task SubscribeAsync(CancellationToken ct)
     {
+        var failures = 0;
         while (!ct.IsCancellationRequested)
         {
             IDisposable? pendingHandle = null;
@@ -59,7 +60,7 @@ public sealed class NacosConfigSubscriptionService(
                 logger.LogWarning(ex, "Nacos subscription unavailable; retrying. TTL and explicit reload remain available.");
             }
             finally { pendingHandle?.Dispose(); }
-            try { await Task.Delay(TimeSpan.FromMilliseconds(Math.Clamp(options.ReconnectDelayMs, 10, 60_000)), ct); }
+            try { await Task.Delay(TimeSpan.FromMilliseconds(Math.Min(60_000, Math.Clamp(options.ReconnectDelayMs, 10, 60_000) * Math.Pow(2, Math.Min(failures++, 10)))), ct); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
         }
     }

@@ -350,11 +350,12 @@ Before closing #229 or proceeding with the dependent runtime changes:
    trajectory observability and offline replay are implemented (#234).
 5. ~~Subscribe to Nacos config change events and wire them into binding
    invalidation (dual cache clear + workspace reload).~~
-   **Done 2026-09-14**: `RedNb.Nacos.All 2.0.0` long-polling subscription on
-   the mcp.json dataId; onChange clears the session binding cache and the
-   runtime added-server cache and triggers the workspace watcher reload.
+   The optional SDK adapter subscribes via long polling on
+   the configured dataId; onChange invalidates capability bindings by advancing
+   the cache generation. It does not reload or replace workspace MCP configuration.
    Graceful no-op without `Nacos:ServerAddr`; the TTL/reload fallback stays
-   active. Hand-verified live on the local Nacos 3.2.4 test bed (JIT):
+   active. Historical prototype measurement (RedNb.Nacos.All 2.0.0, before the
+   current binding-only invalidation design) on the local Nacos 3.2.4 test bed (JIT):
    publish via `POST /nacos/v3/admin/cs/config` → `Nacos config change
    received …; triggering MCP workspace reload` plus the dual-cache clear
    logged at **+310 ms** (DoD: ≤ 2 s).

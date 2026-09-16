@@ -64,7 +64,7 @@ Configure the Router as MCP server `nacos-mcp-router`, and add `provider: nacos`
 }
 ```
 
-Supply optional username/password through your deployment's secret configuration. Missing address or disabled settings produce no subscription. Setup is asynchronous, attempts are bounded, and initial failures retry. `active` means listener registered; the SDK owns subsequent long-poll reconnect and this status is not remote health attestation. Events invalidate bindings; they do not import untrusted config content or replace the workspace file.
+Supply optional username/password through your deployment's secret configuration. Missing address or disabled settings produce no subscription. Setup is asynchronous; each attempt has a timeout and failures retry indefinitely with exponential backoff capped at 60 seconds. `active` means listener registered; the SDK owns subsequent long-poll reconnect and this status is not remote health attestation. Events invalidate bindings; they do not import untrusted config content or replace the workspace file.
 
 Migration from the experimental `nacos` branch: move the top-level `nacos` settings to `adapterSettings.nacos`, select the build flags explicitly, and add `provider: nacos`. `static.target` is preferred; `mcp_server_name` remains a loader alias. Vendor-specific failure names become `provider_unavailable`, `all_bindings_failed`, `capability_provider_unavailable`, `capability_binding_failed`, and `capability_execution_failed`.
 
@@ -72,7 +72,7 @@ Migration from the experimental `nacos` branch: move the top-level `nacos` setti
 
 Each Gateway owns a bounded 1,024-binding cache. Dynamic entries expire after 300 seconds and are scoped by provider, authenticated channel/user, session, normalized intent, binding mode, and generation. Static entries share the same capacity bound and are scoped by security identity; they persist until eviction or invalidation. Registries/caches are per host/workspace; embeddings must not share them across independent workspace security domains.
 
-Workspace reload and adapter events advance the generation and clear bindings. In-flight old-generation resolution cannot repopulate or start execution from stale entries. An invalidation after execution starts cannot undo an external action. Binding fills are serialized; tool execution remains concurrent. Cache hits retain candidate evidence and always recheck authorization.
+Workspace reload and adapter events advance the generation and clear bindings. In-flight old-generation resolution cannot repopulate or start execution from stale entries. An invalidation after execution starts cannot undo an external action. Binding fills are serialized per cache key; unrelated sessions and tool execution remain concurrent. Cache hits retain candidate evidence and always recheck authorization.
 
 Three failed executions open a provider/target/security-scoped circuit for 30 seconds. Success resets it; blocked actions do not count. After cooldown, executions may probe recovery (there is no single-probe half-open guarantee). Unknown tools are never retried automatically. Retry requires the target to explicitly declare retry safety and the step to request retries. Local implementations can opt in with `IRetrySafeCapabilityTool`; custom Nacos composition can supply an operator-controlled allowlist. Default Nacos targets are not retry-safe. Fallbacks continue to use the existing meta-skill failure branches.
 
@@ -87,3 +87,7 @@ Step evidence records provider, generation, intent, candidates/attempts, selecte
 Conformance tests cover both runtimes with the local provider, permission denial before discovery, authorization on cache hits, generation races, provider/security isolation, bounded expiry, circuit cooldown, and replay divergence. Router tests cover captured protocol envelopes and typed failures; listener tests cover retry, cancellation, and disposal.
 
 Live Nacos/Router acceptance is opt-in. Historical contributor measurements in the Router guide are not a new live validation of this refactor. A correctly registered weather backend and live subscription timing still need deployment evidence; NativeAOT SDK events remain separate work. AgentQi catalog/trust and operational screen design belong in the downstream ecosystem/product backlog.
+
+Nacos target retries require an explicit operator allowlist under `adapterSettings.nacos.retrySafeTargets`, for example `["weather-mcp/get_weather"]`. Only list operations known to be safe to repeat; other targets execute once regardless of a skill's retry count. The retry weather example requires this setting.
+
+Sessions retain the latest 100 meta-run records, including their complete replay evidence. Export records before they age out if longer retention is required.

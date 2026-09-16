@@ -320,6 +320,7 @@ public sealed class SessionMetaStepExecutionEvidence
     public int StdinBytes { get; init; }
     public string ParseMode { get; init; } = "text";
     public CapabilityBindingTrajectory? CapabilityBinding { get; init; }
+    public ToolInvocation? CapabilityInvocation { get; init; }
 }
 
 /// <summary>
@@ -342,6 +343,7 @@ public sealed class CapabilityBindingTrajectory
     public string? IntentKey { get; set; }
 
     /// <summary>Intent task description fed to the resolver (dynamic only).</summary>
+    public string? CapabilityType { get; set; }
     public string? TaskDescription { get; set; }
 
     /// <summary>Comma-separated intent keywords (dynamic only).</summary>

@@ -26,10 +26,10 @@ public sealed class NacosOptions
     /// <summary>Nacos group; default matches Nacos' built-in DEFAULT_GROUP.</summary>
     public string Group { get; set; } = "DEFAULT_GROUP";
 
-    /// <summary>Optional Nacos username. Pass through verbatim to the SDK.</summary>
+    /// <summary>Optional Nacos username. Supports env: and raw: secret references.</summary>
     public string? Username { get; set; }
 
-    /// <summary>Optional Nacos password. Pass through verbatim to the SDK.</summary>
+    /// <summary>Optional Nacos password. Supports env: and raw: secret references.</summary>
     public string? Password { get; set; }
 
     /// <summary>LongPolling timeout (milliseconds) handed to the SDK.</summary>

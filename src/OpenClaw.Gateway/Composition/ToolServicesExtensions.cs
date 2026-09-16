@@ -47,7 +47,7 @@ internal static class ToolServicesExtensions
         services.AddSingleton<LocalCapabilityProvider>(sp => new(() => sp.GetRequiredService<NativePluginRegistry>().Tools));
         services.AddSingleton<ICapabilityProvider>(sp => sp.GetRequiredService<LocalCapabilityProvider>());
 #if OPENCLAW_NACOS
-        services.AddSingleton<ICapabilityProvider>(sp => new OpenClaw.Adapters.Nacos.NacosCapabilityProvider(sp.GetRequiredService<McpServerToolRegistry>()));
+        services.AddSingleton<ICapabilityProvider>(sp => OpenClaw.Adapters.Nacos.NacosCapabilityProvider.FromSettings(sp.GetRequiredService<McpServerToolRegistry>(), startup.Config.AdapterSettings));
 #endif
 #if OPENCLAW_NACOS_EVENTS
         OpenClaw.Adapters.Nacos.Events.NacosEventRegistration.Add(services, startup.Config.AdapterSettings);

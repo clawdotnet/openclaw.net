@@ -129,13 +129,13 @@ public sealed class NacosConfigSubscriptionServiceTests
         var handles = new[] { Substitute.For<IDisposable>(), Substitute.For<IDisposable>() };
         var registrations = 0;
         var reads = 0;
+        var observations = new List<(int Read, int Registrations, int Disposals)>();
         config.AddListenerAsync("d", "g", Arg.Any<Action<NacosConfig>>(), Arg.Any<CancellationToken>())
             .Returns(_ => handles[registrations++]);
         config.GetConfigAsync("d", "g", Arg.Any<CancellationToken>()).Returns(_ =>
         {
-            Assert.Equal(++reads, registrations);
+            observations.Add((++reads, registrations, handles[0].ReceivedCalls().Count()));
             if (reads == 1) return Task.FromException<NacosConfig?>(new IOException("snapshot unavailable"));
-            handles[0].Received(1).Dispose();
             return Task.FromResult<NacosConfig?>(new("d", "g", "latest"));
         });
         await using var svc = new NacosConfigSubscriptionService(config,
@@ -145,6 +145,7 @@ public sealed class NacosConfigSubscriptionServiceTests
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         while (svc.Status != "active") await Task.Delay(10, deadline.Token);
         Assert.Equal(2, registrations);
+        Assert.Equal([(1, 1, 0), (2, 2, 1)], observations);
         sink.Received(1).Invalidate(Arg.Any<CapabilityChange>());
         await svc.DisposeAsync();
         handles[1].Received(1).Dispose();

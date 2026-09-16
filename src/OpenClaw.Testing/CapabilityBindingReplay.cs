@@ -94,6 +94,8 @@ public sealed class CapabilityBindingReplay
             };
 
         var mismatches = new List<string>();
+        if (!string.Equals(reproduced.IntentKey, _fixture.Expected.IntentKey, StringComparison.Ordinal)) mismatches.Add("intentKey");
+        if (!string.Equals(reproduced.SelectionPolicy, _fixture.Expected.SelectionPolicy, StringComparison.Ordinal)) mismatches.Add("selectionPolicy");
         if (!string.Equals(reproduced.Provider, _fixture.Expected.Provider, StringComparison.Ordinal)) mismatches.Add("provider");
         if (!string.Equals(reproduced.SchemaFingerprint, _fixture.Expected.SchemaFingerprint, StringComparison.Ordinal)) mismatches.Add("schemaFingerprint");
         if (!string.Equals(reproduced.Binding, _fixture.Expected.Binding, StringComparison.Ordinal)) mismatches.Add("binding");
@@ -153,6 +155,7 @@ public sealed class CapabilityBindingReplay
             Intent = new MetaCapabilityIntent
             {
                 TaskDescription = expected.TaskDescription!,
+                Type = expected.CapabilityType,
                 Keywords = (expected.KeyWords ?? "")
                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             },

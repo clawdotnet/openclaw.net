@@ -14,7 +14,7 @@ public static class NacosEventRegistration
         var options = raw.Deserialize(NacosSettingsJson.Default.NacosOptions) ?? new();
         if (!options.Enabled || string.IsNullOrWhiteSpace(options.ServerAddr)) return;
         services.AddSingleton(options);
-        services.AddNacosConfig(o => { o.ServerAddresses = options.ServerAddr; o.Username = options.Username; o.Password = options.Password; o.LongPollTimeout = options.LongPollingTimeoutMs; o.DefaultTimeout = options.LongPollingTimeoutMs; });
+        services.AddNacosConfig(o => { o.ServerAddresses = options.ServerAddr; o.Username = OpenClaw.Core.Security.SecretResolver.Resolve(options.Username); o.Password = OpenClaw.Core.Security.SecretResolver.Resolve(options.Password); o.LongPollTimeout = options.LongPollingTimeoutMs; o.DefaultTimeout = options.LongPollingTimeoutMs; });
         services.AddSingleton<INacosConfigService>(sp => new RedNbNacosConfigService(sp.GetRequiredService<RedNb.Nacos.Config.IConfigService>(), options, sp.GetRequiredService<ILogger<RedNbNacosConfigService>>()));
         services.AddSingleton<ICapabilityChangeSource, NacosConfigSubscriptionService>();
     }

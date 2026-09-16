@@ -69,6 +69,13 @@ public sealed class DurableActionJournal(string storagePath)
         catch { handle.Dispose(); throw; }
     }
 
+    public static IEnumerable<string?> RecordedCallIds(Session session)
+        => session.History.SelectMany(t => t.ToolCalls ?? []).Select(c => c.CallId)
+            .Concat(session.MetaRunHistory.SelectMany(r => r.StepResults)
+                .Concat(session.MetaExecutionCheckpoint?.StepResults ?? [])
+                .Select(s => s.ExecutionEvidence?.CapabilityInvocation?.CallId))
+            .Where(id => !string.IsNullOrWhiteSpace(id));
+
     public async Task AcknowledgePersistedHistoryAsync(Session session, CancellationToken ct, ILogger? logger = null)
     {
         // A tool can persist session metadata while it holds the dispatch lease. Skip that
@@ -118,7 +125,7 @@ public sealed class DurableActionJournal(string storagePath)
         }
         public void AcknowledgeHistory(Session session)
         {
-            var calls = session.History.SelectMany(t => t.ToolCalls ?? []).Select(c => c.CallId).ToHashSet();
+            var calls = RecordedCallIds(session).ToHashSet();
             foreach (var record in records.Where(r => r.State == "completed" && !r.HistoryPersisted && calls.Contains(r.CallId)))
             { record.HistoryPersisted = true; Save(record); }
         }

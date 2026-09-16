@@ -10,7 +10,7 @@ public sealed class CapabilityProviderRegistry(IEnumerable<ICapabilityProvider> 
     public IReadOnlyList<string> ProviderIds => _providers.Keys.Order(StringComparer.Ordinal).ToArray();
     public string DefaultProvider { get; } = defaultProvider;
     public ICapabilityProvider? Get(string? id) => _providers.GetValueOrDefault(string.IsNullOrWhiteSpace(id) ? DefaultProvider : id);
-    public async Task<(ResolveCapabilityBinding? Binding, ResolveCapabilityFailure? Failure, IReadOnlyList<CapabilityCandidate> Candidates, CapabilityTarget? Target)> ResolveAsync(ResolveCapabilityRequest request, CancellationToken ct)
+    public async Task<(ResolveCapabilityBinding? Binding, ResolveCapabilityFailure? Failure, IReadOnlyList<CapabilityCandidate> Candidates, CapabilityTarget? Target)> ResolveAsync(ResolveCapabilityRequest request, CancellationToken ct, Func<string, bool>? isToolAllowed = null)
     {
         var provider = Get(request.Provider);
         var tried = new List<CapabilityCandidate>();
@@ -18,15 +18,18 @@ public sealed class CapabilityProviderRegistry(IEnumerable<ICapabilityProvider> 
         if (provider is null) return (null, new(ResolveCapabilityFailureCodes.ProviderUnavailable, []), [], null);
         try
         {
-            candidates = (await provider.DiscoverAsync(request, ct)).OrderBy(c => c.Rank).ThenBy(c => c.Name, StringComparer.Ordinal).Take(5).ToArray();
-            if (candidates.Count == 0) return (null, new(ResolveCapabilityFailureCodes.NoCandidates, []), [], null);
+            var discovered = (await provider.DiscoverAsync(request, ct))
+                .Where(c => provider is not LocalCapabilityProvider || isToolAllowed?.Invoke(c.Name) != false)
+                .OrderBy(c => c.Rank).ThenBy(c => c.Name, StringComparer.Ordinal).ToArray();
+            if (discovered.Length == 0) return (null, new(ResolveCapabilityFailureCodes.NoCandidates, []), [], null);
             var selected = request.SelectionPolicy == ResolveCapabilitySelectionPolicy.ExactName
-                ? candidates.Where(c => string.Equals(c.Name, request.TaskDescription, StringComparison.OrdinalIgnoreCase)) : candidates;
-            foreach (var candidate in selected)
+                ? discovered.Where(c => string.Equals(c.Name, request.TaskDescription, StringComparison.OrdinalIgnoreCase)) : discovered;
+            candidates = selected.Take(5).ToArray();
+            foreach (var candidate in candidates)
             {
                 tried.Add(candidate);
                 var target = await provider.BindAsync(candidate.Name, null, ct);
-                if (target is null) continue;
+                if (target is null || isToolAllowed?.Invoke(target.Tool.Name) == false) continue;
                 var binding = new ResolveCapabilityBinding(target.Server, target.ToolId, target.Tool.ParameterSchema, tried.ToArray())
                 {
                     Provider = provider.Id,

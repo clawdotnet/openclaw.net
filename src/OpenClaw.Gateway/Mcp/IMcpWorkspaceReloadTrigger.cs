@@ -2,10 +2,8 @@ namespace OpenClaw.Gateway.Mcp;
 
 /// <summary>
 /// Triggers a workspace MCP reload. Implemented by <c>McpWorkspaceWatcherService</c>
-/// (file-based reload); the Nacos config event subscription (issue #238) funnels
-/// into the same trigger so publish events reuse the established reload path
-/// instead of duplicating it. Extracted to an interface so the subscription
-/// service depends on the trigger, not on the file-watching implementation.
+/// (file-based reload). Nacos events independently invalidate capability bindings;
+/// they do not reload workspace configuration.
 /// </summary>
 public interface IMcpWorkspaceReloadTrigger
 {

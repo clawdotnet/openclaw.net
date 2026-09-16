@@ -10,21 +10,30 @@ namespace OpenClaw.Agent.Tools;
 
 public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers, CapabilityBindingCache cache, TimeProvider? clock = null)
 {
-    private readonly SemaphoreSlim _bindingGate = new(1, 1);
+    private sealed class BindingGate
+    {
+        public readonly SemaphoreSlim Semaphore = new(1, 1);
+        public int Users;
+    }
+    private readonly Dictionary<(string Scope, string Key), BindingGate> _bindingGates = new();
+    private readonly object _gateLock = new();
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private sealed record Cached(CapabilityTarget Target, ResolveCapabilityBinding Binding, IReadOnlyList<CapabilityCandidate> Candidates);
-    private readonly ConcurrentDictionary<string, (int Failures, DateTimeOffset Until)> _circuits = new();
+    private readonly Dictionary<string, (int Failures, DateTimeOffset Until)> _circuits = new();
+    private readonly object _circuitLock = new();
     internal int AddedServerCount => cache.Count; // Retained diagnostic; bindings now share the bounded, generation-aware cache.
-    public void ClearRuntimeCache() { cache.Clear(); _circuits.Clear(); }
+    public void ClearRuntimeCache() { cache.Clear(); lock (_circuitLock) _circuits.Clear(); }
     public async Task<ToolExecutionResult> ExecuteGovernedAsync(MetaCapabilityRefDefinition reference, string arguments,
-        Session session, OpenClaw.Core.Observability.TurnContext turn, OpenClawToolExecutor executor, string callId, CancellationToken ct)
+        Session session, OpenClaw.Core.Observability.TurnContext turn, OpenClawToolExecutor executor, string callId, CancellationToken ct, Func<string, bool>? isSkillToolAllowed = null)
     {
         ToolExecutionResult? captured = null;
         var stepTool = new GovernedStepTool(async token =>
         {
             captured = await ExecuteAsync(reference, arguments, session.Id, token,
-                (tool, args, innerToken) => executor.ExecuteAsync(tool.Name, args, callId + ":target", session, turn,
-                    false, null, innerToken, boundCapabilityTool: tool),
+                (tool, args, innerToken) => isSkillToolAllowed?.Invoke(tool.Name) == false
+                    ? Task.FromResult(Fail("metadata_capability_denied", "Resolved tool is not permitted by skill metadata capabilities", args, new()))
+                    : executor.ExecuteAsync(tool.Name, args, callId + ":target", session, turn,
+                        false, null, innerToken, boundCapabilityTool: providers.Get(reference.Provider) is LocalCapabilityProvider ? null : tool),
                 securityScope: Scope(session.ChannelId, session.AuthenticatedUserId ?? session.SenderId));
             if (captured.ResultStatus != ToolResultStatuses.Completed)
                 throw new ToolOutcomeException(captured.ResultText, captured.ResultStatus, captured.FailureCode, captured.FailureMessage);
@@ -32,11 +41,12 @@ public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers,
         });
         var result = await executor.ExecuteAsync(stepTool.Name, arguments, callId + ":resolve", session, turn,
             false, null, ct, boundCapabilityTool: stepTool);
+        result.CapabilityInvocation = captured?.Invocation;
         result.BindingTrajectory = captured?.BindingTrajectory;
         result.RetrySafe = captured?.RetrySafe ?? false;
         return result;
     }
-    private sealed class GovernedStepTool(Func<CancellationToken, Task<string>> run) : ITool
+    internal sealed class GovernedStepTool(Func<CancellationToken, Task<string>> run) : ITool
     {
         public string Name => "resolve_capability";
         public string Description => "Resolve an authorized capability workflow step";
@@ -65,14 +75,25 @@ public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers,
             intentKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Scope(intentKey, type))));
         var scope = $"{securityScope.Length}:{securityScope}" + (capabilityRef.Binding == "static" ? ":static" : $"{sessionId.Length}:{sessionId}");
         var key = $"{provider.Id}:{generation}:{capabilityRef.Binding}:{intentKey}";
+        trajectory.CapabilityType = intent?.Type;
         trajectory.TaskDescription = intent?.TaskDescription;
         trajectory.KeyWords = intent is null ? null : string.Join(",", intent.Keywords);
         trajectory.SelectionPolicy = capabilityRef.SelectionPolicy;
         trajectory.IntentKey = intentKey;
         Cached? found;
-        await _bindingGate.WaitAsync(ct);
+        var gateKey = (scope, key);
+        BindingGate bindingGate;
+        lock (_gateLock)
+        {
+            if (!_bindingGates.TryGetValue(gateKey, out bindingGate!))
+                _bindingGates[gateKey] = bindingGate = new();
+            bindingGate.Users++;
+        }
+        var entered = false;
         try
         {
+            await bindingGate.Semaphore.WaitAsync(ct);
+            entered = true;
             if ((capabilityRef.Binding == "static" || !string.IsNullOrEmpty(sessionId)) && cache.TryGetValue<Cached>(scope, key, out found)) trajectory.CacheHit = true;
             else
             {
@@ -106,7 +127,18 @@ public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers,
                 { return Fail(CapabilitySlotFailureCodes.ProviderUnavailable, "Capability provider transport unavailable", arguments, trajectory); }
             }
         }
-        finally { _bindingGate.Release(); }
+        finally
+        {
+            if (entered) bindingGate.Semaphore.Release();
+            lock (_gateLock)
+            {
+                if (--bindingGate.Users == 0)
+                {
+                    _bindingGates.Remove(gateKey);
+                    bindingGate.Semaphore.Dispose();
+                }
+            }
+        }
         if (found is null || generation != cache.Generation) return Fail("capability_stale_binding", "Provider configuration changed during resolution; resolve again", arguments, trajectory);
         trajectory.Server = found.Target.Server;
         trajectory.Tool = found.Target.ToolId;
@@ -116,8 +148,9 @@ public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers,
         trajectory.Attempted = found.Binding.TriedCandidates.Select(c => new CapabilityBindingCandidate { Name = c.Name, Rank = c.Rank }).ToList();
         trajectory.ElapsedMs = sw.Elapsed.TotalMilliseconds;
         var circuitKey = $"{scope}:{provider.Id}:{generation}:{found.Target.Server}:{found.Target.Tool.Name}";
-        if (_circuits.TryGetValue(circuitKey, out var circuit) && circuit.Until > _clock.GetUtcNow())
-            return Fail("capability_circuit_open", "Capability circuit is open; wait before trying again", arguments, trajectory);
+        lock (_circuitLock)
+            if (_circuits.TryGetValue(circuitKey, out var circuit) && circuit.Failures >= 3 && circuit.Until > _clock.GetUtcNow())
+                return Fail("capability_circuit_open", "Capability circuit is open; wait before trying again", arguments, trajectory);
         ToolExecutionResult resultText;
         if (invoke is null)
         {
@@ -128,10 +161,26 @@ public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers,
         else resultText = await invoke(found.Target.Tool, arguments, ct);
         if (resultText.ResultStatus == ToolResultStatuses.Failed)
         {
-            if (_circuits.Count > 1024) _circuits.Clear();
-            _circuits.AddOrUpdate(circuitKey, (1, DateTimeOffset.MinValue), (_, old) => (old.Failures + 1, old.Failures + 1 >= 3 ? _clock.GetUtcNow().AddSeconds(30) : DateTimeOffset.MinValue));
+            lock (_circuitLock)
+            {
+                var now = _clock.GetUtcNow();
+                foreach (var expired in _circuits.Where(c => c.Value.Until <= now).Select(c => c.Key).ToArray())
+                    _circuits.Remove(expired);
+                if (_circuits.TryGetValue(circuitKey, out var old))
+                    _circuits[circuitKey] = (old.Failures + 1, now.AddSeconds(30));
+                else
+                {
+                    if (_circuits.Count >= 1024)
+                    {
+                        var closed = _circuits.Where(c => c.Value.Failures < 3).MinBy(c => c.Value.Until);
+                        if (closed.Key is not null) _circuits.Remove(closed.Key);
+                    }
+                    // Never evict an active cooldown to admit a new circuit.
+                    if (_circuits.Count < 1024) _circuits[circuitKey] = (1, now.AddSeconds(30));
+                }
+            }
         }
-        else if (resultText.ResultStatus == ToolResultStatuses.Completed) _circuits.TryRemove(circuitKey, out _);
+        else if (resultText.ResultStatus == ToolResultStatuses.Completed) { lock (_circuitLock) _circuits.Remove(circuitKey); }
         resultText.BindingTrajectory = trajectory;
         resultText.RetrySafe = found.Target.RetrySafe && resultText.ResultStatus == ToolResultStatuses.Failed;
         return resultText;

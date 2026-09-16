@@ -18,11 +18,11 @@ public sealed class VendorNeutralCapabilityTests
         public DateTimeOffset Now = DateTimeOffset.UnixEpoch;
         public override DateTimeOffset GetUtcNow() => Now;
     }
-    private sealed class Probe : ITool
+    private sealed class Probe(string name = "weather") : ITool
     {
         public int Calls;
         public bool Fail;
-        public string Name => "weather";
+        public string Name => name;
         public string Description => "weather city";
         public string ParameterSchema => "{\"type\":\"object\"}";
         public ValueTask<string> ExecuteAsync(string args, CancellationToken ct)
@@ -77,7 +77,8 @@ public sealed class VendorNeutralCapabilityTests
             session.RouteAllowedTools = ["resolve_capability"];
             await (Task<string>)method.Invoke(runtime, [session, skill.Name, "", TestContext.Current.CancellationToken])!;
             Assert.Equal(1, tool.Calls); // cached binding is not cached permission
-            Assert.NotEqual("completed", session.MetaRunHistory.Last().StepResults.Single().Status);
+            Assert.Equal("preset_blocked", session.MetaRunHistory.Last().StepResults.Single().FailureCode);
+            Assert.True(session.MetaRunHistory.Last().StepResults.Single().ExecutionEvidence!.CapabilityBinding!.CacheHit);
             Assert.Empty(chat.ReceivedCalls()); Assert.Empty(execution.ReceivedCalls());
         }
         finally
@@ -160,7 +161,7 @@ public sealed class VendorNeutralCapabilityTests
             var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
             await (Task<string>)method.Invoke(runtime, [session, skill.Name, "", TestContext.Current.CancellationToken])!;
             Assert.Equal(0, provider.Searches); Assert.Equal(0, provider.Binds); Assert.Equal(0, tool.Calls);
-            Assert.NotEqual("completed", session.MetaRunHistory.Single().StepResults.Single().Status);
+            Assert.Equal("preset_blocked", session.MetaRunHistory.Single().StepResults.Single().FailureCode);
         }
         finally
         {
@@ -288,4 +289,132 @@ public sealed class VendorNeutralCapabilityTests
         }
     }
 
+    [Theory]
+    [InlineData(false, "metadata")]
+    [InlineData(true, "metadata")]
+    [InlineData(false, "approval")]
+    [InlineData(true, "approval")]
+    [InlineData(false, "hook")]
+    [InlineData(true, "hook")]
+    [InlineData(false, "journal")]
+    [InlineData(true, "journal")]
+    [InlineData(true, "delegation")]
+    public async Task CapabilityTargets_RespectRuntimeAndSkillContracts(bool maf, string scenario)
+    {
+        var tool = new Probe(scenario is "approval" or "hook" ? "capability:nacos:weather-mcp:get_weather" : "weather");
+        var skill = new SkillDefinition
+        {
+            Name = "guarded", Description = "test", Instructions = "", Location = "test", Kind = SkillKind.Meta,
+            Composition = new() { Steps = [new() { Id = "query", Kind = "tool_call", CapabilityRef = Ref(), ToolArgsJson = "{}", TimeoutSeconds = 2 }] }
+        };
+        if (scenario == "metadata") skill.Metadata.Capabilities = ["tool:emit_text"];
+        var path = Path.Join(Path.GetTempPath(), "capability-guard-" + Guid.NewGuid().ToString("N"));
+        using var memory = new FileMemoryStore(path, 4);
+        var config = new GatewayConfig { Memory = new() { StoragePath = path } };
+        config.Tooling.DurableActionJournal = scenario == "journal";
+        config.Tooling.RequireToolApproval = scenario == "approval";
+        config.Tooling.ApprovalRequiredTools = [tool.Name];
+        if (scenario == "delegation")
+        {
+            config.Delegation.Enabled = true;
+            config.Delegation.Profiles["helper"] = new() { Name = "helper" };
+        }
+        var hook = Substitute.For<IToolHook>();
+        hook.Name.Returns("deny-weather");
+        hook.BeforeExecuteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => ValueTask.FromResult(call.ArgAt<string>(0) != tool.Name));
+        var (runtime, _, _) = CapabilityRuntimeTestFactory.Create(maf, [tool], memory, skill, config,
+            new(new([new Provider(tool)]), new()), scenario == "hook" ? [hook] : []);
+        try
+        {
+            var session = new Session { Id = "s", SenderId = "user", ChannelId = "test" };
+            var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            await ((Task<string>)method.Invoke(runtime, [session, skill.Name, "", TestContext.Current.CancellationToken])!).WaitAsync(TimeSpan.FromSeconds(5));
+            var step = session.MetaRunHistory.Last().StepResults.Single();
+            if (scenario is "journal" or "delegation")
+            {
+                Assert.Equal("completed", step.Status);
+                Assert.Equal(1, tool.Calls);
+                if (scenario == "journal")
+                {
+                    await memory.SaveSessionAsync(session, TestContext.Current.CancellationToken);
+                    var journal = new OpenClaw.Core.Actions.DurableActionJournal(path);
+                    await journal.AcknowledgePersistedHistoryAsync(session, TestContext.Current.CancellationToken);
+                    using (var lease = await journal.OpenAsync(session.Id, TestContext.Current.CancellationToken))
+                        Assert.True(Assert.Single(lease.Records).HistoryPersisted);
+                    // A new invocation must not reuse the prior call ID and cached result.
+                    await (Task<string>)method.Invoke(runtime, [session, skill.Name, "", TestContext.Current.CancellationToken])!;
+                    Assert.Equal(2, tool.Calls);
+                }
+            }
+            else
+            {
+                Assert.Equal(0, tool.Calls);
+                Assert.Equal(scenario == "metadata" ? "metadata_capability_denied" : scenario == "approval" ? "approval_required" : "tool_failed", step.FailureCode);
+            }
+        }
+        finally
+        {
+            if (runtime is IAsyncDisposable a) await a.DisposeAsync(); else if (runtime is IDisposable d) d.Dispose();
+            memory.Dispose(); Directory.Delete(path, true);
+        }
+    }
+
+    [Fact]
+    public async Task DifferentSessions_DoNotWaitForAnotherBinding()
+    {
+        var slow = new Provider(new(), "slow") { Pause = new(TaskCreationOptions.RunContinuationsAsynchronously) };
+        var fast = new Provider(new(), "fast");
+        var executor = new CapabilitySlotExecutor(new([slow, fast]), new());
+        var pending = executor.ExecuteAsync(Ref(provider: "slow"), "{}", "a", TestContext.Current.CancellationToken);
+        try
+        {
+            var result = await executor.ExecuteAsync(Ref(provider: "fast"), "{}", "b", TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal("completed", result.ResultStatus);
+        }
+        finally { slow.Pause.SetResult(); await pending; }
+    }
+
+    [Fact]
+    public async Task CircuitPressure_DoesNotClearOpenCooldowns()
+    {
+        var tool = new Probe { Fail = true };
+        var executor = new CapabilitySlotExecutor(new([new Provider(tool)]), new());
+        for (var i = 0; i < 3; i++) await executor.ExecuteAsync(Ref(), "{}", "protected", TestContext.Current.CancellationToken);
+        for (var i = 0; i < 1030; i++) await executor.ExecuteAsync(Ref(), "{}", "s" + i, TestContext.Current.CancellationToken);
+        Assert.Equal("capability_circuit_open", (await executor.ExecuteAsync(Ref(), "{}", "protected", TestContext.Current.CancellationToken)).FailureCode);
+    }
+
+    [Fact]
+    public async Task ExactName_FiltersBeforeLimit_AndDiscoveryHonorsToolPolicy()
+    {
+        ITool Named(string name)
+        {
+            var tool = Substitute.For<ITool>();
+            tool.Name.Returns(name); tool.Description.Returns("weather"); tool.ParameterSchema.Returns("{}");
+            return tool;
+        }
+        var tools = new[] { "a_weather", "b_weather", "c_weather", "d_weather", "e_weather", "weather" }.Select(Named).ToArray();
+        var registry = new CapabilityProviderRegistry([new LocalCapabilityProvider(() => tools)]);
+        var request = new ResolveCapabilityRequest("weather", null, ResolveCapabilitySelectionPolicy.ExactName);
+        Assert.Equal("weather", (await registry.ResolveAsync(request, TestContext.Current.CancellationToken)).Binding!.Tool);
+        var hidden = await registry.ResolveAsync(request, TestContext.Current.CancellationToken, name => name != "weather");
+        Assert.Null(hidden.Binding);
+        Assert.DoesNotContain(hidden.Candidates, c => c.Name == "weather");
+    }
+
+    [Fact]
+    public async Task Replay_DetectsChangedRecordedIntent_AndRetainsType()
+    {
+        var reference = new MetaCapabilityRefDefinition { Binding = "dynamic", Intent = new() { TaskDescription = "weather", Type = "weather-service" } };
+        var result = await new CapabilitySlotExecutor(new([new Provider(new())]), new()).ExecuteAsync(reference, "{}", "s", TestContext.Current.CancellationToken);
+        var expected = System.Text.Json.JsonSerializer.Deserialize(
+            System.Text.Json.JsonSerializer.Serialize(result.BindingTrajectory, CoreJsonContext.Default.CapabilityBindingTrajectory), CoreJsonContext.Default.CapabilityBindingTrajectory)!;
+        var fixture = new OpenClaw.Testing.CapabilityBindingReplayFixture { Recorded = result.BindingTrajectory!, Expected = expected, SessionId = "s" };
+        Assert.True((await new OpenClaw.Testing.CapabilityBindingReplay(fixture).RunAsync(TestContext.Current.CancellationToken)).Passed);
+        fixture.Recorded.TaskDescription = "changed";
+        var replay = await new OpenClaw.Testing.CapabilityBindingReplay(fixture).RunAsync(TestContext.Current.CancellationToken);
+        Assert.False(replay.Passed);
+        Assert.Contains("intentKey", replay.Message);
+    }
 }

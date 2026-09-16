@@ -8,12 +8,11 @@ namespace OpenClaw.Adapters.Nacos;
 /// Parses the prose envelope emitted by the upstream Nacos MCP Router's
 /// <c>search_mcp_server</c> tool. The envelope wraps a JSON object keyed by
 /// server name between two Chinese-language markers; this helper extracts the
-/// JSON, drops everything else, and returns up to 5 candidates ranked by their
+/// JSON, drops everything else, and returns candidates ranked by their
 /// position in the dictionary.
 /// </summary>
 public static class RouterCandidateParser
 {
-    private const int MaxCandidates = 5;
     private static readonly Regex JsonBlock = new(
         Regex.Escape(RouterProseContract.SearchListMarker) + @"(\{.*?\})\r?\n"
         + Regex.Escape(RouterProseContract.SearchStepMarker),
@@ -32,11 +31,10 @@ public static class RouterCandidateParser
             if (doc.RootElement.ValueKind != JsonValueKind.Object)
                 return Array.Empty<CapabilityCandidate>();
 
-            var results = new List<CapabilityCandidate>(MaxCandidates);
+            var results = new List<CapabilityCandidate>();
             var rank = 1;
             foreach (var property in doc.RootElement.EnumerateObject())
             {
-                if (rank > MaxCandidates) break;
                 if (property.Value.ValueKind != JsonValueKind.Object) { rank++; continue; }
 
                 string name = property.Name;

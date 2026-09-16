@@ -4,8 +4,9 @@ using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Skills.Meta;
 namespace OpenClaw.Agent.Tools;
 
-public sealed class ResolveCapabilityTool(CapabilityProviderRegistry providers) : ITool
+public sealed class ResolveCapabilityTool(CapabilityProviderRegistry providers, Func<string, bool>? isToolAllowed = null) : ITool
 {
+    internal ResolveCapabilityTool WithToolFilter(Func<string, bool> filter) => new(providers, filter);
     public string Name => "resolve_capability";
     public string Description => "Resolve a capability through a configured provider using deterministic selection.";
     public string ParameterSchema => """{"type":"object","required":["task_description"],"properties":{"task_description":{"type":"string"},"provider":{"type":"string"},"keywords":{"type":"array","items":{"type":"string"}},"key_words":{"type":"string"},"selection_policy":{"type":"string","enum":["first","exact_name"]}}}""";
@@ -33,7 +34,7 @@ public sealed class ResolveCapabilityTool(CapabilityProviderRegistry providers) 
                 : r.TryGetProperty("key_words", out k) ? k.GetString() : null;
             var request = new ResolveCapabilityRequest(task, keywords, policy == "exact_name" ? ResolveCapabilitySelectionPolicy.ExactName : ResolveCapabilitySelectionPolicy.First)
             { Provider = r.TryGetProperty("provider", out var id) ? id.GetString() ?? "" : "" };
-            var result = await providers.ResolveAsync(request, ct);
+            var result = await providers.ResolveAsync(request, ct, isToolAllowed);
             return result.Binding is not null ? JsonSerializer.Serialize(result.Binding, ResolveCapabilitySerializerContext.Default.ResolveCapabilityBinding)
                 : JsonSerializer.Serialize(result.Failure, ResolveCapabilitySerializerContext.Default.ResolveCapabilityFailure);
         }

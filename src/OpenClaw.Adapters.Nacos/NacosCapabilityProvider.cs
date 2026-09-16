@@ -14,6 +14,16 @@ namespace OpenClaw.Adapters.Nacos;
 
 public sealed class NacosCapabilityProvider(McpServerToolRegistry registry, string serverId = "nacos-mcp-router", IReadOnlySet<string>? retrySafeTargets = null) : ICapabilityProvider
 {
+    public static NacosCapabilityProvider FromSettings(McpServerToolRegistry registry, IReadOnlyDictionary<string, JsonElement> settings)
+    {
+        var retrySafe = new HashSet<string>(StringComparer.Ordinal);
+        if (settings.TryGetValue("nacos", out var options) && options.ValueKind == JsonValueKind.Object &&
+            options.TryGetProperty("retrySafeTargets", out var targets) && targets.ValueKind == JsonValueKind.Array)
+            foreach (var target in targets.EnumerateArray())
+                if (target.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(target.GetString()))
+                    retrySafe.Add(target.GetString()!);
+        return new(registry, retrySafeTargets: retrySafe);
+    }
     public string Id => "nacos";
     private McpClient Client => registry.GetClientByServerId(serverId)
         ?? throw new ToolOutcomeException("Nacos Router is unavailable.", "failed", CapabilitySlotFailureCodes.ProviderUnavailable, "Router not registered");

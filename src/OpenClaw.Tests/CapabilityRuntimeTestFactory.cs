@@ -27,7 +27,7 @@ internal static class CapabilityRuntimeTestFactory
 {
     internal static (object Runtime, IChatClient Chat, ILlmExecutionService Execution) Create(
         bool maf, IReadOnlyList<ITool> tools, IMemoryStore memory, SkillDefinition skill, GatewayConfig gatewayConfig,
-        CapabilitySlotExecutor capabilitySlotExecutor)
+        CapabilitySlotExecutor capabilitySlotExecutor, IReadOnlyList<IToolHook>? hooks = null)
     {
         var services = new ServiceCollection().BuildServiceProvider();
         var chat = Substitute.For<IChatClient>();
@@ -35,7 +35,9 @@ internal static class CapabilityRuntimeTestFactory
         if (maf)
         {
             var options = new MafOptions();
-            var runtime = new MafAgentRuntime(new AgentRuntimeFactoryContext
+            var runtime = new MafAgentRuntimeFactory(new MafAgentFactory(Options.Create(options), NullLoggerFactory.Instance, services),
+                new MafSessionStateStore(gatewayConfig, Options.Create(options), NullLogger<MafSessionStateStore>.Instance),
+                new MafTelemetryAdapter(), Options.Create(options), NullLoggerFactory.Instance).Create(new AgentRuntimeFactoryContext
             {
                 Services = services,
                 Config = gatewayConfig,
@@ -51,16 +53,15 @@ internal static class CapabilityRuntimeTestFactory
                 WorkspacePath = null,
                 PluginSkillDirs = [],
                 Logger = NullLogger.Instance,
-                Hooks = [],
-                RequireToolApproval = false,
-                ApprovalRequiredTools = [],
+                Hooks = hooks ?? [],
+                RequireToolApproval = gatewayConfig.Tooling.RequireToolApproval,
+                ApprovalRequiredTools = gatewayConfig.Tooling.ApprovalRequiredTools,
                 CapabilitySlotExecutor = capabilitySlotExecutor
-            }, options, new MafAgentFactory(Options.Create(options), NullLoggerFactory.Instance, services),
-                new MafSessionStateStore(gatewayConfig, Options.Create(options), NullLogger<MafSessionStateStore>.Instance),
-                new MafTelemetryAdapter(), NullLogger<MafAgentRuntime>.Instance);
+            });
             return (runtime, chat, execution);
         }
-        var native = new AgentRuntime(chat, tools, memory, gatewayConfig.Llm, maxHistoryTurns: 5, skills: [skill], capabilitySlotExecutor: capabilitySlotExecutor);
+        var native = new AgentRuntime(chat, tools, memory, gatewayConfig.Llm, maxHistoryTurns: 5, skills: [skill], capabilitySlotExecutor: capabilitySlotExecutor, gatewayConfig: gatewayConfig,
+            hooks: hooks, requireToolApproval: gatewayConfig.Tooling.RequireToolApproval, approvalRequiredTools: gatewayConfig.Tooling.ApprovalRequiredTools);
         return (native, chat, execution);
     }
 

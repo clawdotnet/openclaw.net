@@ -28,12 +28,12 @@ public sealed class RouterCandidateParserTests
     }
 
     [Fact]
-    public void Parse_CapsAtFiveEntries()
+    public void Parse_PreservesCandidatesForExactNameSelection()
     {
         var six = string.Join(",", Enumerable.Range(0, 6).Select(i => $"\"k{i}\":{{\"name\":\"k{i}\",\"description\":\"d\"}}"));
         var prose = "## 获取t的步骤如下：\n" + RouterProseContract.SearchListMarker + "{" + six + "}\n" + RouterProseContract.SearchStepMarker + "...";
         var parsed = RouterCandidateParser.Parse(prose);
-        Assert.Equal(5, parsed.Count);
+        Assert.Equal(6, parsed.Count);
     }
 
     [Fact]
@@ -66,5 +66,21 @@ public sealed class RouterCandidateParserTests
         Assert.Equal("cn.pianam.mcp/weather-mcp-china", parsed[1].Name);
         Assert.Equal(2, parsed[1].Rank);
         Assert.Contains("multi-day forecasts", parsed[1].Description);
+    }
+
+    [Theory]
+    [InlineData("{broken}")]
+    [InlineData("[]")]
+    [InlineData("null")]
+    public void Parse_InvalidEnclosedJson_ReturnsEmpty(string json)
+        => Assert.Empty(RouterCandidateParser.Parse(RouterProseContract.SearchListMarker + json + "\n" + RouterProseContract.SearchStepMarker));
+
+    [Fact]
+    public void Parse_NonObjectEntries_KeepOriginalRankWithoutHidingLaterCandidates()
+    {
+        var parsed = RouterCandidateParser.Parse(RouterProseContract.SearchListMarker +
+            """{"bad":null,"bad2":42,"bad3":[],"bad4":"x","bad5":false,"weather":{}}""" + "\n" + RouterProseContract.SearchStepMarker);
+        Assert.Equal("weather", Assert.Single(parsed).Name);
+        Assert.Equal(6, parsed[0].Rank);
     }
 }

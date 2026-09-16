@@ -1272,9 +1272,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                             return ReturnMetaExecutionOutput(session, metaSkill, finalText: null, stepResults, $"Meta step '{step.Id}' is 'tool_call' but does not declare a tool.", preserveCheckpoint: false);
                         }
 
-                        // Capability slots carry their own binding (declared in the
-                        // composition itself), so the name-based allowlist and
-                        // metadata-capability checks do not apply to them.
+                        // Capability slots apply metadata policy after resolving the target name.
                         if (capabilityRef is null)
                         {
                             if (step.ToolAllowlist.Count > 0 && !step.ToolAllowlist.Contains(toolName, StringComparer.OrdinalIgnoreCase))
@@ -1344,7 +1342,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                             Continued: !completed && continueOnError,
                             ExecutionEvidence: toolResult.BindingTrajectory is null
                                 ? null
-                                : new SessionMetaStepExecutionEvidence { CapabilityBinding = toolResult.BindingTrajectory }));
+                                : new SessionMetaStepExecutionEvidence { CapabilityBinding = toolResult.BindingTrajectory, CapabilityInvocation = toolResult.CapabilityInvocation }));
 
                         if (completed)
                         {
@@ -2229,6 +2227,9 @@ public sealed class MafAgentRuntime : IAgentRuntime
         string? error,
         bool preserveCheckpoint)
     {
+        // Keep replay evidence intact while bounding persisted session history.
+        if (session.MetaRunHistory.Count >= 100)
+            session.MetaRunHistory.RemoveRange(0, session.MetaRunHistory.Count - 99);
         session.MetaRunHistory.Add(new SessionMetaRunRecord
         {
             RunId = $"meta_{Guid.NewGuid():N}",
@@ -2657,7 +2658,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
             try
             {
                 lastResult = await _capabilitySlotExecutor.ExecuteGovernedAsync(capabilityRef, toolArgsJson, session, turnCtx,
-                    _toolExecutor, $"meta:{metaSkill.Name}:{step.Id}:attempt:{attempt}", effectiveCt);
+                    _toolExecutor, $"meta:{metaSkill.Name}:{step.Id}:attempt:{attempt}:{Guid.NewGuid():N}", effectiveCt,
+                    name => IsToolAllowedByMetaCapabilities(metaSkill, name));
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
