@@ -95,7 +95,12 @@ public sealed class CapabilitySlotExecutor(CapabilityProviderRegistry providers,
         {
             await bindingGate.Semaphore.WaitAsync(ct);
             entered = true;
-            if ((capabilityRef.Binding == "static" || !string.IsNullOrEmpty(sessionId)) && cache.TryGetValue<Cached>(scope, key, out found)) trajectory.CacheHit = true;
+            // A dynamic binding selected under another skill policy may no longer be eligible.
+            // Re-resolve it; static bindings must remain pinned and be denied at invocation.
+            if ((capabilityRef.Binding == "static" || !string.IsNullOrEmpty(sessionId)) &&
+                cache.TryGetValue<Cached>(scope, key, out found) && found is not null &&
+                (capabilityRef.Binding == "static" || isToolAllowed?.Invoke(found.Target.Tool.Name) != false))
+                trajectory.CacheHit = true;
             else
             {
                 try

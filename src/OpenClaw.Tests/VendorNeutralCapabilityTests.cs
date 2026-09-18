@@ -87,6 +87,65 @@ public sealed class VendorNeutralCapabilityTests
             memory.Dispose(); Directory.Delete(path, true);
         }
     }
+    [Theory]
+    [InlineData(false, "dynamic")]
+    [InlineData(true, "dynamic")]
+    [InlineData(false, "static")]
+    [InlineData(true, "static")]
+    public async Task CachedBinding_RechecksSkillPolicy_AndOnlyDynamicBindingsSelectReplacement(bool maf, string mode)
+    {
+        var first = new Probe("a_weather");
+        var replacement = new Probe("b_weather");
+        var reference = mode == "static"
+            ? new MetaCapabilityRefDefinition { Provider = "local", Binding = mode, Static = new() { Target = first.Name, ToolName = first.Name } }
+            : Ref();
+        var skill = new SkillDefinition
+        {
+            Name = "changing-policy", Description = "weather", Instructions = "", Location = "test", Kind = SkillKind.Meta,
+            Composition = new() { Steps = [new() { Id = "query", Kind = "tool_call", CapabilityRef = reference, ToolArgsJson = "{}" }] }
+        };
+        var path = Path.Join(Path.GetTempPath(), "capability-policy-" + Guid.NewGuid().ToString("N"));
+        using var memory = new FileMemoryStore(path, 4);
+        var registry = new CapabilityProviderRegistry([new LocalCapabilityProvider(() => [first, replacement])]);
+        var (runtime, _, _) = CapabilityRuntimeTestFactory.Create(maf, [first, replacement], memory, skill,
+            new GatewayConfig { Memory = new() { StoragePath = path } }, new(registry, new()));
+        try
+        {
+            var session = new Session { Id = "s", SenderId = "user", ChannelId = "test" };
+            var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            Task<string> Run() => (Task<string>)method.Invoke(runtime, [session, skill.Name, "", TestContext.Current.CancellationToken])!;
+            await Run();
+            Assert.Equal("completed", session.MetaRunHistory.Last().StepResults.Single().Status);
+            Assert.Equal(1, first.Calls);
+
+            skill.Metadata.Capabilities = ["tool:" + replacement.Name];
+            await Run();
+            var step = session.MetaRunHistory.Last().StepResults.Single();
+            Assert.Equal(1, first.Calls);
+            if (mode == "static")
+            {
+                Assert.Equal("blocked", step.Status);
+                Assert.Equal("metadata_capability_denied", step.FailureCode);
+                Assert.Equal(0, replacement.Calls);
+            }
+            else
+            {
+                Assert.Equal("completed", step.Status);
+                Assert.Equal(1, replacement.Calls);
+                Assert.False(step.ExecutionEvidence!.CapabilityBinding!.CacheHit);
+                Assert.Equal(replacement.Name, step.ExecutionEvidence.CapabilityBinding.Tool);
+                await Run();
+                Assert.Equal(2, replacement.Calls);
+                Assert.True(session.MetaRunHistory.Last().StepResults.Single().ExecutionEvidence!.CapabilityBinding!.CacheHit);
+            }
+        }
+        finally
+        {
+            if (runtime is IAsyncDisposable a) await a.DisposeAsync(); else if (runtime is IDisposable d) d.Dispose();
+            memory.Dispose(); Directory.Delete(path, true);
+        }
+    }
+
     [Fact]
     public async Task Invalidation_RejectsAnInflightBinding_AndForcesRebind()
     {

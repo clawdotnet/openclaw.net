@@ -33,7 +33,7 @@
 ```mermaid
 flowchart LR
     subgraph 痛点层
-        P1[工具膨胀<br/>Token 成本] 
+        P1[工具膨胀<br/>Token 成本]
         P2[能力硬编码<br/>不可演进]
     end
     subgraph 解耦层
