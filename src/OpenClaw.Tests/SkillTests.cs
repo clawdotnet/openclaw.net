@@ -798,6 +798,118 @@ public class SkillLoaderTests
         Assert.Equal(expectedError, errorCode);
     }
 
+    [Theory]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":\"static\"}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"quantum\"}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\"}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"tool_name\":\"get_weather\"}}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"weather-mcp\"}}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"dynamic\"}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"dynamic\",\"intent\":{\"keywords\":[\"weather\"]}}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"dynamic\",\"intent\":{\"task_description\":\"weather\"},\"selection_policy\":\"nearest\"}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"},\"top_k\":5}}]}", "capabilityref_reserved_field")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"},\"prefer_version\":\">=1.0.0\"}}]}", "capabilityref_reserved_field")]
+    // capability_ref must not coexist with tool:
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"}}}]}", "invalid_capability_ref")]
+    // capability_ref is only legal on tool_call steps:
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"llm_chat\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"}}}]}", "invalid_capability_ref")]
+    // fallback must not coexist with step on_failure:
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"on_failure\":\"fb\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"},\"fallback\":\"fb\"}},{\"id\":\"fb\",\"kind\":\"tool_call\",\"tool\":\"safe\"}]}", "invalid_capability_ref")]
+    // capability_ref.fallback obeys the on_failure five constraints (ghost target):
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"},\"fallback\":\"ghost\"}}]}", "invalid_on_failure")]
+    public void TryParseSkillContent_CapabilityRefValidation_ReturnsExpectedCode(string compositionJson, string expectedError)
+    {
+        var content = $$"""
+            ---
+            name: capability-ref-validation
+            description: Capability slot validation
+            kind: meta
+            composition: {{compositionJson}}
+            ---
+            Meta instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/capability-ref-validation", SkillSource.Workspace, out var skill, out var errorCode);
+
+        Assert.False(ok);
+        Assert.Null(skill);
+        Assert.Equal(expectedError, errorCode);
+    }
+
+    [Fact]
+    public void TryParseSkillContent_CapabilityRefStatic_ParsesPinnedBinding()
+    {
+        var content = """
+            ---
+            name: capability-ref-static
+            description: Static capability slot
+            kind: meta
+            composition: {"steps":[{"id":"q","kind":"tool_call","capability_ref":{"binding":"static","static":{"mcp_server_name":"weather-mcp","tool_name":"get_weather"}},"tool_args":{"city":"{{ input }}"}}]}
+            ---
+            Meta instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/capability-ref-static", SkillSource.Workspace, out var skill, out var errorCode);
+
+        Assert.True(ok, errorCode);
+        var slot = skill!.Composition!.Steps[0];
+        Assert.Null(slot.Tool);
+        Assert.NotNull(slot.CapabilityRef);
+        Assert.Equal("static", slot.CapabilityRef.Binding);
+        Assert.Equal("weather-mcp", slot.CapabilityRef.Static!.Target);
+        Assert.Equal("get_weather", slot.CapabilityRef.Static.ToolName);
+        Assert.Equal("first", slot.CapabilityRef.SelectionPolicy);
+    }
+
+    [Fact]
+    public void TryParseSkillContent_CapabilityRefDynamic_ParsesIntentAndPolicy()
+    {
+        var content = """
+            ---
+            name: capability-ref-dynamic
+            description: Dynamic capability slot
+            kind: meta
+            composition: {"steps":[{"id":"q","kind":"tool_call","capability_ref":{"binding":"dynamic","intent":{"type":"cap:WeatherQuery","task_description":"查询指定城市的天气","keywords":["天气","city"]},"selection_policy":"exact_name"}}]}
+            ---
+            Meta instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/capability-ref-dynamic", SkillSource.Workspace, out var skill, out var errorCode);
+
+        Assert.True(ok, errorCode);
+        var slot = skill!.Composition!.Steps[0];
+        Assert.NotNull(slot.CapabilityRef);
+        Assert.Equal("dynamic", slot.CapabilityRef.Binding);
+        Assert.Null(slot.CapabilityRef.Static);
+        Assert.Equal("cap:WeatherQuery", slot.CapabilityRef.Intent!.Type);
+        Assert.Equal("查询指定城市的天气", slot.CapabilityRef.Intent.TaskDescription);
+        Assert.Equal(new[] { "天气", "city" }, slot.CapabilityRef.Intent.Keywords);
+        Assert.Equal("exact_name", slot.CapabilityRef.SelectionPolicy);
+    }
+
+    [Fact]
+    public void TryParseSkillContent_CapabilityRefFallback_FoldsIntoOnFailure()
+    {
+        var content = """
+            ---
+            name: capability-ref-fallback
+            description: Capability slot with fallback
+            kind: meta
+            composition: {"steps":[{"id":"q","kind":"tool_call","capability_ref":{"binding":"static","static":{"mcp_server_name":"weather-mcp","tool_name":"get_weather"},"fallback":"fb"}},{"id":"fb","kind":"tool_call","tool":"emit_text","tool_args":{"text":"unavailable"}}]}
+            ---
+            Meta instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/capability-ref-fallback", SkillSource.Workspace, out var skill, out var errorCode);
+
+        Assert.True(ok, errorCode);
+        var slot = skill!.Composition!.Steps[0];
+        Assert.Equal("fb", slot.CapabilityRef!.Fallback);
+        // Folded into OnFailure so the existing failure-branch machinery validates
+        // and routes it (same five constraints as on_failure).
+        Assert.Equal("fb", slot.OnFailure);
+    }
+
     [Fact]
     public void ParseSkillContent_MetaClassifyLegacyRouteObjectMap_ParsesSuccessfully()
     {

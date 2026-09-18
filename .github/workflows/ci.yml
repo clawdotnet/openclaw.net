@@ -107,6 +107,18 @@ jobs:
           name: test-results
           path: "**/*.trx"
 
+  capability-adapters:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Verify default dependency isolation and optional adapter builds
+        run: bash eng/verify-capability-adapters.sh
+
   publish-aot:
     needs: build-and-test
     runs-on: ubuntu-latest

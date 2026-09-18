@@ -26,6 +26,8 @@
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'OpenClaw.Gateway'">
     <OpenClawFeatureVariant>standard</OpenClawFeatureVariant>
     <OpenClawFeatureVariant Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">$(OpenClawFeatureVariant)-opensandbox</OpenClawFeatureVariant>
+    <OpenClawFeatureVariant Condition="'$(OpenClawEnableNacos)' == 'true'">$(OpenClawFeatureVariant)-nacos</OpenClawFeatureVariant>
+    <OpenClawFeatureVariant Condition="'$(OpenClawEnableNacosEvents)' == 'true'">$(OpenClawFeatureVariant)-events</OpenClawFeatureVariant>
     <BaseIntermediateOutputPath>obj/$(OpenClawFeatureVariant)/</BaseIntermediateOutputPath>
     <DefaultItemExcludes>$(DefaultItemExcludes);obj/**</DefaultItemExcludes>
   </PropertyGroup>

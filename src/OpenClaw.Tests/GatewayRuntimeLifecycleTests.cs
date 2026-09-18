@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Plugins;
+using OpenClaw.Agent.Tools;
 using OpenClaw.Channels;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Memory;
@@ -69,20 +70,88 @@ public sealed class GatewayRuntimeLifecycleTests
             var store = new McpConfigStore(root, NullLogger<McpConfigStore>.Instance);
             await store.SaveAsync("""{"enabled":true,"servers":{}}""", TestContext.Current.CancellationToken);
 
-            using var service = new McpWorkspaceWatcherService(
+            await using var service = new McpWorkspaceWatcherService(
                 registry,
                 runtime,
                 workspacePath: null,
                 NullLogger<McpWorkspaceWatcherService>.Instance,
-                store);
+                store,
+                new CapabilityBindingCache());
 
             using var cts = new CancellationTokenSource();
+            var reloaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            runtime.ClearCapabilitySlotRuntimeCacheAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            {
+                reloaded.TrySetResult();
+                return Task.CompletedTask;
+            });
             service.Start(cts.Token);
+            await reloaded.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            runtime.ClearReceivedCalls();
+            reloaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
             service.TriggerReload();
+            await reloaded.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await runtime.Received(1).ClearCapabilitySlotRuntimeCacheAsync(Arg.Any<CancellationToken>());
 
             await WaitForConditionAsync(
                 () => runtime.ReceivedCalls().Any(call =>
                     string.Equals(call.GetMethodInfo().Name, nameof(IAgentRuntime.ApplyMcpToolChangesAsync), StringComparison.Ordinal)),
+                TimeSpan.FromSeconds(3),
+                TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            DeleteDirectoryIfPresent(root);
+        }
+    }
+
+    [Fact]
+    public async Task McpWorkspaceWatcherService_ReloadSuccess_ClearsCapabilityBindingCache()
+    {
+        var root = CreateTempRoot();
+        Directory.CreateDirectory(root);
+        await using var registry = new McpServerToolRegistry(
+            new McpPluginsConfig
+            {
+                Enabled = false,
+                Servers = new Dictionary<string, McpServerConfig>(StringComparer.Ordinal)
+            },
+            NullLogger<McpServerToolRegistry>.Instance);
+        try
+        {
+            var runtime = Substitute.For<IAgentRuntime>();
+            var store = new McpConfigStore(root, NullLogger<McpConfigStore>.Instance);
+            await store.SaveAsync("""{"enabled":true,"servers":{}}""", TestContext.Current.CancellationToken);
+            var cache = new CapabilityBindingCache();
+            var key = CapabilityBindingCache.ComputeIntentKey("weather city", "weather,city", "First");
+            cache.Set("sess-1", key, "weather-mcp", "get_weather");
+
+            await using var service = new McpWorkspaceWatcherService(
+                registry,
+                runtime,
+                workspacePath: null,
+                NullLogger<McpWorkspaceWatcherService>.Instance,
+                store,
+                cache);
+
+            using var cts = new CancellationTokenSource();
+            var reloaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            runtime.ClearCapabilitySlotRuntimeCacheAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            {
+                reloaded.TrySetResult();
+                return Task.CompletedTask;
+            });
+            service.Start(cts.Token);
+            await reloaded.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            runtime.ClearReceivedCalls();
+            reloaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            cache.Set("sess-1", key, "weather-mcp", "get_weather");
+            service.TriggerReload();
+            await reloaded.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await runtime.Received(1).ClearCapabilitySlotRuntimeCacheAsync(Arg.Any<CancellationToken>());
+
+            await WaitForConditionAsync(
+                () => !cache.TryGet("sess-1", key, out _, out _),
                 TimeSpan.FromSeconds(3),
                 TestContext.Current.CancellationToken);
         }

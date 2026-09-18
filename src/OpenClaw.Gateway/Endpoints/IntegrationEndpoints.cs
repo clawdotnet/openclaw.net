@@ -19,6 +19,19 @@ internal static class IntegrationEndpoints
         var facade = IntegrationApiFacade.Create(startup, runtime, app.Services);
         var group = app.MapGroup("/api/integration").WithTags("OpenClaw Integration");
 
+        group.MapGet("/capabilities", (HttpContext ctx) =>
+        {
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.read", requireCsrf: false);
+            if (failure is not null) return failure;
+            var providers = app.Services.GetRequiredService<OpenClaw.Agent.Tools.CapabilityProviderRegistry>();
+            var cache = app.Services.GetRequiredService<OpenClaw.Agent.Tools.CapabilityBindingCache>();
+            var sources = app.Services.GetServices<OpenClaw.Core.Skills.Meta.ICapabilityChangeSource>().ToArray();
+            var status = new OpenClaw.Core.Skills.Meta.CapabilityRuntimeStatus(providers.DefaultProvider,
+                providers.ProviderIds.Select(id => new OpenClaw.Core.Skills.Meta.CapabilityProviderStatus(id,
+                    sources.FirstOrDefault(s => s.ProviderId == id)?.Status ?? "disabled")).ToArray(), cache.Generation, cache.Count);
+            return Results.Json(status, CoreJsonContext.Default.CapabilityRuntimeStatus);
+        });
+
         group.MapGet("/dashboard", async (HttpContext ctx) =>
         {
             var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.read", requireCsrf: false);

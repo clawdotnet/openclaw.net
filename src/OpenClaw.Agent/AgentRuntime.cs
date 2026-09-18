@@ -9,12 +9,14 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Agent.Execution;
 using OpenClaw.Agent.Routing;
+using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Skills;
+using OpenClaw.Core.Skills.Meta;
 
 namespace OpenClaw.Agent;
 
@@ -33,6 +35,7 @@ public delegate ValueTask<bool> ToolApprovalCallback(string toolName, string arg
 public sealed class AgentRuntime : IAgentRuntime
 {
     private readonly OpenClawToolExecutor _toolExecutor;
+    private readonly CapabilitySlotExecutor? _capabilitySlotExecutor;
     private readonly AgentCheckpointManager _checkpoints;
     private readonly AgentToolCallLoop _toolLoop;
     private readonly AgentTurnAccounting _accounting;
@@ -121,9 +124,11 @@ public sealed class AgentRuntime : IAgentRuntime
         ContextBudgetPlanner? contextBudgetPlanner = null,
         ITurnRoutingPolicy? turnRoutingPolicy = null,
         IGoalService? goalService = null,
-        IReadOnlyList<IToolResultInterceptor>? interceptors = null)
+        IReadOnlyList<IToolResultInterceptor>? interceptors = null,
+        CapabilitySlotExecutor? capabilitySlotExecutor = null)
     {
         _logger = logger;
+        _capabilitySlotExecutor = capabilitySlotExecutor;
         _config = config;
         _maxTokens = config.MaxTokens;
         _maxIterations = Math.Max(1, maxIterations);
@@ -244,6 +249,13 @@ public sealed class AgentRuntime : IAgentRuntime
     {
         ct.ThrowIfCancellationRequested();
         _toolExecutor.ReplaceMcpTools(toAdd, toRemove);
+        return Task.CompletedTask;
+    }
+
+    public Task ClearCapabilitySlotRuntimeCacheAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        _capabilitySlotExecutor?.ClearRuntimeCache();
         return Task.CompletedTask;
     }
 
@@ -1475,25 +1487,30 @@ public sealed class AgentRuntime : IAgentRuntime
                 {
                     case "tool_call":
                     {
+                        var capabilityRef = step.CapabilityRef;
                         var toolName = step.Tool;
-                        if (string.IsNullOrWhiteSpace(toolName))
+                        if (capabilityRef is null && string.IsNullOrWhiteSpace(toolName))
                         {
                             return ReturnMetaExecutionOutput(session, metaSkill, finalText: null, stepResults, $"Meta step '{step.Id}' is 'tool_call' but does not declare a tool.", preserveCheckpoint: false);
                         }
 
-                        if (step.ToolAllowlist.Count > 0 && !step.ToolAllowlist.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+                        // Capability slots apply metadata policy after resolving the target name.
+                        if (capabilityRef is null)
                         {
-                            stepResults.Add(new MetaStepExecutionResult(step.Id, step.Kind, ToolResultStatuses.Blocked, "tool_not_allowlisted", 0, Continued: false));
-                            return ReturnMetaExecutionOutput(session, metaSkill, finalText: null, stepResults, $"Meta step '{step.Id}' tool '{toolName}' is not allowlisted.", preserveCheckpoint: false);
-                        }
+                            if (step.ToolAllowlist.Count > 0 && !step.ToolAllowlist.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+                            {
+                                stepResults.Add(new MetaStepExecutionResult(step.Id, step.Kind, ToolResultStatuses.Blocked, "tool_not_allowlisted", 0, Continued: false));
+                                return ReturnMetaExecutionOutput(session, metaSkill, finalText: null, stepResults, $"Meta step '{step.Id}' tool '{toolName}' is not allowlisted.", preserveCheckpoint: false);
+                            }
 
-                            if (!IsToolAllowedByMetaCapabilities(metaSkill, toolName))
+                            if (!IsToolAllowedByMetaCapabilities(metaSkill, toolName!))
                             {
                                 pending.Remove(step.Id);
                                 progress = true;
                                 stepResults.Add(new MetaStepExecutionResult(step.Id, step.Kind, ToolResultStatuses.Blocked, "metadata_capability_denied", 0, Continued: false));
                                 return ReturnMetaExecutionOutput(session, metaSkill, finalText: null, stepResults, $"Meta step '{step.Id}' tool '{toolName}' is not permitted by metadata capabilities.", preserveCheckpoint: false);
                             }
+                        }
 
                         string toolArgsJson;
                         try
@@ -1510,14 +1527,23 @@ public sealed class AgentRuntime : IAgentRuntime
                         }
 
                         var stepSw = Stopwatch.StartNew();
-                        var toolResult = await ExecuteMetaToolStepWithPolicyAsync(
-                            metaSkill,
-                            step,
-                            toolName,
-                            toolArgsJson,
-                            session,
-                            turnCtx,
-                            ct);
+                        var toolResult = capabilityRef is not null
+                            ? await ExecuteMetaCapabilityStepWithPolicyAsync(
+                                metaSkill,
+                                step,
+                                capabilityRef,
+                                toolArgsJson,
+                                session,
+                                turnCtx,
+                                ct)
+                            : await ExecuteMetaToolStepWithPolicyAsync(
+                                metaSkill,
+                                step,
+                                toolName!,
+                                toolArgsJson,
+                                session,
+                                turnCtx,
+                                ct);
                         stepSw.Stop();
 
                         var completed = string.Equals(toolResult.ResultStatus, ToolResultStatuses.Completed, StringComparison.Ordinal);
@@ -1535,7 +1561,10 @@ public sealed class AgentRuntime : IAgentRuntime
                             resultStatus,
                             failureCode,
                             stepSw.Elapsed.TotalMilliseconds,
-                            Continued: !completed && continueOnError));
+                            Continued: !completed && continueOnError,
+                            ExecutionEvidence: toolResult.BindingTrajectory is null
+                                ? null
+                                : new SessionMetaStepExecutionEvidence { CapabilityBinding = toolResult.BindingTrajectory, CapabilityInvocation = toolResult.CapabilityInvocation }));
 
                         if (completed)
                         {
@@ -2422,6 +2451,9 @@ public sealed class AgentRuntime : IAgentRuntime
         string? error,
         bool preserveCheckpoint)
     {
+        // Keep replay evidence intact while bounding persisted session history.
+        if (session.MetaRunHistory.Count >= 100)
+            session.MetaRunHistory.RemoveRange(0, session.MetaRunHistory.Count - 99);
         session.MetaRunHistory.Add(new SessionMetaRunRecord
         {
             RunId = $"meta_{Guid.NewGuid():N}",
@@ -2589,7 +2621,8 @@ public sealed class AgentRuntime : IAgentRuntime
                 result.Status,
                 result.FailureCode,
                 result.DurationMs,
-                result.Continued));
+                result.Continued,
+                result.ExecutionEvidence));
         }
 
         checkpoint.LastUpdatedAtUtc = DateTimeOffset.UtcNow;
@@ -2818,6 +2851,56 @@ public sealed class AgentRuntime : IAgentRuntime
         }
 
         return lastResult ?? CreateMetaStepFailedToolResult(toolName, toolArgsJson, "step_failed", $"Meta step '{step.Id}' failed before producing a result.");
+    }
+
+    private async Task<ToolExecutionResult> ExecuteMetaCapabilityStepWithPolicyAsync(
+        SkillDefinition metaSkill,
+        MetaSkillStepDefinition step,
+        MetaCapabilityRefDefinition capabilityRef,
+        string toolArgsJson,
+        Session session,
+        TurnContext turnCtx,
+        CancellationToken ct)
+    {
+        if (_capabilitySlotExecutor is null)
+        {
+            return CreateMetaStepFailedToolResult(
+                "capability",
+                toolArgsJson,
+                CapabilitySlotFailureCodes.NotConfigured,
+                $"Meta step '{step.Id}' declares a capability slot but no capability executor is wired (no capability provider registry).");
+        }
+
+        var maxAttempts = Math.Max(1, step.Retry.MaxAttempts);
+        ToolExecutionResult? lastResult = null;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            using var timeoutCts = CreateMetaStepTimeout(step, ct);
+            var effectiveCt = timeoutCts?.Token ?? ct;
+            try
+            {
+                lastResult = await _capabilitySlotExecutor.ExecuteGovernedAsync(capabilityRef, toolArgsJson, session, turnCtx,
+                    _toolExecutor, $"meta:{metaSkill.Name}:{step.Id}:attempt:{attempt}:{Guid.NewGuid():N}", effectiveCt,
+                    name => IsToolAllowedByMetaCapabilities(metaSkill, name));
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                lastResult = CreateMetaStepFailedToolResult(
+                    "capability",
+                    toolArgsJson,
+                    "step_timeout",
+                    $"Meta step '{step.Id}' timed out after {step.TimeoutSeconds} second(s).");
+            }
+
+            if (string.Equals(lastResult.ResultStatus, ToolResultStatuses.Completed, StringComparison.Ordinal) || !lastResult.RetrySafe || attempt == maxAttempts)
+                return lastResult;
+
+            if (step.Retry.BackoffMs > 0)
+                await Task.Delay(step.Retry.BackoffMs, ct);
+        }
+
+        return lastResult ?? CreateMetaStepFailedToolResult("capability", toolArgsJson, "step_failed", $"Meta step '{step.Id}' failed before producing a result.");
     }
 
     private async Task<ToolExecutionResult> ExecuteMetaSkillExecStepWithPolicyAsync(

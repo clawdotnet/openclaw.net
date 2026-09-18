@@ -72,6 +72,7 @@ public sealed class MafAgentRuntimeFactory : IAgentRuntimeFactory
             IsContractRuntimeBudgetExceeded = context.IsContractRuntimeBudgetExceeded,
             RecordContractTurnUsage = context.RecordContractTurnUsage,
             AppendContractSnapshot = context.AppendContractSnapshot,
+            CapabilitySlotExecutor = context.CapabilitySlotExecutor,
             Interceptors = context.Interceptors
         });
 
@@ -168,6 +169,7 @@ public sealed class MafAgentRuntimeFactory : IAgentRuntimeFactory
             IsContractRuntimeBudgetExceeded = context.IsContractRuntimeBudgetExceeded,
             RecordContractTurnUsage = context.RecordContractTurnUsage,
             AppendContractSnapshot = context.AppendContractSnapshot,
+            CapabilitySlotExecutor = context.CapabilitySlotExecutor,
             Interceptors = context.Interceptors
         });
     }
