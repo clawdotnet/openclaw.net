@@ -40,27 +40,23 @@ public sealed class ContextBudgetPlanner
             return Fail($"Fractal Memory pulse context is configured for '{autoMode}', not 'pulse' or 'auto'.");
 
         var mode = NormalizeExportMode(fractal.DefaultExportMode);
-        StructuredMemoryExportResult export;
         var sourcePath = NormalizePath(request.PathHint);
-
-        if (!string.IsNullOrWhiteSpace(sourcePath))
-        {
-            export = await _provider.ExportAsync(sourcePath, mode, ct);
-        }
-        else
+        if (string.IsNullOrWhiteSpace(sourcePath))
         {
             sourcePath = await ResolveBestPathAsync(request, ct);
             if (string.IsNullOrWhiteSpace(sourcePath))
                 return Fail("No Fractal Memory node matched the context request.");
-
-            export = await _provider.ExportAsync(sourcePath, mode, ct);
         }
+
+        var maxChars = ResolveMaxChars(request, fractal);
+        var export = _provider is IStructuredMemoryWorkflowProvider workflows
+            ? await workflows.BuildContextAsync(sourcePath, Math.Clamp(maxChars, 256, 1_000_000), ct)
+            : await _provider.ExportAsync(sourcePath, mode, ct);
 
         if (!export.Success)
             return Fail(export.Error ?? "Fractal Memory export failed.", sourcePath);
 
         var context = BuildContextBlock(export, fractal.DefaultDepth);
-        var maxChars = ResolveMaxChars(request, fractal);
         var truncated = export.Truncated;
         if (context.Length > maxChars)
         {
@@ -77,7 +73,7 @@ public sealed class ContextBudgetPlanner
             Success = true,
             Context = context,
             SourcePath = sourcePath,
-            Mode = mode,
+            Mode = export.Mode,
             Truncated = truncated,
             Sources = export.Sources
         };

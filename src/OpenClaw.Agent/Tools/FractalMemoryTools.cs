@@ -187,7 +187,7 @@ internal static class FractalMemoryToolHelpers
         => JsonDocument.Parse(string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
 
     public static string? GetString(JsonElement root, string propertyName)
-        => root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+        => root.ValueKind == JsonValueKind.Object && root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
 
@@ -229,13 +229,14 @@ internal static class FractalMemoryToolHelpers
             Summary = string.IsNullOrWhiteSpace(path)
                 ? $"{toolName} updates Fractal Memory state."
                 : $"{toolName} updates Fractal Memory state for '{path}'.",
-            ApprovalFingerprint = BuildFingerprint(toolName, action, path)
+            ApprovalFingerprint = BuildFingerprint(toolName, action, argumentsJson)
         };
     }
 
-    private static string BuildFingerprint(string toolName, string action, string path)
+    private static string BuildFingerprint(string toolName, string action, string argumentsJson)
     {
-        var payload = $"{toolName}|{action}|{path}";
+        // Bind approval to content, expectedHash and flags, not just the destination node.
+        var payload = $"{toolName}|{action}|{argumentsJson}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
         return Convert.ToHexString(hash).ToLowerInvariant()[..32];
     }

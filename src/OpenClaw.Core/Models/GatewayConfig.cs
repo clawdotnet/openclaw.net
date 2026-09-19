@@ -288,6 +288,7 @@ public sealed class FractalMemoryConfig
     public string Mode { get; set; } = "mcp";
     public string RepositoryRoot { get; set; } = "";
     public string McpCommand { get; set; } = "fractalmem-mcp";
+    public string[] McpArguments { get; set; } = [];
     public int DefaultDepth { get; set; } = 1;
     public string DefaultView { get; set; } = "index";
     public string DefaultExportMode { get; set; } = "compact";

@@ -223,6 +223,8 @@ internal static partial class RuntimeInitializationExtensions
             tools.Add(new FractalMemoryRecentTool(structuredMemoryProvider));
             tools.Add(new FractalMemoryExportTool(structuredMemoryProvider, config.Memory.Fractal));
             tools.Add(new FractalMemoryValidateTool(structuredMemoryProvider));
+            if (structuredMemoryProvider is IStructuredMemoryWorkflowProvider workflowProvider)
+                tools.AddRange(FractalMemoryWorkflowTool.CreateTools(workflowProvider, config.Memory.Fractal));
 
             if (config.Memory.Fractal.AllowWrites)
             {
