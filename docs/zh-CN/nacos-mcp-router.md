@@ -33,7 +33,7 @@ Router 0.2.2 的三个工具仍是 `search_mcp_server`、`add_mcp_server`、`use
 ## 缓存、事件与验收
 
 事件订阅在后台注册，暴露 disabled/starting/active/degraded/stopped 状态，失败时
-按退避策略重试。事件经通用失效接口推进缓存 generation，清除静态和动态绑定；
+按退避策略重试。事件经通用失效接口推进缓存 generation，清除所有静态和动态绑定（未实现按 server 精细失效）；
 不覆盖 workspace 配置。未启用或不可达时，TTL 与显式 reload 继续有效。
 
 [隔离验收工具与完整命令](../../eng/nacos-live/README.md)启动带认证的 Nacos 3.2.4、

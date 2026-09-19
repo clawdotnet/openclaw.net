@@ -189,7 +189,11 @@ def main():
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    # The group can exit between the timed wait and forced termination.
+                    pass
                 process.wait(timeout=5)
         for log in logs:
             log.close()

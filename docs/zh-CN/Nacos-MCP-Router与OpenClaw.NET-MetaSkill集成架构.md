@@ -221,7 +221,7 @@ sequenceDiagram
 2. **Token 最小化**：模型只接触 MetaSkill DAG 结构与 Router 的少量工具描述，而非全部后端服务的 Schema。
 3. **绑定可演进**：更换/升级后端服务只需修改 Nacos 注册信息，MetaSkill 定义不变。
 
-> 实现对照（2026-09-14，#230/#231/#232/#233/#238 已落地）：上图中动态槽位的 `search → add → use` 与静态槽位的 `add`（首次，幂等缓存）→ `use` 均为确定性代码路径；会话级绑定缓存（intent 哈希 + TTL/reload 失效）与节点级降级（fallback 路由 / Top-5 候选轮替 / retry 重试熔断）已实现；Nacos 变更事件订阅的失效联动（#238）已实现——变更到达即双清缓存（会话绑定缓存 + 运行时 added-server 缓存）并触发 watcher reload。
+> 实现对照（2026-09-14，#230/#231/#232/#233/#238 已落地）：上图中动态槽位的 `search → add → use` 与静态槽位的 `add`（首次，幂等缓存）→ `use` 均为确定性代码路径；会话级绑定缓存（intent 哈希 + TTL/reload 失效）与节点级降级（fallback 路由 / Top-5 候选轮替 / retry 重试熔断）已实现；Nacos 变更事件订阅的失效联动（#238）已实现——变更到达经通用能力失效接口推进 generation 并清除所有绑定，静态槽位重新 add、动态槽位重新解析；不触发 workspace 配置 reload。
 
 ## 7. 关键工程决策
 

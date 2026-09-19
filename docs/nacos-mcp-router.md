@@ -302,7 +302,7 @@ cache with the recorded binding). See
 
 Build with `-p:OpenClawEnableNacos=true -p:OpenClawEnableNacosEvents=true` (add `-p:PublishAot=false` for JIT) and configure `adapterSettings.nacos`. See the [configuration example](capability-resolution.md#optional-adapter-builds).
 
-The optional SDK adapter registers in the background, retries failed setup, and reports `starting`, `degraded`, `active`, or `stopped`. Events publish generic invalidation signals that advance the cache generation. They do not overwrite the local workspace configuration. With no adapter or no address, TTL and explicit workspace reload remain available. RedNb.Nacos 2.1.0 supplies generated protocol JSON metadata; the optional adapter supports NativeAOT and does not turn JSON reflection back on. The live harness verifies <=2 s publish-to-invalidation and static/dynamic rebinds in both managed and native processes.
+The optional SDK adapter registers in the background, retries failed setup, and reports `starting`, `degraded`, `active`, or `stopped`. Events publish generic invalidation signals that advance the cache generation and clear all capability bindings; per-server invalidation is not implemented. They do not overwrite the local workspace configuration. With no adapter or no address, TTL and explicit workspace reload remain available. RedNb.Nacos 2.1.0 supplies generated protocol JSON metadata; the optional adapter supports NativeAOT and does not turn JSON reflection back on. The live harness verifies <=2 s publish-to-invalidation and static/dynamic rebinds in both managed and native processes.
 
 ## Historical contributor evidence
 

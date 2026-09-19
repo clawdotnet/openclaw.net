@@ -49,7 +49,7 @@ Nacos SDK and Router-only builds contain no RedNb packages.
 ## Acceptance checks
 
 - Exactly three Router tools; real search, add, and use-tool round trips.
-- Static and dynamic MetaSkills complete with a weather payload in both the
+- Managed tests verify static and dynamic MetaSkills complete with a weather payload in both the
   native agent runtime and Microsoft Agent Framework runtime, reuse bindings,
   avoid duplicate tool registration, and make zero model calls.
 - Managed and NativeAOT smoke executables both keep JSON reflection disabled.
