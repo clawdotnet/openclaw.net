@@ -6,7 +6,7 @@ namespace OpenClaw.Adapters.Nacos.Events;
 
 /// <summary>
 /// Production <see cref="INacosConfigService"/> backed by the RedNb.Nacos SDK
-/// (RedNb.Nacos.All 2.0.0, issue #238). The SDK client is constructed by the
+/// (RedNb.Nacos 2.1.0, including generated protocol JSON metadata). The SDK client is constructed by the
 /// DI extension <c>RedNb.Nacos.DependencyInjection.AddNacosConfig</c> and injected
 /// as <see cref="IConfigService"/>; this adapter only translates between the SDK
 /// surface (<see cref="IConfigService"/>, <see cref="ConfigInfo"/>) and the gateway
