@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsAotCompatible>true</IsAotCompatible>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/OpenClaw.Adapters.Nacos/OpenClaw.Adapters.Nacos.csproj" />
+    <ProjectReference Include="../../src/OpenClaw.Adapters.Nacos.Events/OpenClaw.Adapters.Nacos.Events.csproj" />
+  </ItemGroup>
+</Project>

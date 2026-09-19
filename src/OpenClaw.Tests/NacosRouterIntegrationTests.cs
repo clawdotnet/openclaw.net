@@ -768,6 +768,55 @@ public sealed class NacosRouterIntegrationTests
 
     public static bool LiveEnabled => Environment.GetEnvironmentVariable("OPENCLAW_NACOS_LIVE") == "1";
 
+    [Theory(Skip = "Set OPENCLAW_NACOS_LIVE=1 for the isolated weather acceptance deployment.", SkipUnless = nameof(LiveEnabled))]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task LiveRouter_WeatherSlots_BothRuntimes_ExecuteAndReuseBinding(bool maf, bool dynamic)
+    {
+        var url = Environment.GetEnvironmentVariable("OPENCLAW_NACOS_ROUTER_URL");
+        Assert.True(Uri.TryCreate(url, UriKind.Absolute, out var endpoint) && endpoint.Scheme is "http" or "https");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromMinutes(2));
+        await using var registry = new McpServerToolRegistry(new McpPluginsConfig(), NullLogger<McpServerToolRegistry>.Instance);
+        var reload = await registry.ReloadWorkspaceServersAsync(ServerConfig(url!), timeout.Token);
+        Assert.Equal(3, reload.AddedTools.Count);
+        var skill = dynamic ? LoadDynamicDemo() : LoadStaticDemo();
+        var root = Path.Join(Path.GetTempPath(), "nacos-live-" + Guid.NewGuid().ToString("N"));
+        using var memory = new FileMemoryStore(root, 4);
+        var tools = reload.AddedTools.Append<ITool>(new EmitTextTool()).ToArray();
+        var (runtime, chat, execution) = CapabilityRuntimeTestFactory.Create(maf, tools, memory, skill,
+            new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } },
+            new CapabilitySlotExecutor(new CapabilityProviderRegistry([new NacosCapabilityProvider(registry)]), new()));
+        try
+        {
+            var session = new Session { Id = root, SenderId = "acceptance", ChannelId = "test" };
+            var method = runtime.GetType().GetMethod("ExecuteMetaSkillAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            for (var i = 0; i < 2; i++)
+            {
+                var result = await (Task<string>)method.Invoke(runtime, [session, skill.Name, "Oslo", timeout.Token])!;
+                using var weather = JsonDocument.Parse(result);
+                Assert.Equal("Oslo", weather.RootElement.GetProperty("city").GetString());
+                Assert.Equal(JsonValueKind.Number, weather.RootElement.GetProperty("temperature_c").ValueKind);
+                var query = Assert.Single(session.MetaRunHistory.Last().StepResults, step => step.Id == "query");
+                Assert.Equal("completed", query.Status);
+                Assert.Equal(i > 0, query.ExecutionEvidence!.CapabilityBinding!.CacheHit);
+            }
+            Assert.Empty(chat.ReceivedCalls());
+            Assert.Empty(execution.ReceivedCalls());
+            var unchanged = await registry.ReloadWorkspaceServersAsync(ServerConfig(url!), timeout.Token);
+            Assert.Empty(unchanged.AddedTools);
+        }
+        finally
+        {
+            if (runtime is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
+            else if (runtime is IDisposable disposable) disposable.Dispose();
+            memory.Dispose();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
     [Fact(Skip = "Set OPENCLAW_NACOS_LIVE=1 and OPENCLAW_NACOS_ROUTER_URL for a provisioned Router.", SkipUnless = nameof(LiveEnabled))]
     public async Task LiveRouter_SearchFindsRegisteredWeatherServer()
     {

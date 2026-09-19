@@ -221,7 +221,7 @@ sequenceDiagram
 2. **Token 最小化**：模型只接触 MetaSkill DAG 结构与 Router 的少量工具描述，而非全部后端服务的 Schema。
 3. **绑定可演进**：更换/升级后端服务只需修改 Nacos 注册信息，MetaSkill 定义不变。
 
-> 实现对照（2026-09-14，#230/#231/#232/#233/#238 已落地）：上图中动态槽位的 `search → add → use` 与静态槽位的 `add`（首次，幂等缓存）→ `use` 均为确定性代码路径；会话级绑定缓存（intent 哈希 + TTL/reload 失效）与节点级降级（fallback 路由 / Top-5 候选轮替 / retry 重试熔断）已实现；Nacos 变更事件订阅的失效联动（#238）已实现——变更到达即双清缓存（会话绑定缓存 + 运行时 added-server 缓存）并触发 watcher reload。
+> 实现对照（2026-09-14，#230/#231/#232/#233/#238 已落地）：上图中动态槽位的 `search → add → use` 与静态槽位的 `add`（首次，幂等缓存）→ `use` 均为确定性代码路径；会话级绑定缓存（intent 哈希 + TTL/reload 失效）与节点级降级（fallback 路由 / Top-5 候选轮替 / retry 重试熔断）已实现；Nacos 变更事件订阅的失效联动（#238）已实现——变更到达经通用能力失效接口推进 generation 并清除所有绑定，静态槽位重新 add、动态槽位重新解析；不触发 workspace 配置 reload。
 
 ## 7. 关键工程决策
 
@@ -251,7 +251,7 @@ Router 语义检索的质量完全取决于 Nacos 中 MCP Server 的 `descriptio
 | 缓存粒度 | 会话级（默认）+ 运行时级（静态绑定） |
 | 缓存键 | intent 哈希（task_description + key_words + selectionPolicy） |
 | 失效机制 | TTL 过期（可配，默认 300s）+ mcp.json reload 成功清空（#232 已实现）；订阅 Nacos 配置变更事件（#238 已实现，2026-09-14） |
-| Nacos 变更事件订阅 | `RedNb.Nacos.All 2.0.0` LongPolling 订阅 mcp.json dataId；onChange → watcher reload → 会话绑定缓存 + 运行时 added-server 缓存双清；`ServerAddr` 未配置或 Nacos 不可达时优雅降级为 no-op，TTL/reload 兜底保持生效。运行时要求：SDK 的 gRPC 载荷走反射式 System.Text.Json，而 `PublishAot=true` 会在**所有** runtimeconfig 中注入 `System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault=false`（JIT 运行也会中招）——csproj 仅在 JIT 构建（无 `RuntimeIdentifier`）时重新开启该开关；NativeAOT 下 SDK 载荷类型被裁剪，订阅降级为 TTL/reload 兜底（后续 issue 跟进） |
+| Nacos 变更事件订阅 | 显式启用 `OpenClawEnableNacosEvents=true`，由可选适配器使用 RedNb.Nacos 2.1.0 源生成协议元数据，支持 JIT 和 NativeAOT，无需开启 JSON 反射。onChange 通过通用失效接口推进缓存 generation，清除静态/动态绑定；不覆盖 workspace 配置。未配置或不可达时保持 TTL/reload，并报告 disabled/degraded 状态。当前[可复现验收](../../eng/nacos-live/README.md)覆盖认证服务器、≤2 秒失效及重新绑定；原型 +310 ms 数据保留在英文指南的 Zhang 历史记录中。 |
 
 ### 7.4 版本与准入治理
 
