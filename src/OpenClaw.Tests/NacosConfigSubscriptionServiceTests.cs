@@ -51,6 +51,32 @@ public sealed class NacosConfigSubscriptionServiceTests
     }
 
     [Fact]
+    public async Task InitialSnapshot_AndDuplicateSdkNotifications_InvalidateOnlyOnContentChanges()
+    {
+        var fake = new FakeNacosConfigService();
+        fake.Publish(new("d", "g", "initial"));
+        var cache = new OpenClaw.Agent.Tools.CapabilityBindingCache();
+        await using var svc = Build(fake, new() { ServerAddr = "test", DataId = "d", Group = "g" }, cache);
+        await svc.StartAsync(TestContext.Current.CancellationToken);
+        var generation = cache.Generation;
+        cache.Set("session", "intent", "weather", "get_weather");
+
+        // The real SDK may deliver its initial snapshot after registration has
+        // returned. Repeated notifications must not invalidate an unchanged binding.
+        fake.Publish(new("d", "g", "initial"));
+        Assert.Equal(generation, cache.Generation);
+        Assert.Equal(1, cache.Count);
+
+        fake.Publish(new("d", "g", "changed"));
+        Assert.Equal(generation + 1, cache.Generation);
+        Assert.Equal(0, cache.Count);
+        fake.Publish(new("d", "g", "changed"));
+        Assert.Equal(generation + 1, cache.Generation);
+        fake.Publish(new("d", "g", "initial")); // A real revert is still a change.
+        Assert.Equal(generation + 2, cache.Generation);
+    }
+
+    [Fact]
     public async Task EmptyServerAddr_StartAsync_IsNoOp()
     {
         var fake = new FakeNacosConfigService();

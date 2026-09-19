@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Skills.Meta;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace OpenClaw.Adapters.Nacos.Events;
 
@@ -9,6 +11,8 @@ public sealed class NacosConfigSubscriptionService(
     ILogger<NacosConfigSubscriptionService> logger) : ICapabilityChangeSource
 {
     private readonly object _gate = new();
+    private readonly object _changeGate = new();
+    private string? _lastContentHash;
     private CancellationTokenSource? _lifetime;
     private Task? _worker;
     private IDisposable? _handle;
@@ -67,8 +71,17 @@ public sealed class NacosConfigSubscriptionService(
 
     private void OnChange(NacosConfig changed)
     {
-        if (_lifetime?.IsCancellationRequested != false) return;
-        invalidation.Invalidate(new CapabilityChange(ProviderId, changed.Group + "/" + changed.DataId, Guid.NewGuid().ToString("N")));
+        if (changed.DataId != options.DataId || changed.Group != options.Group) return;
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(changed.Content)));
+        lock (_changeGate)
+        {
+            if (_lifetime?.IsCancellationRequested != false || hash == _lastContentHash) return;
+            // The SDK can deliver its initial snapshot after GetConfigAsync has
+            // reconciled the same content. Do not invalidate a binding in flight
+            // twice for that one revision. Retain only a digest, never config data.
+            invalidation.Invalidate(new CapabilityChange(ProviderId, changed.Group + "/" + changed.DataId, Guid.NewGuid().ToString("N")));
+            _lastContentHash = hash;
+        }
     }
 
     public async ValueTask DisposeAsync()

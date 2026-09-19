@@ -21,14 +21,6 @@ assets = json.loads(Path('src/OpenClaw.Gateway/obj/standard-nacos/project.assets
 assert not any(p.lower().startswith('rednb.') for p in assets['libraries']), 'Router adapter must not pull in the SDK'
 PY
 
-dotnet build "$project" "${fast[@]}" -p:OpenClawEnableNacos=true -p:OpenClawEnableNacosEvents=true -p:PublishAot=false
-log=$(mktemp)
-trap 'rm -f "$log"' EXIT
-if dotnet build "$project" "${fast[@]}" -p:OpenClawEnableNacos=true -p:OpenClawEnableNacosEvents=true -p:PublishAot=true >"$log" 2>&1; then
-  echo 'NativeAOT SDK events unexpectedly succeeded' >&2
-  exit 1
-fi
-if ! grep -Eq 'Nacos.*(JIT|NativeAOT)' "$log"; then
-  cat "$log"
-  exit 1
-fi
+dotnet build "$project" "${fast[@]}" -p:OpenClawEnableNacos=true -p:OpenClawEnableNacosEvents=true -p:PublishAot=false -p:JsonSerializerIsReflectionEnabledByDefault=false
+dotnet build "$project" "${fast[@]}" -p:OpenClawEnableNacos=true -p:OpenClawEnableNacosEvents=true -p:PublishAot=true
+# Native publication and authenticated live execution are covered by nacos-live.yml.

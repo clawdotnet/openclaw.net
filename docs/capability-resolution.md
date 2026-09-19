@@ -9,7 +9,7 @@ OpenClaw.NET owns deterministic capability resolution and execution. The default
 | `OpenClaw.Core` | Provider, candidate, binding, invalidation, trajectory, and status contracts; no vendor SDK types |
 | `OpenClaw.Agent` | Provider selection, deterministic ranking, policy-governed execution, bounded caches, circuit protection |
 | `OpenClaw.Adapters.Nacos` | Router search/add/use protocol and failure normalization over the existing MCP transport |
-| `OpenClaw.Adapters.Nacos.Events` | Optional Nacos SDK, configuration, listener lifecycle, generic invalidation events; JIT only |
+| `OpenClaw.Adapters.Nacos.Events` | Optional Nacos SDK, configuration, listener lifecycle, generic invalidation events; JIT and NativeAOT |
 | AgentQi | Ecosystem documentation, catalog curation/trust assessment, setup and operational UX |
 
 Catalog trust is input to runtime policy, never permission to bypass local authorization, approvals, hooks, or audit. Providers implement `ICapabilityProvider`; change adapters implement `ICapabilityChangeSource` and publish through `ICapabilityInvalidationSink`.
@@ -43,9 +43,9 @@ The tool returns provider, server, tool, schema, schema fingerprint, and attempt
 | --- | --- | --- |
 | Default Gateway | local | absent |
 | `-p:OpenClawEnableNacos=true` | local, nacos | absent; suitable for NativeAOT |
-| Above plus `-p:OpenClawEnableNacosEvents=true -p:PublishAot=false` | local, nacos | explicit JIT adapter |
+| Above plus `-p:OpenClawEnableNacosEvents=true` | local, nacos | explicit SDK adapter; JIT or NativeAOT |
 
-The default Gateway dependency graph has no Nacos package reference. An SDK-events NativeAOT build fails with an actionable diagnostic; native event support remains [#239](https://github.com/clawdotnet/openclaw.net/issues/239). Default serialization stays source-generated. Only the explicitly selected JIT event host enables SDK-required reflection serialization.
+The default Gateway dependency graph has no Nacos package reference. The optional event adapter uses RedNb.Nacos.DependencyInjection 2.1.0 and its generated protocol JSON metadata. It supports NativeAOT without enabling reflection serialization. Use `-p:PublishAot=false` for JIT publishing. The SDK stays absent unless explicitly selected.
 
 Configure the Router as MCP server `nacos-mcp-router`, and add `provider: nacos` to capability references. See the [Router contract and deployment guide](nacos-mcp-router.md). Optional event settings live under the generic extension bag:
 
@@ -86,7 +86,7 @@ Step evidence records provider, generation, intent, candidates/attempts, selecte
 
 Conformance tests cover both runtimes with the local provider, permission denial before discovery, authorization on cache hits, generation races, provider/security isolation, bounded expiry, circuit cooldown, and replay divergence. Router tests cover captured protocol envelopes and typed failures; listener tests cover retry, cancellation, and disposal.
 
-Live Nacos/Router acceptance is opt-in. Historical contributor measurements in the Router guide are not a new live validation of this refactor. A correctly registered weather backend and live subscription timing still need deployment evidence; NativeAOT SDK events remain separate work. AgentQi catalog/trust and operational screen design belong in the downstream ecosystem/product backlog.
+Live Nacos/Router acceptance is reproducible through [the isolated acceptance harness](../eng/nacos-live/README.md). It runs authenticated Nacos 3.2.4 and Router 0.2.2. Managed tests exercise both runtime implementations. Separate managed and NativeAOT smoke processes check real event invalidation and rebinding with JSON reflection disabled. The dedicated CI lane provisions its own services; ordinary unit tests remain independent of them. Historical contributor token measurements remain separately attributed in the Router guide. This proves the tested deployment contract, not arbitrary registry recall or production availability. AgentQi catalog/trust and operational screen design belong in the downstream ecosystem/product backlog.
 
 Nacos target retries require an explicit operator allowlist under `adapterSettings.nacos.retrySafeTargets`, for example `["weather-mcp/get_weather"]`. Only list operations known to be safe to repeat; other targets execute once regardless of a skill's retry count. The retry weather example requires this setting.
 

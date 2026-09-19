@@ -2,7 +2,7 @@
 
 The current architecture and build contract is [vendor-neutral capability resolution](capability-resolution.md). Select `provider: nacos` explicitly. The Router adapter and SDK event adapter are independent optional components.
 
-The live observations below were supplied with the contributor's `nacos` branch on 2026-09-14. They preserve its protocol evidence and measurement caveats; they are not a fresh live validation of the vendor-neutral refactor. In particular, successful weather discovery was not demonstrated on the misregistered test backend.
+Zhang (@geffzhang) supplied the original implementation, protocol captures, and token measurements on 2026-09-14; those historical observations and their caveats are preserved below. The [isolated acceptance harness](../eng/nacos-live/README.md) now validates the current vendor-neutral adapters with a correctly registered `get_weather(city)` backend, both runtimes, and managed/native event invalidation.
 
 ## Contract observations
 
@@ -58,7 +58,7 @@ Live-capture findings (2026-09-14):
 
 ## Opt-in configuration
 
-Build Gateway with `-p:OpenClawEnableNacos=true` to enable the provider. SDK events require the additional explicit JIT options below.
+Build Gateway with `-p:OpenClawEnableNacos=true` to enable the provider. SDK events require the additional explicit adapter flag below, for either JIT or NativeAOT.
 
 Keep Nacos and Router on the same host when Nacos binds only to loopback. Do not
 change an existing deployment's networking or authentication for this example.
@@ -95,15 +95,15 @@ Merge this entry into `<storagePath>/mcp/mcp.json`; preserve existing servers:
 }
 ```
 
-Register a test server named `weather-mcp` using the deployment's Nacos
-console/API. Verified on the referenced deployment (2026-09-14): a console
-registration with a non-empty bilingual description and a stdio local config
-wrapped as `{"mcpServers": {"weather-mcp": {"command": "uvx", "args": ["mcp-server-time"]}}}`.
-`mcp-server-time` is a test-bed stand-in so the full `add_mcp_server` chain runs;
-replace it with a real weather server. Verified 2026-09-14: with this config the
-live chain `search → add → use_tool` completed for `weather-mcp` (add success
-envelope `1. <name>安装完成, tool 列表为: [{name, description, inputSchema}]...`,
-then `use_tool` returned the backend tool result).
+For isolated acceptance, use the [provisioning harness](../eng/nacos-live/README.md).
+It registers `weather-mcp` with a non-empty bilingual description and an
+`mcpServers`-wrapped stdio configuration pointing to `eng/nacos-live/weather_server.py`
+inside the pinned Python environment. The backend actually exposes
+`get_weather(city)` and returns `city`, numeric `temperature_c`, and `source`.
+Fixture observations are labelled; `--live-weather` requests Open-Meteo data.
+Do not reuse the historical `mcp-server-time` registration as a weather backend.
+For another deployment, register its real weather tool and adapt the skill to
+that tool's verified name/schema.
 
 The examples stay under `examples/skills/` and are not bundled or enabled by
 default. Copy the two example directories into an isolated gateway workspace's
@@ -137,7 +137,7 @@ runtimes (static: one cached `add`, then `use_tool` per call; dynamic:
 and protocol-error handling. They use no external credentials, model calls,
 Nacos server, or Docker.
 
-For a provisioned Router with a registered weather server:
+For a provisioned Router with the acceptance `get_weather(city)` backend described above:
 
 ```sh
 export OPENCLAW_NACOS_LIVE=1
@@ -300,15 +300,15 @@ cache with the recorded binding). See
 
 ## Nacos event subscription (issue #238)
 
-Build with `-p:OpenClawEnableNacos=true -p:OpenClawEnableNacosEvents=true -p:PublishAot=false` and configure `adapterSettings.nacos`. See the [configuration example](capability-resolution.md#optional-adapter-builds).
+Build with `-p:OpenClawEnableNacos=true -p:OpenClawEnableNacosEvents=true` (add `-p:PublishAot=false` for JIT) and configure `adapterSettings.nacos`. See the [configuration example](capability-resolution.md#optional-adapter-builds).
 
-The optional SDK adapter registers in the background, retries failed setup, and reports `starting`, `degraded`, `active`, or `stopped`. Events publish generic invalidation signals that advance the cache generation. They do not overwrite the local workspace configuration. With no adapter or no address, TTL and explicit workspace reload remain available. NativeAOT SDK-event builds are rejected explicitly; #239 remains open.
+The optional SDK adapter registers in the background, retries failed setup, and reports `starting`, `degraded`, `active`, or `stopped`. Events publish generic invalidation signals that advance the cache generation and clear all capability bindings; per-server invalidation is not implemented. They do not overwrite the local workspace configuration. With no adapter or no address, TTL and explicit workspace reload remain available. RedNb.Nacos 2.1.0 supplies generated protocol JSON metadata; the optional adapter supports NativeAOT and does not turn JSON reflection back on. The live harness verifies <=2 s publish-to-invalidation and static/dynamic rebinds in both managed and native processes.
 
-## Historical contributor evidence and outstanding live acceptance
+## Historical contributor evidence
 
-The following describes the original branch, before adapter isolation. Repeat live acceptance against the refactor before claiming deployment readiness. In particular, the old dual-cache/watcher implementation below has been replaced by generic generation invalidation.
+The following preserves Zhang's evidence from the original branch, before adapter isolation. The current [acceptance harness](../eng/nacos-live/README.md) tests generic generation invalidation, which replaced the old dual-cache/watcher design. The old weather registration and token data below are historical evidence, not setup instructions for the new harness.
 
-Before closing #229 or proceeding with the dependent runtime changes:
+Original acceptance record:
 
 1. ~~Capture the real three tool schemas, success/error responses, and Router
    package version from the intended Nacos 3.2.4 deployment. Redact credentials.~~
@@ -366,4 +366,4 @@ Before closing #229 or proceeding with the dependent runtime changes:
 | Median input + output tokens (5 runs) | 0 + 0 (no LLM turn) | 17479 + 1181 (traced batch; untraced batch at the iteration cap: 29763 + 1870) |
 | Router version / deployment | 0.2.2 (`@latest`, requires `mcp<2`) / local Nacos 3.2.4, streamable_http :8000 | same |
 
-For current runtime/cache/retry/replay behavior and remaining acceptance, use [capability resolution](capability-resolution.md).
+For current runtime/cache/retry/replay behavior and validation scope, use [capability resolution](capability-resolution.md).
