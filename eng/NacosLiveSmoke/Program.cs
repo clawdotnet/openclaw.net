@@ -43,6 +43,14 @@ try
 {
     Check(!JsonSerializer.IsReflectionEnabledByDefault, "JSON reflection must remain disabled");
     Check(await config.PublishConfigAsync(dataId, options.Group, "initial", ct), "initial config publish failed");
+    // Publish acknowledgement precedes visibility in Nacos's read cache. Finish
+    // seeding before subscribing, so its initial arrival is not the measured change.
+    var seed = Stopwatch.StartNew();
+    while (await config.GetConfigAsync(dataId, options.Group, 10_000, ct) != "initial")
+    {
+        Check(seed.Elapsed < TimeSpan.FromSeconds(30), "initial configuration did not become readable");
+        await Task.Delay(25, ct);
+    }
     await subscription.StartAsync(ct);
     await WaitUntil(() => subscription.Status == "active", TimeSpan.FromSeconds(30), ct);
     var tools = await registry.ReloadWorkspaceServersAsync(new Dictionary<string, McpServerConfig>

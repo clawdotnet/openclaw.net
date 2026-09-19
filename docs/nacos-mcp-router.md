@@ -95,15 +95,15 @@ Merge this entry into `<storagePath>/mcp/mcp.json`; preserve existing servers:
 }
 ```
 
-Register a test server named `weather-mcp` using the deployment's Nacos
-console/API. Verified on the referenced deployment (2026-09-14): a console
-registration with a non-empty bilingual description and a stdio local config
-wrapped as `{"mcpServers": {"weather-mcp": {"command": "uvx", "args": ["mcp-server-time"]}}}`.
-`mcp-server-time` is a test-bed stand-in so the full `add_mcp_server` chain runs;
-replace it with a real weather server. Verified 2026-09-14: with this config the
-live chain `search → add → use_tool` completed for `weather-mcp` (add success
-envelope `1. <name>安装完成, tool 列表为: [{name, description, inputSchema}]...`,
-then `use_tool` returned the backend tool result).
+For isolated acceptance, use the [provisioning harness](../eng/nacos-live/README.md).
+It registers `weather-mcp` with a non-empty bilingual description and an
+`mcpServers`-wrapped stdio configuration pointing to `eng/nacos-live/weather_server.py`
+inside the pinned Python environment. The backend actually exposes
+`get_weather(city)` and returns `city`, numeric `temperature_c`, and `source`.
+Fixture observations are labelled; `--live-weather` requests Open-Meteo data.
+Do not reuse the historical `mcp-server-time` registration as a weather backend.
+For another deployment, register its real weather tool and adapt the skill to
+that tool's verified name/schema.
 
 The examples stay under `examples/skills/` and are not bundled or enabled by
 default. Copy the two example directories into an isolated gateway workspace's
@@ -137,7 +137,7 @@ runtimes (static: one cached `add`, then `use_tool` per call; dynamic:
 and protocol-error handling. They use no external credentials, model calls,
 Nacos server, or Docker.
 
-For a provisioned Router with a registered weather server:
+For a provisioned Router with the acceptance `get_weather(city)` backend described above:
 
 ```sh
 export OPENCLAW_NACOS_LIVE=1

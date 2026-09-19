@@ -42,6 +42,7 @@ def wait_for(check, seconds, description):
             if check():
                 return
         except (OSError, ValueError):
+            # A starting service can refuse connections or return an incomplete response.
             pass
         time.sleep(0.25)
     raise TimeoutError(description)
@@ -58,6 +59,7 @@ def free_port(offsets=(0,)):
                 held[-1].bind(("127.0.0.1", port + offset))
             return port
         except OSError:
+            # Another local process owns one of the required ports; try a new group.
             pass
         finally:
             for sock in held:
@@ -181,6 +183,7 @@ def main():
             try:
                 os.killpg(process.pid, signal.SIGTERM)
             except ProcessLookupError:
+                # This owned process group has already exited.
                 pass
         for process in reversed(children):
             try:
