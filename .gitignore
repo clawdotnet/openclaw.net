@@ -53,3 +53,6 @@ docs/blog/2026-05-13-embedded-gemma-4-local-models.md
 
 # Local documentation packages
 openclaw-docs.zip
+
+# Git worktrees (created via superpowers:using-git-worktrees)
+.worktrees/
