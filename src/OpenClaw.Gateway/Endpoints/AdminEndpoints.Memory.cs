@@ -52,6 +52,14 @@ internal static partial class AdminEndpoints
             var response = structuredMemoryProvider is null
                 ? BuildUnavailableFractalStatus(startup.Config, "Structured memory provider is not registered in this runtime.")
                 : await structuredMemoryProvider.GetStatusAsync(ctx.RequestAborted);
+            if (startup.Config.Memory.Fractal.Enabled &&
+                structuredMemoryProvider is not null and not IStructuredMemoryWorkflowProvider)
+            {
+                response.Warnings = [.. response.Warnings,
+                    "The configured structured memory provider does not support Fractal Memory workflows; workflow agent tools are unavailable."];
+                if (response.Available)
+                    response.Status = "available_with_warnings";
+            }
             return Results.Json(response, CoreJsonContext.Default.StructuredMemoryStatusResponse);
         });
 

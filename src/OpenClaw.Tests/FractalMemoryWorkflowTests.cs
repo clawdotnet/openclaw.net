@@ -183,17 +183,17 @@ public sealed class FractalMemoryWorkflowTests
 
     private sealed class StdioFixture : IAsyncDisposable
     {
-        public string Root { get; } = Path.Combine(Path.GetTempPath(), "fractal fixture " + Guid.NewGuid().ToString("N"));
+        public string Root { get; } = Path.Join(Path.GetTempPath(), "fractal fixture " + Guid.NewGuid().ToString("N"));
         public GatewayConfig Config { get; } = new();
         public FractalMemoryMcpProvider Provider { get; }
         public StdioFixture(string mode = "current")
         {
-            Directory.CreateDirectory(Path.Combine(Root, ".fractal-memory"));
-            File.WriteAllText(Path.Combine(Root, ".fractal-memory", "config.yaml"), "version: 0.1");
+            Directory.CreateDirectory(Path.Join(Root, ".fractal-memory"));
+            File.WriteAllText(Path.Join(Root, ".fractal-memory", "config.yaml"), "version: 0.1");
             Config.Memory.Fractal.Enabled = true;
             Config.Memory.Fractal.McpCommand = "node";
             Config.Memory.Fractal.RepositoryRoot = ".";
-            Config.Memory.Fractal.McpArguments = [Path.Combine(AppContext.BaseDirectory, "Fixtures", "fractal-memory-mcp.mjs"), mode];
+            Config.Memory.Fractal.McpArguments = [Path.Join(AppContext.BaseDirectory, "Fixtures", "fractal-memory-mcp.mjs"), mode];
             Provider = new(Config, Root, NullLogger<FractalMemoryMcpProvider>.Instance);
         }
         public async ValueTask DisposeAsync()

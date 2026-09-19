@@ -16,11 +16,11 @@ public sealed class FractalMemoryLiveTests
     public async Task UpstreamStdio_CaptureResumeAndImportRoundTrip()
     {
         var source = Path.GetFullPath(Environment.GetEnvironmentVariable("OPENCLAW_FRACTAL_SOURCE")!);
-        var cli = Path.Combine(source, "src", "FractalMemory.Cli", "bin", "Debug", "net10.0", "fm.dll");
-        var server = Path.Combine(source, "src", "FractalMemory.McpServer", "bin", "Debug", "net10.0", "fractalmem-mcp.dll");
+        var cli = Path.Join(source, "src", "FractalMemory.Cli", "bin", "Debug", "net10.0", "fm.dll");
+        var server = Path.Join(source, "src", "FractalMemory.McpServer", "bin", "Debug", "net10.0", "fractalmem-mcp.dll");
         Assert.True(File.Exists(cli), $"Build the upstream CLI first: {cli}");
         Assert.True(File.Exists(server), $"Build the upstream MCP server first: {server}");
-        var root = Path.Combine(Path.GetTempPath(), "openclaw-fractal-live-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "openclaw-fractal-live-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
@@ -83,15 +83,17 @@ public sealed class FractalMemoryLiveTests
             await Invoke("handoff_list", pathArgs);
             await Invoke("handoff_read", pathArgs);
             var resume = await Invoke("resume", pathArgs);
-            Assert.True(resume.Data!.Value.GetProperty("comparisonAvailable").GetBoolean());
-            Assert.Equal(0, resume.Data.Value.GetProperty("changedFiles").GetArrayLength());
+            var resumeData = Assert.IsType<JsonElement>(resume.Data);
+            Assert.True(resumeData.GetProperty("comparisonAvailable").GetBoolean());
+            Assert.Equal(0, resumeData.GetProperty("changedFiles").GetArrayLength());
             await Invoke("doctor", """{"repair":true}""");
 
             const string importArgs = """{"path":"research/imported","sourceName":"note.md","content":"# Imported\nOriginal notes."}""";
             var preview = await Invoke("import", importArgs);
-            Assert.True(preview.Data!.Value.GetProperty("canApply").GetBoolean());
-            Assert.False(preview.Data.Value.GetProperty("applied").GetBoolean());
-            Assert.False(Directory.Exists(Path.Combine(root, ".fractal-memory", "research", "imported")));
+            var previewData = Assert.IsType<JsonElement>(preview.Data);
+            Assert.True(previewData.GetProperty("canApply").GetBoolean());
+            Assert.False(previewData.GetProperty("applied").GetBoolean());
+            Assert.False(Directory.Exists(Path.Join(root, ".fractal-memory", "research", "imported")));
             var imported = await Invoke("import", importArgs[..^1] + ",\"apply\":true}");
             Assert.True(imported.Data!.Value.GetProperty("applied").GetBoolean());
             await Invoke("read", """{"path":"research/imported","file":"artifacts/source.md"}""");
