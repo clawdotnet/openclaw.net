@@ -32,6 +32,30 @@ internal static class MemoryCommands
 
         switch (parsed.Positionals[1].ToLowerInvariant())
         {
+            case "workflow":
+            {
+                if (!TryGetPosition(parsed, 2, "operation", out var operation))
+                    return 2;
+                try
+                {
+                    // A file avoids shell quoting problems for multiline notes and write payloads.
+                    var argumentsFile = parsed.GetOption("--arguments-file");
+                    var inlineArguments = parsed.GetOption("--arguments");
+                    if (argumentsFile is not null && inlineArguments is not null)
+                        throw new ArgumentException("Use either --arguments or --arguments-file.");
+                    var arguments = argumentsFile is null ? inlineArguments ?? "{}" : await File.ReadAllTextAsync(argumentsFile, ct);
+                    using var doc = JsonDocument.Parse(arguments);
+                    var response = await client.ExecuteFractalMemoryWorkflowAsync(operation, doc.RootElement, ct);
+                    Write(response, CoreJsonContext.Default.StructuredMemoryWorkflowResult, json,
+                        result => Console.WriteLine(result.Success ? result.Data?.GetRawText() ?? result.Text : result.Error));
+                    return response.Success ? 0 : 1;
+                }
+                catch (Exception ex) when (ex is JsonException or ArgumentException or IOException or UnauthorizedAccessException)
+                {
+                    Console.Error.WriteLine(ex.Message);
+                    return 2;
+                }
+            }
             case "status":
             {
                 var response = await client.GetFractalMemoryStatusAsync(ct);
@@ -254,6 +278,11 @@ internal static class MemoryCommands
               handoff create <path> [--json]
               validate [--json]
               index refresh [--json]
+              workflow <operation> [--arguments <json> | --arguments-file <path>] [--json]
+
+            Workflow operations:
+              read, list, attention, decisions, context, resume, handoff_list, handoff_read,
+              node_create, update, append, review, doctor, import
 
             Common options:
               --url <url>

@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace OpenClaw.Core.Models;
 
 public sealed class StructuredMemoryStatusResponse
@@ -14,6 +16,7 @@ public sealed class StructuredMemoryStatusResponse
     public string Status { get; set; } = "disabled";
     public string? Error { get; set; }
     public IReadOnlyList<string> Warnings { get; set; } = [];
+    public IReadOnlyList<string> AvailableTools { get; set; } = [];
     public StructuredMemoryValidationResult? Validation { get; set; }
 }
 
@@ -35,6 +38,7 @@ public sealed class StructuredMemoryOpenResult
     public int Depth { get; set; }
     public string View { get; set; } = "index";
     public string? Content { get; set; }
+    public bool StateTruncated { get; set; }
     public IReadOnlyList<StructuredMemorySourceRef> Children { get; set; } = [];
     public IReadOnlyList<StructuredMemorySourceRef> SuggestedReads { get; set; } = [];
     public IReadOnlyList<StructuredMemorySourceRef> RecentTimeline { get; set; } = [];
@@ -130,4 +134,21 @@ public sealed class StructuredMemoryContextResult
 public sealed class StructuredMemoryPathRequest
 {
     public string Path { get; set; } = "";
+}
+
+/// <summary>Preserves upstream document hashes, decision IDs, context metadata and source links.</summary>
+public sealed class StructuredMemoryWorkflowResult
+{
+    public bool Success { get; set; }
+    public JsonElement? Data { get; set; }
+    public string? Text { get; set; }
+    public IReadOnlyList<StructuredMemoryResourceLink> Resources { get; set; } = [];
+    public string? Error { get; set; }
+}
+
+public sealed class StructuredMemoryResourceLink
+{
+    public string Uri { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string? MimeType { get; set; }
 }
