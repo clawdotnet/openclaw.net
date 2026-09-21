@@ -7,7 +7,7 @@ using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Validation;
 using OpenClaw.Gateway.Routing;
-using OpenClaw.Routing.Jev;
+using OpenClaw.Routing.Decisions;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -30,7 +30,7 @@ public sealed class JevRoutingTests
             ResponseBody = "{\"model\":\"jev-1.13.0\",\"answers\":{\"question\":" + answer + "},\"usage\":{\"input_tokens\":100,\"output_tokens\":10}}"
         };
         using var client = new TypeSafeDecisionClient(new HttpClient(handler), new Uri("https://api.typesafe.ai/v1/systemone"), _ => ValueTask.FromResult<string?>("test"));
-        var request = new TypeSafeRequest
+        var request = new DecisionRequest
         {
             Model = "jev-1.13.0", State = state.RootElement.Clone(),
             Questions = new() { ["question"] = new() { Type = type, Instructions = "Judge this sample.", Criteria = type == "score" ? criteria.RootElement.Clone() : null } }
@@ -38,7 +38,7 @@ public sealed class JevRoutingTests
         if (valid)
             Assert.Equal(type, (await client.EvaluateAsync(request, Ct)).Answers["question"].Type);
         else
-            await Assert.ThrowsAsync<TypeSafeException>(() => client.EvaluateAsync(request, Ct));
+            await Assert.ThrowsAsync<DecisionException>(() => client.EvaluateAsync(request, Ct));
     }
 
     [Fact]
@@ -292,14 +292,14 @@ public sealed class JevRoutingTests
         var disabled = new ServiceCollection().AddLogging().AddDynamicTurnRouting(new(), "/tmp");
         using var disabledServices = disabled.BuildServiceProvider();
         Assert.Same(NoopTurnRoutingPolicy.Instance, disabledServices.GetRequiredService<ITurnRoutingPolicy>());
-        Assert.Null(disabledServices.GetService<ITypeSafeDecisionClient>());
+        Assert.Null(disabledServices.GetService<IDecisionClient>());
 
         var config = new DynamicTurnRoutingConfig { Jev = new() { Mode = "shadow", DiagnosticsPath = "" } };
         var enabled = new ServiceCollection().AddLogging();
         enabled.AddSingleton<IRedactionPipeline>(new NoopRedactionPipeline());
         enabled.AddDynamicTurnRouting(config, "/tmp");
         using var enabledServices = enabled.BuildServiceProvider();
-        Assert.IsType<JevTurnRoutingPolicy>(enabledServices.GetRequiredService<ITurnRoutingPolicy>());
+        Assert.IsType<DecisionTurnRoutingPolicy>(enabledServices.GetRequiredService<ITurnRoutingPolicy>());
     }
 
     [Theory]
@@ -336,7 +336,7 @@ public sealed class JevRoutingTests
         public Handler Handler { get; } = new();
         public FixedPolicy Baseline { get; } = new();
         public Observer Observer { get; } = new();
-        public JevTurnRoutingPolicy Policy { get; }
+        public DecisionTurnRoutingPolicy Policy { get; }
         private readonly HttpClient _http;
 
         public Harness(string mode, string choice, double confidence = 0.99, double highRisk = 0.01,
@@ -389,10 +389,10 @@ public sealed class JevRoutingTests
         }
     }
 
-    private sealed class Observer : IJevRoutingObserver
+    private sealed class Observer : IDecisionRoutingObserver
     {
-        public List<JevRoutingDiagnostic> Items { get; } = [];
-        public void Record(JevRoutingDiagnostic diagnostic) => Items.Add(diagnostic);
+        public List<DecisionRoutingDiagnostic> Items { get; } = [];
+        public void Record(DecisionRoutingDiagnostic diagnostic) => Items.Add(diagnostic);
     }
 
     private sealed class FakeClock : TimeProvider

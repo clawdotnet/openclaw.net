@@ -14,6 +14,7 @@ public sealed class RoutingCommandsTests
         {
             var config = new GatewayConfig();
             config.DynamicTurnRouting.Jev.Mode = "shadow";
+            config.DynamicTurnRouting.Laya.Mode = "shadow";
             config.DynamicTurnRouting.Jev.ApiKeyRef = "raw:do-not-print-this";
             await GatewayConfigFile.SaveAsync(config, path);
             using var output = new StringWriter();
@@ -25,6 +26,7 @@ public sealed class RoutingCommandsTests
             var saved = GatewayConfigFile.Load(path);
             Assert.False(saved.DynamicTurnRouting.Enabled);
             Assert.Equal("disabled", saved.DynamicTurnRouting.Jev.Mode);
+            Assert.Equal("disabled", saved.DynamicTurnRouting.Laya.Mode);
         }
         finally
         {

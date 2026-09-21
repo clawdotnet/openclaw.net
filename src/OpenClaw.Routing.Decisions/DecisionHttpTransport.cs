@@ -1,32 +1,20 @@
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
 
-namespace OpenClaw.Routing.Jev;
+namespace OpenClaw.Routing.Decisions;
 
-/// <summary>AOT-safe HTTP transport. The caller owns deadlines and fallback, so requests are not retried.</summary>
-public sealed class TypeSafeDecisionClient(
-    HttpClient httpClient,
-    Uri endpoint,
-    Func<CancellationToken, ValueTask<string?>> resolveApiKey) : ITypeSafeDecisionClient, IDisposable
+internal static class DecisionHttpTransport
 {
-    public async Task<TypeSafeResponse> EvaluateAsync(TypeSafeRequest request, CancellationToken cancellationToken)
+    public static async Task<DecisionResponse> SendAsync(HttpClient httpClient, HttpRequestMessage message,
+        DecisionRequest request, CancellationToken cancellationToken)
     {
-        var apiKey = await resolveApiKey(cancellationToken);
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new TypeSafeException("missing_api_key");
-
-        using var message = new HttpRequestMessage(HttpMethod.Post, endpoint);
-        message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        message.Content = JsonContent.Create(request, JevJsonContext.Default.TypeSafeRequest);
         using var response = await httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
-            throw new TypeSafeException($"http_{(int)response.StatusCode}");
+            throw new DecisionException($"http_{(int)response.StatusCode}");
 
         // Never include upstream bodies in diagnostics. Bound even a chunked response before deserializing.
         const int maxResponseBytes = 256 * 1024;
         if (response.Content.Headers.ContentLength > maxResponseBytes)
-            throw new TypeSafeException("response_too_large");
+            throw new DecisionException("response_too_large");
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var buffer = new MemoryStream();
         var chunk = new byte[8192];
@@ -34,56 +22,56 @@ public sealed class TypeSafeDecisionClient(
         while ((read = await stream.ReadAsync(chunk, cancellationToken)) != 0)
         {
             if (buffer.Length + read > maxResponseBytes)
-                throw new TypeSafeException("response_too_large");
+                throw new DecisionException("response_too_large");
             buffer.Write(chunk, 0, read);
         }
 
-        TypeSafeResponse result;
+        DecisionResponse result;
         try
         {
             result = JsonSerializer.Deserialize(buffer.GetBuffer().AsSpan(0, (int)buffer.Length),
-                JevJsonContext.Default.TypeSafeResponse) ?? throw new TypeSafeException("invalid_response");
+                DecisionJsonContext.Default.DecisionResponse) ?? throw new DecisionException("invalid_response");
         }
         catch (JsonException)
         {
-            throw new TypeSafeException("invalid_response");
+            throw new DecisionException("invalid_response");
         }
         Validate(request, result);
         return result;
     }
 
-    private static void Validate(TypeSafeRequest request, TypeSafeResponse response)
+    private static void Validate(DecisionRequest request, DecisionResponse response)
     {
         if (string.IsNullOrWhiteSpace(response.Model) || response.Model.Length > 128 ||
             response.Answers is null || response.Usage is null ||
             response.Usage.InputTokens < 0 || response.Usage.OutputTokens < 0 ||
             response.Answers.Count != request.Questions.Count)
-            throw new TypeSafeException("invalid_response");
+            throw new DecisionException("invalid_response");
 
         foreach (var (id, question) in request.Questions)
         {
             if (!response.Answers.TryGetValue(id, out var answer) || answer is null || answer.Type != question.Type)
-                throw new TypeSafeException("invalid_answer");
+                throw new DecisionException("invalid_answer");
             if (question.Type == "noul")
             {
                 if (!IsProbability(answer.Noul))
-                    throw new TypeSafeException("invalid_answer");
+                    throw new DecisionException("invalid_answer");
                 continue;
             }
 
             if (!IsProbability(answer.Confidence) || answer.Probabilities is not { Count: > 0 } probabilities ||
                 probabilities.Values.Any(value => !IsProbability(value)) || Math.Abs(probabilities.Values.Sum() - 1) > 0.001)
-                throw new TypeSafeException("invalid_probabilities");
+                throw new DecisionException("invalid_probabilities");
 
             if (question.Type == "choice")
             {
-                var criteria = question.Criteria;
-                if (criteria is not { ValueKind: JsonValueKind.Object } ||
-                    probabilities.Count != criteria.Value.EnumerateObject().Count() ||
-                    probabilities.Keys.Any(key => !criteria.Value.TryGetProperty(key, out _)) ||
+                if (question.Criteria is not JsonElement criteria || criteria.ValueKind != JsonValueKind.Object)
+                    throw new DecisionException("invalid_choice");
+                if (probabilities.Count != criteria.EnumerateObject().Count() ||
+                    probabilities.Keys.Any(key => !criteria.TryGetProperty(key, out _)) ||
                     answer.Choice is null || !probabilities.TryGetValue(answer.Choice, out var chosen) ||
                     chosen < probabilities.Values.Max())
-                    throw new TypeSafeException("invalid_choice");
+                    throw new DecisionException("invalid_choice");
             }
             else if (question.Type == "score")
             {
@@ -93,16 +81,15 @@ public sealed class TypeSafeDecisionClient(
                     answer.Legend is null || answer.Legend.Count != levels ||
                     probabilities.Keys.Any(key => !answer.Legend.ContainsKey(key)) ||
                     Enumerable.Range(0, levels).Any(index => !probabilities.ContainsKey(index.ToString(System.Globalization.CultureInfo.InvariantCulture))))
-                    throw new TypeSafeException("invalid_score");
+                    throw new DecisionException("invalid_score");
             }
             else
             {
-                throw new TypeSafeException("unsupported_question");
+                throw new DecisionException("unsupported_question");
             }
         }
     }
 
     private static bool IsProbability(double? value) => value is >= 0 and <= 1;
 
-    public void Dispose() => httpClient.Dispose();
 }

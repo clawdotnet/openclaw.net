@@ -32,7 +32,7 @@
     <ProjectReference Include="..\OpenClaw.Agent\OpenClaw.Agent.csproj" />
     <ProjectReference Include="..\OpenClaw.Plugins.TokenJuice\OpenClaw.Plugins.TokenJuice.csproj" />
     <ProjectReference Include="..\OpenClaw.Routing.Onnx\OpenClaw.Routing.Onnx.csproj" />
-    <ProjectReference Include="../OpenClaw.Routing.Jev/OpenClaw.Routing.Jev.csproj" />
+    <ProjectReference Include="../OpenClaw.Routing.Decisions/OpenClaw.Routing.Decisions.csproj" />
     <ProjectReference Include="..\OpenClaw.Channels\OpenClaw.Channels.csproj" />
     <ProjectReference Include="..\OpenClaw.Protocols.Browser\OpenClaw.Protocols.Browser.csproj" />
     <ProjectReference Include="..\OpenClaw.Protocols.Mqtt\OpenClaw.Protocols.Mqtt.csproj" />

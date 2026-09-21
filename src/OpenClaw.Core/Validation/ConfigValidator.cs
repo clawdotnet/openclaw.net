@@ -718,7 +718,21 @@ public static class ConfigValidator
             errors.Add($"DynamicTurnRouting.Jev: {ex.Message}");
         }
 
-        if (config.DynamicTurnRouting.Enabled || jevEnabled)
+        var layaEnabled = false;
+        try
+        {
+            layaEnabled = DecisionRoutingConfiguration.NormalizeMode(config.DynamicTurnRouting.Laya) != "disabled";
+            if (layaEnabled)
+                DecisionRoutingConfiguration.Validate(config.DynamicTurnRouting.Laya);
+            if (jevEnabled && layaEnabled)
+                errors.Add("Enable only one decision provider: Jev or Laya. Local Laya never falls back to hosted Jev.");
+        }
+        catch (ArgumentException ex)
+        {
+            errors.Add($"DynamicTurnRouting.Laya: {ex.Message}");
+        }
+
+        if (config.DynamicTurnRouting.Enabled || jevEnabled || layaEnabled)
         {
             var policy = config.DynamicTurnRouting.Policy;
             var tierMap = config.DynamicTurnRouting.Policy.Tiers;

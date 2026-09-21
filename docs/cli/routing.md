@@ -23,9 +23,9 @@ Router mode behavior:
 
 - `recommended`: enables dynamic turn routing and keeps existing tier mappings.
 - `openrouter-mix`: enables routing and appends OpenRouter-oriented preferred tags to tiers (`cost`, `fast`, `tools`, `reasoning`).
-- `disabled`: turns both ONNX and Jev routing off. Restart the gateway after configuration changes.
+- `disabled`: turns ONNX, Jev, and Laya routing off. Restart the gateway after configuration changes.
 
-`routing status` also reports `jevMode` and `jevModel`. Jev is disabled by default; its `shadow` and `active` modes are configured through `DynamicTurnRouting.Jev`. See [Jev routing](../jev-routing.md) for the evaluation workflow. The existing `diagnostics on|off` command controls the ONNX policy flag; Jev journaling is controlled separately by `Jev.DiagnosticsPath`.
+`routing status` also reports `jevMode`, `jevModel`, `layaMode`, `layaModel`, and `layaCalibrationId`. See [local Laya routing](../laya-routing.md) for offline setup and calibration. Jev is disabled by default; its `shadow` and `active` modes are configured through `DynamicTurnRouting.Jev`. See [Jev routing](../jev-routing.md) for the evaluation workflow. The existing `diagnostics on|off` command controls the ONNX policy flag; Jev journaling is controlled separately by `Jev.DiagnosticsPath`.
 
 Examples:
 

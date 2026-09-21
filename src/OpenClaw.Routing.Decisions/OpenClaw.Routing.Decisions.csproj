@@ -3,6 +3,7 @@
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../tools/laya_service/rubrics/openclaw-laya-tiers-v1.json" LogicalName="OpenClaw.LayaRoutingRubric.json" />
     <ProjectReference Include="../OpenClaw.Core/OpenClaw.Core.csproj" />
     <ProjectReference Include="../OpenClaw.Agent/OpenClaw.Agent.csproj" />
   </ItemGroup>

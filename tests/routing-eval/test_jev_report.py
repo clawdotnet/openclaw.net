@@ -22,6 +22,19 @@ class JevReportTests(unittest.TestCase):
         self.assertEqual(.000084, report["estimated_reported_decision_cost_usd"])
         self.assertEqual(1500, report["added_latency_ms"]["p95"])
 
+    def test_calibration_is_split_by_checkpoint_and_counts_abstention(self):
+        rows = [{"decision_id": str(i), "baseline_tier": "T2", "applied_tier": "T2", "latency_ms": 1,
+                 "provider": "laya", "model": "laya@revision", "rubric_version": "v1",
+                 "metadata": {"checkpoint": checkpoint, "calibration_id": "raw"},
+                 "probabilities": {"T0": .1, "T1": .1, "T2": .1, "T3": .1, "abstain": .6}}
+                for i, checkpoint in enumerate(["english", "multilingual"])]
+        labels = [{"decision_id": str(i), "expected_tier": "T0"} for i in range(2)]
+        report = module.summarize(rows, labels)
+        self.assertEqual(2, len(report["calibration_quality"]))
+        self.assertEqual(0, report["calibration_quality"][0]["accuracy"])
+        self.assertIn("decision_with_fallback", report["quality"])
+        self.assertNotIn("jev_with_fallback", report["quality"])
+
     def test_unlabeled_data_does_not_claim_accuracy(self):
         report = module.summarize([{"decision_id": "a", "baseline_tier": "T2", "applied_tier": "T2", "latency_ms": 0}])
         self.assertIsNone(report["quality"])

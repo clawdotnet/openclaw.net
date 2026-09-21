@@ -85,7 +85,9 @@ After calibration, change `Jev.Mode` to `active` and restart. Each configured `P
 
 Active mode changes only the proposed model profile, its direct fallback, and reasoning level, plus routing tier/reason. It preserves the baseline's tool restrictions, response policy, tags, and prompt behavior. It grants no tool permissions and does not replace governance, approvals, or the model selector. Baseline restrictions can still prevent a proposed model from using tools; evaluate that configuration explicitly.
 
-For Jev-only rollback set `Jev.Mode=disabled` and restart. To turn both routers off, run:
+The shared decision client and policy also support [local Laya routing](laya-routing.md). Enable only one decision provider at a time. Jev retains its own credentials, model identity, pricing, and rubric.
+
+For Jev-only rollback set `Jev.Mode=disabled` and restart. To turn ONNX, Jev, and Laya off, run:
 
 ```bash
 openclaw routing configure router --router disabled --config /path/to/appsettings.json
@@ -95,7 +97,7 @@ Restart afterward and remove any environment override that would re-enable Jev.
 
 ## Implementation and verification
 
-- `OpenClaw.Routing.Jev`: reusable Choice/Score/Noul HTTP transport, source-generated JSON, bounded response parsing, policy, and observer.
+- `OpenClaw.Routing.Decisions`: reusable Choice/Score/Noul HTTP transport, source-generated JSON, bounded response parsing, policy, and observer.
 - `TurnRoutingGuardrails`: deterministic rules shared with ONNX; existing ONNX probability handling remains unchanged.
 - `TurnRoutingServices`: optional gateway composition; no hosted client is registered when disabled.
 - `JevRoutingTests`: HTTP contract, shadow isolation, active scope, redaction, floors, malformed data, timeout, cancellation, overload, concurrency and circuit recovery.
@@ -106,3 +108,5 @@ python3 -m unittest discover -s tests/routing-eval -p test_jev_report.py
 ```
 
 The transport follows the [TypeSafe API](https://docs.typesafe.ai/api). The model pin and initial estimated price come from its [model reference](https://docs.typesafe.ai/models), checked September 20, 2026. See [confidence semantics](https://docs.typesafe.ai/confidence) and [known model limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13) before tuning policy.
+
+Jev is developed by TypeSafe AI; see [Diogo Almeida's introduction](https://typesafe.ai/blog/introducing-system-one-models-and-jev). OpenClaw's adapters are maintained separately. Laya credit is recorded in its [provider guide](laya-routing.md).

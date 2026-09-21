@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Summarize Jev routing journals; optional human labels measure tier quality, not task success."""
+"""Summarize Jev or Laya routing journals; optional human labels measure tier quality, not task success."""
 import argparse
 from collections import Counter
 import json
 import math
 from pathlib import Path
 import sys
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.laya_service.calibration import metrics
 
 
 TIERS = ("T0", "T1", "T2", "T3")
@@ -87,6 +91,7 @@ def summarize(rows, label_rows=()):
         "decisions": len(rows), "responses_with_usage": len(completed),
         "eligible_proposals": len(proposed), "proposal_coverage": len(proposed) / len(rows),
         "modes": dict(Counter(row.get("mode", "unknown") for row in rows)),
+        "providers": dict(Counter(row.get("provider", "jev") for row in rows)),
         "models": dict(Counter(row.get("model", "unreported") for row in rows)),
         "rubric_versions": dict(Counter(row.get("rubric_version", "unknown") for row in rows)),
         "reasons": dict(Counter(row.get("reason", "unknown") for row in rows)),
@@ -120,7 +125,49 @@ def summarize(rows, label_rows=()):
             "always_t2": quality(labeled, labels, lambda row: "T2"),
             "jev_with_fallback": quality(labeled, labels, lambda row: row.get("proposed_tier") or row["baseline_tier"]),
         }
+    # Evaluate raw tier distributions, separately from the safeguards/fallback policy.
+    # Never pool calibration across checkpoint, rubric, or temperature artifacts.
+    cohorts = {}
+    for row in rows:
+        if row["decision_id"] not in labels or not row.get("probabilities"):
+            continue
+        metadata = row.get("metadata") or {}
+        identity = json.dumps([row.get("provider", "jev"), row.get("model"), row.get("rubric_version"),
+                               metadata.get("checkpoint"), metadata.get("revision"), metadata.get("calibration_id"),
+                               metadata.get("schema_hash")])
+        cohorts.setdefault(identity, []).append({
+            "answer": {"type": "choice", "probabilities": row["probabilities"]},
+            "label": labels[row["decision_id"]]["expected_tier"]})
+    report["calibration_quality"] = [{"cohort": json.loads(key), **metrics(values)} for key, values in cohorts.items()]
+    if report["quality"]:
+        report["quality"]["decision_with_fallback"] = report["quality"]["jev_with_fallback"]
+        if any(row.get("provider") == "laya" for row in rows):
+            del report["quality"]["jev_with_fallback"]
     return report
+
+
+def plot(report, path):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    cohorts = report["calibration_quality"]
+    if not cohorts:
+        raise ValueError("Reliability plots require labeled probabilities.")
+    figure, axes = plt.subplots(len(cohorts), 2, figsize=(10, 4 * len(cohorts)), squeeze=False)
+    for index, cohort in enumerate(cohorts):
+        bins = cohort["reliability_bins"]
+        axes[index, 0].plot([0, 1], [0, 1], "--", color="gray")
+        axes[index, 0].plot([b["mean_top_probability"] for b in bins], [b["accuracy"] for b in bins], "o-")
+        provider, model, rubric, checkpoint, revision, calibration_id, schema = cohort["cohort"]
+        title = f"{provider} / {checkpoint or model or 'unknown'}\n{rubric or 'unknown rubric'} | revision {(revision or 'n/a')[:8]} | calibration {(calibration_id or 'n/a')[:8]}"
+        axes[index, 0].set(xlabel="Mean top probability", ylabel="Accuracy", xlim=(0, 1), ylim=(0, 1))
+        axes[index, 0].set_title(title, fontsize=9)
+        curve = [point for point in cohort["risk_coverage"] if point["error_rate"] is not None]
+        axes[index, 1].plot([p["coverage"] for p in curve], [p["error_rate"] for p in curve], "o-")
+        axes[index, 1].set(xlabel="Coverage at entropy-confidence threshold", ylabel="Error rate", xlim=(0, 1), ylim=(0, 1))
+    figure.tight_layout()
+    figure.savefig(path, dpi=150)
+    plt.close(figure)
 
 
 def main():
@@ -128,15 +175,18 @@ def main():
     parser.add_argument("journal", help="Path to a snapshot of jev-decisions.jsonl")
     parser.add_argument("--labels", help="Optional JSONL with decision_id, expected_tier, and high_risk")
     parser.add_argument("--output", help="Write report JSON here instead of stdout")
+    parser.add_argument("--plot", help="Optional reliability/risk-coverage PNG (requires matplotlib)")
     args = parser.parse_args()
     try:
         report = summarize(list(read_jsonl(args.journal)), list(read_jsonl(args.labels)) if args.labels else [])
+        if args.plot:
+            plot(report, args.plot)
         rendered = json.dumps(report, indent=2, allow_nan=False) + "\n"
         if args.output:
             Path(args.output).write_text(rendered, encoding="utf-8")
         else:
             sys.stdout.write(rendered)
-    except (OSError, ValueError, TypeError) as exc:
+    except (OSError, ValueError, TypeError, KeyError, ImportError) as exc:
         parser.exit(2, f"{exc}\n")
 
 

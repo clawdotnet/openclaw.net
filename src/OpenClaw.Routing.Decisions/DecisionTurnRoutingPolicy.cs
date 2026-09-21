@@ -6,17 +6,19 @@ using OpenClaw.Agent.Routing;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
 
-namespace OpenClaw.Routing.Jev;
+namespace OpenClaw.Routing.Decisions;
 
-/// <summary>Opt-in hosted routing over an unchanged baseline; shadow mode returns that baseline verbatim.</summary>
-public sealed class JevTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
+/// <summary>Opt-in decision routing over an unchanged baseline; shadow mode returns that baseline verbatim.</summary>
+public sealed class DecisionTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
 {
-    private readonly JevRoutingConfig _config;
+    public const string RubricVersion = "openclaw-tiers-v1";
+    private readonly DecisionRoutingConfig _config;
+    private readonly string _provider;
     private readonly DynamicTurnRoutingPolicyConfig _policy;
     private readonly ITurnRoutingPolicy _baseline;
-    private readonly ITypeSafeDecisionClient _client;
+    private readonly IDecisionClient _client;
     private readonly IRedactionPipeline _redactor;
-    private readonly IJevRoutingObserver _observer;
+    private readonly IDecisionRoutingObserver _observer;
     private readonly string _mode;
     private readonly TimeProvider _clock;
     private readonly SemaphoreSlim _slots;
@@ -24,18 +26,19 @@ public sealed class JevTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
     private int _failures;
     private DateTimeOffset _openUntil;
 
-    public JevTurnRoutingPolicy(JevRoutingConfig config, DynamicTurnRoutingPolicyConfig policy,
-        ITurnRoutingPolicy baseline, ITypeSafeDecisionClient client, IRedactionPipeline redactor,
-        IJevRoutingObserver observer, TimeProvider? clock = null)
+    public DecisionTurnRoutingPolicy(DecisionRoutingConfig config, DynamicTurnRoutingPolicyConfig policy,
+        ITurnRoutingPolicy baseline, IDecisionClient client, IRedactionPipeline redactor,
+        IDecisionRoutingObserver observer, TimeProvider? clock = null)
     {
-        JevRoutingConfiguration.Validate(config);
+        DecisionRoutingConfiguration.Validate(config);
         _config = config;
+        _provider = DecisionRoutingConfiguration.Provider(config);
         _policy = policy;
         _baseline = baseline;
         _client = client;
         _redactor = redactor;
         _observer = observer;
-        _mode = JevRoutingConfiguration.NormalizeMode(config);
+        _mode = DecisionRoutingConfiguration.NormalizeMode(config);
         _clock = clock ?? TimeProvider.System;
         _slots = new SemaphoreSlim(config.MaxConcurrentRequests);
     }
@@ -47,7 +50,7 @@ public sealed class JevTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
             return baseline;
 
         var timer = Stopwatch.StartNew();
-        TypeSafeResponse? result = null;
+        DecisionResponse? result = null;
         TurnRoutingDecision? proposed = null;
         var reason = "accepted";
         var truncated = false;
@@ -72,7 +75,7 @@ public sealed class JevTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
                 deadline.CancelAfter(_config.TimeoutMs);
                 result = await _client.EvaluateAsync(BuildRequest(state), deadline.Token);
                 if (!string.Equals(result.Model, _config.Model, StringComparison.Ordinal))
-                    throw new TypeSafeException("model_version_mismatch");
+                    throw new DecisionException("model_version_mismatch");
                 ResetFailures();
                 (proposed, reason) = Propose(request, baseline, result, truncated);
             }
@@ -81,7 +84,7 @@ public sealed class JevTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
                 reason = "timeout";
                 RecordFailure();
             }
-            catch (TypeSafeException ex)
+            catch (DecisionException ex)
             {
                 reason = ex.Reason;
                 RecordFailure();
@@ -101,8 +104,10 @@ public sealed class JevTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         var applied = _mode == "active" && proposed is not null ? proposed : baseline;
         var tierAnswer = result?.Answers.GetValueOrDefault("tier");
-        _observer.Record(new JevRoutingDiagnostic
+        _observer.Record(new DecisionRoutingDiagnostic
         {
+            Provider = _provider, Metadata = result?.Metadata,
+            RubricVersion = _config is LayaRoutingConfig ? "openclaw-laya-tiers-v1" : RubricVersion,
             Mode = _mode, SessionId = request.Session.Id,
             BaselineTier = baseline.Tier, BaselineProfileId = baseline.ModelProfileId ?? request.Session.ModelProfileId,
             ProposedTier = proposed?.Tier, ProposedProfileId = proposed?.ModelProfileId,
@@ -118,11 +123,11 @@ public sealed class JevTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
         return applied;
     }
 
-    private JevRoutingState BuildState(TurnRoutingRequest request, out bool truncated)
+    private DecisionRoutingState BuildState(TurnRoutingRequest request, out bool truncated)
     {
         var current = _redactor.Redact(request.UserMessage);
         if (current.Length > _config.MaxStateChars)
-            throw new TypeSafeException("request_too_large");
+            throw new DecisionException("request_too_large");
         var remaining = _config.MaxStateChars - current.Length;
         var messages = request.Messages
             .Where(message => message.Role == ChatRole.User || message.Role == ChatRole.Assistant)
@@ -134,7 +139,7 @@ public sealed class JevTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
         truncated = messages.Count > _config.HistoryMessages || request.Messages.Any(message =>
             message.Text?.StartsWith("[Previous conversation summary:", StringComparison.Ordinal) == true ||
             message.Text?.StartsWith("[Previous tool calls:", StringComparison.Ordinal) == true);
-        var history = new List<JevHistoryMessage>();
+        var history = new List<DecisionHistoryMessage>();
         foreach (var message in messages.TakeLast(_config.HistoryMessages).Reverse())
         {
             var text = _redactor.Redact(message.Text);
@@ -144,17 +149,18 @@ public sealed class JevTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
                 break; // Keep whole recent messages; never classify a chopped instruction as complete.
             }
             remaining -= text.Length;
-            history.Add(new JevHistoryMessage { Role = message.Role.Value, Text = text });
+            history.Add(new DecisionHistoryMessage { Role = message.Role.Value, Text = text });
         }
         history.Reverse();
-        return new JevRoutingState { CurrentRequest = current, RecentConversation = history.ToArray() };
+        return new DecisionRoutingState { CurrentRequest = current, RecentConversation = history.ToArray() };
     }
 
-    private TypeSafeRequest BuildRequest(JevRoutingState state) => new()
+    private DecisionRequest BuildRequest(DecisionRoutingState state) => _config is LayaRoutingConfig ? BuildLayaRequest(state) : new()
     {
         Model = _config.Model,
-        State = JsonSerializer.SerializeToElement(state, JevJsonContext.Default.JevRoutingState),
-        Questions = new Dictionary<string, TypeSafeQuestion>
+        RubricVersion = RubricVersion,
+        State = JsonSerializer.SerializeToElement(state, DecisionJsonContext.Default.DecisionRoutingState),
+        Questions = new Dictionary<string, DecisionQuestion>
         {
             ["tier"] = new()
             {
@@ -167,7 +173,7 @@ public sealed class JevTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
                     ["T2"] = "Multi-step implementation, debugging, operational work, or consequential decisions requiring reliable tool use.",
                     ["T3"] = "Deep reasoning, difficult cross-system investigation, or broad architecture and research synthesis.",
                     ["abstain"] = "Missing context, ambiguous task, or no defensible capability classification."
-                }, JevJsonContext.Default.DictionaryStringString)
+                }, DecisionJsonContext.Default.DictionaryStringString)
             },
             ["high_risk"] = new()
             {
@@ -182,8 +188,21 @@ public sealed class JevTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
         }
     };
 
+    private DecisionRequest BuildLayaRequest(DecisionRoutingState state)
+    {
+        using var stream = typeof(DecisionTurnRoutingPolicy).Assembly.GetManifestResourceStream("OpenClaw.LayaRoutingRubric.json")
+            ?? throw new InvalidOperationException("Missing embedded Laya routing rubric.");
+        var rubric = JsonSerializer.Deserialize(stream, DecisionJsonContext.Default.DecisionRubric)!;
+        return new DecisionRequest
+        {
+            Model = _config.Model, RubricVersion = rubric.RubricVersion,
+            State = JsonSerializer.SerializeToElement(state, DecisionJsonContext.Default.DecisionRoutingState),
+            Questions = rubric.Questions
+        };
+    }
+
     private (TurnRoutingDecision? Decision, string Reason) Propose(TurnRoutingRequest request,
-        TurnRoutingDecision baseline, TypeSafeResponse response, bool truncated)
+        TurnRoutingDecision baseline, DecisionResponse response, bool truncated)
     {
         var answer = response.Answers["tier"];
         var tier = ParseTier(answer.Choice);
@@ -215,7 +234,7 @@ public sealed class JevTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
         if (string.IsNullOrWhiteSpace(target.ModelProfileId))
             return (null, "unconfigured_tier");
 
-        // Only profile and reasoning changes are introduced by Jev. All tool permissions,
+        // Only profile and reasoning changes are introduced by the decision provider. All tool permissions,
         // prompt behavior, and response settings remain those of the established baseline.
         return (new TurnRoutingDecision
         {
@@ -228,7 +247,7 @@ public sealed class JevTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
             CacheContinuityMaxConversationTurns = baseline.CacheContinuityMaxConversationTurns,
             CacheContinuityResetOnProfileSwitch = baseline.CacheContinuityResetOnProfileSwitch,
             SystemPromptSuffix = baseline.SystemPromptSuffix,
-            Reason = tier == rawTier ? "jev" : "jev+safety_floor"
+            Reason = tier == rawTier ? _provider : $"{_provider}+safety_floor"
         }, tier == rawTier ? "accepted" : "safety_floor");
     }
 

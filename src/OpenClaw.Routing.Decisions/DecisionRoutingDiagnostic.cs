@@ -1,14 +1,16 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
-namespace OpenClaw.Routing.Jev;
+namespace OpenClaw.Routing.Decisions;
 
 /// <summary>Decision metadata only: no conversation text, tool arguments, or credentials.</summary>
-public sealed class JevRoutingDiagnostic
+public sealed class DecisionRoutingDiagnostic
 {
     public string DecisionId { get; init; } = Guid.NewGuid().ToString("N");
     public DateTimeOffset TimestampUtc { get; init; } = DateTimeOffset.UtcNow;
-    public string RubricVersion { get; init; } = "openclaw-tiers-v1";
+    public string RubricVersion { get; init; } = DecisionTurnRoutingPolicy.RubricVersion;
+    public required string Provider { get; init; }
+    public DecisionMetadata? Metadata { get; init; }
     public required string Mode { get; init; }
     public required string SessionId { get; init; }
     public required string BaselineTier { get; init; }
@@ -31,19 +33,19 @@ public sealed class JevRoutingDiagnostic
     public decimal? EstimatedCostUsd { get; init; }
 }
 
-public interface IJevRoutingObserver
+public interface IDecisionRoutingObserver
 {
-    void Record(JevRoutingDiagnostic diagnostic);
+    void Record(DecisionRoutingDiagnostic diagnostic);
 }
 
-public sealed class JsonlJevRoutingObserver(string? path, ILogger<JsonlJevRoutingObserver> logger) : IJevRoutingObserver
+public sealed class JsonlDecisionRoutingObserver(string? path, ILogger<JsonlDecisionRoutingObserver> logger) : IDecisionRoutingObserver
 {
     private readonly Lock _gate = new();
 
-    public void Record(JevRoutingDiagnostic diagnostic)
+    public void Record(DecisionRoutingDiagnostic diagnostic)
     {
-        logger.LogInformation("Jev routing {Mode}: baseline={BaselineTier} proposed={ProposedTier} applied={AppliedTier} reason={Reason} latencyMs={LatencyMs} inputTokens={InputTokens} estimatedCostUsd={CostUsd} decisionId={DecisionId}",
-            diagnostic.Mode, diagnostic.BaselineTier, diagnostic.ProposedTier, diagnostic.AppliedTier,
+        logger.LogInformation("Decision routing {Provider} {Mode}: baseline={BaselineTier} proposed={ProposedTier} applied={AppliedTier} reason={Reason} latencyMs={LatencyMs} inputTokens={InputTokens} estimatedCostUsd={CostUsd} decisionId={DecisionId}",
+            diagnostic.Provider, diagnostic.Mode, diagnostic.BaselineTier, diagnostic.ProposedTier, diagnostic.AppliedTier,
             diagnostic.Reason, diagnostic.LatencyMs, diagnostic.InputTokens, diagnostic.EstimatedCostUsd, diagnostic.DecisionId);
         if (string.IsNullOrWhiteSpace(path))
             return;
@@ -53,13 +55,13 @@ public sealed class JsonlJevRoutingObserver(string? path, ILogger<JsonlJevRoutin
             lock (_gate)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-                File.AppendAllText(path, JsonSerializer.Serialize(diagnostic, JevJsonContext.Default.JevRoutingDiagnostic) + "\n");
+                File.AppendAllText(path, JsonSerializer.Serialize(diagnostic, DecisionJsonContext.Default.DecisionRoutingDiagnostic) + "\n");
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Storage availability must not decide whether an agent turn can execute.
-            logger.LogWarning("Unable to append Jev routing diagnostics ({ErrorType}).", ex.GetType().Name);
+            logger.LogWarning("Unable to append decision routing diagnostics ({ErrorType}).", ex.GetType().Name);
         }
     }
 }
