@@ -31,6 +31,10 @@ public sealed partial class GatewayAdminEndpointTests
         preview.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewer);
         using var previewResponse = await harness.Client.SendAsync(preview);
         Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+        using var bodylessPreview = new HttpRequestMessage(HttpMethod.Post, "/admin/memory/fractal/workflows/doctor");
+        bodylessPreview.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewer);
+        using var bodylessPreviewResponse = await harness.Client.SendAsync(bodylessPreview);
+        Assert.Equal(HttpStatusCode.OK, bodylessPreviewResponse.StatusCode);
 
         using var repair = new HttpRequestMessage(HttpMethod.Post, "/admin/memory/fractal/workflows/doctor") { Content = JsonContent("""{"repair":true}""") };
         repair.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewer);
@@ -47,7 +51,7 @@ public sealed partial class GatewayAdminEndpointTests
         write.Headers.Add(BrowserSessionAuthService.CsrfHeaderName, csrf);
         using var writeResponse = await harness.Client.SendAsync(write);
         Assert.Equal(HttpStatusCode.OK, writeResponse.StatusCode);
-        Assert.Equal(2, workflows.ReceivedCalls().Count());
+        Assert.Equal(3, workflows.ReceivedCalls().Count());
     }
 
     [Theory]

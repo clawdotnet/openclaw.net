@@ -7,6 +7,7 @@ namespace OpenClaw.Core.Memory;
 public sealed class ContextBudgetPlanner
 {
     private const int TokenCharEstimate = 4;
+    private const int ContextEnvelopeReserveChars = 512;
     private readonly GatewayConfig _config;
     private readonly IStructuredMemoryProvider _provider;
 
@@ -50,7 +51,10 @@ public sealed class ContextBudgetPlanner
 
         var maxChars = ResolveMaxChars(request, fractal);
         var export = _provider is IStructuredMemoryWorkflowProvider workflows
-            ? await workflows.BuildContextAsync(sourcePath, Math.Clamp(maxChars, 256, 1_000_000), ct)
+            ? await workflows.BuildContextAsync(
+                sourcePath,
+                Math.Clamp(maxChars - ContextEnvelopeReserveChars, 256, 1_000_000),
+                ct)
             : await _provider.ExportAsync(sourcePath, mode, ct);
 
         if (!export.Success)

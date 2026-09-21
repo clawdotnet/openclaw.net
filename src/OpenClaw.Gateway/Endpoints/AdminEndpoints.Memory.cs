@@ -205,9 +205,10 @@ internal static partial class AdminEndpoints
 
         app.MapPost("/admin/memory/fractal/workflows/{operation}", async (HttpContext ctx, string operation) =>
         {
-            var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: false, endpointScope: "admin.memory");
-            if (authResult.Failure is not null)
-                return authResult.Failure;
+            // Reject unauthenticated callers before reading a body, then apply role, CSRF and
+            // rate-limit policy once using the final read/write scope after validation.
+            if (!EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false).IsAuthorized)
+                return Results.Unauthorized();
             var workflow = FractalMemoryWorkflows.Find(operation);
             if (workflow is null)
                 return Results.Json(new StructuredMemoryWorkflowResult { Error = "Unknown Fractal Memory workflow." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status404NotFound);
@@ -220,19 +221,25 @@ internal static partial class AdminEndpoints
             {
                 return Results.Json(new StructuredMemoryWorkflowResult { Error = "Arguments must be a valid JSON object." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status400BadRequest);
             }
-            using var document = payload.Value;
             if (payload.Failure is not null)
                 return payload.Failure;
-            var arguments = document?.RootElement ?? default;
+            using var document = payload.Value ?? JsonDocument.Parse("{}");
+            var arguments = document.RootElement;
             if (workflow.Validate(arguments) is { } error)
                 return Results.Json(new StructuredMemoryWorkflowResult { Error = error }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status400BadRequest);
 
             var mutation = workflow.IsMutation(arguments);
+            var authResult = AuthorizeOperator(
+                ctx,
+                startup,
+                browserSessions,
+                operations,
+                requireCsrf: mutation,
+                endpointScope: mutation ? "admin.memory.mutate" : "admin.memory");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
             if (mutation)
             {
-                authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.memory.mutate");
-                if (authResult.Failure is not null)
-                    return authResult.Failure;
                 if (!startup.Config.Memory.Fractal.AllowWrites)
                     return Results.Json(new StructuredMemoryWorkflowResult { Error = "Fractal Memory writes are disabled by configuration." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status403Forbidden);
             }
@@ -241,9 +248,25 @@ internal static partial class AdminEndpoints
 
             var result = await workflows.ExecuteWorkflowAsync(operation, arguments, ctx.RequestAborted);
             if (mutation)
-                RecordOperatorAudit(ctx, operations, authResult.Authorization!, workflow.ToolName, "fractal_memory",
-                    $"Requested Fractal Memory {operation}.", result.Success, before: null,
+            {
+                var targetId = arguments.TryGetProperty("path", out var pathValue) && pathValue.ValueKind == JsonValueKind.String
+                    ? pathValue.GetString() ?? "repository"
+                    : "repository";
+                operations.RuntimeEvents.Append(new RuntimeEventEntry
+                {
+                    Id = $"evt_{Guid.NewGuid():N}"[..20],
+                    TimestampUtc = DateTimeOffset.UtcNow,
+                    Component = "fractal_memory",
+                    Action = operation,
+                    Severity = result.Success ? "info" : "warning",
+                    Summary = result.Success
+                        ? $"Fractal Memory {operation} requested for '{targetId}'."
+                        : $"Fractal Memory {operation} failed for '{targetId}': {result.Error}"
+                });
+                RecordOperatorAudit(ctx, operations, authResult.Authorization!, workflow.ToolName, targetId,
+                    $"Requested Fractal Memory {operation} for '{targetId}'.", result.Success, before: null,
                     after: new MutationResponse { Success = result.Success });
+            }
             return Results.Json(result, CoreJsonContext.Default.StructuredMemoryWorkflowResult);
         });
 

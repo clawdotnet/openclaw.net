@@ -156,9 +156,36 @@ public sealed class FractalMemoryWorkflowTests
             Assert.False(read.Success);
             Assert.Contains("Update FractalMemory.McpServer", read.Error);
         }
-        var open = await fixture.Provider.OpenAsync("projects/demo", 2, "state", TestContext.Current.CancellationToken);
+        var open = await fixture.Provider.OpenAsync("projects/demo", 2, "index", TestContext.Current.CancellationToken);
         Assert.Equal("state", open.View);
         Assert.True(open.StateTruncated);
+    }
+
+    [Fact]
+    public async Task Context_ReservesRoomForOpenClawEnvelope()
+    {
+        var provider = Substitute.For<IStructuredMemoryProvider, IStructuredMemoryWorkflowProvider>();
+        var workflows = (IStructuredMemoryWorkflowProvider)provider;
+        workflows.BuildContextAsync("projects/demo", 488, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new StructuredMemoryExportResult
+            {
+                Success = true,
+                Path = "projects/demo",
+                Mode = "context",
+                Content = "Bounded objective"
+            }));
+        var config = new GatewayConfig();
+        config.Memory.Fractal.Enabled = true;
+        config.Memory.Fractal.AutoContextMode = "auto";
+        config.Memory.Fractal.MaxContextChars = 1000;
+        config.Memory.Fractal.MaxContextTokens = 1000;
+
+        var result = await new ContextBudgetPlanner(config, provider).BuildContextAsync(
+            new() { PathHint = "projects/demo", Mode = "auto", MaxChars = 1000, MaxTokens = 1000 },
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.Error);
+        await workflows.Received(1).BuildContextAsync("projects/demo", 488, Arg.Any<CancellationToken>());
     }
 
     [Fact]
