@@ -254,6 +254,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         System.Text.Json.JsonElement? responseSchema = null,
         string? correlationId = null)
     {
+        _toolExecutor.PrepareAudienceTurn(session, userMessage);
         using var activity = _telemetry.StartRunActivity("Agent.Maf.RunAsync", session, _runtimeState);
         _goalService?.BeginTurn(session.Id);
         var resolvedCorrelationId = ResolveCorrelationId(correlationId);
@@ -307,7 +308,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 TrimHistory(session);
 
             var messages = BuildMessages(session);
-            await TryInjectRecallAsync(messages, userMessage, ct);
+            if (_toolExecutor.GetAudienceProfile(session) is not { IncludePrivateContext: false })
+                await TryInjectRecallAsync(messages, userMessage, ct);
 
             // Inject Goal activation prompt if a goal is active
             if (_goalIntegration is not null)
@@ -472,6 +474,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         if (!_options.EnableStreaming)
             throw new NotSupportedException("MAF streaming is disabled for this runtime.");
 
+        _toolExecutor.PrepareAudienceTurn(session, userMessage);
         using var activity = _telemetry.StartRunActivity("Agent.Maf.RunStreamingAsync", session, _runtimeState);
         _goalService?.BeginTurn(session.Id);
         var resolvedCorrelationId = ResolveCorrelationId(correlationId);
@@ -528,7 +531,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 TrimHistory(session);
 
             var messages = BuildMessages(session);
-            await TryInjectRecallAsync(messages, userMessage, ct);
+            if (_toolExecutor.GetAudienceProfile(session) is not { IncludePrivateContext: false })
+                await TryInjectRecallAsync(messages, userMessage, ct);
 
             // Inject Goal activation prompt (streaming path)
             if (_goalIntegration is not null)
@@ -795,6 +799,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
 
     private string GetSystemPrompt(Session session, string? userMessage = null)
     {
+        if (_toolExecutor.GetAudienceProfile(session) is { IncludePrivateContext: false })
+            return AgentSystemPromptBuilder.ApplyResponseMode(AgentSystemPromptBuilder.BuildBaseSystemPrompt(_requireToolApproval, false), session.ResponseMode);
         string systemPrompt;
         string? blockedRoutes = null;
         lock (_skillGate)

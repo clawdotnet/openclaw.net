@@ -129,6 +129,9 @@ Tool: echo(hello): ok
 
 Explore the [user guide](docs/USER_GUIDE.md), [tool catalog](docs/TOOLS_GUIDE.md), [SkillKit](docs/SKILLKIT.md), and [harness testing](docs/HARNESS_REGRESSION.md) for details. The separate [AgentQi Mobile repository](https://github.com/agentqi/agentqi-mobile) provides an Android operator console and build instructions.
 
+For audience restrictions, verified bundle updates, remote device enrollment,
+and a one-command local demo, see [the operations guide](docs/audience-updates-enrollment.md).
+
 ## Compatibility and capability boundaries
 
 NativeAOT support and upstream compatibility depend on the feature you enable. Check the [capability matrix](docs/CAPABILITY_MATRIX.md) and [compatibility guide](docs/COMPATIBILITY.md) before choosing a deployment lane.

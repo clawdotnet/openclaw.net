@@ -81,10 +81,20 @@ internal sealed class ToolPresetResolver : IToolPresetResolver
             ? ResolvePresetIdForSurface(surface)
             : requestedPresetId!.Trim();
 
-        if (_config.Tooling.Presets.TryGetValue(presetId, out var configuredPreset))
-            return ResolveConfiguredPreset(presetId, surface, configuredPreset, toolNames);
-
-        return ResolveBuiltInPreset(presetId, surface, toolNames);
+        var resolved = _config.Tooling.Presets.TryGetValue(presetId, out var configuredPreset)
+            ? ResolveConfiguredPreset(presetId, surface, configuredPreset, toolNames)
+            : ResolveBuiltInPreset(presetId, surface, toolNames);
+        var audience = AudiencePolicy.Resolve(_config.Tooling.Audiences, session);
+        if (audience is null) return resolved;
+        return new ResolvedToolPreset
+        {
+            PresetId = resolved.PresetId, Surface = resolved.Surface,
+            Description = resolved.Description + " Audience restrictions apply.",
+            EffectiveAutonomyMode = resolved.EffectiveAutonomyMode,
+            RequireToolApproval = resolved.RequireToolApproval,
+            ApprovalRequiredTools = resolved.ApprovalRequiredTools,
+            AllowedTools = resolved.AllowedTools.Where(name => AudiencePolicy.AllowsTool(audience, name)).ToHashSet(StringComparer.OrdinalIgnoreCase)
+        };
     }
 
     public IReadOnlyList<ResolvedToolPreset> ListPresets(IEnumerable<string> availableToolNames)

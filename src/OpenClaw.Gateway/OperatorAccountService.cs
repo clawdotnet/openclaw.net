@@ -211,6 +211,16 @@ internal sealed class OperatorAccountService
         }
     }
 
+    public OperatorAccountTokenCreateResponse? CreateEnrollmentToken(string id, string deviceName, DateTimeOffset expectedRevision, DateTimeOffset expiry)
+    {
+        lock (_gate)
+        {
+            var account = LoadUnsafe().Accounts.FirstOrDefault(item => item.Id == id);
+            if (account is not { Enabled: true } || account.UpdatedAtUtc != expectedRevision) return null;
+            return CreateToken(id, new OperatorAccountTokenCreateRequest { Label = "device:" + deviceName, ExpiresAtUtc = expiry });
+        }
+    }
+
     public bool RevokeToken(string accountId, string tokenId)
     {
         lock (_gate)

@@ -31,6 +31,7 @@ internal static class Program
                 "tui" => await TuiAsync(rest),
                 "insights" => await InsightsAsync(rest),
                 "setup" => await SetupAsync(rest),
+                "update" => await UpdateCommands.RunAsync(rest),
                 "upgrade" => await UpgradeAsync(rest),
                 "backup" => await BackupCommands.RunAsync(rest),
                 "maintenance" => await MaintenanceAsync(rest),
@@ -102,6 +103,7 @@ internal static class Program
               openclaw insights [options]
               openclaw setup [options]
               openclaw setup <launch|service|status|verify|channel|provider|tailscale> [options]
+              openclaw update <trust|check|install|rollback|launch> [options]
               openclaw upgrade <check|rollback> [options]
               openclaw backup <create|validate|restore> [options]
               openclaw init [options]

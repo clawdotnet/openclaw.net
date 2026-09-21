@@ -112,6 +112,21 @@ public sealed class OpenClawToolExecutor
         _interceptors = interceptors;
     }
 
+    public AudienceProfile? GetAudienceProfile(Session session) => AudiencePolicy.Resolve(_config.Tooling.Audiences, session);
+
+    public void PrepareAudienceTurn(Session session, string message)
+    {
+        var profile = GetAudienceProfile(session);
+        var contextKey = profile is null ? "unrestricted" : Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(profile, CoreJsonContext.Default.AudienceProfile))));
+        if (session.History.Count > 0 && session.AudienceContextKey != contextKey
+            && !(session.AudienceContextKey is null && profile is null))
+            throw new InvalidOperationException("Audience policy changed. Start a new session to keep prior private context isolated.");
+        if (profile is { AllowAttachments: false } && MediaMarkerProtocol.Extract(message).Markers.Count > 0)
+            throw new InvalidOperationException("Attachments are disabled for this audience.");
+        session.AudienceContextKey = contextKey;
+    }
+
     public IList<AITool> ToolDeclarations
     {
         get
@@ -1030,8 +1045,9 @@ public sealed class OpenClawToolExecutor
         });
     }
 
-    private static bool IsToolAllowedForSession(Session session, string toolName, ResolvedToolPreset? preset)
+    private bool IsToolAllowedForSession(Session session, string toolName, ResolvedToolPreset? preset)
     {
+        if (!AudiencePolicy.AllowsTool(GetAudienceProfile(session), toolName)) return false;
         // DisableTools routing decisions intentionally expose no tools to the model.
         if (session.RouteToolsDisabled)
             return false;

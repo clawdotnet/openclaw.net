@@ -362,6 +362,25 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Sign update manifest when publisher key is configured
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          IS_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$UPDATE_SIGNING_KEY" ]]; then
+            echo "Update signing key is not configured; verified-update feed will not be published."
+            exit 0
+          fi
+          KEY_FILE="$(mktemp)"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          chmod 600 "$KEY_FILE"
+          printf '%s' "$UPDATE_SIGNING_KEY" > "$KEY_FILE"
+          CHANNEL=stable
+          if [[ "$IS_PRERELEASE" == "true" || "$RELEASE_TAG" == *-* ]]; then CHANNEL=beta; fi
+          python3 eng/create-update-manifest.py --assets release-assets --version "$RELEASE_TAG" --channel "$CHANNEL" --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG" --key "$KEY_FILE"
+
       - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}

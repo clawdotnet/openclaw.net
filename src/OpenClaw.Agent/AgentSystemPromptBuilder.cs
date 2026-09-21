@@ -25,7 +25,7 @@ internal static class AgentSystemPromptBuilder
         return string.IsNullOrEmpty(skillSection) ? basePrompt : basePrompt + "\n" + skillSection;
     }
 
-    public static string BuildBaseSystemPrompt(bool requireApproval)
+    public static string BuildBaseSystemPrompt(bool requireApproval, bool includePrivateContext = true)
     {
         const int PromptFileMaxChars = 20_000;
 
@@ -87,6 +87,8 @@ internal static class AgentSystemPromptBuilder
                 explain what you were trying to do and ask the user how they'd like to proceed.
                 """;
         }
+
+        if (!includePrivateContext) return basePrompt;
 
         var workspacePath = Environment.GetEnvironmentVariable("OPENCLAW_WORKSPACE") ?? Directory.GetCurrentDirectory();
 
