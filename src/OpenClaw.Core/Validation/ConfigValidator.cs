@@ -706,7 +706,19 @@ public static class ConfigValidator
             errors.Add($"Models.DefaultProfile '{config.Models.DefaultProfile}' does not exist in Models.Profiles.");
         }
 
-        if (config.DynamicTurnRouting.Enabled)
+        var jevEnabled = false;
+        try
+        {
+            jevEnabled = JevRoutingConfiguration.NormalizeMode(config.DynamicTurnRouting.Jev) != "disabled";
+            if (jevEnabled)
+                JevRoutingConfiguration.Validate(config.DynamicTurnRouting.Jev);
+        }
+        catch (ArgumentException ex)
+        {
+            errors.Add($"DynamicTurnRouting.Jev: {ex.Message}");
+        }
+
+        if (config.DynamicTurnRouting.Enabled || jevEnabled)
         {
             var policy = config.DynamicTurnRouting.Policy;
             var tierMap = config.DynamicTurnRouting.Policy.Tiers;
@@ -728,7 +740,7 @@ public static class ConfigValidator
             var tokenizerPath = config.DynamicTurnRouting.Assets.TokenizerPath;
 
             var usesBundlePath = !string.IsNullOrWhiteSpace(config.DynamicTurnRouting.BundlePath);
-            if (!usesBundlePath)
+            if (config.DynamicTurnRouting.Enabled && !usesBundlePath)
             {
                 if (!string.IsNullOrWhiteSpace(classifierPath) && string.IsNullOrWhiteSpace(embeddingPath))
                     errors.Add("DynamicTurnRouting requires an embedding model when classifier routing is enabled.");

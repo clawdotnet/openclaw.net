@@ -289,21 +289,21 @@ public sealed class OnnxTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
             reasons.Add("under_routing_safety");
         }
 
-        var flaggedTier = ApplyFlagOverrides(tier, signals);
+        var flaggedTier = TurnRoutingGuardrails.ApplyFlagOverrides(tier, signals);
         if (flaggedTier != tier)
         {
             tier = flaggedTier;
             reasons.Add("flag_override");
         }
 
-        var contextTier = ApplyContextRule(tier, input.TurnIndex, policy.DeepConversationTurnIndexThreshold);
+        var contextTier = TurnRoutingGuardrails.ApplyContextRule(tier, input.TurnIndex, policy.DeepConversationTurnIndexThreshold);
         if (contextTier != tier)
         {
             tier = contextTier;
             reasons.Add("context_rule");
         }
 
-        var stickyTier = ApplyStickyTier(tier, input.PreviousTier, policy.EnableStickyTier);
+        var stickyTier = TurnRoutingGuardrails.ApplyStickyTier(tier, input.PreviousTier, policy.EnableStickyTier);
         if (stickyTier != tier)
         {
             tier = stickyTier;
@@ -373,43 +373,7 @@ public sealed class OnnxTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
         return probabilities[2] + probabilities[3] > threshold ? 2 : tier;
     }
 
-    private static int ApplyFlagOverrides(int tier, RoutingSignals signals)
-    {
-        var result = tier;
-        if (signals.HighRisk)
-            result = Math.Max(result, 2);
-        if (signals.Debug && signals.LongContext)
-            result = Math.Max(result, 2);
-        if ((signals.Research && signals.Planning) || (signals.RepoArch && signals.Planning))
-            result = Math.Max(result, 3);
-        if (signals.RepoArch)
-            result = Math.Max(result, 1);
-        if (signals.Planning)
-            result = Math.Max(result, 1);
-        return result;
-    }
-
-    private static int ApplyContextRule(int tier, int turnIndex, int turnIndexThreshold)
-        => turnIndex >= turnIndexThreshold ? Math.Max(tier, 1) : tier;
-
-    private static int ApplyStickyTier(int tier, string? previousTier, bool enabled)
-    {
-        if (!enabled)
-            return tier;
-
-        var previous = previousTier?.Trim().ToUpperInvariant() switch
-        {
-            "T0" => 0,
-            "T1" => 1,
-            "T2" => 2,
-            "T3" => 3,
-            _ => -1
-        };
-
-        return previous > tier ? previous : tier;
-    }
-
-    private static int ApplyGreetingCap(int tier, RoutingFeatureInput input, RoutingSignals signals)
+    private static int ApplyGreetingCap(int tier, RoutingFeatureInput input, TurnRoutingSignals signals)
     {
         if (tier <= 1)
             return tier;

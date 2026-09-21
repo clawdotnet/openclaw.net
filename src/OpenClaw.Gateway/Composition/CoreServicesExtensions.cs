@@ -147,20 +147,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton<ConfiguredModelProfileRegistry>();
         services.AddSingleton<IModelProfileRegistry>(sp => sp.GetRequiredService<ConfiguredModelProfileRegistry>());
         services.AddSingleton<IModelSelectionPolicy, DefaultModelSelectionPolicy>();
-        services.AddSingleton(sp =>
-            DynamicTurnRoutingConfigNormalizer.Normalize(
-                config.DynamicTurnRouting,
-                new OpenSquillaBundleLoader()));
-        services.AddSingleton<ITurnRoutingPolicy>(sp =>
-        {
-            var resolvedRoutingConfig = sp.GetRequiredService<ResolvedDynamicTurnRoutingConfig>();
-            if (!resolvedRoutingConfig.Enabled)
-                return NoopTurnRoutingPolicy.Instance;
-
-            return new OnnxTurnRoutingPolicy(
-                resolvedRoutingConfig,
-                sp.GetRequiredService<ILogger<OnnxTurnRoutingPolicy>>());
-        });
+        services.AddDynamicTurnRouting(config.DynamicTurnRouting, config.Memory.StoragePath);
         services.AddSingleton<ModelEvaluationRunner>();
         services.AddSingleton<PromptCacheTraceWriter>();
         services.AddSingleton<PromptCacheCoordinator>();

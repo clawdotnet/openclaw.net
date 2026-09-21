@@ -24,6 +24,7 @@
     <ProjectReference Include="..\OpenClaw.Protocols.Mqtt\OpenClaw.Protocols.Mqtt.csproj" />
     <ProjectReference Include="..\OpenClaw.Plugins.Payment\OpenClaw.Plugins.Payment.csproj" />
     <ProjectReference Include="..\OpenClaw.Routing.Onnx\OpenClaw.Routing.Onnx.csproj" />
+    <ProjectReference Include="../OpenClaw.Routing.Jev/OpenClaw.Routing.Jev.csproj" />
     <ProjectReference Include="..\OpenClaw.SemanticKernelAdapter\OpenClaw.SemanticKernelAdapter.csproj" />
     <ProjectReference Include="..\OpenClaw.SkillKit.Abstractions\OpenClaw.SkillKit.Abstractions.csproj" />
     <ProjectReference Include="..\OpenClaw.SkillKit\OpenClaw.SkillKit.csproj" />

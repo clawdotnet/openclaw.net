@@ -3,9 +3,32 @@ namespace OpenClaw.Core.Models;
 public sealed class DynamicTurnRoutingConfig
 {
     public bool Enabled { get; set; }
+    public JevRoutingConfig Jev { get; set; } = new();
     public string BundlePath { get; set; } = "";
     public DynamicTurnRoutingAssetsConfig Assets { get; set; } = new();
     public DynamicTurnRoutingPolicyConfig Policy { get; set; } = new();
+}
+
+/// <summary>Optional hosted decision routing. Independent of Enabled, which controls the ONNX baseline.</summary>
+public sealed class JevRoutingConfig
+{
+    public string Mode { get; set; } = "disabled";
+    public string Endpoint { get; set; } = "https://api.typesafe.ai/v1/systemone";
+    public string ApiKeyRef { get; set; } = "env:TYPESAFE_API_KEY";
+    public string Model { get; set; } = "jev-1.13.0";
+    public int TimeoutMs { get; set; } = 1500;
+    public int MaxStateChars { get; set; } = 12000;
+    public int HistoryMessages { get; set; } = 4;
+    public int MaxConcurrentRequests { get; set; } = 8;
+    public int CircuitFailureThreshold { get; set; } = 3;
+    public int CircuitBreakSeconds { get; set; } = 30;
+    public double MinConfidence { get; set; } = 0.80;
+    public double DowngradeMinConfidence { get; set; } = 0.95;
+    public double MinProbabilityMargin { get; set; } = 0.15;
+    public double HighRiskThreshold { get; set; } = 0.20;
+    public decimal InputUsdPerMillionTokens { get; set; } = 0.042m;
+    // Relative to Memory.StoragePath. Empty disables the journal.
+    public string DiagnosticsPath { get; set; } = "routing/jev-decisions.jsonl";
 }
 
 public sealed class DynamicTurnRoutingAssetsConfig
