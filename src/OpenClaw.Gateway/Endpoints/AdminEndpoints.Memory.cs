@@ -238,11 +238,8 @@ internal static partial class AdminEndpoints
                 endpointScope: mutation ? "admin.memory.mutate" : "admin.memory");
             if (authResult.Failure is not null)
                 return authResult.Failure;
-            if (mutation)
-            {
-                if (!startup.Config.Memory.Fractal.AllowWrites)
-                    return Results.Json(new StructuredMemoryWorkflowResult { Error = "Fractal Memory writes are disabled by configuration." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status403Forbidden);
-            }
+            if (mutation && !startup.Config.Memory.Fractal.AllowWrites)
+                return Results.Json(new StructuredMemoryWorkflowResult { Error = "Fractal Memory writes are disabled by configuration." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status403Forbidden);
             if (structuredMemoryProvider is not IStructuredMemoryWorkflowProvider workflows)
                 return Results.Json(new StructuredMemoryWorkflowResult { Error = "Structured memory workflows are not registered in this runtime." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult);
 
