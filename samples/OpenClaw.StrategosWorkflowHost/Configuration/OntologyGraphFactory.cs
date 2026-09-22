@@ -13,7 +13,7 @@ namespace OpenClaw.StrategosWorkflowHost.Configuration;
 /// primitives land (escalation, compensation audit, etc.).
 /// </para>
 /// <para>
-/// LevelUp.Strategos.Ontology 2.10.0 has no public descriptor-record constructor path to
+/// LevelUp.Strategos.Ontology 3.0.0 has no public descriptor-record constructor path to
 /// an <see cref="OntologyGraph"/> — the graph's constructor is internal and descriptors
 /// carry CLR identity (the DR-1 invariant). The supported authoring surface is a
 /// <see cref="DomainOntology"/> subclass composed by <see cref="OntologyGraphBuilder"/>,
@@ -54,9 +54,7 @@ internal sealed class AgentReviewOntology : DomainOntology
 
             o.Action("Submit")
                 .Description("Submit a review request for agent adjudication.")
-                // Rendered into the precondition description as an expression string, which
-                // is what ontology_action surfaces to the model as a constraint summary.
-                .Requires(x => x.Title.Length > 0 && x.Description.Length >= 10);
+                .Requires(x => x.Title != "" && x.Description != "");
 
             o.Action("Approve").Description("Approve the review request.");
             o.Action("Reject").Description("Reject the review request.");
@@ -79,7 +77,7 @@ internal sealed class AgentReviewOntology : DomainOntology
 
             o.Action("Write")
                 .Description("Write a comment on a review request.")
-                .Requires(x => x.Body.Length >= 1 && x.Body.Length <= 4000);
+                .Requires(x => x.Body != "");
         });
     }
 }

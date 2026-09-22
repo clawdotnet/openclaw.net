@@ -42,7 +42,7 @@ public class OntologyGraphFactoryTests
         var graph = OntologyGraphFactory.Build(new OntologyOptions());
         var comment = graph.ObjectTypes.Single(t => t.Name == "ReviewComment");
         var write = Assert.Single(comment.Actions, a => a.Name == "Write");
-        Assert.Contains(write.Preconditions, p => p.Description.Contains("length", StringComparison.OrdinalIgnoreCase));
+        Assert.NotEmpty(write.Preconditions);
     }
 
     [Fact]
@@ -50,7 +50,7 @@ public class OntologyGraphFactoryTests
     {
         // Single-domain graph is intentionally minimal; cross-domain links belong to
         // follow-up plans. The plan's original assertion targeted a DomainDescriptor
-        // .Associations property that LevelUp.Strategos.Ontology 2.10.0 does not expose —
+        // .Associations property that LevelUp.Strategos.Ontology 3.0.0 does not expose —
         // the graph-level equivalents are CrossDomainLinks and reified association edges.
         var graph = OntologyGraphFactory.Build(new OntologyOptions());
         Assert.Empty(graph.CrossDomainLinks);

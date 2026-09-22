@@ -4,7 +4,7 @@ using Strategos.Steps;
 
 namespace OpenClaw.StrategosWorkflowHost.Steps;
 
-// Reports the aggregated confidence so the saga-level RequireConfidence(0.85) gate can fire.
+// Reports the aggregated confidence before the explicit operator approval point.
 // The gate lives in the step-config on ReviewWorkflow; this step only echoes the value.
 public sealed class AssessConfidence : IWorkflowStep<ReviewState>
 {

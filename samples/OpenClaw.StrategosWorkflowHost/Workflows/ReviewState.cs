@@ -38,9 +38,6 @@ public sealed record ReviewState : IEventSourcedState<ReviewState>
     public ReviewState Apply(PlanExecutorCompleted e) =>
         e.UpdatedState with { CurrentPhase = "ExecutingPlan" };
 
-    public ReviewState Apply(RequestHumanReviewCompleted e) =>
-        e.UpdatedState with { CurrentPhase = "AwaitingReview" };
-
     public ReviewState Apply(SecurityReviewerCompleted e) =>
         e.UpdatedState with { CurrentPhase = "ExecutingReview" };
 
@@ -66,7 +63,6 @@ public sealed record ReviewState : IEventSourcedState<ReviewState>
     public ReviewState ApplyEvent(IProgressEvent evt) => evt switch
     {
         PlanExecutorCompleted c => c.UpdatedState,
-        RequestHumanReviewCompleted c => c.UpdatedState,
         SecurityReviewerCompleted c => c.UpdatedState,
         ArchitectureReviewerCompleted c => c.UpdatedState,
         CostReviewerCompleted c => c.UpdatedState,

@@ -7,7 +7,7 @@ namespace OpenClaw.StrategosWorkflowHost.Configuration;
 // A real IChatClient implementation for Mock mode: returns a fixed per-role verdict JSON so the
 // Strategos agent-step -> IChatClient -> verdict-parse path runs end-to-end with no LLM keys.
 // The three roles all return Confidence=0.8 so the workflow deterministically reaches
-// AssessConfidence (0.8 < 0.85 -> OnLowConfidence -> AwaitApproval), exercising the approval gate.
+// AssessConfidence produces a low confidence result before the explicit approval point.
 public sealed class MockReviewChatClient : IChatClient
 {
     public ChatClientMetadata Metadata => new("mock-review");
