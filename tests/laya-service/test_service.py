@@ -1,6 +1,5 @@
 import copy
 import hashlib
-import importlib
 import json
 from pathlib import Path
 import sys
@@ -76,20 +75,29 @@ class ProtocolTests(unittest.TestCase):
                 target.write_text('{}' if filename.endswith('.json') else 'fake weight')
         hub = types.ModuleType('huggingface_hub'); hub.snapshot_download = snapshot
         with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, {'huggingface_hub': hub}):
-            manifest = download.prepare(tmp, protocol.DEFAULT_REVISION, ['english'])
+            expected = {filename: hashlib.sha256(
+                ('{}' if filename.endswith('.json') else 'fake weight').encode()).hexdigest()
+                for filename in protocol.MODEL_FILES}
+            with patch.object(download, 'DEFAULT_FILE_HASHES', {'english': expected}):
+                manifest = download.prepare(tmp, protocol.DEFAULT_REVISION, ['english'])
             self.assertEqual(list(protocol.MODEL_FILES), calls[0][1]['allow_patterns'])
             self.assertEqual(protocol.DEFAULT_REVISION, calls[0][1]['revision'])
             self.assertIn('english', runtime.load_manifest(manifest)['checkpoints'])
             self.assertTrue((Path(tmp)/'LAYA-NOTICE.md').exists())
             with self.assertRaises(ValueError): download.prepare(tmp, 'latest', ['english'])
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, {'huggingface_hub': hub}), \
+                patch.object(download, 'DEFAULT_FILE_HASHES', {'english': {**expected, 'model.safetensors': '0'*64}}):
+            with self.assertRaisesRegex(ValueError, 'upstream digest'):
+                download.prepare(tmp, protocol.DEFAULT_REVISION, ['english'])
 
 
 class CompatibilityTests(unittest.TestCase):
     def test_armenian_minority_and_unknown_scripts_never_use_english(self):
         lang = types.ModuleType('laya.lang')
-        lang.state_text = lambda state: state if isinstance(state, str) else str(state)
         lang.analyse = lambda state: {'is_english': True}
-        with patch.dict(sys.modules, {'laya.lang': lang}):
+        common = types.ModuleType('laya.common')
+        common.serialize_state = lambda state: state if isinstance(state, str) else str(state)
+        with patch.dict(sys.modules, {'laya.lang': lang, 'laya.common': common}):
             for text in ['Հայերեն', 'English text with Հայերեն', 'हिन्दी', 'ქართული']:
                 self.assertEqual('multilingual', compat.select_checkpoint(text))
                 with self.assertRaises(protocol.Rejected): compat.select_checkpoint(text, 'en')
@@ -157,16 +165,23 @@ class CalibrationTests(unittest.TestCase):
         self.assertLess(fixed['score'], score['score'])
         self.assertAlmostEqual(.8, calibration.transform({'type': 'noul', 'noul': .8}, 1)['noul'])
 
+    def test_rejects_boolean_probabilities(self):
+        with self.assertRaisesRegex(protocol.Rejected, 'invalid_model_probabilities'):
+            calibration.transform({'type': 'noul', 'noul': True}, 1)
+
 
 class ServerTests(unittest.TestCase):
     def setUp(self):
         self.calls = 0
+        self.failure = None
         owner = self
         class FakeRuntime:
             def health(self): return {'ready': True}
             def predict(self, value):
                 owner.calls += 1
                 protocol.validate_request(value, MODEL)
+                if owner.failure:
+                    raise owner.failure
                 return {'ok': True}
         self.server = DecisionServer(0, FakeRuntime())
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True); self.thread.start()
@@ -200,6 +215,14 @@ class ServerTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as error: self.post(value)
         self.assertEqual(422, error.exception.code)
         self.assertNotIn(b'SECRET', error.exception.read()); error.exception.close()
+
+    def test_runtime_failures_are_service_errors_not_client_errors(self):
+        self.failure = ValueError('invalid model output')
+        with self.assertRaises(HTTPError) as error:
+            self.post(request())
+        self.assertEqual(503, error.exception.code)
+        self.assertEqual({'error': 'inference_failed'}, json.load(error.exception))
+        error.exception.close()
 
 
 if __name__ == '__main__':

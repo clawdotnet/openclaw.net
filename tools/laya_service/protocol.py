@@ -101,7 +101,8 @@ def distribution(answer):
         values, keys = [1 - probability, probability], ["false", "true"]
     else:
         keys, values = list(answer["probabilities"]), list(answer["probabilities"].values())
-    if len(values) < 2 or any(not isinstance(p, (float, int)) or not math.isfinite(p) or not 0 <= p <= 1 for p in values) or abs(sum(values) - 1) > 0.002:
+    if len(values) < 2 or any(isinstance(p, bool) or not isinstance(p, (float, int)) or
+                              not math.isfinite(p) or not 0 <= p <= 1 for p in values) or abs(sum(values) - 1) > 0.002:
         raise Rejected("invalid_model_probabilities")
     total = sum(values)
     return keys, [p / total for p in values]

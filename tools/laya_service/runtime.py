@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from .calibration import Calibration
 from .compat import ensure_complete, select_checkpoint
-from .protocol import (CHECKPOINTS, MODEL_FILES, SDK_VERSION, Rejected, file_hash,
+from .protocol import (CHECKPOINTS, MODEL_FILES, SDK_VERSION, Rejected, canonical, file_hash,
                        is_hex, schema_hash, validate_request)
 
 
@@ -73,10 +73,15 @@ class Runtime:
         self.calibration.check(schema, selected, questions)
         ensure_complete(agent, request["state"], questions)
         result = agent.predict(request["state"], questions)
-        raw = result["answers"]
-        return {"model": self.model, "answers": self.calibration.apply(selected, raw), "raw_answers": raw,
-                "usage": result["usage"],
-                "metadata": {"checkpoint": selected, "revision": self.revision,
-                             "calibration_id": self.calibration.identifier, "schema_hash": schema,
-                             "rubric_version": request["rubric_version"], "device": agent.device.type,
-                             "sdk_version": SDK_VERSION, "truncated": False}}
+        try:
+            raw = result["answers"]
+            response = {"model": self.model, "answers": self.calibration.apply(selected, raw), "raw_answers": raw,
+                        "usage": result["usage"],
+                        "metadata": {"checkpoint": selected, "revision": self.revision,
+                                     "calibration_id": self.calibration.identifier, "schema_hash": schema,
+                                     "rubric_version": request["rubric_version"], "device": agent.device.type,
+                                     "sdk_version": SDK_VERSION, "truncated": False}}
+            canonical(response)
+            return response
+        except (Rejected, ValueError, TypeError, KeyError, RecursionError) as exc:
+            raise RuntimeError("invalid_model_output") from exc

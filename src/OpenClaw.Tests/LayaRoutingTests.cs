@@ -1,4 +1,6 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.AI;
@@ -85,6 +87,7 @@ public sealed class LayaRoutingTests
     [InlineData("truncated", "laya_truncated_input")]
     [InlineData("revision", "laya_metadata_mismatch")]
     [InlineData("calibration_id", "laya_calibration_mismatch")]
+    [InlineData("schema_hash", "laya_metadata_mismatch")]
     [InlineData("sdk_version", "laya_metadata_mismatch")]
     [InlineData("missing_metadata", "laya_metadata_mismatch")]
     [InlineData("http_error", "http_503")]
@@ -154,6 +157,12 @@ public sealed class LayaRoutingTests
             Authorization = request.Headers.Authorization?.ToString();
             ContentLength = request.Content!.Headers.ContentLength;
             Body = await request.Content.ReadAsStringAsync(cancellationToken);
+            if (Result["metadata"]?["schema_hash"]?.GetValue<string>() == Calibration)
+            {
+                using var payload = JsonDocument.Parse(Body);
+                var questions = Encoding.UTF8.GetBytes(payload.RootElement.GetProperty("questions").GetRawText());
+                Result["metadata"]!["schema_hash"] = Convert.ToHexString(SHA256.HashData(questions)).ToLowerInvariant();
+            }
             return new HttpResponseMessage(Status) { Content = new StringContent(Result.ToJsonString()) };
         }
     }

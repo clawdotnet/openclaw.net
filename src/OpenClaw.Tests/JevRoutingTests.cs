@@ -111,6 +111,7 @@ public sealed class JevRoutingTests
         using var harness = new Harness("active", "T0");
         var request = Request(text);
         request.Session.RouteModelTier = previousTier;
+        request.Session.RouteReason = previousTier is null ? null : "jev";
         Assert.Equal(expected, (await harness.Policy.ResolveAsync(request, Ct)).Tier);
         Assert.Equal("safety_floor", Assert.Single(harness.Observer.Items).Reason);
     }
@@ -140,6 +141,60 @@ public sealed class JevRoutingTests
         else request.Session.ModelOverride = "pinned";
         Assert.Same(harness.Baseline.Decision, await harness.Policy.ResolveAsync(request, Ct));
         Assert.Equal("explicit_model_selection", Assert.Single(harness.Observer.Items).Reason);
+        Assert.Equal(0, harness.Handler.Calls);
+    }
+
+    [Fact]
+    public async Task StickyTierOnlyUsesAConfirmedDecisionProviderRoute()
+    {
+        using var harness = new Harness("active", "T0");
+        var request = Request();
+        request.Session.RouteModelTier = "T3";
+        request.Session.RouteReason = "default";
+        Assert.Equal("T0", (await harness.Policy.ResolveAsync(request, Ct)).Tier);
+        request.Session.RouteReason = "jev";
+        Assert.Equal("T3", (await harness.Policy.ResolveAsync(request, Ct)).Tier);
+    }
+
+    [Fact]
+    public async Task DeepConversationFloorCountsPriorUserMessagesOnly()
+    {
+        using var harness = new Harness("active", "T0", configurePolicy: p => p.DeepConversationTurnIndexThreshold = 2);
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.User, "Prior question."),
+            new(ChatRole.Assistant, "Prior answer."),
+            new(ChatRole.User, "Current question.")
+        };
+        var request = Request("Current question.", messages);
+        request.Session.History.AddRange([
+            new ChatTurn { Role = "user", Content = "Prior question." },
+            new ChatTurn { Role = "user", Content = "Current question." }
+        ]);
+        Assert.Equal("T0", (await harness.Policy.ResolveAsync(request, Ct)).Tier);
+    }
+
+    [Fact]
+    public async Task RedactionExpansionDoesNotOpenTheProviderCircuit()
+    {
+        var redactor = new RedactionPipeline([new ExpandingRedactor()]);
+        using var harness = new Harness("active", "T0", configure: c =>
+        {
+            c.MaxStateChars = 256;
+            c.CircuitFailureThreshold = 1;
+        }, redactor: redactor);
+        Assert.Same(harness.Baseline.Decision, await harness.Policy.ResolveAsync(Request("expand"), Ct));
+        Assert.Equal("request_too_large", Assert.Single(harness.Observer.Items).Reason);
+        Assert.Equal("T0", (await harness.Policy.ResolveAsync(Request("short"), Ct)).Tier);
+        Assert.Equal(1, harness.Handler.Calls);
+    }
+
+    [Fact]
+    public async Task SecretResolutionFailureFallsBackWithoutEscapingTheRouter()
+    {
+        using var harness = new Harness("active", "T0", secretFailure: true);
+        Assert.Same(harness.Baseline.Decision, await harness.Policy.ResolveAsync(Request(), Ct));
+        Assert.Equal("request_failed", Assert.Single(harness.Observer.Items).Reason);
     }
 
     [Fact]
@@ -340,7 +395,8 @@ public sealed class JevRoutingTests
         private readonly HttpClient _http;
 
         public Harness(string mode, string choice, double confidence = 0.99, double highRisk = 0.01,
-            double requiresTools = 0.01, Action<JevRoutingConfig>? configure = null, string? key = "test-key", TimeProvider? clock = null)
+            double requiresTools = 0.01, Action<JevRoutingConfig>? configure = null, string? key = "test-key", TimeProvider? clock = null,
+            Action<DynamicTurnRoutingPolicyConfig>? configurePolicy = null, IRedactionPipeline? redactor = null, bool secretFailure = false)
         {
             var probabilities = new[] { "T0", "T1", "T2", "T3", "abstain" }.ToDictionary(tier => tier, tier => tier == choice ? 0.96 : 0.01);
             Handler.ResponseBody = JsonSerializer.Serialize(new
@@ -367,9 +423,12 @@ public sealed class JevRoutingTests
                     T3 = new() { ModelProfileId = "profile-3", ReasoningLevel = "high" }
                 }
             };
+            configurePolicy?.Invoke(policy);
             Policy = new(config, policy, Baseline,
-                new TypeSafeDecisionClient(_http, new Uri(config.Endpoint), _ => ValueTask.FromResult(key)),
-                new RedactionPipeline([new BaselineSecretRedactor()]), Observer, clock);
+                new TypeSafeDecisionClient(_http, new Uri(config.Endpoint), _ => secretFailure
+                    ? throw new SecretResolutionException("secret backend unavailable")
+                    : ValueTask.FromResult(key)),
+                redactor ?? new RedactionPipeline([new BaselineSecretRedactor()]), Observer, clock);
         }
 
         public void Dispose() { Policy.Dispose(); _http.Dispose(); }
@@ -387,6 +446,12 @@ public sealed class JevRoutingTests
             cancellationToken.ThrowIfCancellationRequested();
             return ValueTask.FromResult(Decision);
         }
+    }
+
+    private sealed class ExpandingRedactor : ISensitiveDataRedactor
+    {
+        public string Name => "expanding-test";
+        public string Redact(string? value) => value == "expand" ? new string('x', 257) : value ?? string.Empty;
     }
 
     private sealed class Observer : IDecisionRoutingObserver

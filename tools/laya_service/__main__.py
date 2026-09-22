@@ -23,6 +23,7 @@ class DecisionServer(ThreadingHTTPServer):
             try:
                 request.sendall(b"HTTP/1.0 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
             except OSError:
+                # The overloaded peer may disconnect before receiving the response.
                 pass
             self.shutdown_request(request)
             return
@@ -49,6 +50,7 @@ class Handler(BaseHTTPRequestHandler):
         super().setup()
 
     def log_message(self, *args):
+        # Request metadata can contain sensitive local prompt information.
         pass
 
     def send_json(self, status, value):
@@ -90,20 +92,24 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(503, {"error": "busy"})
             return
         try:
-            raw = self.rfile.read(length)
-            if len(raw) != length:
-                raise Rejected("incomplete_body")
-            request = read_json(raw.decode("utf-8"))
-            result = self.server.runtime.predict(request)
-            self.send_json(200, result)
-        except Rejected as exc:
-            self.send_json(422, {"error": str(exc)})
-        except (ValueError, TypeError, KeyError, RecursionError):
-            self.send_json(422, {"error": "invalid_request"})
-        except (socket.timeout, ConnectionError, BrokenPipeError):
-            pass
-        except Exception:
-            self.send_json(503, {"error": "inference_failed"})
+            try:
+                raw = self.rfile.read(length)
+                if len(raw) != length:
+                    raise Rejected("incomplete_body")
+                request = read_json(raw.decode("utf-8"))
+            except (Rejected, UnicodeError, ValueError, TypeError, RecursionError) as exc:
+                self.send_json(422, {"error": str(exc) if isinstance(exc, Rejected) else "invalid_request"})
+                return
+            try:
+                result = self.server.runtime.predict(request)
+                self.send_json(200, result)
+            except Rejected as exc:
+                self.send_json(422, {"error": str(exc)})
+            except (socket.timeout, ConnectionError, BrokenPipeError):
+                # The local client controls its own deadline and may close first.
+                pass
+            except Exception:
+                self.send_json(503, {"error": "inference_failed"})
         finally:
             self.server.inference.release()
 
@@ -126,6 +132,7 @@ def main():
         try:
             server.serve_forever()
         except KeyboardInterrupt:
+            # Normal interactive shutdown.
             pass
 
 

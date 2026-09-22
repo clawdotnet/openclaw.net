@@ -4,8 +4,9 @@ from .protocol import Rejected
 
 
 def select_checkpoint(state, language=None):
-    from laya.lang import analyse, state_text
-    text = state_text(state)
+    from laya.common import serialize_state
+    from laya.lang import analyse
+    text = serialize_state(state)
     # Laya 0.3.4 omits Armenian from its script ranges. Inspect every letter,
     # including minority scripts, so mixed text cannot silently use English.
     non_latin = any(c.isalpha() and "LATIN" not in unicodedata.name(c, "") for c in text)

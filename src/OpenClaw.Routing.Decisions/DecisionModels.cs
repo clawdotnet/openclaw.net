@@ -79,5 +79,6 @@ public sealed class DecisionException(string reason) : Exception(reason)
 [JsonSerializable(typeof(DecisionRubric))]
 [JsonSerializable(typeof(DecisionRoutingState))]
 [JsonSerializable(typeof(DecisionRoutingDiagnostic))]
+[JsonSerializable(typeof(Dictionary<string, DecisionQuestion>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 internal partial class DecisionJsonContext : JsonSerializerContext;

@@ -62,6 +62,8 @@ public sealed class DecisionTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
             reason = "empty_request";
         else if (request.UserMessage.Length > _config.MaxStateChars)
             reason = "request_too_large";
+        else if (!string.IsNullOrWhiteSpace(request.Session.ModelOverride) || !string.IsNullOrWhiteSpace(request.Session.ModelProfileId))
+            reason = "explicit_model_selection";
         else if (CircuitOpen())
             reason = "circuit_open";
         else if (!await _slots.WaitAsync(0, cancellationToken))
@@ -87,9 +89,10 @@ public sealed class DecisionTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
             catch (DecisionException ex)
             {
                 reason = ex.Reason;
-                RecordFailure();
+                if (ex.Reason != "request_too_large")
+                    RecordFailure();
             }
-            catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or InvalidOperationException or ArgumentException)
+            catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or InvalidOperationException or ArgumentException or SecretResolutionException)
             {
                 // No exception messages: upstream messages and URLs may contain sensitive data.
                 reason = "request_failed";
@@ -208,8 +211,6 @@ public sealed class DecisionTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
         var tier = ParseTier(answer.Choice);
         if (tier < 0)
             return (null, "abstain");
-        if (!string.IsNullOrWhiteSpace(request.Session.ModelOverride) || !string.IsNullOrWhiteSpace(request.Session.ModelProfileId))
-            return (null, "explicit_model_selection");
         var baselineTier = ParseTier(baseline.Tier);
         var downgrade = tier < baselineTier;
         if (truncated && downgrade)
@@ -220,11 +221,16 @@ public sealed class DecisionTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
             return (null, "uncertain");
 
         var rawTier = tier;
-        var turnIndex = request.Session.History.Count(turn => turn.Role == "user");
+        var turnIndex = request.Messages.Count(message => message.Role == ChatRole.User &&
+            !string.Equals(message.Text, request.UserMessage, StringComparison.Ordinal));
         var signals = TurnRoutingGuardrails.ExtractSignals(request.UserMessage, turnIndex);
         tier = TurnRoutingGuardrails.ApplyFlagOverrides(tier, signals);
         tier = TurnRoutingGuardrails.ApplyContextRule(tier, turnIndex, _policy.DeepConversationTurnIndexThreshold);
-        tier = TurnRoutingGuardrails.ApplyStickyTier(tier, request.Session.RouteModelTier, _policy.EnableStickyTier);
+        var priorReason = request.Session.RouteReason;
+        var providerStickyTier = priorReason == _provider || priorReason == $"{_provider}+safety_floor"
+            ? request.Session.RouteModelTier
+            : null;
+        tier = TurnRoutingGuardrails.ApplyStickyTier(tier, providerStickyTier, _policy.EnableStickyTier);
         if (response.Answers["high_risk"].Noul >= _config.HighRiskThreshold)
             tier = Math.Max(tier, 2);
         if (response.Answers["requires_tools"].Noul >= 0.5)

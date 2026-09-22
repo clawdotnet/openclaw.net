@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text.Json;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Validation;
@@ -21,6 +22,9 @@ public sealed class LayaDecisionClient : IDecisionClient, IDisposable
 
     public async Task<DecisionResponse> EvaluateAsync(DecisionRequest request, CancellationToken cancellationToken)
     {
+        var questions = JsonSerializer.SerializeToUtf8Bytes(request.Questions,
+            DecisionJsonContext.Default.DictionaryStringDecisionQuestion);
+        var expectedSchemaHash = Convert.ToHexString(SHA256.HashData(questions)).ToLowerInvariant();
         using var message = new HttpRequestMessage(HttpMethod.Post, _endpoint);
         // Materialize the bounded payload so Content-Length is known; the local
         // service deliberately rejects chunked bodies before reading request data.
@@ -32,7 +36,7 @@ public sealed class LayaDecisionClient : IDecisionClient, IDisposable
         var metadata = result.Metadata;
         if (result.Model != _config.Model || metadata is null || metadata.Revision != _config.Model[5..] ||
             metadata.Checkpoint is not ("english" or "multilingual" or "typed-decisions") ||
-            metadata.RubricVersion != request.RubricVersion || !DecisionRoutingConfiguration.IsHex(metadata.SchemaHash, 64) ||
+            metadata.RubricVersion != request.RubricVersion || metadata.SchemaHash != expectedSchemaHash ||
             metadata.SdkVersion != "0.3.4" || metadata.Device is not ("cpu" or "cuda" or "mps"))
             throw new DecisionException("laya_metadata_mismatch");
         if (metadata.Truncated)

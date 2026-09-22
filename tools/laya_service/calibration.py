@@ -4,10 +4,11 @@ Inputs are local observations from evaluate.py. Fit and validation cases must be
 """
 import argparse
 import copy
+import hashlib
 import json
 import math
 from pathlib import Path
-from .protocol import CHECKPOINTS, SDK_VERSION, Rejected, canonical, distribution, file_hash, is_hex
+from .protocol import CHECKPOINTS, SDK_VERSION, Rejected, distribution, file_hash, is_hex
 
 
 def temperature_scale(probabilities, temperature):
@@ -86,7 +87,8 @@ class Calibration:
         self.data = None
         self.identifier = "uncalibrated"
         if path:
-            data = json.loads(Path(path).read_text())
+            payload = Path(path).read_bytes()
+            data = json.loads(payload.decode("utf-8"))
             if (data.get("version") != 1 or data.get("sdk_version") != SDK_VERSION or
                 data.get("model") != model or not is_hex(data.get("schema_hash"), 64) or
                 not isinstance(data.get("temperatures"), dict) or not data["temperatures"] or
@@ -99,7 +101,7 @@ class Calibration:
                     if not isinstance(key, str) or not isinstance(temperature, (int, float)) or not math.isfinite(temperature) or not 0.1 <= temperature <= 10:
                         raise ValueError("Invalid calibration temperature.")
             self.data = data
-            self.identifier = file_hash(path)
+            self.identifier = hashlib.sha256(payload).hexdigest()
 
     def check(self, schema, checkpoint, questions):
         if not self.data:
