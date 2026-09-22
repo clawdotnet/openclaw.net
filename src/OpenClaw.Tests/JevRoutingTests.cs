@@ -175,6 +175,20 @@ public sealed class JevRoutingTests
     }
 
     [Fact]
+    public async Task DeepConversationFloorCountsRepeatedPriorPrompts()
+    {
+        using var harness = new Harness("active", "T0", configurePolicy: p => p.DeepConversationTurnIndexThreshold = 2);
+        var request = Request("continue", [
+            new ChatMessage(ChatRole.User, "continue"),
+            new ChatMessage(ChatRole.Assistant, "first"),
+            new ChatMessage(ChatRole.User, "continue"),
+            new ChatMessage(ChatRole.Assistant, "second"),
+            new ChatMessage(ChatRole.User, "continue")
+        ]);
+        Assert.Equal("T1", (await harness.Policy.ResolveAsync(request, Ct)).Tier);
+    }
+
+    [Fact]
     public async Task RedactionExpansionDoesNotOpenTheProviderCircuit()
     {
         var redactor = new RedactionPipeline([new ExpandingRedactor()]);

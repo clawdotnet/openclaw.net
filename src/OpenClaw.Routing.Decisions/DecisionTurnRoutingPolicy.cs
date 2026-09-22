@@ -221,8 +221,10 @@ public sealed class DecisionTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
             return (null, "uncertain");
 
         var rawTier = tier;
-        var turnIndex = request.Messages.Count(message => message.Role == ChatRole.User &&
-            !string.Equals(message.Text, request.UserMessage, StringComparison.Ordinal));
+        var turnIndex = request.Messages.Count(message => message.Role == ChatRole.User);
+        var lastMessage = request.Messages.LastOrDefault();
+        if (lastMessage?.Role == ChatRole.User && string.Equals(lastMessage.Text, request.UserMessage, StringComparison.Ordinal))
+            turnIndex--;
         var signals = TurnRoutingGuardrails.ExtractSignals(request.UserMessage, turnIndex);
         tier = TurnRoutingGuardrails.ApplyFlagOverrides(tier, signals);
         tier = TurnRoutingGuardrails.ApplyContextRule(tier, turnIndex, _policy.DeepConversationTurnIndexThreshold);
