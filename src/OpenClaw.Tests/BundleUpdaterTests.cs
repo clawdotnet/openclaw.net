@@ -123,6 +123,21 @@ public sealed class BundleUpdaterTests : IDisposable
         var installed = await updater.InstallAsync("stable", "1.2.0-beta.1", TestContext.Current.CancellationToken, allowDowngrade: true);
         Assert.Contains("1.2.0-beta.1", installed, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task ExplicitlyCheckedVersionIsTheVersionInstalled()
+    {
+        var bundle = Archive(); var handler = new Handler(); using var http = new HttpClient(handler);
+        var updater = new BundleUpdater(http, _root, smokeCheck: static (_, _) => Task.CompletedTask);
+        updater.ConfigureTrust(new("https://publisher.test/feed", _key.ExportSubjectPublicKeyInfoPem()));
+        var asset = new UpdateAsset(RuntimeInformation.RuntimeIdentifier, "https://publisher.test/bundle.zip",
+            Convert.ToHexString(SHA256.HashData(bundle)), bundle.Length);
+        var feed = JsonSerializer.SerializeToUtf8Bytes(new UpdateFeed(1, DateTimeOffset.UtcNow.AddDays(1),
+            [new("2.0.0", "stable", [asset]), new("1.5.0", "stable", [asset])]), UpdateJsonContext.Default.UpdateFeed);
+        handler.Data = new() { ["/feed"] = feed, ["/feed.sig"] = Sign(feed), ["/bundle.zip"] = bundle };
+        var installed = await updater.InstallAsync("stable", "1.5.0", TestContext.Current.CancellationToken);
+        Assert.Contains("1.5.0", installed, StringComparison.Ordinal);
+    }
     [Fact]
     public void ExplicitVersionAndChannelDoNotFallBack()
     {

@@ -45,7 +45,7 @@ public partial class MainWindowViewModel
             if (!await ConfirmMutationAsync("Install update", $"Install version {UpdateVersion}? Restart afterward to use the new bundle.", "Install")) return;
             using var http = CreateUpdateHttpClient();
             UpdateStatus = "Downloading and verifying the complete bundle…";
-            await new BundleUpdater(http, BundleUpdater.DefaultRoot).InstallAsync(UpdateChannel, null, CancellationToken.None);
+            await new BundleUpdater(http, BundleUpdater.DefaultRoot).InstallAsync(UpdateChannel, UpdateVersion, CancellationToken.None);
             UpdateStatus = "Installed. Restart into the active bundle when ready. Your configuration and data were preserved.";
         }
         catch (Exception ex) when (IsUserFacingOperationError(ex)) { UpdateStatus = ex.Message; }
