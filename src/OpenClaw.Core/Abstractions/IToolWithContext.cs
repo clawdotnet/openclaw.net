@@ -5,6 +5,7 @@ namespace OpenClaw.Core.Abstractions;
 
 public sealed class ToolExecutionContext
 {
+    public string? IdempotencyKey { get; init; }
     public required Session Session { get; init; }
     public required TurnContext TurnContext { get; init; }
 }

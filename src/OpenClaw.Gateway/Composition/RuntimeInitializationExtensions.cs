@@ -210,6 +210,9 @@ internal static partial class RuntimeInitializationExtensions
             skills => artifactRuntime.ReplaceSkills(skills));
         skillWatcher.Start(app.Lifetime.ApplicationStopping);
         var mcpWatcher = StartMcpWorkspaceWatcher(app, services, startup, agentRuntime);
+        var capabilitySources = app.Services.GetServices<OpenClaw.Core.Skills.Meta.ICapabilityChangeSource>().ToArray();
+        foreach (var source in capabilitySources)
+            await source.StartAsync(app.Lifetime.ApplicationStopping);
 
         await services.AutomationService.RefreshCacheAsync(app.Lifetime.ApplicationStopping);
         var cronScheduler = app.Services.GetRequiredService<CronScheduler>();
@@ -219,6 +222,8 @@ internal static partial class RuntimeInitializationExtensions
         var shutdownCoordinator = app.Services.GetRequiredService<GatewayRuntimeShutdownCoordinator>();
         shutdownCoordinator.RegisterAsyncCleanup("mcp registry", _ => services.McpRegistry.DisposeAsync());
         shutdownCoordinator.RegisterAsyncCleanup("mcp workspace watcher", _ => mcpWatcher.DisposeAsync());
+        foreach (var source in capabilitySources)
+            shutdownCoordinator.RegisterAsyncCleanup("capability change source", _ => source.DisposeAsync());
         shutdownCoordinator.RegisterAsyncCleanup("mcpapp registry", _ => services.McpAppRegistry.DisposeAsync());
         mcpAppStartupCleanup.Cancel();
         var runtime = CreateGatewayRuntime(

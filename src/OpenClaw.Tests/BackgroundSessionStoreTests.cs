@@ -12,6 +12,45 @@ public sealed class BackgroundSessionStoreTests : IAsyncDisposable
     private readonly List<string> _tempFiles = [];
 
     [Fact]
+    public async Task SqliteCaptureFiltersByPersistedUpdateTime()
+    {
+        var db = NewTempFile("capture-filter", ".db");
+        using var store = new SqliteMemoryStore(db, false);
+        var ct = TestContext.Current.CancellationToken;
+        var old = NewSession("websocket:old", SessionRunState.Completed);
+        var fresh = NewSession("websocket:fresh", SessionRunState.Completed);
+        fresh.LastActiveAt = DateTimeOffset.UtcNow.AddDays(-2);
+        await store.SaveSessionAsync(old, ct); await store.SaveSessionAsync(fresh, ct);
+        using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={db}"))
+        {
+            await connection.OpenAsync(ct);
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE sessions SET updated_at=0 WHERE id='websocket:old';";
+            await command.ExecuteNonQueryAsync(ct);
+        }
+        var ids = new List<string>();
+        await foreach (var snapshot in store.ReadSnapshotsAsync(DateTimeOffset.UtcNow.AddHours(-1), ct)) ids.Add(snapshot.Id);
+        Assert.Equal(["websocket:fresh"], ids);
+    }
+
+    [Fact]
+    public async Task CaptureSnapshotDoesNotExposeOrReplaceCachedSession()
+    {
+        var dir = NewTempDir("capture-snapshot");
+        await using var store = new FileMemoryStore(dir);
+        var session = NewSession("websocket:snapshot", SessionRunState.Completed);
+        await store.SaveSessionAsync(session, TestContext.Current.CancellationToken);
+        var cached = await store.GetSessionAsync(session.Id, TestContext.Current.CancellationToken);
+        await foreach (var snapshot in store.ReadSnapshotsAsync(null, TestContext.Current.CancellationToken))
+        {
+            Assert.NotSame(cached, snapshot);
+            snapshot.History.Add(new ChatTurn { Role = "assistant", Content = "detached" });
+        }
+        Assert.Same(cached, await store.GetSessionAsync(session.Id, TestContext.Current.CancellationToken));
+        Assert.DoesNotContain(cached!.History, turn => turn.Content == "detached");
+    }
+
+    [Fact]
     public async Task FileStore_ListsOnlyRunnableBackgroundSessions()
     {
         var dir = NewTempDir("bg-file-basic");

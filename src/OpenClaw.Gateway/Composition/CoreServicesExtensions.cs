@@ -97,6 +97,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton(sp =>
             new AllowlistManager(config.Memory.StoragePath, sp.GetRequiredService<ILogger<AllowlistManager>>()));
 
+        services.AddHostedService<RegressionCaptureWorker>();
         services.AddSingleton<RuntimeMetrics>();
         services.AddSingleton<IMemoryStore>(sp => CreateMemoryStore(
             startup,
@@ -244,10 +245,11 @@ internal static class CoreServicesExtensions
             var startupContext = sp.GetRequiredService<GatewayStartupContext>();
             var logger = sp.GetRequiredService<ILogger<InMemoryGoalService>>();
             var storagePath = startupContext.Config.Memory.StoragePath;
-            var historyPath = !string.IsNullOrEmpty(storagePath)
-                ? Path.Combine(Path.GetFullPath(storagePath), "goal-history.jsonl")
+            var historyPath = !string.IsNullOrWhiteSpace(storagePath)
+                ? Path.Join(Path.GetFullPath(storagePath), "goal-history.jsonl")
                 : null;
-            return new InMemoryGoalService(logger, historyPath);
+            return new InMemoryGoalService(logger, historyPath,
+                string.IsNullOrWhiteSpace(storagePath) ? null : Path.Join(Path.GetFullPath(storagePath), "goals"));
         });
         services.AddSingleton<ITool, GetGoalTool>();
         services.AddSingleton<ITool, CreateGoalTool>();

@@ -2,6 +2,32 @@
 
 OpenClaw.NET is a NativeAOT-friendly agent runtime and gateway for local and self-hosted .NET agent workloads. This page defines the intended project boundaries so contributors can decide what belongs in core, what belongs in the gateway, and what should stay in optional extension packs or downstream products.
 
+## Project And Product Identity
+
+| Name | Current role | Decision boundary |
+| --- | --- | --- |
+| **OpenClaw.NET** | Repository and runtime identity | Owns runtime correctness, local/self-hosted execution, gateway and CLI primitives, durable state, recovery, replay, and plugin execution compatibility. |
+| **AgentQi** | Documentation and ecosystem umbrella | Owns the broader developer/operator experience, ecosystem discovery, trust and lifecycle UX, and future multi-instance or fleet-level management. |
+| **AgentQi Companion** | Desktop product for OpenClaw.NET | Owns the chat-first desktop experience for setup and operation of one OpenClaw.NET runtime. “For OpenClaw.NET” describes the relationship; it is not a package, protocol, or storage rename. |
+| **AgentQiX** | Reserved likely future runtime identity | No current package, repository, or runtime rename is implied. A migration requires an explicit naming decision, compatibility plan, and release boundary. |
+
+The current rule is therefore to keep runtime capabilities in OpenClaw.NET, use AgentQi Companion for the desktop application, and describe cross-runtime ecosystem or managed-product work under AgentQi. Do not introduce AgentQiX naming into runtime packages or user-facing migration guidance until that separate decision is made.
+
+### Naming surfaces
+
+| Surface | Canonical label |
+| --- | --- |
+| Repository, runtime, gateway, CLI, packages, protocols, settings, and GitHub release titles | **OpenClaw.NET** |
+| Desktop window chrome, application metadata, desktop-bundle descriptions, and desktop documentation | **AgentQi Companion**; use **AgentQi Companion for OpenClaw.NET** when the relationship needs explanation |
+| Documentation and ecosystem navigation | **AgentQi** and **AgentQi.dev** |
+| Future runtime references | Keep **AgentQiX** reserved until an explicit migration decision and compatibility plan exist |
+
+## Capability resolution and optional registries
+
+OpenClaw.NET owns vendor-neutral capability contracts, deterministic resolution and execution, cache invalidation, reliability, and trajectory/replay. Nacos Router and Nacos SDK events are separate optional adapters; no Nacos SDK or configuration type belongs in Core or the default Gateway graph. SDK-backed events currently require an explicit JIT host; NativeAOT event support remains #239.
+
+AgentQi owns ecosystem documentation, catalog/trust assessment, and operational UX. Runtime authorization and approvals remain enforced locally on every selected tool, including cache hits. See [capability resolution](capability-resolution.md) for contracts, build choices, migration, and acceptance boundaries.
+
 ## OpenClaw.NET Core
 
 Core owns the stable runtime contracts and minimal behavior required to run agent workloads safely.
@@ -31,6 +57,7 @@ Gateway responsibilities include:
 - websocket surfaces
 - admin, health, and diagnostics routes
 - configuration, startup, and public-bind posture checks
+- local backup, restore, reconciliation, and guided-recovery entry points
 
 The gateway can compose optional surfaces, but it should not hide unsupported runtime modes or silently load extensions that require a different compatibility lane.
 
@@ -51,6 +78,12 @@ Examples include:
 - industrial adapters
 
 Extensions should fail fast when unsupported in the active runtime mode.
+
+## Runtime Versus Ecosystem Operations
+
+OpenClaw.NET owns the primitives required to operate one local or self-hosted runtime safely. This includes persisted dispatch state, deterministic replay inputs, instance backup and restore, recovery authorization, runtime diagnostics, and execution of compatible plugins.
+
+AgentQi is the appropriate layer for experiences that coordinate or curate those primitives across projects or instances, such as fleet views, ecosystem catalogs, installation/update UX, trust review, collaboration, hosted control planes, and cross-instance policy. AgentQi may call OpenClaw.NET APIs, but core runtime correctness must not depend on an AgentQi service.
 
 ## Optional ONNX Boundaries
 
@@ -142,3 +175,5 @@ When a change is hard to place, reviewers should ask:
 - Does this belong in an optional extension instead of core?
 - Is this reusable infrastructure or product-specific logic?
 - Does this preserve vendor neutrality?
+- Is this single-runtime correctness (OpenClaw.NET) or cross-runtime ecosystem/product UX (AgentQi)?
+- Does the change accidentally imply an AgentQiX rename without an approved migration decision?

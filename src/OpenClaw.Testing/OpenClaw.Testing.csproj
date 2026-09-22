@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.Client\OpenClaw.Client.csproj" />
+    <ProjectReference Include="..\OpenClaw.Agent\OpenClaw.Agent.csproj" />
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
   </ItemGroup>
 </Project>

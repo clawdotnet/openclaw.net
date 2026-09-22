@@ -26,6 +26,8 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Guides | OpenSquilla Meta-Skill Migration | [opensquilla-meta-skill-migration.md](opensquilla-meta-skill-migration.md) |
 | Guides | OpenSquilla Dynamic Turn Routing | [opensquilla-dynamic-turn-routing.md](opensquilla-dynamic-turn-routing.md) |
 | Guides | Dynamic Routing and Model Profiles | [dynamic-turn-routing-model-profiles.md](dynamic-turn-routing-model-profiles.md) |
+| Guides | Nacos MCP Router PoC | [nacos-mcp-router.md](nacos-mcp-router.md) |
+| Guides | Nacos MCP Router PoC (zh-CN) | [zh-CN/nacos-mcp-router.md](zh-CN/nacos-mcp-router.md) |
 | Guides | External CLI Connectors | [EXTERNAL_CLI_CONNECTORS.md](EXTERNAL_CLI_CONNECTORS.md) |
 | Guides | Fractal Memory | [FRACTAL_MEMORY.md](FRACTAL_MEMORY.md) |
 | Guides | Model Profiles | [MODEL_PROFILES.md](MODEL_PROFILES.md) |
@@ -40,6 +42,7 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Guides | Codebase Harness Map | [CODEBASE_HARNESS_MAP.md](CODEBASE_HARNESS_MAP.md) |
 | Reference | Compatibility | [COMPATIBILITY.md](COMPATIBILITY.md) |
 | Reference | Capability Matrix | [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md) |
+| Reference | Capability Resolution | [capability-resolution.md](capability-resolution.md) |
 | Reference | Architecture Boundaries | [ARCHITECTURE_BOUNDARIES.md](ARCHITECTURE_BOUNDARIES.md) |
 | Reference | Sessions and Token Accounting | [SESSIONS.md](SESSIONS.md) |
 | Reference | Canvas and A2UI | [CANVAS_A2UI.md](CANVAS_A2UI.md) |
@@ -54,6 +57,8 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Integrations | WhatsApp | [WHATSAPP_SETUP.md](WHATSAPP_SETUP.md) |
 | Integrations | A2A | [a2a.md](a2a.md) |
 | Integrations | External Coding Backends | [external-coding-backends.md](external-coding-backends.md) |
+| Integrations | Nacos MCP Router (PoC) | [nacos-mcp-router.md](nacos-mcp-router.md) |
+| Integrations | Nacos MCP Router (PoC, zh-CN) | [zh-CN/nacos-mcp-router.md](zh-CN/nacos-mcp-router.md) |
 | Integrations | Tailscale Deployment | [deployment/TAILSCALE.md](deployment/TAILSCALE.md) |
 | Operations | Workspace Admin APIs | [WORKSPACE_ADMIN.md](WORKSPACE_ADMIN.md) |
 | Operations | Security | [SECURITY.md](../SECURITY.md) |
@@ -125,6 +130,7 @@ Guides
 Reference
   Compatibility
   Capability Matrix
+  Capability Resolution
   Architecture Boundaries
   Sessions and Token Accounting
   Canvas and A2UI
@@ -140,6 +146,7 @@ Integrations
   WhatsApp
   A2A
   External Coding Backends
+  Nacos MCP Router (PoC)
   Tailscale Deployment
 
 Operations

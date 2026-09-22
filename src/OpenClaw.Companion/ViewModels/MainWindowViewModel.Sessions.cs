@@ -188,6 +188,13 @@ public sealed partial class MainWindowViewModel
                 $"History turns: {row.HistoryTurns}",
                 $"Tokens: {row.TotalTokens}"
             });
+            if (detail.Recovery is { } recovery)
+                SelectedSessionDetail += Environment.NewLine + Environment.NewLine
+                    + "Run explanation and recovery" + Environment.NewLine + recovery.Summary
+                    + Environment.NewLine + "Recorded evidence:" + Environment.NewLine
+                    + string.Join(Environment.NewLine, recovery.Evidence.Select(item => "• " + item))
+                    + Environment.NewLine + "Next steps:" + Environment.NewLine
+                    + string.Join(Environment.NewLine, recovery.NextSteps.Select(item => "• " + item));
             ReplaceItems(SessionTimelineRows, timeline.Events.Select(RuntimeEventRow.FromEntry));
             OnPropertyChanged(nameof(HasSessionTimelineRows));
         }

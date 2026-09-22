@@ -755,4 +755,10 @@ Use this checklist after deploying Goal changes to confirm the feature is workin
 
 ---
 
-## References
+## Reliability and storage behavior
+
+The gateway now configures `InMemoryGoalService` with a `goals` state directory beneath `Memory.StoragePath`. Each goal is stored in an atomically replaced JSON file with a SHA-256 session filename. Objective, status, token baseline and usage, continuation count, and blocker observations survive a process restart. Corrupt state fails visibly instead of being silently replaced. Deployments must use a single writer for this local store; this is not a distributed goal backend.
+
+Every runtime turn starts a fresh continuation allowance. Resuming a paused or blocked goal resets the continuation counter and blocker audit, while preserving token usage. Model-initiated blocked transitions require three matching observations. Explicit operator status commands remain available as overrides. `update_goal` must be the only tool in its batch; completed tool batches count as work evidence.
+
+Goal persistence does not guarantee exactly-once external effects. Completed-batch checkpoints remain separate from the goal record. An action journal and reconciliation of uncertain external results are follow-up work.

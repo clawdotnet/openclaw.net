@@ -19,11 +19,13 @@ internal static class EndpointHelpers
         string? AccountId,
         string? Username,
         string? DisplayName,
-        bool IsBootstrapAdmin)
+        bool IsBootstrapAdmin,
+        DateTimeOffset? AccountUpdatedAtUtc = null)
     {
         public OperatorIdentitySnapshot ToIdentity()
             => new()
             {
+                AccountUpdatedAtUtc = AccountUpdatedAtUtc ?? BrowserSession?.AccountUpdatedAtUtc,
                 AuthMode = AuthMode,
                 Role = Role,
                 AccountId = AccountId,
@@ -167,7 +169,8 @@ internal static class EndpointHelpers
                 AccountId: accountIdentity.AccountId,
                 Username: accountIdentity.Username,
                 DisplayName: accountIdentity.DisplayName,
-                IsBootstrapAdmin: false);
+                IsBootstrapAdmin: false,
+                AccountUpdatedAtUtc: accountIdentity.AccountUpdatedAtUtc);
         }
 
         if (IsAllowedAuthMode(policy, OrganizationAuthModeNames.BrowserSession) &&
@@ -354,6 +357,7 @@ internal static class EndpointHelpers
             scope.StartsWith("admin.session.promote", StringComparison.Ordinal) ||
             scope.StartsWith("admin.branch.restore", StringComparison.Ordinal) ||
             scope.StartsWith("admin.session.metadata", StringComparison.Ordinal) ||
+            scope.StartsWith("admin.sessions.recovery.mutate", StringComparison.Ordinal) ||
             scope.StartsWith("admin.sessions.abort", StringComparison.Ordinal) ||
             scope.StartsWith("admin.sessions.delete", StringComparison.Ordinal) ||
             scope.StartsWith("admin.automations.mutate", StringComparison.Ordinal) ||

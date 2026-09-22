@@ -89,6 +89,48 @@ public sealed class ModelProfileSelectionTests
         Assert.Contains("Falling back from 'gemma4-local'", selection.Explanation, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(false, "mini-readonly")]
+    [InlineData(true, "frontier-tools")]
+    public void SelectionPolicy_MultipleToolDefinitions_RequireParallelSupportOnlyWhenExplicit(bool requireParallel, string expectedProfile)
+    {
+        LlmClientFactory.ResetDynamicProviders();
+        LlmClientFactory.RegisterProvider("fake-profile-tests", new EvaluationChatClient());
+        using var registry = new ConfiguredModelProfileRegistry(BuildProfileConfig(), NullLogger<ConfiguredModelProfileRegistry>.Instance);
+        registry.SetDefaultProfileId();
+        var policy = new DefaultModelSelectionPolicy(registry);
+        using var schema = JsonDocument.Parse("""{"type":"object","properties":{}}""");
+        var selection = policy.Resolve(new OpenClaw.Core.Abstractions.ModelSelectionRequest
+        {
+            Session = new Session
+            {
+                Id = "multiple-tools",
+                ChannelId = "test",
+                SenderId = "user",
+                ModelProfileId = "mini-readonly",
+                FallbackModelProfileIds = ["frontier-tools"],
+                ModelRequirements = new ModelSelectionRequirements
+                {
+                    SupportsParallelToolCalls = requireParallel ? true : null
+                }
+            },
+            Messages = [new ChatMessage(ChatRole.User, "Choose an appropriate tool")],
+            Options = new ChatOptions
+            {
+                Tools =
+                [
+                    AIFunctionFactory.CreateDeclaration("first", "First tool", schema.RootElement.Clone(), returnJsonSchema: null),
+                    AIFunctionFactory.CreateDeclaration("second", "Second tool", schema.RootElement.Clone(), returnJsonSchema: null)
+                ]
+            },
+            Streaming = false
+        });
+
+        Assert.Equal(expectedProfile, selection.SelectedProfileId);
+        Assert.True(selection.Requirements.SupportsTools);
+        Assert.Equal(requireParallel ? true : (bool?)null, selection.Requirements.SupportsParallelToolCalls);
+    }
+
     [Fact]
     public void SelectionPolicy_PrefersTaggedProfileWhenRequirementsAreEqual()
     {

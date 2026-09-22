@@ -1,72 +1,95 @@
-<Styles xmlns="https://github.com/avaloniaui">
-    <Style Selector="TextBlock.page-title">
-        <Setter Property="FontSize" Value="22" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Styles.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="CompanionBackground">#F8F7F4</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionSurface">#FDFCFB</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionCard">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionSidebar">#F3F2EE</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionForeground">#292824</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionMuted">#716F68</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionBorder">#E4E2DC</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionAccent">#287B77</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionAccentSoft">#E5EFEC</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionOnAccent">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionDanger">#A93632</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionDangerSoft">#FBEDEB</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionNotice">#F5F0E4</SolidColorBrush>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="CompanionBackground">#191918</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionSurface">#20201E</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionCard">#252523</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionSidebar">#1D1D1B</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionForeground">#ECEBE6</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionMuted">#B0AEA6</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionBorder">#3A3A35</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionAccent">#81C5BD</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionAccentSoft">#283E3A</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionOnAccent">#172C29</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionDanger">#F3978B</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionDangerSoft">#432B28</SolidColorBrush>
+                    <SolidColorBrush x:Key="CompanionNotice">#383326</SolidColorBrush>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Styles.Resources>
+    <Style Selector="Window.companion-window">
+        <Setter Property="Background" Value="{DynamicResource CompanionBackground}" />
+        <Setter Property="Foreground" Value="{DynamicResource CompanionForeground}" />
+        <Setter Property="FontSize" Value="14" />
     </Style>
-
-    <Style Selector="TextBlock.section-title">
-        <Setter Property="FontSize" Value="15" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+    <Style Selector="TextBlock.connection-label"><Setter Property="Foreground" Value="{DynamicResource CompanionMuted}" /></Style>
+    <Style Selector="TextBlock.connection-label.connected"><Setter Property="Foreground" Value="{DynamicResource CompanionAccent}" /></Style>
+    <Style Selector="TextBlock.page-title"><Setter Property="FontSize" Value="26" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
+    <Style Selector="TextBlock.section-title"><Setter Property="FontSize" Value="16" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
+    <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="{DynamicResource CompanionMuted}" /><Setter Property="FontSize" Value="13" /></Style>
+    <Style Selector="Border.section-card, Border.metric-card, Border.empty-state, Border.composer, Border.palette">
+        <Setter Property="Padding" Value="20" /><Setter Property="CornerRadius" Value="14" />
+        <Setter Property="BorderThickness" Value="1" /><Setter Property="BorderBrush" Value="{DynamicResource CompanionBorder}" />
+        <Setter Property="Background" Value="{DynamicResource CompanionCard}" />
     </Style>
-
-    <Style Selector="TextBlock.muted">
-        <Setter Property="Opacity" Value="0.68" />
-        <Setter Property="FontSize" Value="12" />
+    <Style Selector="Border.metric-card"><Setter Property="MinHeight" Value="96" /></Style>
+    <Style Selector="Border.composer"><Setter Property="Padding" Value="12" /></Style>
+    <Style Selector="Border.palette"><Setter Property="BoxShadow" Value="0 16 60 0 #30000000" /></Style>
+    <Style Selector="Border.badge"><Setter Property="CornerRadius" Value="8" /><Setter Property="Padding" Value="8,4" /><Setter Property="Background" Value="{DynamicResource CompanionAccentSoft}" /></Style>
+    <Style Selector="Border.connection-notice"><Setter Property="Background" Value="{DynamicResource CompanionNotice}" /><Setter Property="CornerRadius" Value="10" /><Setter Property="Padding" Value="16,12" /></Style>
+    <Style Selector="Border.error-banner"><Setter Property="Background" Value="{DynamicResource CompanionDangerSoft}" /><Setter Property="Padding" Value="14" /><Setter Property="CornerRadius" Value="10" /></Style>
+    <Style Selector="Border.error-banner TextBlock, Border.error-banner SelectableTextBlock"><Setter Property="Foreground" Value="{DynamicResource CompanionDanger}" /></Style>
+    <Style Selector="Button, TextBox, ComboBox, ListBox"><Setter Property="Foreground" Value="{DynamicResource CompanionForeground}" /></Style>
+    <Style Selector="Button">
+        <Setter Property="CornerRadius" Value="8" /><Setter Property="Padding" Value="14,9" /><Setter Property="MinHeight" Value="36" />
+        <Setter Property="Background" Value="{DynamicResource CompanionCard}" /><Setter Property="BorderBrush" Value="{DynamicResource CompanionBorder}" /><Setter Property="BorderThickness" Value="1" />
     </Style>
-
-    <Style Selector="Border.section-card">
-        <Setter Property="Padding" Value="14" />
-        <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
-        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" />
-    </Style>
-
-    <Style Selector="Border.metric-card">
-        <Setter Property="Padding" Value="12" />
-        <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
-        <Setter Property="MinHeight" Value="84" />
-    </Style>
-
-    <Style Selector="Border.badge">
-        <Setter Property="CornerRadius" Value="10" />
-        <Setter Property="Padding" Value="8,3" />
-        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}" />
-    </Style>
-
-    <Style Selector="TextBox.monospace">
-        <Setter Property="FontFamily" Value="Consolas, Menlo, monospace" />
-        <Setter Property="FontSize" Value="12" />
-    </Style>
-
-    <Style Selector="Button.primary">
-        <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-
-    <Style Selector="Button.danger">
-        <Setter Property="Background" Value="#a61f1f" />
-        <Setter Property="Foreground" Value="White" />
-        <Setter Property="BorderBrush" Value="#a61f1f" />
-    </Style>
-
-    <Style Selector="Border.empty-state">
-        <Setter Property="Padding" Value="24" />
-        <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
-    </Style>
-
-    <Style Selector="Border.error-banner">
-        <Setter Property="Padding" Value="10" />
-        <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="Background" Value="#3a1515" />
-        <Setter Property="BorderBrush" Value="#ff453a" />
-        <Setter Property="BorderThickness" Value="1" />
-    </Style>
-
-    <Style Selector="Border.error-banner TextBlock">
-        <Setter Property="Foreground" Value="White" />
-    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{DynamicResource CompanionAccentSoft}" /><Setter Property="BorderBrush" Value="{DynamicResource CompanionAccent}" /></Style>
+    <Style Selector="Button.primary"><Setter Property="Background" Value="{DynamicResource CompanionAccent}" /><Setter Property="Foreground" Value="{DynamicResource CompanionOnAccent}" /><Setter Property="BorderBrush" Value="Transparent" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{DynamicResource CompanionAccent}" /><Setter Property="Foreground" Value="{DynamicResource CompanionOnAccent}" /><Setter Property="Opacity" Value="0.85" /></Style>
+    <Style Selector="Button.danger"><Setter Property="Background" Value="{DynamicResource CompanionDangerSoft}" /><Setter Property="Foreground" Value="{DynamicResource CompanionDanger}" /><Setter Property="BorderBrush" Value="Transparent" /></Style>
+    <Style Selector="Button.quiet"><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Padding" Value="8,5" /><Setter Property="Foreground" Value="{DynamicResource CompanionMuted}" /></Style>
+    <Style Selector="Button.suggestion"><Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Left" /><Setter Property="Padding" Value="18" /><Setter Property="CornerRadius" Value="12" /></Style>
+    <Style Selector="Button.status-card"><Setter Property="HorizontalContentAlignment" Value="Left" /><Setter Property="Padding" Value="12" /><Setter Property="CornerRadius" Value="10" /></Style>
+    <Style Selector="Button.search-trigger"><Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="Padding" Value="12,6" /></Style>
+    <Style Selector="TextBox, ComboBox"><Setter Property="CornerRadius" Value="8" /><Setter Property="MinHeight" Value="38" /><Setter Property="Background" Value="{DynamicResource CompanionCard}" /><Setter Property="BorderBrush" Value="{DynamicResource CompanionBorder}" /></Style>
+    <Style Selector="Expander"><Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="CornerRadius" Value="12" /><Setter Property="Background" Value="{DynamicResource CompanionCard}" /><Setter Property="BorderBrush" Value="{DynamicResource CompanionBorder}" /></Style>
+    <Style Selector="Expander /template/ Border"><Setter Property="Background" Value="{DynamicResource CompanionCard}" /><Setter Property="BorderBrush" Value="{DynamicResource CompanionBorder}" /></Style>
+    <Style Selector="TextBox"><Setter Property="PlaceholderForeground" Value="{DynamicResource CompanionMuted}" /></Style>
+    <Style Selector="ComboBox"><Setter Property="PlaceholderForeground" Value="{DynamicResource CompanionMuted}" /></Style>
+    <Style Selector="TextBox.monospace"><Setter Property="FontFamily" Value="Consolas, Menlo, monospace" /><Setter Property="FontSize" Value="12" /></Style>
+    <Style Selector="TextBox.composer-input"><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Padding" Value="6" /><Setter Property="FontSize" Value="15" /></Style>
+    <Style Selector="TextBox.composer-input:focus /template/ Border#PART_BorderElement"><Setter Property="BorderThickness" Value="0" /><Setter Property="Background" Value="Transparent" /></Style>
+    <Style Selector="ListBox.navigation, ListBox.section-navigation"><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Padding" Value="0" /></Style>
+    <Style Selector="ListBox.navigation ListBoxItem, ListBox.section-navigation ListBoxItem"><Setter Property="CornerRadius" Value="8" /><Setter Property="Padding" Value="12,10" /><Setter Property="Margin" Value="0,2" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style>
+    <Style Selector="ListBox.navigation ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter, ListBox.section-navigation ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{DynamicResource CompanionAccentSoft}" /><Setter Property="Foreground" Value="{DynamicResource CompanionAccent}" /></Style>
+    <Style Selector="ListBox.navigation ListBoxItem /template/ Rectangle#SelectionIndicator, ListBox.section-navigation ListBoxItem /template/ Rectangle#SelectionIndicator"><Setter Property="IsVisible" Value="False" /></Style>
+    <Style Selector="ListBox.section-navigation ListBoxItem"><Setter Property="Padding" Value="12,7" /><Setter Property="Margin" Value="0,0,8,0" /></Style>
+    <!-- Keep the existing feature containers and selection contract; navigation lives in the shell. -->
+    <Style Selector="TabControl.section-host"><Setter Property="Padding" Value="0" /></Style>
+    <Style Selector="TabControl.section-host /template/ ItemsPresenter#PART_ItemsPresenter"><Setter Property="Width" Value="0" /><Setter Property="Height" Value="0" /><Setter Property="Opacity" Value="0" /><Setter Property="IsHitTestVisible" Value="False" /></Style>
+    <Style Selector="TabControl.section-host TabItem"><Setter Property="Focusable" Value="False" /></Style>
+    <Style Selector="StackPanel.welcome"><Setter Property="Margin" Value="24,40" /><Setter Property="Spacing" Value="16" /></Style>
+    <Style Selector="TextBlock.welcome-title"><Setter Property="FontSize" Value="30" /></Style>
+    <Style Selector="Window.compact StackPanel.welcome"><Setter Property="Margin" Value="20,8" /><Setter Property="Spacing" Value="10" /></Style>
+    <Style Selector="Window.compact TextBlock.welcome-title"><Setter Property="FontSize" Value="24" /></Style>
+    <Style Selector="Window.compact Button.suggestion"><Setter Property="Padding" Value="12" /></Style>
 </Styles>

@@ -43,10 +43,7 @@ public class ApiService
     {
         using var request = CreateRequest(HttpMethod.Get, url);
         using var response = await _http.SendAsync(request).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            return default;
-        }
+        response.EnsureSuccessStatusCode();
 
         return await response.Content
             .ReadFromJsonAsync<T>(_jsonOptions)
@@ -63,10 +60,7 @@ public class ApiService
     {
         using var request = CreateRequest(HttpMethod.Post, url, body);
         using var response = await _http.SendAsync(request).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            return default;
-        }
+        response.EnsureSuccessStatusCode();
 
         if (response.Content.Headers.ContentLength == 0)
         {
@@ -78,9 +72,11 @@ public class ApiService
             .ConfigureAwait(false);
     }
 
-    public async Task<HttpResponseMessage> PostRawAsync(string url, object? body = null)
+    public async Task<HttpResponseMessage> PostRawAsync(string url, object? body = null, string? bearerToken = null)
     {
         var request = CreateRequest(HttpMethod.Post, url, body);
+        if (!string.IsNullOrWhiteSpace(bearerToken))
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
         return await _http.SendAsync(request).ConfigureAwait(false);
     }
 

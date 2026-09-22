@@ -42,7 +42,7 @@ public sealed class MafToolAdapter : AIFunction
         ToolExecutionResult result = await _toolExecutor.ExecuteAsync(
             _tool.Name,
             argsJson,
-            callId: null,
+            callId: $"maf_{Guid.NewGuid():N}",
             executionContext.Session,
             executionContext.TurnContext,
             isStreaming: streamEventWriter is not null,

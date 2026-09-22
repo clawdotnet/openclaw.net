@@ -8,7 +8,7 @@ using OpenClaw.Payments.Abstractions;
 
 namespace OpenClaw.Client;
 
-public sealed class OpenClawHttpClient : IDisposable
+public sealed partial class OpenClawHttpClient : IDisposable
 {
     private const string LatestMcpProtocolVersion = "2026-07-28";
     private const string LatestLegacyMcpProtocolVersion = "2025-11-25";

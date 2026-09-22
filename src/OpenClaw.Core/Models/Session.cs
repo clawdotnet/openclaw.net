@@ -319,6 +319,62 @@ public sealed class SessionMetaStepExecutionEvidence
     public string InputMode { get; init; } = "none";
     public int StdinBytes { get; init; }
     public string ParseMode { get; init; } = "text";
+    public CapabilityBindingTrajectory? CapabilityBinding { get; init; }
+    public ToolInvocation? CapabilityInvocation { get; init; }
+}
+
+/// <summary>
+/// The recorded binding path of one capability slot execution (issue #234).
+/// Persisted with the run's step results so `meta-runs --json` and the
+/// OpenClaw.Testing harness can audit and replay bindings offline.
+/// Upstream search returns no scores, so candidates carry the positional
+/// rank only — none are fabricated (issue #230 contract).
+/// </summary>
+public sealed class CapabilityBindingTrajectory
+{
+    public string Provider { get; set; } = "";
+    public long Revision { get; set; }
+    public string? SchemaFingerprint { get; set; }
+    public string? Schema { get; set; }
+    /// <summary>Binding mode: <c>static</c> or <c>dynamic</c>.</summary>
+    public string Binding { get; set; } = "";
+
+    /// <summary>SHA-256 hex of the normalised intent (dynamic only).</summary>
+    public string? IntentKey { get; set; }
+
+    /// <summary>Intent task description fed to the resolver (dynamic only).</summary>
+    public string? CapabilityType { get; set; }
+    public string? TaskDescription { get; set; }
+
+    /// <summary>Comma-separated intent keywords (dynamic only).</summary>
+    public string? KeyWords { get; set; }
+
+    /// <summary>Resolver selection policy as the wire value: <c>first</c> or <c>exact_name</c>.</summary>
+    public string SelectionPolicy { get; set; } = "first";
+
+    /// <summary>True when the session binding cache supplied the binding (dynamic only).</summary>
+    public bool CacheHit { get; set; }
+
+    /// <summary>The bound server; null when binding failed.</summary>
+    public string? Server { get; set; }
+
+    /// <summary>The bound tool; null when binding failed.</summary>
+    public string? Tool { get; set; }
+
+    /// <summary>Elapsed milliseconds of the binding phase only (excludes use_tool).</summary>
+    public double ElapsedMs { get; set; }
+
+    /// <summary>Search Top-N candidates in upstream rank order (dynamic only).</summary>
+    public List<CapabilityBindingCandidate> Candidates { get; set; } = [];
+
+    /// <summary>Candidates the resolver actually attempted to add, in rank order.</summary>
+    public List<CapabilityBindingCandidate> Attempted { get; set; } = [];
+}
+
+public sealed class CapabilityBindingCandidate
+{
+    public string Name { get; set; } = "";
+    public int Rank { get; set; }
 }
 
 public sealed class MetaRunReplayPreviewResponse
@@ -796,6 +852,7 @@ public sealed class SessionDelegationChildSummary
 /// </summary>
 [JsonSerializable(typeof(Session))]
 [JsonSerializable(typeof(SessionRunState))]
+[JsonSerializable(typeof(BackgroundRecoveryIndexEntry))]
 [JsonSerializable(typeof(BackgroundRunMetadata))]
 [JsonSerializable(typeof(StableSessionBindingInfo))]
 [JsonSerializable(typeof(ChatTurn))]
@@ -811,6 +868,10 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(SessionMetaStepResult))]
 [JsonSerializable(typeof(List<SessionMetaStepResult>))]
 [JsonSerializable(typeof(SessionMetaStepExecutionEvidence))]
+[JsonSerializable(typeof(CapabilityBindingTrajectory))]
+[JsonSerializable(typeof(List<CapabilityBindingTrajectory>))]
+[JsonSerializable(typeof(CapabilityBindingCandidate))]
+[JsonSerializable(typeof(List<CapabilityBindingCandidate>))]
 [JsonSerializable(typeof(MetaRunReplayPreviewResponse))]
 [JsonSerializable(typeof(MetaRunReplayStepPreview))]
 [JsonSerializable(typeof(MetaRunReplayStepPreview[]))]
@@ -859,6 +920,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(MetaRunDerivedProposalStepDetail[]))]
 [JsonSerializable(typeof(WsClientEnvelope))]
 [JsonSerializable(typeof(WsServerEnvelope))]
+[JsonSerializable(typeof(OpenClaw.Core.Skills.Meta.CapabilityRuntimeStatus))]
 [JsonSerializable(typeof(GatewayConfig))]
 [JsonSerializable(typeof(BackgroundExecutionConfig))]
 [JsonSerializable(typeof(RuntimeConfig))]
@@ -1613,6 +1675,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(SessionPromotionRequest))]
 [JsonSerializable(typeof(SessionPromotionResponse))]
 [JsonSerializable(typeof(SessionDiffResponse))]
+[JsonSerializable(typeof(SessionRecoveryExplanation))]
 [JsonSerializable(typeof(SessionTimelineResponse))]
 [JsonSerializable(typeof(SessionExportItem))]
 [JsonSerializable(typeof(List<SessionExportItem>))]

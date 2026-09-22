@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using OpenClaw.Core.Models;
 using OpenClaw.Dashboard.Models;
 
 namespace OpenClaw.Dashboard.Services;
@@ -32,19 +33,19 @@ public class AuthService
     }
 
     public Task<bool> LoginWithCredentials(string username, string password)
-        => PostLoginAsync(new { mode = "credentials", username, password });
+        => PostLoginAsync(new AuthSessionRequest { Username = username, Password = password });
 
     public Task<bool> LoginWithToken(string token)
-        => PostLoginAsync(new { mode = "token", token });
+        => PostLoginAsync(new AuthSessionRequest { AccountToken = token });
 
     public Task<bool> LoginWithBootstrap(string bootstrapToken)
-        => PostLoginAsync(new { mode = "bootstrap", bootstrapToken });
+        => PostLoginAsync(new AuthSessionRequest(), bootstrapToken);
 
-    private async Task<bool> PostLoginAsync(object body)
+    private async Task<bool> PostLoginAsync(AuthSessionRequest body, string? bearerToken = null)
     {
         try
         {
-            using var response = await _api.PostRawAsync("auth/session", body).ConfigureAwait(false);
+            using var response = await _api.PostRawAsync("auth/session", body, bearerToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 SetAuth(null);

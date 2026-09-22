@@ -29,7 +29,7 @@ public sealed class MemoryStoreCorruptionException : IOException
 /// Sessions and notes are stored as JSON files with URL-safe base64 encoded filenames
 /// to prevent path traversal attacks. Includes in-memory LRU cache for sessions.
 /// </summary>
-public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNoteCatalog, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IBackgroundSessionStore, IAsyncDisposable, IDisposable
+public sealed class FileMemoryStore : IMemoryStore, ISessionSnapshotSource, IMemoryNoteSearch, IMemoryNoteCatalog, IMemoryRetentionStore, ISessionAdminStore, ISessionSearchStore, IBackgroundSessionStore, IAsyncDisposable, IDisposable
 {
     private const int SessionLoadStripeCount = 64;
 
@@ -73,6 +73,24 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNo
         _sessionLoadStripes = Enumerable.Range(0, SessionLoadStripeCount)
             .Select(static _ => new SemaphoreSlim(1, 1))
             .ToArray();
+    }
+
+    public async IAsyncEnumerable<Session> ReadSnapshotsAsync(DateTimeOffset? since,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        foreach (var file in Directory.EnumerateFiles(_sessionsPath, "*.json"))
+        {
+            ct.ThrowIfCancellationRequested();
+            Session? snapshot;
+            try
+            {
+                if (since is { } cutoff && File.GetLastWriteTimeUtc(file) < cutoff.UtcDateTime) continue;
+                snapshot = JsonSerializer.Deserialize(await File.ReadAllTextAsync(file, ct), CoreJsonContext.Default.Session);
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+            { _logger?.LogWarning(ex, "Skipping an unreadable capture snapshot."); continue; }
+            if (snapshot is not null) yield return snapshot;
+        }
     }
 
     public async ValueTask<Session?> GetSessionAsync(string sessionId, CancellationToken ct)
@@ -137,7 +155,52 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNo
         }
     }
 
-    public async ValueTask<IReadOnlyList<Session>> ListBackgroundRunnableSessionsAsync(int limit, CancellationToken ct)
+    public ValueTask<IReadOnlyList<Session>> ListBackgroundRunnableSessionsAsync(int limit, CancellationToken ct)
+        => ListBackgroundSessionsAsync(limit, ct);
+
+    public async ValueTask<IReadOnlyList<Session>> ListBackgroundRecoveryPageAsync(int limit, string? afterSessionId, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 500);
+        if (!Directory.Exists(_sessionsPath)) return [];
+        var candidates = new List<(string Id, string Path)>();
+        foreach (var file in Directory.EnumerateFiles(_sessionsPath, "*.json"))
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                await using var stream = File.OpenRead(file);
+                var metadata = await JsonSerializer.DeserializeAsync(stream, CoreJsonContext.Default.BackgroundRecoveryIndexEntry, ct);
+                if (metadata is { BackgroundRun: not null, RunState: SessionRunState.Running or SessionRunState.Continuing }
+                    && !string.IsNullOrEmpty(metadata.Id)
+                    && (afterSessionId is null || StringComparer.Ordinal.Compare(metadata.Id, afterSessionId) > 0))
+                    candidates.Add((metadata.Id, file));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            {
+                _logger?.LogWarning(ex, "Skipping corrupt session metadata during recovery: {Path}", file);
+            }
+        }
+        var sessions = new List<Session>();
+        foreach (var candidate in candidates.OrderBy(static item => item.Id, StringComparer.Ordinal))
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                await using var stream = File.OpenRead(candidate.Path);
+                var session = await JsonSerializer.DeserializeAsync(stream, CoreJsonContext.Default.Session, ct);
+                if (session is { BackgroundRun: not null, RunState: SessionRunState.Running or SessionRunState.Continuing })
+                    sessions.Add(session);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            {
+                _logger?.LogWarning(ex, "Skipping corrupt session during recovery: {Path}", candidate.Path);
+            }
+            if (sessions.Count == limit) break;
+        }
+        return sessions;
+    }
+
+    private async ValueTask<IReadOnlyList<Session>> ListBackgroundSessionsAsync(int limit, CancellationToken ct)
     {
         limit = Math.Clamp(limit, 1, 500);
         if (!Directory.Exists(_sessionsPath))
@@ -179,10 +242,8 @@ public sealed class FileMemoryStore : IMemoryStore, IMemoryNoteSearch, IMemoryNo
             }
         }
 
-        return sessions
-            .OrderBy(static s => s.BackgroundRun?.LastContinuedAtUtc ?? s.LastActiveAt)
-            .Take(limit)
-            .ToArray();
+        return sessions.OrderBy(static s => s.BackgroundRun?.LastContinuedAtUtc ?? s.LastActiveAt)
+            .Take(limit).ToArray();
     }
 
     public ValueTask DisposeAsync()

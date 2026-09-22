@@ -1,4 +1,6 @@
+using OpenClaw.Agent.Tools;
 using System.Diagnostics;
+using OpenClaw.Core.Actions;
 using System.Text;
 using System.Text.Json;
 using System.Runtime.InteropServices;
@@ -23,6 +25,9 @@ public sealed class ToolExecutionResult
     public string? FailureCode { get; init; }
     public string? FailureMessage { get; init; }
     public string? NextStep { get; init; }
+    public ToolInvocation? CapabilityInvocation { get; set; }
+    public CapabilityBindingTrajectory? BindingTrajectory { get; set; }
+    public bool RetrySafe { get; set; }
 
     public FunctionResultContent ToFunctionResultContent(string callId)
         => new(callId, ResultText);
@@ -30,6 +35,7 @@ public sealed class ToolExecutionResult
 
 public sealed class OpenClawToolExecutor
 {
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Session, System.Collections.Concurrent.ConcurrentDictionary<string, string>> _sessionActionResults = new();
     private Dictionary<string, ITool> _toolsByName;
     private AITool[] _toolDeclarations;
     private readonly object _toolsMutationLock = new();
@@ -195,17 +201,25 @@ public sealed class OpenClawToolExecutor
         ToolApprovalCallback? approvalCallback,
         CancellationToken ct,
         Func<string, ValueTask>? onDelta = null,
-        int toolCallCount = 1)
+        int toolCallCount = 1, ITool? boundCapabilityTool = null)
     {
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.ExecuteTool");
         activity?.SetTag("tool.name", toolName);
         var persistedArgsJson = _redaction.Redact(argsJson);
+
+        if (toolName == "update_goal" && toolCallCount > 1)
+            return CreateImmediateResult(toolName, persistedArgsJson,
+                "Error: update_goal must be called alone after all other tools have completed.",
+                callId: callId, resultStatus: ToolResultStatuses.Blocked,
+                failureCode: ToolFailureCodes.ToolFailed);
 
         ITool? tool;
         lock (_toolsMutationLock)
         {
             _toolsByName.TryGetValue(toolName, out tool);
         }
+
+        if (boundCapabilityTool is not null && boundCapabilityTool.Name == toolName) tool = boundCapabilityTool;
 
         if (tool is null)
         {
@@ -236,6 +250,8 @@ public sealed class OpenClawToolExecutor
         }
 
         var preset = _toolPresetResolver?.Resolve(session, _toolsByName.Keys);
+        if (tool is ResolveCapabilityTool resolver)
+            tool = resolver.WithToolFilter(name => IsToolAllowedForSession(session, name, preset));
         if (!IsToolAllowedForSession(session, tool.Name, preset))
         {
             var deniedByPreset = preset is not null
@@ -510,6 +526,63 @@ public sealed class OpenClawToolExecutor
             }
         }
 
+        using var actionLease = _config.Tooling.DurableActionJournal && tool is not CapabilitySlotExecutor.GovernedStepTool && tool.Name != "meta_invoke" && !IsKnownReadOnly(tool, argsJson)
+            ? await new DurableActionJournal(_config.Memory.StoragePath).OpenAsync(session.Id, ct)
+            : null;
+        var liveActionResults = _sessionActionResults.GetOrCreateValue(session);
+        ActionRecord? action = null;
+        if (actionLease is not null)
+        {
+            // A changed provider call ID cannot bypass an interrupted or uncheckpointed dispatch.
+            var recordedCalls = DurableActionJournal.RecordedCallIds(session).ToHashSet();
+            foreach (var recorded in actionLease.Records.Where(r => r.HistoryPersisted))
+                liveActionResults.TryRemove(recorded.Id, out _);
+            var unresolved = actionLease.Records.FirstOrDefault(r => r.CallId != callId &&
+                (r.State == "started" || (r.State == "completed" && !r.HistoryPersisted && !recordedCalls.Contains(r.CallId) &&
+                    (!liveActionResults.TryGetValue(r.Id, out var correlation) || correlation != turnCtx.CorrelationId))));
+            if (unresolved is not null)
+                return CreateImmediateResult(toolName, persistedArgsJson,
+                    $"Action {unresolved.Id} requires reconciliation before another tool can run.", callId: callId,
+                    resultStatus: ToolResultStatuses.Blocked, failureCode: "action_reconciliation_required");
+            if (string.IsNullOrWhiteSpace(callId))
+                return CreateImmediateResult(toolName, persistedArgsJson, "Durable actions require a stable call ID.",
+                    resultStatus: ToolResultStatuses.Blocked, failureCode: "action_identity_required");
+            var existed = actionLease.Records.Any(r => r.CallId == callId);
+            try { action = actionLease.Begin(callId, toolName, argsJson); }
+            catch (InvalidOperationException)
+            {
+                return CreateImmediateResult(toolName, persistedArgsJson, "Action identity was reused with different arguments. Refresh the action before continuing.",
+                    callId: callId, resultStatus: ToolResultStatuses.Blocked, failureCode: "action_identity_conflict");
+            }
+            if (existed && action.State == "started" && tool is IReconcilableTool reconciliable)
+            {
+                try
+                {
+                    using var reconciliationTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    if (_toolTimeoutSeconds > 0) reconciliationTimeout.CancelAfter(TimeSpan.FromSeconds(_toolTimeoutSeconds));
+                    var outcome = await reconciliable.ReconcileAsync(action.Id, reconciliationTimeout.Token);
+                    if (outcome.State is "completed" or "not_executed")
+                        actionLease.Resolve(action, action.Revision, outcome.State, "Provider reconciliation.",
+                            outcome.Result is null ? null : _redaction.Redact(outcome.Result));
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Action reconciliation could not establish an outcome for {ActionId}", action.Id);
+                    return CreateImmediateResult(toolName, persistedArgsJson,
+                        $"Action {action.Id} still requires provider reconciliation.", callId: callId,
+                        resultStatus: ToolResultStatuses.Blocked, failureCode: "action_reconciliation_required");
+                }
+            }
+            if (existed && action.State == "started")
+                return CreateImmediateResult(toolName, persistedArgsJson,
+                    $"Action {action.Id} has an unknown outcome. Verify provider state before retrying.", callId: callId,
+                    resultStatus: ToolResultStatuses.Blocked, failureCode: "action_reconciliation_required");
+            if (action.State == "completed")
+                return CreateImmediateResult(toolName, persistedArgsJson, action.Result!, callId: callId);
+            if (action.State == "not_executed") actionLease.MarkStarted(action);
+        }
+
         var sw = Stopwatch.StartNew();
         string result;
         string resultStatus = ToolResultStatuses.Completed;
@@ -519,6 +592,7 @@ public sealed class OpenClawToolExecutor
         var toolFailed = false;
         var toolTimedOut = false;
         var afterHookCtx = hookCtx;
+        var dispatchStarted = false;
         try
         {
             var substitution = await _sentinelSubstitution.SubstituteAsync(new SentinelSubstitutionContext
@@ -534,8 +608,19 @@ public sealed class OpenClawToolExecutor
             persistedArgsJson = _redaction.Redact(substitution.PersistedArgumentsJson);
             afterHookCtx = hookCtx with { ArgumentsJson = persistedArgsJson };
 
-            if (onDelta is not null && tool is IStreamingTool streamingTool)
+            if (action is not null && tool is IReconcilableTool durableTool)
+            {
+                using var actionTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                if (_toolTimeoutSeconds > 0) actionTimeout.CancelAfter(TimeSpan.FromSeconds(_toolTimeoutSeconds));
+                dispatchStarted = true;
+                result = await durableTool.ExecuteWithIdempotencyAsync(executionArgsJson, action.Id,
+                    new ToolExecutionContext { Session = session, TurnContext = turnCtx, IdempotencyKey = action.Id }, actionTimeout.Token);
+            }
+            else if (onDelta is not null && tool is IStreamingTool streamingTool)
+            {
+                dispatchStarted = true;
                 result = await ExecuteStreamingToolCollectAsync(streamingTool, executionArgsJson, onDelta, ct);
+            }
             else if (_metaInvokeExecutor is not null &&
                 string.Equals(tool.Name, "meta_invoke", StringComparison.Ordinal) &&
                 TryGetMetaInvokeArguments(executionArgsJson, out var requestedSkill, out var requestedInput))
@@ -551,10 +636,12 @@ public sealed class OpenClawToolExecutor
                 }
             }
             else
-                result = await ExecuteToolWithRoutingAsync(tool, executionArgsJson, session, turnCtx, ct);
+                result = await ExecuteToolWithRoutingAsync(tool, executionArgsJson, session, turnCtx, ct, () => dispatchStarted = true);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            if (action is not null && !dispatchStarted)
+                actionLease!.Resolve(action, action.Revision, "not_executed", "Cancelled before tool dispatch.");
             throw;
         }
         catch (OperationCanceledException)
@@ -568,6 +655,15 @@ public sealed class OpenClawToolExecutor
             nextStep = "Retry the tool call or increase Tooling.ToolTimeoutSeconds.";
             _metrics?.IncrementToolTimeouts();
             _logger?.LogWarning("[{CorrelationId}] Tool {Tool} timed out after {Timeout}s", turnCtx.CorrelationId, tool.Name, _toolTimeoutSeconds);
+        }
+        catch (ToolOutcomeException ex)
+        {
+            result = ex.Result;
+            toolFailed = true;
+            resultStatus = ex.ResultStatus;
+            failureCode = ex.FailureCode;
+            failureMessage = ex.FailureMessage;
+            _metrics?.IncrementToolFailures();
         }
         catch (ToolSandboxException ex)
         {
@@ -627,6 +723,24 @@ public sealed class OpenClawToolExecutor
                     _logger?.LogWarning(ex, "[{CorrelationId}] Interceptor {Interceptor} failed, returning raw output",
                         turnCtx.CorrelationId, interceptor.Name);
                 }
+            }
+        }
+
+        if (action is not null)
+        {
+            if (!dispatchStarted)
+                actionLease!.Resolve(action, action.Revision, "not_executed", "Argument preparation failed before tool dispatch.");
+            else if (!toolFailed)
+            {
+                actionLease!.Complete(action, result);
+                liveActionResults[action.Id] = turnCtx.CorrelationId;
+            }
+            else
+            {
+                // An exception or timeout does not prove that an external mutation failed.
+                resultStatus = ToolResultStatuses.Blocked;
+                failureCode = "action_reconciliation_required";
+                nextStep = $"Verify provider outcome for action {action.Id} before retrying.";
             }
         }
 
@@ -782,6 +896,19 @@ public sealed class OpenClawToolExecutor
         if (decision.EvaluationMs is not null)
             activity?.SetTag("tool.governance.evaluation_ms", decision.EvaluationMs);
         activity?.SetTag("tool.governance.unavailable", decision.IsUnavailable);
+    }
+
+    private static bool IsKnownReadOnly(ITool tool, string arguments)
+    {
+        // Unknown and custom tools stay conservative. Only established read operations opt out.
+        if (ToolGovernanceDescriptorCatalog.Resolve(tool.Name, tool.Description, ResolveToolActionDescriptor(tool, arguments)).ReadOnly) return true;
+        if (ToolActionPolicyResolver.SupportsActionAwareApproval(tool.Name))
+        {
+            var descriptor = ToolActionPolicyResolver.Resolve(tool.Name, arguments);
+            return !descriptor.IsMutation && descriptor.Action is "list" or "get" or "preview" or "log" or "poll"
+                or "wait" or "list_connectors" or "list_commands" or "command_schema" or "connector_status";
+        }
+        return false;
     }
 
     private static bool IsValidJson(string value)
@@ -990,18 +1117,23 @@ public sealed class OpenClawToolExecutor
         string argsJson,
         Session session,
         TurnContext turnCtx,
-        CancellationToken ct)
+        CancellationToken ct, Action dispatchStarting)
     {
+        Task<string> DispatchLocalAsync()
+        {
+            dispatchStarting();
+            return ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
+        }
         if (!_executionRouter.TryResolveRoute(tool, out var route, out var template, out var legacySandboxRoute, out var sandboxMode))
         {
             if (IsLocalExecutionDisabled(tool))
                 throw CreateLocalExecutionUnavailableException(tool);
 
-            return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
+            return await DispatchLocalAsync();
         }
 
         if (tool is not ISandboxCapableTool sandboxCapableTool)
-            return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
+            return await DispatchLocalAsync();
 
         var backendName = string.IsNullOrWhiteSpace(route?.Backend)
             ? _config.Execution.DefaultBackend
@@ -1016,7 +1148,7 @@ public sealed class OpenClawToolExecutor
             throw CreateLocalExecutionUnavailableException(tool);
 
         if (string.Equals(backendName, "local", StringComparison.OrdinalIgnoreCase) && !legacySandboxRoute)
-            return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
+            return await DispatchLocalAsync();
 
         if (_executionRouter.RequiresWorkspace(backendName) && string.IsNullOrWhiteSpace(_config.Tooling.WorkspaceRoot))
         {
@@ -1046,6 +1178,7 @@ public sealed class OpenClawToolExecutor
                 tool.Name,
                 sandboxRequest.TimeToLiveSeconds);
 
+            dispatchStarting();
             var executionResult = await _executionRouter.ExecuteAsync(new ExecutionRequest
             {
                 ToolName = tool.Name,
@@ -1093,7 +1226,7 @@ public sealed class OpenClawToolExecutor
                 turnCtx.CorrelationId,
                 tool.Name,
                 legacySandboxRoute ? "local tool execution" : route!.FallbackBackend);
-            return await ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
+            return await DispatchLocalAsync();
         }
         catch (ToolSandboxUnavailableException ex)
         {

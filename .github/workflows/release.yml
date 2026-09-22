@@ -30,13 +30,80 @@ env:
   DOTNET_VERSION: "10.0.x"
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  FAST_BUILD_PROPERTIES: "-p:OpenClawSkipDashboardBuild=true"
 
 permissions:
   contents: read
 
 jobs:
+  release-documentation:
+    name: Release Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Reject stale release availability language
+        if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.create_release)
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: python3 eng/verify-release-docs.py "$RELEASE_TAG"
+
+  public-compatibility-smoke:
+    permissions:
+      contents: read
+    name: Public Compatibility Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENCLAW_PUBLIC_SMOKE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('OpenClaw.Net.slnx', '**/*.csproj', '**/*.props', '**/*.targets') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22"
+
+      - name: Restore
+        run: dotnet restore src/OpenClaw.Tests
+
+      - name: Build
+        run: dotnet build --no-restore -c Release src/OpenClaw.Tests ${{ env.FAST_BUILD_PROPERTIES }}
+
+      - name: Run pinned public compatibility gate
+        run: dotnet test --no-build -c Release --filter "Category=PublicSmoke" --verbosity normal --logger "trx;LogFileName=release-public-smoke.trx" src/OpenClaw.Tests
+
+      - name: Upload smoke results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-public-smoke-results
+          path: "**/release-public-smoke.trx"
+
   build-release-assets:
     name: Build ${{ matrix.asset }} assets
+    needs:
+      - release-documentation
+      - public-compatibility-smoke
+      - desktop-first-success
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -68,6 +135,7 @@ jobs:
       - name: Publish, smoke-test, and package assets
         shell: pwsh
         env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
           WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
           APPLE_DEVELOPER_ID_CERT_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERT_BASE64 }}
@@ -81,6 +149,12 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           $rid = "${{ matrix.rid }}"
           $root = (Get-Location).Path
+          $releaseVersion = "0.0.0"
+          if ($env:RELEASE_TAG -match '^v?((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$') {
+            $releaseVersion = $Matches[1]
+          } elseif ("${{ github.ref_type }}" -eq "tag" -or "${{ inputs.create_release }}" -eq "true") {
+            throw "A semantic version tag is required when creating a release."
+          }
           $staging = Join-Path $root "artifacts/release/$rid"
           $archives = Join-Path $root "artifacts/release-archives"
           $exe = if ($IsWindows) { ".exe" } else { "" }
@@ -106,9 +180,9 @@ jobs:
             Write-Host "Using macOS Swift library paths: $env:LIBRARY_PATH"
           }
 
-          dotnet publish "$root/src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" -c Release -r $rid -p:PublishAot=true -o $gateway
-          dotnet publish "$root/src/OpenClaw.Cli/OpenClaw.Cli.csproj" -c Release -r $rid -p:PublishAot=true -o $cli
-          dotnet publish "$root/src/OpenClaw.Companion/OpenClaw.Companion.csproj" -c Release -r $rid --self-contained true -p:PublishAot=false -p:PublishSingleFile=false -o $companion
+          dotnet publish "$root/src/OpenClaw.Gateway/OpenClaw.Gateway.csproj" -c Release -p:Version=$releaseVersion -r $rid -p:PublishAot=true -p:OpenClawUseClassicMacLd=false -o $gateway
+          dotnet publish "$root/src/OpenClaw.Cli/OpenClaw.Cli.csproj" -c Release -p:Version=$releaseVersion -r $rid -p:PublishAot=true -o $cli
+          dotnet publish "$root/src/OpenClaw.Companion/OpenClaw.Companion.csproj" -c Release -p:Version=$releaseVersion -r $rid --self-contained true -p:PublishAot=false -p:PublishSingleFile=false -o $companion
 
           Copy-Item -Path $gateway -Destination $desktopGateway -Recurse -Force
           Copy-Item -Path $cli -Destination $desktopCli -Recurse -Force
@@ -178,12 +252,39 @@ jobs:
           & $cliBin version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+          if ($IsLinux) {
+            python3 "$root/eng/verify-desktop-first-success.py" --cli $cliBin --gateway $gatewayBin
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
           $desktopArchive = Join-Path $archives "openclaw-desktop-$rid.zip"
           $gatewayArchive = Join-Path $archives "openclaw-gateway-aot-$rid.zip"
           $cliArchive = Join-Path $archives "openclaw-cli-aot-$rid.zip"
-          Compress-Archive -Path (Join-Path $staging "desktop/*") -DestinationPath $desktopArchive -Force
-          Compress-Archive -Path (Join-Path $gateway "*") -DestinationPath $gatewayArchive -Force
-          Compress-Archive -Path (Join-Path $cli "*") -DestinationPath $cliArchive -Force
+          function New-ReleaseArchive([string] $source, [string] $destination) {
+            if ($IsWindows) {
+              Compress-Archive -Path (Join-Path $source "*") -DestinationPath $destination -Force
+            } else {
+              # Compress-Archive drops executable permissions on Unix.
+              Push-Location $source
+              try { & zip -q -r $destination . } finally { Pop-Location }
+            }
+          }
+          New-ReleaseArchive (Join-Path $staging "desktop") $desktopArchive
+          New-ReleaseArchive $gateway $gatewayArchive
+          New-ReleaseArchive $cli $cliArchive
+
+          if (-not $IsWindows) {
+            $extracted = Join-Path $staging "extraction-smoke"
+            New-Item -ItemType Directory -Force -Path $extracted | Out-Null
+            & unzip -q $desktopArchive -d $extracted
+            foreach ($relative in @("companion/OpenClaw.Companion", "gateway/OpenClaw.Gateway", "cli/openclaw")) {
+              $binary = Join-Path $extracted $relative
+              if (([IO.File]::GetUnixFileMode($binary) -band [IO.UnixFileMode]::UserExecute) -eq 0) {
+                throw "Extracted desktop binary is not executable: $relative"
+              }
+            }
+            & (Join-Path $extracted "cli/openclaw") --version
+          }
 
           if ($IsMacOS -and $env:APPLE_ID -and $env:APPLE_TEAM_ID -and $env:APPLE_APP_SPECIFIC_PASSWORD -and $env:APPLE_CODESIGN_IDENTITY) {
             xcrun notarytool submit $desktopArchive --apple-id $env:APPLE_ID --team-id $env:APPLE_TEAM_ID --password $env:APPLE_APP_SPECIFIC_PASSWORD --wait
@@ -200,8 +301,49 @@ jobs:
       - name: Upload release artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: release-${{ matrix.rid }}
+          name: release-assets-${{ matrix.rid }}
           path: artifacts/release-archives/*
+
+  desktop-first-success:
+    name: Desktop First-Success Contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('OpenClaw.Net.slnx', '**/*.csproj', '**/*.props', '**/*.targets') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Validate packaged smoke fixture
+        run: python3 -m unittest discover -s eng -p "test_verify_desktop_first_success.py"
+
+      - name: Restore desktop contract tests
+        run: dotnet restore src/OpenClaw.Tests
+
+      - name: Build desktop contract tests
+        run: dotnet build --no-restore -c Release src/OpenClaw.Tests ${{ env.FAST_BUILD_PROPERTIES }}
+
+      - name: Run local-agent first-success contract
+        run: dotnet test --no-build -c Release --filter "Category=DesktopRelease" --verbosity normal --logger "trx;LogFileName=desktop-first-success.trx" src/OpenClaw.Tests
+
+      - name: Upload desktop contract results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: desktop-first-success-results
+          path: "**/desktop-first-success.trx"
 
   publish-github-release:
     name: Publish GitHub Release
@@ -216,6 +358,7 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
+          pattern: release-assets-*
           path: release-assets
           merge-multiple: true
 
@@ -247,7 +390,9 @@ jobs:
           - openclaw-desktop-osx-arm64.zip
           - openclaw-desktop-linux-x64.zip
 
-          These archives bundle Companion, the NativeAOT gateway, and the NativeAOT CLI. Standalone gateway and CLI archives are also attached for operators.
+          These archives bundle AgentQi Companion, the NativeAOT gateway, and the NativeAOT CLI. Standalone gateway and CLI archives are also attached for operators.
+
+          Release verification for this exact tag includes the deterministic pinned public-plugin compatibility gate, the AgentQi Companion local-agent first-success contract, and the release-documentation availability check. The moving latest-package canary is reported separately and is not release-blocking.
 
           Windows and macOS assets are currently unsigned unless this workflow is extended with signing secrets. See docs/RELEASES.md for the expected first-run warnings and the signing path.
           EOF

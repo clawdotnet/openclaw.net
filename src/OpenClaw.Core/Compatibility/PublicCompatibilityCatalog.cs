@@ -90,6 +90,7 @@ public static class PublicCompatibilityCatalog
             ExpectedRelativePath = entry.ExpectedRelativePath,
             ConfigJsonExample = entry.ConfigJson,
             InstallExtraPackages = entry.InstallExtraPackages ?? [],
+            LatestCanaryInstallExtraPackages = entry.LatestCanaryInstallExtraPackages ?? [],
             ExpectedToolNames = entry.ExpectedToolNames ?? [],
             ExpectedSkillNames = entry.ExpectedSkillNames ?? [],
             ExpectedCliCommandNames = entry.ExpectedCliCommandNames ?? [],
@@ -215,6 +216,7 @@ internal sealed class CompatibilityCatalogManifestEntry
     public string? ExpectedRelativePath { get; set; }
     public string? ConfigJson { get; set; }
     public string[]? InstallExtraPackages { get; set; }
+    public string[]? LatestCanaryInstallExtraPackages { get; set; }
     public string[]? ExpectedToolNames { get; set; }
     public string[]? ExpectedSkillNames { get; set; }
     public string[]? ExpectedCliCommandNames { get; set; }

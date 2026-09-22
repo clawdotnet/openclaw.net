@@ -48,6 +48,9 @@ public sealed class GatewayConfig
     public GmailPubSubConfig GmailPubSub { get; set; } = new();
     public MdnsConfig Mdns { get; set; } = new();
     public DiagnosticsConfig Diagnostics { get; set; } = new();
+
+    /// <summary>Optional adapter-owned settings, interpreted only by explicitly included adapters.</summary>
+    public Dictionary<string, System.Text.Json.JsonElement> AdapterSettings { get; set; } = new();
     public string UsageFooter { get; set; } = "off"; // "off", "tokens", "full"
 
     public int MaxConcurrentSessions { get; set; } = 64;
@@ -209,6 +212,9 @@ public sealed class PromptCacheTraceConfig
 
 public sealed class MemoryConfig
 {
+    public bool RegressionCaptureEnabled { get; set; }
+    public int RegressionCaptureMaxFiles { get; set; } = 100;
+
     /// <summary>Memory backend provider: "file" (default), "sqlite", or "mempalace".</summary>
     public string Provider { get; set; } = "file";
 
@@ -396,6 +402,12 @@ public sealed class SecurityConfig
     /// </summary>
     public bool AllowRawSecretRefsOnPublicBind { get; set; } = false;
 
+    /// <summary>
+    /// Global opt-in for insecure TLS: permits Vault Tls.SkipVerify (accept any server
+    /// certificate). ConfigValidator rejects SkipVerify when this is false.
+    /// </summary>
+    public bool AllowInsecureTls { get; set; } = false;
+
     /// <summary>Idle timeout (minutes) for browser admin sessions. Default 60 minutes.</summary>
     public int BrowserSessionIdleMinutes { get; set; } = 60;
 
@@ -421,6 +433,37 @@ public sealed class SecurityConfig
 
     /// <summary>Convenience: true when <see cref="AuthMode"/> is "oidc".</summary>
     public bool IsOidcMode => string.Equals(AuthMode, SecurityAuthModeNames.Oidc, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Vault / OpenBao backend configuration. Null disables the vault backend.</summary>
+    public VaultSecurityOptions? Vault { get; set; }
+}
+
+/// <summary>Vault / OpenBao secret backend options. See docs/security/vault.md.</summary>
+public sealed class VaultSecurityOptions
+{
+    public bool Enabled { get; set; }
+    public string? Address { get; set; }
+    public string? TokenRef { get; set; }
+    public string? Namespace { get; set; }
+    public string KvMount { get; set; } = "secret";
+    public int KvVersion { get; set; } = 2;
+    public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(10);
+    public TimeSpan CacheTtl { get; set; } = TimeSpan.FromMinutes(5);
+    public VaultRateLimitOptions RateLimit { get; set; } = new();
+    public bool PrewarmRequired { get; set; } = true;
+    public List<string> PrewarmRefs { get; set; } = [];
+    public VaultTlsOptions Tls { get; set; } = new();
+}
+
+public sealed class VaultRateLimitOptions
+{
+    public int RequestsPerSecond { get; set; } = 20;
+}
+
+public sealed class VaultTlsOptions
+{
+    public bool SkipVerify { get; set; }
+    public string? CaCertPath { get; set; }
 }
 
 /// <summary>Authentication mode names for <see cref="SecurityConfig.AuthMode"/>.</summary>
@@ -495,6 +538,9 @@ public sealed class CanvasConfig
 
 public sealed class ToolingConfig
 {
+    /// <summary>Persist tool dispatches and block uncertain retries. Opt-in for compatibility.</summary>
+    public bool DurableActionJournal { get; set; }
+
     /// <summary>Autonomy mode: "readonly", "supervised", or "full".</summary>
     public string AutonomyMode { get; set; } = "supervised";
 

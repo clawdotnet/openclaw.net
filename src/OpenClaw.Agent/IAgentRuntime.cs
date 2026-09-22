@@ -55,4 +55,13 @@ public interface IAgentRuntime
         IReadOnlyList<OpenClaw.Core.Abstractions.ITool> toAdd,
         IReadOnlyList<string> toRemove,
         CancellationToken ct = default) => Task.CompletedTask;
+
+    /// <summary>
+    /// Clears the capability slot executor's runtime-level "already added"
+    /// cache so subsequent slot executions re-run <c>add_mcp_server</c>.
+    /// Invoked by <c>McpWorkspaceWatcherService</c> after a workspace MCP
+    /// reload or a Nacos config-change event (issue #238). Default no-op
+    /// keeps test doubles working without a real executor.
+    /// </summary>
+    Task ClearCapabilitySlotRuntimeCacheAsync(CancellationToken ct = default) => Task.CompletedTask;
 }

@@ -29,6 +29,7 @@ internal static partial class AdminEndpoints
 {
     private static void MapSessionEndpoints(WebApplication app, AdminEndpointServices services)
     {
+        MapRecoveryEndpoints(app, services);
         var startup = services.Startup;
         var runtime = services.Runtime;
         var browserSessions = services.BrowserSessions;
@@ -113,6 +114,8 @@ internal static partial class AdminEndpoints
                 Session = session,
                 IsActive = runtime.SessionManager.IsActive(id),
                 BranchCount = branches.Count,
+                Recovery = OpenClaw.Core.Services.SessionRecoveryExplainer.ExplainWithGoalStore(session,
+                    ctx.RequestServices.GetService<IGoalService>(), runtime.ToolApprovalService.ListPending()),
                 Metadata = operations.SessionMetadata.Get(id)
             }, CoreJsonContext.Default.AdminSessionDetailResponse);
         });

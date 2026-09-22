@@ -395,7 +395,7 @@ internal static partial class AdminEndpoints
             }
 
             var result = adminSettings.Update(snapshot);
-            RecordOperatorAudit(ctx, operations, auth, "settings_update", "gateway-settings", result.Success ? "Updated admin settings." : "Admin settings update failed.", result.Success, before: null, after: result.Snapshot);
+            RecordOperatorAudit(ctx, operations, auth, "settings_update", "gateway-settings", result.Success ? "Updated admin settings." : "Admin settings update failed.", result.Success, before: null, after: null);
             var response = BuildSettingsResponse(
                 startup,
                 adminSettings,
@@ -419,7 +419,7 @@ internal static partial class AdminEndpoints
             var auth = authResult.Authorization!;
 
             var result = adminSettings.Reset();
-            RecordOperatorAudit(ctx, operations, auth, "settings_reset", "gateway-settings", "Reset admin settings overrides.", success: true, before: null, after: result.Snapshot);
+            RecordOperatorAudit(ctx, operations, auth, "settings_reset", "gateway-settings", result.Success ? "Reset admin settings overrides." : "Settings reset failed.", success: result.Success, before: null, after: null);
             var response = BuildSettingsResponse(
                 startup,
                 adminSettings,
@@ -427,8 +427,9 @@ internal static partial class AdminEndpoints
                 result.Persistence,
                 result.RestartRequired,
                 result.RestartRequiredFields,
-                "Settings overrides cleared.");
-            return Results.Json(response, CoreJsonContext.Default.AdminSettingsResponse);
+                result.Success ? "Settings overrides cleared." : "Settings reset failed.",
+                extraWarnings: result.Errors);
+            return Results.Json(response, CoreJsonContext.Default.AdminSettingsResponse, statusCode: result.Success ? 200 : 400);
         });
 
         app.MapGet("/admin/heartbeat", async (HttpContext ctx) =>

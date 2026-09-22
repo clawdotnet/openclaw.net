@@ -36,28 +36,34 @@ internal sealed class BackgroundSessionRecoveryWorker
             return;
         }
 
-        var limit = Math.Max(1, _config.BackgroundExecution.AutoResumeMaxConcurrent * 20);
-        var sessions = await _store.ListBackgroundRunnableSessionsAsync(limit, ct);
-        foreach (var session in sessions)
+        var limit = (int)Math.Clamp((long)_config.BackgroundExecution.AutoResumeMaxConcurrent * 20, 1, 500);
+        string? cursor = null;
+        while (true)
         {
-            ct.ThrowIfCancellationRequested();
-            if (session.BackgroundRun is null)
-                continue;
-
-            await _pipeline.InboundWriter.WriteAsync(new InboundMessage
+            var sessions = await _store.ListBackgroundRecoveryPageAsync(limit, cursor, ct);
+            if (sessions.Count == 0) break;
+            foreach (var session in sessions)
             {
-                ChannelId = session.ChannelId,
-                SenderId = session.SenderId,
-                SessionId = session.Id,
-                Text = "Resume the active background goal from the latest checkpoint.",
-                Type = BackgroundMessageTypes.AutoResume,
-                IsSystem = true,
-                BackgroundRunId = session.BackgroundRun.RunId,
-                BackgroundContinuationSequence = session.BackgroundRun.ContinuationSequence
-            }, ct);
+                ct.ThrowIfCancellationRequested();
+                if (session.BackgroundRun is null)
+                    continue;
 
-            if (_config.BackgroundExecution.AutoResumeStaggerSeconds > 0)
-                await Task.Delay(TimeSpan.FromSeconds(_config.BackgroundExecution.AutoResumeStaggerSeconds), ct);
+                await _pipeline.InboundWriter.WriteAsync(new InboundMessage
+                {
+                    ChannelId = session.ChannelId,
+                    SenderId = session.SenderId,
+                    SessionId = session.Id,
+                    Text = "Resume the active background goal from the latest checkpoint.",
+                    Type = BackgroundMessageTypes.AutoResume,
+                    IsSystem = true,
+                    BackgroundRunId = session.BackgroundRun.RunId,
+                    BackgroundContinuationSequence = session.BackgroundRun.ContinuationSequence
+                }, ct);
+
+                if (_config.BackgroundExecution.AutoResumeStaggerSeconds > 0)
+                    await Task.Delay(TimeSpan.FromSeconds(_config.BackgroundExecution.AutoResumeStaggerSeconds), ct);
+            }
+            cursor = sessions[^1].Id;
         }
     }
 }

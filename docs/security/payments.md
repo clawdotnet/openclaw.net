@@ -46,6 +46,9 @@ Resolution is allowed only inside browser fill execution after critical approval
 
 The deterministic mock provider is for tests and local development. Stripe Link uses a safe `ProcessStartInfo.ArgumentList` runner, no shell execution, timeout/cancellation support, and redacted process output. If `link-cli` is absent, setup status reports `not_installed`.
 
-Production vault adapters are intentionally extension points for DPAPI, Azure Key Vault, HashiCorp Vault, and AWS Secrets Manager.
+Production secret backends are implemented as follows:
+
+- HashiCorp Vault / OpenBao (KV v2 read): see `docs/security/vault.md`. Implementation in `OpenClaw.Security.Vault` using VaultSharp.
+- Future: AWS Secrets Manager, Azure Key Vault, DPAPI (planned v2).
 
 Future provider adapters can target x402, Ramp, Mercury, Payrica/mobile money, and other rails without changing the public tool boundary.

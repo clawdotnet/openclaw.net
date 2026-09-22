@@ -4,6 +4,16 @@ All notable changes to this project are tracked in this file.
 
 ## [Unreleased]
 
+### Release Engineering
+
+- Standardized the desktop product name as AgentQi Companion while preserving OpenClaw.NET runtime, package, protocol, and storage identities.
+- Added a release-blocking desktop first-success contract covering Companion preset persistence, shared preset capabilities, sequential multi-tool selection, and an Ollama-compatible tool round trip.
+- Added a release documentation gate that rejects tags still described as future or unavailable work, and updated v0.3.0 availability guidance.
+- Made the deterministic pinned public-plugin compatibility smoke run on pull requests and `main` pushes, while keeping the moving latest-package canary scheduled/manual and non-blocking.
+- Added the pinned public-plugin compatibility smoke as a prerequisite for release asset builds.
+- Pinned Supermemory's complete plugin/peer test set and kept a separate latest-peer canary so release verification is reproducible while upstream drift remains visible.
+- Clarified exact-head merge checks, v0.2.0 verification scope, main-only reliability features, and the OpenClaw.NET/AgentQi/AgentQiX product boundary.
+
 ### MCP v2 Upgrade
 
 - Upgraded MCP integration surfaces to C# SDK `2.0.0` behavior across gateway, MCP App, and client-facing SDK helpers.
@@ -40,6 +50,9 @@ All notable changes to this project are tracked in this file.
 - Hardened `inbox_zero` IMAP command construction:
   - Quoted IMAP credentials and folders.
   - Sanitized user-provided folder names for analyze/cleanup/trash-sender actions.
+- Added Vault / OpenBao secret resolver backend (`OpenClaw.Security.Vault`): KV v2 read with token auth, TTL cache with single-flight and refresh-ahead, startup pre-warm via `IHostedService`, and `vault:<mount>/data/<path>#<key>` reference syntax. See `docs/security/vault.md`.
+- Added `Security.Vault.Tls.CaCertPath` support: load a custom CA bundle (PEM file or directory) for Vault TLS validation; mutually exclusive with `Tls.SkipVerify`.
+- Made `vault:` references fail closed: resolving a `vault:` ref while the Vault backend is disabled now throws `VaultNotConfiguredException` instead of silently falling back to the literal string.
 
 ### Memory Retention and Hardening
 

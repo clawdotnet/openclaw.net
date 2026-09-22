@@ -7,8 +7,8 @@
     <PublishAot>true</PublishAot>
     <StripSymbols>true</StripSymbols>
     <OptimizationPreference>Size</OptimizationPreference>
-    <!-- The gateway AOT link currently trips Apple's new macOS arm64 linker; keep the classic linker scoped to this project. -->
-    <OpenClawUseClassicMacLd Condition="'$(OpenClawUseClassicMacLd)' == ''">true</OpenClawUseClassicMacLd>
+    <!-- Use Apple's current linker by default. Set this property to true only as an emergency macOS arm64 fallback. -->
+    <OpenClawUseClassicMacLd Condition="'$(OpenClawUseClassicMacLd)' == ''">false</OpenClawUseClassicMacLd>
     <!-- Aggressive AOT trimming for minimal binary -->
     <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
     <IlcOptimizationPreference>Size</IlcOptimizationPreference>
@@ -18,6 +18,11 @@
     <DebuggerSupport>false</DebuggerSupport>
     <MetricsSupport>true</MetricsSupport>
     <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <!-- Exclude skills/ from default Content auto-include so the explicit
+         <Content Include="skills\**\*"> below is the sole source. Without this,
+         the SDK auto-includes files like *.json/manifest.jsonld and trips
+         NETSDK1022 "duplicate Content items". -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);skills\**</DefaultItemExcludes>
     <!-- Optional protocol packages can carry transitive AOT warnings; keep package-level warnings suppressed while surfacing project-owned trim diagnostics. -->
     <NoWarn>$(NoWarn);IL2104;IL3000;IL3002;IL3053</NoWarn>
   </PropertyGroup>
@@ -35,6 +40,10 @@
     <ProjectReference Include="..\OpenClaw.Payments.StripeLink\OpenClaw.Payments.StripeLink.csproj" />
     <ProjectReference Include="..\OpenClaw.Plugins.Payment\OpenClaw.Plugins.Payment.csproj" />
     <ProjectReference Include="..\OpenClaw.Plugins.TokenJuice\OpenClaw.Plugins.TokenJuice.csproj" />
+    <!-- Vault integration (VaultSharp, IsAotCompatible=false) is not NativeAOT-safe.
+         AOT publish builds drop the project reference and the Program.cs registration
+         together (OPENCLAW_VAULT_EXCLUDED); JIT builds (build/run/test) keep it. -->
+    <ProjectReference Include="..\OpenClaw.Security.Vault\OpenClaw.Security.Vault.csproj" Condition="'$(_IsPublishing)' != 'true' or '$(PublishAot)' != 'true'" />
   </ItemGroup>
   <!-- Dashboard Blazor WASM is integrated via CopyDashboardFiles targets below.
        Keep it out of ProjectReference to avoid Static Web Assets cross-project
@@ -52,6 +61,10 @@
   </ItemGroup>
   <PropertyGroup Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENCLAW_ENABLE_OPENSANDBOX</DefineConstants>
+  </PropertyGroup>
+  <!-- Only NativeAOT publishing excludes Vault. Managed builds and JIT publishing retain it. -->
+  <PropertyGroup Condition="'$(_IsPublishing)' == 'true' and '$(PublishAot)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENCLAW_VAULT_EXCLUDED</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Anthropic" Version="12.29.1" />
@@ -143,5 +156,20 @@
       <_DotNetBootScriptPub Include="$(PublishDir)wwwroot\dashboard\_framework\dotnet.*.js" Exclude="$(PublishDir)wwwroot\dashboard\_framework\dotnet.runtime.*.js;$(PublishDir)wwwroot\dashboard\_framework\dotnet.native.*.js;$(PublishDir)wwwroot\dashboard\_framework\dotnet.*.js.gz;$(PublishDir)wwwroot\dashboard\_framework\dotnet.*.js.br;$(PublishDir)wwwroot\dashboard\_framework\dotnet.js" />
     </ItemGroup>
     <Copy SourceFiles="@(_DotNetBootScriptPub)" DestinationFiles="$(PublishDir)wwwroot\dashboard\_framework\dotnet.js" SkipUnchangedFiles="true" Condition="'@(_DotNetBootScriptPub)' != ''" />
+  </Target>
+  <PropertyGroup Condition="'$(OpenClawEnableNacos)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENCLAW_NACOS</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(OpenClawEnableNacosEvents)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENCLAW_NACOS_EVENTS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenClawEnableNacos)' == 'true'">
+    <ProjectReference Include="../OpenClaw.Adapters.Nacos/OpenClaw.Adapters.Nacos.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(OpenClawEnableNacosEvents)' == 'true'">
+    <ProjectReference Include="../OpenClaw.Adapters.Nacos.Events/OpenClaw.Adapters.Nacos.Events.csproj" />
+  </ItemGroup>
+  <Target Name="ValidateNacosAdapterSelection" BeforeTargets="PrepareForBuild" Condition="'$(OpenClawEnableNacosEvents)' == 'true'">
+    <Error Condition="'$(OpenClawEnableNacos)' != 'true'" Text="Nacos events require OpenClawEnableNacos=true." />
   </Target>
 </Project>

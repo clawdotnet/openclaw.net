@@ -23,6 +23,12 @@ public interface IGoalService
     /// </summary>
     void UpdateStatus(string sessionId, GoalStatus newStatus, string? note = null);
 
+    /// <summary>Starts a new runtime turn without resetting lifetime usage or blocker history.</summary>
+    void BeginTurn(string sessionId);
+
+    /// <summary>Validates model-initiated terminal transitions; operators may override via UpdateStatus.</summary>
+    void UpdateModelStatus(string sessionId, GoalStatus newStatus, string? note = null);
+
     /// <summary>Updates token usage for the goal. Computes usage from session baseline.</summary>
     void UpdateTokenUsage(string sessionId, long sessionTotalTokens);
 

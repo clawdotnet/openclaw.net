@@ -117,11 +117,11 @@ internal sealed class AgentPromptContextAssembler
         }
     }
 
-    public List<ChatMessage> BuildMessages(Session session, int maxHistoryTurns, bool exactLatestToolBatch = false)
+    public List<ChatMessage> BuildMessages(Session session, int maxHistoryTurns, bool exactLatestToolBatch = false, string? systemPrompt = null)
     {
         var messages = new List<ChatMessage>
         {
-            new(ChatRole.System, GetSystemPrompt(session))
+            new(ChatRole.System, systemPrompt ?? GetSystemPrompt(session))
         };
 
         var skip = Math.Max(0, session.History.Count - maxHistoryTurns);

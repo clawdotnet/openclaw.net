@@ -11,6 +11,7 @@ Use this checklist when reviewing pull requests. Not every item applies to every
 - Does the change preserve current default behavior unless the PR explicitly states otherwise?
 - Are failure modes clear and actionable?
 - Does the PR disclose whether it directly supports a company or customer use case?
+- Have required checks completed successfully on the exact PR head or merge-queue commit?
 
 ## Runtime/Core PR Checklist
 
@@ -38,6 +39,7 @@ Use this checklist when reviewing pull requests. Not every item applies to every
 - Does it fail fast when unsupported?
 - Does it avoid loading dynamic or JIT-only behavior in the AOT lane?
 - Are setup and compatibility docs updated?
+- If plugin loading, dependency resolution, or the compatibility catalog changed, does the pinned public compatibility smoke pass?
 
 ## Industrial PR Checklist
 
@@ -57,6 +59,7 @@ Use this checklist when reviewing pull requests. Not every item applies to every
 - Does it avoid overstating roadmap commitments?
 - Does it keep setup steps current and concrete?
 - Does it link to canonical docs instead of duplicating long instructions?
+- Does it distinguish the latest release from behavior available only on `main`?
 
 ## Security-Sensitive PR Checklist
 

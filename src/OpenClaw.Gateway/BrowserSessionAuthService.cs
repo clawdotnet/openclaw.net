@@ -19,14 +19,17 @@ internal sealed class BrowserSessionAuthService
         string? AccountId,
         string? Username,
         string? DisplayName,
-        bool IsBootstrapAdmin);
+        bool IsBootstrapAdmin,
+        DateTimeOffset? AccountUpdatedAtUtc);
 
     private readonly ConcurrentDictionary<string, SessionState> _sessions = new(StringComparer.Ordinal);
     private readonly GatewayConfig _config;
+    private readonly OperatorAccountService? _accounts;
 
-    public BrowserSessionAuthService(GatewayConfig config)
+    public BrowserSessionAuthService(GatewayConfig config, OperatorAccountService? accounts = null)
     {
         _config = config;
+        _accounts = accounts;
     }
 
     public BrowserSessionTicket Create(bool remember, OperatorIdentitySnapshot? identity = null)
@@ -52,7 +55,8 @@ internal sealed class BrowserSessionAuthService
             effectiveIdentity.AccountId,
             effectiveIdentity.Username,
             effectiveIdentity.DisplayName,
-            effectiveIdentity.IsBootstrapAdmin);
+            effectiveIdentity.IsBootstrapAdmin,
+            effectiveIdentity.AccountUpdatedAtUtc);
         return new BrowserSessionTicket(
             sessionId,
             csrfToken,
@@ -62,7 +66,8 @@ internal sealed class BrowserSessionAuthService
             effectiveIdentity.AccountId,
             effectiveIdentity.Username,
             effectiveIdentity.DisplayName,
-            effectiveIdentity.IsBootstrapAdmin);
+            effectiveIdentity.IsBootstrapAdmin,
+            effectiveIdentity.AccountUpdatedAtUtc);
     }
 
     public bool TryAuthorize(HttpContext ctx, bool requireCsrf, out BrowserSessionTicket? ticket)
@@ -76,6 +81,16 @@ internal sealed class BrowserSessionAuthService
 
         if (!_sessions.TryGetValue(sessionId, out var state))
             return false;
+
+        if (_accounts is not null && state.AccountId is not null && state.AccountUpdatedAtUtc is not null && !state.IsBootstrapAdmin)
+        {
+            var account = _accounts.Get(state.AccountId)?.Account;
+            if (account is null || !account.Enabled || account.UpdatedAtUtc != state.AccountUpdatedAtUtc)
+            {
+                _sessions.TryRemove(sessionId, out _);
+                return false;
+            }
+        }
 
         if (state.ExpiresAtUtc <= DateTimeOffset.UtcNow)
         {
@@ -102,7 +117,8 @@ internal sealed class BrowserSessionAuthService
             refreshed.AccountId,
             refreshed.Username,
             refreshed.DisplayName,
-            refreshed.IsBootstrapAdmin);
+            refreshed.IsBootstrapAdmin,
+            refreshed.AccountUpdatedAtUtc);
         return true;
     }
 
@@ -176,4 +192,5 @@ internal sealed record BrowserSessionTicket(
     string? AccountId,
     string? Username,
     string? DisplayName,
-    bool IsBootstrapAdmin);
+    bool IsBootstrapAdmin,
+    DateTimeOffset? AccountUpdatedAtUtc = null);

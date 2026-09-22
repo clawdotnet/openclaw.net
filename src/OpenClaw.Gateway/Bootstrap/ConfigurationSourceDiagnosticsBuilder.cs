@@ -55,7 +55,8 @@ internal static class ConfigurationSourceDiagnosticsBuilder
         var configuredRef = configuration[key];
         var configuredSource = ResolveWinningSource(configuration, key);
         var modelProviderKey = Environment.GetEnvironmentVariable("MODEL_PROVIDER_KEY");
-        var resolvedFromRef = SecretResolver.Resolve(configuredRef);
+        var resolvedFromRef = configuredRef?.StartsWith("vault:", StringComparison.OrdinalIgnoreCase) == true
+            ? configuredRef : SecretResolver.Resolve(configuredRef);
         var hasEffectiveKey = !string.IsNullOrWhiteSpace(config.Llm.ApiKey);
 
         string source;

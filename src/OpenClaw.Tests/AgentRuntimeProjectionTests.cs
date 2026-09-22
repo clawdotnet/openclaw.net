@@ -213,6 +213,81 @@ public sealed class AgentRuntimeProjectionTests
     }
 
     [Fact]
+    public void CloneSkill_BothRuntimes_PreserveCapabilityRefComposition()
+    {
+        // #231: capability slots live inside the composition. Both runtimes share
+        // the composition by reference; pin that the projection path carries the
+        // slots untouched so a future deep-copy cannot silently drop them.
+        var source = new SkillDefinition
+        {
+            Name = "capref-skill",
+            Description = "Description of capref-skill",
+            Instructions = "Base instructions.",
+            Location = "/skills/capref-skill",
+            ProjectionContracts = [],
+            Resources = [],
+            Composition = new MetaSkillComposition
+            {
+                Steps =
+                [
+                    new MetaSkillStepDefinition
+                    {
+                        Id = "pinned",
+                        Kind = "tool_call",
+                        CapabilityRef = new MetaCapabilityRefDefinition
+                        {
+                            Binding = "static",
+                            Static = new MetaCapabilityStaticBinding { Target = "weather-mcp", ToolName = "get_weather" },
+                            Fallback = "fb"
+                        },
+                        OnFailure = "fb"
+                    },
+                    new MetaSkillStepDefinition
+                    {
+                        Id = "resolved",
+                        Kind = "tool_call",
+                        CapabilityRef = new MetaCapabilityRefDefinition
+                        {
+                            Binding = "dynamic",
+                            Intent = new MetaCapabilityIntent { Type = "cap:WeatherQuery", TaskDescription = "查询天气", Keywords = ["天气"] },
+                            SelectionPolicy = "exact_name"
+                        }
+                    },
+                    new MetaSkillStepDefinition { Id = "fb", Kind = "tool_call", Tool = "emit_text" }
+                ]
+            }
+        };
+
+        var nativeClone = AgentRuntime.CloneSkill(source, "patched instructions.", disableModelInvocation: true);
+        var mafClone = MafAgentRuntime.CloneSkill(source, "patched instructions.", disableModelInvocation: true);
+
+        // Composition is deliberately shared by reference in both runtimes.
+        Assert.Same(source.Composition, nativeClone.Composition);
+        Assert.Same(source.Composition, mafClone.Composition);
+
+        foreach (var clone in new[] { nativeClone, mafClone })
+        {
+            var steps = clone.Composition!.Steps;
+            Assert.Equal(3, steps.Count);
+
+            var pinned = steps[0];
+            Assert.NotNull(pinned.CapabilityRef);
+            Assert.Equal("static", pinned.CapabilityRef.Binding);
+            Assert.Equal("weather-mcp", pinned.CapabilityRef.Static!.Target);
+            Assert.Equal("get_weather", pinned.CapabilityRef.Static.ToolName);
+            Assert.Equal("fb", pinned.CapabilityRef.Fallback);
+            Assert.Equal("fb", pinned.OnFailure);
+
+            var resolved = steps[1];
+            Assert.NotNull(resolved.CapabilityRef);
+            Assert.Equal("dynamic", resolved.CapabilityRef.Binding);
+            Assert.Equal("cap:WeatherQuery", resolved.CapabilityRef.Intent!.Type);
+            Assert.Equal("查询天气", resolved.CapabilityRef.Intent.TaskDescription);
+            Assert.Equal("exact_name", resolved.CapabilityRef.SelectionPolicy);
+        }
+    }
+
+    [Fact]
     public void CloneSkill_BothRuntimes_PatchedInstructionsMatch()
     {
         var source = CreateSkill("test", instructions: "Original.");

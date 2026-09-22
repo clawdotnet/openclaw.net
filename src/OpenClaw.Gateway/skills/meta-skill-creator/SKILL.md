@@ -119,7 +119,7 @@ composition:
     - id: harvest
       kind: skill_exec
       skill: history-explorer
-      skill_exec_entrypoint: scripts/explore.py
+      entrypoint: scripts/explore.py
       depends_on: [clarify_intent, creator_clarify]
       when: "'route: meta-skill' in (outputs.clarify_intent | lower)"
       on_failure: harvest_empty

@@ -1,10 +1,14 @@
 using ModelContextProtocol.AspNetCore;
+using OpenClaw.Core.Security;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
 using OpenClaw.Gateway.Endpoints;
 using OpenClaw.Gateway.Mcp;
 using OpenClaw.Gateway.Pipeline;
 using OpenClaw.Gateway.Profiles;
+#if !OPENCLAW_VAULT_EXCLUDED
+using OpenClaw.Security.Vault;
+#endif
 using TickerQ.DependencyInjection;
 using OpenClaw.Gateway.A2A;
 using OpenClaw.MicrosoftAgentFrameworkAdapter;
@@ -70,6 +74,9 @@ while (true)
         builder.Services.AddOpenClawToolServices(startup);
         builder.Services.AddOpenClawBackendServices(startup);
         builder.Services.AddOpenClawSecurityServices(startup);
+#if !OPENCLAW_VAULT_EXCLUDED
+        builder.Services.AddOpenClawVaultSecrets(startup.Config.Security.Vault);
+#endif
         builder.Services.AddOpenClawMcpServices(startup);
         builder.Services.ApplyOpenClawRuntimeProfile(startup);
         builder.Services.AddMicrosoftAgentFramework(builder.Configuration);
@@ -79,6 +86,13 @@ while (true)
 #endif
 
         await using var app = builder.Build();
+        // Route the static SecretResolver facade through the DI resolver
+        // before the runtime initializes (which may resolve secret refs).
+        ResolverAccessor.Use(app.Services);
+#if !OPENCLAW_VAULT_EXCLUDED
+        if (app.Services.GetService<VaultRefPrewarmService>() is { } vaultPrewarm)
+            await vaultPrewarm.WarmAsync(app.Lifetime.ApplicationStopping);
+#endif
         app.Lifetime.ApplicationStarted.Register(() => started = true);
         startupConsole.WritePhase("Initializing runtime");
         app.UseTickerQ();

@@ -2,7 +2,7 @@
 
 OpenClaw.NET's low-friction desktop path is the **desktop bundle** published on [GitHub Releases](https://github.com/clawdotnet/openclaw.net/releases/latest). It bundles:
 
-- Companion
+- AgentQi Companion
 - the NativeAOT gateway
 - the NativeAOT CLI
 
@@ -61,7 +61,20 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-Maintainers can also run the `Release` workflow manually. Manual runs can create or update a draft release when a tag is supplied.
+Maintainers can also run the `Release` workflow manually. Manual runs can create or update a draft release when a tag is supplied. Before any platform assets build, the workflow runs the deterministic pinned public-plugin compatibility gate. The scheduled/manual latest-package canary remains non-blocking and is not part of release readiness.
+
+### Release Integrity Gate
+
+A release is ready only when all of the following are true for the exact tag commit:
+
+1. Core build and test jobs pass.
+2. The pinned `public-compatibility-smoke` job passes with the complete plugin and peer dependency set fixed by `compat/public-smoke.json`.
+3. Platform asset builds and extraction smokes pass.
+4. The release notes distinguish shipped behavior from capabilities available only on `main`.
+
+Use **full CI** only when all required lanes above passed for that exact commit. Report the non-blocking latest-package canary separately so upstream drift is visible without making a moving dependency a release gate.
+
+> **v0.2.0 verification note:** v0.2.0 was published before the pinned public compatibility job became a release-workflow dependency. Its successful build and platform smokes did not establish public-plugin compatibility. The reliability and recovery work documented in the [roadmap](ROADMAP.md) landed after v0.2.0 and was first released in v0.3.0.
 
 The workflow currently builds:
 
@@ -71,9 +84,11 @@ The workflow currently builds:
 
 The macOS runner label is intentionally ARM-native for the `osx-arm64` artifact. Add an Intel macOS row only if you want to support older Intel Macs and have a runner that can NativeAOT publish that RID reliably.
 
-### Companion Release Smoke
+### AgentQi Companion Release Smoke
 
 Before publishing a public desktop release, run this manual smoke on at least one desktop bundle:
+
+Set `OPENCLAW_COMPANION_STATE_DIR` to a fresh temporary directory when launching Companion to isolate its settings, managed config, workspace, and scoped token storage from an existing installation.
 
 1. Extract the desktop archive into a clean directory.
 2. Launch Companion from the `companion` folder.
@@ -85,7 +100,15 @@ Before publishing a public desktop release, run this manual smoke on at least on
 
 ### macOS NativeAOT Linker Note
 
-The gateway project currently opts into Apple's classic linker for `osx-arm64` NativeAOT publishes because the new macOS arm64 linker can fail with an `ld::Fixup` assertion on the gateway binary. This may print a `-ld_classic is deprecated` warning during gateway publish. The CLI does not use this fallback by default. Scheduled/manual CI probes the gateway with `-p:OpenClawUseClassicMacLd=false`; remove the gateway opt-in when the Apple/.NET toolchain links the gateway reliably without it.
+The gateway and release workflow use Apple's current linker by default for `osx-arm64` NativeAOT publishes. Pull-request, scheduled, and manual CI also verify this path on `macos-15`. Without `-ld_classic`, the release workflow must build the gateway, run `--doctor`, package the assets, extract the desktop archive, verify executable permissions, and execute the bundled CLI.
+
+The deprecated classic linker remains available temporarily as an emergency diagnostic override:
+
+```bash
+dotnet publish src/OpenClaw.Gateway/OpenClaw.Gateway.csproj -c Release -r osx-arm64 -p:PublishAot=true -p:OpenClawUseClassicMacLd=true
+```
+
+Do not use that override for normal release artifacts. Remove it after one published release completes successfully with the modern linker.
 
 ## CI Artifacts vs Releases
 

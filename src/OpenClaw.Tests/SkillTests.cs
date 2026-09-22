@@ -254,6 +254,242 @@ public class SkillLoaderTests
     }
 
     [Fact]
+    public void ParseSkillContent_YamlTriggersQuotedScalars_RemainStrings()
+    {
+        var content = """
+            ---
+            name: quoted-triggers
+            description: Quoted scalars must serialize as JSON strings
+            triggers:
+              - "123"
+              - "true"
+              - "null"
+              - "~"
+            ---
+            Instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/quoted-triggers", SkillSource.Workspace);
+
+        Assert.NotNull(skill);
+        Assert.Equal(["123", "true", "null", "~"], skill!.Triggers);
+    }
+
+    [Theory]
+    [InlineData("123")]
+    [InlineData("true")]
+    [InlineData("~")]
+    public void ParseSkillContent_YamlTriggersPlainInferredScalar_FailsAsNonString(string plainValue)
+    {
+        // Plain scalars keep their boolean/number/null-like inference, so a
+        // plain 123/true/~ converts to a non-string JSON value and cannot be a trigger.
+        var content = $"""
+            ---
+            name: plain-trigger
+            description: Plain inferred scalar trigger
+            triggers:
+              - {plainValue}
+            ---
+            Instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/plain-trigger", SkillSource.Workspace, out _, out _);
+
+        Assert.False(ok);
+    }
+
+    [Fact]
+    public void ParseSkillContent_YamlCompositionQuotedScalars_RemainStrings()
+    {
+        var content = """
+            ---
+            name: quoted-composition
+            description: Quoted scalars in a YAML composition block
+            kind: meta
+            composition:
+              steps:
+                - id: s1
+                  kind: llm_chat
+                  with:
+                    prompt: "123"
+                    truthy: "true"
+                    nothing: "null"
+            ---
+            Instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/quoted-composition", SkillSource.Workspace, out var skill, out var errorCode);
+
+        Assert.True(ok, errorCode);
+        Assert.NotNull(skill);
+        var step = Assert.Single(skill!.Composition!.Steps);
+        using var withDoc = JsonDocument.Parse(step.WithJson!);
+        Assert.Equal(JsonValueKind.String, withDoc.RootElement.GetProperty("prompt").ValueKind);
+        Assert.Equal("123", withDoc.RootElement.GetProperty("prompt").GetString());
+        Assert.Equal("true", withDoc.RootElement.GetProperty("truthy").GetString());
+        Assert.Equal("null", withDoc.RootElement.GetProperty("nothing").GetString());
+    }
+
+    [Fact]
+    public void ParseSkillContent_YamlCompositionLegacySkillExecFields_AreNormalized()
+    {
+        var content = """
+            ---
+            name: legacy-skill-exec-fields
+            description: Legacy skill_exec field aliases remain supported
+            kind: meta
+            composition:
+              steps:
+                - id: delegate
+                  kind: skill_exec
+                  skill: web-research
+                  skill_exec_entrypoint: report
+                  skill_exec_args: ["--format", "json"]
+                  skill_exec_stdin: "{{ input }}"
+                  skill_exec_cwd: artifacts/meta
+                  skill_exec_parse_mode: json
+            ---
+            Instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/legacy-skill-exec-fields", SkillSource.Workspace);
+
+        Assert.NotNull(skill);
+        var step = Assert.Single(skill!.Composition!.Steps);
+        Assert.Equal("report", step.SkillExecEntrypoint);
+        Assert.Equal(["--format", "json"], step.SkillExecArgs);
+        Assert.Equal("{{ input }}", step.SkillExecStdin);
+        Assert.Equal("artifacts/meta", step.SkillExecCwd);
+        Assert.Equal("json", step.SkillExecParseMode);
+    }
+
+    [Fact]
+    public void ParseSkillContent_YamlCompositionLegacyNamedWithProperty_IsPreserved()
+    {
+        var content = """
+            ---
+            name: legacy-named-payload
+            description: Arbitrary payload keys are preserved
+            kind: meta
+            composition:
+              steps:
+                - id: delegate
+                  kind: llm_chat
+                  with:
+                    skill_exec_args: payload-value
+            ---
+            Instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/legacy-named-payload", SkillSource.Workspace);
+
+        Assert.NotNull(skill);
+        var step = Assert.Single(skill!.Composition!.Steps);
+        using var withDoc = JsonDocument.Parse(step.WithJson!);
+        Assert.Equal("payload-value", withDoc.RootElement.GetProperty("skill_exec_args").GetString());
+        Assert.False(withDoc.RootElement.TryGetProperty("args", out _));
+    }
+
+    [Fact]
+    public void TryParseSkillContent_YamlCompositionDuplicateSkillExecAlias_IsRejected()
+    {
+        var content = """
+            ---
+            name: duplicate-skill-exec-field
+            description: Duplicate skill_exec field spellings are rejected
+            kind: meta
+            composition:
+              steps:
+                - id: delegate
+                  kind: skill_exec
+                  skill: web-research
+                  args: ["canonical"]
+                  skill_exec_args: ["legacy"]
+            ---
+            Instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/duplicate-skill-exec-field", SkillSource.Workspace, out _, out var errorCode);
+
+        Assert.False(ok);
+        Assert.Equal("invalid_skill_exec", errorCode);
+    }
+
+    [Fact]
+    public void ParseSkillContent_YamlCompositionUppercaseNull_PreservesLegacyInference()
+    {
+        var content = """
+            ---
+            name: uppercase-null
+            description: Uppercase null keeps legacy scalar inference
+            kind: meta
+            composition:
+              steps:
+                - id: s1
+                  kind: llm_chat
+                  with:
+                    value: NULL
+            ---
+            Instructions.
+            """;
+
+        var skill = SkillLoader.ParseSkillContent(content, "/skills/uppercase-null", SkillSource.Workspace);
+
+        Assert.NotNull(skill);
+        var step = Assert.Single(skill!.Composition!.Steps);
+        using var withDoc = JsonDocument.Parse(step.WithJson!);
+        Assert.Equal(JsonValueKind.Null, withDoc.RootElement.GetProperty("value").ValueKind);
+    }
+
+    [Fact]
+    public void ParseSkillContent_YamlBlockBeyondDepthLimit_FailsGracefully()
+    {
+        var nesting = 80; // deeper than the conversion depth limit
+        var nestedLines = Enumerable.Range(0, nesting)
+            .Select(i => new string(' ', i * 2) + "n:")
+            .Append(new string(' ', nesting * 2) + "leaf");
+        var block = string.Join('\n', nestedLines.Select(line => "        " + line));
+
+        var content = $"""
+            ---
+            name: deep-yaml
+            description: YAML nested deeper than the conversion limit
+            kind: meta
+            composition:
+            {block}
+            ---
+            Instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/deep-yaml", SkillSource.Workspace, out _, out _);
+
+        Assert.False(ok);
+    }
+
+    [Fact]
+    public void ParseSkillContent_YamlSelfReferencingAnchor_FailsGracefully()
+    {
+        var content = """
+            ---
+            name: cyclic-yaml
+            description: Self-referencing YAML anchor
+            kind: meta
+            composition:
+              steps: &steps
+                - id: cycle
+                  kind: llm_chat
+                  with:
+                    again: *steps
+            ---
+            Instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/cyclic-yaml", SkillSource.Workspace, out _, out _);
+
+        Assert.False(ok);
+    }
+
+    [Fact]
     public void ParseSkillContent_MetaOpenSquillaDslFields_ParsesSuccessfully()
     {
         var content = """
@@ -560,6 +796,118 @@ public class SkillLoaderTests
         Assert.False(ok);
         Assert.Null(skill);
         Assert.Equal(expectedError, errorCode);
+    }
+
+    [Theory]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":\"static\"}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"quantum\"}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\"}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"tool_name\":\"get_weather\"}}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"weather-mcp\"}}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"dynamic\"}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"dynamic\",\"intent\":{\"keywords\":[\"weather\"]}}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"dynamic\",\"intent\":{\"task_description\":\"weather\"},\"selection_policy\":\"nearest\"}}]}", "invalid_capability_ref")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"},\"top_k\":5}}]}", "capabilityref_reserved_field")]
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"},\"prefer_version\":\">=1.0.0\"}}]}", "capabilityref_reserved_field")]
+    // capability_ref must not coexist with tool:
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"}}}]}", "invalid_capability_ref")]
+    // capability_ref is only legal on tool_call steps:
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"llm_chat\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"}}}]}", "invalid_capability_ref")]
+    // fallback must not coexist with step on_failure:
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"tool\":\"u\",\"on_failure\":\"fb\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"},\"fallback\":\"fb\"}},{\"id\":\"fb\",\"kind\":\"tool_call\",\"tool\":\"safe\"}]}", "invalid_capability_ref")]
+    // capability_ref.fallback obeys the on_failure five constraints (ghost target):
+    [InlineData("{\"steps\":[{\"id\":\"q\",\"kind\":\"tool_call\",\"capability_ref\":{\"binding\":\"static\",\"static\":{\"mcp_server_name\":\"w\",\"tool_name\":\"t\"},\"fallback\":\"ghost\"}}]}", "invalid_on_failure")]
+    public void TryParseSkillContent_CapabilityRefValidation_ReturnsExpectedCode(string compositionJson, string expectedError)
+    {
+        var content = $$"""
+            ---
+            name: capability-ref-validation
+            description: Capability slot validation
+            kind: meta
+            composition: {{compositionJson}}
+            ---
+            Meta instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/capability-ref-validation", SkillSource.Workspace, out var skill, out var errorCode);
+
+        Assert.False(ok);
+        Assert.Null(skill);
+        Assert.Equal(expectedError, errorCode);
+    }
+
+    [Fact]
+    public void TryParseSkillContent_CapabilityRefStatic_ParsesPinnedBinding()
+    {
+        var content = """
+            ---
+            name: capability-ref-static
+            description: Static capability slot
+            kind: meta
+            composition: {"steps":[{"id":"q","kind":"tool_call","capability_ref":{"binding":"static","static":{"mcp_server_name":"weather-mcp","tool_name":"get_weather"}},"tool_args":{"city":"{{ input }}"}}]}
+            ---
+            Meta instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/capability-ref-static", SkillSource.Workspace, out var skill, out var errorCode);
+
+        Assert.True(ok, errorCode);
+        var slot = skill!.Composition!.Steps[0];
+        Assert.Null(slot.Tool);
+        Assert.NotNull(slot.CapabilityRef);
+        Assert.Equal("static", slot.CapabilityRef.Binding);
+        Assert.Equal("weather-mcp", slot.CapabilityRef.Static!.Target);
+        Assert.Equal("get_weather", slot.CapabilityRef.Static.ToolName);
+        Assert.Equal("first", slot.CapabilityRef.SelectionPolicy);
+    }
+
+    [Fact]
+    public void TryParseSkillContent_CapabilityRefDynamic_ParsesIntentAndPolicy()
+    {
+        var content = """
+            ---
+            name: capability-ref-dynamic
+            description: Dynamic capability slot
+            kind: meta
+            composition: {"steps":[{"id":"q","kind":"tool_call","capability_ref":{"binding":"dynamic","intent":{"type":"cap:WeatherQuery","task_description":"查询指定城市的天气","keywords":["天气","city"]},"selection_policy":"exact_name"}}]}
+            ---
+            Meta instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/capability-ref-dynamic", SkillSource.Workspace, out var skill, out var errorCode);
+
+        Assert.True(ok, errorCode);
+        var slot = skill!.Composition!.Steps[0];
+        Assert.NotNull(slot.CapabilityRef);
+        Assert.Equal("dynamic", slot.CapabilityRef.Binding);
+        Assert.Null(slot.CapabilityRef.Static);
+        Assert.Equal("cap:WeatherQuery", slot.CapabilityRef.Intent!.Type);
+        Assert.Equal("查询指定城市的天气", slot.CapabilityRef.Intent.TaskDescription);
+        Assert.Equal(new[] { "天气", "city" }, slot.CapabilityRef.Intent.Keywords);
+        Assert.Equal("exact_name", slot.CapabilityRef.SelectionPolicy);
+    }
+
+    [Fact]
+    public void TryParseSkillContent_CapabilityRefFallback_FoldsIntoOnFailure()
+    {
+        var content = """
+            ---
+            name: capability-ref-fallback
+            description: Capability slot with fallback
+            kind: meta
+            composition: {"steps":[{"id":"q","kind":"tool_call","capability_ref":{"binding":"static","static":{"mcp_server_name":"weather-mcp","tool_name":"get_weather"},"fallback":"fb"}},{"id":"fb","kind":"tool_call","tool":"emit_text","tool_args":{"text":"unavailable"}}]}
+            ---
+            Meta instructions.
+            """;
+
+        var ok = SkillLoader.TryParseSkillContent(content, "/skills/capability-ref-fallback", SkillSource.Workspace, out var skill, out var errorCode);
+
+        Assert.True(ok, errorCode);
+        var slot = skill!.Composition!.Steps[0];
+        Assert.Equal("fb", slot.CapabilityRef!.Fallback);
+        // Folded into OnFailure so the existing failure-branch machinery validates
+        // and routes it (same five constraints as on_failure).
+        Assert.Equal("fb", slot.OnFailure);
     }
 
     [Fact]

@@ -30,10 +30,17 @@ public sealed class MempalaceMemoryStoreTests : IAsyncLifetime
     [Fact]
     public async Task NativeDynamicPlugin_RegistersMempalaceMemoryProvider()
     {
-        var pluginDir = Path.GetDirectoryName(typeof(MempalaceMemoryPlugin).Assembly.Location)
+        var assemblyDir = Path.GetDirectoryName(typeof(MempalaceMemoryPlugin).Assembly.Location)
             ?? throw new InvalidOperationException("Could not resolve MemPalace plugin assembly directory.");
 
-        Assert.True(File.Exists(Path.Join(pluginDir, "openclaw.native-plugin.json")));
+        // Multiple plugin projects emit the same manifest filename into the test output.
+        // Stage the actual MemPalace manifest and dependencies in an isolated plugin root.
+        var pluginDir = Path.Join(_storagePath, "plugin");
+        Directory.CreateDirectory(pluginDir);
+        foreach (var dependency in Directory.EnumerateFiles(assemblyDir, "*.dll"))
+            File.Copy(dependency, Path.Join(pluginDir, Path.GetFileName(dependency)));
+        File.Copy(Path.Join(assemblyDir, "Fixtures", "mempalace", "openclaw.native-plugin.json"),
+            Path.Join(pluginDir, "openclaw.native-plugin.json"));
 
         var pluginConfig = new NativeDynamicPluginsConfig
         {

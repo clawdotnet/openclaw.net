@@ -9,6 +9,9 @@ on:
   schedule:
     - cron: "0 8 * * *"
 
+permissions:
+  contents: read
+
 env:
   DOTNET_VERSION: "10.0.x"
   DOTNET_NOLOGO: true
@@ -25,6 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
@@ -50,6 +55,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
@@ -75,20 +82,23 @@ jobs:
       - name: Build solution
         run: dotnet build OpenClaw.Net.slnx --no-restore -c Release
 
+      - name: Verify Vault publish boundary
+        run: python3 eng/verify-vault-publish-boundary.py
+
       - name: Test standard targets
         run: dotnet test --no-build -c Release --verbosity normal --logger "trx;LogFileName=results.trx" src/OpenClaw.Tests
 
       - name: HelloAgent smoke
         run: dotnet run --project samples/OpenClaw.HelloAgent -c Release --no-build
 
-      - name: Restore sandbox-enabled solution
-        run: dotnet restore OpenClaw.Net.slnx -p:OpenClawEnableOpenSandbox=true
+      - name: Restore optional integrations
+        run: dotnet restore OpenClaw.Net.slnx -p:OpenClawEnableOpenSandbox=true -p:OpenClawEnableMempalace=true
 
-      - name: Build sandbox-enabled solution
-        run: dotnet build OpenClaw.Net.slnx --no-restore -c Release -p:OpenClawEnableOpenSandbox=true
+      - name: Build optional integrations
+        run: dotnet build OpenClaw.Net.slnx --no-restore -c Release -p:OpenClawEnableOpenSandbox=true -p:OpenClawEnableMempalace=true
 
-      - name: Test sandbox-enabled targets
-        run: dotnet test --no-build -c Release -p:OpenClawEnableOpenSandbox=true --verbosity normal --logger "trx;LogFileName=results-sandbox.trx" src/OpenClaw.Tests
+      - name: Test optional integrations
+        run: dotnet test --no-build -c Release -p:OpenClawEnableOpenSandbox=true -p:OpenClawEnableMempalace=true --verbosity normal --logger "trx;LogFileName=results-sandbox.trx" src/OpenClaw.Tests
 
       - name: Upload test results
         if: always()
@@ -97,12 +107,26 @@ jobs:
           name: test-results
           path: "**/*.trx"
 
+  capability-adapters:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Verify default dependency isolation and optional adapter builds
+        run: bash eng/verify-capability-adapters.sh
+
   publish-aot:
     needs: build-and-test
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
@@ -147,12 +171,16 @@ jobs:
           path: ./artifacts/aot/cli/
 
   macos-gateway-linker-probe:
+    permissions:
+      contents: read
     needs: build-and-test
     runs-on: macos-15
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
@@ -189,9 +217,8 @@ jobs:
           echo "LIBRARY_PATH=$joined" >> "$GITHUB_ENV"
           echo "Using macOS Swift library paths: $joined"
 
-      - name: Probe gateway NativeAOT without classic linker
+      - name: Verify gateway NativeAOT with modern linker
         id: probe
-        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -206,12 +233,13 @@ jobs:
             2>&1 | tee artifacts/linker-probe/publish.log
 
       - name: Report linker probe outcome
+        if: always()
         shell: bash
         run: |
           if [[ "${{ steps.probe.outcome }}" == "success" ]]; then
-            echo "::notice title=Gateway linked without classic linker::Remove the gateway OpenClawUseClassicMacLd default after validating release smoke coverage."
+            echo "::notice title=Gateway linked with modern linker::Keep the explicit classic-linker override only until one published release completes successfully."
           else
-            echo "::warning title=Gateway still needs classic linker::The no-classic-linker probe failed on macos-15; keep the scoped gateway fallback."
+            echo "::warning title=Modern linker regression::The macos-15 gateway publish failed; use the scoped classic-linker override only for emergency diagnosis."
           fi
 
       - name: Upload linker probe log
@@ -226,6 +254,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
@@ -269,9 +299,11 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
@@ -292,14 +324,17 @@ jobs:
           cache-to: type=gha,mode=max
 
   public-compatibility-smoke:
+    permissions:
+      contents: read
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     timeout-minutes: 30
     env:
       OPENCLAW_PUBLIC_SMOKE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
@@ -329,6 +364,7 @@ jobs:
         run: dotnet test --no-build -c Release --filter "Category=PublicSmoke" --verbosity normal --logger "trx;LogFileName=public-smoke.trx" src/OpenClaw.Tests
 
       - name: Probe latest public plugin packages
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         id: latest_plugin_canary
         continue-on-error: true
         env:
@@ -336,7 +372,7 @@ jobs:
         run: dotnet test --no-build -c Release --filter "Category=LatestCanary" --verbosity normal --logger "trx;LogFileName=latest-plugin-canary.trx" src/OpenClaw.Tests
 
       - name: Report latest-package compatibility canary
-        if: always()
+        if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         shell: bash
         run: |
           if [[ "${{ steps.latest_plugin_canary.outcome }}" == "success" ]]; then
@@ -357,3 +393,50 @@ jobs:
           path: |
             **/public-smoke.trx
             **/latest-plugin-canary.trx
+
+  vault-integration:
+    name: Vault integration tests (opt-in)
+    runs-on: ubuntu-latest
+    if: github.event.repository.fork == false && vars.RUN_VAULT_INTEGRATION == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('OpenClaw.Net.slnx', '**/*.csproj', '**/*.props', '**/*.targets') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Start OpenBao
+        run: docker compose -f deploy/docker-compose/openbao.yml up -d
+
+      - name: Wait for OpenBao
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://127.0.0.1:8200/v1/sys/health >/dev/null; then
+              echo "OpenBao is healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::OpenBao did not become healthy within 30s"
+          exit 1
+
+      - name: Run integration tests
+        env:
+          OPENBAO_ADDR: http://127.0.0.1:8200
+          OPENBAO_TOKEN: root
+        run: dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter "Category=Integration"
+
+      - name: Tear down OpenBao
+        if: always()
+        run: docker compose -f deploy/docker-compose/openbao.yml down -v

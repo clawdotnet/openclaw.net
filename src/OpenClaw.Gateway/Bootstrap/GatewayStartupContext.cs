@@ -5,6 +5,7 @@ namespace OpenClaw.Gateway.Bootstrap;
 
 internal sealed class GatewayStartupContext
 {
+    public AdminSettingsSnapshot? BaseAdminSettings { get; init; }
     public required GatewayConfig Config { get; init; }
     public required GatewayRuntimeState RuntimeState { get; init; }
     public required bool IsNonLoopbackBind { get; init; }

@@ -99,6 +99,7 @@ curl --silent --fail "http://127.0.0.1:19899/health" >/dev/null
 echo "Running published CLI smoke..."
 "$CLI_BIN" --help >/dev/null
 "$CLI_BIN" version >/dev/null
+python3 "$ROOT_DIR/eng/verify-backup-smoke.py" "$CLI_BIN"
 
 echo "Stopping published gateway..."
 kill "$GATEWAY_PID" >/dev/null 2>&1 || true

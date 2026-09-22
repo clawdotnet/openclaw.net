@@ -1,4 +1,5 @@
 <Project>
+  <!-- Temporary emergency fallback for macOS arm64 NativeAOT publishes. The gateway and release workflow use the modern linker by default. -->
   <ItemGroup Condition="'$(PublishAot)' == 'true' and '$(RuntimeIdentifier)' == 'osx-arm64' and '$(OpenClawUseClassicMacLd)' == 'true'">
     <LinkerArg Include="-ld_classic" />
   </ItemGroup>

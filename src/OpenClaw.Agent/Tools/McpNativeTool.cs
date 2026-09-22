@@ -37,7 +37,7 @@ public sealed class McpNativeTool(
             foreach (var prop in argsDoc.RootElement.EnumerateObject())
                 argsDict[prop.Name] = prop.Value.Clone();
 
-            // Reads the current user identity from the AsyncLocal execution context and injects it into the MCP protocol¡¯s _meta field.
+            // Reads the current user identity from the AsyncLocal execution context and injects it into the MCP protocolï¿½ï¿½s _meta field.
             // _meta is protocol-level metadata and does not pollute the tool's arguments.
             // Prefer the stable user ID obtained through OIDC authentication; if authentication is unavailable, fall back to the route-level SenderId.
             var session = context?.Session ?? AgentExecutionContextScope.TryGetCurrent()?.Session;
@@ -65,7 +65,20 @@ public sealed class McpNativeTool(
 
             var text = FormatResponseContent(response, suppressStructuredContent);
             var isError = response.IsError ?? false;
+            // The ToolOutcomeException + "mcp_tool_error" FailureCode path only fires
+            // when the caller supplies a ToolExecutionContext (the meta-skill executor
+            // route through IToolWithContext). Direct ITool.ExecuteAsync(argsJson, ct)
+            // callers pass context=null and silently degrade to the prefixed string,
+            // which preserves backwards compatibility but loses the typed failure
+            // signal. If you add a new direct caller, surface the boolean explicitly
+            // â€” do not rely on string inspection.
+            if (isError && context is not null)
+                throw new ToolOutcomeException($"Error: {text}", "failed", "mcp_tool_error", text);
             return isError ? $"Error: {text}" : text;
+        }
+        catch (ToolOutcomeException)
+        {
+            throw;
         }
         catch (JsonException ex)
         {

@@ -8,6 +8,7 @@
     <InternalsVisibleTo Include="OpenClaw.MicrosoftAgentFrameworkAdapter" />
     <InternalsVisibleTo Include="OpenClaw.Gateway" />
     <InternalsVisibleTo Include="OpenClaw.Tests" />
+    <InternalsVisibleTo Include="OpenClaw.Testing" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />

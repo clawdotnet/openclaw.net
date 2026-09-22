@@ -18,8 +18,11 @@
     <Project Path="samples/OpenClaw.SemanticKernelInteropHost/OpenClaw.SemanticKernelInteropHost.csproj" />
     <Project Path="samples/OpenClaw.StrategosWorkflowHost.Tests/OpenClaw.StrategosWorkflowHost.Tests.csproj" />
     <Project Path="samples/OpenClaw.StrategosWorkflowHost/OpenClaw.StrategosWorkflowHost.csproj" />
+    <Project Path="samples/OpenClaw.TrajectoryReplay/OpenClaw.TrajectoryReplay.csproj" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/OpenClaw.Adapters.Nacos.Events/OpenClaw.Adapters.Nacos.Events.csproj" />
+    <Project Path="src/OpenClaw.Adapters.Nacos/OpenClaw.Adapters.Nacos.csproj" />
     <Project Path="src/OpenClaw.Cli/OpenClaw.Cli.csproj" />
     <Project Path="src/OpenClaw.Client/OpenClaw.Client.csproj" />
     <Project Path="src/OpenClaw.Companion/OpenClaw.Companion.csproj" />
@@ -37,6 +40,7 @@
     <Project Path="src/OpenClaw.Providers.MicrosoftExtensionsAI/OpenClaw.Providers.MicrosoftExtensionsAI.csproj" />
     <Project Path="src/OpenClaw.Routing.Onnx/OpenClaw.Routing.Onnx.csproj" />
     <Project Path="src/OpenClaw.SemanticKernelAdapter/OpenClaw.SemanticKernelAdapter.csproj" />
+    <Project Path="src/OpenClaw.Security.Vault/OpenClaw.Security.Vault.csproj" />
     <Project Path="src/OpenClaw.SkillKit.Abstractions/OpenClaw.SkillKit.Abstractions.csproj" />
     <Project Path="src/OpenClaw.SkillKit/OpenClaw.SkillKit.csproj" />
     <Project Path="src/OpenClaw.Testing/OpenClaw.Testing.csproj" />

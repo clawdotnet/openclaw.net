@@ -148,12 +148,10 @@ internal sealed class DefaultModelSelectionPolicy : IModelSelectionPolicy
 
         if (request.Streaming)
             combined.SupportsStreaming = true;
+        // Offering several tools does not require parallel calls in one response.
+        // Explicit session requirements for parallel calling remain in the clone.
         if (request.Options?.Tools is { Count: > 0 })
-        {
             combined.SupportsTools = true;
-            if (request.Options.Tools.Count > 1)
-                combined.SupportsParallelToolCalls ??= true;
-        }
 
         if (request.Options?.ResponseFormat is not null)
         {

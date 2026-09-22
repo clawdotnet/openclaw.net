@@ -147,6 +147,7 @@ internal static partial class AdminEndpoints
 
         MapAuthEndpoints(app, services);
         MapSetupEndpoints(app, services);
+        MapConfigurationEndpoints(app, services);
         MapSessionEndpoints(app, services);
         MapAutomationEndpoints(app, services);
         MapMemoryEndpoints(app, services);

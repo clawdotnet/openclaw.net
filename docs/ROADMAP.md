@@ -1,9 +1,28 @@
 # Roadmap
 
+## Release Availability
+
+The roadmap describes the current `main` branch, which may move ahead of published binaries. The reliability, recovery, and AgentQi Companion work listed as recently completed is available in [v0.3.0](https://github.com/clawdotnet/openclaw.net/tree/v0.3.0) and later. Consult each future item for an explicit target release rather than assuming that `main` is already packaged.
+
 ## Recently Completed
 
+- **Companion token protection and migration** (**released in v0.3.0**): OS-backed token storage now automatically migrates legacy JSON/fallback credentials with read-back verification, preserves recoverable copies on failure, respects Remember token and plaintext opt-in, and uses atomic private file writes. See [Companion token storage](companion-token-storage.md).
+
+- **Run explanation and recovery view** (**released in v0.3.0**): admin console, Dashboard, and Companion session details combine recorded run/goal state, goal notes, session-scoped pending approvals, checkpoints, and recent tool failure evidence with contextual recovery guidance. Existing timelines remain available for investigation; the view does not authorize or replay actions.
+
+- **Real-run regression import and offline replay** (**released in v0.3.0**): import a redacted, complete text exchange from a gateway trajectory export and run recorded provider/tool fixtures through `RuntimeScenarioRunner`, with independent assertions and strict consumption checks. Includes an executable sample; see [trajectory replay](testing/trajectory-replay.md).
+
+- Browser sessions invalidate after local operator account updates, deletion, or disablement.
+- Goal completion accepts completed tool work; model status updates run alone and blocked transitions require three observations. Resume resets continuation and blocker counters.
+- Goal state is persisted atomically under the configured memory storage directory and restored lazily after restart.
+- Startup recovery pages all runnable sessions by stable ID instead of stopping after its first batch.
+- Dashboard authentication shares the gateway login request contract; typed API failures surface HTTP errors.
+- The production native runtime uses the extracted checkpoint, tool-loop, model, and context services.
+- `RuntimeScenarioRunner` executes an injected native or MAF runtime and evaluates emitted evidence instead of trusting a supplied trace.
+- CLI insights, outbound URL safety validation, and anonymizable trajectory export are implemented. See the capability matrix for optional and experimental lanes.
+
 - **Channel expansion**: Discord (Gateway WebSocket + interaction webhook), Slack (Events API + slash commands), Signal (signald/signal-cli bridge) channel adapters with DM policy, allowlists, thread-to-session mapping, and signature validation.
-- **Tool expansion** (34 → 48 native tools): edit_file, apply_patch, message, x_search, memory_get, sessions_history, sessions_send, sessions_spawn, session_status, sessions_yield, agents_list, cron, gateway, profile_write.
+- **Tool expansion** (80+ native and optional surfaces): edit_file, apply_patch, message, x_search, memory_get, sessions_history, sessions_send, sessions_spawn, session_status, sessions_yield, agents_list, cron, gateway, profile_write.
 - **Tool presets and groups**: 4 new built-in presets (full, coding, messaging, minimal) and 7 built-in tool groups (group:runtime, group:fs, group:sessions, group:memory, group:web, group:automation, group:messaging).
 - **Chat commands**: /think (reasoning effort), /compact (history compaction), /verbose (tool call/token output).
 - **Multi-agent routing**: per-channel/sender routing with model override, route-scoped prompt instructions, tool presets, and tool allowlist restrictions.
@@ -47,22 +66,14 @@ These are strong candidates for the next roadmap phases because they extend the 
    - Focus on one-shot and bounded process execution first.
    - Treat GPU-enabled workloads as an optional extension once the base backend is stable.
 
-### Operator Visibility and Safety
+### Reliability and Operator Value
 
-9. **CLI/TUI insights**
-   - Add an `openclaw insights` command and matching TUI panel.
-   - Summarize provider usage, token spend, tool frequency, and session counts from existing telemetry.
-   - Prefer operator-readable summaries over introducing a new analytics subsystem.
+The runtime already includes CLI insights, URL safety validation, and trajectory export. The next additions build on those capabilities:
 
-10. **URL safety validation**
-   - Add SSRF-oriented URL validation in web fetch and browser tooling.
-   - Block loopback/private targets by default and allow optional blocklists.
-   - Keep this configurable, but make the safe path easy to enable globally.
-
-11. **Trajectory export**
-   - Export prompts, tool calls, results, and responses as JSONL for analysis or training pipelines.
-   - Support date-range or session-scoped export plus optional anonymization.
-   - Expose it through admin and CLI surfaces instead of burying it in storage internals.
+1. **Durable action reconciliation (released in v0.3.0, opt-in)**: persisted dispatch journal, stable provider adapter keys, completed-result reuse, and blocking of unknown outcomes before replay. See [durable actions](durable-actions.md). Provider-specific adapters and executor-bypassing jobs need individual integration.
+2. **Expanded regression capture (released in v0.3.0)**: opt-in bounded automatic capture, structured failed/blocked tool replay, and offline multimodal URL-content verification. See [trajectory replay](testing/trajectory-replay.md).
+3. **Full-instance backup and restore (released in v0.3.0)**: offline inventory plans capture durable state and secret-reference manifests, verify checksums, and restore into a new isolated directory with SQLite validation and no dispatch. See [instance backup](instance-backup.md).
+4. **Guided recovery controls (released in v0.3.0)**: permission-aware goal pause/resume and evidence-backed action reconciliation with revision, approval, and budget checks. Complements the run explanation view; see [guided recovery](guided-recovery.md).
 
 ## Security Hardening (Likely Breaking)
 
@@ -77,11 +88,7 @@ Recommend implementing behind flags first, then enabling by default in a major r
    - Current: `legacy` makes empty allowlist behave as allow-all for some channels.
    - Target: `strict` should be the default for safer out-of-the-box behavior.
 
-3. **Encrypt Companion token storage**
-   - Store the auth token using OS-provided secure storage (Keychain/DPAPI/etc).
-   - Include migration from existing plaintext settings.
-
-4. **Default Telegram webhook signature validation to `true`**
+3. **Default Telegram webhook signature validation to `true`**
    - Requires `WebhookSecretToken`/`WebhookSecretTokenRef` to be configured.
    - Improves default webhook authenticity guarantees.
 

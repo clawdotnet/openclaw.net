@@ -308,7 +308,7 @@ internal sealed class OllamaChatClient : IChatClient
                 }
             }
 
-            contents.Add(new FunctionCallContent($"ollama_call_{++index}", nameElement.GetString()!, arguments));
+            contents.Add(new FunctionCallContent($"ollama_call_{Guid.NewGuid():N}_{++index}", nameElement.GetString()!, arguments));
         }
 
         return contents;

@@ -75,7 +75,10 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
         await VerifyNpmPluginAsync(
             entry,
             packageSpecOverride: $"{entry.PackageName}@latest",
-            scenarioIdOverride: $"latest-{entry.Id}");
+            scenarioIdOverride: $"latest-{entry.Id}",
+            installExtraPackagesOverride: entry.LatestCanaryInstallExtraPackages is { Length: > 0 }
+                ? entry.LatestCanaryInstallExtraPackages
+                : null);
     }
 
     private async Task VerifyClawHubSkillAsync(CompatibilityCatalogEntry entry)
@@ -116,7 +119,8 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
     private async Task VerifyNpmPluginAsync(
         CompatibilityCatalogEntry entry,
         string? packageSpecOverride = null,
-        string? scenarioIdOverride = null)
+        string? scenarioIdOverride = null,
+        IReadOnlyList<string>? installExtraPackagesOverride = null)
     {
         Assert.False(string.IsNullOrWhiteSpace(entry.PackageSpec), $"Smoke entry '{entry.Id}' must declare an npm spec.");
         Assert.False(string.IsNullOrWhiteSpace(entry.PackageName), $"Smoke entry '{entry.Id}' must declare packageName.");
@@ -128,8 +132,9 @@ public sealed class PublicCompatibilitySmokeTests : IDisposable
         Directory.CreateDirectory(installDir);
 
         var packages = new List<string> { packageSpecOverride ?? entry.PackageSpec! };
-        if (entry.InstallExtraPackages is { Length: > 0 })
-            packages.AddRange(entry.InstallExtraPackages);
+        var extraPackages = installExtraPackagesOverride ?? entry.InstallExtraPackages;
+        if (extraPackages.Count > 0)
+            packages.AddRange(extraPackages);
         await InstallPackagesAsync(installDir, packages);
 
         var packageDir = Path.Combine(installDir, "node_modules", entry.PackageName!

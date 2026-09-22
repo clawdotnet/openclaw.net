@@ -904,6 +904,7 @@ internal sealed class GatewayInboundMessageWorker
                                 // Lifecycle notifications for background task terminal states
                                 if (session.BackgroundRun is not null && !turnResult.ShouldContinue)
                                 {
+                                    session.BackgroundRun.LastStopReason = turnResult.StopReason.ToString();
                                     // Map StopReason to final SessionRunState and persist
                                     session.RunState = turnResult.StopReason switch
                                     {
