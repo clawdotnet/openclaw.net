@@ -22,7 +22,7 @@ public partial class MainWindowViewModel
             new BundleUpdater(http, BundleUpdater.DefaultRoot).ConfigureTrust(new(UpdateManifestUrl, await File.ReadAllTextAsync(UpdatePublicKeyPath)));
             UpdateStatus = "Publisher configured.";
         }
-        catch (Exception ex) { UpdateStatus = ex.Message; }
+        catch (Exception ex) when (IsUserFacingOperationError(ex)) { UpdateStatus = ex.Message; }
     }
     [RelayCommand]
     private async Task CheckBundleUpdateAsync()
@@ -34,7 +34,7 @@ public partial class MainWindowViewModel
             UpdateVersion = release.Version;
             UpdateStatus = $"Verified {release.Channel} release {release.Version}. Install keeps the previous bundle for rollback.";
         }
-        catch (Exception ex) { UpdateStatus = ex.Message; }
+        catch (Exception ex) when (IsUserFacingOperationError(ex)) { UpdateStatus = ex.Message; }
     }
     [RelayCommand]
     private async Task InstallBundleUpdateAsync()
@@ -45,10 +45,10 @@ public partial class MainWindowViewModel
             if (!await ConfirmMutationAsync("Install update", $"Install version {UpdateVersion}? Restart afterward to use the new bundle.", "Install")) return;
             using var http = CreateUpdateHttpClient();
             UpdateStatus = "Downloading and verifying the complete bundle…";
-            await new BundleUpdater(http, BundleUpdater.DefaultRoot).InstallAsync(UpdateChannel, UpdateVersion, CancellationToken.None);
+            await new BundleUpdater(http, BundleUpdater.DefaultRoot).InstallAsync(UpdateChannel, null, CancellationToken.None);
             UpdateStatus = "Installed. Restart into the active bundle when ready. Your configuration and data were preserved.";
         }
-        catch (Exception ex) { UpdateStatus = ex.Message; }
+        catch (Exception ex) when (IsUserFacingOperationError(ex)) { UpdateStatus = ex.Message; }
     }
     [RelayCommand]
     private async Task RollbackBundleUpdateAsync()
@@ -60,7 +60,7 @@ public partial class MainWindowViewModel
             new BundleUpdater(http, BundleUpdater.DefaultRoot).Rollback();
             UpdateStatus = "Previous bundle activated. Restart when ready.";
         }
-        catch (Exception ex) { UpdateStatus = ex.Message; }
+        catch (Exception ex) when (IsUserFacingOperationError(ex)) { UpdateStatus = ex.Message; }
     }
     [RelayCommand]
     private async Task RestartUpdatedCompanionAsync()
@@ -74,6 +74,6 @@ public partial class MainWindowViewModel
             Process.Start(new ProcessStartInfo(executable) { UseShellExecute = false });
             if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop) desktop.Shutdown();
         }
-        catch (Exception ex) { UpdateStatus = ex.Message; }
+        catch (Exception ex) when (IsUserFacingOperationError(ex)) { UpdateStatus = ex.Message; }
     }
 }

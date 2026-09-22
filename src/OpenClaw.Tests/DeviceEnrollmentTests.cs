@@ -44,15 +44,23 @@ public sealed class DeviceEnrollmentTests : IDisposable
         Assert.Single(results, x => x is not null);
     }
     [Fact]
-    public void ExchangeIsRateLimitedAndRestartInvalidatesPendingCodes()
+    public void RestartInvalidatesPendingCodesAndUnrelatedTokenChangesDoNot()
     {
         var (accounts, id, service, clock) = Setup();
         var code = service.Create(new(id, "Laptop"));
         Assert.Null(new DeviceEnrollmentService(accounts, clock).Exchange(code.Code));
-        for (var i = 0; i < 30; i++) Assert.Null(service.Exchange("invalid"));
-        Assert.Throws<InvalidOperationException>(() => service.Exchange(code.Code));
-        clock.Now += TimeSpan.FromMinutes(1);
+        code = service.Create(new(id, "Laptop"));
+        accounts.CreateToken(id, new OperatorAccountTokenCreateRequest { Label = "unrelated" });
         Assert.NotNull(service.Exchange(code.Code));
+    }
+
+    [Fact]
+    public void EnrollmentRateLimitIsScopedPerCaller()
+    {
+        var limiter = new ActorRateLimitService(_root, NullLogger<ActorRateLimitService>.Instance);
+        for (var i = 0; i < 30; i++) Assert.True(limiter.TryConsumeFixed("ip", "caller-a", "device_enrollment_exchange", 30, TimeSpan.FromMinutes(1)));
+        Assert.False(limiter.TryConsumeFixed("ip", "caller-a", "device_enrollment_exchange", 30, TimeSpan.FromMinutes(1)));
+        Assert.True(limiter.TryConsumeFixed("ip", "caller-b", "device_enrollment_exchange", 30, TimeSpan.FromMinutes(1)));
     }
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
 }

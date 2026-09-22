@@ -30,7 +30,9 @@ with (work/'gateway.log').open('w') as log:
    if proc.poll() is not None: raise RuntimeError('Gateway exited: '+str(work))
    try:
     if request('/auth/session',token=bootstrap)[0]==200: break
-   except (URLError,OSError): pass
+   except (URLError,OSError):
+    # The gateway may not have opened its loopback socket yet.
+    pass
    time.sleep(.5)
   status,result=request('/admin/operator-accounts',{'username':'demoowner','password':'test-password-long-enough','role':'operator','enabled':True},bootstrap)
   assert status==201,(status,'create account',str(work))

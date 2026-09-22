@@ -290,7 +290,8 @@ public sealed class AgentRuntime : IAgentRuntime
         JsonElement? responseSchema = null,
         string? correlationId = null)
     {
-        _toolExecutor.PrepareAudienceTurn(session, userMessage);
+        if (_toolExecutor.PrepareAudienceTurn(session, userMessage) is { } audienceRejection)
+            return AgentTurnResult.Completed(audienceRejection);
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.RunAsync");
         activity?.SetTag("session.id", session.Id);
         activity?.SetTag("channel.id", session.ChannelId);
@@ -600,7 +601,12 @@ public sealed class AgentRuntime : IAgentRuntime
         ToolApprovalCallback? approvalCallback = null,
         string? correlationId = null)
     {
-        _toolExecutor.PrepareAudienceTurn(session, userMessage);
+        if (_toolExecutor.PrepareAudienceTurn(session, userMessage) is { } audienceRejection)
+        {
+            yield return AgentStreamEvent.ErrorOccurred(audienceRejection, "audience_policy_rejected");
+            yield return AgentStreamEvent.Complete();
+            yield break;
+        }
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.RunStreamingAsync");
         activity?.SetTag("session.id", session.Id);
         activity?.SetTag("channel.id", session.ChannelId);
@@ -1013,7 +1019,13 @@ public sealed class AgentRuntime : IAgentRuntime
     private string GetSystemPrompt(Session session, string? userMessage = null)
     {
         if (_toolExecutor.GetAudienceProfile(session) is { IncludePrivateContext: false })
-            return AgentSystemPromptBuilder.ApplyResponseMode(AgentSystemPromptBuilder.BuildBaseSystemPrompt(_requireToolApproval, false), session.ResponseMode);
+        {
+            var publicPrompt = AgentSystemPromptBuilder.ApplyResponseMode(
+                AgentSystemPromptBuilder.BuildBaseSystemPrompt(_requireToolApproval, false), session.ResponseMode);
+            return string.IsNullOrWhiteSpace(session.SystemPromptOverride)
+                ? publicPrompt
+                : publicPrompt + "\n\n[Route Instructions]\n" + session.SystemPromptOverride.Trim();
+        }
         string systemPrompt;
         string? blockedRoutes = null;
         lock (_skillGate)

@@ -25,10 +25,21 @@ public sealed class BundleUpdaterTests : IDisposable
         data = Feed("1.0.0", [1], DateTimeOffset.UtcNow.AddMinutes(-1));
         Assert.Throws<InvalidDataException>(() => BundleUpdater.VerifyFeed(data, Sign(data), _key.ExportSubjectPublicKeyInfoPem(), DateTimeOffset.UtcNow));
     }
+    [Fact]
+    public void TrustPersistenceStripsPrivateKeyMaterial()
+    {
+        using var http = new HttpClient(new Handler());
+        var updater = new BundleUpdater(http, _root);
+        updater.ConfigureTrust(new("https://publisher.test/feed", _key.ExportRSAPrivateKeyPem()));
+        var persisted = File.ReadAllText(updater.TrustPath);
+        Assert.Contains("BEGIN PUBLIC KEY", persisted);
+        Assert.DoesNotContain("PRIVATE KEY", persisted);
+    }
     [Theory]
     [InlineData("../outside")]
     [InlineData("/absolute")]
     [InlineData("C:\\escape")]
+    [InlineData("cli/../../outside")]
     public void UnsafeArchiveCannotEscapeStaging(string name)
     {
         Directory.CreateDirectory(_root);
@@ -37,11 +48,22 @@ public sealed class BundleUpdaterTests : IDisposable
         Assert.Throws<InvalidDataException>(() => BundleUpdater.ExtractBundle(zip, Path.Combine(_root, "staging")));
     }
     [Fact]
+    public void SymlinkArchiveEntryIsRejected()
+    {
+        Directory.CreateDirectory(_root);
+        var zip = Path.Combine(_root, "symlink.zip");
+        using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
+        {
+            var entry = archive.CreateEntry("cli/link");
+            entry.ExternalAttributes = 0xA000 << 16;
+        }
+        Assert.Throws<InvalidDataException>(() => BundleUpdater.ExtractBundle(zip, Path.Combine(_root, "staging")));
+    }
+    [Fact]
     public async Task InstallVerifiesAllComponentsAndRollbackRestoresPreviousPointer()
     {
-        if (OperatingSystem.IsWindows()) return; // fixture executables use /bin/sh
         var bundle = Archive(); var handler = new Handler(); using var http = new HttpClient(handler);
-        var updater = new BundleUpdater(http, _root);
+        var updater = new BundleUpdater(http, _root, smokeCheck: static (_, _) => Task.CompletedTask);
         updater.ConfigureTrust(new("https://publisher.test/feed", _key.ExportSubjectPublicKeyInfoPem()));
         void Publish(string version) { var feed = Feed(version, bundle); handler.Data = new() { ["/feed"] = feed, ["/feed.sig"] = Sign(feed), ["/bundle.zip"] = bundle }; }
         Publish("1.0.0"); var first = await updater.InstallAsync("stable", null, TestContext.Current.CancellationToken);
@@ -51,6 +73,55 @@ public sealed class BundleUpdaterTests : IDisposable
         Publish("1.0.2"); handler.Data["/bundle.zip"] = new byte[bundle.Length];
         await Assert.ThrowsAsync<InvalidDataException>(() => updater.InstallAsync("stable", null, TestContext.Current.CancellationToken));
         Assert.StartsWith(first, updater.GetActiveExecutable("cli"));
+    }
+    [Theory]
+    [InlineData("1.2.0-beta.1", "1.2.0-beta.2", -1)]
+    [InlineData("1.2.0", "1.2.0-rc.9", 1)]
+    [InlineData("2.0.0", "1.99.99", 1)]
+    public void SemanticVersionComparisonPreservesPrereleasePrecedence(string left, string right, int expected)
+        => Assert.Equal(expected, Math.Sign(BundleUpdater.CompareSemanticVersions(left, right)));
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("1.2.3.4")]
+    [InlineData("1.02.3")]
+    [InlineData("1.2.3-beta.01")]
+    public void InvalidSemanticVersionsFailClosed(string value)
+        => Assert.Throws<InvalidDataException>(() => BundleUpdater.CompareSemanticVersions(value, "1.0.0"));
+
+    [Fact]
+    public async Task FailedPostMoveActivationIsRemovedAndRetrySucceeds()
+    {
+        var bundle = Archive(); var handler = new Handler(); using var http = new HttpClient(handler);
+        var updater = new BundleUpdater(http, _root, smokeCheck: static (_, _) => Task.CompletedTask);
+        updater.ConfigureTrust(new("https://publisher.test/feed", _key.ExportSubjectPublicKeyInfoPem()));
+        var feed = Feed("1.0.0", bundle);
+        handler.Data = new() { ["/feed"] = feed, ["/feed.sig"] = Sign(feed), ["/bundle.zip"] = bundle };
+        Directory.CreateDirectory(Path.Combine(_root, "launch.ps1"));
+        var failure = await Assert.ThrowsAnyAsync<Exception>(() => updater.InstallAsync("stable", null, TestContext.Current.CancellationToken));
+        Assert.True(failure is IOException or UnauthorizedAccessException);
+        Directory.Delete(Path.Combine(_root, "launch.ps1"));
+        var installed = await updater.InstallAsync("stable", null, TestContext.Current.CancellationToken);
+        Assert.True(Directory.Exists(installed));
+    }
+
+    [Fact]
+    public async Task DowngradesRequireExplicitAuthorizationIncludingPrereleases()
+    {
+        var bundle = Archive(); var handler = new Handler(); using var http = new HttpClient(handler);
+        var updater = new BundleUpdater(http, _root, smokeCheck: static (_, _) => Task.CompletedTask);
+        updater.ConfigureTrust(new("https://publisher.test/feed", _key.ExportSubjectPublicKeyInfoPem()));
+        void Publish(string version)
+        {
+            var feed = Feed(version, bundle);
+            handler.Data = new() { ["/feed"] = feed, ["/feed.sig"] = Sign(feed), ["/bundle.zip"] = bundle };
+        }
+        Publish("1.2.0-beta.2");
+        await updater.InstallAsync("stable", null, TestContext.Current.CancellationToken);
+        Publish("1.2.0-beta.1");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => updater.InstallAsync("stable", "1.2.0-beta.1", TestContext.Current.CancellationToken));
+        var installed = await updater.InstallAsync("stable", "1.2.0-beta.1", TestContext.Current.CancellationToken, allowDowngrade: true);
+        Assert.Contains("1.2.0-beta.1", installed, StringComparison.Ordinal);
     }
     [Fact]
     public void ExplicitVersionAndChannelDoNotFallBack()

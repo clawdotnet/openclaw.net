@@ -36,19 +36,19 @@ public sealed class AudiencePolicyTests
     public void AudienceDowngradeRejectsExistingPrivateHistory()
     {
         var config = Config(); config.Tooling.Audiences.ChannelBindings["slack"] = "personal";
-        var executor = Executor(config); var session = Session(); executor.PrepareAudienceTurn(session, "hello");
+        var executor = Executor(config); var session = Session(); Assert.Null(executor.PrepareAudienceTurn(session, "hello"));
         session.History.Add(new() { Role = "assistant", Content = "private" });
         config.Tooling.Audiences.ChannelBindings["slack"] = "public";
-        Assert.Throws<InvalidOperationException>(() => executor.PrepareAudienceTurn(session, "hello"));
+        Assert.Contains("narrowed", executor.PrepareAudienceTurn(session, "hello"), StringComparison.OrdinalIgnoreCase);
         Assert.Single(session.History); // rejection must not delete user history
     }
     [Fact]
     public void PublicAttachmentsAreRejected()
     {
-        Assert.Throws<InvalidOperationException>(() => Executor(Config()).PrepareAudienceTurn(Session(), "[IMAGE_URL:https://example.com/a.png]"));
+        Assert.Contains("disabled", Executor(Config()).PrepareAudienceTurn(Session(), "[IMAGE_URL:https://example.com/a.png]"), StringComparison.OrdinalIgnoreCase);
     }
     [Fact]
-    public async Task PublicRuntimeSkipsRecallAndRoutePrompt()
+    public async Task PublicRuntimeSkipsRecallButKeepsRoutePrompt()
     {
         var client = Substitute.For<IChatClient>();
         IList<ChatMessage>? captured = null;
@@ -61,7 +61,27 @@ public sealed class AudiencePolicyTests
         var session = Session(); session.SystemPromptOverride = "private-route-sentinel";
         await runtime.RunAsync(session, "hello", TestContext.Current.CancellationToken);
         Assert.NotNull(captured);
-        Assert.DoesNotContain(captured!, m => m.Text.Contains("private-route-sentinel"));
+        Assert.Contains(captured!, m => m.Text.Contains("private-route-sentinel"));
         await ((IMemoryNoteSearch)memory).DidNotReceiveWithAnyArgs().SearchNotesAsync(default!, default, default, default);
+    }
+
+    [Fact]
+    public void ToolOnlyPolicyChangesDoNotInvalidateExistingHistory()
+    {
+        var config = Config();
+        var executor = Executor(config); var session = Session();
+        Assert.Null(executor.PrepareAudienceTurn(session, "hello"));
+        session.History.Add(new() { Role = "assistant", Content = "public" });
+        config.Tooling.Audiences.Profiles["public"].AllowedTools = ["Web_Search"];
+        Assert.Null(executor.PrepareAudienceTurn(session, "hello"));
+        Assert.True(AudiencePolicy.AllowsTool(config.Tooling.Audiences.Profiles["public"], "web_search"));
+    }
+
+    [Fact]
+    public void AudienceBindingsAndProfilesAreCaseInsensitive()
+    {
+        var config = Config();
+        config.Tooling.Audiences.ChannelBindings["SLACK"] = "TEAM";
+        Assert.Same(config.Tooling.Audiences.Profiles["team"], AudiencePolicy.Resolve(config.Tooling.Audiences, Session()));
     }
 }

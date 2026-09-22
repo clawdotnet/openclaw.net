@@ -19,19 +19,34 @@ internal static class UpdateCommands
                 Console.WriteLine($"{release.Channel}: {release.Version}"); return 0;
             case "install":
                 if (!args.Contains("--yes")) throw new ArgumentException("Review update check, then pass --yes to install and activate the bundle.");
-                Console.WriteLine(await updater.InstallAsync(Option("--channel") ?? "stable", Option("--version"), CancellationToken.None));
+                Console.WriteLine(await updater.InstallAsync(Option("--channel") ?? "stable", Option("--version"), CancellationToken.None, args.Contains("--allow-downgrade")));
                 Console.WriteLine("Bundle activated. Stop the old gateway before launching the new gateway. Use openclaw update launch companion (or cli/gateway)."); return 0;
             case "rollback":
                 if (!args.Contains("--yes")) throw new ArgumentException("Pass --yes to activate the previous bundle.");
                 Console.WriteLine(updater.Rollback()); return 0;
             case "launch":
-                var component = args.Length > 1 ? args[1] : "companion";
+                var component = ResolveLaunchComponent(args);
                 var info = new ProcessStartInfo(updater.GetActiveExecutable(component)) { UseShellExecute = false };
                 var separator = Array.IndexOf(args, "--");
                 if (separator >= 0) foreach (var arg in args[(separator + 1)..]) info.ArgumentList.Add(arg);
                 using (var process = Process.Start(info) ?? throw new IOException("Cannot launch active bundle.")) { await process.WaitForExitAsync(); return process.ExitCode; }
+            case null or "help" or "--help" or "-h":
+                Console.WriteLine("openclaw update trust --manifest <https URL> --key <publisher.pem>\nopenclaw update check|install [--channel stable|beta] [--version <version>] [--allow-downgrade] [--yes]\nopenclaw update rollback --yes\nopenclaw update launch cli|gateway|companion [-- <arguments>]\nAll commands accept --root <managed update directory>."); return 0;
             default:
-                Console.WriteLine("openclaw update trust --manifest <https URL> --key <publisher.pem>\nopenclaw update check|install [--channel stable|beta] [--version <version>] [--yes]\nopenclaw update rollback --yes\nopenclaw update launch cli|gateway|companion [-- <arguments>]\nAll commands accept --root <managed update directory>."); return 0;
+                Console.Error.WriteLine($"Unknown update command: {command}");
+                return 2;
+        }
+    }
+    internal static string ResolveLaunchComponent(string[] args)
+        => PositionalArguments(args).Skip(1).FirstOrDefault() ?? "companion";
+
+    private static IEnumerable<string> PositionalArguments(string[] args)
+    {
+        var optionsWithValues = new HashSet<string>(["--root", "--manifest", "--key", "--channel", "--version"], StringComparer.Ordinal);
+        for (var i = 0; i < args.Length && args[i] != "--"; i++)
+        {
+            if (optionsWithValues.Contains(args[i])) { i++; continue; }
+            if (!args[i].StartsWith("--", StringComparison.Ordinal)) yield return args[i];
         }
     }
 }

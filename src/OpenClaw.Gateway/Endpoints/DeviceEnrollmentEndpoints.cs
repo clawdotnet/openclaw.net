@@ -1,4 +1,3 @@
-using System.Net;
 using System.Text.Json;
 using OpenClaw.Core.Models;
 using OpenClaw.Gateway.Bootstrap;
@@ -11,7 +10,7 @@ internal static class DeviceEnrollmentEndpoints
     {
         var service = app.Services.GetRequiredService<DeviceEnrollmentService>();
         var sessions = app.Services.GetRequiredService<BrowserSessionAuthService>();
-        bool Secure(HttpContext ctx) => ctx.Request.IsHttps || (ctx.Connection.RemoteIpAddress is { } ip && IPAddress.IsLoopback(ip));
+        bool Secure(HttpContext ctx) => ctx.Request.IsHttps || !startup.IsNonLoopbackBind;
         bool TokensEnabled() => app.Services.GetRequiredService<OrganizationPolicyService>().GetSnapshot().AllowedAuthModes.Contains(OrganizationAuthModeNames.AccountToken, StringComparer.OrdinalIgnoreCase);
         app.MapPost("/auth/devices/enroll", async (HttpContext ctx) =>
         {
@@ -46,6 +45,8 @@ internal static class DeviceEnrollmentEndpoints
             if (bodyLimit is { IsReadOnly: false }) bodyLimit.MaxRequestBodySize = 4096;
             if (!Secure(ctx) || !TokensEnabled()) return Results.StatusCode(403);
             if (ctx.Request.ContentLength is > 1024) return Results.BadRequest();
+            if (!runtime.Operations.ActorRateLimits.TryConsumeFixed("ip", EndpointHelpers.GetRemoteIpKey(ctx),
+                    "device_enrollment_exchange", 30, TimeSpan.FromMinutes(1))) return Results.StatusCode(429);
             try
             {
                 var request = await JsonSerializer.DeserializeAsync(ctx.Request.Body, DeviceEnrollmentJsonContext.Default.DeviceEnrollmentExchange, ctx.RequestAborted);
@@ -61,7 +62,6 @@ internal static class DeviceEnrollmentEndpoints
                 return Results.Json(result, CoreJsonContext.Default.OperatorAccountTokenCreateResponse);
             }
             catch (JsonException) { return Results.BadRequest(); }
-            catch (InvalidOperationException) { return Results.StatusCode(429); }
         });
     }
 }

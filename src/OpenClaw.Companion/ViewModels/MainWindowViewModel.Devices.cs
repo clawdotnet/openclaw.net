@@ -20,7 +20,7 @@ public partial class MainWindowViewModel
             DeviceEnrollmentCode = result.Code;
             DeviceEnrollmentStatus = $"One-use code expires at {result.ExpiresAtUtc.ToLocalTime():t}. Device tokens expire after 30 days; revoke them in Operator accounts.";
         }
-        catch (Exception ex) { DeviceEnrollmentStatus = ex.Message; }
+        catch (Exception ex) when (IsUserFacingOperationError(ex)) { DeviceEnrollmentStatus = ex.Message; }
     }
 
     [RelayCommand]
@@ -37,6 +37,10 @@ public partial class MainWindowViewModel
             SaveSettings();
             DeviceEnrollmentStatus = $"Enrolled as {result.Account?.Username}. Connect to start chatting.";
         }
-        catch (Exception ex) { DeviceEnrollmentStatus = ex.Message; }
+        catch (Exception ex) when (IsUserFacingOperationError(ex)) { DeviceEnrollmentStatus = ex.Message; }
     }
+
+    private static bool IsUserFacingOperationError(Exception ex) => ex is ArgumentException or InvalidOperationException
+        or IOException or HttpRequestException or System.Text.Json.JsonException or System.Security.Cryptography.CryptographicException
+        or UnauthorizedAccessException or NotSupportedException or System.ComponentModel.Win32Exception;
 }

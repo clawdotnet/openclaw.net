@@ -321,6 +321,13 @@ internal static partial class OpenAiEndpoints
                             CompleteToolCall(evt.ToolName);
                             await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
                         }
+                        else if (evt.Type == AgentStreamEventType.Error)
+                        {
+                            await WriteChunkAsync(new OpenAiDelta { Content = evt.Content }, "stop");
+                            await ctx.Response.WriteAsync("data: [DONE]\n\n", ctx.RequestAborted);
+                            await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+                            break;
+                        }
                         else if (evt.Type == AgentStreamEventType.Done)
                         {
                             await WriteChunkAsync(new OpenAiDelta(), "stop");

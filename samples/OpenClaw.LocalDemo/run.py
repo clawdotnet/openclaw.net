@@ -83,6 +83,7 @@ def main():
                 webbrowser.open(url)
             gateway.wait()
     except KeyboardInterrupt:
+        # Ctrl+C is the normal way to stop the interactive demo.
         pass
     finally:
         if gateway and gateway.poll() is None:

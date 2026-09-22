@@ -67,7 +67,7 @@ All commands accept `--root <path>`. Use `--channel beta` for beta feed entries.
 Explicit version pins must exist in the selected channel; no silent fallback.
 The feed orders releases newest first. Manifests expire; expired feeds fail closed.
 Automatic selection rejects an older numeric release than the active one; an
-explicit version pin or rollback permits an intentional downgrade.
+an explicit `--allow-downgrade` flag or rollback permits an intentional downgrade.
 
 Installation verifies RSA/SHA-256 signatures on exact manifest bytes, then bundle
 SHA-256 and size. It smoke-checks CLI `version` and gateway `--doctor` with isolated

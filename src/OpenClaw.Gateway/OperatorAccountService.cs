@@ -211,15 +211,28 @@ internal sealed class OperatorAccountService
         }
     }
 
-    public OperatorAccountTokenCreateResponse? CreateEnrollmentToken(string id, string deviceName, DateTimeOffset expectedRevision, DateTimeOffset expiry)
+    internal (string Id, string Revision)? GetEnrollmentSecuritySnapshot(string id)
     {
         lock (_gate)
         {
             var account = LoadUnsafe().Accounts.FirstOrDefault(item => item.Id == id);
-            if (account is not { Enabled: true } || account.UpdatedAtUtc != expectedRevision) return null;
+            return account is { Enabled: true } ? (account.Id, EnrollmentSecurityRevision(account)) : null;
+        }
+    }
+
+    public OperatorAccountTokenCreateResponse? CreateEnrollmentToken(string id, string deviceName, string expectedRevision, DateTimeOffset expiry)
+    {
+        lock (_gate)
+        {
+            var account = LoadUnsafe().Accounts.FirstOrDefault(item => item.Id == id);
+            if (account is not { Enabled: true } || EnrollmentSecurityRevision(account) != expectedRevision) return null;
             return CreateToken(id, new OperatorAccountTokenCreateRequest { Label = "device:" + deviceName, ExpiresAtUtc = expiry });
         }
     }
+
+    private static string EnrollmentSecurityRevision(StoredAccount account)
+        => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            $"{account.Enabled}\n{account.Role}\n{account.PasswordHash}")));
 
     public bool RevokeToken(string accountId, string tokenId)
     {

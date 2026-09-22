@@ -254,7 +254,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
         System.Text.Json.JsonElement? responseSchema = null,
         string? correlationId = null)
     {
-        _toolExecutor.PrepareAudienceTurn(session, userMessage);
+        if (_toolExecutor.PrepareAudienceTurn(session, userMessage) is { } audienceRejection)
+            return Agent.AgentTurnResult.Completed(audienceRejection);
         using var activity = _telemetry.StartRunActivity("Agent.Maf.RunAsync", session, _runtimeState);
         _goalService?.BeginTurn(session.Id);
         var resolvedCorrelationId = ResolveCorrelationId(correlationId);
@@ -474,7 +475,12 @@ public sealed class MafAgentRuntime : IAgentRuntime
         if (!_options.EnableStreaming)
             throw new NotSupportedException("MAF streaming is disabled for this runtime.");
 
-        _toolExecutor.PrepareAudienceTurn(session, userMessage);
+        if (_toolExecutor.PrepareAudienceTurn(session, userMessage) is { } audienceRejection)
+        {
+            yield return AgentStreamEvent.ErrorOccurred(audienceRejection, "audience_policy_rejected");
+            yield return AgentStreamEvent.Complete();
+            yield break;
+        }
         using var activity = _telemetry.StartRunActivity("Agent.Maf.RunStreamingAsync", session, _runtimeState);
         _goalService?.BeginTurn(session.Id);
         var resolvedCorrelationId = ResolveCorrelationId(correlationId);
@@ -800,7 +806,13 @@ public sealed class MafAgentRuntime : IAgentRuntime
     private string GetSystemPrompt(Session session, string? userMessage = null)
     {
         if (_toolExecutor.GetAudienceProfile(session) is { IncludePrivateContext: false })
-            return AgentSystemPromptBuilder.ApplyResponseMode(AgentSystemPromptBuilder.BuildBaseSystemPrompt(_requireToolApproval, false), session.ResponseMode);
+        {
+            var publicPrompt = AgentSystemPromptBuilder.ApplyResponseMode(
+                AgentSystemPromptBuilder.BuildBaseSystemPrompt(_requireToolApproval, false), session.ResponseMode);
+            return string.IsNullOrWhiteSpace(session.SystemPromptOverride)
+                ? publicPrompt
+                : publicPrompt + "\n\n[Route Instructions]\n" + session.SystemPromptOverride.Trim();
+        }
         string systemPrompt;
         string? blockedRoutes = null;
         lock (_skillGate)

@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -18,7 +20,8 @@ public sealed record BundleActivation(string Current, string? Previous);
 public partial class UpdateJsonContext : JsonSerializerContext { }
 
 /// <summary>Verified, side-by-side desktop bundles. Activation never overwrites a running binary.</summary>
-public sealed class BundleUpdater(HttpClient http, string root, TimeProvider? timeProvider = null)
+public sealed class BundleUpdater(HttpClient http, string root, TimeProvider? timeProvider = null,
+    Func<string, CancellationToken, Task>? smokeCheck = null)
 {
     private readonly string _root = Path.GetFullPath(root);
     private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
@@ -34,8 +37,9 @@ public sealed class BundleUpdater(HttpClient http, string root, TimeProvider? ti
         using var rsa = RSA.Create();
         rsa.ImportFromPem(trust.PublicKeyPem);
         if (rsa.KeySize < 3072) throw new InvalidDataException("Update signing keys must be RSA 3072 bits or larger.");
+        var publicTrust = trust with { PublicKeyPem = rsa.ExportSubjectPublicKeyInfoPem() };
         Directory.CreateDirectory(_root);
-        WriteAtomic(TrustPath, JsonSerializer.Serialize(trust, UpdateJsonContext.Default.UpdateTrust));
+        WriteAtomic(TrustPath, JsonSerializer.Serialize(publicTrust, UpdateJsonContext.Default.UpdateTrust));
     }
 
     public async Task<UpdateRelease> CheckAsync(string channel, string? version, CancellationToken ct)
@@ -71,17 +75,17 @@ public sealed class BundleUpdater(HttpClient http, string root, TimeProvider? ti
         return release;
     }
 
-    public async Task<string> InstallAsync(string channel, string? version, CancellationToken ct)
+    public async Task<string> InstallAsync(string channel, string? version, CancellationToken ct, bool allowDowngrade = false)
     {
         Directory.CreateDirectory(_root);
         using var lease = new FileStream(Path.Combine(_root, "update.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var release = await CheckAsync(channel, version, ct);
         var activeId = ReadActivation()?.Current;
-        if (version is null && activeId is { Length: > 65 })
+        if (activeId is { Length: > 65 })
         {
             var previousVersion = activeId[..^65];
-            if (Version.TryParse(previousVersion.Split('-')[0], out var previous) && Version.TryParse(release.Version.Split('-')[0], out var offered) && offered < previous)
-                throw new InvalidOperationException("The feed offers an older version. Select --version explicitly or use rollback.");
+            if (CompareSemanticVersions(release.Version, previousVersion) < 0 && !allowDowngrade)
+                throw new InvalidOperationException("The feed offers an older version. Use rollback or explicitly allow a downgrade.");
         }
         var asset = release.Assets.SingleOrDefault(x => x.Rid == RuntimeInformation.RuntimeIdentifier)
             ?? throw new InvalidDataException("No update for this operating system and architecture.");
@@ -91,6 +95,8 @@ public sealed class BundleUpdater(HttpClient http, string root, TimeProvider? ti
         var id = release.Version + "-" + asset.Sha256.ToLowerInvariant();
         var destination = BundlePath(id);
         var staging = Path.Combine(_root, ".staging-" + Guid.NewGuid().ToString("N"));
+        var moved = false;
+        var activated = false;
         Directory.CreateDirectory(staging);
         try
         {
@@ -104,18 +110,24 @@ public sealed class BundleUpdater(HttpClient http, string root, TimeProvider? ti
             }
             var bundle = Path.Combine(staging, "bundle");
             ExtractBundle(archive, bundle);
-            await SmokeCheckAsync(bundle, ct);
+            await (smokeCheck ?? SmokeCheckAsync)(bundle, ct);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             // Never trust a pre-existing installation instead of the freshly verified archive.
             if (Directory.Exists(destination))
                 throw new InvalidOperationException("This bundle is already installed. Use update launch or rollback; existing files are not overwritten.");
             Directory.Move(bundle, destination);
+            moved = true;
             var previous = ReadActivation()?.Current;
             WriteLaunchers();
             WriteAtomic(ActivationPath, JsonSerializer.Serialize(new BundleActivation(id, previous), UpdateJsonContext.Default.BundleActivation));
+            activated = true;
             return destination;
         }
-        finally { if (Directory.Exists(staging)) Directory.Delete(staging, true); }
+        finally
+        {
+            if (moved && !activated && Directory.Exists(destination)) Directory.Delete(destination, true);
+            if (Directory.Exists(staging)) Directory.Delete(staging, true);
+        }
     }
 
     public string Rollback()
@@ -145,6 +157,35 @@ public sealed class BundleUpdater(HttpClient http, string root, TimeProvider? ti
     {
         if (string.IsNullOrEmpty(version) || version.Length > 80 || version.Contains("..") || version.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('.' or '-')))
             throw new InvalidDataException("Invalid release version.");
+        _ = CompareSemanticVersions(version, version);
+    }
+    internal static int CompareSemanticVersions(string left, string right)
+    {
+        static (int[] Main, string[] Pre) Parse(string value)
+        {
+            var split = value.Split('-', 2);
+            var mainParts = split[0].Split('.');
+            if (mainParts.Length != 3 || mainParts.Any(part => part.Length == 0 ||
+                    (part.Length > 1 && part[0] == '0') || !int.TryParse(part, out _)))
+                throw new InvalidDataException("Release versions must use valid semantic versioning.");
+            var main = mainParts.Select(int.Parse).ToArray();
+            var pre = split.Length == 1 ? [] : split[1].Split('.');
+            if (pre.Any(part => part.Length == 0 || part.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-') ||
+                    (part.All(char.IsAsciiDigit) && part.Length > 1 && part[0] == '0')))
+                throw new InvalidDataException("Release versions must use valid semantic versioning.");
+            return (main, pre);
+        }
+        var a = Parse(left); var b = Parse(right);
+        for (var i = 0; i < 3; i++) { var comparison = a.Main[i].CompareTo(b.Main[i]); if (comparison != 0) return comparison; }
+        if (a.Pre.Length == 0 || b.Pre.Length == 0) return a.Pre.Length == b.Pre.Length ? 0 : a.Pre.Length == 0 ? 1 : -1;
+        for (var i = 0; i < Math.Min(a.Pre.Length, b.Pre.Length); i++)
+        {
+            var aNumber = int.TryParse(a.Pre[i], out var an); var bNumber = int.TryParse(b.Pre[i], out var bn);
+            var comparison = aNumber && bNumber ? an.CompareTo(bn)
+                : aNumber ? -1 : bNumber ? 1 : string.CompareOrdinal(a.Pre[i], b.Pre[i]);
+            if (comparison != 0) return comparison;
+        }
+        return a.Pre.Length.CompareTo(b.Pre.Length);
     }
     public static void ExtractBundle(string archivePath, string destination)
     {
@@ -162,6 +203,10 @@ public sealed class BundleUpdater(HttpClient http, string root, TimeProvider? ti
             total = checked(total + entry.Length);
             if (total > 4L * 1024 * 1024 * 1024) throw new InvalidDataException("Expanded update is too large.");
             var path = Path.Combine(destination, name);
+            var destinationRoot = Path.GetFullPath(destination) + Path.DirectorySeparatorChar;
+            path = Path.GetFullPath(path);
+            if (!path.StartsWith(destinationRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                throw new InvalidDataException("Unsafe update archive path.");
             if (name.EndsWith('/')) { Directory.CreateDirectory(path); continue; }
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             using var source = entry.Open();
@@ -187,11 +232,15 @@ public sealed class BundleUpdater(HttpClient http, string root, TimeProvider? ti
     {
         await RunCheckAsync(Executable(bundle, "cli"), ["version"], bundle, ct);
         var smokeConfig = Path.Combine(Path.GetDirectoryName(bundle)!, "smoke.json");
-        using (var stream = File.Create(smokeConfig))
-        using (var writer = new Utf8JsonWriter(stream))
+        using (var listener = new TcpListener(IPAddress.Loopback, 0))
         {
+            listener.Start();
+            var smokePort = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            using var stream = File.Create(smokeConfig);
+            using var writer = new Utf8JsonWriter(stream);
             writer.WriteStartObject(); writer.WriteStartObject("OpenClaw");
-            writer.WriteString("BindAddress", "127.0.0.1"); writer.WriteNumber("Port", 19899);
+            writer.WriteString("BindAddress", "127.0.0.1"); writer.WriteNumber("Port", smokePort);
             writer.WriteStartObject("Memory"); writer.WriteString("StoragePath", Path.Combine(Path.GetDirectoryName(bundle)!, "smoke-memory")); writer.WriteEndObject();
             writer.WriteStartObject("Llm"); writer.WriteString("Provider", "ollama"); writer.WriteString("Model", "llama3.2"); writer.WriteEndObject();
             writer.WriteEndObject(); writer.WriteEndObject();
@@ -208,10 +257,13 @@ public sealed class BundleUpdater(HttpClient http, string root, TimeProvider? ti
         using var process = Process.Start(info) ?? throw new IOException("Cannot start staged component.");
         var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
         var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
-        try { await process.WaitForExitAsync(timeout.Token); await Task.WhenAll(stdout, stderr); }
+        string[] output;
+        try { await process.WaitForExitAsync(timeout.Token); output = await Task.WhenAll(stdout, stderr); }
         catch { if (!process.HasExited) process.Kill(entireProcessTree: true); throw; }
-        if (process.ExitCode != 0) throw new InvalidDataException("Staged component failed its startup check; current bundle is unchanged.");
+        if (process.ExitCode != 0)
+            throw new InvalidDataException($"Staged component failed its startup check; current bundle is unchanged. Output: {Tail(output[0])} {Tail(output[1])}".Trim());
     }
+    private static string Tail(string value) => value.Length <= 2048 ? value.Trim() : value[^2048..].Trim();
     private async Task<byte[]> DownloadBytesAsync(string url, long maximum, CancellationToken ct)
     {
         using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
