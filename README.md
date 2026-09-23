@@ -121,6 +121,7 @@ Tool: echo(hello): ok
 | Agent runtime | Streaming, tool execution, cancellation, retries, sessions, memory, and token-usage reporting. |
 | Interfaces | AgentQi Companion, browser chat and admin UI, CLI, terminal UI, OpenAI-compatible HTTP endpoints, MCP, and WebSockets. |
 | Models | OpenAI, Claude, Gemini, Azure OpenAI, DeepSeek, Ollama, and OpenAI-compatible providers; named profiles and optional embedded local inference. |
+| Decision routing | Opt-in [hosted Jev](docs/jev-routing.md) or [local Laya](docs/laya-routing.md) routing, with shadow evaluation, safety floors, and fallback to the existing policy. Laya active routing requires a calibration artifact. |
 | Tools and channels | 80+ native and optional tool surfaces for files, web, sessions, databases, email, home automation, and more; adapters for Telegram, WhatsApp, Teams, Slack, Discord, and other channels. The active set depends on configuration. |
 | Extensions | MCP servers and interactive MCP Apps, reusable `SKILL.md` packages, first-party .NET integrations, and supported OpenClaw TS/JS plugins. |
 | Long-running work | Session-scoped `/goal` continuation, `/loop` recurring prompts, and optional durable workflow backends. |

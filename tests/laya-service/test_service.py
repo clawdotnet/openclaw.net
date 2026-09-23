@@ -31,6 +31,15 @@ def observation(identifier, label='small', probability=.99):
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_rubric_hash_matches_dotnet_golden_values(self):
+        rubric = json.loads((Path(__file__).resolve().parents[2] /
+                             'tools/laya_service/rubrics/openclaw-laya-tiers-v1.json').read_text())
+        self.assertEqual('8c8de008c11734cf12b58c7914581ea2779c2e44356f3c5b1cf79df7fa953d9c',
+                         protocol.schema_hash(rubric['questions']))
+        rubric['questions']['tier']['instructions'] = "Judge l'utilisateur <x> & C++ café 中文 😀\u2028\u0001\n\t"
+        self.assertEqual('2089e651a62138bf97aaf6c0ee38e4791540f7ec372064384cc7caf831b9da9c',
+                         protocol.schema_hash(rubric['questions']))
+
     def test_rejects_duplicate_nonfinite_and_invalid_contracts(self):
         for value in ['{"x":1,"x":2}', '{"x":NaN}']:
             with self.assertRaises(ValueError): protocol.read_json(value)

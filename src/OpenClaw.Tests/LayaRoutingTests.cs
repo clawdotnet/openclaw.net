@@ -20,6 +20,7 @@ public sealed class LayaRoutingTests
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
     private static readonly FixedPolicy Baseline = new();
     private const string Calibration = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private const string RubricHash = "8c8de008c11734cf12b58c7914581ea2779c2e44356f3c5b1cf79df7fa953d9c";
 
     [Theory]
     [InlineData("http://example.com/v1/decisions")]
@@ -81,6 +82,61 @@ public sealed class LayaRoutingTests
         Assert.Equal("english", observer.Items[0].Metadata!.Checkpoint);
         Assert.Equal("openclaw-laya-tiers-v1", observer.Items[0].RubricVersion);
         Assert.Equal(0, observer.Items[0].EstimatedCostUsd);
+    }
+
+    [Theory]
+    [InlineData(false, RubricHash)]
+    [InlineData(true, "2089e651a62138bf97aaf6c0ee38e4791540f7ec372064384cc7caf831b9da9c")]
+    public async Task SchemaHashMatchesPythonGoldenValues(bool unicode, string expectedHash)
+    {
+        var config = new LayaRoutingConfig();
+        using var handler = new Handler(config);
+        handler.Result["metadata"]!["schema_hash"] = expectedHash;
+        using var client = new LayaDecisionClient(new HttpClient(handler), config);
+        using var stream = typeof(DecisionTurnRoutingPolicy).Assembly.GetManifestResourceStream("OpenClaw.LayaRoutingRubric.json")!;
+        using var rubric = JsonDocument.Parse(stream);
+        var questions = new Dictionary<string, DecisionQuestion>();
+        foreach (var item in rubric.RootElement.GetProperty("questions").EnumerateObject())
+        {
+            questions[item.Name] = new()
+            {
+                Type = item.Value.GetProperty("type").GetString()!,
+                Instructions = unicode && item.Name == "tier"
+                    ? "Judge l'utilisateur <x> & C++ café 中文 😀\u2028\u0001\n\t"
+                    : item.Value.GetProperty("instructions").GetString()!,
+                Criteria = item.Value.TryGetProperty("criteria", out var criteria) ? criteria.Clone() : null
+            };
+        }
+        using var state = JsonDocument.Parse("\"hello\"");
+        var result = await client.EvaluateAsync(new()
+        {
+            Model = config.Model, State = state.RootElement.Clone(), Questions = questions,
+            RubricVersion = "openclaw-laya-tiers-v1"
+        }, Ct);
+        Assert.Equal(expectedHash, result.Metadata!.SchemaHash);
+    }
+
+    [Theory]
+    [InlineData('x', 31990)]
+    [InlineData('\n', 16000)]
+    [InlineData('中', 11000)]
+    public async Task OversizedSerializedStateDoesNotReachServiceOrOpenCircuit(char character, int count)
+    {
+        var config = new LayaRoutingConfig { Mode = "active", CalibrationId = Calibration, MaxStateChars = 32000, CircuitFailureThreshold = 1 };
+        using var handler = new Handler(config);
+        using var client = new LayaDecisionClient(new HttpClient(handler), config);
+        var observer = new Observer();
+        using var policy = CreatePolicy(config, client, observer);
+        var oversized = new TurnRoutingRequest
+        {
+            Session = Request().Session, UserMessage = "prefix" + new string(character, count),
+            Messages = [], BaseOptions = new ChatOptions()
+        };
+        Assert.Same(Baseline.Decision, await policy.ResolveAsync(oversized, Ct));
+        Assert.Equal("request_too_large", Assert.Single(observer.Items).Reason);
+        Assert.Equal(0, handler.Calls);
+        Assert.Equal("local-small", (await policy.ResolveAsync(Request(), Ct)).ModelProfileId);
+        Assert.Equal(1, handler.Calls);
     }
 
     [Theory]
@@ -159,9 +215,7 @@ public sealed class LayaRoutingTests
             Body = await request.Content.ReadAsStringAsync(cancellationToken);
             if (Result["metadata"]?["schema_hash"]?.GetValue<string>() == Calibration)
             {
-                using var payload = JsonDocument.Parse(Body);
-                var questions = Encoding.UTF8.GetBytes(payload.RootElement.GetProperty("questions").GetRawText());
-                Result["metadata"]!["schema_hash"] = Convert.ToHexString(SHA256.HashData(questions)).ToLowerInvariant();
+                Result["metadata"]!["schema_hash"] = RubricHash;
             }
             return new HttpResponseMessage(Status) { Content = new StringContent(Result.ToJsonString()) };
         }

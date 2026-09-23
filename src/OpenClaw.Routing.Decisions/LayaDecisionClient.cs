@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Validation;
@@ -22,15 +23,22 @@ public sealed class LayaDecisionClient : IDecisionClient, IDisposable
 
     public async Task<DecisionResponse> EvaluateAsync(DecisionRequest request, CancellationToken cancellationToken)
     {
-        var questions = JsonSerializer.SerializeToUtf8Bytes(request.Questions,
-            DecisionJsonContext.Default.DictionaryStringDecisionQuestion);
+        // The service bounds the canonical state, including keys and escaped text.
+        // Reject locally so user input cannot count as a service failure or open its circuit.
+        if (LayaCanonicalJson.Serialize(request.State).Length > Math.Min(_config.MaxStateChars, 32000))
+            throw new DecisionException("request_too_large");
+        var questions = Encoding.UTF8.GetBytes(LayaCanonicalJson.Serialize(JsonSerializer.SerializeToElement(
+            request.Questions, DecisionJsonContext.Default.DictionaryStringDecisionQuestion)));
         var expectedSchemaHash = Convert.ToHexString(SHA256.HashData(questions)).ToLowerInvariant();
         using var message = new HttpRequestMessage(HttpMethod.Post, _endpoint);
         // Materialize the bounded payload so Content-Length is known; the local
         // service deliberately rejects chunked bodies before reading request data.
-        message.Content = new ByteArrayContent(JsonSerializer.SerializeToUtf8Bytes(new LayaWireRequest(request.Model, request.State, request.Questions,
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new LayaWireRequest(request.Model, request.State, request.Questions,
             request.RubricVersion, string.IsNullOrWhiteSpace(_config.Language) ? null : _config.Language),
-            DecisionJsonContext.Default.LayaWireRequest));
+            DecisionJsonContext.Default.LayaWireRequest);
+        if (payload.Length > 65536)
+            throw new DecisionException("request_too_large");
+        message.Content = new ByteArrayContent(payload);
         message.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         var result = await DecisionHttpTransport.SendAsync(_http, message, request, cancellationToken);
         var metadata = result.Metadata;

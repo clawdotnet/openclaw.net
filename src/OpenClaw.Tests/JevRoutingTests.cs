@@ -2,6 +2,9 @@ using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
+using OpenClaw.Agent;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Agent.Routing;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
@@ -111,7 +114,7 @@ public sealed class JevRoutingTests
         using var harness = new Harness("active", "T0");
         var request = Request(text);
         request.Session.RouteModelTier = previousTier;
-        request.Session.RouteReason = previousTier is null ? null : "jev";
+        request.Session.RouteModelTierSource = previousTier is null ? null : "jev";
         Assert.Equal(expected, (await harness.Policy.ResolveAsync(request, Ct)).Tier);
         Assert.Equal("safety_floor", Assert.Single(harness.Observer.Items).Reason);
     }
@@ -150,10 +153,31 @@ public sealed class JevRoutingTests
         using var harness = new Harness("active", "T0");
         var request = Request();
         request.Session.RouteModelTier = "T3";
-        request.Session.RouteReason = "default";
+        request.Session.RouteModelTierSource = "default";
         Assert.Equal("T0", (await harness.Policy.ResolveAsync(request, Ct)).Tier);
-        request.Session.RouteReason = "jev";
+        request.Session.RouteModelTierSource = "jev";
         Assert.Equal("T3", (await harness.Policy.ResolveAsync(request, Ct)).Tier);
+    }
+
+    [Fact]
+    public async Task ProviderStickyTierSurvivesCompletedRuntimeTurns()
+    {
+        using var harness = new Harness("active", "T0");
+        var client = Substitute.For<IChatClient>();
+        client.GetResponseAsync(Arg.Any<IList<ChatMessage>>(), Arg.Any<ChatOptions>(), Arg.Any<CancellationToken>())
+            .Returns(new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok")));
+        var runtime = new AgentRuntime(client, [], Substitute.For<IMemoryStore>(),
+            new LlmProviderConfig { Provider = "openai", Model = "test" }, 10, turnRoutingPolicy: harness.Policy);
+        var session = Request().Session;
+        await runtime.RunAsync(session, "Compare architecture and plan the migration.", Ct);
+        Assert.Equal("T3", session.RouteModelTier);
+        Assert.Equal("jev+safety_floor", session.RouteModelTierSource);
+        Assert.Null(session.RouteReason);
+        await runtime.RunAsync(session, "ok, do it", Ct);
+        Assert.Equal("T3", session.RouteModelTier);
+        Assert.Null(session.RouteReason);
+        Assert.All(harness.Observer.Items, item => Assert.Equal("T3", item.AppliedTier));
+        Assert.Equal(2, harness.Handler.Calls);
     }
 
     [Fact]

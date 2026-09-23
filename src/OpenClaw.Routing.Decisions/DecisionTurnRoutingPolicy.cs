@@ -228,7 +228,7 @@ public sealed class DecisionTurnRoutingPolicy : ITurnRoutingPolicy, IDisposable
         var signals = TurnRoutingGuardrails.ExtractSignals(request.UserMessage, turnIndex);
         tier = TurnRoutingGuardrails.ApplyFlagOverrides(tier, signals);
         tier = TurnRoutingGuardrails.ApplyContextRule(tier, turnIndex, _policy.DeepConversationTurnIndexThreshold);
-        var priorReason = request.Session.RouteReason;
+        var priorReason = request.Session.RouteModelTierSource;
         var providerStickyTier = priorReason == _provider || priorReason == $"{_provider}+safety_floor"
             ? request.Session.RouteModelTier
             : null;
