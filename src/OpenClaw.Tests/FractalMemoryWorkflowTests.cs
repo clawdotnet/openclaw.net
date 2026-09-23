@@ -138,6 +138,7 @@ public sealed class FractalMemoryWorkflowTests
     {
         await using var fixture = new StdioFixture(serverMode);
         fixture.Config.Memory.Fractal.AutoContextMode = "auto";
+        fixture.Config.Memory.Fractal.DefaultExportMode = "verbose";
         var planner = new ContextBudgetPlanner(fixture.Config, fixture.Provider);
         var result = await planner.BuildContextAsync(new() { PathHint = "projects/demo", Mode = "auto", MaxChars = 500 }, TestContext.Current.CancellationToken);
         Assert.True(result.Success, result.Error);
@@ -186,6 +187,34 @@ public sealed class FractalMemoryWorkflowTests
 
         Assert.True(result.Success, result.Error);
         await workflows.Received(1).BuildContextAsync("projects/demo", 488, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Context_SourceLabelsDoNotDisplaceBoundedText()
+    {
+        var provider = Substitute.For<IStructuredMemoryProvider, IStructuredMemoryWorkflowProvider>();
+        var content = new string('x', 23470) + "CURATED CONTEXT END";
+        ((IStructuredMemoryWorkflowProvider)provider).BuildContextAsync("projects/demo", 23488, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new StructuredMemoryExportResult
+            {
+                Success = true, Path = "projects/demo", Mode = "context", Content = content,
+                Sources = Enumerable.Range(0, 20).Select(i => new StructuredMemorySourceRef
+                {
+                    SourcePath = $"projects/demo/{i}/" + new string('s', 80), StartLine = 1, EndLine = 20
+                }).ToArray()
+            }));
+        var config = new GatewayConfig();
+        config.Memory.Fractal.Enabled = true;
+        config.Memory.Fractal.AutoContextMode = "auto";
+        config.Memory.Fractal.MaxContextChars = 24000;
+        config.Memory.Fractal.MaxContextTokens = 6000;
+        var result = await new ContextBudgetPlanner(config, provider).BuildContextAsync(
+            new() { PathHint = "projects/demo", Mode = "auto" }, TestContext.Current.CancellationToken);
+        Assert.True(result.Success, result.Error);
+        Assert.Contains(content, result.Context);
+        Assert.True(result.Context!.Length <= 24000);
+        Assert.False(result.Truncated);
+        Assert.Equal(20, result.Sources.Count);
     }
 
     [Fact]

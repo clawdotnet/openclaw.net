@@ -280,7 +280,23 @@ internal static class EndpointHelpers
         string endpointScope)
     {
         var auth = AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf);
+        return AuthorizeOperatorEndpoint(ctx, operations, auth, requireCsrf, endpointScope);
+    }
+
+    public static (OperatorAuthorizationResult? Authorization, IResult? Failure) AuthorizeOperatorEndpoint(
+        HttpContext ctx,
+        RuntimeOperationsState operations,
+        OperatorAuthorizationResult auth,
+        bool requireCsrf,
+        string endpointScope)
+    {
         if (!auth.IsAuthorized)
+            return (null, Results.Unauthorized());
+
+        if (requireCsrf && auth.UsedBrowserSession &&
+            (auth.BrowserSession is null || !string.Equals(
+                ctx.Request.Headers[BrowserSessionAuthService.CsrfHeaderName].ToString(),
+                auth.BrowserSession.CsrfToken, StringComparison.Ordinal)))
             return (null, Results.Unauthorized());
 
         if (!IsRoleAllowed(auth.Role, endpointScope, out var requiredRole))

@@ -205,7 +205,7 @@ Trust: untrusted_reference_data
 </fractal_memory_context>
 ```
 
-Upstream's `maxCharacters` bounds only its `text` field, not JSON metadata or resource links. Manual workflow results preserve that metadata; automatic injection uses the bounded text and source labels only, then applies the final OpenClaw budget. `MaxContextTokens` uses the existing four-characters-per-token estimate, not model-specific tokenization.
+Upstream's `maxCharacters` bounds only its `text` field, not JSON metadata or resource links. Manual workflow results preserve that metadata; automatic injection reserves room for the wrapper and includes source labels only when they fit alongside the bounded text. The structured result retains every source even when a label does not fit. The final OpenClaw budget still applies to the entire block. `MaxContextTokens` uses the existing four-characters-per-token estimate, not model-specific tokenization.
 
 ## Runtime Pulse
 

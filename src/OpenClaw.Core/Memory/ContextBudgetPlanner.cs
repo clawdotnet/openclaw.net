@@ -60,7 +60,7 @@ public sealed class ContextBudgetPlanner
         if (!export.Success)
             return Fail(export.Error ?? "Fractal Memory export failed.", sourcePath);
 
-        var context = BuildContextBlock(export, fractal.DefaultDepth);
+        var context = BuildContextBlock(export, fractal.DefaultDepth, maxChars);
         var truncated = export.Truncated;
         if (context.Length > maxChars)
         {
@@ -102,7 +102,7 @@ public sealed class ContextBudgetPlanner
             : null;
     }
 
-    private static string BuildContextBlock(StructuredMemoryExportResult export, int depth)
+    private static string BuildContextBlock(StructuredMemoryExportResult export, int depth, int maxChars)
     {
         var generatedAt = DateTimeOffset.UtcNow;
         var sb = new StringBuilder();
@@ -113,24 +113,30 @@ public sealed class ContextBudgetPlanner
         sb.AppendLine($"GeneratedAtUtc: {generatedAt:O}");
         sb.AppendLine("Trust: untrusted_reference_data");
         sb.AppendLine();
+        var content = string.IsNullOrWhiteSpace(export.Content) ? "" : export.Content.Trim() + Environment.NewLine;
+        var footer = "</fractal_memory_context>" + Environment.NewLine;
+        // Source labels are optional metadata. Preserve the server-curated text before
+        // spending the remaining envelope budget on labels; all sources remain in the result.
+        var labels = new StringBuilder();
         if (export.Sources.Count > 0)
         {
-            sb.AppendLine("Source labels:");
+            labels.AppendLine("Source labels:");
             foreach (var source in export.Sources.Take(20))
             {
                 var label = !string.IsNullOrWhiteSpace(source.SourcePath) ? source.SourcePath : source.Path;
                 var line = source.StartLine.HasValue && source.EndLine.HasValue
                     ? $":{source.StartLine}-{source.EndLine}"
                     : "";
-                sb.AppendLine($"- {label}{line}");
+                var entry = $"- {label}{line}" + Environment.NewLine;
+                if ((long)sb.Length + labels.Length + entry.Length + Environment.NewLine.Length + content.Length + footer.Length > maxChars)
+                    continue;
+                labels.Append(entry);
             }
-            sb.AppendLine();
+            if (labels.Length > "Source labels:".Length + Environment.NewLine.Length)
+                sb.Append(labels).AppendLine();
         }
 
-        if (!string.IsNullOrWhiteSpace(export.Content))
-            sb.AppendLine(export.Content.Trim());
-
-        sb.AppendLine("</fractal_memory_context>");
+        sb.Append(content).Append(footer);
         return sb.ToString();
     }
 

@@ -76,6 +76,38 @@ public sealed partial class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task FractalMemoryWorkflows_MeterEachRequestIncludingInvalidBodies()
+    {
+        await using var harness = await CreateHarnessAsync(true, config => config.Memory.Fractal.Enabled = true);
+        using var policy = new HttpRequestMessage(HttpMethod.Post, "/admin/rate-limits")
+        {
+            Content = JsonContent("""
+                {"id":"fractal-read","actorType":"ip","endpointScope":"admin.memory",
+                 "burstLimit":4,"burstWindowSeconds":3600,"sustainedLimit":4,"sustainedWindowSeconds":3600,"enabled":true}
+                """)
+        };
+        policy.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        using var created = await harness.Client.SendAsync(policy);
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var cases = new[]
+        {
+            ("doctor", "{}", HttpStatusCode.OK),
+            ("missing", "{}", HttpStatusCode.NotFound),
+            ("read", "{", HttpStatusCode.BadRequest),
+            ("read", "{}", HttpStatusCode.BadRequest),
+            ("doctor", "{}", HttpStatusCode.TooManyRequests)
+        };
+        foreach (var (operation, body, expected) in cases)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/admin/memory/fractal/workflows/{operation}")
+                { Content = JsonContent(body) };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+            using var response = await harness.Client.SendAsync(request);
+            Assert.Equal(expected, response.StatusCode);
+        }
+    }
+
+    [Fact]
     public async Task FractalMemoryWorkflows_HttpClientPreservesHashAndSourceLinks()
     {
         var provider = Substitute.For<IStructuredMemoryProvider, IStructuredMemoryWorkflowProvider>();

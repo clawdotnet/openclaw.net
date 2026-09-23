@@ -207,11 +207,14 @@ internal static partial class AdminEndpoints
         {
             // Reject unauthenticated callers before reading a body, then apply role, CSRF and
             // rate-limit policy once using the final read/write scope after validation.
-            if (!EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false).IsAuthorized)
+            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
+            if (!auth.IsAuthorized)
                 return Results.Unauthorized();
+            IResult MeterInvalidRequest(IResult failure) => EndpointHelpers.AuthorizeOperatorEndpoint(
+                ctx, operations, auth, requireCsrf: false, endpointScope: "admin.memory").Failure ?? failure;
             var workflow = FractalMemoryWorkflows.Find(operation);
             if (workflow is null)
-                return Results.Json(new StructuredMemoryWorkflowResult { Error = "Unknown Fractal Memory workflow." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status404NotFound);
+                return MeterInvalidRequest(Results.Json(new StructuredMemoryWorkflowResult { Error = "Unknown Fractal Memory workflow." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status404NotFound));
             JsonBodyReadResult<JsonDocument> payload;
             try
             {
@@ -219,21 +222,20 @@ internal static partial class AdminEndpoints
             }
             catch (JsonException)
             {
-                return Results.Json(new StructuredMemoryWorkflowResult { Error = "Arguments must be a valid JSON object." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status400BadRequest);
+                return MeterInvalidRequest(Results.Json(new StructuredMemoryWorkflowResult { Error = "Arguments must be a valid JSON object." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status400BadRequest));
             }
             if (payload.Failure is not null)
-                return payload.Failure;
+                return MeterInvalidRequest(payload.Failure);
             using var document = payload.Value ?? JsonDocument.Parse("{}");
             var arguments = document.RootElement;
             if (workflow.Validate(arguments) is { } error)
-                return Results.Json(new StructuredMemoryWorkflowResult { Error = error }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status400BadRequest);
+                return MeterInvalidRequest(Results.Json(new StructuredMemoryWorkflowResult { Error = error }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status400BadRequest));
 
             var mutation = workflow.IsMutation(arguments);
-            var authResult = AuthorizeOperator(
+            var authResult = EndpointHelpers.AuthorizeOperatorEndpoint(
                 ctx,
-                startup,
-                browserSessions,
                 operations,
+                auth,
                 requireCsrf: mutation,
                 endpointScope: mutation ? "admin.memory.mutate" : "admin.memory");
             if (authResult.Failure is not null)
