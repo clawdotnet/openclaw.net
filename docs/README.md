@@ -47,6 +47,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [cli/routing.md](cli/routing.md) | `openclaw routing ...` commands for onboarding, router modes, tier/provider mapping, and diagnostics. |
 | [mempalace-memory.md](mempalace-memory.md) | Optional ElBruno.MempalaceNet memory provider and temporal KG tool. |
 | [FRACTAL_MEMORY.md](FRACTAL_MEMORY.md) | Optional MCP-first Fractal Memory integration for compact structured project memory and Runtime Pulse context. |
+| [Audience, updates and enrollment](audience-updates-enrollment.md) | Audience restrictions, signed bundle updates and rollback, device enrollment, and the local demo. |
 | [providers/microsoft-extensions-ai.md](providers/microsoft-extensions-ai.md) | Optional JIT bridge for arbitrary `Microsoft.Extensions.AI.IChatClient` providers. |
 | [SESSIONS.md](SESSIONS.md) | Session lifecycle, the `SessionManager`, `sessions_spawn` / `sessions_yield` / `sessions` tools, and per-turn token accounting semantics (turn/session/runtime/provider views). |
 | [CANVAS_A2UI.md](CANVAS_A2UI.md) | Supported Canvas and A2UI behavior for agent-rendered visual workspaces. |

@@ -131,6 +131,8 @@ Explore the [user guide](docs/USER_GUIDE.md), [tool catalog](docs/TOOLS_GUIDE.md
 
 For audience restrictions, verified bundle updates, remote device enrollment,
 and a one-command local demo, see [the operations guide](docs/audience-updates-enrollment.md).
+Audience controls are opt-in; verified updates require an independently trusted
+publisher key, and remote device enrollment requires HTTPS and an administrator-issued code.
 
 ## Compatibility and capability boundaries
 

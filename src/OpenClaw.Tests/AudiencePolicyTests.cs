@@ -43,6 +43,17 @@ public sealed class AudiencePolicyTests
         Assert.Single(session.History); // rejection must not delete user history
     }
     [Fact]
+    public void LegacyPrivateHistoryCannotEnterPublicAudience()
+    {
+        var session = Session();
+        session.History.Add(new() { Role = "assistant", Content = "legacy private context" });
+        Assert.Contains("narrowed", Executor(Config()).PrepareAudienceTurn(session, "hello"), StringComparison.OrdinalIgnoreCase);
+        Assert.Null(session.AudienceContextKey);
+        Assert.Single(session.History);
+        Assert.Null(Executor(new GatewayConfig()).PrepareAudienceTurn(session, "hello"));
+    }
+
+    [Fact]
     public void PublicAttachmentsAreRejected()
     {
         Assert.Contains("disabled", Executor(Config()).PrepareAudienceTurn(Session(), "[IMAGE_URL:https://example.com/a.png]"), StringComparison.OrdinalIgnoreCase);

@@ -41,6 +41,6 @@ public partial class MainWindowViewModel
     }
 
     private static bool IsUserFacingOperationError(Exception ex) => ex is ArgumentException or InvalidOperationException
-        or IOException or HttpRequestException or System.Text.Json.JsonException or System.Security.Cryptography.CryptographicException
+        or IOException or InvalidDataException or HttpRequestException or System.Text.Json.JsonException or System.Security.Cryptography.CryptographicException
         or UnauthorizedAccessException or NotSupportedException or System.ComponentModel.Win32Exception;
 }

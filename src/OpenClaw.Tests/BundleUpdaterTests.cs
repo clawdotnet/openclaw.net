@@ -5,6 +5,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using OpenClaw.Core.Updates;
+using OpenClaw.Companion.Services;
+using OpenClaw.Companion.ViewModels;
 using Xunit;
 namespace OpenClaw.Tests;
 public sealed class BundleUpdaterTests : IDisposable
@@ -75,6 +77,25 @@ public sealed class BundleUpdaterTests : IDisposable
         Assert.StartsWith(first, updater.GetActiveExecutable("cli"));
     }
     [Theory]
+    [InlineData("cli")]
+    [InlineData("gateway")]
+    public async Task RealSmokeCheckRejectsFailingBundleAndIncludesOutput(string component)
+    {
+        if (OperatingSystem.IsWindows()) return; // These fixture executables use /bin/sh.
+        var bundle = Archive(component);
+        var handler = new Handler();
+        using var http = new HttpClient(handler);
+        var updater = new BundleUpdater(http, _root);
+        updater.ConfigureTrust(new("https://publisher.test/feed", _key.ExportSubjectPublicKeyInfoPem()));
+        var feed = Feed("1.0.0", bundle);
+        handler.Data = new() { ["/feed"] = feed, ["/feed.sig"] = Sign(feed), ["/bundle.zip"] = bundle };
+        var error = await Assert.ThrowsAsync<InvalidDataException>(() => updater.InstallAsync("stable", null, TestContext.Current.CancellationToken));
+        Assert.Contains("smoke-stdout", error.Message);
+        Assert.Contains("smoke-stderr", error.Message);
+        Assert.Throws<InvalidOperationException>(() => updater.GetActiveExecutable("cli"));
+    }
+
+    [Theory]
     [InlineData("1.2.0-beta.1", "1.2.0-beta.2", -1)]
     [InlineData("1.2.0", "1.2.0-rc.9", 1)]
     [InlineData("2.0.0", "1.99.99", 1)]
@@ -139,6 +160,38 @@ public sealed class BundleUpdaterTests : IDisposable
         Assert.Contains("1.5.0", installed, StringComparison.Ordinal);
     }
     [Fact]
+    public async Task CompanionChecksTrackLatestWithoutTurningResultIntoVersionPin()
+    {
+        var handler = new Handler();
+        using var http = new HttpClient(handler, disposeHandler: false);
+        new BundleUpdater(http, _root).ConfigureTrust(new("https://publisher.test/feed", _key.ExportSubjectPublicKeyInfoPem()));
+        var viewModel = new MainWindowViewModel(new SettingsStore(Path.Combine(_root, "settings")), new GatewayWebSocketClient())
+        {
+            UpdateStorageRoot = _root,
+            UpdateHttpClientFactory = () => new HttpClient(handler, disposeHandler: false)
+        };
+        void Publish(string version)
+        {
+            var feed = Feed(version, [1]);
+            handler.Data = new() { ["/feed"] = feed, ["/feed.sig"] = Sign(feed) };
+        }
+        Publish("1.2.0");
+        await viewModel.CheckBundleUpdateCommand.ExecuteAsync(null);
+        Assert.Contains("Verified stable release 1.2.0", viewModel.UpdateStatus);
+        Assert.Equal("", viewModel.UpdateVersion);
+        Publish("1.3.0");
+        await viewModel.CheckBundleUpdateCommand.ExecuteAsync(null);
+        Assert.Contains("Verified stable release 1.3.0", viewModel.UpdateStatus);
+        Assert.Equal("", viewModel.UpdateVersion);
+        viewModel.UpdateVersion = "1.2.0";
+        await viewModel.InstallBundleUpdateCommand.ExecuteAsync(null);
+        Assert.Contains("Check for updates first", viewModel.UpdateStatus);
+        await viewModel.CheckBundleUpdateCommand.ExecuteAsync(null);
+        Assert.Contains("no matching release", viewModel.UpdateStatus);
+        Assert.Equal("1.2.0", viewModel.UpdateVersion);
+    }
+
+    [Fact]
     public void ExplicitVersionAndChannelDoNotFallBack()
     {
         var data = Feed("1.0.0", [1]);
@@ -146,12 +199,16 @@ public sealed class BundleUpdaterTests : IDisposable
         Assert.Throws<InvalidDataException>(() => BundleUpdater.SelectRelease(feed, "beta", null));
         Assert.Throws<InvalidDataException>(() => BundleUpdater.SelectRelease(feed, "stable", "2.0.0"));
     }
-    private static byte[] Archive()
+    private static byte[] Archive(string? failingComponent = null)
     {
         using var stream = new MemoryStream();
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, true))
             foreach (var file in new[] { "cli/openclaw", "gateway/OpenClaw.Gateway", "companion/OpenClaw.Companion" })
-            { using var writer = new StreamWriter(archive.CreateEntry(file).Open(), new UTF8Encoding(false)); writer.Write("#!/bin/sh\nexit 0\n"); }
+            {
+                using var writer = new StreamWriter(archive.CreateEntry(file).Open(), new UTF8Encoding(false));
+                writer.Write(failingComponent is not null && file.StartsWith(failingComponent + "/", StringComparison.Ordinal)
+                    ? "#!/bin/sh\necho smoke-stdout\necho smoke-stderr >&2\nexit 7\n" : "#!/bin/sh\nexit 0\n");
+            }
         return stream.ToArray();
     }
     private sealed class Handler : HttpMessageHandler

@@ -130,7 +130,7 @@ public sealed class OpenClawToolExecutor
 
     private static bool NarrowsContext(string? previous, string current)
     {
-        if (previous is null) return false;
+        previous ??= "private:attachments";
         static (bool Private, bool Attachments) Parse(string key) => key switch
         {
             "public:no-attachments" => (false, false),

@@ -36,7 +36,9 @@ internal sealed class DeviceEnrollmentService(OperatorAccountService accounts, T
                 !_pending.TryGetValue(Hash(code.Trim().ToUpperInvariant()), out var pending)) return null;
             if (pending.Expires <= now) { _pending.Remove(Hash(code.Trim().ToUpperInvariant())); return null; }
             var result = accounts.CreateEnrollmentToken(pending.AccountId, pending.Name, pending.SecurityRevision, now.AddDays(30));
-            if (result is not null) _pending.Remove(Hash(code.Trim().ToUpperInvariant()));
+            // A security mismatch permanently invalidates this code, even if the
+            // account's role or enabled state is restored before its expiry.
+            _pending.Remove(Hash(code.Trim().ToUpperInvariant()));
             return result;
         }
     }

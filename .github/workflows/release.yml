@@ -422,7 +422,8 @@ jobs:
           if [[ "$PRERELEASE" == "true" ]]; then args+=(--prerelease); fi
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "$TAG" --draft="$DRAFT" --prerelease="$PRERELEASE"
+            # Asset refreshes must preserve the existing title and publication state.
+            gh release edit "$TAG" --prerelease="$PRERELEASE"
             gh release upload "$TAG" release-assets/* --clobber
           else
             gh "${args[@]}" release-assets/*

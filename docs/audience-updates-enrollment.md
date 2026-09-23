@@ -85,6 +85,11 @@ restart actions. Restart stops only Companion's managed gateway and launches the
 active Companion bundle. External gateway services remain operator-managed.
 Rollback selects old binaries; it does not downgrade persisted data schemas.
 
+Leave the version field empty to check for the latest release on the selected
+channel. A successful check keeps that field empty and retains the verified
+version separately for installation. Enter a version only to pin it explicitly;
+changing the channel or pin requires a new check before installing.
+
 ### Publishing a signed feed
 
 The release workflow signs `update-manifest.json` and its detached
@@ -92,6 +97,9 @@ The release workflow signs `update-manifest.json` and its detached
 publisher RSA private PEM. **No publisher key is bundled or generated automatically.**
 Without this secret, release archives still publish, but no verified-update feed
 is produced. Distribute the matching public key independently.
+
+Re-running publication for an existing tag refreshes assets and the prerelease
+flag while preserving its current title and draft/published state.
 
 The publisher can also run:
 

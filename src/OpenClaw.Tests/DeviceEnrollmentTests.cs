@@ -35,6 +35,19 @@ public sealed class DeviceEnrollmentTests : IDisposable
         code = service.Create(new(id, "Laptop"));
         accounts.Update(id, new OperatorAccountUpdateRequest { Enabled = false });
         Assert.Null(service.Exchange(code.Code));
+        accounts.Update(id, new OperatorAccountUpdateRequest { Enabled = true });
+        Assert.Null(service.Exchange(code.Code));
+        Assert.NotNull(service.Exchange(service.Create(new(id, "Replacement")).Code));
+    }
+    [Fact]
+    public void RoleMismatchInvalidatesCodeEvenIfOriginalRoleIsRestored()
+    {
+        var (accounts, id, service, _) = Setup();
+        var code = service.Create(new(id, "Laptop"));
+        accounts.Update(id, new OperatorAccountUpdateRequest { Role = "viewer" });
+        Assert.Null(service.Exchange(code.Code));
+        accounts.Update(id, new OperatorAccountUpdateRequest { Role = "operator" });
+        Assert.Null(service.Exchange(code.Code));
     }
     [Fact]
     public async Task ConcurrentRedemptionCreatesOnlyOneToken()
@@ -52,6 +65,25 @@ public sealed class DeviceEnrollmentTests : IDisposable
         code = service.Create(new(id, "Laptop"));
         accounts.CreateToken(id, new OperatorAccountTokenCreateRequest { Label = "unrelated" });
         Assert.NotNull(service.Exchange(code.Code));
+    }
+
+    [Fact]
+    public void EnrollmentLimitSurvivesPolicyAndFixedWindowPruning()
+    {
+        var limiter = new ActorRateLimitService(_root, NullLogger<ActorRateLimitService>.Instance);
+        limiter.AddOrUpdate(new ActorRateLimitPolicy
+        {
+            Id = "admin", ActorType = "ip", EndpointScope = "admin.status", Enabled = true,
+            BurstLimit = 1000, SustainedLimit = 1000, BurstWindowSeconds = 3600, SustainedWindowSeconds = 3600
+        });
+        Assert.True(limiter.TryConsumeFixed("ip", "caller", "exchange", 1, TimeSpan.FromHours(1)));
+        for (var i = 0; i < 256; i++)
+        {
+            Assert.True(limiter.TryConsume("ip", "admin", "admin.status", out _));
+            limiter.SnapshotActive();
+            Assert.True(limiter.TryConsumeFixed("ip", "other-" + i, "exchange", 1, TimeSpan.FromSeconds(1)));
+            Assert.False(limiter.TryConsumeFixed("ip", "caller", "exchange", 1, TimeSpan.FromHours(1)));
+        }
     }
 
     [Fact]

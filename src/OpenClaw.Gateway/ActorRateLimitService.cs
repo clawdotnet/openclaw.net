@@ -24,6 +24,16 @@ internal sealed class ActorRateLimitService
     private readonly string _path;
     private readonly Lock _gate = new();
     private readonly ConcurrentDictionary<string, WindowState> _windows = new(StringComparer.Ordinal);
+    private readonly Lock _fixedGate = new();
+    private readonly Dictionary<(string ActorType, string Scope, string ActorKey), FixedWindowState> _fixedWindows = [];
+    private sealed class FixedWindowState(long now, long duration)
+    {
+        public long StartedAt = now;
+        public long LastTouched = now;
+        public long Duration = duration;
+        public int Count;
+    }
+    private long _fixedPruneCounter;
     private readonly ILogger<ActorRateLimitService> _logger;
     private long _pruneCounter;
     private List<ActorRateLimitPolicy>? _cached;
@@ -150,23 +160,25 @@ internal sealed class ActorRateLimitService
     public bool TryConsumeFixed(string actorType, string actorKey, string endpointScope, int limit, TimeSpan window)
     {
         if (string.IsNullOrWhiteSpace(actorKey)) actorKey = "unknown";
-        var key = $"fixed:{actorType}:{endpointScope}:{actorKey}";
-        var state = _windows.GetOrAdd(key, static _ => new WindowState());
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var seconds = Math.Max(1, (long)window.TotalSeconds);
-        if (Interlocked.Increment(ref _pruneCounter) % PruneInterval == 0)
-            foreach (var entry in _windows.Where(static item => item.Key.StartsWith("fixed:", StringComparison.Ordinal)).ToArray())
-                if (now - entry.Value.LastTouchedUnixSeconds > seconds * 2) _windows.TryRemove(entry.Key, out _);
-        lock (state)
+        lock (_fixedGate)
         {
-            if (state.BurstWindowSeconds == 0 || now - state.BurstWindowSeconds >= seconds)
+            if (++_fixedPruneCounter % PruneInterval == 0)
+                foreach (var entry in _fixedWindows.Where(item => now - item.Value.LastTouched > item.Value.Duration * 2).ToArray())
+                    _fixedWindows.Remove(entry.Key);
+            var key = (actorType, endpointScope, actorKey);
+            if (!_fixedWindows.TryGetValue(key, out var state))
+                _fixedWindows.Add(key, state = new FixedWindowState(now, seconds));
+            state.LastTouched = now;
+            state.Duration = seconds;
+            if (now - state.StartedAt >= seconds)
             {
-                state.BurstWindowSeconds = now;
-                state.BurstCount = 0;
+                state.StartedAt = now;
+                state.Count = 0;
             }
-            if (state.BurstCount >= limit) return false;
-            state.BurstCount++;
-            state.LastTouchedUnixSeconds = now;
+            if (state.Count >= limit) return false;
+            state.Count++;
             return true;
         }
     }
