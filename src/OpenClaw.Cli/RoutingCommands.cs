@@ -118,6 +118,11 @@ internal static class RoutingCommands
             var routing = config.DynamicTurnRouting;
             var policy = routing.Policy;
             output.WriteLine($"enabled={routing.Enabled}");
+            output.WriteLine($"jevMode={routing.Jev.Mode}");
+            output.WriteLine($"jevModel={routing.Jev.Model}");
+            output.WriteLine($"layaMode={routing.Laya.Mode}");
+            output.WriteLine($"layaModel={routing.Laya.Model}");
+            output.WriteLine($"layaCalibrationId={routing.Laya.CalibrationId}");
             output.WriteLine($"bundlePath={routing.BundlePath}");
             output.WriteLine($"classifier={routing.Assets.ClassifierModelPath}");
             output.WriteLine($"embedding={routing.Assets.EmbeddingModelPath}");
@@ -377,6 +382,11 @@ internal static class RoutingCommands
     private static void ApplyRouterMode(DynamicTurnRoutingConfig routing, string mode)
     {
         routing.Enabled = mode is not RouterModeDisabled;
+        if (mode is RouterModeDisabled)
+        {
+            routing.Jev.Mode = "disabled";
+            routing.Laya.Mode = "disabled";
+        }
 
         if (mode is RouterModeOpenRouterMix)
         {
@@ -416,7 +426,8 @@ internal static class RoutingCommands
               - Routing remains configuration-driven through OpenClaw:DynamicTurnRouting.
                             - --router recommended enables dynamic routing with existing tier mappings.
                             - --router openrouter-mix enables routing and appends openrouter-oriented preferred tags by tier.
-                            - --router disabled turns dynamic routing off.
+                            - --router disabled turns ONNX, Jev, and Laya routing off.
+              - Jev shadow/active modes are opt-in via DynamicTurnRouting.Jev.Mode; restart after configuration changes.
               - This command group provides operator-oriented routing entry points.
             """);
     }

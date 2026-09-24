@@ -247,16 +247,19 @@ public class AgentRuntimeTests
     public async Task RunAsync_TurnRoutingPolicy_PersistsRouteModelTierForNextTurn()
     {
         var observedPreviousTiers = new List<string?>();
+        var observedPreviousSources = new List<string?>();
         var routing = Substitute.For<ITurnRoutingPolicy>();
         routing.ResolveAsync(Arg.Any<TurnRoutingRequest>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 var request = call.Arg<TurnRoutingRequest>();
                 observedPreviousTiers.Add(request.Session.RouteModelTier);
+                observedPreviousSources.Add(request.Session.RouteModelTierSource);
+                Assert.Null(request.Session.RouteReason);
                 return new TurnRoutingDecision
                 {
                     Tier = observedPreviousTiers.Count == 1 ? "T3" : "T1",
-                    Reason = observedPreviousTiers.Count == 1 ? "first_route" : "second_route"
+                    Reason = observedPreviousTiers.Count == 1 ? "jev" : "jev+safety_floor"
                 };
             });
 
@@ -273,7 +276,12 @@ public class AgentRuntimeTests
         await agent.RunAsync(session, "second", TestContext.Current.CancellationToken);
 
         Assert.Equal([null, "T3"], observedPreviousTiers);
+        Assert.Equal([null, "jev"], observedPreviousSources);
         Assert.Equal("T1", session.RouteModelTier);
+        Assert.Equal("jev+safety_floor", session.RouteModelTierSource);
+        Assert.Null(session.RouteReason);
+        var restored = JsonSerializer.Deserialize(JsonSerializer.Serialize(session, CoreJsonContext.Default.Session), CoreJsonContext.Default.Session)!;
+        Assert.Equal(session.RouteModelTierSource, restored.RouteModelTierSource);
     }
 
     [Fact]

@@ -71,6 +71,9 @@ public sealed class Session
     /// <summary>Optional dynamic routing tier retained across turns for sticky-tier policy decisions.</summary>
     public string? RouteModelTier { get; set; }
 
+    /// <summary>Origin of the retained tier; survives restoration of turn-scoped routing settings.</summary>
+    public string? RouteModelTierSource { get; set; }
+
     /// <summary>Optional turn-scoped routing explanation selected by dynamic turn routing.</summary>
     public string? RouteReason { get; set; }
 

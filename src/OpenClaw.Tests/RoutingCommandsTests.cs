@@ -7,6 +7,34 @@ namespace OpenClaw.Tests;
 public sealed class RoutingCommandsTests
 {
     [Fact]
+    public async Task RoutingCommands_StatusShowsJev_AndDisableStopsBothRouters()
+    {
+        var path = Path.Join(Path.GetTempPath(), $"openclaw-jev-routing-{Guid.NewGuid():N}.json");
+        try
+        {
+            var config = new GatewayConfig();
+            config.DynamicTurnRouting.Jev.Mode = "shadow";
+            config.DynamicTurnRouting.Laya.Mode = "shadow";
+            config.DynamicTurnRouting.Jev.ApiKeyRef = "raw:do-not-print-this";
+            await GatewayConfigFile.SaveAsync(config, path);
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            Assert.Equal(0, await RoutingCommands.RunAsync(["status", "--config", path], output, error));
+            Assert.Contains("jevMode=shadow", output.ToString());
+            Assert.DoesNotContain("do-not-print-this", output.ToString());
+            Assert.Equal(0, await RoutingCommands.RunAsync(["configure", "router", "--router", "disabled", "--config", path], output, error));
+            var saved = GatewayConfigFile.Load(path);
+            Assert.False(saved.DynamicTurnRouting.Enabled);
+            Assert.Equal("disabled", saved.DynamicTurnRouting.Jev.Mode);
+            Assert.Equal("disabled", saved.DynamicTurnRouting.Laya.Mode);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task RoutingCommands_Help_ListsRequiredSubcommands()
     {
         using var output = new StringWriter();

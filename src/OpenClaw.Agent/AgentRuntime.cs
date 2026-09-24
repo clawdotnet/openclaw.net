@@ -1208,6 +1208,7 @@ public sealed class AgentRuntime : IAgentRuntime
             session.RouteAllowedTools = decision.AllowedTools;
         }
         session.RouteModelTier = decision.Tier;
+        session.RouteModelTierSource = decision.Reason;
         session.RouteReason = decision.Reason;
         session.SystemPromptOverride = CombineSystemPromptOverride(
             snapshot.SystemPromptOverride,

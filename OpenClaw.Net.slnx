@@ -37,6 +37,7 @@
     <Project Path="src/OpenClaw.Protocols.Mqtt/OpenClaw.Protocols.Mqtt.csproj" />
     <Project Path="src/OpenClaw.Providers.MicrosoftExtensionsAI/OpenClaw.Providers.MicrosoftExtensionsAI.csproj" />
     <Project Path="src/OpenClaw.Routing.Onnx/OpenClaw.Routing.Onnx.csproj" />
+    <Project Path="src/OpenClaw.Routing.Decisions/OpenClaw.Routing.Decisions.csproj" />
     <Project Path="src/OpenClaw.SemanticKernelAdapter/OpenClaw.SemanticKernelAdapter.csproj" />
     <Project Path="src/OpenClaw.Security.Vault/OpenClaw.Security.Vault.csproj" />
     <Project Path="src/OpenClaw.SkillKit.Abstractions/OpenClaw.SkillKit.Abstractions.csproj" />

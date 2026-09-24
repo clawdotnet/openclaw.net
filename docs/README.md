@@ -41,6 +41,8 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [opensquilla-dynamic-turn-routing.md](opensquilla-dynamic-turn-routing.md) | Independent guide to the OpenSquilla-style dynamic turn-routing surface, current implementation status, runtime wiring, and operator expectations. |
 | [opensquilla-meta-skill-migration.md](opensquilla-meta-skill-migration.md) | OpenClaw.NET meta-skill migration notes for OpenSquilla-style DAG orchestration, current parity, and remaining migration gaps. |
 | [dynamic-turn-routing-model-profiles.md](dynamic-turn-routing-model-profiles.md) | Collaboration playbook for how Dynamic Turn Routing and Model Profiles work together (precedence, field projection, fallback, and restore semantics). |
+| [laya-routing.md](laya-routing.md) | Local Laya decision routing, model preparation, calibration, attribution, and rollback. |
+| [jev-routing.md](jev-routing.md) | Optional Jev shadow evaluation and model routing, configuration, diagnostics, quality reports, and rollback. |
 | [EXTERNAL_CLI_CONNECTORS.md](EXTERNAL_CLI_CONNECTORS.md) | Governed external CLI connectors, optional presets, named command allowlists, approvals, redaction, and audit behavior. |
 | [plugins/payment.md](plugins/payment.md) | Native payment tool, virtual cards, machine payments, providers, and safe agent-facing actions. |
 | [cli/payment.md](cli/payment.md) | `openclaw payment ...` gateway-backed CLI commands and safe output contract. |

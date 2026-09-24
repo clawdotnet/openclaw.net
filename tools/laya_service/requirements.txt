@@ -1,0 +1,7 @@
+# Tested with Python 3.12. Install the appropriate PyTorch CUDA wheel separately on GPU hosts.
+laya==0.3.4
+torch==2.14.0
+transformers==5.17.0
+safetensors==0.8.0
+huggingface-hub==1.32.0
+numpy==2.5.3

@@ -85,6 +85,11 @@ jobs:
       - name: Verify Vault publish boundary
         run: python3 eng/verify-vault-publish-boundary.py
 
+      - name: Test local decision service and evaluation tools
+        run: |
+          python3 -B -m unittest discover -s tests/laya-service -v
+          python3 -B -m unittest discover -s tests/routing-eval -p test_jev_report.py
+
       - name: Test standard targets
         run: dotnet test --no-build -c Release --verbosity normal --logger "trx;LogFileName=results.trx" src/OpenClaw.Tests
 
