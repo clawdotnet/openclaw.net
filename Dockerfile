@@ -28,6 +28,7 @@ COPY src/OpenClaw.Plugins.Payment/OpenClaw.Plugins.Payment.csproj src/OpenClaw.P
 COPY src/OpenClaw.Plugins.TokenJuice/OpenClaw.Plugins.TokenJuice.csproj src/OpenClaw.Plugins.TokenJuice/
 COPY src/OpenClaw.Protocols.Browser/OpenClaw.Protocols.Browser.csproj src/OpenClaw.Protocols.Browser/
 COPY src/OpenClaw.Protocols.Mqtt/OpenClaw.Protocols.Mqtt.csproj src/OpenClaw.Protocols.Mqtt/
+COPY src/OpenClaw.Routing.Decisions/OpenClaw.Routing.Decisions.csproj src/OpenClaw.Routing.Decisions/
 COPY src/OpenClaw.Routing.Onnx/OpenClaw.Routing.Onnx.csproj src/OpenClaw.Routing.Onnx/
 COPY src/mcpapp/OpenClaw.McpApp/OpenClaw.McpApp.csproj src/mcpapp/OpenClaw.McpApp/
 
@@ -37,6 +38,7 @@ RUN dotnet restore src/OpenClaw.Gateway/OpenClaw.Gateway.csproj
 # Copy all source
 COPY src/ src/
 COPY compat/ compat/
+COPY tools/laya_service/rubrics/ tools/laya_service/rubrics/
 
 # Publish Gateway as NativeAOT single-file binary
 RUN dotnet publish src/OpenClaw.Gateway/OpenClaw.Gateway.csproj \
