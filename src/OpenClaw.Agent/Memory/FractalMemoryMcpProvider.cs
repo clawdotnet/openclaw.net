@@ -6,17 +6,19 @@ using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
 
 namespace OpenClaw.Agent.Memory;
 
-public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsyncDisposable, IDisposable
+public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IStructuredMemoryWorkflowProvider, IAsyncDisposable, IDisposable
 {
     private readonly GatewayConfig _config;
     private readonly string? _workspacePath;
     private readonly ILogger<FractalMemoryMcpProvider> _logger;
     private readonly SemaphoreSlim _clientGate = new(1, 1);
     private McpClient? _client;
+    private IReadOnlyList<string> _availableTools = [];
     private bool _disposed;
 
     public FractalMemoryMcpProvider(
@@ -43,7 +45,7 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
             McpCommand = fractal.McpCommand,
             AutoContextMode = Normalize(fractal.AutoContextMode, "off"),
             AllowWrites = fractal.AllowWrites,
-            WriteToolsAvailable = fractal.Enabled && fractal.AllowWrites,
+            WriteToolsAvailable = false,
             Available = false,
             Status = fractal.Enabled ? "unavailable" : "disabled",
             Warnings = warnings
@@ -55,10 +57,17 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
         try
         {
             _ = await EnsureClientAsync(ct);
-            response.Available = true;
-            response.Status = warnings.Count == 0 ? "available" : "available_with_warnings";
+            response.AvailableTools = _availableTools;
+            // A successful MCP handshake alone does not prove a repository can be read.
+            response.Validation = await ValidateAsync(ct);
+            response.Available = response.Validation.Success;
+            response.Error = response.Validation.Error;
+            response.WriteToolsAvailable = response.Available && fractal.AllowWrites &&
+                _availableTools.Contains("memory_handoff_create", StringComparer.Ordinal);
+            response.Status = !response.Available ? "unavailable" :
+                warnings.Count == 0 && !response.Validation.HasErrors ? "available" : "available_with_warnings";
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             response.Error = FriendlyError(ex);
             response.Status = "unavailable";
@@ -197,6 +206,64 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
             : new StructuredMemoryValidationResult { Success = false, Error = result.Error };
     }
 
+    public async Task<StructuredMemoryWorkflowResult> ExecuteWorkflowAsync(string operation, JsonElement arguments, CancellationToken ct)
+    {
+        var workflow = FractalMemoryWorkflows.Find(operation);
+        if (workflow is null)
+            return new() { Error = $"Unsupported Fractal Memory workflow '{operation}'." };
+        if (workflow.Validate(arguments) is { } error)
+            return new() { Error = error };
+        if (workflow.IsMutation(arguments) && !_config.Memory.Fractal.AllowWrites)
+            return new() { Error = "Fractal Memory writes are disabled by configuration." };
+
+        var result = await CallToolAsync(workflow.McpToolName,
+            arguments.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value.Clone(), StringComparer.Ordinal), ct);
+        return new StructuredMemoryWorkflowResult
+        {
+            Success = result.Success,
+            Data = result.StructuredContent,
+            Text = result.Text,
+            Resources = result.Resources,
+            Error = result.Error
+        };
+    }
+
+    public async Task<StructuredMemoryExportResult> BuildContextAsync(string path, int maxCharacters, CancellationToken ct)
+    {
+        // Discover once, retaining compatibility with the original seven-tool server.
+        try
+        {
+            await EnsureClientAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            return new() { Path = path, Error = FriendlyError(ex) };
+        }
+        if (!_availableTools.Contains("memory_context", StringComparer.Ordinal))
+            return await ExportAsync(path, _config.Memory.Fractal.DefaultExportMode, ct);
+
+        var result = await CallToolAsync("memory_context", new Dictionary<string, object?>
+        {
+            ["path"] = path,
+            ["maxCharacters"] = Math.Clamp(maxCharacters, 256, 1_000_000)
+        }, ct);
+        if (!result.Success)
+            return new() { Path = path, Mode = "context", Error = result.Error };
+        if (!TryGetObject(result.StructuredContent, out var data) || GetString(data, "text") is not { } content)
+            return new() { Path = path, Mode = "context", Error = "Fractal Memory returned no structured context text." };
+
+        return new StructuredMemoryExportResult
+        {
+            Success = true,
+            Path = GetString(data, "nodePath") ?? path,
+            Mode = "context",
+            Content = content,
+            CharCount = content.Length,
+            Truncated = GetBool(data, "truncated") ?? false,
+            Sources = ParseSourceArray(data, "sources")
+        };
+    }
+
     public void Dispose()
     {
         // Prefer DisposeAsync; synchronous disposal runs async cleanup off the current context.
@@ -227,6 +294,8 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
         try
         {
             var client = await EnsureClientAsync(ct);
+            if (!_availableTools.Contains(toolName, StringComparer.Ordinal))
+                return ToolCallOutcome.Fail($"The Fractal Memory MCP server does not provide '{toolName}'. Update FractalMemory.McpServer to a version supporting this operation.");
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(60));
             var response = await client.CallToolAsync(toolName, CompactArguments(arguments), progress: null, cancellationToken: timeoutCts.Token);
@@ -234,7 +303,12 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
             if (response.IsError is true)
                 return ToolCallOutcome.Fail(string.IsNullOrWhiteSpace(text) ? $"Fractal Memory MCP tool '{toolName}' returned an error." : text);
 
-            return new ToolCallOutcome(true, text, response.StructuredContent, null);
+            return new ToolCallOutcome(true, text, response.StructuredContent?.Clone(), null)
+            {
+                Resources = (response.Content ?? []).OfType<ResourceLinkBlock>()
+                    .Select(link => new StructuredMemoryResourceLink { Uri = link.Uri, Name = link.Name, MimeType = link.MimeType })
+                    .ToArray()
+            };
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -245,6 +319,11 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
             return ToolCallOutcome.Fail($"Timed out calling Fractal Memory MCP tool '{toolName}'.");
         }
         catch (ObjectDisposedException ex)
+        {
+            _logger.LogDebug(ex, "Fractal Memory MCP tool {ToolName} failed", toolName);
+            return ToolCallOutcome.Fail(FriendlyError(ex));
+        }
+        catch (McpException ex)
         {
             _logger.LogDebug(ex, "Fractal Memory MCP tool {ToolName} failed", toolName);
             return ToolCallOutcome.Fail(FriendlyError(ex));
@@ -305,6 +384,7 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
             var transport = new StdioClientTransport(new StdioClientTransportOptions
             {
                 Command = fractal.McpCommand,
+                Arguments = fractal.McpArguments,
                 WorkingDirectory = string.IsNullOrWhiteSpace(root) ? null : root,
                 EnvironmentVariables = string.IsNullOrWhiteSpace(root)
                     ? null
@@ -316,6 +396,16 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
             });
 
             var client = await McpClient.CreateAsync(transport, cancellationToken: timeoutCts.Token);
+            try
+            {
+                var tools = await client.ListToolsAsync(cancellationToken: timeoutCts.Token);
+                _availableTools = tools.Select(tool => tool.Name).ToArray();
+            }
+            catch
+            {
+                await client.DisposeAsync();
+                throw;
+            }
             System.Threading.Volatile.Write(ref _client, client);
             return client;
         }
@@ -331,12 +421,10 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
 
     private string ResolveRepositoryRoot(FractalMemoryConfig fractal)
     {
-        var root = !string.IsNullOrWhiteSpace(fractal.RepositoryRoot)
-            ? fractal.RepositoryRoot
-            : !string.IsNullOrWhiteSpace(_workspacePath)
-                ? _workspacePath!
-                : Directory.GetCurrentDirectory();
-        return Path.GetFullPath(root);
+        var workspaceRoot = string.IsNullOrWhiteSpace(_workspacePath)
+            ? Directory.GetCurrentDirectory() : Path.GetFullPath(_workspacePath);
+        return string.IsNullOrWhiteSpace(fractal.RepositoryRoot)
+            ? workspaceRoot : Path.GetFullPath(fractal.RepositoryRoot, workspaceRoot);
     }
 
     private static IReadOnlyList<string> BuildRepositoryWarnings(string root)
@@ -370,8 +458,9 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
                 Title = GetString(root, "title"),
                 Summary = GetString(root, "summary"),
                 Depth = GetInt(root, "depth") ?? depth,
-                View = GetString(root, "view")?.ToLowerInvariant() ?? view,
+                View = ReadEnum(root, "view", view, ["index", "state", "timeline", "decisions", "children"]),
                 Content = BuildOpenContent(root, text),
+                StateTruncated = GetBool(root, "stateTruncated") ?? false,
                 Children = children,
                 SuggestedReads = suggestedReads,
                 RecentTimeline = timeline,
@@ -402,7 +491,7 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
             {
                 Success = true,
                 Path = exportPath,
-                Mode = GetString(root, "mode")?.ToLowerInvariant() ?? mode,
+                Mode = ReadEnum(root, "mode", mode, ["compact", "standard", "verbose"]),
                 Title = GetString(root, "title"),
                 Content = content,
                 Sources = sources.Count == 0 ? [new StructuredMemorySourceRef { Path = exportPath }] : sources,
@@ -534,7 +623,7 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
 
                 return new StructuredMemorySourceRef
                 {
-                    Path = GetString(item, "relativePath") ?? GetString(item, "path") ?? GetString(item, "sourcePath") ?? "",
+                    Path = GetString(item, "nodePath") ?? GetString(item, "relativePath") ?? GetString(item, "path") ?? GetString(item, "sourcePath") ?? "",
                     Title = GetString(item, "title"),
                     SourcePath = GetString(item, "sourcePath"),
                     SectionHeading = GetString(item, "sectionHeading"),
@@ -564,7 +653,7 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
             .Where(static item => item.ValueKind == JsonValueKind.Object)
             .Select(static item => new StructuredMemoryValidationIssue
             {
-                Severity = GetString(item, "severity") ?? "",
+                Severity = ReadEnum(item, "severity", "", ["warning", "error"]),
                 Path = GetString(item, "relativePath") ?? GetString(item, "path"),
                 Message = GetString(item, "message") ?? ""
             })
@@ -721,6 +810,14 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
         return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out number) ? number : null;
     }
 
+    private static string ReadEnum(JsonElement root, string name, string fallback, string[] names)
+    {
+        var value = GetString(root, name);
+        if (int.TryParse(value, out var ordinal))
+            return ordinal >= 0 && ordinal < names.Length ? names[ordinal] : fallback;
+        return names.FirstOrDefault(candidate => string.Equals(candidate, value, StringComparison.OrdinalIgnoreCase)) ?? fallback;
+    }
+
     private static double? GetDouble(JsonElement root, string name)
     {
         if (!TryGetProperty(root, name, out var value))
@@ -774,7 +871,9 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
             : $"Fractal Memory validation reported {issues.Count} issue(s).";
 
     private static string FriendlyError(Exception ex)
-        => ex is InvalidOperationException or DirectoryNotFoundException
+        => ex is OperationCanceledException
+            ? "Timed out connecting to the Fractal Memory MCP server."
+            : ex is InvalidOperationException or DirectoryNotFoundException
             ? ex.Message
             : $"Fractal Memory MCP provider is unavailable: {ex.Message}";
 
@@ -822,6 +921,7 @@ public sealed class FractalMemoryMcpProvider : IStructuredMemoryProvider, IAsync
 
     private sealed record ToolCallOutcome(bool Success, string Text, JsonElement? StructuredContent, string? Error)
     {
+        public IReadOnlyList<StructuredMemoryResourceLink> Resources { get; init; } = [];
         public static ToolCallOutcome Fail(string? error) => new(false, "", null, error ?? "Fractal Memory MCP call failed.");
     }
 }

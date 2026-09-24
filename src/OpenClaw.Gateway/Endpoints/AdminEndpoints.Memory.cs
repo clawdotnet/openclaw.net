@@ -10,6 +10,7 @@ using OpenClaw.Agent.Execution;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Channels;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
@@ -51,6 +52,14 @@ internal static partial class AdminEndpoints
             var response = structuredMemoryProvider is null
                 ? BuildUnavailableFractalStatus(startup.Config, "Structured memory provider is not registered in this runtime.")
                 : await structuredMemoryProvider.GetStatusAsync(ctx.RequestAborted);
+            if (startup.Config.Memory.Fractal.Enabled &&
+                structuredMemoryProvider is not null and not IStructuredMemoryWorkflowProvider)
+            {
+                response.Warnings = [.. response.Warnings,
+                    "The configured structured memory provider does not support Fractal Memory workflows; workflow agent tools are unavailable."];
+                if (response.Available)
+                    response.Status = "available_with_warnings";
+            }
             return Results.Json(response, CoreJsonContext.Default.StructuredMemoryStatusResponse);
         });
 
@@ -192,6 +201,72 @@ internal static partial class AdminEndpoints
             });
             RecordOperatorAudit(ctx, operations, auth, "fractal_memory_handoff_create", path, $"Requested Fractal Memory handoff for '{path}'.", result.Success, before: null, after: result);
             return Results.Json(result, CoreJsonContext.Default.StructuredMemoryHandoffResult);
+        });
+
+        app.MapPost("/admin/memory/fractal/workflows/{operation}", async (HttpContext ctx, string operation) =>
+        {
+            // Reject unauthenticated callers before reading a body, then apply role, CSRF and
+            // rate-limit policy once using the final read/write scope after validation.
+            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
+            if (!auth.IsAuthorized)
+                return Results.Unauthorized();
+            IResult MeterInvalidRequest(IResult failure) => EndpointHelpers.AuthorizeOperatorEndpoint(
+                ctx, operations, auth, requireCsrf: false, endpointScope: "admin.memory").Failure ?? failure;
+            var workflow = FractalMemoryWorkflows.Find(operation);
+            if (workflow is null)
+                return MeterInvalidRequest(Results.Json(new StructuredMemoryWorkflowResult { Error = "Unknown Fractal Memory workflow." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status404NotFound));
+            JsonBodyReadResult<JsonDocument> payload;
+            try
+            {
+                payload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.JsonDocument);
+            }
+            catch (JsonException)
+            {
+                return MeterInvalidRequest(Results.Json(new StructuredMemoryWorkflowResult { Error = "Arguments must be a valid JSON object." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status400BadRequest));
+            }
+            if (payload.Failure is not null)
+                return MeterInvalidRequest(payload.Failure);
+            using var document = payload.Value ?? JsonDocument.Parse("{}");
+            var arguments = document.RootElement;
+            if (workflow.Validate(arguments) is { } error)
+                return MeterInvalidRequest(Results.Json(new StructuredMemoryWorkflowResult { Error = error }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status400BadRequest));
+
+            var mutation = workflow.IsMutation(arguments);
+            var authResult = EndpointHelpers.AuthorizeOperatorEndpoint(
+                ctx,
+                operations,
+                auth,
+                requireCsrf: mutation,
+                endpointScope: mutation ? "admin.memory.mutate" : "admin.memory");
+            if (authResult.Failure is not null)
+                return authResult.Failure;
+            if (mutation && !startup.Config.Memory.Fractal.AllowWrites)
+                return Results.Json(new StructuredMemoryWorkflowResult { Error = "Fractal Memory writes are disabled by configuration." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult, statusCode: StatusCodes.Status403Forbidden);
+            if (structuredMemoryProvider is not IStructuredMemoryWorkflowProvider workflows)
+                return Results.Json(new StructuredMemoryWorkflowResult { Error = "Structured memory workflows are not registered in this runtime." }, CoreJsonContext.Default.StructuredMemoryWorkflowResult);
+
+            var result = await workflows.ExecuteWorkflowAsync(operation, arguments, ctx.RequestAborted);
+            if (mutation)
+            {
+                var targetId = arguments.TryGetProperty("path", out var pathValue) && pathValue.ValueKind == JsonValueKind.String
+                    ? pathValue.GetString() ?? "repository"
+                    : "repository";
+                operations.RuntimeEvents.Append(new RuntimeEventEntry
+                {
+                    Id = $"evt_{Guid.NewGuid():N}"[..20],
+                    TimestampUtc = DateTimeOffset.UtcNow,
+                    Component = "fractal_memory",
+                    Action = operation,
+                    Severity = result.Success ? "info" : "warning",
+                    Summary = result.Success
+                        ? $"Fractal Memory {operation} requested for '{targetId}'."
+                        : $"Fractal Memory {operation} failed for '{targetId}': {result.Error}"
+                });
+                RecordOperatorAudit(ctx, operations, authResult.Authorization!, workflow.ToolName, targetId,
+                    $"Requested Fractal Memory {operation} for '{targetId}'.", result.Success, before: null,
+                    after: new MutationResponse { Success = result.Success });
+            }
+            return Results.Json(result, CoreJsonContext.Default.StructuredMemoryWorkflowResult);
         });
 
         app.MapGet("/admin/memory/notes", async (HttpContext ctx, string? prefix = null, string? memoryClass = null, string? projectId = null, int limit = 100) =>

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using OpenClaw.Core.Models;
 using OpenClaw.Payments.Abstractions;
 
@@ -166,6 +167,9 @@ internal sealed class OpenClawHttpClient : IDisposable
 
     public Task<StructuredMemoryHandoffResult> CreateFractalMemoryHandoffAsync(string path, CancellationToken cancellationToken)
         => _inner.CreateFractalMemoryHandoffAsync(path, cancellationToken);
+
+    public Task<StructuredMemoryWorkflowResult> ExecuteFractalMemoryWorkflowAsync(string operation, JsonElement arguments, CancellationToken cancellationToken)
+        => _inner.ExecuteFractalMemoryWorkflowAsync(operation, arguments, cancellationToken);
 
     public Task<SharedHarnessStateListResponse> ListSharedHarnessStateAsync(SharedHarnessStateListQuery query, CancellationToken cancellationToken)
         => _inner.ListSharedHarnessStateAsync(query, cancellationToken);

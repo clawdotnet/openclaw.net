@@ -2047,6 +2047,9 @@ public sealed partial class GatewayAdminEndpointTests
         using var statusPayload = await ReadJsonAsync(statusResponse);
         Assert.True(statusPayload.RootElement.GetProperty("enabled").GetBoolean());
         Assert.True(statusPayload.RootElement.GetProperty("available").GetBoolean());
+        Assert.Equal("available_with_warnings", statusPayload.RootElement.GetProperty("status").GetString());
+        Assert.Contains(statusPayload.RootElement.GetProperty("warnings").EnumerateArray(), warning =>
+            warning.GetString()!.Contains("does not support Fractal Memory workflows", StringComparison.Ordinal));
 
         using var emptySearchRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/memory/fractal/search?query=%20%20");
         emptySearchRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);

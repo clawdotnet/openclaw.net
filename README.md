@@ -124,6 +124,7 @@ Tool: echo(hello): ok
 | Tools and channels | 80+ native and optional tool surfaces for files, web, sessions, databases, email, home automation, and more; adapters for Telegram, WhatsApp, Teams, Slack, Discord, and other channels. The active set depends on configuration. |
 | Extensions | MCP servers and interactive MCP Apps, reusable `SKILL.md` packages, first-party .NET integrations, and supported OpenClaw TS/JS plugins. |
 | Long-running work | Session-scoped `/goal` continuation, `/loop` recurring prompts, and optional durable workflow backends. |
+| Structured project memory | Optional [Fractal Memory](docs/FRACTAL_MEMORY.md) capture, review, import, handoff, and resume workflows through agent tools, CLI, and admin API. Writes are opt-in and agent approvals are enabled by default. |
 | Review and observability | Tool approvals, diagnostics, audit and trajectory exports, passive harness contracts, evidence bundles, and optional Plan-Execute-Verify execution. |
 | Developer tooling | Offline harness regression checks, static codebase maps, SkillKit authoring and validation, and TokenJuice tool-output reduction. |
 

@@ -107,7 +107,7 @@ public sealed class FractalMemoryTests
         Assert.NotNull(context.Context);
         Assert.True(context.Context!.Length <= 500);
         Assert.Contains("<fractal_memory_context>", context.Context, StringComparison.Ordinal);
-        Assert.Contains("projects/demo/state.md", context.Context, StringComparison.Ordinal);
+        Assert.Equal("projects/demo/state.md", Assert.Single(context.Sources).SourcePath);
         Assert.Equal(1, provider.SearchCalls);
         Assert.Equal(1, provider.ExportCalls);
         Assert.Equal("compact", provider.LastExportMode);

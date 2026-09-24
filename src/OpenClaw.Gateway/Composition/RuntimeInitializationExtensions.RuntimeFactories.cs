@@ -131,7 +131,8 @@ internal static partial class RuntimeInitializationExtensions
         RuntimeServices services,
         string? workspacePath,
         GatewayRuntimeState runtimeState,
-        SkillArtifactRuntime artifactRuntime)
+        SkillArtifactRuntime artifactRuntime,
+        ILogger startupLogger)
     {
         var projectId = config.Memory.ProjectId
             ?? Environment.GetEnvironmentVariable("OPENCLAW_PROJECT")
@@ -223,6 +224,11 @@ internal static partial class RuntimeInitializationExtensions
             tools.Add(new FractalMemoryRecentTool(structuredMemoryProvider));
             tools.Add(new FractalMemoryExportTool(structuredMemoryProvider, config.Memory.Fractal));
             tools.Add(new FractalMemoryValidateTool(structuredMemoryProvider));
+            if (structuredMemoryProvider is IStructuredMemoryWorkflowProvider workflowProvider)
+                tools.AddRange(FractalMemoryWorkflowTool.CreateTools(workflowProvider, config.Memory.Fractal));
+            else
+                startupLogger.LogWarning(
+                    "The configured structured memory provider does not support Fractal Memory workflows; workflow agent tools are unavailable.");
 
             if (config.Memory.Fractal.AllowWrites)
             {

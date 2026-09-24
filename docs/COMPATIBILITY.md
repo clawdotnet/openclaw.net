@@ -34,6 +34,13 @@ Compatibility switches (Gateway config):
 - `OpenClaw:McpCompatibility:EnableDiscoveryFirst=true`
   - Keeps discover-first path enabled (default).
 
+## Fractal Memory
+
+| Surface | Status | Notes |
+| --- | --- | --- |
+| FractalMem stdio integration | Supported with caveats | Optional in both runtime modes. Requires an external .NET 10 FractalMem MCP server and initialized memory workspace; supports command arguments for source-built servers. |
+| Capture, review, context, resume and import workflows | Supported with caveats | Explicit fourteen-operation allowlist preserves hashes and source links. Writes are opt-in and agent writes require approval by default. Older servers retain seven-tool support and export fallback. See [FRACTAL_MEMORY.md](FRACTAL_MEMORY.md) for the verified upstream revision and live test. |
+
 ## Upstream Skill Compatibility
 
 | Surface | Status | Notes |

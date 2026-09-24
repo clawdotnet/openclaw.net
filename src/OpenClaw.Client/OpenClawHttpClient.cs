@@ -710,6 +710,20 @@ public sealed partial class OpenClawHttpClient : IDisposable
         return await SendAsync(req, CoreJsonContext.Default.StructuredMemoryHandoffResult, cancellationToken);
     }
 
+    public async Task<StructuredMemoryWorkflowResult> ExecuteFractalMemoryWorkflowAsync(string operation, JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var workflow = OpenClaw.Core.Memory.FractalMemoryWorkflows.Find(operation)
+            ?? throw new ArgumentException("Unknown Fractal Memory workflow.", nameof(operation));
+        if (workflow.Validate(arguments) is { } error)
+            throw new ArgumentException(error, nameof(arguments));
+        using var req = new HttpRequestMessage(HttpMethod.Post,
+            new Uri(_adminMemoryFractalStatusUri, $"/admin/memory/fractal/workflows/{workflow.Operation}"))
+        {
+            Content = BuildJsonContent(arguments, CoreJsonContext.Default.JsonElement)
+        };
+        return await SendAsync(req, CoreJsonContext.Default.StructuredMemoryWorkflowResult, cancellationToken);
+    }
+
     public Task<SharedHarnessStateListResponse> ListSharedHarnessStateAsync(SharedHarnessStateListQuery query, CancellationToken cancellationToken)
         => GetAsync(BuildSharedHarnessStateListUri(query), CoreJsonContext.Default.SharedHarnessStateListResponse, cancellationToken);
 
