@@ -238,6 +238,22 @@
 								</StackPanel>
 							</Border>
 						</Grid>
+<Expander Header="Application updates">
+    <StackPanel Spacing="8" Margin="0,8">
+        <TextBox Text="{Binding UpdateManifestUrl}" PlaceholderText="HTTPS manifest URL" />
+        <TextBox Text="{Binding UpdatePublicKeyPath}" PlaceholderText="Publisher public key PEM file" />
+        <Button Content="Configure publisher trust" Command="{Binding ConfigureUpdateTrustCommand}" />
+        <TextBox Text="{Binding UpdateChannel}" PlaceholderText="stable or beta" />
+        <TextBox Text="{Binding UpdateVersion}" PlaceholderText="Version (optional for check)" />
+        <WrapPanel>
+            <Button Content="Check" Command="{Binding CheckBundleUpdateCommand}" />
+            <Button Content="Install" Command="{Binding InstallBundleUpdateCommand}" />
+            <Button Content="Roll back" Command="{Binding RollbackBundleUpdateCommand}" />
+            <Button Content="Restart into active bundle" Command="{Binding RestartUpdatedCompanionCommand}" />
+        </WrapPanel>
+        <TextBlock Text="{Binding UpdateStatus}" TextWrapping="Wrap" />
+    </StackPanel>
+</Expander>
 <Expander Header="Advanced connection settings" IsExpanded="{Binding ConnectionSettingsExpanded}">
     <StackPanel Spacing="16" Margin="0,12,0,0">
         <TextBlock Text="Connect to a local or remote gateway. Access is determined by your operator account." Classes="muted" TextWrapping="Wrap" />
@@ -247,6 +263,16 @@
             <StackPanel Grid.Row="1" Spacing="6"><TextBlock Text="Operator token" FontWeight="Medium" /><TextBox Text="{Binding AuthToken}" PasswordChar="•" AutomationProperties.Name="Enter your operator token" PlaceholderText="Enter your operator token" /></StackPanel>
             <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4"><CheckBox Content="Remember token" IsChecked="{Binding RememberToken}" /><CheckBox Content="Enable debug logging" IsChecked="{Binding DebugMode}" /></StackPanel>
         </Grid>
+        <Expander Header="Pair another device">
+            <StackPanel Spacing="8" Margin="0,8">
+                <TextBox Text="{Binding DeviceEnrollmentAccountId}" PlaceholderText="Operator account ID" />
+                <TextBox Text="{Binding DeviceEnrollmentName}" PlaceholderText="Device name" />
+                <Button Content="Generate enrollment code" Command="{Binding CreateDeviceEnrollmentCommand}" />
+                <TextBox Text="{Binding DeviceEnrollmentCode}" PlaceholderText="Enrollment code" />
+                <Button Content="Enroll this device" Command="{Binding RedeemDeviceEnrollmentCommand}" />
+                <TextBlock Text="{Binding DeviceEnrollmentStatus}" TextWrapping="Wrap" />
+            </StackPanel>
+        </Expander>
         <Expander Header="Token storage fallback"><StackPanel Spacing="8" Margin="0,8"><TextBlock Text="Plaintext fallback stores the token without encryption when protected storage is unavailable. Only enable this if you accept that risk." Classes="muted" TextWrapping="Wrap" /><CheckBox Content="Allow plaintext token fallback" IsChecked="{Binding AllowPlaintextTokenFallback}" /></StackPanel></Expander>
         <WrapPanel><Button Content="Connect" Classes="primary" Command="{Binding ConnectCommand}" IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" Margin="0,0,8,0" /><Button Content="Disconnect" Command="{Binding DisconnectCommand}" IsEnabled="{Binding IsConnected}" /><TextBlock Text="{Binding Status}" Classes="muted" Margin="12,0" VerticalAlignment="Center" /></WrapPanel>
     </StackPanel>

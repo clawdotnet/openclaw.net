@@ -49,6 +49,42 @@ namespace OpenClaw.Tests;
 public sealed partial class GatewayAdminEndpointTests
 {
     [Fact]
+    public async Task DeviceEnrollment_TypedClientRoundTripAndRevocation()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var accounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var account = accounts.Create(new OperatorAccountCreateRequest { Username = "device-owner", Password = "test-password", Role = OperatorRoleNames.Operator });
+        using var adminHttp = harness.App.GetTestClient(); adminHttp.BaseAddress = new Uri("https://localhost");
+        using var client = new OpenClawHttpClient("https://localhost", harness.AuthToken, adminHttp);
+        var code = await client.CreateDeviceEnrollmentAsync(new(account.Id, "Test laptop"), TestContext.Current.CancellationToken);
+        using var exchangeHttp = harness.App.GetTestClient(); exchangeHttp.BaseAddress = new Uri("https://localhost");
+        using var anonymousClient = new OpenClawHttpClient("https://localhost", null, exchangeHttp);
+        var result = await anonymousClient.ExchangeDeviceEnrollmentAsync(code.Code, TestContext.Current.CancellationToken);
+        Assert.True(accounts.TryAuthenticateToken(result.Token, out var identity));
+        Assert.Equal(OperatorRoleNames.Operator, identity!.Role);
+        Assert.True(accounts.RevokeToken(account.Id, result.TokenInfo!.Id));
+        Assert.False(accounts.TryAuthenticateToken(result.Token, out _));
+        await Assert.ThrowsAsync<HttpRequestException>(() => anonymousClient.ExchangeDeviceEnrollmentAsync(code.Code, TestContext.Current.CancellationToken));
+
+        var operatorToken = CreateOperatorToken(harness, OperatorRoleNames.Operator, "enrollment-operator");
+        using var operatorRequest = new HttpRequestMessage(HttpMethod.Post, "https://localhost/auth/devices/enroll") { Content = JsonContent($$"""{"accountId":"{{account.Id}}","deviceName":"Denied"}""") };
+        operatorRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", operatorToken);
+        using var operatorResponse = await exchangeHttp.SendAsync(operatorRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, operatorResponse.StatusCode);
+
+        var (cookie, _) = await LoginAsync(exchangeHttp, harness.AuthToken);
+        using var noCsrf = new HttpRequestMessage(HttpMethod.Post, "https://localhost/auth/devices/enroll") { Content = JsonContent($$"""{"accountId":"{{account.Id}}","deviceName":"Denied"}""") };
+        noCsrf.Headers.Add("Cookie", cookie);
+        using var noCsrfResponse = await exchangeHttp.SendAsync(noCsrf);
+        Assert.Equal(HttpStatusCode.Unauthorized, noCsrfResponse.StatusCode);
+
+        using var insecureHttp = harness.App.GetTestClient(); insecureHttp.BaseAddress = new Uri("http://localhost");
+        using var insecureRequest = new HttpRequestMessage(HttpMethod.Post, "/auth/devices/exchange") { Content = JsonContent("""{"code":"unused"}""") };
+        using var insecureResponse = await insecureHttp.SendAsync(insecureRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, insecureResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task GuidedRecovery_RequiresOperatorCsrfAndCurrentRevision()
     {
         await using var harness = await CreateHarnessAsync(true, config => config.Tooling.DurableActionJournal = true);
@@ -7788,6 +7824,7 @@ public sealed partial class GatewayAdminEndpointTests
         builder.Services.AddSingleton(new OperatorAccountService(
             storagePath,
             NullLogger<OperatorAccountService>.Instance));
+        builder.Services.AddSingleton(sp => new DeviceEnrollmentService(sp.GetRequiredService<OperatorAccountService>(), TimeProvider.System));
         builder.Services.AddSingleton(new OrganizationPolicyService(
             storagePath,
             NullLogger<OrganizationPolicyService>.Instance));

@@ -321,13 +321,17 @@ internal static partial class OpenAiEndpoints
                             CompleteToolCall(evt.ToolName);
                             await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
                         }
-                        else if (evt.Type == AgentStreamEventType.Done)
+                        else if (evt.Type == AgentStreamEventType.Error)
                         {
-                            await WriteChunkAsync(new OpenAiDelta(), "stop");
-                            await ctx.Response.WriteAsync("data: [DONE]\n\n", ctx.RequestAborted);
+                            await WriteChunkAsync(new OpenAiDelta { Content = evt.Content });
                             await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
                         }
                     }
+                    // Drain the iterator so checkpoint/contract finalization after Error or Done
+                    // runs, and terminate once even when an early rejection yields only Error.
+                    await WriteChunkAsync(new OpenAiDelta(), "stop");
+                    await ctx.Response.WriteAsync("data: [DONE]\n\n", ctx.RequestAborted);
+                    await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
                 }
                 else
                 {

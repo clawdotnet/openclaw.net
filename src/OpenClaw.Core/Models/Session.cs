@@ -19,6 +19,8 @@ public sealed class Session
     private long _totalCacheReadTokens;
     private long _totalCacheWriteTokens;
 
+    public string? AudienceContextKey { get; set; }
+
     public required string Id { get; init; }
     // ChannelId / SenderId describe the *current* routing identity of the conversation party.
     // They must be mutable because a persisted session can be reactivated by a fresh connection
@@ -1054,6 +1056,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(JsonDocument))]
 [JsonSerializable(typeof(ToolsetConfig))]
 [JsonSerializable(typeof(Dictionary<string, ToolsetConfig>))]
+[JsonSerializable(typeof(AudienceProfile))]
 [JsonSerializable(typeof(ToolPresetConfig))]
 [JsonSerializable(typeof(Dictionary<string, ToolPresetConfig>))]
 [JsonSerializable(typeof(ResolvedToolPreset))]

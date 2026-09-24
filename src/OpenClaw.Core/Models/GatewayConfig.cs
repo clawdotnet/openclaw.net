@@ -539,6 +539,7 @@ public sealed class CanvasConfig
 
 public sealed class ToolingConfig
 {
+    public AudienceConfig Audiences { get; set; } = new();
     /// <summary>Persist tool dispatches and block uncertain retries. Opt-in for compatibility.</summary>
     public bool DurableActionJournal { get; set; }
 

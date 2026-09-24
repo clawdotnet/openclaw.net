@@ -24,6 +24,16 @@ internal sealed class ActorRateLimitService
     private readonly string _path;
     private readonly Lock _gate = new();
     private readonly ConcurrentDictionary<string, WindowState> _windows = new(StringComparer.Ordinal);
+    private readonly Lock _fixedGate = new();
+    private readonly Dictionary<(string ActorType, string Scope, string ActorKey), FixedWindowState> _fixedWindows = [];
+    private sealed class FixedWindowState(long now, long duration)
+    {
+        public long StartedAt = now;
+        public long LastTouched = now;
+        public long Duration = duration;
+        public int Count;
+    }
+    private long _fixedPruneCounter;
     private readonly ILogger<ActorRateLimitService> _logger;
     private long _pruneCounter;
     private List<ActorRateLimitPolicy>? _cached;
@@ -145,6 +155,32 @@ internal sealed class ActorRateLimitService
         }
 
         return true;
+    }
+
+    public bool TryConsumeFixed(string actorType, string actorKey, string endpointScope, int limit, TimeSpan window)
+    {
+        if (string.IsNullOrWhiteSpace(actorKey)) actorKey = "unknown";
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var seconds = Math.Max(1, (long)window.TotalSeconds);
+        lock (_fixedGate)
+        {
+            if (++_fixedPruneCounter % PruneInterval == 0)
+                foreach (var entry in _fixedWindows.Where(item => now - item.Value.LastTouched > item.Value.Duration * 2).ToArray())
+                    _fixedWindows.Remove(entry.Key);
+            var key = (actorType, endpointScope, actorKey);
+            if (!_fixedWindows.TryGetValue(key, out var state))
+                _fixedWindows.Add(key, state = new FixedWindowState(now, seconds));
+            state.LastTouched = now;
+            state.Duration = seconds;
+            if (now - state.StartedAt >= seconds)
+            {
+                state.StartedAt = now;
+                state.Count = 0;
+            }
+            if (state.Count >= limit) return false;
+            state.Count++;
+            return true;
+        }
     }
 
     public IReadOnlyList<ActorRateLimitStatus> SnapshotActive()

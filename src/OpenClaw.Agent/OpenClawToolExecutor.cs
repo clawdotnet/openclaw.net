@@ -112,6 +112,37 @@ public sealed class OpenClawToolExecutor
         _interceptors = interceptors;
     }
 
+    public AudienceProfile? GetAudienceProfile(Session session) => AudiencePolicy.Resolve(_config.Tooling.Audiences, session);
+
+    public string? PrepareAudienceTurn(Session session, string message)
+    {
+        var profile = GetAudienceProfile(session);
+        var contextKey = profile is null
+            ? "private:attachments"
+            : $"{(profile.IncludePrivateContext ? "private" : "public")}:{(profile.AllowAttachments ? "attachments" : "no-attachments")}";
+        if (session.History.Count > 0 && NarrowsContext(session.AudienceContextKey, contextKey))
+            return "Audience policy narrowed. Start a new session to keep prior private context isolated.";
+        if (profile is { AllowAttachments: false } && MediaMarkerProtocol.Extract(message).Markers.Count > 0)
+            return "Attachments are disabled for this audience.";
+        session.AudienceContextKey = contextKey;
+        return null;
+    }
+
+    private static bool NarrowsContext(string? previous, string current)
+    {
+        previous ??= "private:attachments";
+        static (bool Private, bool Attachments) Parse(string key) => key switch
+        {
+            "public:no-attachments" => (false, false),
+            "public:attachments" => (false, true),
+            "private:no-attachments" => (true, false),
+            "private:attachments" or "unrestricted" => (true, true),
+            _ => (true, true) // Older profile hashes are treated as maximally permissive.
+        };
+        var before = Parse(previous); var after = Parse(current);
+        return before.Private && !after.Private || before.Attachments && !after.Attachments;
+    }
+
     public IList<AITool> ToolDeclarations
     {
         get
@@ -1030,8 +1061,9 @@ public sealed class OpenClawToolExecutor
         });
     }
 
-    private static bool IsToolAllowedForSession(Session session, string toolName, ResolvedToolPreset? preset)
+    private bool IsToolAllowedForSession(Session session, string toolName, ResolvedToolPreset? preset)
     {
+        if (!AudiencePolicy.AllowsTool(GetAudienceProfile(session), toolName)) return false;
         // DisableTools routing decisions intentionally expose no tools to the model.
         if (session.RouteToolsDisabled)
             return false;
