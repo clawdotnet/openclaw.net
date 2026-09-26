@@ -120,14 +120,10 @@ internal sealed class OwnedProcess : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        try
+        using (_log)
+        using (_process)
         {
             await StopAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
-        }
-        finally
-        {
-            _process.Dispose();
-            _log.Dispose();
         }
     }
 
