@@ -285,32 +285,39 @@ internal static class NacosServer
         string password,
         CancellationToken cancellationToken)
     {
-        using var initializeResponse = await client.PostAsync(
+        using (var initializeContent = new FormUrlEncodedContent(
+            new Dictionary<string, string> { ["password"] = password }))
+        using (var initializeResponse = await client.PostAsync(
             new Uri($"{consoleAddress}/v3/auth/user/admin"),
-            new FormUrlEncodedContent(new Dictionary<string, string> { ["password"] = password }),
-            cancellationToken);
-        initializeResponse.EnsureSuccessStatusCode();
-        using var initializeJson = JsonDocument.Parse(await initializeResponse.Content.ReadAsStringAsync(cancellationToken));
-        if (!initializeJson.RootElement.TryGetProperty("code", out var initializeCode)
-            || initializeCode.ValueKind != JsonValueKind.Number
-            || initializeCode.GetInt32() != 0)
+            initializeContent,
+            cancellationToken))
         {
-            throw new InvalidOperationException("Nacos administrator initialization response did not contain code 0.");
+            initializeResponse.EnsureSuccessStatusCode();
+            using var initializeJson = JsonDocument.Parse(await initializeResponse.Content.ReadAsStringAsync(cancellationToken));
+            if (!initializeJson.RootElement.TryGetProperty("code", out var initializeCode)
+                || initializeCode.ValueKind != JsonValueKind.Number
+                || initializeCode.GetInt32() != 0)
+            {
+                throw new InvalidOperationException("Nacos administrator initialization response did not contain code 0.");
+            }
         }
 
-        using var loginResponse = await client.PostAsync(
-            new Uri($"{consoleAddress}/v3/auth/user/login"),
-            new FormUrlEncodedContent(new Dictionary<string, string>
+        using (var loginContent = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["username"] = "nacos",
                 ["password"] = password,
-            }),
-            cancellationToken);
-        loginResponse.EnsureSuccessStatusCode();
-        using var loginJson = JsonDocument.Parse(await loginResponse.Content.ReadAsStringAsync(cancellationToken));
-        if (!HasAccessToken(loginJson.RootElement))
+            }))
+        using (var loginResponse = await client.PostAsync(
+            new Uri($"{consoleAddress}/v3/auth/user/login"),
+            loginContent,
+            cancellationToken))
         {
-            throw new InvalidOperationException("Nacos administrator login response did not contain an accessToken.");
+            loginResponse.EnsureSuccessStatusCode();
+            using var loginJson = JsonDocument.Parse(await loginResponse.Content.ReadAsStringAsync(cancellationToken));
+            if (!HasAccessToken(loginJson.RootElement))
+            {
+                throw new InvalidOperationException("Nacos administrator login response did not contain an accessToken.");
+            }
         }
     }
 

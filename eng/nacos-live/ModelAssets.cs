@@ -11,13 +11,14 @@ internal sealed record ModelSource(Uri Endpoint, string Repository, string Branc
         }
 
         var repository = GetValue("HF_REPO", "sentence-transformers/all-MiniLM-L6-v2", environment);
-        var defaultBranch = endpoint.Host.Equals("www.modelscope.cn", StringComparison.OrdinalIgnoreCase)
-            || endpoint.Host.Equals("modelscope.cn", StringComparison.OrdinalIgnoreCase)
-            ? "master"
-            : "main";
+        var defaultBranch = IsModelScopeEndpoint(endpoint) ? "master" : "main";
         var branch = GetValue("HF_BRANCH", defaultBranch, environment);
         return new ModelSource(endpoint, repository, branch);
     }
+
+    internal static bool IsModelScopeEndpoint(Uri endpoint) =>
+        endpoint.Host.Equals("www.modelscope.cn", StringComparison.OrdinalIgnoreCase)
+        || endpoint.Host.Equals("modelscope.cn", StringComparison.OrdinalIgnoreCase);
 
     private static string GetValue(
         string key,
@@ -120,11 +121,19 @@ internal static class ModelAssets
         }
 
         var repositoryPath = string.Join('/', source.Repository.Split('/').Select(Uri.EscapeDataString));
-        var builder = new UriBuilder(source.Endpoint)
+        var builder = new UriBuilder(source.Endpoint);
+        if (ModelSource.IsModelScopeEndpoint(source.Endpoint))
         {
-            Path = $"/api/v1/models/{repositoryPath}/repo",
-            Query = $"Revision={Uri.EscapeDataString(source.Branch)}&FilePath={Uri.EscapeDataString(remotePath)}",
-        };
+            builder.Path = $"/api/v1/models/{repositoryPath}/repo";
+            builder.Query = $"Revision={Uri.EscapeDataString(source.Branch)}&FilePath={Uri.EscapeDataString(remotePath)}";
+        }
+        else
+        {
+            var remotePathSegments = string.Join('/', remotePath.Split('/').Select(Uri.EscapeDataString));
+            builder.Path = $"/{repositoryPath}/resolve/{Uri.EscapeDataString(source.Branch)}/{remotePathSegments}";
+            builder.Query = string.Empty;
+        }
+
         return builder.Uri;
     }
 

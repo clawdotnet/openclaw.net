@@ -326,7 +326,7 @@ public sealed class CalendarTool : ITool, IDisposable
         var jwt = $"{signingInput}.{Base64UrlEncode(signature)}";
 
         // Exchange JWT for access token
-        var tokenRequest = new FormUrlEncodedContent([
+        using var tokenRequest = new FormUrlEncodedContent([
             new KeyValuePair<string, string>("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
             new KeyValuePair<string, string>("assertion", jwt)
         ]);

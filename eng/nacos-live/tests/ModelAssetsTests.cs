@@ -14,7 +14,36 @@ public sealed class ModelAssetsTests
         var uri = ModelAssets.BuildDownloadUri(source, "onnx/model.onnx");
 
         Assert.Equal(
-            "https://models.example/api/v1/models/team/model/repo?Revision=release%2F1&FilePath=onnx%2Fmodel.onnx",
+            "https://models.example/team/model/resolve/release%2F1/onnx/model.onnx",
+            uri.AbsoluteUri);
+    }
+
+    [Fact]
+    public void BuildDownloadUri_UsesModelScopeApiLayout()
+    {
+        var source = new ModelSource(new Uri("https://www.modelscope.cn/"), "team/model", "master");
+
+        var uri = ModelAssets.BuildDownloadUri(source, "onnx/model.onnx");
+
+        Assert.Equal(
+            "https://www.modelscope.cn/api/v1/models/team/model/repo?Revision=master&FilePath=onnx%2Fmodel.onnx",
+            uri.AbsoluteUri);
+    }
+
+    [Fact]
+    public void FromEnvironment_UsesMainForNonModelScopeResolveEndpoint()
+    {
+        var source = ModelSource.FromEnvironment(new Dictionary<string, string?>
+        {
+            ["HF_ENDPOINT"] = "https://models.example",
+            ["HF_REPO"] = "team/model",
+        });
+
+        var uri = ModelAssets.BuildDownloadUri(source, "onnx/model.onnx");
+
+        Assert.Equal("main", source.Branch);
+        Assert.Equal(
+            "https://models.example/team/model/resolve/main/onnx/model.onnx",
             uri.AbsoluteUri);
     }
 
