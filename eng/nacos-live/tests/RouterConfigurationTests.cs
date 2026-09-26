@@ -9,12 +9,14 @@ public sealed class RouterConfigurationTests
     public void BuildRouterEnvironment_ContainsRouterSettingsAndExcludesSmokeSettings()
     {
         var deployment = CreateDeployment();
+        var modelDirectory = Path.Combine("models", "all-MiniLM");
+        var dataDirectory = Path.Combine("data", "router");
 
         var environment = RouterConfiguration.BuildRouterEnvironment(
             deployment,
             24001,
-            "C:\\models\\all-MiniLM",
-            "C:\\data\\router");
+            modelDirectory,
+            dataDirectory);
 
         Assert.Equal("127.0.0.1:8848", environment["NACOS_ADDR"]);
         Assert.Equal("nacos", environment["NACOS_USERNAME"]);
@@ -23,8 +25,8 @@ public sealed class RouterConfigurationTests
         Assert.Equal("streamable_http", environment["TRANSPORT_TYPE"]);
         Assert.Equal("24001", environment["PORT"]);
         Assert.Equal("10", environment["UPDATE_INTERVAL"]);
-        Assert.Equal("C:\\models\\all-MiniLM", environment["EMBEDDING_MODEL_DIR"]);
-        Assert.Equal("C:\\data\\router", environment["SONNETDB_DATA_DIR"]);
+        Assert.Equal(Path.GetFullPath(modelDirectory), environment["EMBEDDING_MODEL_DIR"]);
+        Assert.Equal(Path.GetFullPath(dataDirectory), environment["SONNETDB_DATA_DIR"]);
         Assert.DoesNotContain(environment.Keys, key => key.StartsWith("OPENCLAW_NACOS_", StringComparison.Ordinal));
     }
 
