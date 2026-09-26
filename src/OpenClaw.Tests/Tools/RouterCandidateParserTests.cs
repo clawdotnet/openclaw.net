@@ -28,6 +28,18 @@ public sealed class RouterCandidateParserTests
     }
 
     [Fact]
+    public void Parse_AcceptsAsciiColonSearchMarker()
+    {
+        const string marker = "### 1. 当前可用的mcp server列表为:";
+        var prose = marker + "{\"weather-mcp\":{\"name\":\"weather-mcp\",\"description\":\"weather\"}}\n"
+            + RouterProseContract.SearchStepMarker;
+
+        var parsed = RouterCandidateParser.Parse(prose);
+
+        Assert.Equal("weather-mcp", Assert.Single(parsed).Name);
+    }
+
+    [Fact]
     public void Parse_PreservesCandidatesForExactNameSelection()
     {
         var six = string.Join(",", Enumerable.Range(0, 6).Select(i => $"\"k{i}\":{{\"name\":\"k{i}\",\"description\":\"d\"}}"));

@@ -4,6 +4,13 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Folder Name="/eng/" />
+  <Folder Name="/eng/nacos-live/">
+    <Project Path="eng/nacos-live/NacosLiveAcceptance.csproj" />
+  </Folder>
+  <Folder Name="/eng/nacos-live/tests/">
+    <Project Path="eng/nacos-live/tests/NacosLiveAcceptance.Tests.csproj" />
+  </Folder>
   <Folder Name="/mcpapp/">
     <Project Path="src/mcpapp/OpenClaw.McpApp/OpenClaw.McpApp.csproj" />
   </Folder>

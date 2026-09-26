@@ -2,6 +2,8 @@
 
 The current architecture and build contract is [vendor-neutral capability resolution](capability-resolution.md). Select `provider: nacos` explicitly. The Router adapter and SDK event adapter are independent optional components.
 
+> **Current .NET implementation:** [Nacos live acceptance and Gateway integration](nacos-live-architecture.md) documents the .NET harness, Streamable HTTP fixture, managed/NativeAOT smoke, and pinned `NacosMcpRouter` 1.0.0 tool. The upstream protocol captures below describe Router 0.2.2 and are historical compatibility evidence, not the current acceptance setup.
+
 Zhang (@geffzhang) supplied the original implementation, protocol captures, and token measurements on 2026-09-14; those historical observations and their caveats are preserved below. The [isolated acceptance harness](../eng/nacos-live/README.md) now validates the current vendor-neutral adapters with a correctly registered `get_weather(city)` backend, both runtimes, and managed/native event invalidation.
 
 ## Contract observations
@@ -95,15 +97,7 @@ Merge this entry into `<storagePath>/mcp/mcp.json`; preserve existing servers:
 }
 ```
 
-For isolated acceptance, use the [provisioning harness](../eng/nacos-live/README.md).
-It registers `weather-mcp` with a non-empty bilingual description and an
-`mcpServers`-wrapped stdio configuration pointing to `eng/nacos-live/weather_server.py`
-inside the pinned Python environment. The backend actually exposes
-`get_weather(city)` and returns `city`, numeric `temperature_c`, and `source`.
-Fixture observations are labelled; `--live-weather` requests Open-Meteo data.
-Do not reuse the historical `mcp-server-time` registration as a weather backend.
-For another deployment, register its real weather tool and adapt the skill to
-that tool's verified name/schema.
+The current isolated acceptance is implemented in .NET. See the [architecture guide](nacos-live-architecture.md) and [harness instructions](../eng/nacos-live/README.md): the harness starts authenticated Nacos 3.2.4, the pinned .NET Router global tool, and a loopback Streamable HTTP `get_weather(city)` fixture. The fixture returns labelled deterministic Oslo data; it does not represent live weather or prove general search recall. The Python Router references in the protocol-capture section above describe the historical upstream implementation only.
 
 The examples stay under `examples/skills/` and are not bundled or enabled by
 default. Copy the two example directories into an isolated gateway workspace's

@@ -51,6 +51,7 @@
 | 集成 | A2A | [a2a.md](a2a.md) |
 | 集成 | 外部编码后端 | [external-coding-backends.md](external-coding-backends.md) |
 | 集成 | Nacos MCP Router（PoC） | [nacos-mcp-router.md](nacos-mcp-router.md) |
+| 集成 | Nacos Live 验收与 Gateway 架构 | [nacos-live-architecture.md](nacos-live-architecture.md) |
 | 集成 | Tailscale 部署 | [deployment/TAILSCALE.md](deployment/TAILSCALE.md) |
 | 运维 | 工作区管理 API | [WORKSPACE_ADMIN.md](WORKSPACE_ADMIN.md) |
 | 运维 | 安全 | [SECURITY.md](../../SECURITY.md) |

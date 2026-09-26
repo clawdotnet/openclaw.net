@@ -7,6 +7,8 @@
 `PublishAot=false`。RedNb.Nacos 2.1.0 提供源生成协议 JSON 元数据，无需重新开启
 JSON 反射。默认 Gateway 不引入 Nacos SDK。
 
+> **当前 .NET 实现：** [.NET live acceptance 与 Gateway 集成架构](nacos-live-architecture.md)介绍 .NET harness、Streamable HTTP fixture、managed/NativeAOT smoke 和固定版本 `NacosMcpRouter` 1.0.0。本文后续的 Router 0.2.2 协议捕获属于历史兼容资料，不是当前验收搭建方式。
+
 ## 协议与能力槽位
 
 Router 0.2.2 的三个工具仍是 `search_mcp_server`、`add_mcp_server`、`use_tool`。
@@ -36,18 +38,11 @@ Router 0.2.2 的三个工具仍是 `search_mcp_server`、`add_mcp_server`、`use
 按退避策略重试。事件经通用失效接口推进缓存 generation，清除所有静态和动态绑定（未实现按 server 精细失效）；
 不覆盖 workspace 配置。未启用或不可达时，TTL 与显式 reload 继续有效。
 
-[隔离验收工具与完整命令](../../eng/nacos-live/README.md)启动带认证的 Nacos 3.2.4、
-Router 0.2.2，以及真正暴露 `get_weather(city)` 的独立 MCP 服务。它检查：
-
-1. 双 runtime 下静态/动态技能返回天气结果、复用缓存、不重复注册工具、零模型调用。
-2. 托管与 NativeAOT 进程均禁用 JSON 反射，生产订阅适配器进入 active。
-3. 真实配置发布后 2 秒内清除已预热的绑定，下次静态/动态调用都重新绑定成功。
-
-默认天气结果明确标注为 fixture，真实 Nacos/Router/事件传输照常执行；
-`--live-weather` 改为查询 Open-Meteo 的 Oslo 天气。不可把 fixture 温度当作现场
-天气观测，也不把隔离部署的成功推断为任意生产注册表的召回率。
-专用 CI 自动运行隔离验收，普通测试在未设置 `OPENCLAW_NACOS_LIVE=1` 时跳过
-现场测试。成功报告含 managed/native JSON 和双 runtime TRX。
+当前隔离验收使用 .NET harness、带认证的 Nacos 3.2.4、固定版本 .NET Router global tool，
+以及 loopback Streamable HTTP `get_weather(city)` fixture。完整架构、验收断言、运行命令和
+证据说明见[当前 .NET 验收文档](nacos-live-architecture.md)与[运行指南](../../eng/nacos-live/README.md)。
+fixture 天气是有明确标签的确定性 Oslo 测试数据，不是实时观测；隔离验收也不代表任意生产
+注册表的搜索召回率。本文前面的 Router 0.2.2 协议细节及后面的贡献测量继续作为历史记录保留。
 
 ## Zhang 的历史贡献与测量
 

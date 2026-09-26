@@ -41,18 +41,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: eng/nacos-live/requirements.txt
       - name: Install native toolchain and pinned Router
         run: |
           bash .github/scripts/install-nativeaot-prereqs.sh
-          python -m venv "$RUNNER_TEMP/nacos-python"
-          "$RUNNER_TEMP/nacos-python/bin/pip" install -r eng/nacos-live/requirements.txt
-          "$RUNNER_TEMP/nacos-python/bin/python" -c 'from chromadb.utils.embedding_functions import DefaultEmbeddingFunction; DefaultEmbeddingFunction()(["weather city"])'
-          curl --fail --location --retry 3 https://github.com/alibaba/nacos/releases/download/3.2.4/nacos-server-3.2.4.tar.gz -o "$RUNNER_TEMP/nacos.tar.gz"
+          dotnet tool install --global NacosMcpRouter --version 1.0.0
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
       - name: Publish NativeAOT Gateway with optional events
         run: dotnet publish src/OpenClaw.Gateway -c Release -r linux-x64 -p:OpenClawEnableNacos=true -p:OpenClawEnableNacosEvents=true -p:OpenClawSkipDashboardBuild=true -o "$RUNNER_TEMP/nacos-gateway"
       - name: Build acceptance executables and runtime tests
@@ -60,10 +53,10 @@ jobs:
           dotnet publish eng/NacosLiveSmoke -c Release -r linux-x64 -p:PublishAot=true -o "$RUNNER_TEMP/nacos-native"
           dotnet build eng/NacosLiveSmoke -c Release -p:PublishAot=false
           dotnet build src/OpenClaw.Tests -c Release -p:OpenClawSkipDashboardBuild=true
-      - name: Verify authenticated Nacos events and weather binding
+      - name: Run .NET harness tests and authenticated Nacos acceptance
         run: |
-          "$RUNNER_TEMP/nacos-python/bin/python" eng/nacos-live/verify.py \
-            --archive "$RUNNER_TEMP/nacos.tar.gz" \
+          dotnet test eng/nacos-live/tests/NacosLiveAcceptance.Tests.csproj -c Release
+          dotnet run --project eng/nacos-live/NacosLiveAcceptance.csproj -c Release --no-build -- \
             --managed eng/NacosLiveSmoke/bin/Release/net10.0/NacosLiveSmoke.dll \
             --native "$RUNNER_TEMP/nacos-native/NacosLiveSmoke" \
             --test-dll src/OpenClaw.Tests/bin/Release/net10.0/OpenClaw.Tests.dll \
@@ -76,6 +69,4 @@ jobs:
           path: |
             ${{ runner.temp }}/nacos-evidence/*.json
             ${{ runner.temp }}/nacos-evidence/*.trx
-            ${{ runner.temp }}/nacos-evidence/managed.log
-            ${{ runner.temp }}/nacos-evidence/native.log
-            ${{ runner.temp }}/nacos-evidence/runtimes.log
+            ${{ runner.temp }}/nacos-evidence/*.log

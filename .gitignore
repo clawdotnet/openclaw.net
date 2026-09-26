@@ -58,3 +58,4 @@ openclaw-docs.zip
 __pycache__/
 *.pyc
 .venv/
+/.data

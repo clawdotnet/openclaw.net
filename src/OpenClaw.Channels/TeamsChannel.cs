@@ -148,7 +148,7 @@ public sealed class TeamsChannel : IChannelAdapter
                 return _cachedToken;
 
             var tokenUrl = $"https://login.microsoftonline.com/{_tenantId}/oauth2/v2.0/token";
-            var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["grant_type"] = "client_credentials",
                 ["client_id"] = _appId,
