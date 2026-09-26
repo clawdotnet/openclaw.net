@@ -9,8 +9,8 @@ public sealed class RouterConfigurationTests
     public void BuildRouterEnvironment_ContainsRouterSettingsAndExcludesSmokeSettings()
     {
         var deployment = CreateDeployment();
-        var modelDirectory = Path.Combine("models", "all-MiniLM");
-        var dataDirectory = Path.Combine("data", "router");
+        var modelDirectory = Path.Combine(Path.GetTempPath(), "models", "all-MiniLM");
+        var dataDirectory = Path.Combine(Path.GetTempPath(), "data", "router");
 
         var environment = RouterConfiguration.BuildRouterEnvironment(
             deployment,
