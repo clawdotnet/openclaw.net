@@ -14,7 +14,7 @@ namespace OpenClaw.Adapters.Nacos;
 public static class RouterCandidateParser
 {
     private static readonly Regex JsonBlock = new(
-        Regex.Escape(RouterProseContract.SearchListMarker) + @"(\{.*?\})\r?\n"
+        Regex.Escape(RouterProseContract.SearchListMarker[..^1]) + "[:：](\\{.*?\\})\\r?\\n"
         + Regex.Escape(RouterProseContract.SearchStepMarker),
         RegexOptions.Singleline | RegexOptions.Compiled);
 
