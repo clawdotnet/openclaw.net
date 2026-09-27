@@ -155,14 +155,14 @@ internal sealed class BotFrameworkTokenValidator : ITeamsTokenValidator, IAsyncD
             if (_snapshot is { } snapshotLocked && snapshotLocked.ExpiresAt > DateTimeOffset.UtcNow)
                 return snapshotLocked;
 
-            var metadataResponse = await _http.GetAsync(OpenIdMetadataUrl, ct);
+            using var metadataResponse = await _http.GetAsync(OpenIdMetadataUrl, ct);
             metadataResponse.EnsureSuccessStatusCode();
             await using var metadataStream = await metadataResponse.Content.ReadAsStreamAsync(ct);
             using var metadataDocument = await JsonDocument.ParseAsync(metadataStream, cancellationToken: ct);
             var jwksUrl = TryGetString(metadataDocument.RootElement, "jwks_uri");
 
             jwksUrl = string.IsNullOrWhiteSpace(jwksUrl) ? DefaultJwksUrl : jwksUrl;
-            var keysResponse = await _http.GetAsync(jwksUrl, ct);
+            using var keysResponse = await _http.GetAsync(jwksUrl, ct);
             keysResponse.EnsureSuccessStatusCode();
             await using var keysStream = await keysResponse.Content.ReadAsStreamAsync(ct);
             using var keysDocument = await JsonDocument.ParseAsync(keysStream, cancellationToken: ct);

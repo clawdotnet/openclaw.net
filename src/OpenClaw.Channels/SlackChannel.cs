@@ -61,7 +61,7 @@ public sealed partial class SlackChannel : IChannelAdapter
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _botToken);
             request.Content = JsonContent.Create(payload, SlackJsonContext.Default.SlackPostMessageRequest);
 
-            var response = await _http.SendAsync(request, ct);
+            using var response = await _http.SendAsync(request, ct);
 
             if ((int)response.StatusCode == 429)
             {
