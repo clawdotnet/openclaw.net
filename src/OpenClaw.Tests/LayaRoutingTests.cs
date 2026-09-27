@@ -145,6 +145,7 @@ public sealed class LayaRoutingTests
     [InlineData("calibration_id", "laya_calibration_mismatch")]
     [InlineData("schema_hash", "laya_metadata_mismatch")]
     [InlineData("sdk_version", "laya_metadata_mismatch")]
+    [InlineData("runtime", "laya_metadata_mismatch")]
     [InlineData("missing_metadata", "laya_metadata_mismatch")]
     [InlineData("http_error", "http_503")]
     public async Task UnusableLocalResponsesKeepBaselineWithoutHostedFallback(string corruption, string expected)
@@ -204,7 +205,7 @@ public sealed class LayaRoutingTests
             },
             usage = new { input_tokens = 150, output_tokens = 0 },
             metadata = new { checkpoint = "english", revision = config.Model[5..], calibration_id = Calibration,
-                schema_hash = Calibration, rubric_version = "openclaw-laya-tiers-v1", device = "cpu", sdk_version = "0.3.4", truncated = false }
+                schema_hash = Calibration, rubric_version = "openclaw-laya-tiers-v1", device = "cpu", sdk_version = "1.0.0", runtime = "NLaya", truncated = false }
         }))!.AsObject();
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

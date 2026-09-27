@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>OpenClaw.LayaService</RootNamespace>
+    <AssemblyName>OpenClaw.LayaService</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="NLaya" Version="1.0.0" />
+    <PackageReference Include="NLaya.TorchSharp" Version="1.0.0" />
+    <PackageReference Include="TorchSharp-cpu" Version="0.107.0" />
+    <PackageReference Include="ScottPlot" Version="5.1.59" />
+    <EmbeddedResource Include="rubrics/openclaw-laya-tiers-v1.json" LogicalName="OpenClaw.LayaService.Rubric.openclaw-laya-tiers-v1.json" />
+    <None Update="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="licenses/laya-APACHE-2.0.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

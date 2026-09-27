@@ -41,6 +41,7 @@ public sealed class DecisionMetadata
     public required string RubricVersion { get; init; }
     public required string Device { get; init; }
     public required string SdkVersion { get; init; }
+    public required string Runtime { get; init; }
     public required bool Truncated { get; init; }
 }
 

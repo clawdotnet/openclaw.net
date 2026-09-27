@@ -49,6 +49,7 @@
 | 集成 | Microsoft Teams | [TEAMS_SETUP.md](TEAMS_SETUP.md) |
 | 集成 | WhatsApp | [WHATSAPP_SETUP.md](WHATSAPP_SETUP.md) |
 | 集成 | A2A | [a2a.md](a2a.md) |
+| 集成 | 本地 Laya 决策路由 | [integrations/laya-routing.md](integrations/laya-routing.md) |
 | 集成 | 外部编码后端 | [external-coding-backends.md](external-coding-backends.md) |
 | 集成 | Nacos MCP Router（PoC） | [nacos-mcp-router.md](nacos-mcp-router.md) |
 | 集成 | Nacos Live 验收与 Gateway 架构 | [nacos-live-architecture.md](nacos-live-architecture.md) |
@@ -132,6 +133,7 @@
   Microsoft Teams
   WhatsApp
   A2A
+  本地 Laya 决策路由
   外部编码后端
   Nacos MCP Router（PoC）
   Tailscale 部署

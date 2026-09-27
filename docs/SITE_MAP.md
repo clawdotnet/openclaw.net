@@ -56,6 +56,9 @@ Use this map when turning the Markdown docs into a documentation website. It kee
 | Integrations | Microsoft Teams | [TEAMS_SETUP.md](TEAMS_SETUP.md) |
 | Integrations | WhatsApp | [WHATSAPP_SETUP.md](WHATSAPP_SETUP.md) |
 | Integrations | A2A | [a2a.md](a2a.md) |
+| Integrations | Local Laya Decision Routing | [laya-routing.md](laya-routing.md) |
+| Integrations | Jev Decision Routing | [jev-routing.md](jev-routing.md) |
+| Integrations | Local Laya Routing (zh-CN) | [zh-CN/integrations/laya-routing.md](zh-CN/integrations/laya-routing.md) |
 | Integrations | External Coding Backends | [external-coding-backends.md](external-coding-backends.md) |
 | Integrations | Nacos MCP Router (PoC) | [nacos-mcp-router.md](nacos-mcp-router.md) |
 | Integrations | Nacos MCP Router (PoC, zh-CN) | [zh-CN/nacos-mcp-router.md](zh-CN/nacos-mcp-router.md) |
@@ -146,6 +149,9 @@ Integrations
   Microsoft Teams
   WhatsApp
   A2A
+  Local Laya Decision Routing
+  Jev Decision Routing
+  Local Laya Routing (zh-CN)
   External Coding Backends
   Nacos MCP Router (PoC)
   Tailscale Deployment

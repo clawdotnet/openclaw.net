@@ -62,7 +62,8 @@ The tier/profile fields describe routing preferences before the existing model s
 Copy a completed journal snapshot and summarize it:
 
 ```bash
-python3 scripts/evaluate-jev-routing.py /path/to/jev-decisions.snapshot.jsonl --output /tmp/jev-report.json
+dotnet run --project tools/laya_service -c Release -- report \
+  /path/to/jev-decisions.snapshot.jsonl --output /tmp/jev-report.json
 ```
 
 For representative decisions, use existing session records to assign human labels in a separate JSONL file:
@@ -72,7 +73,9 @@ For representative decisions, use existing session records to assign human label
 ```
 
 ```bash
-python3 scripts/evaluate-jev-routing.py /path/to/jev-decisions.snapshot.jsonl --labels /path/to/labels.jsonl --output /tmp/jev-quality.json
+dotnet run --project tools/laya_service -c Release -- report \
+  /path/to/jev-decisions.snapshot.jsonl --labels /path/to/labels.jsonl \
+  --output /tmp/jev-quality.json
 ```
 
 Without labels the report includes coverage, failures, disagreement, latency and estimated decision spend; it makes no accuracy claim. With labels it compares the baseline, always-T2, and Jev with safeguards/fallback using accuracy, confusion matrices, per-tier F1, under-routing, and high-risk capability retention. Label coverage and per-tier sample counts matter. Separate model/rubric cohorts before calibrating thresholds.
@@ -104,7 +107,7 @@ Restart afterward and remove any environment override that would re-enable Jev.
 
 ```bash
 dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj -p:OpenClawSkipDashboardBuild=true --filter 'FullyQualifiedName~JevRoutingTests|FullyQualifiedName~TurnRoutingPolicyTests|FullyQualifiedName~RoutingCommandsTests'
-python3 -m unittest discover -s tests/routing-eval -p test_jev_report.py
+dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --filter 'FullyQualifiedName~RoutingJournalReportTests|FullyQualifiedName~ReliabilityPlotTests'
 ```
 
 The transport follows the [TypeSafe API](https://docs.typesafe.ai/api). The model pin and initial estimated price come from its [model reference](https://docs.typesafe.ai/models), checked September 20, 2026. See [confidence semantics](https://docs.typesafe.ai/confidence) and [known model limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13) before tuning policy.

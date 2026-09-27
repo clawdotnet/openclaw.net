@@ -58,7 +58,7 @@
 - `CommandLine.Parse(string[] args)` 产出 `CommandInvocation`，其 `Command` 为 `serve|download|evaluate|calibrate|report`，`Options` 保留重复 `--checkpoint` 值并拒绝未知选项。
 - `Program` 只解析命令、调用相应 handler、将安全错误写到 stderr 并返回非零退出码；不得输出请求 state、凭据或任意底层异常文本。
 
-- [ ] **步骤 1：先写 CLI 解析失败测试**，覆盖五个命令、重复 checkpoint、缺值参数、未知命令和未知参数。例如：
+- [x] **步骤 1：先写 CLI 解析失败测试**，覆盖五个命令、重复 checkpoint、缺值参数、未知命令和未知参数。例如：
 
 ```csharp
 [Fact]
@@ -70,14 +70,14 @@ public void Parse_DownloadPreservesRepeatedCheckpoints()
 }
 ```
 
-- [ ] **步骤 2：运行测试确认失败。**
+- [x] **步骤 2：运行测试确认失败。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --filter FullyQualifiedName~CommandLineTests`
 预期：因项目或 `CommandLine` 尚不存在而失败。
 
-- [ ] **步骤 3：创建项目骨架。** `LayaService.csproj` 设置 `OutputType=Exe`、`TargetFramework=net10.0`、root namespace；引用 `NLaya` 1.0.0、`NLaya.TorchSharp` 1.0.0、`TorchSharp-cpu` 0.107.0、`Microsoft.AspNetCore.App` 和 ScottPlot 5.1.59。测试项目采用 `eng/nacos-live/tests/NacosLiveAcceptance.Tests.csproj` 的 xUnit v3 模式，并引用服务项目。把两个项目放入 `.slnx` 的 `/tools/laya_service/` solution folder。
-- [ ] **步骤 4：实现命令解析和顶层派发。** 每个命令 handler 初期可以返回明确的 `not_implemented` 错误；不得留下成功但无动作的空实现。保持 CLI 参数为 `dotnet run --project tools/laya_service -- <command> ...`。
-- [ ] **步骤 5：重跑 CLI 测试并构建项目。**
+- [x] **步骤 3：创建项目骨架。** `LayaService.csproj` 设置 `OutputType=Exe`、`TargetFramework=net10.0`、root namespace；引用 `NLaya` 1.0.0、`NLaya.TorchSharp` 1.0.0、`TorchSharp-cpu` 0.107.0、`Microsoft.AspNetCore.App` 和 ScottPlot 5.1.59。测试项目采用 `eng/nacos-live/tests/NacosLiveAcceptance.Tests.csproj` 的 xUnit v3 模式，并引用服务项目。把两个项目放入 `.slnx` 的 `/tools/laya_service/` solution folder。
+- [x] **步骤 4：实现命令解析和顶层派发。** 每个命令 handler 初期可以返回明确的 `not_implemented` 错误；不得留下成功但无动作的空实现。保持 CLI 参数为 `dotnet run --project tools/laya_service -- <command> ...`。
+- [x] **步骤 5：重跑 CLI 测试并构建项目。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release`
 预期：CLI 解析测试通过。
@@ -103,15 +103,15 @@ public void Parse_DownloadPreservesRepeatedCheckpoints()
 - `RequestValidator.Validate(DecisionWireRequest request, string configuredModel)` 拒绝无效请求并返回固定 reason code。
 - `DecisionServer.Build(IDecisionPredictor predictor, ServiceOptions options)` 返回可由测试启动的 `WebApplication`；生产只监听 `IPAddress.Loopback`。
 
-- [ ] **步骤 1：先写请求与 host 测试。** 覆盖 golden request、非法字段/type/大小、duplicate JSON key、Origin、Host、chunked/超大 body、错误码、并发 inference gate、响应不回显输入。至少固定 HTTP 状态与错误响应：无效输入 `422`；busy 和 predictor 异常 `503`。
-- [ ] **步骤 2：运行测试确认失败。**
+- [x] **步骤 1：先写请求与 host 测试。** 覆盖 golden request、非法字段/type/大小、duplicate JSON key、Origin、Host、chunked/超大 body、错误码、并发 inference gate、响应不回显输入。至少固定 HTTP 状态与错误响应：无效输入 `422`；busy 和 predictor 异常 `503`。
+- [x] **步骤 2：运行测试确认失败。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --filter 'FullyQualifiedName~ProtocolTests|FullyQualifiedName~DecisionServerTests'`
 预期：测试类型尚未实现时失败。
 
-- [ ] **步骤 3：实现 DTO 和 JSON 校验。** wire request 仅允许 `model/state/questions/rubric_version/language`；保留 choice/score/noul 形状、候选项顺序和已确认的请求界限。用 `Utf8JsonReader`/`JsonDocument` 严格拒绝重复 key、非有限数值和无效 UTF-8；不可将 JSON 对象重序列化后再计算 schema identity。
-- [ ] **步骤 4：实现 ASP.NET Core server。** 绑定 loopback；只映射 `GET /health` 和 `POST /v1/decisions`；校验 Host 精确匹配绑定地址/端口并拒绝任意 Origin；要求 JSON `Content-Length`、拒绝 Transfer-Encoding、限制 body 为 65,536 bytes；无排队单推理 gate、有限连接数、连接/读取 deadline；关闭请求日志。以固定 reason code 返回 4xx/5xx，不回显异常。
-- [ ] **步骤 5：重跑服务测试。**
+- [x] **步骤 3：实现 DTO 和 JSON 校验。** wire request 仅允许 `model/state/questions/rubric_version/language`；保留 choice/score/noul 形状、候选项顺序和已确认的请求界限。用 `Utf8JsonReader`/`JsonDocument` 严格拒绝重复 key、非有限数值和无效 UTF-8；不可将 JSON 对象重序列化后再计算 schema identity。
+- [x] **步骤 4：实现 ASP.NET Core server。** 绑定 loopback；只映射 `GET /health` 和 `POST /v1/decisions`；校验 Host 精确匹配绑定地址/端口并拒绝任意 Origin；要求 JSON `Content-Length`、拒绝 Transfer-Encoding、限制 body 为 65,536 bytes；无排队单推理 gate、有限连接数、连接/读取 deadline；关闭请求日志。以固定 reason code 返回 4xx/5xx，不回显异常。
+- [x] **步骤 5：重跑服务测试。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --filter 'FullyQualifiedName~ProtocolTests|FullyQualifiedName~DecisionServerTests'`
 预期：fake predictor 下所有 wire、安全和限制测试通过，不需要模型文件。
@@ -135,15 +135,15 @@ public void Parse_DownloadPreservesRepeatedCheckpoints()
 - `HuggingFaceDownloader.DownloadAsync(DownloadOptions options, HttpClient http, CancellationToken ct)` 仅从 `https://huggingface.co/convaiinnovations/laya/resolve/{revision}/{file}` 获取 allowlist 文件，输出模型 manifest 路径。
 - 默认 revision 沿用现有实现的 `1c5edc17a7acd8701df6fc341c0d179f1c62c982`；迁移 `download.py` 中该 revision 的已知逐文件哈希。只有文件下载后哈希验证通过，才将其写入 manifest。
 
-- [ ] **步骤 1：先写 manifest 与下载测试。** 覆盖固定 revision、三种 checkpoint 路径、缺失/改坏文件、路径穿越、未知文件、HTTP 错误/重定向、哈希不匹配、原子 manifest 以及许可/notice 输出；使用假的 `HttpMessageHandler`，不访问网络。
-- [ ] **步骤 2：运行测试确认失败。**
+- [x] **步骤 1：先写 manifest 与下载测试。** 覆盖固定 revision、三种 checkpoint 路径、缺失/改坏文件、路径穿越、未知文件、HTTP 错误/重定向、哈希不匹配、原子 manifest 以及许可/notice 输出；使用假的 `HttpMessageHandler`，不访问网络。
+- [x] **步骤 2：运行测试确认失败。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --filter 'FullyQualifiedName~ModelManifestTests|FullyQualifiedName~HuggingFaceDownloaderTests'`
 预期：实现缺失导致失败。
 
-- [ ] **步骤 3：实现下载与校验。** 文件清单从已固定的 NLaya checkpoint 文件布局生成；每个下载写入 destination 下唯一临时文件，摘要通过后才原子替换；不同 revision 使用不同目标目录；验证任何最终路径都留在 destination 内。写入 manifest 前重新验证完整 checkpoint。复制现有 `THIRD_PARTY_NOTICES.md` 和 Apache-2.0 license 到模型目录。
-- [ ] **步骤 4：连接 `download` CLI。** 支持 `--destination`、`--revision` 和可重复 `--checkpoint`；缺少必需值或 revision 不为 40 位 hex 时返回非零退出码。
-- [ ] **步骤 5：重跑下载测试与 Release build。**
+- [x] **步骤 3：实现下载与校验。** 文件清单从已固定的 NLaya checkpoint 文件布局生成；每个下载写入 destination 下唯一临时文件，摘要通过后才原子替换；不同 revision 使用不同目标目录；验证任何最终路径都留在 destination 内。写入 manifest 前重新验证完整 checkpoint。复制现有 `THIRD_PARTY_NOTICES.md` 和 Apache-2.0 license 到模型目录。
+- [x] **步骤 4：连接 `download` CLI。** 支持 `--destination`、`--revision` 和可重复 `--checkpoint`；缺少必需值或 revision 不为 40 位 hex 时返回非零退出码。
+- [x] **步骤 5：重跑下载测试与 Release build。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --filter 'FullyQualifiedName~ModelManifestTests|FullyQualifiedName~HuggingFaceDownloaderTests'`
 预期：所有测试通过且测试未产生实际 Hugging Face 请求。
@@ -167,15 +167,15 @@ public void Parse_DownloadPreservesRepeatedCheckpoints()
 - Predictor 映射 `DecisionWireRequest` 为 NLaya `Questions`/state/`RouteOptions`，再把 typed result 映射到现有 `DecisionWireResponse`。
 - Metadata 必须提供现有字段并固定 `sdk_version="1.0.0"`、`runtime="NLaya"`、`revision`、`checkpoint`、`schema_hash`、`rubric_version`、`device`、`calibration_id` 和 `truncated=false`。
 
-- [ ] **步骤 1：先写 fake/fixture 输出适配测试。** 测试 Choice/Score/Noul 与概率映射、raw_answers 保留、自动 English/multilingual 路由、语言 hint、非拉丁/混合文本、显式 typed-decisions、未知 checkpoint、设备不可用和输入超过 token budget 时拒绝。typed-decisions 不可因任务名称自动选择。
-- [ ] **步骤 2：运行测试确认失败。**
+- [x] **步骤 1：先写 fake/fixture 输出适配测试。** 测试 Choice/Score/Noul 与概率映射、raw_answers 保留、自动 English/multilingual 路由、语言 hint、非拉丁/混合文本、显式 typed-decisions、未知 checkpoint、设备不可用和输入超过 token budget 时拒绝。typed-decisions 不可因任务名称自动选择。
+- [x] **步骤 2：运行测试确认失败。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --filter FullyQualifiedName~NLayaDecisionPredictorTests`
 预期：NLaya adapter 尚未实现时失败。
 
-- [ ] **步骤 3：实现 NLaya adapter。** 从通过 hash 校验的本地路径加载；使用 `NLaya.Routing.Router`/NLaya 1.0.0 公开 API 和 `UseTorchSharp`；禁用 task-name 自动选择；仅预加载 manifest 中请求的 checkpoints。使用同一 tokenizer 逻辑检查 token budget，超限在 inference 前失败，不将 `truncated=false` 用作未经检查的声明。明确配置 CPU；accelerator 仅在对应 runtime 被安装且显式选择时初始化，不捕获后退到 CPU。
-- [ ] **步骤 4：更新 Gateway metadata contract。** 把 `LayaDecisionClient` 的 SDK 检查改为 `1.0.0` 并新增严格 `runtime == "NLaya"` 检查。扩展 `LayaRoutingTests` 的 handler metadata 和 mismatched runtime 用例，保持服务错误时 baseline fallback 与无 hosted fallback 断言。
-- [ ] **步骤 5：运行服务 adapter 与 Gateway 定向测试。**
+- [x] **步骤 3：实现 NLaya adapter。** 从通过 hash 校验的本地路径加载；使用 `NLaya.Routing.Router`/NLaya 1.0.0 公开 API 和 `UseTorchSharp`；禁用 task-name 自动选择；仅预加载 manifest 中请求的 checkpoints。使用同一 tokenizer 逻辑检查 token budget，超限在 inference 前失败，不将 `truncated=false` 用作未经检查的声明。明确配置 CPU；accelerator 仅在对应 runtime 被安装且显式选择时初始化，不捕获后退到 CPU。
+- [x] **步骤 4：更新 Gateway metadata contract。** 把 `LayaDecisionClient` 的 SDK 检查改为 `1.0.0` 并新增严格 `runtime == "NLaya"` 检查。扩展 `LayaRoutingTests` 的 handler metadata 和 mismatched runtime 用例，保持服务错误时 baseline fallback 与无 hosted fallback 断言。
+- [x] **步骤 5：运行服务 adapter 与 Gateway 定向测试。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --filter FullyQualifiedName~NLayaDecisionPredictorTests`
 预期：fake/fixture 测试通过，无权重下载。
@@ -204,16 +204,16 @@ public void Parse_DownloadPreservesRepeatedCheckpoints()
 - `CalibrationFitter.Fit(IReadOnlyList<Observation> training, IReadOnlyList<Observation> validation, int minimumSamples = 20)` 返回 v2 calibration DTO。
 - `CalibrationMetrics.Measure(IReadOnlyList<LabeledPrediction> rows)` 返回样本数、accuracy、NLL、Brier、ECE、reliability bins 和 risk/coverage；`LabeledPrediction` 在 `CalibrationMetrics.cs` 定义，携带答案类型、候选键、归一化概率和标签。
 
-- [ ] **步骤 1：先写 evaluation 隐私与 HTTP 测试。** 用 fake `HttpMessageHandler` 验证 case ID 唯一性、标签覆盖每个问题、默认 rubric/model、loopback literal endpoint 限制、proxy/redirect 禁用、服务 metadata identity 检查、canonical 请求指纹及 observation 不含原始 state。
-- [ ] **步骤 2：先写 calibration metric/contract 测试。** 覆盖概率归一化、noul/choice/score 分布、temperature grid、train/validation ID 与 fingerprint 重叠、模型/schema/runtime 混合、bucket 不一致、每桶最少 20 条、多标签、稳定 v2 JSON 和 exact-byte SHA-256。保留旧 Python metrics golden 结果。
-- [ ] **步骤 3：运行测试确认失败。**
+- [x] **步骤 1：先写 evaluation 隐私与 HTTP 测试。** 用 fake `HttpMessageHandler` 验证 case ID 唯一性、标签覆盖每个问题、默认 rubric/model、loopback literal endpoint 限制、proxy/redirect 禁用、服务 metadata identity 检查、canonical 请求指纹及 observation 不含原始 state。
+- [x] **步骤 2：先写 calibration metric/contract 测试。** 覆盖概率归一化、noul/choice/score 分布、temperature grid、train/validation ID 与 fingerprint 重叠、模型/schema/runtime 混合、bucket 不一致、每桶最少 20 条、多标签、稳定 v2 JSON 和 exact-byte SHA-256。保留旧 Python metrics golden 结果。
+- [x] **步骤 3：运行测试确认失败。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --filter 'FullyQualifiedName~CaseEvaluatorTests|FullyQualifiedName~CalibrationFitterTests'`
 预期：尚无实现时失败。
 
-- [ ] **步骤 4：实现 evaluator。** 读取现有 case JSONL，每条请求只发往字面 loopback `/v1/decisions`；用 `HttpClientHandler` 设置 `AllowAutoRedirect=false` 且禁用代理。observations 只写 ID、canonical fingerprint、question、label、模型/checkpoint/schema/runtime provenance 和 raw answer；写入临时文件，成功处理整个数据集后原子替换目标。
-- [ ] **步骤 5：实现 metrics、温度拟合和 v2 calibration store。** 拟合继续使用候选温度 `10 ** (-1 + i / 80)`，`i=0..160` 的 NLL 最小值；按 checkpoint 与 `type:option-count` 分桶。artifact 固定为 UTF-8 JSON、final newline、`version=2`，绑定模型 revision、schema hash、NLaya 版本、温度和 validation metrics；service 校验 configured SHA-256，拒绝 v1 并提示重新生成。
-- [ ] **步骤 6：连接 `evaluate` 与 `calibrate` CLI 并重跑定向测试。**
+- [x] **步骤 4：实现 evaluator。** 读取现有 case JSONL，每条请求只发往字面 loopback `/v1/decisions`；用 `HttpClientHandler` 设置 `AllowAutoRedirect=false` 且禁用代理。observations 只写 ID、canonical fingerprint、question、label、模型/checkpoint/schema/runtime provenance 和 raw answer；写入临时文件，成功处理整个数据集后原子替换目标。
+- [x] **步骤 5：实现 metrics、温度拟合和 v2 calibration store。** 拟合继续使用候选温度 `10 ** (-1 + i / 80)`，`i=0..160` 的 NLL 最小值；按 checkpoint 与 `type:option-count` 分桶。artifact 固定为 UTF-8 JSON、final newline、`version=2`，绑定模型 revision、schema hash、NLaya 版本、温度和 validation metrics；service 校验 configured SHA-256，拒绝 v1 并提示重新生成。
+- [x] **步骤 6：连接 `evaluate` 与 `calibrate` CLI 并重跑定向测试。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --filter 'FullyQualifiedName~CaseEvaluatorTests|FullyQualifiedName~CalibrationFitterTests'`
 预期：原始观察隐私、校准分桶及 artifact 哈希测试全部通过。
@@ -238,15 +238,15 @@ public void Parse_DownloadPreservesRepeatedCheckpoints()
 - `RoutingJournalReport.ReadJsonLines(string path)` 对每行给出带行号的 JSON 错误；`Summarize(rows, labels)` 返回与当前脚本字段兼容的 report DTO。
 - `ReliabilityPlot.WritePng(RoutingReport report, string outputPath)` 使用 ScottPlot 5.1.59 生成 reliability 与 risk/coverage 两列图；没有带标签概率 cohort 时返回明确错误。
 
-- [ ] **步骤 1：先写 report parity tests。** 从现有 `test_jev_report.py` 逐例移植 Jev fallback、Laya cohort 分组、abstain 概率、无标签不报 accuracy、空/重复/unmatched 数据校验；断言输出字段、数值和 JSON key 与现有 Python fixtures 一致。
-- [ ] **步骤 2：运行测试确认失败。**
+- [x] **步骤 1：先写 report parity tests。** 从现有 `test_jev_report.py` 逐例移植 Jev fallback、Laya cohort 分组、abstain 概率、无标签不报 accuracy、空/重复/unmatched 数据校验；断言输出字段、数值和 JSON key 与现有 Python fixtures 一致。
+- [x] **步骤 2：运行测试确认失败。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --filter 'FullyQualifiedName~RoutingJournalReportTests|FullyQualifiedName~ReliabilityPlotTests'`
 预期：尚无报告实现时失败。
 
-- [ ] **步骤 3：实现 summary/quality/calibration cohort。** 保留 decisions、usage、eligible proposals、coverage、mode/provider/model/rubric/reason/tier counts、latency percentile、token/cost、quality confusion/F1/under/over-routing/high-risk retention 字段；概率指标调用 Task 5 的 `CalibrationMetrics` 并严格按 provider/model/rubric/checkpoint/revision/calibration/schema 分组。
-- [ ] **步骤 4：实现 ScottPlot 输出。** 锁定 `<PackageReference Include="ScottPlot" Version="5.1.59" />`；生成 headless PNG，标题包含 cohort identity，绘出理想 calibration 对角线和 risk/coverage 曲线；无图像设备依赖，不生成无数据的误导图。
-- [ ] **步骤 5：连接 `report` CLI 并运行 fixtures/PNG 测试。**
+- [x] **步骤 3：实现 summary/quality/calibration cohort。** 保留 decisions、usage、eligible proposals、coverage、mode/provider/model/rubric/reason/tier counts、latency percentile、token/cost、quality confusion/F1/under/over-routing/high-risk retention 字段；概率指标调用 Task 5 的 `CalibrationMetrics` 并严格按 provider/model/rubric/checkpoint/revision/calibration/schema 分组。
+- [x] **步骤 4：实现 ScottPlot 输出。** 锁定 `<PackageReference Include="ScottPlot" Version="5.1.59" />`；生成 headless PNG，标题包含 cohort identity，绘出理想 calibration 对角线和 risk/coverage 曲线；无图像设备依赖，不生成无数据的误导图。
+- [x] **步骤 5：连接 `report` CLI 并运行 fixtures/PNG 测试。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --filter 'FullyQualifiedName~RoutingJournalReportTests|FullyQualifiedName~ReliabilityPlotTests'`
 预期：Jev 与 Laya fixtures 的 report JSON parity 通过，PNG 文件存在且非空。
@@ -262,16 +262,16 @@ public void Parse_DownloadPreservesRepeatedCheckpoints()
 - Delete: Task 1–6 文件清单中的 Python modules、Python requirements、Python 测试与两个 report entrypoint。
 - Keep: rubric、license、notice 和 routing JSONL fixtures。
 
-- [ ] **步骤 1：先确认 .NET 测试通过，再更新 CI 命令。** 在 `ci.yml` 的本地决策工具步骤中使用 `dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --no-build`；保留仓库其他既有 Python 检查，不删除 `eng/verify-vault-publish-boundary.py` 步骤。
-- [ ] **步骤 2：将服务和测试项目加入 `.slnx` 并做 solution restore/build。**
+- [x] **步骤 1：先确认 .NET 测试通过，再更新 CI 命令。** 在 `ci.yml` 的本地决策工具步骤中使用 `dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release --no-build`；保留仓库其他既有 Python 检查，不删除 `eng/verify-vault-publish-boundary.py` 步骤。
+- [x] **步骤 2：将服务和测试项目加入 `.slnx` 并做 solution restore/build。**
 
 运行：`dotnet restore OpenClaw.Net.slnx`
 预期：NLaya/TorchSharp/ScottPlot 固定依赖可恢复。
 运行：`dotnet build OpenClaw.Net.slnx --no-restore -c Release`
 预期：solution build 成功。
 
-- [ ] **步骤 3：仅在新测试已通过后删除 Python 实现/测试/入口。** 保留许可、rubric 和 JSONL fixtures。用 `rg -n "tools\.laya_service|tools/laya_service|evaluate-jev-routing|evaluate-decision-routing|tests/laya-service|test_jev_report"` 扫描 tracked 文件；仅允许新文档里说明历史迁移的文字，不允许剩余运行时引用。
-- [ ] **步骤 4：运行 CI 对应的 Python 依赖边界检查与 .NET tests。**
+- [x] **步骤 3：仅在新测试已通过后删除 Python 实现/测试/入口。** 保留许可、rubric 和 JSONL fixtures。用 `rg -n "tools\.laya_service|tools/laya_service|evaluate-jev-routing|evaluate-decision-routing|tests/laya-service|test_jev_report"` 扫描 tracked 文件；仅允许新文档里说明历史迁移的文字，不允许剩余运行时引用。
+- [x] **步骤 4：运行 CI 对应的 Python 依赖边界检查与 .NET tests。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release`
 预期：所有工具测试通过。
@@ -296,9 +296,9 @@ public void Parse_DownloadPreservesRepeatedCheckpoints()
 - Create: `docs/zh-CN/integrations/laya-routing.md`
 - Modify: `docs/cli/routing.md` only once; consolidate references into the same edit.
 
-- [ ] **步骤 1：将运维命令改为 .NET CLI。** 中英文文档说明 NuGet/runtime 版本、`serve/download/evaluate/calibrate/report` 命令、revision/hash/manifest、runtime metadata、校准 v2 重生成、设备选择和 rollback；Jev 报告改为同一 `report` 命令，旧 Python 命令不再展示。
-- [ ] **步骤 2：更新文档导航。** 在 `docs/README.md`、`docs/SITE_MAP.md` 和 `docs/zh-CN/SITE_MAP.md` 链接运维指南及中文版；确保新增相对链接目标存在。
-- [ ] **步骤 3：运行最终 focused gates。**
+- [x] **步骤 1：将运维命令改为 .NET CLI。** 中英文文档说明 NuGet/runtime 版本、`serve/download/evaluate/calibrate/report` 命令、revision/hash/manifest、runtime metadata、校准 v2 重生成、设备选择和 rollback；Jev 报告改为同一 `report` 命令，旧 Python 命令不再展示。
+- [x] **步骤 2：更新文档导航。** 在 `docs/README.md`、`docs/SITE_MAP.md` 和 `docs/zh-CN/SITE_MAP.md` 链接运维指南及中文版；确保新增相对链接目标存在。
+- [x] **步骤 3：运行最终 focused gates。**
 
 运行：`dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release`
 预期：全部 service/download/evaluate/calibrate/report tests 通过，且不访问 Hugging Face。
@@ -309,7 +309,7 @@ public void Parse_DownloadPreservesRepeatedCheckpoints()
 运行：`git diff --check`
 预期：无空白错误。
 
-- [ ] **步骤 4：提供 opt-in 真实模型验证说明。** 记录需由操作者在模型下载和硬件已配置的环境运行的命令：分别 smoke 每个已支持 checkpoint，检查 parity 的 typed-answer/category 与概率容差；不得把此项混入普通 CI，也不得称为生产质量证据。
+- [x] **步骤 4：提供 opt-in 真实模型验证说明。** 记录需由操作者在模型下载和硬件已配置的环境运行的命令：分别 smoke 每个已支持 checkpoint，检查 parity 的 typed-answer/category 与概率容差；不得把此项混入普通 CI，也不得称为生产质量证据。
 - [ ] **步骤 5：提交** `docs: document NLaya Laya service migration`。
 
 ## 规格覆盖自检

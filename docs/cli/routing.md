@@ -27,6 +27,14 @@ Router mode behavior:
 
 `routing status` also reports `jevMode`, `jevModel`, `layaMode`, `layaModel`, and `layaCalibrationId`. See [local Laya routing](../laya-routing.md) for offline setup and calibration. Jev is disabled by default; its `shadow` and `active` modes are configured through `DynamicTurnRouting.Jev`. See [Jev routing](../jev-routing.md) for the evaluation workflow. The existing `diagnostics on|off` command controls the ONNX policy flag; Jev journaling is controlled separately by `Jev.DiagnosticsPath`.
 
+Jev and Laya journal summaries share the standalone .NET report tool. It can write JSON and optional ScottPlot PNG reliability/risk-coverage charts; see the provider guides for label schema and examples:
+
+```bash
+dotnet run --project tools/laya_service -c Release -- report \
+	/path/to/decisions.snapshot.jsonl --labels /path/to/labels.jsonl \
+	--output /path/to/report.json --plot /path/to/reliability.png
+```
+
 Examples:
 
 ```bash

@@ -1,41 +1,38 @@
-# Local Laya decision routing
+# Local Laya Decision Routing
 
-OpenClaw can use Laya as an optional, locally hosted decision provider. Both native and Microsoft Agent Framework runtimes use the shared decision-routing policy. The default is disabled. Laya produces typed decisions; it is not a chat model and should not be added to `Models.Profiles` as a generator.
+OpenClaw can use Laya as an optional, locally hosted decision provider. Native and Microsoft Agent Framework runtimes share the decision-routing policy. The default is disabled. Laya produces typed decisions; it is not a chat model and must not be added to `Models.Profiles` as a generator.
 
-**Laya is developed by Nandakishor Mukkunnoth (Nandakishor M), ConvAI Innovations, and upstream contributors.** Its model, SDK, and research are their work. This integration's local service, compatibility checks, and evaluation tooling are maintained separately. See the [author's article](https://laya.convaiinnovations.com/), [source repository](https://github.com/NandhaKishorM/laya), [model card](https://huggingface.co/convaiinnovations/laya), and retained [attribution and license](../tools/laya_service/THIRD_PARTY_NOTICES.md). The earlier [confidence-aware routing paper](https://arxiv.org/abs/2510.01237) motivates escalation pathways; this implementation changes model selection only.
+**Laya is developed by Nandakishor Mukkunnoth (Nandakishor M), ConvAI Innovations, and upstream contributors.** Its model, SDK, and research are their work. OpenClaw separately maintains the local service, adapter, and evaluation tools. See the [author's article](https://laya.convaiinnovations.com/), [source repository](https://github.com/NandhaKishorM/laya), [model card](https://huggingface.co/convaiinnovations/laya), and retained [attribution and license](../tools/laya_service/THIRD_PARTY_NOTICES.md). The earlier [confidence-aware routing paper](https://arxiv.org/abs/2510.01237) motivates escalation pathways; this integration changes model selection only.
 
-## Prepare the optional service
+## Runtime Boundary
 
-Run these commands from the repository root with Python 3.12. Python/PyTorch remain outside the .NET gateway and its NativeAOT binary. Keep model assets and calibration datasets outside the repository.
+The standalone service targets .NET 10 and uses `NLaya`/`NLaya.TorchSharp` 1.0.0 with `TorchSharp-cpu` 0.107.0. The Gateway communicates with it over the loopback HTTP contract and does not reference NLaya or TorchSharp. The service is a JIT deployment; NativeAOT support is not claimed. CPU is the verified runtime with the checked-in dependency set. `cuda` and `mps` are accepted only when their matching TorchSharp backend is installed; this project does not bundle those backends.
+
+Keep model assets, calibration observations, and reports outside the repository. From the repository root, download the pinned revision and selected checkpoint files:
 
 ```bash
-python3.12 -m venv /path/to/laya-venv
-/path/to/laya-venv/bin/python -m pip install -r tools/laya_service/requirements.txt
-/path/to/laya-venv/bin/python -m tools.laya_service.download \
+dotnet run --project tools/laya_service -c Release -- download \
   --destination /path/to/laya-models \
+  --revision 1c5edc17a7acd8701df6fc341c0d179f1c62c982 \
   --checkpoint english --checkpoint multilingual
 ```
 
-The downloader pins Hugging Face revision `1c5edc17a7acd8701df6fc341c0d179f1c62c982`, selects only the named checkpoint files, prepares tokenizer compatibility, and creates a manifest of SHA-256 hashes. It copies attribution and the upstream Apache-2.0 license beside the assets. Use a new destination when changing revision. The SDK is pinned to `laya==0.3.4`; dependency versions are the tested Python 3.12 combination. On Linux CUDA hosts, install the appropriate PyTorch wheel for the GPU/driver. CUDA was not verified by the macOS smoke test.
+The downloader retrieves only the allowlisted model/config/tokenizer assets for the requested checkpoints, writes their SHA-256 values to `manifest.json`, and copies upstream attribution and license notices. The default revision is `1c5edc17a7acd8701df6fc341c0d179f1c62c982`. Use a fresh destination when changing revisions. Startup verifies manifest paths and every asset hash before loading local files; serving never downloads weights. The [retained upstream license](../tools/laya_service/licenses/laya-APACHE-2.0.txt) and [third-party notices](../tools/laya_service/THIRD_PARTY_NOTICES.md) travel with the service.
 
-For English-only use, download only `english`. Non-English requests then retain the gateway's baseline when the required checkpoint is unavailable. Do not assume unknown or mixed scripts are English. The compatibility layer handles Armenian, omitted by the released SDK, and other non-Latin minority scripts before inference. An explicit language hint helps short Latin-script inputs; an English hint conflicting with non-Latin text is rejected.
-
-Start a persistent service:
+Start the local service:
 
 ```bash
-/path/to/laya-venv/bin/python -m tools.laya_service \
-  --manifest /path/to/laya-models/manifest.json --device cpu --port 8099
+dotnet run --project tools/laya_service -c Release -- serve \
+  --manifest /path/to/laya-models/manifest.json --device cpu --port 8099 --threads 4
 ```
 
-Use `--device mps` on supported Apple Silicon or `--device cuda` on a configured NVIDIA host. `--threads 4` is the default CPU thread limit. `--checkpoint multilingual` can force all requests to the multilingual checkpoint. The workflow-specific `typed-decisions` checkpoint must be downloaded and explicitly selected; automatic routing does not select it merely because question names resemble its training tasks.
+`--checkpoint auto` is the default. `english` and `multilingual` are routed by language; `typed-decisions` must be downloaded and explicitly selected. `--device` accepts `cpu`, `cuda`, or `mps`; an unavailable backend fails startup rather than silently falling back. `GET http://127.0.0.1:8099/health` reports readiness and model/runtime identity. Restart after changing the manifest or calibration.
 
-All installed/selected checkpoints load and warm up before the socket opens. Startup verifies every asset hash. Runtime sets Hugging Face/Transformers offline mode and loads only local paths; it never downloads weights. `GET http://127.0.0.1:8099/health` reports readiness, model identity, calibration ID, checkpoints, and actual devices, including SDK CPU fallback. Restart the service after changing its manifest or calibration.
+The service binds only to `127.0.0.1`, rejects browser Origin and unexpected Host headers, caps request size and connections, and admits one inference at a time without a waiting queue. The Gateway bypasses proxies and redirects, accepts only literal loopback endpoints, and never falls back from Laya to hosted Jev. Selected conversation text still crosses a local HTTP process boundary.
 
-The service binds only to `127.0.0.1`, rejects browser Origin and unexpected Host headers, caps request size and connections, and admits one inference at a time without a waiting queue. Protect the host as you would any local process. The gateway bypasses proxies and redirects for Laya, accepts only literal loopback endpoints, and never falls back from Laya to hosted Jev. Selected conversation text still crosses a local HTTP process boundary.
+## Gateway Configuration
 
-## Start in shadow mode
-
-Retain the existing `Policy.Tiers` model-profile mappings. Enable one decision provider at a time:
+Retain existing `Policy.Tiers` model-profile mappings and enable one decision provider at a time:
 
 ```json
 {
@@ -57,57 +54,66 @@ Retain the existing `Policy.Tiers` model-profile mappings. Enable one decision p
 }
 ```
 
-Restart the gateway. `openclaw routing status --config /path/to/appsettings.json` shows configured provider modes and identities. `DynamicTurnRouting.Enabled` still controls the independent ONNX baseline. Shadow mode returns that baseline unchanged but adds bounded evaluation latency.
+Restart the Gateway. `openclaw routing status --config /path/to/appsettings.json` shows configured provider modes and identities. `DynamicTurnRouting.Enabled` still controls the independent ONNX baseline. Shadow mode returns that baseline unchanged but adds bounded evaluation latency.
 
-The shorter `openclaw-laya-tiers-v1` rubric is [shared by the gateway and evaluation tool](../tools/laya_service/rubrics/openclaw-laya-tiers-v1.json). It asks for T0–T3/abstain, risk, and tool need. Before prediction the service checks the exact tokenizer budget for state, question instructions, and every option. It rejects any input the SDK would truncate or rewrite, rather than deciding from silently incomplete text. The English checkpoint has a 512-token total budget per question, multilingual 1,024 by default, including questions and options. Up to 20 choice options and 16 questions are accepted, subject to those stricter token limits.
+The `openclaw-laya-tiers-v1` rubric is [shared by the Gateway and evaluator](../tools/laya_service/rubrics/openclaw-laya-tiers-v1.json). The adapter reports `sdk_version: "1.0.0"` and `runtime: "NLaya"`; Gateway metadata checks both before accepting a decision. The service checks tokenizer budgets for state, question instructions, and options, and rejects inputs that would be truncated. The English checkpoint budget is 512 tokens per question and multilingual is 1,024 by default; protocol limits are up to 20 choice options and 16 questions, subject to those budgets.
 
-The adapter checks model revision, SDK version, calibration identity, rubric, device, checkpoint, and explicit absence of truncation. Errors, overload, deadline expiry, and uncertainty retain the baseline. The shared policy preserves redaction, explicit model selections, deterministic floors, sticky tiers, and tool permissions. It does not authorize actions. Disabling a router does not weaken existing permissions.
+Errors, overload, deadline expiry, and uncertainty retain the baseline. Shared policy preserves redaction, explicit model selections, deterministic floors, sticky tiers, and tool permissions. It does not authorize actions. Metadata-only journals omit state, prompts, and credentials; protect and rotate them using normal log retention controls.
 
-Metadata-only journals include provider, checkpoint/revision, schema hash, calibration ID, actual device, rubric, probabilities, latency, and applied/proposed routes. They omit state, prompts, and credentials. Laya's metered API cost is zero; this does not represent the cost of local compute. Rotate/protect these files using normal log retention controls.
+## Evaluate and Calibrate
 
-## Evaluate and calibrate
-
-The base weights run without training, but this is not evidence of production routing quality. In a local smoke test the new rubric still underpredicted tool need for repository work. The [author's benchmarks](https://github.com/NandhaKishorM/laya/blob/42626c348753fbb17572a813127df2278a1ec527/BENCHMARKS.md) also distinguish the fine-tuned checkpoint from weak base-model performance on typed decisions. Do not transfer Jev confidence thresholds or advertise the local timing as a quality benchmark.
-
-Prepare representative, human-labeled calibration and held-out validation JSONL files. Each line has a unique case ID, state, and labels for every question. The tool supplies the shared routing rubric and pinned model unless an explicit schema/model is provided:
+Model execution and passing unit tests do not establish production routing quality. Do not transfer Jev confidence thresholds or interpret local runtime as a quality benchmark. Prepare representative human-labeled calibration and held-out validation JSONL files. Each case has a unique ID, state, and labels for every question; when questions/model are omitted, the evaluator supplies the shared rubric and pinned model:
 
 ```json
 {"case_id":"cal-001","state":{"current_request":"Rewrite hello in uppercase.","recent_conversation":[]},"labels":{"tier":"T0","high_risk":false,"requires_tools":false}}
 ```
 
-Include languages, multi-turn references, ambiguity, consequential tasks, and tool-dependent requests. Keep validation cases and their IDs separate from fitting data. Twenty observations per checkpoint/question-type/option-count bucket is the tooling minimum, not a sufficient production sample size. Include multiple labels in each calibration bucket. Do not derive tool/risk labels mechanically from model outputs.
+Include languages, multi-turn references, ambiguity, consequential tasks, and tool-dependent requests. Keep validation cases separate from fitting cases. Twenty observations per checkpoint/question-type/option-count bucket is only the tooling minimum. Include multiple labels in every training bucket and do not derive risk/tool labels mechanically from model outputs.
 
 ```bash
-/path/to/laya-venv/bin/python -m tools.laya_service.evaluate /path/to/calibration-cases.jsonl --output /path/to/calibration-raw.jsonl
-/path/to/laya-venv/bin/python -m tools.laya_service.evaluate /path/to/validation-cases.jsonl --output /path/to/validation-raw.jsonl
-/path/to/laya-venv/bin/python -m tools.laya_service.calibration \
+dotnet run --project tools/laya_service -c Release -- evaluate /path/to/calibration-cases.jsonl \
+  --endpoint http://127.0.0.1:8099/v1/decisions --output /path/to/calibration-raw.jsonl
+dotnet run --project tools/laya_service -c Release -- evaluate /path/to/validation-cases.jsonl \
+  --endpoint http://127.0.0.1:8099/v1/decisions --output /path/to/validation-raw.jsonl
+dotnet run --project tools/laya_service -c Release -- calibrate \
   --fit /path/to/calibration-raw.jsonl --validate /path/to/validation-raw.jsonl \
   --output /path/to/calibration.json
 ```
 
-Observations retain raw pre-adapter probabilities, labels, and request hashes for detecting duplicate cases, without state. Protect these local evaluation files as potentially sensitive metadata. Calibration fits an additional scalar temperature to those probabilities, separately by checkpoint, primitive, and option count. It validates disjoint IDs, exact-request fingerprints, and provenance, reports held-out NLL, Brier score, expected calibration error, reliability bins, and risk-versus-coverage curves, and prints the artifact's SHA-256 ID. It does not retrain weights or automatically promote a provider. Inspect held-out results, especially under-routing and important language cohorts; reject a calibration that worsens acceptable risk or coverage. Temperature scaling cannot fix bad rankings or missing knowledge, and may require subsequent task-specific fine-tuning.
+The evaluator sends requests only to a literal `http://127.0.0.1:PORT/v1/decisions` endpoint, disables proxies and redirects, and writes state-free observations with raw answers, labels, provenance, and canonical request fingerprints. Treat these files as potentially sensitive metadata. Calibration fits scalar temperatures by checkpoint and `type:option-count`, validates disjoint IDs/fingerprints and homogeneous model/schema/runtime identity, and reports held-out NLL, Brier, ECE, reliability bins, and risk/coverage. The output is UTF-8 JSON with a final newline and `version: 2`, bound to model revision, schema hash, `sdk_version: "1.0.0"`, and `runtime: "NLaya"`. The CLI prints the exact artifact SHA-256.
 
-Restart the service with `--calibration /path/to/calibration.json`, put its printed SHA-256 in `Laya.CalibrationId`, and continue shadow evaluation. The service rejects a different question schema, candidate order, or a checkpoint/bucket absent from the calibration. After acceptable held-out task results, set `Laya.Mode=active` and configure confidence/margin thresholds based on that evaluation. Active mode requires a calibration ID; the response must match it. No production calibration artifact is shipped.
+Restart with `--calibration /path/to/calibration.json` and set the printed SHA-256 in `Laya.CalibrationId`. The service rejects v1 artifacts, a different question schema, or missing checkpoint/buckets. Continue shadow evaluation and inspect held-out results before considering active mode. Temperature scaling cannot repair ranking errors or missing knowledge. No production calibration artifact ships with this repository.
 
-The existing journal report now supports both providers:
+## Routing Journal Report
 
-```bash
-python3 scripts/evaluate-decision-routing.py /path/to/laya-decisions.snapshot.jsonl \
-  --labels /path/to/tier-labels.jsonl --output /path/to/report.json
-```
-
-Tier-label rows use `decision_id`, `expected_tier`, and optional `high_risk`, as described in [Jev routing](jev-routing.md). Calibration metrics are separated by provider/model/rubric/checkpoint/revision/calibration/schema cohort. They assess raw tier distributions separately from policy safeguards and fallback. Add `--plot /path/to/reliability.png` when `matplotlib` is installed to render reliability and risk/coverage plots. Unlabeled journals make no accuracy claim. The legacy `evaluate-jev-routing.py` command remains available.
-
-## Rollback and verification
-
-Set `Laya.Mode=disabled` and restart the gateway, or use `openclaw routing configure router --router disabled` to disable ONNX and both decision providers. Remove environment overrides that would re-enable them. Stop the independently managed Python service when it is no longer needed.
+The .NET report command handles both Jev and Laya journals. Labels use `decision_id`, `expected_tier`, and optional boolean `high_risk`. Calibration is reported separately by provider/model/rubric/checkpoint/revision/calibration/schema cohort. Unlabeled journals make no accuracy claim; reliability plots require labeled probability data.
 
 ```bash
-python3 -B -m unittest discover -s tests/laya-service -v
-python3 -B -m unittest discover -s tests/routing-eval -p test_jev_report.py
-dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj --filter 'FullyQualifiedName~LayaRoutingTests|FullyQualifiedName~JevRoutingTests'
+dotnet run --project tools/laya_service -c Release -- report \
+  /path/to/jev-decisions.snapshot.jsonl \
+  --labels /path/to/tier-labels.jsonl --output /path/to/report.json \
+  --plot /path/to/reliability.png
 ```
 
-The Python unit tests require only the standard library; they do not download weights or make hosted inference calls. Real local inference is a separate operator smoke check. This implementation covers turn routing, local serving, compatibility improvements, and calibration tooling. Skill selection, memory reranking, and workflow escalation remain later integrations requiring their own quality evaluations.
+## Rollback and Verification
 
-Development verification on September 21, 2026 included real English inference on Apple MPS, multilingual inference on CPU (including Armenian checkpoint selection), a compiled macOS arm64 NativeAOT client calling the local service, and a synthetic calibration/evaluation round trip. These verify the integration, not production quality or a general latency guarantee. No production routing mode or model weights were changed by that verification.
+Set `Laya.Mode=disabled` and restart the Gateway, or run `openclaw routing configure router --router disabled` to disable ONNX and both decision providers. Remove environment overrides that would re-enable them, and stop the independently managed .NET service when it is no longer needed.
+
+```bash
+dotnet test tools/laya_service/tests/LayaService.Tests.csproj -c Release
+dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj -c Release \
+  -p:OpenClawSkipDashboardBuild=true --filter FullyQualifiedName~LayaRoutingTests
+```
+
+These tests use fakes and fixtures; they do not download weights or exercise real model quality. Real inference and checkpoint parity are opt-in operator checks in an environment with model assets and the required device backend. Skill selection, memory reranking, and workflow escalation remain separate integrations requiring their own evaluations.
+
+For an opt-in real-model check, download all three checkpoints, start the service once per checkpoint by setting `--checkpoint english`, `--checkpoint multilingual`, or `--checkpoint typed-decisions`, then evaluate the same labeled parity dataset against each service:
+
+```bash
+dotnet run --project tools/laya_service -c Release -- serve \
+  --manifest /path/to/laya-models/manifest.json --checkpoint english --device cpu
+dotnet run --project tools/laya_service -c Release -- evaluate /path/to/parity-cases.jsonl \
+  --endpoint http://127.0.0.1:8099/v1/decisions --output /path/to/english-observations.jsonl
+```
+
+Repeat with `multilingual` and `typed-decisions` (and distinct output paths). Compare each observation to an approved reference for exact typed-answer/category matches and probability deltas within a tolerance chosen before the run for the same device/runtime. Record checkpoint, revision, runtime, device, and tolerance with the results. The repository does not supply real-model golden outputs or a production acceptance threshold; this check is not part of ordinary CI and is not evidence of production routing quality.
