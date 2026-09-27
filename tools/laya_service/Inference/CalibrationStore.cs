@@ -114,7 +114,8 @@ public sealed class CalibrationStore
             }
             TransformAnswer(answer, question.TypeName, question, temperature);
         }
-        return JsonDocument.Parse(transformed.ToJsonString()).RootElement.Clone();
+        using var document = JsonDocument.Parse(transformed.ToJsonString());
+        return document.RootElement.Clone();
     }
 
     private static void TransformAnswer(JsonObject answer, string type, Question question, double temperature)

@@ -110,7 +110,8 @@ public static class CaseEvaluator
             requestNode["questions"] = JsonNode.Parse(rubric.RootElement.GetProperty("questions").GetRawText());
         }
         if (!requestNode.ContainsKey("model")) requestNode["model"] = "laya@" + ModelManifest.DefaultRevision;
-        var requestElement = JsonDocument.Parse(requestNode.ToJsonString()).RootElement.Clone();
+        using var requestDocument = JsonDocument.Parse(requestNode.ToJsonString());
+        var requestElement = requestDocument.RootElement.Clone();
         var request = StrictJson.ParseRequest(Encoding.UTF8.GetBytes(StrictJson.Canonicalize(requestElement)));
         RequestValidator.Validate(request, request.Model);
         if (labels.GetPropertyCount() != request.Questions.GetPropertyCount() ||

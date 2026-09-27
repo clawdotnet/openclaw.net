@@ -124,7 +124,8 @@ public sealed class NLayaDecisionPredictor : IDecisionPredictor, IAsyncDisposabl
 
         var prediction = await agent.PredictAsync(state, questions,
             new PredictOptions { Lang = request.Language }, cancellationToken);
-        var result = JsonDocument.Parse(prediction.ToJsonString()).RootElement.Clone();
+        using var predictionDocument = JsonDocument.Parse(prediction.ToJsonString());
+        var result = predictionDocument.RootElement.Clone();
         var rawAnswers = result.GetProperty("answers");
         var calibratedAnswers = _calibration.Apply(request, checkpoint, rawAnswers);
         var response = MapPrediction(request, result, checkpoint, GetDevice(agent.Backend.Name), _calibration.Identifier, calibratedAnswers);
@@ -191,7 +192,8 @@ public sealed class NLayaDecisionPredictor : IDecisionPredictor, IAsyncDisposabl
                 ["truncated"] = false
             }
         };
-        return JsonDocument.Parse(result.ToJsonString()).RootElement.Clone();
+        using var resultDocument = JsonDocument.Parse(result.ToJsonString());
+        return resultDocument.RootElement.Clone();
     }
 
     public static void EnsureDevice(string backendName, string requestedDevice)

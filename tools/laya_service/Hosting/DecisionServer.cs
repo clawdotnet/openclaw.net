@@ -43,6 +43,7 @@ public static class DecisionServer
 
         var app = builder.Build();
         var inferenceGate = new SemaphoreSlim(1, 1);
+        app.Lifetime.ApplicationStopped.Register(inferenceGate.Dispose);
         app.Run(context => HandleAsync(context, predictor, options, inferenceGate));
         return app;
     }

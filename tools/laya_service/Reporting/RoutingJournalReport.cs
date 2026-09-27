@@ -200,9 +200,10 @@ public static class RoutingJournalReport
             var falsePositive = Tiers.Where(other => other != tier).Sum(other => confusion[other][tier]);
             var falseNegative = Tiers.Where(other => other != tier).Sum(other => confusion[tier][other]);
             var support = confusion[tier].Values.Sum();
-            var f1 = 2 * truePositive + falsePositive + falseNegative == 0
+            var denominator = 2.0 * truePositive + falsePositive + falseNegative;
+            var f1 = denominator == 0
                 ? 0
-                : 2 * truePositive / (double)(2 * truePositive + falsePositive + falseNegative);
+                : 2.0 * truePositive / denominator;
             f1Total += f1;
             perTier[tier] = new JsonObject { ["support"] = support, ["f1"] = f1 };
         }
