@@ -139,8 +139,12 @@ public sealed class CalibrationStore
                 distribution.Count != labels.Length || labels.Any(label => !distribution.ContainsKey(label)))
                 throw new InvalidDataException("Invalid answer probabilities.");
             probabilities = labels.Select(label => distribution[label]!.GetValue<double>()).ToArray();
-            if (probabilities.Any(value => !double.IsFinite(value) || value is < 0 or > 1) || Math.Abs(probabilities.Sum() - 1) > 1e-5)
+            if (probabilities.Any(value => !double.IsFinite(value) || value is < 0 or > 1))
                 throw new InvalidDataException("Invalid answer probabilities.");
+            var total = probabilities.Sum();
+            if (Math.Abs(total - 1) > 0.002)
+                throw new InvalidDataException("Invalid answer probabilities.");
+            for (var index = 0; index < probabilities.Length; index++) probabilities[index] /= total;
         }
 
         var scaled = Scale(probabilities, temperature);

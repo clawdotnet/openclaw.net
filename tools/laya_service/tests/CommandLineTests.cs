@@ -62,6 +62,31 @@ public sealed class CommandLineTests
         }
     }
 
+    [Theory]
+    [InlineData("multilingual", "checkpoint_not_installed")]
+    [InlineData("unknown", "unknown_checkpoint")]
+    public async Task Serve_ReportsCheckpointStartupFailure(string checkpoint, string expectedReason)
+    {
+        var directoryPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directoryPath);
+        var manifestPath = ModelManifestTests.WriteManifest(directoryPath, new string('a', 40), ["english"]);
+        var previousError = Console.Error;
+        using var error = new StringWriter();
+        try
+        {
+            Console.SetError(error);
+            var exitCode = await Program.Main(["serve", "--manifest", manifestPath, "--checkpoint", checkpoint]);
+
+            Assert.Equal(2, exitCode);
+            Assert.Equal(expectedReason, error.ToString().Trim());
+        }
+        finally
+        {
+            Console.SetError(previousError);
+            Directory.Delete(directoryPath, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task Calibrate_FitsObservationFilesAndWritesV2Artifact()
     {

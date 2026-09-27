@@ -216,7 +216,11 @@ public static class CalibrationFitter
 
         var probabilities = answer.GetProperty("probabilities");
         var keys = probabilities.EnumerateObject().Select(item => item.Name).ToArray();
-        var values = probabilities.EnumerateObject().Select(item => item.Value.GetDouble()).ToArray();
+        var values = probabilities.EnumerateObject().Select(item =>
+        {
+            if (item.Value.ValueKind != JsonValueKind.Number) throw new InvalidDataException("Invalid raw answer probability.");
+            return item.Value.GetDouble();
+        }).ToArray();
         return CalibrationMetrics.Normalize(new LabeledPrediction(type, keys, values, row.Label));
     }
 

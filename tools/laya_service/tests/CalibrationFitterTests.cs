@@ -90,6 +90,17 @@ public sealed class CalibrationFitterTests
     }
 
     [Fact]
+    public void Fit_RejectsNonNumericRawProbabilities()
+    {
+        var training = BuildObservations("train", 20);
+        var validation = BuildObservations("validation", 20);
+        using var answer = JsonDocument.Parse("""{"type":"choice","probabilities":{"a":"0.6","b":0.4}}""");
+        training[0] = training[0] with { RawAnswer = answer.RootElement.Clone() };
+
+        Assert.Throws<InvalidDataException>(() => CalibrationFitter.Fit(training, validation));
+    }
+
+    [Fact]
     public async Task WriteAsync_ReturnsSha256OfExactArtifactBytes()
     {
         var artifact = CalibrationFitter.Fit(BuildObservations("train", 20), BuildObservations("validation", 20));

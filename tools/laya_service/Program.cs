@@ -125,6 +125,12 @@ public static class Program
             Console.Error.WriteLine("operation_cancelled");
             return 1;
         }
+        catch (InvalidOperationException exception) when (exception.Message is
+            "checkpoint_not_installed" or "requested_device_unavailable" or "unknown_checkpoint")
+        {
+            Console.Error.WriteLine(exception.Message);
+            return 2;
+        }
         catch
         {
             Console.Error.WriteLine("command_failed");

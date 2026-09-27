@@ -140,6 +140,44 @@ public sealed class NLayaDecisionPredictorTests
         }
     }
 
+    [Fact]
+    public void CalibrationV2AcceptsRoundedProbabilitySums()
+    {
+        using var stateDocument = JsonDocument.Parse("\"A short English message.\"");
+        using var questionsDocument = JsonDocument.Parse(QuestionsJson);
+        using var answersDocument = JsonDocument.Parse("""
+            {"tier":{"type":"choice","choice":"small","probabilities":{"small":0.701,"large":0.3}},"severity":{"type":"score","score":0.3,"probabilities":{"0":0.7,"1":0.3}},"urgent":{"type":"noul","noul":0.8,"value":true}}
+            """);
+        var request = Request(stateDocument.RootElement.Clone(), questionsDocument.RootElement.Clone());
+        var artifact = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            version = 2,
+            model = Model,
+            schema_hash = StrictJson.SchemaHash(request.Questions),
+            sdk_version = "1.0.0",
+            runtime = "NLaya",
+            temperatures = new Dictionary<string, Dictionary<string, double>>
+            {
+                ["english"] = new() { ["choice:2"] = 2, ["score:2"] = 2, ["noul:2"] = 2 }
+            },
+            validation = new { }
+        });
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllBytes(path, artifact);
+        try
+        {
+            var calibration = CalibrationStore.Load(path, Model);
+            var calibrated = calibration.Apply(request, "english", answersDocument.RootElement);
+            var expected = Math.Sqrt(0.701) / (Math.Sqrt(0.701) + Math.Sqrt(0.3));
+
+            Assert.Equal(expected, calibrated.GetProperty("tier").GetProperty("probabilities").GetProperty("small").GetDouble(), 12);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static DecisionWireRequest Request(JsonElement state, JsonElement questions, string? language = null, string rubricVersion = "rubric-v1")
         => new() { Model = Model, State = state, Questions = questions, RubricVersion = rubricVersion, Language = language };
 
