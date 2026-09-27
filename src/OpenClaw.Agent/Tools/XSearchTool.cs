@@ -49,7 +49,7 @@ public sealed class XSearchTool : ITool, IDisposable
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _bearerToken);
 
-            var response = await _http.SendAsync(request, ct);
+            using var response = await _http.SendAsync(request, ct);
 
             if (!response.IsSuccessStatusCode)
             {

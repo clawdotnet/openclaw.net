@@ -45,7 +45,7 @@ public sealed class LayaDecisionClient : IDecisionClient, IDisposable
         if (result.Model != _config.Model || metadata is null || metadata.Revision != _config.Model[5..] ||
             metadata.Checkpoint is not ("english" or "multilingual" or "typed-decisions") ||
             metadata.RubricVersion != request.RubricVersion || metadata.SchemaHash != expectedSchemaHash ||
-            metadata.SdkVersion != "0.3.4" || metadata.Device is not ("cpu" or "cuda" or "mps"))
+            metadata.SdkVersion != "1.0.0" || metadata.Runtime != "NLaya" || metadata.Device is not ("cpu" or "cuda" or "mps"))
             throw new DecisionException("laya_metadata_mismatch");
         if (metadata.Truncated)
             throw new DecisionException("laya_truncated_input");

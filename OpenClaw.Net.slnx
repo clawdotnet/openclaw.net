@@ -55,6 +55,13 @@
     <Project Path="src/OpenClaw.WhatsApp.BaileysWorker/OpenClaw.WhatsApp.BaileysWorker.csproj" />
     <Project Path="src/OpenClawNet.Sandbox.OpenSandbox/OpenClawNet.Sandbox.OpenSandbox.csproj" />
   </Folder>
+  <Folder Name="/tools/" />
+  <Folder Name="/tools/laya_service/">
+    <Project Path="tools/laya_service/LayaService.csproj" />
+  </Folder>
+  <Folder Name="/tools/laya_service/tests/">
+    <Project Path="tools/laya_service/tests/LayaService.Tests.csproj" />
+  </Folder>
   <Project Path="src/OpenClaw.Agent/OpenClaw.Agent.csproj" />
   <Project Path="src/OpenClaw.Channels/OpenClaw.Channels.csproj" />
   <Project Path="src/OpenClaw.Core/OpenClaw.Core.csproj" />

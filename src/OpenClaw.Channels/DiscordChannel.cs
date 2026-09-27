@@ -383,7 +383,7 @@ public sealed class DiscordChannel : IChannelAdapter
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bot", _botToken);
             request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-            var response = await _http.SendAsync(request, ct);
+            using var response = await _http.SendAsync(request, ct);
             if (response.IsSuccessStatusCode)
                 _logger.LogInformation("Registered Discord slash command '/{Command}'.", commandName);
             else
