@@ -7397,6 +7397,17 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.Contains("/admin/channels/whatsapp/auth/stream", html, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task AdminUi_OperatorAccountRole_ShouldExplainViewerCannotChat()
+    {
+        var adminHtmlPath = Path.GetFullPath(Path.Join(AppContext.BaseDirectory, "../../../../../src/OpenClaw.Gateway/wwwroot/admin.html"));
+        var html = await File.ReadAllTextAsync(adminHtmlPath);
+
+        Assert.Contains("id=\"operator-account-role-hint\"", html, StringComparison.Ordinal);
+        Assert.Contains("Read-only: can't chat or run the agent", html, StringComparison.Ordinal);
+        Assert.Contains("operatorAccountRoleInput.addEventListener('change', updateOperatorAccountRoleHint)", html, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("ws://127.0.0.1:18789/ws", "http://127.0.0.1:18789")]
     [InlineData("wss://example.com/ws", "https://example.com")]

@@ -993,6 +993,7 @@
                     </select>
                     <input id="operator-account-password-input" type="password" placeholder="Password">
                 </div>
+                <div id="operator-account-role-hint" class="muted" aria-live="polite" style="margin-bottom:0.5rem;">Read-only: can't chat or run the agent from web chat, Companion, the CLI, or API clients. Choose operator for those.</div>
                 <div class="actions" style="margin-bottom:0.75rem;">
                     <button id="operator-account-create-button">Create Account</button>
                 </div>
@@ -3226,6 +3227,16 @@
                     </tbody>
                 </table>
             `;
+        }
+
+        const operatorAccountRoleHints = {
+            viewer: "Read-only: can't chat or run the agent from web chat, Companion, the CLI, or API clients. Choose operator for those.",
+            operator: 'Can chat, run the agent, and decide approvals.',
+            admin: 'Operator access plus settings, plugins, accounts, and organization policy.'
+        };
+
+        function updateOperatorAccountRoleHint() {
+            document.getElementById('operator-account-role-hint').textContent = operatorAccountRoleHints[operatorAccountRoleInput.value] || '';
         }
 
         async function createOperatorAccount() {
@@ -5835,6 +5846,7 @@
         document.getElementById('setup-wizard-run-button').addEventListener('click', runFirstOperatorWizard);
         document.getElementById('operator-accounts-refresh-button').addEventListener('click', loadOperatorAccounts);
         document.getElementById('operator-account-create-button').addEventListener('click', createOperatorAccount);
+        operatorAccountRoleInput.addEventListener('change', updateOperatorAccountRoleHint);
         document.getElementById('organization-policy-refresh-button').addEventListener('click', loadOrganizationPolicy);
         document.getElementById('organization-policy-save-button').addEventListener('click', saveOrganizationPolicy);
         document.getElementById('observability-refresh-button').addEventListener('click', loadObservability);
