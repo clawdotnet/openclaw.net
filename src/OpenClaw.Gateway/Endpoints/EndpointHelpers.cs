@@ -42,13 +42,18 @@ internal static class EndpointHelpers
         if (!isNonLoopbackBind && !config.Security.AlwaysRequireAuth && !config.Security.IsOidcMode)
             return true;
 
+        var organizationPolicy = ctx.RequestServices.GetService<OrganizationPolicyService>();
+        var policy = organizationPolicy?.GetSnapshot() ?? new OrganizationPolicySnapshot();
+
         // OIDC mode OR JWT token: UseAuthentication() middleware validated the JWT
         // and populated ctx.User. Accept the request if the user is authenticated.
         if (ctx.User.Identity?.IsAuthenticated == true)
             return true;
 
         // Static AuthToken check (bootstrap token).
-        if (!string.IsNullOrWhiteSpace(config.AuthToken))
+        if (policy.BootstrapTokenEnabled &&
+            IsAllowedAuthMode(policy, OrganizationAuthModeNames.BootstrapToken) &&
+            !string.IsNullOrWhiteSpace(config.AuthToken))
         {
             var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
             if (GatewaySecurity.IsTokenValid(token, config.AuthToken))
@@ -57,9 +62,6 @@ internal static class EndpointHelpers
 
         // Fall through to operator account tokens and browser sessions
         // so that AlwaysRequireAuth works with non-bootstrap auth methods.
-        var organizationPolicy = ctx.RequestServices.GetService<OrganizationPolicyService>();
-        var policy = organizationPolicy?.GetSnapshot() ?? new OrganizationPolicySnapshot();
-
         // Operator account token.
         if (IsAllowedAuthMode(policy, OrganizationAuthModeNames.AccountToken))
         {

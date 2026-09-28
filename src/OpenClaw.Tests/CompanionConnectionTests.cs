@@ -15,10 +15,8 @@ public sealed class CompanionConnectionTests : IDisposable
     public void Dispose()
     {
         foreach (var dir in _tempDirs)
-        {
-            try { Directory.Delete(dir, recursive: true); }
-            catch { }
-        }
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
     }
 
     [AvaloniaFact]
@@ -50,6 +48,23 @@ public sealed class CompanionConnectionTests : IDisposable
         Assert.False(vm.IsConnected);
         var message = Assert.Single(vm.Messages, m => m.Role == ChatRole.System);
         Assert.DoesNotContain("operator", message.Text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [AvaloniaFact]
+    public async Task ServerClose_WhenClientReconnectsBeforeUiDispatch_ShouldKeepConnected()
+    {
+        var (vm, client) = CreateConnectedViewModel();
+        var closedSocket = new TestWebSocket();
+        closedSocket.QueueClose(WebSocketCloseStatus.PolicyViolation, "This action requires the operator role.");
+
+        await client.RunReceiveLoopForTest(closedSocket, CancellationToken.None);
+        using var reconnectedSocket = new TestWebSocket();
+        client.SetConnectedSocketForTest(reconnectedSocket);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(vm.IsConnected);
+        Assert.Equal("Connected", vm.Status);
+        Assert.DoesNotContain(vm.Messages, message => message.Role == ChatRole.System);
     }
 
     private (MainWindowViewModel ViewModel, GatewayWebSocketClient Client) CreateConnectedViewModel()

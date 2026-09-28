@@ -454,6 +454,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             : $"The gateway closed the connection: {reason}";
         Dispatcher.UIThread.Post(() =>
         {
+            if (_client.IsConnected)
+                return;
+
             IsConnected = false;
             Status = "Disconnected";
             AddSystemMessageCore(message);

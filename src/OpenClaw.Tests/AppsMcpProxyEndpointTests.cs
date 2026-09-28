@@ -12,6 +12,7 @@ using OpenClaw.Core.Plugins;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Endpoints;
+using OpenClaw.Gateway.Mcp;
 using OpenClaw.McpApp;
 using OpenClaw.McpApp.Models;
 using Xunit;
@@ -180,6 +181,23 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
         Assert.True(extensions.TryGetProperty("io.modelcontextprotocol/tasks", out var tasksCapability), body);
         Assert.Equal(JsonValueKind.Object, tasksCapability.ValueKind);
     }
+
+    [Theory]
+    [InlineData("openclaw.run_workflow")]
+    [InlineData("openclaw.respond_workflow")]
+    [InlineData("openclaw.send_message")]
+    public void GatewayMcpServer_MutatingTools_RunSynchronously(string toolName)
+        => Assert.Equal(McpTaskExecutionMode.Synchronous, McpServiceExtensions.GetTaskExecutionMode(toolName));
+
+    [Fact]
+    public void GatewayMcpServer_ReadOnlyTools_RemainTaskCapable()
+        => Assert.Equal(McpTaskExecutionMode.Optional, McpServiceExtensions.GetTaskExecutionMode("openclaw.get_status"));
+
+    [Fact]
+    public void GatewayMcpServer_DynamicAppTools_RunSynchronously()
+        => Assert.Equal(
+            McpTaskExecutionMode.Synchronous,
+            McpServiceExtensions.GetTaskExecutionMode("echo_session", hasMatchedPrimitive: false));
 
     private async Task<string> StartFakeUpstreamAsync()
     {

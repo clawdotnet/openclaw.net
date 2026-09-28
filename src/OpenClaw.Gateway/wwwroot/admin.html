@@ -993,7 +993,7 @@
                     </select>
                     <input id="operator-account-password-input" type="password" placeholder="Password">
                 </div>
-                <div id="operator-account-role-hint" class="muted" aria-live="polite" style="margin-bottom:0.5rem;">Read-only: can't chat or run the agent from web chat, Companion, the CLI, or API clients. Choose operator for those.</div>
+                <div id="operator-account-role-hint" class="muted" aria-live="polite" style="margin-bottom:0.5rem;">Read-only by default: can't chat or run the agent from web chat, Companion, the CLI, or API clients. Choose operator for those; Security.AllowViewerAgentExecution is a temporary migration exception.</div>
                 <div class="actions" style="margin-bottom:0.75rem;">
                     <button id="operator-account-create-button">Create Account</button>
                 </div>
@@ -3230,7 +3230,7 @@
         }
 
         const operatorAccountRoleHints = {
-            viewer: "Read-only: can't chat or run the agent from web chat, Companion, the CLI, or API clients. Choose operator for those.",
+            viewer: "Read-only by default: can't chat or run the agent from web chat, Companion, the CLI, or API clients. Choose operator for those; Security.AllowViewerAgentExecution is a temporary migration exception.",
             operator: 'Can chat, run the agent, and decide approvals.',
             admin: 'Operator access plus settings, plugins, accounts, and organization policy.'
         };

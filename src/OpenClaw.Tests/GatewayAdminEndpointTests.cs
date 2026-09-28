@@ -494,6 +494,26 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("GET", "/apps/health")]
+    [InlineData("POST", "/apps/mcp/inventory-app")]
+    public async Task AppsHostRoutes_WhenBootstrapDisabled_ShouldRejectBootstrapToken(string method, string path)
+    {
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configureServices: AddMcpAppServices);
+        var policy = harness.App.Services.GetRequiredService<OrganizationPolicyService>();
+        policy.Update(new OrganizationPolicySnapshot
+        {
+            BootstrapTokenEnabled = false,
+            AllowedAuthModes = [OrganizationAuthModeNames.AccountToken, OrganizationAuthModeNames.BrowserSession]
+        });
+
+        var response = await SendAppsHostRequestAsync(harness, method, path, harness.AuthToken);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
     private static void AddMcpAppServices(IServiceCollection services, GatewayConfig config)
         => services.AddOpenClawMcpAppServices(config.McpApps);
 
@@ -7404,7 +7424,8 @@ public sealed partial class GatewayAdminEndpointTests
         var html = await File.ReadAllTextAsync(adminHtmlPath);
 
         Assert.Contains("id=\"operator-account-role-hint\"", html, StringComparison.Ordinal);
-        Assert.Contains("Read-only: can't chat or run the agent", html, StringComparison.Ordinal);
+        Assert.Contains("Read-only by default: can't chat or run the agent", html, StringComparison.Ordinal);
+        Assert.Contains("Security.AllowViewerAgentExecution is a temporary migration exception", html, StringComparison.Ordinal);
         Assert.Contains("operatorAccountRoleInput.addEventListener('change', updateOperatorAccountRoleHint)", html, StringComparison.Ordinal);
     }
 
