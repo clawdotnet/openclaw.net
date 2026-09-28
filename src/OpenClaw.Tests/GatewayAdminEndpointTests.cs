@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using OpenClaw.Client;
@@ -561,6 +562,112 @@ public sealed partial class GatewayAdminEndpointTests
 
         Assert.False(result.RootElement.TryGetProperty("isError", out var isError) && isError.GetBoolean());
         Assert.Contains("activeSessions", result.RootElement.GetProperty("content")[0].GetProperty("text").GetString());
+    }
+
+    [Fact]
+    public async Task AgentExecution_WhenViewerDenied_ShouldLogAccountAndRoleWithoutToken()
+    {
+        var logs = new CapturingLoggerProvider();
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configureServices: (services, _) => services.AddSingleton<ILoggerProvider>(logs));
+        var token = CreateAccountToken(harness, "denied-viewer", OperatorRoleNames.Viewer);
+
+        var response = await SendChatCompletionAsync(harness, token);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var entry = Assert.Single(logs.Warnings, message => message.Contains("/v1/chat/completions", StringComparison.Ordinal));
+        Assert.Contains("denied-viewer", entry, StringComparison.Ordinal);
+        Assert.Contains("viewer", entry, StringComparison.Ordinal);
+        Assert.DoesNotContain(token, entry, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AgentExecution_WhenViewerAndAllowViewerAgentExecution_ShouldRunAgentAndLog()
+    {
+        var logs = new CapturingLoggerProvider();
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configure: config => config.Security.AllowViewerAgentExecution = true,
+            configureServices: (services, _) => services.AddSingleton<ILoggerProvider>(logs));
+        var token = CreateAccountToken(harness, "legacy-viewer", OperatorRoleNames.Viewer);
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns("viewer reply");
+
+        var response = await SendChatCompletionAsync(harness, token);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var entry = Assert.Single(logs.Warnings, message => message.Contains("AllowViewerAgentExecution", StringComparison.Ordinal));
+        Assert.Contains("legacy-viewer", entry, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AgentExecution_WhenAllowViewerAgentExecutionWithoutCredentials_ShouldStillReject()
+    {
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configure: config => config.Security.AllowViewerAgentExecution = true);
+
+        var response = await SendChatCompletionAsync(harness, bearerToken: "not-a-real-token");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminPosture_WhenAllowViewerAgentExecution_ShouldReportRisk()
+    {
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configure: config => config.Security.AllowViewerAgentExecution = true);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/posture");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        Assert.Contains(
+            payload.RootElement.GetProperty("riskFlags").EnumerateArray().Select(static item => item.GetString()).OfType<string>(),
+            flag => flag == "viewer_agent_execution_allowed");
+    }
+
+    private static async Task<HttpResponseMessage> SendChatCompletionAsync(GatewayTestHarness harness, string bearerToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        {
+            Content = JsonContent("""{"messages":[{"role":"user","content":"hello"}]}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+        return await harness.Client.SendAsync(request);
+    }
+
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly ConcurrentQueue<(LogLevel Level, string Message)> _entries = new();
+
+        public IEnumerable<string> Warnings
+            => _entries.Where(static entry => entry.Level == LogLevel.Warning).Select(static entry => entry.Message);
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(_entries);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(ConcurrentQueue<(LogLevel Level, string Message)> entries) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+                => entries.Enqueue((logLevel, formatter(state, exception)));
+        }
     }
 
     private static async Task<JsonDocument> CallMcpToolAsync(GatewayTestHarness harness, string bearerToken, string toolName, string argumentsJson)

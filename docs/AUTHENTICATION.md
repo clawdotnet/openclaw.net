@@ -16,6 +16,7 @@ Authentication configuration lives under the `OpenClaw.Security` node in `appset
 |-------|------|---------|-------------|
 | `AuthToken` | `string?` | `null` | Static bootstrap token. When `null`, bootstrap auth is disabled |
 | `AlwaysRequireAuth` | `bool` | `false` | When `true`, even loopback-bound requests must carry valid credentials |
+| `AllowViewerAgentExecution` | `bool` | `false` | **Temporary, to be removed in the next release.** When `true`, identities below `operator` can still run the agent (see [3.3](#33-role-required-for-agent-execution)). Each such request is logged and `admin posture` reports the risk |
 | `AuthMode` | `string` | `"token"` | Authentication mode: `"token"` or `"oidc"` |
 | `AllowQueryStringToken` | `bool` | `false` | Whether to accept tokens from the `?token=` query string parameter |
 | `BrowserSessionIdleMinutes` | `int` | `60` | Idle timeout for browser admin sessions (minutes) |
@@ -190,6 +191,8 @@ WebSocket connected
 | MCP `openclaw.send_message`, `openclaw.run_workflow`, `openclaw.respond_workflow` | Tool error result; read-only MCP tools stay available to viewers |
 
 Bootstrap tokens and open loopback resolve to `admin` and are unaffected. New operator accounts default to `viewer`, so accounts used for Companion, CLI/TUI chat, or API clients need the `operator` role.
+
+Each denial is logged as a warning under the `OpenClaw.Gateway.Authorization` category, naming the surface, auth mode, account, and role (never the credential), so admins can find the accounts to promote. To migrate without an outage, set `OpenClaw:Security:AllowViewerAgentExecution=true`, watch the log for the admitted accounts, grant them `operator`, then turn the setting off. The setting is temporary and will be removed in the next release.
 
 ### 3.4 `IsAuthorizedRequest` — Detailed Logic
 

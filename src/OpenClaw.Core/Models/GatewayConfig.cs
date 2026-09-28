@@ -385,6 +385,13 @@ public sealed class SecurityConfig
     public bool RequireRequesterMatchForHttpToolApproval { get; set; } = false;
 
     /// <summary>
+    /// Temporary compatibility switch, to be removed in the next release. When true, authenticated identities
+    /// below the operator role (such as viewer accounts) can still run the agent through /ws, /v1/*, A2A,
+    /// /apps/chat, and mutating MCP tools. Each such request is logged so the accounts can be promoted.
+    /// </summary>
+    public bool AllowViewerAgentExecution { get; set; } = false;
+
+    /// <summary>
     /// When binding to a non-loopback address, the gateway refuses to start if the local tooling
     /// is configured in an unsafe way (e.g. shell enabled or wildcard roots). Set this to true
     /// only if you fully trust your network perimeter and token distribution.

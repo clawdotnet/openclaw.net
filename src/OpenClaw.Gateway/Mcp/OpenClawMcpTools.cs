@@ -218,7 +218,7 @@ internal sealed class OpenClawMcpTools
         [Description("Optional session ID.")] string? sessionId = null,
         CancellationToken ct = default)
     {
-        RequireOperator();
+        RequireOperator("openclaw.run_workflow");
         return JsonSerializer.Serialize(
             await _facade.RunWorkflowAsync(
                 workflowId,
@@ -256,7 +256,7 @@ internal sealed class OpenClawMcpTools
         [Description("Optional JSON object or value passed as response payload.")] string? payloadJson = null,
         CancellationToken ct = default)
     {
-        RequireOperator();
+        RequireOperator("openclaw.respond_workflow");
         return JsonSerializer.Serialize(
             await _facade.RespondWorkflowRunAsync(
                 workflowId,
@@ -305,7 +305,7 @@ internal sealed class OpenClawMcpTools
         [Description("Optional reply-to message ID.")] string? replyToMessageId = null,
         CancellationToken ct = default)
     {
-        RequireOperator();
+        RequireOperator("openclaw.send_message");
         return JsonSerializer.Serialize(
             await _facade.QueueMessageAsync(new IntegrationMessageRequest
             {
@@ -321,10 +321,10 @@ internal sealed class OpenClawMcpTools
 
     // Read-only tools stay open to viewers; mutating tools require the role their REST equivalents require.
     // Without a request context (e.g. a detached task) the caller is unknown, so deny.
-    private void RequireOperator()
+    private void RequireOperator(string toolName)
     {
         var ctx = _httpContextAccessor.HttpContext;
-        if (ctx is null || !EndpointHelpers.CanExecuteAgent(ctx, _startup))
+        if (ctx is null || !EndpointHelpers.CanExecuteAgent(ctx, _startup, $"MCP tool {toolName}"))
             throw new McpException(EndpointHelpers.OperatorRoleRequiredMessage);
     }
 

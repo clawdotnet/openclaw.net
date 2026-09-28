@@ -333,12 +333,39 @@ internal static class EndpointHelpers
     /// Surfaces that turn a request into agent input or another mutation (chat, the OpenAI-compatible API,
     /// A2A, MCP Apps chat, mutating MCP tools) require the same role as POST /api/integration/messages.
     /// Authentication alone is not enough: viewer credentials must stay read-only.
+    /// Denials, and admissions under Security.AllowViewerAgentExecution, are logged with the account so
+    /// admins can find identities that need the operator role.
     /// </summary>
-    public static bool CanExecuteAgent(HttpContext ctx, GatewayStartupContext startup)
+    public static bool CanExecuteAgent(HttpContext ctx, GatewayStartupContext startup, string? action = null)
     {
         var browserSessions = ctx.RequestServices.GetRequiredService<BrowserSessionAuthService>();
         var auth = AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
-        return auth.IsAuthorized && IsRoleAllowed(auth.Role, "integration.mutate.agent", out _);
+        if (auth.IsAuthorized && IsRoleAllowed(auth.Role, "integration.mutate.agent", out _))
+            return true;
+
+        var logger = ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("OpenClaw.Gateway.Authorization");
+        action ??= ctx.Request.Path.Value;
+
+        if (!auth.IsAuthorized)
+        {
+            logger.LogWarning(
+                "Denied {Action}: the credential is not accepted by the operator authorization chain (for example a bootstrap token disabled by organization policy).",
+                action);
+            return false;
+        }
+
+        if (startup.Config.Security.AllowViewerAgentExecution)
+        {
+            logger.LogWarning(
+                "Allowed {Action} for {AuthMode} account {AccountId} ({Username}) with role {Role} only because Security.AllowViewerAgentExecution is on. Grant the operator role before that setting is removed.",
+                action, auth.AuthMode, auth.AccountId, auth.Username, auth.Role);
+            return true;
+        }
+
+        logger.LogWarning(
+            "Denied {Action} for {AuthMode} account {AccountId} ({Username}) with role {Role}: running the agent requires the operator role.",
+            action, auth.AuthMode, auth.AccountId, auth.Username, auth.Role);
+        return false;
     }
 
     public static async Task WriteOperatorRoleRequiredAsync(HttpContext ctx)

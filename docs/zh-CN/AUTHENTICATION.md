@@ -16,6 +16,7 @@ OpenClaw.NET Gateway 支持多层认证体系，涵盖静态令牌、OIDC/JWT Be
 |------|------|--------|------|
 | `AuthToken` | `string?` | `null` | 静态 Bootstrap 令牌。`null` 时禁用 Bootstrap 认证 |
 | `AlwaysRequireAuth` | `bool` | `false` | `true` 时，即使是 loopback 绑定也需要认证 |
+| `AllowViewerAgentExecution` | `bool` | `false` | **临时设置，将在下一个版本移除。** `true` 时，低于 `operator` 的身份仍可执行智能体（见 3.3 节）。每个此类请求都会记录日志，`admin posture` 也会报告该风险 |
 | `AuthMode` | `string` | `"token"` | 认证模式：`"token"` 或 `"oidc"` |
 | `AllowQueryStringToken` | `bool` | `false` | 是否允许从查询字符串 `?token=` 读取令牌 |
 | `BrowserSessionIdleMinutes` | `int` | `60` | 浏览器会话空闲超时（分钟） |
@@ -190,6 +191,8 @@ WebSocket 已连接
 | MCP `openclaw.send_message`、`openclaw.run_workflow`、`openclaw.respond_workflow` | 返回工具错误结果；只读 MCP 工具对 viewer 仍可用 |
 
 引导令牌和开放回环会解析为 `admin`，不受影响。新建的操作员账户默认为 `viewer`，因此用于 Companion、CLI/TUI 聊天或 API 客户端的账户需要 `operator` 角色。
+
+每次拒绝都会在 `OpenClaw.Gateway.Authorization` 类别下记录一条警告日志，包含入口、认证方式、账户和角色（绝不包含凭据），便于管理员找出需要提升角色的账户。如需无中断迁移，可设置 `OpenClaw:Security:AllowViewerAgentExecution=true`，从日志中找出被放行的账户，为其授予 `operator` 角色，然后关闭该设置。该设置是临时的，将在下一个版本移除。
 
 ### 3.4 `IsAuthorizedRequest` 详细逻辑
 
