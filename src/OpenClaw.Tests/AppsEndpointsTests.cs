@@ -106,6 +106,76 @@ public sealed class AppsEndpointsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Chat_ConcurrentTurnsOnSameSession_RunOneAtATime()
+    {
+        var firstTurnStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondTurnStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstTurn = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var turns = 0;
+        var agentRuntime = Substitute.For<IAgentRuntime>();
+        agentRuntime.RunStreamingAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<string?>())
+            .Returns(_ => HeldTurn());
+
+        async IAsyncEnumerable<AgentStreamEvent> HeldTurn()
+        {
+            if (Interlocked.Increment(ref turns) == 1)
+            {
+                firstTurnStarted.SetResult();
+                await releaseFirstTurn.Task;
+            }
+            else
+            {
+                secondTurnStarted.SetResult();
+            }
+
+            yield return AgentStreamEvent.Complete();
+        }
+
+        await using var harness = await StartGatewayAsync(null, agentRuntime);
+        var ct = TestContext.Current.CancellationToken;
+
+        var first = harness.Client.PostAsync("/apps/chat", JsonContent.Create(new { message = "one", sessionId = "apps-serial" }), ct);
+        await firstTurnStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        var second = harness.Client.PostAsync("/apps/chat", JsonContent.Create(new { message = "two", sessionId = "apps-serial" }), ct);
+
+        // While the first turn holds the session, the second must wait rather than run alongside it.
+        var overlapped = await Task.WhenAny(secondTurnStarted.Task, Task.Delay(TimeSpan.FromMilliseconds(500), ct)) == secondTurnStarted.Task;
+        releaseFirstTurn.SetResult();
+        (await first).EnsureSuccessStatusCode();
+        (await second).EnsureSuccessStatusCode();
+
+        Assert.False(overlapped);
+        Assert.True(secondTurnStarted.Task.IsCompletedSuccessfully);
+    }
+
+    [Fact]
+    public async Task Chat_PersistsSessionAfterTurn()
+    {
+        var store = new TestMemoryStore();
+        var agentRuntime = Substitute.For<IAgentRuntime>();
+        agentRuntime.RunStreamingAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<string?>())
+            .Returns(_ => StreamEvents());
+
+        await using var harness = await StartGatewayAsync(null, agentRuntime, store);
+        var ct = TestContext.Current.CancellationToken;
+
+        var response = await harness.Client.PostAsync("/apps/chat", JsonContent.Create(new { message = "hello", sessionId = "apps-persisted" }), ct);
+        response.EnsureSuccessStatusCode();
+
+        Assert.NotNull(await store.GetSessionAsync("apps-persisted", ct));
+    }
+
+    [Fact]
     public void CorsAllowHeaders_IncludeMcpSessionHeaders()
     {
         Assert.Contains("mcp-protocol-version", PipelineExtensions.CorsAllowHeaders, StringComparison.Ordinal);
@@ -133,7 +203,7 @@ public sealed class AppsEndpointsTests : IAsyncDisposable
         return $"{app.Urls.Single().TrimEnd('/')}/mcp";
     }
 
-    private async Task<AppsGatewayTestHarness> StartGatewayAsync(string? upstreamUrl, IAgentRuntime agentRuntime)
+    private async Task<AppsGatewayTestHarness> StartGatewayAsync(string? upstreamUrl, IAgentRuntime agentRuntime, IMemoryStore? store = null)
     {
         var config = new GatewayConfig
         {
@@ -182,7 +252,7 @@ public sealed class AppsEndpointsTests : IAsyncDisposable
         builder.Services.AddOpenClawMcpAppServices(config.McpApps);
         builder.Services.AddSingleton(new BrowserSessionAuthService(config));
 
-        var runtime = CreateRuntime(config, agentRuntime);
+        var runtime = CreateRuntime(config, agentRuntime, store ?? new TestMemoryStore());
         var app = builder.Build();
         app.MapOpenClawAppsEndpoints(startup, runtime);
         await app.StartAsync();
@@ -196,9 +266,9 @@ public sealed class AppsEndpointsTests : IAsyncDisposable
         return new AppsGatewayTestHarness(app, client, registry);
     }
 
-    private static GatewayAppRuntime CreateRuntime(GatewayConfig config, IAgentRuntime agentRuntime)
+    private static GatewayAppRuntime CreateRuntime(GatewayConfig config, IAgentRuntime agentRuntime, IMemoryStore store)
     {
-        var sessionManager = new SessionManager(new TestMemoryStore(), config, NullLogger.Instance);
+        var sessionManager = new SessionManager(store, config, NullLogger.Instance);
         return new GatewayAppRuntime
         {
             AgentRuntime = agentRuntime,
