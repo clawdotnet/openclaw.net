@@ -13,6 +13,7 @@ internal sealed class TestWebSocket : WebSocket
     private TaskCompletionSource<bool>? _sendRelease;
 
     private WebSocketState _state = WebSocketState.Open;
+    private (WebSocketCloseStatus? Status, string? Description) _queuedClose;
 
     public IReadOnlyCollection<byte[]> Sent => _sent.ToArray();
 
@@ -22,8 +23,11 @@ internal sealed class TestWebSocket : WebSocket
     public void QueueReceiveBytes(byte[] bytes, bool endOfMessage)
         => _receive.Enqueue((bytes, WebSocketMessageType.Text, endOfMessage));
 
-    public void QueueClose()
-        => _receive.Enqueue((Array.Empty<byte>(), WebSocketMessageType.Close, true));
+    public void QueueClose(WebSocketCloseStatus? status = null, string? description = null)
+    {
+        _queuedClose = (status, description);
+        _receive.Enqueue((Array.Empty<byte>(), WebSocketMessageType.Close, true));
+    }
 
     public void QueueReceiveException(Exception exception)
         => _receiveExceptions.Enqueue(exception);
@@ -43,8 +47,8 @@ internal sealed class TestWebSocket : WebSocket
     public void ReleaseBlockedSend()
         => _sendRelease?.TrySetResult(true);
 
-    public override WebSocketCloseStatus? CloseStatus { get; }
-    public override string? CloseStatusDescription { get; }
+    public override WebSocketCloseStatus? CloseStatus => _state == WebSocketState.CloseReceived ? _queuedClose.Status : null;
+    public override string? CloseStatusDescription => _state == WebSocketState.CloseReceived ? _queuedClose.Description : null;
     public override WebSocketState State => _state;
     public override string? SubProtocol { get; }
 
@@ -79,7 +83,7 @@ internal sealed class TestWebSocket : WebSocket
         if (next.Type == WebSocketMessageType.Close)
         {
             _state = WebSocketState.CloseReceived;
-            return Task.FromResult(new WebSocketReceiveResult(0, WebSocketMessageType.Close, true));
+            return Task.FromResult(new WebSocketReceiveResult(0, WebSocketMessageType.Close, true, _queuedClose.Status, _queuedClose.Description));
         }
 
         if (buffer.Array is null)

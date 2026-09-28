@@ -22,6 +22,9 @@ internal static partial class OpenAiEndpoints
                 return;
             }
 
+            if (await TryRejectBelowOperatorAsync(ctx, startup))
+                return;
+
             if (!runtime.Operations.ActorRateLimits.TryConsume("ip", EndpointHelpers.GetRemoteIpKey(ctx), "openai_http", out var blockedByPolicyId))
             {
                 ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;

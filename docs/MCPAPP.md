@@ -37,7 +37,7 @@ OpenClaw.NET exposes a small gateway-facing host surface for browser-side MCP Ap
 | Route | Purpose |
 |-------|---------|
 | `/apps/health` | Returns the selected MCP App id plus the gateway MCP endpoint the browser should connect to |
-| `/apps/chat` | Streams chat-host SSE events (`session`, `text`, `tool`, `result`, `done`) into the existing `GatewayAppRuntime` |
+| `/apps/chat` | Streams chat-host SSE events (`session`, `text`, `tool`, `result`, `done`) into the existing `GatewayAppRuntime`. Requires the `operator` role |
 | `/apps/mcp/{appId}` | Proxies MCP requests to the already connected `McpClient` for that App |
 
 The important detail is that browser UIs should connect to `/apps/mcp/{appId}`, not directly to the App's raw upstream MCP URL. That keeps browser-driven MCP calls and model-driven MCP calls on the same OpenClaw-managed session.

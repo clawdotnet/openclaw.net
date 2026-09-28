@@ -47,6 +47,14 @@ internal static class AppsEndpoints
                 return;
             }
 
+            // AppsAuthorized admits any loopback client IP, which behind a same-host proxy is every caller;
+            // running the agent needs a resolved operator identity on top of that.
+            if (!EndpointHelpers.CanExecuteAgent(ctx, startup))
+            {
+                await EndpointHelpers.WriteOperatorRoleRequiredAsync(ctx);
+                return;
+            }
+
             JsonNode? body;
             try
             {

@@ -74,6 +74,12 @@ internal static class A2AEndpointExtensions
                     return;
                 }
 
+                if (!EndpointHelpers.CanExecuteAgent(ctx, startup))
+                {
+                    await EndpointHelpers.WriteOperatorRoleRequiredAsync(ctx);
+                    return;
+                }
+
                 if (!runtime.Operations.ActorRateLimits.TryConsume(
                         "ip",
                         EndpointHelpers.GetRemoteIpKey(ctx),

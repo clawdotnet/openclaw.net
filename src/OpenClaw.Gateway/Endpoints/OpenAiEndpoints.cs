@@ -10,6 +10,10 @@ internal static partial class OpenAiEndpoints
     private const string StableSessionHeader = "X-OpenClaw-Session-Id";
     private const string NoImplicitToolsAllowed = "__openclaw_openai_no_implicit_tools__";
 
+    // OpenAI-shaped so SDK clients surface the message instead of a bare status.
+    private const string OperatorRoleRequiredErrorJson =
+        $$$"""{"error":{"message":"{{{EndpointHelpers.OperatorRoleRequiredMessage}}}","type":"permission_error","code":"insufficient_role"}}""";
+
     public static void MapOpenClawOpenAiEndpoints(
         this WebApplication app,
         GatewayStartupContext startup,
@@ -17,6 +21,17 @@ internal static partial class OpenAiEndpoints
     {
         MapChatCompletionsEndpoint(app, startup, runtime);
         MapResponsesEndpoint(app, startup, runtime);
+    }
+
+    private static async Task<bool> TryRejectBelowOperatorAsync(HttpContext ctx, GatewayStartupContext startup)
+    {
+        if (EndpointHelpers.CanExecuteAgent(ctx, startup))
+            return false;
+
+        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+        ctx.Response.ContentType = "application/json";
+        await ctx.Response.WriteAsync(OperatorRoleRequiredErrorJson, ctx.RequestAborted);
+        return true;
     }
 
     private static void ApplyImplicitToolPolicy(Session session, GatewayAppRuntime runtime, string? presetId)

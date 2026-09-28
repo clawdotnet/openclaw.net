@@ -1,8 +1,11 @@
 using System.ComponentModel;
 using System.Text.Json;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using OpenClaw.Core.Models;
+using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
+using OpenClaw.Gateway.Endpoints;
 
 namespace OpenClaw.Gateway.Mcp;
 
@@ -15,8 +18,15 @@ namespace OpenClaw.Gateway.Mcp;
 internal sealed class OpenClawMcpTools
 {
     private readonly IntegrationApiFacade _facade;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly GatewayStartupContext _startup;
 
-    public OpenClawMcpTools(IntegrationApiFacade facade) => _facade = facade;
+    public OpenClawMcpTools(IntegrationApiFacade facade, IHttpContextAccessor httpContextAccessor, GatewayStartupContext startup)
+    {
+        _facade = facade;
+        _httpContextAccessor = httpContextAccessor;
+        _startup = startup;
+    }
 
     [McpServerTool(Name = "openclaw.get_dashboard", ReadOnly = true),
      Description("Get the aggregated operator dashboard snapshot.")]
@@ -207,7 +217,9 @@ internal sealed class OpenClawMcpTools
         [Description("Optional sender ID.")] string? senderId = null,
         [Description("Optional session ID.")] string? sessionId = null,
         CancellationToken ct = default)
-        => JsonSerializer.Serialize(
+    {
+        RequireOperator();
+        return JsonSerializer.Serialize(
             await _facade.RunWorkflowAsync(
                 workflowId,
                 new AgentWorkflowRequest
@@ -220,6 +232,7 @@ internal sealed class OpenClawMcpTools
                 },
                 ct),
             CoreJsonContext.Default.AgentWorkflowRunResult);
+    }
 
     [McpServerTool(Name = "openclaw.get_workflow_run", ReadOnly = true),
      Description("Get the current status snapshot for a durable workflow run.")]
@@ -242,7 +255,9 @@ internal sealed class OpenClawMcpTools
         [Description("Optional actor ID for the responder.")] string? actorId = null,
         [Description("Optional JSON object or value passed as response payload.")] string? payloadJson = null,
         CancellationToken ct = default)
-        => JsonSerializer.Serialize(
+    {
+        RequireOperator();
+        return JsonSerializer.Serialize(
             await _facade.RespondWorkflowRunAsync(
                 workflowId,
                 runId,
@@ -256,6 +271,7 @@ internal sealed class OpenClawMcpTools
                 },
                 ct),
             CoreJsonContext.Default.AgentWorkflowRunSnapshot);
+    }
 
     [McpServerTool(Name = "openclaw.query_runtime_events", ReadOnly = true),
      Description("Query recent runtime events.")]
@@ -288,7 +304,9 @@ internal sealed class OpenClawMcpTools
         [Description("Optional idempotency message ID.")] string? messageId = null,
         [Description("Optional reply-to message ID.")] string? replyToMessageId = null,
         CancellationToken ct = default)
-        => JsonSerializer.Serialize(
+    {
+        RequireOperator();
+        return JsonSerializer.Serialize(
             await _facade.QueueMessageAsync(new IntegrationMessageRequest
             {
                 Text = text,
@@ -299,6 +317,16 @@ internal sealed class OpenClawMcpTools
                 ReplyToMessageId = replyToMessageId
             }, ct),
             CoreJsonContext.Default.IntegrationMessageResponse);
+    }
+
+    // Read-only tools stay open to viewers; mutating tools require the role their REST equivalents require.
+    // Without a request context (e.g. a detached task) the caller is unknown, so deny.
+    private void RequireOperator()
+    {
+        var ctx = _httpContextAccessor.HttpContext;
+        if (ctx is null || !EndpointHelpers.CanExecuteAgent(ctx, _startup))
+            throw new McpException(EndpointHelpers.OperatorRoleRequiredMessage);
+    }
 
     private static JsonElement? ParsePayloadJson(string? payloadJson)
     {

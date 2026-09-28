@@ -43,9 +43,9 @@ MCP tools expose the same surface:
 | Tool | Purpose |
 | --- | --- |
 | `openclaw.list_workflows` | List configured workflow backends. |
-| `openclaw.run_workflow` | Start a workflow run. |
+| `openclaw.run_workflow` | Start a workflow run. Requires the `operator` role. |
 | `openclaw.get_workflow_run` | Read current status, events, pending inputs, and output. |
-| `openclaw.respond_workflow` | Send a human or system response to a pending input port. |
+| `openclaw.respond_workflow` | Send a human or system response to a pending input port. Requires the `operator` role. |
 
 ## Status Model
 

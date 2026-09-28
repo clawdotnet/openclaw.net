@@ -33,6 +33,7 @@ using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Core.Skills;
 using OpenClaw.Gateway;
+using OpenClaw.Gateway.A2A;
 using OpenClaw.Gateway.Backends;
 using OpenClaw.Gateway.Bootstrap;
 using ModelContextProtocol.AspNetCore;
@@ -42,6 +43,7 @@ using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Tools;
 using OpenClaw.Gateway.Mcp;
 using OpenClaw.Gateway.Models;
+using OpenClaw.MicrosoftAgentFrameworkAdapter;
 using OpenClaw.Payments.Core;
 using Xunit;
 
@@ -374,6 +376,143 @@ public sealed partial class GatewayAdminEndpointTests
         using var ws = await ConnectWebSocketAsync(harness, bearerToken: null);
 
         Assert.Null(await ReceiveWithinAsync(ws, TimeSpan.FromMilliseconds(500)));
+    }
+
+    [Theory]
+    [InlineData("/v1/chat/completions", """{"messages":[{"role":"user","content":"hello"}]}""")]
+    [InlineData("/v1/responses", """{"input":"hello"}""")]
+    public async Task OpenAiEndpoints_WhenViewerAccountToken_ShouldReturnForbiddenWithoutRunningAgent(string path, string body)
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var token = CreateAccountToken(harness, "openai-viewer", OperatorRoleNames.Viewer);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent(body) };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        var error = payload.RootElement.GetProperty("error");
+        Assert.Equal("permission_error", error.GetProperty("type").GetString());
+        Assert.Contains("operator", error.GetProperty("message").GetString(), StringComparison.OrdinalIgnoreCase);
+        await harness.Runtime.AgentRuntime.DidNotReceiveWithAnyArgs().RunAsync(default!, default!, default, default, default);
+    }
+
+    [Fact]
+    public async Task ChatCompletions_WhenOperatorAccountToken_ShouldRunAgent()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var token = CreateAccountToken(harness, "openai-operator", OperatorRoleNames.Operator);
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns("operator reply");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        {
+            Content = JsonContent("""{"messages":[{"role":"user","content":"hello"}]}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        Assert.Equal("operator reply", payload.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public async Task AppsChat_WhenViewerAccountToken_ShouldReturnForbiddenWithoutRunningAgent()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var token = CreateAccountToken(harness, "apps-viewer", OperatorRoleNames.Viewer);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/apps/chat") { Content = JsonContent("""{"message":"hello"}""") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        harness.Runtime.AgentRuntime.DidNotReceiveWithAnyArgs().RunStreamingAsync(default!, default!, default);
+    }
+
+    [Fact]
+    public async Task AppsChat_WhenLoopbackClientReachesNonLoopbackBindWithoutCredentials_ShouldNotRunAgent()
+    {
+        // A same-host reverse proxy without trusted forwarded headers makes every caller look like loopback.
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configureApp: app => app.Use(async (ctx, next) =>
+            {
+                ctx.Connection.RemoteIpAddress = IPAddress.Loopback;
+                await next(ctx);
+            }));
+
+        var response = await harness.Client.PostAsync("/apps/chat", JsonContent("""{"message":"hello"}"""));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        harness.Runtime.AgentRuntime.DidNotReceiveWithAnyArgs().RunStreamingAsync(default!, default!, default);
+    }
+
+    [Theory]
+    [InlineData(OperatorRoleNames.Viewer, HttpStatusCode.Forbidden)]
+    [InlineData(OperatorRoleNames.Operator, HttpStatusCode.OK)]
+    public async Task A2AExecution_WhenAccountToken_ShouldRequireOperatorRole(string role, HttpStatusCode expected)
+    {
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configureServices: (services, _) => services.Configure<MafOptions>(options => options.EnableA2A = true),
+            configureApp: app => app.MapPost("/a2a", () => Results.Ok()));
+        var token = CreateAccountToken(harness, "a2a-" + role, role);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/a2a") { Content = JsonContent("{}") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(expected, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("openclaw.send_message", """{"text":"hello"}""")]
+    [InlineData("openclaw.run_workflow", """{"workflowId":"wf","input":"hello"}""")]
+    [InlineData("openclaw.respond_workflow", """{"workflowId":"wf","runId":"run","portId":"port"}""")]
+    public async Task McpMutatingTool_WhenViewerAccountToken_ShouldReturnToolError(string toolName, string arguments)
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var token = CreateAccountToken(harness, "mcp-viewer", OperatorRoleNames.Viewer);
+
+        using var result = await CallMcpToolAsync(harness, token, toolName, arguments);
+
+        Assert.True(result.RootElement.GetProperty("isError").GetBoolean());
+        Assert.Contains("operator", result.RootElement.GetProperty("content")[0].GetProperty("text").GetString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task McpReadOnlyTool_WhenViewerAccountToken_ShouldSucceed()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var token = CreateAccountToken(harness, "mcp-reader", OperatorRoleNames.Viewer);
+
+        using var result = await CallMcpToolAsync(harness, token, "openclaw.get_status", "{}");
+
+        Assert.False(result.RootElement.TryGetProperty("isError", out var isError) && isError.GetBoolean());
+        Assert.Contains("activeSessions", result.RootElement.GetProperty("content")[0].GetProperty("text").GetString());
+    }
+
+    private static async Task<JsonDocument> CallMcpToolAsync(GatewayTestHarness harness, string bearerToken, string toolName, string argumentsJson)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        {
+            Content = JsonContent($$$"""{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"{{{toolName}}}","arguments":{{{argumentsJson}}}}}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        var response = await harness.Client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadMcpJsonAsync(response);
+        return JsonDocument.Parse(payload.RootElement.GetProperty("result").GetRawText());
     }
 
     private static string CreateAccountToken(GatewayTestHarness harness, string username, string role)
@@ -7823,9 +7962,10 @@ public sealed partial class GatewayAdminEndpointTests
         Action<GatewayConfig>? configure = null,
         Func<string, IMemoryStore>? memoryStoreFactory = null,
         Action<IServiceCollection, GatewayConfig>? configureServices = null,
-        GatewayRuntimeState? runtimeStateOverride = null)
+        GatewayRuntimeState? runtimeStateOverride = null,
+        Action<WebApplication>? configureApp = null)
     {
-        return await CreateHarnessAsyncInternal(nonLoopbackBind, configure, memoryStoreFactory, configureServices, runtimeStateOverride);
+        return await CreateHarnessAsyncInternal(nonLoopbackBind, configure, memoryStoreFactory, configureServices, runtimeStateOverride, configureApp);
     }
 
     private static async Task<GatewayTestHarness> CreateHarnessAsyncInternal(
@@ -7833,7 +7973,8 @@ public sealed partial class GatewayAdminEndpointTests
         Action<GatewayConfig>? configure,
         Func<string, IMemoryStore>? memoryStoreFactory,
         Action<IServiceCollection, GatewayConfig>? configureServices,
-        GatewayRuntimeState? runtimeStateOverride)
+        GatewayRuntimeState? runtimeStateOverride,
+        Action<WebApplication>? configureApp)
     {
         var storagePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "openclaw-admin-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(storagePath);
@@ -7949,6 +8090,8 @@ public sealed partial class GatewayAdminEndpointTests
         var runtime = CreateRuntime(config, storagePath, memoryStore, sessionManager, heartbeatService);
         app.InitializeMcpRuntime(runtime);
         app.UseOpenClawMcpAuth(startup, runtime);
+        app.UseOpenClawA2AAuth(startup, runtime);
+        configureApp?.Invoke(app);
         app.MapOpenApi("/openapi/{documentName}.json");
         app.MapOpenClawEndpoints(startup, runtime);
         app.MapMcp("/mcp");

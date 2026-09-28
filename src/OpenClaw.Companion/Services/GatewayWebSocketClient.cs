@@ -12,6 +12,7 @@ public sealed class GatewayWebSocketClient : IAsyncDisposable
         _inner.OnTextMessage += text => OnTextMessage?.Invoke(text);
         _inner.OnEnvelopeReceived += envelope => OnEnvelopeReceived?.Invoke(envelope);
         _inner.OnError += error => OnError?.Invoke(error);
+        _inner.OnClosed += (status, reason) => OnClosed?.Invoke(status, reason);
     }
 
     public bool IsConnected
@@ -20,6 +21,7 @@ public sealed class GatewayWebSocketClient : IAsyncDisposable
     public event Action<string>? OnTextMessage;
     public event Action<OpenClaw.Core.Models.WsServerEnvelope>? OnEnvelopeReceived;
     public event Action<string>? OnError;
+    public event Action<WebSocketCloseStatus?, string?>? OnClosed;
 
     public async Task ConnectAsync(Uri wsUri, string? bearerToken, CancellationToken ct)
         => await _inner.ConnectAsync(wsUri, bearerToken, ct);
@@ -44,5 +46,13 @@ public sealed class GatewayWebSocketClient : IAsyncDisposable
             "SetConnectedSocketForTest",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
         method?.Invoke(_inner, [ws]);
+    }
+
+    internal Task RunReceiveLoopForTest(WebSocket ws, CancellationToken ct)
+    {
+        var method = typeof(OpenClaw.Client.OpenClawWebSocketClient).GetMethod(
+            "RunReceiveLoopForTest",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        return (Task)method!.Invoke(_inner, [ws, ct])!;
     }
 }

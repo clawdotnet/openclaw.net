@@ -102,14 +102,14 @@ For the full A2A behavior and operator notes, see [a2a.md](a2a.md).
 OpenClaw.NET now has three fixed operator roles:
 
 - `viewer`: read-only dashboard, audit, setup status, observability, and export access
-- `operator`: viewer permissions plus approvals, memory/profile/learning changes, automation execution, session promotion, and webhook replay
+- `operator`: viewer permissions plus approvals, chat and other agent execution, memory/profile/learning changes, automation execution, session promotion, and webhook replay
 - `admin`: operator permissions plus settings, plugins, provider policies, accounts, and organization policy
 
 Recommended auth flow:
 
 1. Use `OPENCLAW_AUTH_TOKEN` once on a non-loopback deployment to bootstrap the first operator account.
 2. Sign into `/admin` with the operator account username and password.
-3. Exchange credentials for an operator account token when setting up Companion, API clients, CLI automation, or websocket integrations.
+3. Exchange credentials for an operator account token when setting up Companion, API clients, CLI automation, or websocket integrations. Clients that chat or run the agent need an account with the `operator` role; new accounts default to `viewer`.
 
 Operator token exchange is available at `POST /auth/operator-token`.
 

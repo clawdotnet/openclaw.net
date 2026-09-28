@@ -36,7 +36,13 @@ All notable changes to this project are tracked in this file.
 
 ### Security
 
-- Required the `operator` role for `/ws` chat, matching `POST /api/integration/messages`. Viewer identities, including OIDC users without an operator role claim, were previously admitted and could submit agent turns and approval decisions. They are now closed with code 1008, which web chat reports as an authorization failure. Grant `operator` to accounts and OIDC users who should chat.
+- Required the `operator` role wherever a request runs the agent or mutates state, matching `POST /api/integration/messages`. Previously any authenticated identity, including viewer account tokens, viewer browser sessions, and OIDC users without an operator role claim, could run the agent with tools through these surfaces. New operator accounts default to `viewer`, so grant `operator` to accounts used for Companion, CLI/TUI chat, and API clients.
+  - `/ws`: closed with code 1008, which web chat reports as an authorization failure.
+  - `POST /v1/chat/completions` and `POST /v1/responses`: 403 with an OpenAI-style `permission_error` body.
+  - A2A execution paths: 403. Discovery stays public.
+  - `POST /apps/chat`: 403. It also no longer runs the agent for an unauthenticated caller whose client IP is loopback, which behind a same-host reverse proxy without `TrustForwardedHeaders` was every caller.
+  - MCP `openclaw.send_message`, `openclaw.run_workflow`, and `openclaw.respond_workflow`: tool error result. Read-only MCP tools stay available to viewers.
+- Added `OpenClawWebSocketClient.OnClosed`, raised with the gateway's close status and reason. Companion now marks itself disconnected and shows the reason instead of appearing connected after the gateway closes the socket.
 - Bound tool-approval decisions to the original requester (`channelId` + `senderId`) for non-loopback/public binds.
 - Kept `POST /tools/approve` as an explicit admin override path.
 - Added WhatsApp official webhook signature validation support (`ValidateSignature`, `WebhookAppSecret`/`WebhookAppSecretRef`).

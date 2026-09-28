@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http.Features;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
@@ -324,6 +325,31 @@ internal static class EndpointHelpers
         }
 
         return (auth, null);
+    }
+
+    internal const string OperatorRoleRequiredMessage = "This action requires the operator role.";
+
+    /// <summary>
+    /// Surfaces that turn a request into agent input or another mutation (chat, the OpenAI-compatible API,
+    /// A2A, MCP Apps chat, mutating MCP tools) require the same role as POST /api/integration/messages.
+    /// Authentication alone is not enough: viewer credentials must stay read-only.
+    /// </summary>
+    public static bool CanExecuteAgent(HttpContext ctx, GatewayStartupContext startup)
+    {
+        var browserSessions = ctx.RequestServices.GetRequiredService<BrowserSessionAuthService>();
+        var auth = AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
+        return auth.IsAuthorized && IsRoleAllowed(auth.Role, "integration.mutate.agent", out _);
+    }
+
+    public static async Task WriteOperatorRoleRequiredAsync(HttpContext ctx)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+        ctx.Response.ContentType = "application/json";
+        await JsonSerializer.SerializeAsync(
+            ctx.Response.Body,
+            new OperationStatusResponse { Success = false, Error = OperatorRoleRequiredMessage },
+            CoreJsonContext.Default.OperationStatusResponse,
+            ctx.RequestAborted);
     }
 
     public static bool IsRoleAllowed(string grantedRole, string endpointScope, out string requiredRole)

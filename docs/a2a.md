@@ -88,7 +88,7 @@ With that configuration, the Agent Card advertises endpoints such as `https://ag
 
 ## Authentication
 
-Discovery is public by default so standard A2A card resolvers can fetch the Agent Card. Execution endpoints continue to use the gateway authentication and IP rate limiting policy.
+Discovery is public by default so standard A2A card resolvers can fetch the Agent Card. Execution endpoints continue to use the gateway authentication and IP rate limiting policy, and require the `operator` role.
 
 For public deployments, configure gateway authentication before exposing the A2A execution paths.
 

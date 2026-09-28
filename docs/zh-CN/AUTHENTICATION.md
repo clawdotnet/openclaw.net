@@ -148,7 +148,7 @@ WebSocket 请求 (/ws)
   └─ 通过 ──→ 接受 WebSocket 连接
 ```
 
-**第二步（仅 `/ws`）：`CanSubmitChat`**
+**第二步（仅 `/ws`）：`EndpointHelpers.CanExecuteAgent`**
 
 每个 `/ws` 帧都会成为智能体输入，因此连接需要与 `POST /api/integration/messages` 相同的 `operator` 角色。角色通过 `AuthorizeOperatorRequest` 解析，与 HTTP API 使用同一认证链：
 
@@ -177,7 +177,21 @@ WebSocket 已连接
   └─ 调用 AuthorizeOperatorRequest() ──→ 提取 AccountId 作为 userId
 ```
 
-### 3.3 `IsAuthorizedRequest` 详细逻辑
+### 3.3 智能体执行所需角色
+
+`IsAuthorizedRequest` 只确认调用方已通过认证。会把请求变为智能体输入或其他变更的入口，还需要 `operator` 角色（与 `POST /api/integration/messages` 相同），由 `EndpointHelpers.CanExecuteAgent` 检查：
+
+| 入口 | 角色低于 operator 时 |
+|------|----------------------|
+| `/ws` | 先接受，再以 1008 (PolicyViolation) 关闭 |
+| `POST /v1/chat/completions`、`POST /v1/responses` | 403，返回 OpenAI 风格的 `permission_error` 响应体 |
+| A2A 执行路径（发现端点仍然公开） | 403 |
+| `POST /apps/chat` | 403。仅凭回环客户端 IP 不再足够 |
+| MCP `openclaw.send_message`、`openclaw.run_workflow`、`openclaw.respond_workflow` | 返回工具错误结果；只读 MCP 工具对 viewer 仍可用 |
+
+引导令牌和开放回环会解析为 `admin`，不受影响。新建的操作员账户默认为 `viewer`，因此用于 Companion、CLI/TUI 聊天或 API 客户端的账户需要 `operator` 角色。
+
+### 3.4 `IsAuthorizedRequest` 详细逻辑
 
 ```csharp
 // 第 1 步：Loopback 豁免

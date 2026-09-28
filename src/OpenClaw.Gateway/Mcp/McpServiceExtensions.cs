@@ -23,6 +23,8 @@ internal static class McpServiceExtensions
         GatewayStartupContext startup)
     {
         services.TryAddSingleton<GatewayRuntimeHolder>();
+        // Mutating MCP tools check the caller's role; HTTP handlers run in the request's execution context.
+        services.AddHttpContextAccessor();
 
         services.AddSingleton<IntegrationApiFacade>(sp =>
         {

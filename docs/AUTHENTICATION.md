@@ -148,7 +148,7 @@ WebSocket request (/ws)
   └─ Passed ──→ Accept WebSocket connection
 ```
 
-**Phase 2 (`/ws` only): `CanSubmitChat`**
+**Phase 2 (`/ws` only): `EndpointHelpers.CanExecuteAgent`**
 
 Every `/ws` frame becomes agent input, so the connection needs the same `operator` role as `POST /api/integration/messages`. The role is resolved through `AuthorizeOperatorRequest`, the same chain the HTTP API uses:
 
@@ -177,7 +177,21 @@ WebSocket connected
   └─ Call AuthorizeOperatorRequest() ──→ extract AccountId as userId
 ```
 
-### 3.3 `IsAuthorizedRequest` — Detailed Logic
+### 3.3 Role Required for Agent Execution
+
+`IsAuthorizedRequest` only establishes that a caller is authenticated. Surfaces that turn a request into agent input or another mutation also require the `operator` role, the same role as `POST /api/integration/messages`, through `EndpointHelpers.CanExecuteAgent`:
+
+| Surface | Below operator |
+|---------|----------------|
+| `/ws` | Accepted, then closed with 1008 (PolicyViolation) |
+| `POST /v1/chat/completions`, `POST /v1/responses` | 403 with an OpenAI-style `permission_error` body |
+| A2A execution paths (discovery stays public) | 403 |
+| `POST /apps/chat` | 403. A loopback client IP no longer suffices on its own |
+| MCP `openclaw.send_message`, `openclaw.run_workflow`, `openclaw.respond_workflow` | Tool error result; read-only MCP tools stay available to viewers |
+
+Bootstrap tokens and open loopback resolve to `admin` and are unaffected. New operator accounts default to `viewer`, so accounts used for Companion, CLI/TUI chat, or API clients need the `operator` role.
+
+### 3.4 `IsAuthorizedRequest` — Detailed Logic
 
 ```csharp
 // Step 1: Loopback exemption
