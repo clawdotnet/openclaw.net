@@ -36,6 +36,7 @@ All notable changes to this project are tracked in this file.
 
 ### Security
 
+- Required the `operator` role for `/ws` chat, matching `POST /api/integration/messages`. Viewer identities, including OIDC users without an operator role claim, were previously admitted and could submit agent turns and approval decisions. They are now closed with code 1008, which web chat reports as an authorization failure. Grant `operator` to accounts and OIDC users who should chat.
 - Bound tool-approval decisions to the original requester (`channelId` + `senderId`) for non-loopback/public binds.
 - Kept `POST /tools/approve` as an explicit admin override path.
 - Added WhatsApp official webhook signature validation support (`ValidateSignature`, `WebhookAppSecret`/`WebhookAppSecretRef`).

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.WebSockets;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text.RegularExpressions;
@@ -337,6 +338,78 @@ public sealed partial class GatewayAdminEndpointTests
         using var loginPayload = await ReadJsonAsync(loginResponse);
         Assert.Equal("browser-session", loginPayload.RootElement.GetProperty("authMode").GetString());
         Assert.Equal("viewer", loginPayload.RootElement.GetProperty("role").GetString());
+    }
+
+    [Fact]
+    public async Task WebSocketChat_WhenViewerAccountToken_ShouldCloseWithPolicyViolation()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var token = CreateAccountToken(harness, "ws-viewer", OperatorRoleNames.Viewer);
+
+        using var ws = await ConnectWebSocketAsync(harness, token);
+        var received = await ReceiveWithinAsync(ws, TimeSpan.FromSeconds(5));
+
+        Assert.NotNull(received);
+        Assert.Equal(WebSocketMessageType.Close, received.MessageType);
+        Assert.Equal(WebSocketCloseStatus.PolicyViolation, ws.CloseStatus);
+        Assert.Contains("operator", ws.CloseStatusDescription, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task WebSocketChat_WhenOperatorAccountToken_ShouldStayOpen()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var token = CreateAccountToken(harness, "ws-operator", OperatorRoleNames.Operator);
+
+        using var ws = await ConnectWebSocketAsync(harness, token);
+
+        Assert.Null(await ReceiveWithinAsync(ws, TimeSpan.FromMilliseconds(500)));
+    }
+
+    [Fact]
+    public async Task WebSocketChat_WhenOpenLoopbackWithoutCredentials_ShouldStayOpen()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: false);
+
+        using var ws = await ConnectWebSocketAsync(harness, bearerToken: null);
+
+        Assert.Null(await ReceiveWithinAsync(ws, TimeSpan.FromMilliseconds(500)));
+    }
+
+    private static string CreateAccountToken(GatewayTestHarness harness, string username, string role)
+    {
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var account = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = username,
+            Password = "P@ssw0rd123!",
+            Role = role
+        });
+        var token = operatorAccounts.CreateToken(account.Id, new OperatorAccountTokenCreateRequest { Label = username });
+        Assert.NotNull(token);
+        return token!.Token;
+    }
+
+    private static async Task<WebSocket> ConnectWebSocketAsync(GatewayTestHarness harness, string? bearerToken)
+    {
+        var client = harness.App.GetTestServer().CreateWebSocketClient();
+        if (bearerToken is not null)
+            client.ConfigureRequest = request => request.Headers.Authorization = $"Bearer {bearerToken}";
+        return await client.ConnectAsync(new Uri("ws://localhost/ws"), CancellationToken.None);
+    }
+
+    // Returns null when nothing arrives in time, which for these tests means the server kept the connection open.
+    private static async Task<WebSocketReceiveResult?> ReceiveWithinAsync(WebSocket ws, TimeSpan timeout)
+    {
+        using var cts = new CancellationTokenSource(timeout);
+        try
+        {
+            return await ws.ReceiveAsync(new byte[1024], cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
     }
 
     [Fact]

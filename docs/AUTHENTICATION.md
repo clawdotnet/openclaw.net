@@ -130,7 +130,7 @@ Request enters
 
 ### 3.2 WebSocket Authentication Flow
 
-WebSocket endpoints (`/ws`, `/ws/live`) use a two-phase authentication flow:
+WebSocket endpoints (`/ws`, `/ws/live`) authenticate in Phase 1. `/ws` then applies the chat role check (Phase 2) and resolves the user ID (Phase 3):
 
 **Phase 1: `TryValidateWebSocketRequest` → `IsAuthorizedRequest`**
 
@@ -148,7 +148,24 @@ WebSocket request (/ws)
   └─ Passed ──→ Accept WebSocket connection
 ```
 
-**Phase 2: `TryResolveAuthorizedUserIdForWebSocket`**
+**Phase 2 (`/ws` only): `CanSubmitChat`**
+
+Every `/ws` frame becomes agent input, so the connection needs the same `operator` role as `POST /api/integration/messages`. The role is resolved through `AuthorizeOperatorRequest`, the same chain the HTTP API uses:
+
+```
+WebSocket accepted (/ws)
+  │
+  ├─ Role below operator, or identity not allowed by organization policy?
+  │     ── yes ──→ close 1008 (PolicyViolation) "Chat requires the operator role."
+  │
+  └─ Passed ──→ Phase 3
+```
+
+The connection is accepted and then closed, rather than rejected with 403 during the handshake. Browsers cannot read a failed handshake's status code, but web chat treats close code 1008 as an authorization failure and stops reconnecting.
+
+This applies to OIDC identities too. A JWT without the configured `RoleClaim` resolves to `viewer` and cannot chat, so grant `operator` through the claim to users who should use web chat.
+
+**Phase 3: `TryResolveAuthorizedUserIdForWebSocket`**
 
 ```
 WebSocket connected

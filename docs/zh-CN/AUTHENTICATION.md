@@ -130,7 +130,7 @@ HTTP API 端点使用 `AuthorizeOperatorRequest` 方法（[EndpointHelpers.cs](.
 
 ### 3.2 WebSocket 认证流程
 
-WebSocket 端点 (`/ws`, `/ws/live`) 使用两步认证流程：
+WebSocket 端点 (`/ws`, `/ws/live`) 在第一步完成认证；`/ws` 随后执行聊天角色检查（第二步）并解析用户 ID（第三步）：
 
 **第一步：`TryValidateWebSocketRequest` → `IsAuthorizedRequest`**
 
@@ -148,7 +148,24 @@ WebSocket 请求 (/ws)
   └─ 通过 ──→ 接受 WebSocket 连接
 ```
 
-**第二步：`TryResolveAuthorizedUserIdForWebSocket`**
+**第二步（仅 `/ws`）：`CanSubmitChat`**
+
+每个 `/ws` 帧都会成为智能体输入，因此连接需要与 `POST /api/integration/messages` 相同的 `operator` 角色。角色通过 `AuthorizeOperatorRequest` 解析，与 HTTP API 使用同一认证链：
+
+```
+WebSocket 已接受 (/ws)
+  │
+  ├─ 角色低于 operator，或身份不被组织策略允许？
+  │     ── 是 ──→ 关闭 1008 (PolicyViolation) "Chat requires the operator role."
+  │
+  └─ 通过 ──→ 第三步
+```
+
+连接会先被接受再关闭，而不是在握手阶段返回 403。浏览器无法读取握手失败的状态码，而 Web Chat 会将关闭码 1008 视为授权失败并停止重连。
+
+OIDC 身份同样适用。缺少所配置 `RoleClaim` 的 JWT 会解析为 `viewer`，无法聊天；请通过该声明为需要使用 Web Chat 的用户授予 `operator` 角色。
+
+**第三步：`TryResolveAuthorizedUserIdForWebSocket`**
 
 ```
 WebSocket 已连接

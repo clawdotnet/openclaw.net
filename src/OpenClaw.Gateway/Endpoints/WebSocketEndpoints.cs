@@ -22,6 +22,16 @@ internal static class WebSocketEndpoints
                 return;
 
             var ws = await ctx.WebSockets.AcceptWebSocketAsync();
+
+            // Every /ws frame becomes agent input, so require the same role as POST /api/integration/messages.
+            // Close after accepting rather than returning 403: browsers cannot read a failed handshake's status,
+            // but web chat treats close code 1008 as an authorization failure and stops reconnecting.
+            if (!CanSubmitChat(ctx, startup))
+            {
+                await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Chat requires the operator role.", ctx.RequestAborted);
+                return;
+            }
+
             var clientId = ctx.Connection.Id;
             TryResolveAuthorizedUserIdForWebSocket(ctx, startup, out var userId);
             await runtime.WebSocketChannel.HandleConnectionAsync(ws, clientId, ctx.Connection.RemoteIpAddress, ctx.RequestAborted, userId);
@@ -93,6 +103,13 @@ internal static class WebSocketEndpoints
         }
 
         return true;
+    }
+
+    internal static bool CanSubmitChat(HttpContext ctx, GatewayStartupContext startup)
+    {
+        var browserSessions = ctx.RequestServices.GetRequiredService<BrowserSessionAuthService>();
+        var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
+        return auth.IsAuthorized && EndpointHelpers.IsRoleAllowed(auth.Role, "integration.mutate.chat", out _);
     }
 
     internal static bool TryResolveAuthorizedUserIdForWebSocket(HttpContext ctx, GatewayStartupContext startup, out string? authenticatedUserId)
