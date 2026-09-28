@@ -75,7 +75,11 @@ internal static class AppsMcpProxyEndpoint
             // Check the current request rather than the one that opened a stateful session. Dynamic App tools
             // run synchronously so the request context remains available; if it is ever absent, fail closed.
             var caller = httpContextAccessor?.HttpContext;
-            if (caller is null || !EndpointHelpers.CanExecuteAgent(caller, startup, $"MCP App tool {serverId}/{callParams.Name}"))
+            if (caller is null || !EndpointHelpers.CanExecuteAgent(
+                    caller,
+                    startup,
+                    $"MCP App tool {serverId}/{callParams.Name}",
+                    requireCsrf: true))
                 throw new McpException(EndpointHelpers.OperatorRoleRequiredMessage);
 
             if (!string.IsNullOrEmpty(sessionId))

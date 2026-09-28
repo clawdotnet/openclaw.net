@@ -338,10 +338,14 @@ internal static class EndpointHelpers
     /// Denials, and admissions under Security.AllowViewerAgentExecution, are logged with the account so
     /// admins can find identities that need the operator role.
     /// </summary>
-    public static bool CanExecuteAgent(HttpContext ctx, GatewayStartupContext startup, string? action = null)
+    public static bool CanExecuteAgent(
+        HttpContext ctx,
+        GatewayStartupContext startup,
+        string? action = null,
+        bool requireCsrf = false)
     {
         var browserSessions = ctx.RequestServices.GetRequiredService<BrowserSessionAuthService>();
-        var auth = AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
+        var auth = AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf);
         if (auth.IsAuthorized && IsRoleAllowed(auth.Role, "integration.mutate.agent", out _))
             return true;
 

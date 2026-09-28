@@ -108,6 +108,38 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task CallTool_WhenBrowserSessionOmitsCsrf_ShouldReturnOperatorErrorWithoutCallingUpstream()
+    {
+        var upstreamUrl = await StartFakeUpstreamAsync();
+        await using var gateway = await StartGatewayWithProxyAsync("inventory-app", upstreamUrl, nonLoopbackBind: true);
+        var browserSessions = gateway.App.Services.GetRequiredService<BrowserSessionAuthService>();
+        var ticket = browserSessions.Create(remember: false);
+        await using var mcpClient = await CreateBrowserSessionProxyClientAsync(gateway, ticket, includeCsrf: false);
+
+        var result = await mcpClient.CallToolAsync("echo_session", cancellationToken: CancellationToken.None);
+
+        Assert.True(result.IsError);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content)).Text;
+        Assert.Contains("operator", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, _upstreamToolCalls);
+    }
+
+    [Fact]
+    public async Task CallTool_WhenBrowserSessionIncludesCsrf_ShouldReachUpstream()
+    {
+        var upstreamUrl = await StartFakeUpstreamAsync();
+        await using var gateway = await StartGatewayWithProxyAsync("inventory-app", upstreamUrl, nonLoopbackBind: true);
+        var browserSessions = gateway.App.Services.GetRequiredService<BrowserSessionAuthService>();
+        var ticket = browserSessions.Create(remember: false);
+        await using var mcpClient = await CreateBrowserSessionProxyClientAsync(gateway, ticket, includeCsrf: true);
+
+        var result = await mcpClient.CallToolAsync("echo_session", cancellationToken: CancellationToken.None);
+
+        Assert.NotEqual(true, result.IsError);
+        Assert.Equal(1, _upstreamToolCalls);
+    }
+
+    [Fact]
     public async Task CallTool_UnknownAppId_ReturnsActionableErrorPayload()
     {
         var upstreamUrl = await StartFakeUpstreamAsync();
@@ -254,6 +286,27 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
                 AdditionalHeaders = new Dictionary<string, string> { ["Authorization"] = $"Bearer {bearerToken}" }
             }),
             cancellationToken: CancellationToken.None);
+
+    private static Task<McpClient> CreateBrowserSessionProxyClientAsync(
+        GatewayProxyTestHarness gateway,
+        BrowserSessionTicket ticket,
+        bool includeCsrf)
+    {
+        var headers = new Dictionary<string, string>
+        {
+            ["Cookie"] = $"{BrowserSessionAuthService.CookieName}={ticket.SessionId}"
+        };
+        if (includeCsrf)
+            headers[BrowserSessionAuthService.CsrfHeaderName] = ticket.CsrfToken;
+
+        return McpClient.CreateAsync(
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri($"{gateway.BaseAddress}apps/mcp/inventory-app"),
+                AdditionalHeaders = headers
+            }),
+            cancellationToken: CancellationToken.None);
+    }
 
     // Mirrors the production registrations the proxy's authorization depends on.
     private static void AddGatewayAuthServices(IServiceCollection services, GatewayConfig config, GatewayStartupContext startup, string storagePath)

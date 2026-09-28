@@ -14,9 +14,8 @@ public sealed class CompanionConnectionTests : IDisposable
 
     public void Dispose()
     {
-        foreach (var dir in _tempDirs)
-            if (Directory.Exists(dir))
-                Directory.Delete(dir, recursive: true);
+        foreach (var dir in _tempDirs.Where(Directory.Exists))
+            Directory.Delete(dir, recursive: true);
     }
 
     [AvaloniaFact]
