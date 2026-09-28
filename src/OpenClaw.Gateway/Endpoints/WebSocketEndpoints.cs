@@ -43,6 +43,14 @@ internal static class WebSocketEndpoints
                 return;
 
             var ws = await ctx.WebSockets.AcceptWebSocketAsync();
+
+            // The live bridge runs no tools but spends provider credentials, so it needs the same role as /ws.
+            if (!EndpointHelpers.CanExecuteAgent(ctx, startup))
+            {
+                await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, EndpointHelpers.OperatorRoleRequiredMessage, ctx.RequestAborted);
+                return;
+            }
+
             try
             {
                 var openRequest = await ReceiveLiveOpenRequestAsync(ws, ctx.RequestAborted);

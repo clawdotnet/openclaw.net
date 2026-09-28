@@ -131,7 +131,7 @@ Request enters
 
 ### 3.2 WebSocket Authentication Flow
 
-WebSocket endpoints (`/ws`, `/ws/live`) authenticate in Phase 1. `/ws` then applies the chat role check (Phase 2) and resolves the user ID (Phase 3):
+WebSocket endpoints (`/ws`, `/ws/live`) authenticate in Phase 1 and then apply the role check (Phase 2). `/ws` also resolves the user ID (Phase 3):
 
 **Phase 1: `TryValidateWebSocketRequest` → `IsAuthorizedRequest`**
 
@@ -149,7 +149,7 @@ WebSocket request (/ws)
   └─ Passed ──→ Accept WebSocket connection
 ```
 
-**Phase 2 (`/ws` only): `EndpointHelpers.CanExecuteAgent`**
+**Phase 2: `EndpointHelpers.CanExecuteAgent`**
 
 Every `/ws` frame becomes agent input, so the connection needs the same `operator` role as `POST /api/integration/messages`. The role is resolved through `AuthorizeOperatorRequest`, the same chain the HTTP API uses:
 
@@ -185,6 +185,7 @@ WebSocket connected
 | Surface | Below operator |
 |---------|----------------|
 | `/ws` | Accepted, then closed with 1008 (PolicyViolation) |
+| `/ws/live` | Accepted, then closed with 1008. The live bridge runs no tools but spends provider credentials |
 | `POST /v1/chat/completions`, `POST /v1/responses` | 403 with an OpenAI-style `permission_error` body |
 | A2A execution paths (discovery stays public) | 403 |
 | `POST /apps/chat` | 403 |

@@ -131,7 +131,7 @@ HTTP API 端点使用 `AuthorizeOperatorRequest` 方法（[EndpointHelpers.cs](.
 
 ### 3.2 WebSocket 认证流程
 
-WebSocket 端点 (`/ws`, `/ws/live`) 在第一步完成认证；`/ws` 随后执行聊天角色检查（第二步）并解析用户 ID（第三步）：
+WebSocket 端点 (`/ws`, `/ws/live`) 在第一步完成认证，随后执行角色检查（第二步）；`/ws` 还会解析用户 ID（第三步）：
 
 **第一步：`TryValidateWebSocketRequest` → `IsAuthorizedRequest`**
 
@@ -149,7 +149,7 @@ WebSocket 请求 (/ws)
   └─ 通过 ──→ 接受 WebSocket 连接
 ```
 
-**第二步（仅 `/ws`）：`EndpointHelpers.CanExecuteAgent`**
+**第二步：`EndpointHelpers.CanExecuteAgent`**
 
 每个 `/ws` 帧都会成为智能体输入，因此连接需要与 `POST /api/integration/messages` 相同的 `operator` 角色。角色通过 `AuthorizeOperatorRequest` 解析，与 HTTP API 使用同一认证链：
 
@@ -185,6 +185,7 @@ WebSocket 已连接
 | 入口 | 角色低于 operator 时 |
 |------|----------------------|
 | `/ws` | 先接受，再以 1008 (PolicyViolation) 关闭 |
+| `/ws/live` | 先接受，再以 1008 关闭。实时桥接不运行工具，但会消耗提供商凭据额度 |
 | `POST /v1/chat/completions`、`POST /v1/responses` | 403，返回 OpenAI 风格的 `permission_error` 响应体 |
 | A2A 执行路径（发现端点仍然公开） | 403 |
 | `POST /apps/chat` | 403 |

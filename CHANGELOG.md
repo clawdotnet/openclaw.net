@@ -38,6 +38,7 @@ All notable changes to this project are tracked in this file.
 
 - Required the `operator` role wherever a request runs the agent or mutates state, matching `POST /api/integration/messages`. Previously any authenticated identity, including viewer account tokens, viewer browser sessions, and OIDC users without an operator role claim, could run the agent with tools through these surfaces. New operator accounts default to `viewer`, so grant `operator` to accounts used for Companion, CLI/TUI chat, and API clients.
   - `/ws`: closed with code 1008, which web chat reports as an authorization failure.
+  - `/ws/live`: closed with code 1008. The live model bridge runs no tools but spends provider credentials.
   - `POST /v1/chat/completions` and `POST /v1/responses`: 403 with an OpenAI-style `permission_error` body.
   - A2A execution paths: 403. Discovery stays public.
   - `POST /apps/chat`: 403.

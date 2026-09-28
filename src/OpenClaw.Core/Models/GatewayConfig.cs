@@ -387,7 +387,8 @@ public sealed class SecurityConfig
     /// <summary>
     /// Temporary compatibility switch, to be removed in the next release. When true, authenticated identities
     /// below the operator role (such as viewer accounts) can still run the agent through /ws, /v1/*, A2A,
-    /// /apps/chat, MCP App tool calls, and mutating MCP tools. Each such request is logged so the accounts can be promoted.
+    /// /apps/chat, MCP App tool calls, mutating MCP tools, and /ws/live. Each such request is logged so the accounts
+    /// can be promoted.
     /// </summary>
     public bool AllowViewerAgentExecution { get; set; } = false;
 
