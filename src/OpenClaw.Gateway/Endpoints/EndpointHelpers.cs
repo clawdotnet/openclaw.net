@@ -69,7 +69,7 @@ internal static class EndpointHelpers
             if (operatorAccounts is not null)
             {
                 var token = GatewaySecurity.GetToken(ctx, config.Security.AllowQueryStringToken);
-                if (!string.IsNullOrWhiteSpace(token) && operatorAccounts.TryAuthenticateToken(token, out _))
+                if (!string.IsNullOrWhiteSpace(token) && TryAuthenticateAccountToken(ctx, operatorAccounts, token, out _))
                     return true;
             }
         }
@@ -161,7 +161,7 @@ internal static class EndpointHelpers
         if (IsAllowedAuthMode(policy, OrganizationAuthModeNames.AccountToken) &&
             !string.IsNullOrWhiteSpace(token) &&
             operatorAccounts is not null &&
-            operatorAccounts.TryAuthenticateToken(token, out var accountIdentity))
+            TryAuthenticateAccountToken(ctx, operatorAccounts, token, out var accountIdentity))
         {
             return new OperatorAuthorizationResult(
                 true,
@@ -201,6 +201,30 @@ internal static class EndpointHelpers
             Username: null,
             DisplayName: null,
             IsBootstrapAdmin: false);
+    }
+
+    private sealed record AccountTokenVerification(string Token, bool Succeeded, OperatorIdentitySnapshot? Identity);
+
+    // Token verification is deliberately slow (PBKDF2) and serialized inside OperatorAccountService, and one
+    // request can pass through several checks (authentication, role, identity). Verify each request's token
+    // once and reuse the outcome; revocation still applies from the next request.
+    private static bool TryAuthenticateAccountToken(
+        HttpContext ctx,
+        OperatorAccountService operatorAccounts,
+        string token,
+        out OperatorIdentitySnapshot? identity)
+    {
+        if (ctx.Items.TryGetValue(typeof(AccountTokenVerification), out var cached) &&
+            cached is AccountTokenVerification previous &&
+            string.Equals(previous.Token, token, StringComparison.Ordinal))
+        {
+            identity = previous.Identity;
+            return previous.Succeeded;
+        }
+
+        var succeeded = operatorAccounts.TryAuthenticateToken(token, out identity);
+        ctx.Items[typeof(AccountTokenVerification)] = new AccountTokenVerification(token, succeeded, identity);
+        return succeeded;
     }
 
     public static bool TrySetMaxRequestBodySize(HttpContext ctx, long maxBytes)
