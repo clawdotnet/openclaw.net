@@ -32,6 +32,9 @@ internal sealed class OpenClawA2AExecutionBridge : IOpenClawA2AExecutionBridge
 
         await using var sessionLock = await runtime.SessionManager.AcquireSessionLockAsync(session.Id, cancellationToken);
 
+        // The A2A request's SenderId is the caller's contextId, so the turn's identity comes from the signed-in account.
+        session.AuthenticatedUserId = A2ACallerContext.AccountId;
+
         var (handled, commandResponse) = await runtime.CommandProcessor.TryProcessCommandAsync(
             session,
             request.UserText,

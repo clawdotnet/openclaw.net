@@ -98,6 +98,10 @@ internal static partial class OpenAiEndpoints
                     persistStableSessionOnExit = true;
                 }
 
+                // The turn runs as the signed-in account: it scopes per-user capability bindings and is the
+                // userId MCP servers see. Callers without an account (open loopback, bootstrap) run without one.
+                session.AuthenticatedUserId = EndpointHelpers.ResolveAuthenticatedAccountId(ctx, startup);
+
                 var httpMwCtx = new MessageContext
                 {
                     ChannelId = "openai-http",

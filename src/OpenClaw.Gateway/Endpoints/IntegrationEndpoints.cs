@@ -849,7 +849,7 @@ internal static class IntegrationEndpoints
             }
 
             return Results.Json(
-                await facade.QueueMessageAsync(request, ctx.RequestAborted),
+                await facade.QueueMessageAsync(request, ctx.RequestAborted, EndpointHelpers.ResolveAuthenticatedAccountId(ctx, startup)),
                 CoreJsonContext.Default.IntegrationMessageResponse,
                 statusCode: StatusCodes.Status202Accepted);
         });

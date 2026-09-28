@@ -80,6 +80,8 @@ internal static class A2AEndpointExtensions
                     return;
                 }
 
+                A2ACallerContext.AccountId = EndpointHelpers.ResolveAuthenticatedAccountId(ctx, startup);
+
                 if (!runtime.Operations.ActorRateLimits.TryConsume(
                         "ip",
                         EndpointHelpers.GetRemoteIpKey(ctx),

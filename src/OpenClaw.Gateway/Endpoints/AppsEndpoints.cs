@@ -82,6 +82,7 @@ internal static class AppsEndpoints
                 ? $"apps-{Guid.NewGuid():N}"
                 : requestedSessionId!;
             var session = await runtime.SessionManager.GetOrCreateByIdAsync(sessionId, "apps", sessionId, ct);
+            session.AuthenticatedUserId = EndpointHelpers.ResolveAuthenticatedAccountId(ctx, startup);
 
             await SendAsync(ctx, new JsonObject { ["type"] = "session", ["sessionId"] = sessionId }, ct);
 

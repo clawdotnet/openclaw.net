@@ -236,6 +236,23 @@ return false;  // 401 Unauthorized
 
 ---
 
+### 3.5 Turn Identity
+
+`Session.AuthenticatedUserId` is the identity a turn runs with. It scopes per-user capability bindings and is passed to MCP servers as `_meta.userId`. When it is empty, those fall back to the session's `SenderId`.
+
+Surfaces that run turns set it from the signed-in account (`EndpointHelpers.ResolveAuthenticatedAccountId`), never from a caller-supplied sender id:
+
+| Surface | Identity source |
+|---------|-----------------|
+| `POST /api/integration/messages`, MCP `openclaw.send_message` | Account of the request; the body's `senderId` is only used for routing and display |
+| `/ws` | Account resolved at connection |
+| `POST /v1/chat/completions`, `POST /v1/responses`, `POST /apps/chat` | Account of the request |
+| A2A execution | Account of the request; the A2A `contextId` is only the sender id |
+
+Open loopback and bootstrap callers have no account, so their turns run without one.
+
+A pipeline turn from an external sender without an account runs without one too. It does not inherit the account of whoever wrote to the session before. For example, a Telegram user's turn never runs as an operator who posted into that Telegram session. System, scheduled, automation, and background-continuation turns act on the session's behalf and keep its identity.
+
 ## 4. Middleware Pipeline
 
 Authentication middleware is registered in `Program.cs` in the following order:
