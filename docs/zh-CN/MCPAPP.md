@@ -38,7 +38,7 @@ OpenClaw.NET 为浏览器侧 MCP App UI 暴露了一组面向 gateway 的 host �
 |------|------|
 | `/apps/health` | 返回当前选中的 MCP App id，以及浏览器应连接的 gateway MCP 端点 |
 | `/apps/chat` | 把浏览器 host 的聊天请求桥接到现有 `GatewayAppRuntime`，并输出 `session`、`text`、`tool`、`result`、`done` 形状的 SSE。需要 `operator` 角色 |
-| `/apps/mcp/{appId}` | 把 MCP 请求代理到该 App 已经连接好的 `McpClient` |
+| `/apps/mcp/{appId}` | 把 MCP 请求代理到该 App 已经连接好的 `McpClient`。`tools/call` 需要 `operator` 角色；列表和读取对任何已认证角色仍可用 |
 
 关键点是：浏览器 UI 应连接 `/apps/mcp/{appId}`，而不是直接连接 MCP App 的原始上游 URL。这样浏览器触发的 MCP 调用与 Agent 触发的 MCP 调用才能落在同一条 OpenClaw 管理的会话上。
 

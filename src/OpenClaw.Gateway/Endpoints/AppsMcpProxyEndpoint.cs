@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using OpenClaw.Gateway.Bootstrap;
@@ -53,6 +54,9 @@ internal static class AppsMcpProxyEndpoint
             return;
         }
 
+        var startup = httpContext.RequestServices.GetRequiredService<GatewayStartupContext>();
+        var httpContextAccessor = httpContext.RequestServices.GetService<IHttpContextAccessor>();
+
         sessionOptions.Handlers.ListToolsHandler = async (ctx, ct2) =>
             await upstream.ListToolsAsync(ctx.Params ?? new ListToolsRequestParams(), ct2);
 
@@ -65,6 +69,14 @@ internal static class AppsMcpProxyEndpoint
         sessionOptions.Handlers.CallToolHandler = async (ctx, ct2) =>
         {
             var callParams = ctx.Params!;
+
+            // App tools can change state and share the agent's upstream session, so calling them needs the same
+            // operator role as /apps/chat, the host these UIs run in. Listing and reading stay open to viewers.
+            // Check the current request rather than the one that opened a stateful session.
+            var caller = httpContextAccessor?.HttpContext ?? httpContext;
+            if (!EndpointHelpers.CanExecuteAgent(caller, startup, $"MCP App tool {serverId}/{callParams.Name}"))
+                throw new McpException(EndpointHelpers.OperatorRoleRequiredMessage);
+
             if (!string.IsNullOrEmpty(sessionId))
             {
                 callParams.Meta ??= new JsonObject();

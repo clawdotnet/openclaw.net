@@ -331,7 +331,7 @@ internal static class EndpointHelpers
 
     /// <summary>
     /// Surfaces that turn a request into agent input or another mutation (chat, the OpenAI-compatible API,
-    /// A2A, MCP Apps chat, mutating MCP tools) require the same role as POST /api/integration/messages.
+    /// A2A, MCP Apps chat and tool calls, mutating MCP tools) require the same role as POST /api/integration/messages.
     /// Authentication alone is not enough: viewer credentials must stay read-only.
     /// Denials, and admissions under Security.AllowViewerAgentExecution, are logged with the account so
     /// admins can find identities that need the operator role.

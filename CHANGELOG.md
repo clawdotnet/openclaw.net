@@ -41,6 +41,7 @@ All notable changes to this project are tracked in this file.
   - `POST /v1/chat/completions` and `POST /v1/responses`: 403 with an OpenAI-style `permission_error` body.
   - A2A execution paths: 403. Discovery stays public.
   - `POST /apps/chat`: 403.
+  - `tools/call` through the `/apps/mcp/{appId}` MCP App proxy: tool error result. Listing and reading App tools and resources stay available to any authenticated role.
   - MCP `openclaw.send_message`, `openclaw.run_workflow`, and `openclaw.respond_workflow`: tool error result. Read-only MCP tools stay available to viewers.
   - Each denial is logged under `OpenClaw.Gateway.Authorization` with the surface, account, and role, so admins can find accounts to promote.
   - Migration aid: `OpenClaw:Security:AllowViewerAgentExecution=true` restores the previous behavior for authenticated identities below `operator`, logs each such request, and adds the `viewer_agent_execution_allowed` risk flag to `admin posture`. It is temporary and will be removed in the next release.

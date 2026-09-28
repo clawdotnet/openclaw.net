@@ -188,6 +188,7 @@ WebSocket 已连接
 | `POST /v1/chat/completions`、`POST /v1/responses` | 403，返回 OpenAI 风格的 `permission_error` 响应体 |
 | A2A 执行路径（发现端点仍然公开） | 403 |
 | `POST /apps/chat` | 403 |
+| `/apps/mcp/{appId}` 的 `tools/call` | 返回工具错误结果；列出和读取 App 工具与资源仍可用 |
 | MCP `openclaw.send_message`、`openclaw.run_workflow`、`openclaw.respond_workflow` | 返回工具错误结果；只读 MCP 工具对 viewer 仍可用 |
 
 引导令牌和开放回环会解析为 `admin`，不受影响。新建的操作员账户默认为 `viewer`，因此用于 Companion、CLI/TUI 聊天或 API 客户端的账户需要 `operator` 角色。

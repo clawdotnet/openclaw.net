@@ -188,6 +188,7 @@ WebSocket connected
 | `POST /v1/chat/completions`, `POST /v1/responses` | 403 with an OpenAI-style `permission_error` body |
 | A2A execution paths (discovery stays public) | 403 |
 | `POST /apps/chat` | 403 |
+| `/apps/mcp/{appId}` `tools/call` | Tool error result; listing and reading App tools and resources stay available |
 | MCP `openclaw.send_message`, `openclaw.run_workflow`, `openclaw.respond_workflow` | Tool error result; read-only MCP tools stay available to viewers |
 
 Bootstrap tokens and open loopback resolve to `admin` and are unaffected. New operator accounts default to `viewer`, so accounts used for Companion, CLI/TUI chat, or API clients need the `operator` role.
