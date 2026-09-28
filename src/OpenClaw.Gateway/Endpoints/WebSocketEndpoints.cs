@@ -34,7 +34,8 @@ internal static class WebSocketEndpoints
 
             var clientId = ctx.Connection.Id;
             TryResolveAuthorizedUserIdForWebSocket(ctx, startup, out var userId);
-            await runtime.WebSocketChannel.HandleConnectionAsync(ws, clientId, ctx.Connection.RemoteIpAddress, ctx.RequestAborted, userId);
+            var isAdmin = EndpointHelpers.ResolveCaller(ctx, startup).IsAdmin;
+            await runtime.WebSocketChannel.HandleConnectionAsync(ws, clientId, ctx.Connection.RemoteIpAddress, ctx.RequestAborted, userId, isAdmin);
         });
 
         app.Map("/ws/live", async (HttpContext ctx) =>

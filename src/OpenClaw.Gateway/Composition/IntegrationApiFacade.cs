@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Core.Compatibility;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Workflows;
 
@@ -134,7 +135,8 @@ internal sealed class IntegrationApiFacade
                 TotalOutputTokens = session.TotalOutputTokens,
                 TotalCacheReadTokens = session.TotalCacheReadTokens,
                 TotalCacheWriteTokens = session.TotalCacheWriteTokens,
-                IsActive = true
+                IsActive = true,
+                OwnerAccountId = session.OwnerAccountId
             })
             .ToArray();
 
@@ -291,7 +293,8 @@ internal sealed class IntegrationApiFacade
                 TotalOutputTokens = session.TotalOutputTokens,
                 TotalCacheReadTokens = session.TotalCacheReadTokens,
                 TotalCacheWriteTokens = session.TotalCacheWriteTokens,
-                IsActive = true
+                IsActive = true,
+                OwnerAccountId = session.OwnerAccountId
             })
             .ToArray();
 
@@ -794,13 +797,10 @@ internal sealed class IntegrationApiFacade
     public async Task<IntegrationMessageResponse> QueueMessageAsync(
         IntegrationMessageRequest request,
         CancellationToken cancellationToken,
-        string? authenticatedUserId = null)
+        string? authenticatedUserId = null,
+        bool authenticatedUserIsAdmin = false)
     {
-        var effectiveChannelId = string.IsNullOrWhiteSpace(request.ChannelId) ? "integration-api" : request.ChannelId.Trim();
-        var effectiveSenderId = string.IsNullOrWhiteSpace(request.SenderId) ? "http-client" : request.SenderId.Trim();
-        var effectiveSessionId = string.IsNullOrWhiteSpace(request.SessionId)
-            ? $"{effectiveChannelId}:{effectiveSenderId}"
-            : request.SessionId.Trim();
+        var (effectiveChannelId, effectiveSenderId, effectiveSessionId) = ResolveTarget(request);
 
         await _runtime.RecentSenders.RecordAsync(effectiveChannelId, effectiveSenderId, senderName: null, cancellationToken);
 
@@ -813,7 +813,8 @@ internal sealed class IntegrationApiFacade
             Text = request.Text,
             MessageId = request.MessageId,
             ReplyToMessageId = request.ReplyToMessageId,
-            AuthenticatedUserId = authenticatedUserId
+            AuthenticatedUserId = authenticatedUserId,
+            AuthenticatedUserIsAdmin = authenticatedUserIsAdmin
         };
 
         if (!_runtime.Pipeline.InboundWriter.TryWrite(message))
@@ -946,6 +947,24 @@ internal sealed class IntegrationApiFacade
         };
     }
 
+    /// <summary>
+    /// Whether the caller may post into the session a message request targets. Checked before queueing so the
+    /// caller gets a synchronous refusal; the worker enforces the same rule when the turn runs.
+    /// </summary>
+    public async Task<bool> CanWriteSessionAsync(IntegrationMessageRequest request, string? accountId, bool isAdmin, CancellationToken cancellationToken)
+    {
+        var session = await _runtime.SessionManager.LoadAsync(ResolveTarget(request).SessionId, cancellationToken);
+        return session is null || SessionAccess.CanWrite(session, accountId, isAdmin);
+    }
+
+    private static (string ChannelId, string SenderId, string SessionId) ResolveTarget(IntegrationMessageRequest request)
+    {
+        var channelId = string.IsNullOrWhiteSpace(request.ChannelId) ? "integration-api" : request.ChannelId.Trim();
+        var senderId = string.IsNullOrWhiteSpace(request.SenderId) ? "http-client" : request.SenderId.Trim();
+        var sessionId = string.IsNullOrWhiteSpace(request.SessionId) ? $"{channelId}:{senderId}" : request.SessionId.Trim();
+        return (channelId, senderId, sessionId);
+    }
+
     public static SessionListQuery BuildSessionQuery(
         string? search,
         string? channelId,
@@ -954,7 +973,8 @@ internal sealed class IntegrationApiFacade
         DateTimeOffset? toUtc,
         string? state,
         bool? starred,
-        string? tag)
+        string? tag,
+        string? ownerAccountId = null)
     {
         return new SessionListQuery
         {
@@ -965,7 +985,8 @@ internal sealed class IntegrationApiFacade
             ToUtc = toUtc,
             State = ParseSessionState(state),
             Starred = starred,
-            Tag = string.IsNullOrWhiteSpace(tag) ? null : tag.Trim()
+            Tag = string.IsNullOrWhiteSpace(tag) ? null : tag.Trim(),
+            OwnerAccountId = string.IsNullOrWhiteSpace(ownerAccountId) ? null : ownerAccountId
         };
     }
 

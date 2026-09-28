@@ -253,6 +253,23 @@ Open loopback and bootstrap callers have no account, so their turns run without 
 
 A pipeline turn from an external sender without an account runs without one too. It does not inherit the account of whoever wrote to the session before. For example, a Telegram user's turn never runs as an operator who posted into that Telegram session. System, scheduled, automation, and background-continuation turns act on the session's behalf and keep its identity.
 
+### 3.6 Session Ownership
+
+A session created by a signed-in account records it as `Session.OwnerAccountId`. The owner is set once, at creation, and never reassigned.
+
+| Session | Who can post to it |
+|---------|--------------------|
+| Owned | The owner and admins. Other accounts are refused on every surface: REST returns 403, MCP returns a tool error, `/apps/chat` returns 403, A2A returns an error event, and pipeline turns (including `/ws`) get a reply saying the conversation belongs to another account |
+| Unowned (created by channels, cron, bootstrap or loopback callers, or before ownership existed) | Anyone allowed to post. Writing to an unowned session never claims it |
+
+Callers without an account (bootstrap, open loopback, channel and system turns) are not restricted by ownership. They are admin-equivalent, or they address sessions by their own keys.
+
+Reading stays open to every role that can read sessions, so dashboards and audit are unaffected.
+
+`GET /api/integration/sessions?owner=me` lists only the caller's own sessions, active and persisted. `SessionSummary.ownerAccountId` carries the owner. Callers without an account own no sessions.
+
+`/v1/*` sessions are already scoped to the calling credential. They record the owner but need no extra check.
+
 ## 4. Middleware Pipeline
 
 Authentication middleware is registered in `Program.cs` in the following order:

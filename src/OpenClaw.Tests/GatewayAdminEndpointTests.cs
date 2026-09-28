@@ -846,6 +846,147 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.Equal("acct-a2a", ran?.AuthenticatedUserId);
     }
 
+    [Fact]
+    public async Task IntegrationMessages_WhenSessionOwnedByAnotherAccount_ShouldRejectUnlessAdmin()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (_, ownerId) = CreateAccountTokenWithId(harness, "rest-owner", OperatorRoleNames.Operator);
+        var (otherToken, _) = CreateAccountTokenWithId(harness, "rest-other", OperatorRoleNames.Operator);
+        var (adminToken, _) = CreateAccountTokenWithId(harness, "rest-admin", OperatorRoleNames.Admin);
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync("owned-rest", "agentqi-mobile", "owner", CancellationToken.None, ownerAccountId: ownerId);
+
+        async Task<HttpResponseMessage> PostAsync(string token)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/integration/messages")
+            {
+                Content = JsonContent("""{"text":"hello","sessionId":"owned-rest"}""")
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            return await harness.Client.SendAsync(request);
+        }
+
+        var denied = await PostAsync(otherToken);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.False(harness.Runtime.Pipeline.InboundReader.TryRead(out _));
+
+        var admitted = await PostAsync(adminToken);
+        Assert.Equal(HttpStatusCode.Accepted, admitted.StatusCode);
+        Assert.True(harness.Runtime.Pipeline.InboundReader.TryRead(out var queued));
+        Assert.True(queued.AuthenticatedUserIsAdmin);
+    }
+
+    [Fact]
+    public async Task McpSendMessage_WhenSessionOwnedByAnotherAccount_ShouldReturnToolError()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (_, ownerId) = CreateAccountTokenWithId(harness, "mcp-owner", OperatorRoleNames.Operator);
+        var (otherToken, _) = CreateAccountTokenWithId(harness, "mcp-other", OperatorRoleNames.Operator);
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync("owned-mcp", "agentqi-mobile", "owner", CancellationToken.None, ownerAccountId: ownerId);
+
+        using var result = await CallMcpToolAsync(harness, otherToken, "openclaw.send_message", """{"text":"hello","sessionId":"owned-mcp"}""");
+
+        Assert.True(result.RootElement.GetProperty("isError").GetBoolean());
+        Assert.Contains("another account", result.RootElement.GetProperty("content")[0].GetProperty("text").GetString(), StringComparison.Ordinal);
+        Assert.False(harness.Runtime.Pipeline.InboundReader.TryRead(out _));
+    }
+
+    [Fact]
+    public async Task AppsChat_WhenSessionOwnedByAnotherAccount_ShouldReturnForbidden()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (_, ownerId) = CreateAccountTokenWithId(harness, "apps-owner", OperatorRoleNames.Operator);
+        var (otherToken, _) = CreateAccountTokenWithId(harness, "apps-other", OperatorRoleNames.Operator);
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync("owned-apps", "apps", "owned-apps", CancellationToken.None, ownerAccountId: ownerId);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/apps/chat") { Content = JsonContent("""{"message":"hello","sessionId":"owned-apps"}""") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", otherToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        harness.Runtime.AgentRuntime.DidNotReceiveWithAnyArgs().RunStreamingAsync(default!, default!, default);
+    }
+
+    [Fact]
+    public async Task A2ABridge_WhenSessionOwnedByAnotherAccount_ShouldNotRunAgent()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync("owned-a2a", "a2a", "ctx", CancellationToken.None, ownerAccountId: "acct-owner");
+        var bridge = new OpenClawA2AExecutionBridge(new GatewayRuntimeHolder { Runtime = harness.Runtime }, NullLogger<OpenClawA2AExecutionBridge>.Instance);
+        var events = new List<AgentStreamEvent>();
+
+        A2ACallerContext.AccountId = "acct-other";
+        try
+        {
+            await bridge.ExecuteStreamingAsync(
+                new OpenClaw.MicrosoftAgentFrameworkAdapter.A2A.OpenClawA2AExecutionRequest
+                {
+                    SessionId = "owned-a2a",
+                    ChannelId = "a2a",
+                    SenderId = "ctx",
+                    UserText = "hello"
+                },
+                (evt, _) =>
+                {
+                    events.Add(evt);
+                    return ValueTask.CompletedTask;
+                },
+                CancellationToken.None);
+        }
+        finally
+        {
+            A2ACallerContext.AccountId = null;
+        }
+
+        harness.Runtime.AgentRuntime.DidNotReceiveWithAnyArgs().RunStreamingAsync(default!, default!, default);
+        Assert.Contains(events, evt => evt.Type == AgentStreamEventType.Error && evt.Content == SessionAccess.DeniedMessage);
+    }
+
+    [Fact]
+    public async Task ChatCompletions_WhenAccountToken_ShouldRecordSessionOwner()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "openai-owner", OperatorRoleNames.Operator);
+        Session? ran = null;
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns(callInfo =>
+            {
+                ran = callInfo.Arg<Session>();
+                return Task.FromResult("ok");
+            });
+
+        await SendChatCompletionAsync(harness, token);
+
+        Assert.Equal(accountId, ran?.OwnerAccountId);
+    }
+
+    [Fact]
+    public async Task IntegrationSessions_WhenOwnerIsMe_ShouldListOnlyCallerOwnedSessions()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "list-owner", OperatorRoleNames.Viewer);
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync("mine-active", "agentqi-mobile", "me", CancellationToken.None, ownerAccountId: accountId);
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync("theirs-active", "agentqi-mobile", "them", CancellationToken.None, ownerAccountId: "acct-someone-else");
+        await harness.MemoryStore.SaveSessionAsync(new Session { Id = "mine-stored", ChannelId = "agentqi-mobile", SenderId = "me", OwnerAccountId = accountId }, CancellationToken.None);
+        await harness.MemoryStore.SaveSessionAsync(new Session { Id = "unowned-stored", ChannelId = "telegram", SenderId = "t" }, CancellationToken.None);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/integration/sessions?owner=me");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        var active = payload.RootElement.GetProperty("active").EnumerateArray().Select(static item => item.GetProperty("id").GetString()!).ToArray();
+        var persisted = payload.RootElement.GetProperty("persisted").GetProperty("items").EnumerateArray().Select(static item => item.GetProperty("id").GetString()!).ToArray();
+        Assert.Equal(["mine-active"], active);
+        Assert.Equal(["mine-stored"], persisted);
+        Assert.Equal(accountId, payload.RootElement.GetProperty("active")[0].GetProperty("ownerAccountId").GetString());
+    }
+
     private static async IAsyncEnumerable<AgentStreamEvent> NoAgentEvents()
     {
         await Task.CompletedTask;

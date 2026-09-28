@@ -45,17 +45,17 @@ public sealed class SessionManager : IAsyncDisposable, IDisposable
     /// Get or create a session for the given channel+sender pair.
     /// Session key is deterministic: channelId:senderId
     /// </summary>
-    public async ValueTask<Session> GetOrCreateAsync(string channelId, string senderId, CancellationToken ct)
+    public async ValueTask<Session> GetOrCreateAsync(string channelId, string senderId, CancellationToken ct, string? ownerAccountId = null)
     {
         var key = string.Concat(channelId, ":", senderId);
-        return await GetOrCreateByIdAsync(key, channelId, senderId, ct);
+        return await GetOrCreateByIdAsync(key, channelId, senderId, ct, ownerAccountId);
     }
 
     /// <summary>
     /// Get or create a session for an explicit session id. Useful for cron jobs and webhooks
     /// that want stable, named sessions independent of channel+sender.
     /// </summary>
-    public async ValueTask<Session> GetOrCreateByIdAsync(string sessionId, string channelId, string senderId, CancellationToken ct)
+    public async ValueTask<Session> GetOrCreateByIdAsync(string sessionId, string channelId, string senderId, CancellationToken ct, string? ownerAccountId = null)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
             throw new ArgumentException("sessionId must be set.", nameof(sessionId));
@@ -109,6 +109,7 @@ public sealed class SessionManager : IAsyncDisposable, IDisposable
                 Id = key,
                 ChannelId = channelId,
                 SenderId = senderId,
+                OwnerAccountId = string.IsNullOrWhiteSpace(ownerAccountId) ? null : ownerAccountId,
                 LastActiveAt = now
             };
 

@@ -135,6 +135,28 @@ public sealed class WebSocketChannelTests
     }
 
     [Fact]
+    public async Task HandleConnectionAsync_WhenCallerIsAdmin_ShouldMarkMessagesAsAdmin()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });
+        var ws = new TestWebSocket();
+        ws.QueueReceiveText("hello");
+        ws.QueueClose();
+
+        InboundMessage? received = null;
+        channel.OnMessageReceived += (msg, _) =>
+        {
+            received = msg;
+            return ValueTask.CompletedTask;
+        };
+
+        await channel.HandleConnectionAsync(ws, "client", IPAddress.Loopback, TestContext.Current.CancellationToken, authenticatedUserId: "acct-admin", authenticatedUserIsAdmin: true);
+
+        Assert.NotNull(received);
+        Assert.Equal("acct-admin", received!.AuthenticatedUserId);
+        Assert.True(received.AuthenticatedUserIsAdmin);
+    }
+
+    [Fact]
     public async Task HandleConnectionAsync_AcceptsLegacyContentEnvelope()
     {
         var channel = new WebSocketChannel(new WebSocketConfig { MaxMessageBytes = 1024 });

@@ -313,10 +313,23 @@ internal sealed class GatewayInboundMessageWorker
                             var resolvedRoute = routeResolver?.Resolve(msg.ChannelId, msg.SenderId);
 
                             session = msg.SessionId is not null
-                                ? await sessionManager.GetOrCreateByIdAsync(msg.SessionId, msg.ChannelId, conversationRecipientId, lifetime.ApplicationStopping)
-                                : await sessionManager.GetOrCreateAsync(msg.ChannelId, conversationRecipientId, lifetime.ApplicationStopping);
+                                ? await sessionManager.GetOrCreateByIdAsync(msg.SessionId, msg.ChannelId, conversationRecipientId, lifetime.ApplicationStopping, msg.AuthenticatedUserId)
+                                : await sessionManager.GetOrCreateAsync(msg.ChannelId, conversationRecipientId, lifetime.ApplicationStopping, msg.AuthenticatedUserId);
                             if (session is null)
                                 throw new InvalidOperationException("Session manager returned null session.");
+
+                            if (!SessionAccess.CanWrite(session, msg.AuthenticatedUserId, msg.AuthenticatedUserIsAdmin))
+                            {
+                                await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
+                                {
+                                    ChannelId = msg.ChannelId,
+                                    RecipientId = conversationRecipientId,
+                                    AccountId = msg.AccountId,
+                                    Text = SessionAccess.DeniedMessage,
+                                    ReplyToMessageId = msg.MessageId
+                                }, lifetime.ApplicationStopping);
+                                continue;
+                            }
 
                             // Abort intercept: handle /stop, /cancel, /abort BEFORE acquiring the session lock
                             // so the abort does not wait for the in-flight execution to release the lock.

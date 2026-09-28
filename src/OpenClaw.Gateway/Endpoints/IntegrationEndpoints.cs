@@ -1,5 +1,6 @@
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Sessions;
 using System.Text.Json;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
@@ -185,7 +186,24 @@ internal static class IntegrationEndpoints
             var starred = GetQueryBool(ctx, "starred");
             var tag = GetOptionalQueryString(ctx, "tag");
 
-            var query = IntegrationApiFacade.BuildSessionQuery(search, channelId, senderId, fromUtc, toUtc, state, starred, tag);
+            // owner=me lists the caller's own sessions; callers without an account (bootstrap, open loopback) own none.
+            string? ownerAccountId = null;
+            if (string.Equals(GetOptionalQueryString(ctx, "owner"), "me", StringComparison.OrdinalIgnoreCase))
+            {
+                ownerAccountId = EndpointHelpers.ResolveAuthenticatedAccountId(ctx, startup);
+                if (ownerAccountId is null)
+                {
+                    return Results.Json(
+                        new IntegrationSessionsResponse
+                        {
+                            Filters = new SessionListQuery(),
+                            Persisted = new PagedSessionList { Page = page, PageSize = pageSize, HasMore = false, Items = [] }
+                        },
+                        CoreJsonContext.Default.IntegrationSessionsResponse);
+                }
+            }
+
+            var query = IntegrationApiFacade.BuildSessionQuery(search, channelId, senderId, fromUtc, toUtc, state, starred, tag, ownerAccountId);
             return Results.Json(
                 await facade.ListSessionsAsync(page, pageSize, query, ctx.RequestAborted),
                 CoreJsonContext.Default.IntegrationSessionsResponse);
@@ -848,8 +866,17 @@ internal static class IntegrationEndpoints
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
+            var caller = EndpointHelpers.ResolveCaller(ctx, startup);
+            if (!await facade.CanWriteSessionAsync(request, caller.AccountId, caller.IsAdmin, ctx.RequestAborted))
+            {
+                return Results.Json(
+                    new OperationStatusResponse { Success = false, Error = SessionAccess.DeniedMessage },
+                    CoreJsonContext.Default.OperationStatusResponse,
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
             return Results.Json(
-                await facade.QueueMessageAsync(request, ctx.RequestAborted, EndpointHelpers.ResolveAuthenticatedAccountId(ctx, startup)),
+                await facade.QueueMessageAsync(request, ctx.RequestAborted, caller.AccountId, caller.IsAdmin),
                 CoreJsonContext.Default.IntegrationMessageResponse,
                 statusCode: StatusCodes.Status202Accepted);
         });

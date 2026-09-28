@@ -20,6 +20,7 @@ public sealed class SessionSummary
     public string? BackgroundRunObjective { get; init; }
     public int BackgroundContinuationCount { get; init; }
     public bool IsActive { get; init; }
+    public string? OwnerAccountId { get; init; }
 }
 
 public sealed class PagedSessionList
@@ -41,4 +42,5 @@ public sealed class SessionListQuery
     public SessionState? State { get; init; }
     public bool? Starred { get; init; }
     public string? Tag { get; init; }
+    public string? OwnerAccountId { get; init; }
 }

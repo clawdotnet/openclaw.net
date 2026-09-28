@@ -86,7 +86,8 @@ internal static partial class AdminEndpoints
                     RunState = session.RunState,
                     BackgroundRunObjective = session.BackgroundRun?.Objective,
                     BackgroundContinuationCount = session.BackgroundRun?.ContinuationCount ?? 0,
-                    IsActive = true
+                    IsActive = true,
+                    OwnerAccountId = session.OwnerAccountId
                 })
                 .ToArray();
 

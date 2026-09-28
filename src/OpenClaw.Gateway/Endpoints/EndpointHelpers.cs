@@ -405,19 +405,36 @@ internal static class EndpointHelpers
     /// Null for open loopback and bootstrap callers, which have no account and are admin-equivalent.
     /// </summary>
     public static string? ResolveAuthenticatedAccountId(HttpContext ctx, GatewayStartupContext startup)
+        => ResolveCaller(ctx, startup).AccountId;
+
+    internal readonly record struct CallerAccount(string? AccountId, bool IsAdmin);
+
+    /// <summary>
+    /// The signed-in account behind a request and whether it holds the admin role, which may write to sessions
+    /// owned by other accounts. Open loopback and bootstrap callers have no account and count as admin.
+    /// </summary>
+    internal static CallerAccount ResolveCaller(HttpContext ctx, GatewayStartupContext startup)
     {
         var browserSessions = ctx.RequestServices.GetRequiredService<BrowserSessionAuthService>();
         var auth = AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
-        return auth.IsAuthorized && !string.IsNullOrWhiteSpace(auth.AccountId) ? auth.AccountId : null;
+        if (!auth.IsAuthorized)
+            return default;
+
+        return new CallerAccount(
+            string.IsNullOrWhiteSpace(auth.AccountId) ? null : auth.AccountId,
+            auth.IsBootstrapAdmin || OperatorRoleNames.CanAccess(auth.Role, OperatorRoleNames.Admin));
     }
 
-    public static async Task WriteOperatorRoleRequiredAsync(HttpContext ctx)
+    public static Task WriteOperatorRoleRequiredAsync(HttpContext ctx)
+        => WriteForbiddenAsync(ctx, OperatorRoleRequiredMessage);
+
+    public static async Task WriteForbiddenAsync(HttpContext ctx, string error)
     {
         ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
         ctx.Response.ContentType = "application/json";
         await JsonSerializer.SerializeAsync(
             ctx.Response.Body,
-            new OperationStatusResponse { Success = false, Error = OperatorRoleRequiredMessage },
+            new OperationStatusResponse { Success = false, Error = error },
             CoreJsonContext.Default.OperationStatusResponse,
             ctx.RequestAborted);
     }

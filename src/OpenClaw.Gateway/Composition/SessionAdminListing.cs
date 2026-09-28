@@ -27,6 +27,10 @@ internal static class SessionAdminQuery
         if (query.State is { } state && session.State != state)
             return false;
 
+        if (!string.IsNullOrWhiteSpace(query.OwnerAccountId) &&
+            !string.Equals(session.OwnerAccountId, query.OwnerAccountId, StringComparison.Ordinal))
+            return false;
+
         var metadata = metadataById.TryGetValue(session.Id, out var storedMetadata)
             ? storedMetadata
             : new SessionMetadataSnapshot { SessionId = session.Id, Starred = false, Tags = [] };
@@ -75,6 +79,10 @@ internal static class SessionAdminQuery
             return false;
 
         if (query.State is { } state && summary.State != state)
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(query.OwnerAccountId) &&
+            !string.Equals(summary.OwnerAccountId, query.OwnerAccountId, StringComparison.Ordinal))
             return false;
 
         var metadata = metadataById.TryGetValue(summary.Id, out var storedMetadata)
