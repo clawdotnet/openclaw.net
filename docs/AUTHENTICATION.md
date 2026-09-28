@@ -16,6 +16,7 @@ Authentication configuration lives under the `OpenClaw.Security` node in `appset
 |-------|------|---------|-------------|
 | `AuthToken` | `string?` | `null` | Static bootstrap token. When `null`, bootstrap auth is disabled |
 | `AlwaysRequireAuth` | `bool` | `false` | When `true`, even loopback-bound requests must carry valid credentials |
+| `AllowViewerAgentExecution` | `bool` | `false` | **Temporary, to be removed in the next release.** When `true`, identities below `operator` can still run the agent (see [3.3](#33-role-required-for-agent-execution)). Each such request is logged and `admin posture` reports the risk |
 | `AuthMode` | `string` | `"token"` | Authentication mode: `"token"` or `"oidc"` |
 | `AllowQueryStringToken` | `bool` | `false` | Whether to accept tokens from the `?token=` query string parameter |
 | `BrowserSessionIdleMinutes` | `int` | `60` | Idle timeout for browser admin sessions (minutes) |
@@ -130,7 +131,7 @@ Request enters
 
 ### 3.2 WebSocket Authentication Flow
 
-WebSocket endpoints (`/ws`, `/ws/live`) use a two-phase authentication flow:
+WebSocket endpoints (`/ws`, `/ws/live`) authenticate in Phase 1. `/ws` then applies the chat role check (Phase 2) and resolves the user ID (Phase 3):
 
 **Phase 1: `TryValidateWebSocketRequest` → `IsAuthorizedRequest`**
 
@@ -148,7 +149,24 @@ WebSocket request (/ws)
   └─ Passed ──→ Accept WebSocket connection
 ```
 
-**Phase 2: `TryResolveAuthorizedUserIdForWebSocket`**
+**Phase 2 (`/ws` only): `EndpointHelpers.CanExecuteAgent`**
+
+Every `/ws` frame becomes agent input, so the connection needs the same `operator` role as `POST /api/integration/messages`. The role is resolved through `AuthorizeOperatorRequest`, the same chain the HTTP API uses:
+
+```
+WebSocket accepted (/ws)
+  │
+  ├─ Role below operator, or identity not allowed by organization policy?
+  │     ── yes ──→ close 1008 (PolicyViolation) "Chat requires the operator role."
+  │
+  └─ Passed ──→ Phase 3
+```
+
+The connection is accepted and then closed, rather than rejected with 403 during the handshake. Browsers cannot read a failed handshake's status code, but web chat treats close code 1008 as an authorization failure and stops reconnecting.
+
+This applies to OIDC identities too. A JWT without the configured `RoleClaim` resolves to `viewer` and cannot chat, so grant `operator` through the claim to users who should use web chat.
+
+**Phase 3: `TryResolveAuthorizedUserIdForWebSocket`**
 
 ```
 WebSocket connected
@@ -160,7 +178,24 @@ WebSocket connected
   └─ Call AuthorizeOperatorRequest() ──→ extract AccountId as userId
 ```
 
-### 3.3 `IsAuthorizedRequest` — Detailed Logic
+### 3.3 Role Required for Agent Execution
+
+`IsAuthorizedRequest` only establishes that a caller is authenticated. Surfaces that turn a request into agent input or another mutation also require the `operator` role, the same role as `POST /api/integration/messages`, through `EndpointHelpers.CanExecuteAgent`:
+
+| Surface | Below operator |
+|---------|----------------|
+| `/ws` | Accepted, then closed with 1008 (PolicyViolation) |
+| `POST /v1/chat/completions`, `POST /v1/responses` | 403 with an OpenAI-style `permission_error` body |
+| A2A execution paths (discovery stays public) | 403 |
+| `POST /apps/chat` | 403 |
+| `/apps/mcp/{appId}` `tools/call` | Tool error result; listing and reading App tools and resources stay available |
+| MCP `openclaw.send_message`, `openclaw.run_workflow`, `openclaw.respond_workflow` | Tool error result; read-only MCP tools stay available to viewers |
+
+Bootstrap tokens and open loopback resolve to `admin` and are unaffected. New operator accounts default to `viewer`, so accounts used for Companion, CLI/TUI chat, or API clients need the `operator` role.
+
+Each denial is logged as a warning under the `OpenClaw.Gateway.Authorization` category, naming the surface, auth mode, account, and role (never the credential), so admins can find the accounts to promote. To migrate without an outage, set `OpenClaw:Security:AllowViewerAgentExecution=true`, watch the log for the admitted accounts, grant them `operator`, then turn the setting off. The setting is temporary and will be removed in the next release.
+
+### 3.4 `IsAuthorizedRequest` — Detailed Logic
 
 ```csharp
 // Step 1: Loopback exemption

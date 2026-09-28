@@ -1,3 +1,4 @@
+using System.Net.WebSockets;
 using OpenClaw.Client;
 using Xunit;
 
@@ -53,5 +54,36 @@ public sealed class OpenClawWebSocketClientTests
 
         Assert.Equal(["first", "second"], received);
         Assert.Equal("boom", error);
+    }
+
+    [Fact]
+    public async Task ReceiveLoop_WhenServerCloses_ShouldRaiseOnClosedWithStatusAndReason()
+    {
+        var client = new OpenClawWebSocketClient();
+        var ws = new TestWebSocket();
+        ws.QueueClose(WebSocketCloseStatus.PolicyViolation, "This action requires the operator role.");
+        (WebSocketCloseStatus? Status, string? Reason)? closed = null;
+        client.OnClosed += (status, reason) => closed = (status, reason);
+
+        await client.RunReceiveLoopForTest(ws, TestContext.Current.CancellationToken);
+
+        Assert.Equal((WebSocketCloseStatus.PolicyViolation, "This action requires the operator role."), closed);
+    }
+
+    [Fact]
+    public async Task ReceiveLoop_WhenCancelledByClient_ShouldNotRaiseOnClosed()
+    {
+        var client = new OpenClawWebSocketClient();
+        var ws = new TestWebSocket();
+        ws.BlockReceiveUntilCancelled();
+        var raised = false;
+        client.OnClosed += (_, _) => raised = true;
+        using var cts = new CancellationTokenSource();
+
+        var loop = client.RunReceiveLoopForTest(ws, cts.Token);
+        await cts.CancelAsync();
+        await loop;
+
+        Assert.False(raised);
     }
 }

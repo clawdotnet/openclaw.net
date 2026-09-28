@@ -47,6 +47,12 @@ internal static class AppsEndpoints
                 return;
             }
 
+            if (!EndpointHelpers.CanExecuteAgent(ctx, startup))
+            {
+                await EndpointHelpers.WriteOperatorRoleRequiredAsync(ctx);
+                return;
+            }
+
             JsonNode? body;
             try
             {
@@ -117,14 +123,10 @@ internal static class AppsEndpoints
         });
     }
 
+    // Local trust follows the bind address, as on every other endpoint. A loopback client IP is not an
+    // identity: behind a same-host reverse proxy every caller has one, and it would bypass AlwaysRequireAuth.
     private static bool AppsAuthorized(HttpContext ctx, GatewayStartupContext startup)
-    {
-        var ip = ctx.Connection.RemoteIpAddress;
-        if (ip is not null && System.Net.IPAddress.IsLoopback(ip))
-            return true;
-
-        return EndpointHelpers.IsAuthorizedRequest(ctx, startup.Config, startup.IsNonLoopbackBind);
-    }
+        => EndpointHelpers.IsAuthorizedRequest(ctx, startup.Config, startup.IsNonLoopbackBind);
 
     private static string? AsString(JsonNode? node)
         => node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;

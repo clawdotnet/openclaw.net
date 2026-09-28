@@ -18,6 +18,7 @@ using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Security;
+using OpenClaw.Gateway;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
@@ -179,6 +180,7 @@ public sealed class AppsEndpointsTests : IAsyncDisposable
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseTestServer();
         builder.Services.AddOpenClawMcpAppServices(config.McpApps);
+        builder.Services.AddSingleton(new BrowserSessionAuthService(config));
 
         var runtime = CreateRuntime(config, agentRuntime);
         var app = builder.Build();

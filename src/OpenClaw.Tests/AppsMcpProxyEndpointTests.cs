@@ -9,8 +9,10 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Plugins;
+using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Endpoints;
+using OpenClaw.Gateway.Mcp;
 using OpenClaw.McpApp;
 using OpenClaw.McpApp.Models;
 using Xunit;
@@ -21,6 +23,7 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
 {
     private readonly List<WebApplication> _apps = [];
     private readonly List<string> _tempDirs = [];
+    private int _upstreamToolCalls;
 
     [Fact]
     public void GatewayConfig_McpCompatibility_Defaults_AreStrictAndDiscoveryFirst()
@@ -62,6 +65,78 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
         Assert.NotNull(result.StructuredContent);
         var doc = result.StructuredContent!.Value;
         Assert.Equal("abc123", doc.GetProperty("sessionId").GetString());
+    }
+
+    [Fact]
+    public async Task CallTool_WhenViewerAccountToken_ShouldReturnOperatorErrorWithoutCallingUpstream()
+    {
+        var upstreamUrl = await StartFakeUpstreamAsync();
+        await using var gateway = await StartGatewayWithProxyAsync("inventory-app", upstreamUrl, nonLoopbackBind: true);
+        await using var mcpClient = await CreateProxyClientAsync(gateway, CreateAccountToken(gateway, OperatorRoleNames.Viewer));
+
+        var result = await mcpClient.CallToolAsync("echo_session", cancellationToken: CancellationToken.None);
+
+        Assert.True(result.IsError);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content)).Text;
+        Assert.Contains("operator", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, _upstreamToolCalls);
+    }
+
+    [Fact]
+    public async Task ToolsList_WhenViewerAccountToken_ShouldStillPassThrough()
+    {
+        var upstreamUrl = await StartFakeUpstreamAsync();
+        await using var gateway = await StartGatewayWithProxyAsync("inventory-app", upstreamUrl, nonLoopbackBind: true);
+        await using var mcpClient = await CreateProxyClientAsync(gateway, CreateAccountToken(gateway, OperatorRoleNames.Viewer));
+
+        var tools = await mcpClient.ListToolsAsync(cancellationToken: CancellationToken.None);
+
+        Assert.Contains(tools, t => t.Name == "echo_session");
+    }
+
+    [Fact]
+    public async Task CallTool_WhenOperatorAccountToken_ShouldReachUpstream()
+    {
+        var upstreamUrl = await StartFakeUpstreamAsync();
+        await using var gateway = await StartGatewayWithProxyAsync("inventory-app", upstreamUrl, nonLoopbackBind: true);
+        await using var mcpClient = await CreateProxyClientAsync(gateway, CreateAccountToken(gateway, OperatorRoleNames.Operator));
+
+        var result = await mcpClient.CallToolAsync("echo_session", cancellationToken: CancellationToken.None);
+
+        Assert.NotEqual(true, result.IsError);
+        Assert.Equal(1, _upstreamToolCalls);
+    }
+
+    [Fact]
+    public async Task CallTool_WhenBrowserSessionOmitsCsrf_ShouldReturnOperatorErrorWithoutCallingUpstream()
+    {
+        var upstreamUrl = await StartFakeUpstreamAsync();
+        await using var gateway = await StartGatewayWithProxyAsync("inventory-app", upstreamUrl, nonLoopbackBind: true);
+        var browserSessions = gateway.App.Services.GetRequiredService<BrowserSessionAuthService>();
+        var ticket = browserSessions.Create(remember: false);
+        await using var mcpClient = await CreateBrowserSessionProxyClientAsync(gateway, ticket, includeCsrf: false);
+
+        var result = await mcpClient.CallToolAsync("echo_session", cancellationToken: CancellationToken.None);
+
+        Assert.True(result.IsError);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content)).Text;
+        Assert.Contains("operator", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, _upstreamToolCalls);
+    }
+
+    [Fact]
+    public async Task CallTool_WhenBrowserSessionIncludesCsrf_ShouldReachUpstream()
+    {
+        var upstreamUrl = await StartFakeUpstreamAsync();
+        await using var gateway = await StartGatewayWithProxyAsync("inventory-app", upstreamUrl, nonLoopbackBind: true);
+        var browserSessions = gateway.App.Services.GetRequiredService<BrowserSessionAuthService>();
+        var ticket = browserSessions.Create(remember: false);
+        await using var mcpClient = await CreateBrowserSessionProxyClientAsync(gateway, ticket, includeCsrf: true);
+
+        var result = await mcpClient.CallToolAsync("echo_session", cancellationToken: CancellationToken.None);
+
+        Assert.NotEqual(true, result.IsError);
+        Assert.Equal(1, _upstreamToolCalls);
     }
 
     [Fact]
@@ -139,6 +214,23 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
         Assert.Equal(JsonValueKind.Object, tasksCapability.ValueKind);
     }
 
+    [Theory]
+    [InlineData("openclaw.run_workflow")]
+    [InlineData("openclaw.respond_workflow")]
+    [InlineData("openclaw.send_message")]
+    public void GatewayMcpServer_MutatingTools_RunSynchronously(string toolName)
+        => Assert.Equal(McpTaskExecutionMode.Synchronous, McpServiceExtensions.GetTaskExecutionMode(toolName));
+
+    [Fact]
+    public void GatewayMcpServer_ReadOnlyTools_RemainTaskCapable()
+        => Assert.Equal(McpTaskExecutionMode.Optional, McpServiceExtensions.GetTaskExecutionMode("openclaw.get_status"));
+
+    [Fact]
+    public void GatewayMcpServer_DynamicAppTools_RunSynchronously()
+        => Assert.Equal(
+            McpTaskExecutionMode.Synchronous,
+            McpServiceExtensions.GetTaskExecutionMode("echo_session", hasMatchedPrimitive: false));
+
     private async Task<string> StartFakeUpstreamAsync()
     {
         var builder = WebApplication.CreateSlimBuilder();
@@ -158,6 +250,7 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
             }))
             .WithCallToolHandler((ctx, _) =>
             {
+                Interlocked.Increment(ref _upstreamToolCalls);
                 var sessionId = ctx.Params?.Meta?["sessionId"]?.ToString();
                 return ValueTask.FromResult(new CallToolResult
                 {
@@ -173,7 +266,59 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
         return $"{app.Urls.Single().TrimEnd('/')}/mcp";
     }
 
-    private async Task<GatewayProxyTestHarness> StartGatewayWithProxyAsync(string appId, string upstreamUrl)
+    private static string CreateAccountToken(GatewayProxyTestHarness gateway, string role)
+    {
+        var accounts = gateway.App.Services.GetRequiredService<OperatorAccountService>();
+        var account = accounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "proxy-" + role,
+            Password = "P@ssw0rd123!",
+            Role = role
+        });
+        return accounts.CreateToken(account.Id, new OperatorAccountTokenCreateRequest { Label = role })!.Token;
+    }
+
+    private static Task<McpClient> CreateProxyClientAsync(GatewayProxyTestHarness gateway, string bearerToken)
+        => McpClient.CreateAsync(
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri($"{gateway.BaseAddress}apps/mcp/inventory-app"),
+                AdditionalHeaders = new Dictionary<string, string> { ["Authorization"] = $"Bearer {bearerToken}" }
+            }),
+            cancellationToken: CancellationToken.None);
+
+    private static Task<McpClient> CreateBrowserSessionProxyClientAsync(
+        GatewayProxyTestHarness gateway,
+        BrowserSessionTicket ticket,
+        bool includeCsrf)
+    {
+        var headers = new Dictionary<string, string>
+        {
+            ["Cookie"] = $"{BrowserSessionAuthService.CookieName}={ticket.SessionId}"
+        };
+        if (includeCsrf)
+            headers[BrowserSessionAuthService.CsrfHeaderName] = ticket.CsrfToken;
+
+        return McpClient.CreateAsync(
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri($"{gateway.BaseAddress}apps/mcp/inventory-app"),
+                AdditionalHeaders = headers
+            }),
+            cancellationToken: CancellationToken.None);
+    }
+
+    // Mirrors the production registrations the proxy's authorization depends on.
+    private static void AddGatewayAuthServices(IServiceCollection services, GatewayConfig config, GatewayStartupContext startup, string storagePath)
+    {
+        services.AddSingleton(startup);
+        services.AddHttpContextAccessor();
+        services.AddSingleton(new BrowserSessionAuthService(config));
+        services.AddSingleton(new OperatorAccountService(storagePath, NullLogger<OperatorAccountService>.Instance));
+        services.AddSingleton(new OrganizationPolicyService(storagePath, NullLogger<OrganizationPolicyService>.Instance));
+    }
+
+    private async Task<GatewayProxyTestHarness> StartGatewayWithProxyAsync(string appId, string upstreamUrl, bool nonLoopbackBind = false)
     {
         var root = Path.Combine(Path.GetTempPath(), "openclaw-apps-proxy-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -207,13 +352,14 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
         {
             Config = config,
             RuntimeState = RuntimeModeResolver.Resolve(config.Runtime),
-            IsNonLoopbackBind = false,
+            IsNonLoopbackBind = nonLoopbackBind,
             WorkspacePath = null,
         };
 
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Services.AddOpenClawMcpAppServices(config.McpApps);
+        AddGatewayAuthServices(builder.Services, config, startup, root);
         builder.Services.AddMcpServer(options =>
             {
                 options.ServerInfo = new Implementation { Name = "OpenClaw Gateway MCP", Version = "1.0.0" };
@@ -275,6 +421,7 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Services.AddOpenClawMcpAppServices(config.McpApps);
+        AddGatewayAuthServices(builder.Services, config, startup, root);
         builder.Services.AddMcpServer(options =>
             {
                 options.ServerInfo = new Implementation { Name = "OpenClaw Gateway MCP", Version = "1.0.0" };

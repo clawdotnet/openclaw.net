@@ -16,6 +16,7 @@ OpenClaw.NET Gateway 支持多层认证体系，涵盖静态令牌、OIDC/JWT Be
 |------|------|--------|------|
 | `AuthToken` | `string?` | `null` | 静态 Bootstrap 令牌。`null` 时禁用 Bootstrap 认证 |
 | `AlwaysRequireAuth` | `bool` | `false` | `true` 时，即使是 loopback 绑定也需要认证 |
+| `AllowViewerAgentExecution` | `bool` | `false` | **临时设置，将在下一个版本移除。** `true` 时，低于 `operator` 的身份仍可执行智能体（见 3.3 节）。每个此类请求都会记录日志，`admin posture` 也会报告该风险 |
 | `AuthMode` | `string` | `"token"` | 认证模式：`"token"` 或 `"oidc"` |
 | `AllowQueryStringToken` | `bool` | `false` | 是否允许从查询字符串 `?token=` 读取令牌 |
 | `BrowserSessionIdleMinutes` | `int` | `60` | 浏览器会话空闲超时（分钟） |
@@ -130,7 +131,7 @@ HTTP API 端点使用 `AuthorizeOperatorRequest` 方法（[EndpointHelpers.cs](.
 
 ### 3.2 WebSocket 认证流程
 
-WebSocket 端点 (`/ws`, `/ws/live`) 使用两步认证流程：
+WebSocket 端点 (`/ws`, `/ws/live`) 在第一步完成认证；`/ws` 随后执行聊天角色检查（第二步）并解析用户 ID（第三步）：
 
 **第一步：`TryValidateWebSocketRequest` → `IsAuthorizedRequest`**
 
@@ -148,7 +149,24 @@ WebSocket 请求 (/ws)
   └─ 通过 ──→ 接受 WebSocket 连接
 ```
 
-**第二步：`TryResolveAuthorizedUserIdForWebSocket`**
+**第二步（仅 `/ws`）：`EndpointHelpers.CanExecuteAgent`**
+
+每个 `/ws` 帧都会成为智能体输入，因此连接需要与 `POST /api/integration/messages` 相同的 `operator` 角色。角色通过 `AuthorizeOperatorRequest` 解析，与 HTTP API 使用同一认证链：
+
+```
+WebSocket 已接受 (/ws)
+  │
+  ├─ 角色低于 operator，或身份不被组织策略允许？
+  │     ── 是 ──→ 关闭 1008 (PolicyViolation) "Chat requires the operator role."
+  │
+  └─ 通过 ──→ 第三步
+```
+
+连接会先被接受再关闭，而不是在握手阶段返回 403。浏览器无法读取握手失败的状态码，而 Web Chat 会将关闭码 1008 视为授权失败并停止重连。
+
+OIDC 身份同样适用。缺少所配置 `RoleClaim` 的 JWT 会解析为 `viewer`，无法聊天；请通过该声明为需要使用 Web Chat 的用户授予 `operator` 角色。
+
+**第三步：`TryResolveAuthorizedUserIdForWebSocket`**
 
 ```
 WebSocket 已连接
@@ -160,7 +178,24 @@ WebSocket 已连接
   └─ 调用 AuthorizeOperatorRequest() ──→ 提取 AccountId 作为 userId
 ```
 
-### 3.3 `IsAuthorizedRequest` 详细逻辑
+### 3.3 智能体执行所需角色
+
+`IsAuthorizedRequest` 只确认调用方已通过认证。会把请求变为智能体输入或其他变更的入口，还需要 `operator` 角色（与 `POST /api/integration/messages` 相同），由 `EndpointHelpers.CanExecuteAgent` 检查：
+
+| 入口 | 角色低于 operator 时 |
+|------|----------------------|
+| `/ws` | 先接受，再以 1008 (PolicyViolation) 关闭 |
+| `POST /v1/chat/completions`、`POST /v1/responses` | 403，返回 OpenAI 风格的 `permission_error` 响应体 |
+| A2A 执行路径（发现端点仍然公开） | 403 |
+| `POST /apps/chat` | 403 |
+| `/apps/mcp/{appId}` 的 `tools/call` | 返回工具错误结果；列出和读取 App 工具与资源仍可用 |
+| MCP `openclaw.send_message`、`openclaw.run_workflow`、`openclaw.respond_workflow` | 返回工具错误结果；只读 MCP 工具对 viewer 仍可用 |
+
+引导令牌和开放回环会解析为 `admin`，不受影响。新建的操作员账户默认为 `viewer`，因此用于 Companion、CLI/TUI 聊天或 API 客户端的账户需要 `operator` 角色。
+
+每次拒绝都会在 `OpenClaw.Gateway.Authorization` 类别下记录一条警告日志，包含入口、认证方式、账户和角色（绝不包含凭据），便于管理员找出需要提升角色的账户。如需无中断迁移，可设置 `OpenClaw:Security:AllowViewerAgentExecution=true`，从日志中找出被放行的账户，为其授予 `operator` 角色，然后关闭该设置。该设置是临时的，将在下一个版本移除。
+
+### 3.4 `IsAuthorizedRequest` 详细逻辑
 
 ```csharp
 // 第 1 步：Loopback 豁免

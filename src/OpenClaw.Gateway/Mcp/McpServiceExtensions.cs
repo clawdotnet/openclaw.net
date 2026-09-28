@@ -23,6 +23,8 @@ internal static class McpServiceExtensions
         GatewayStartupContext startup)
     {
         services.TryAddSingleton<GatewayRuntimeHolder>();
+        // Mutating MCP tools check the caller's role; HTTP handlers run in the request's execution context.
+        services.AddHttpContextAccessor();
 
         services.AddSingleton<IntegrationApiFacade>(sp =>
         {
@@ -45,13 +47,25 @@ internal static class McpServiceExtensions
                     && !startup.Config.McpCompatibility.ForceLegacyInitialize;
                 options.ConfigureSessionOptions = AppsMcpProxyEndpoint.ConfigureSessionOptionsAsync;
             })
-            .WithTasks(new InMemoryMcpTaskStore())
+            .WithTasks(new InMemoryMcpTaskStore(), options =>
+            {
+                options.ExecutionModeSelector = request => GetTaskExecutionMode(
+                    request.Params?.Name,
+                    hasMatchedPrimitive: request.MatchedPrimitive is not null);
+            })
             .WithTools<OpenClawMcpTools>()
             .WithResources<OpenClawMcpResources>()
             .WithPrompts<OpenClawMcpPrompts>();
 
         return services;
     }
+
+    internal static McpTaskExecutionMode GetTaskExecutionMode(string? toolName, bool hasMatchedPrimitive = true)
+        => !hasMatchedPrimitive || toolName is "openclaw.run_workflow"
+            or "openclaw.respond_workflow"
+            or "openclaw.send_message"
+            ? McpTaskExecutionMode.Synchronous
+            : McpTaskExecutionMode.Optional;
 
     /// <summary>
     /// Populates <see cref="GatewayRuntimeHolder.Runtime"/> after the runtime is created.

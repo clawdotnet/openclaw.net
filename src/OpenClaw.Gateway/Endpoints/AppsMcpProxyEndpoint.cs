@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using OpenClaw.Gateway.Bootstrap;
@@ -53,6 +54,9 @@ internal static class AppsMcpProxyEndpoint
             return;
         }
 
+        var startup = httpContext.RequestServices.GetRequiredService<GatewayStartupContext>();
+        var httpContextAccessor = httpContext.RequestServices.GetService<IHttpContextAccessor>();
+
         sessionOptions.Handlers.ListToolsHandler = async (ctx, ct2) =>
             await upstream.ListToolsAsync(ctx.Params ?? new ListToolsRequestParams(), ct2);
 
@@ -65,6 +69,19 @@ internal static class AppsMcpProxyEndpoint
         sessionOptions.Handlers.CallToolHandler = async (ctx, ct2) =>
         {
             var callParams = ctx.Params!;
+
+            // App tools can change state and share the agent's upstream session, so calling them needs the same
+            // operator role as /apps/chat, the host these UIs run in. Listing and reading stay open to viewers.
+            // Check the current request rather than the one that opened a stateful session. Dynamic App tools
+            // run synchronously so the request context remains available; if it is ever absent, fail closed.
+            var caller = httpContextAccessor?.HttpContext;
+            if (caller is null || !EndpointHelpers.CanExecuteAgent(
+                    caller,
+                    startup,
+                    $"MCP App tool {serverId}/{callParams.Name}",
+                    requireCsrf: true))
+                throw new McpException(EndpointHelpers.OperatorRoleRequiredMessage);
+
             if (!string.IsNullOrEmpty(sessionId))
             {
                 callParams.Meta ??= new JsonObject();
@@ -81,11 +98,9 @@ internal static class AppsMcpProxyEndpoint
     {
         app.MapMcp("/apps/mcp/{serverId}").AddEndpointFilter(async (ctx, next) =>
         {
+            // Same bind-based rule as AppsEndpoints: a loopback client IP alone is not trusted.
             var httpContext = ctx.HttpContext;
-            var ip = httpContext.Connection.RemoteIpAddress;
-            var authorized = (ip is not null && System.Net.IPAddress.IsLoopback(ip))
-                || EndpointHelpers.IsAuthorizedRequest(httpContext, startup.Config, startup.IsNonLoopbackBind);
-            if (!authorized)
+            if (!EndpointHelpers.IsAuthorizedRequest(httpContext, startup.Config, startup.IsNonLoopbackBind))
             {
                 httpContext.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 return Results.Empty;

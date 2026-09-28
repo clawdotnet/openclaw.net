@@ -36,6 +36,17 @@ All notable changes to this project are tracked in this file.
 
 ### Security
 
+- Required the `operator` role wherever a request runs the agent or mutates state, matching `POST /api/integration/messages`. Previously any authenticated identity, including viewer account tokens, viewer browser sessions, and OIDC users without an operator role claim, could run the agent with tools through these surfaces. New operator accounts default to `viewer`, so grant `operator` to accounts used for Companion, CLI/TUI chat, and API clients.
+  - `/ws`: closed with code 1008, which web chat reports as an authorization failure.
+  - `POST /v1/chat/completions` and `POST /v1/responses`: 403 with an OpenAI-style `permission_error` body.
+  - A2A execution paths: 403. Discovery stays public.
+  - `POST /apps/chat`: 403.
+  - `tools/call` through the `/apps/mcp/{appId}` MCP App proxy: tool error result. Listing and reading App tools and resources stay available to any authenticated role.
+  - MCP `openclaw.send_message`, `openclaw.run_workflow`, and `openclaw.respond_workflow`: tool error result. Read-only MCP tools stay available to viewers.
+  - Each denial is logged under `OpenClaw.Gateway.Authorization` with the surface, account, and role, so admins can find accounts to promote.
+  - Migration aid: `OpenClaw:Security:AllowViewerAgentExecution=true` restores the previous behavior for authenticated identities below `operator`, logs each such request, and adds the `viewer_agent_execution_allowed` risk flag to `admin posture`. It is temporary and will be removed in the next release.
+- Stopped trusting a loopback client IP on `/apps/health`, `/apps/chat`, and `/apps/mcp/{appId}`. Behind a same-host reverse proxy without `TrustForwardedHeaders`, every caller has a loopback IP, so these routes answered unauthenticated requests, including agent runs and MCP App tool calls, and ignored `AlwaysRequireAuth`. They now follow the gateway's bind-based rule: open only on a loopback-bound gateway without `AlwaysRequireAuth`.
+- Added `OpenClawWebSocketClient.OnClosed`, raised with the gateway's close status and reason. Companion now marks itself disconnected and shows the reason instead of appearing connected after the gateway closes the socket.
 - Bound tool-approval decisions to the original requester (`channelId` + `senderId`) for non-loopback/public binds.
 - Kept `POST /tools/approve` as an explicit admin override path.
 - Added WhatsApp official webhook signature validation support (`ValidateSignature`, `WebhookAppSecret`/`WebhookAppSecretRef`).

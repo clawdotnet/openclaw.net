@@ -35,6 +35,13 @@ public sealed class OpenClawWebSocketClient : IAsyncDisposable
     public event Action<WsServerEnvelope>? OnEnvelopeReceived;
     public event Action<string>? OnError;
 
+    /// <summary>
+    /// Raised when the gateway closes the connection, with its close status and reason
+    /// (for example 1008 PolicyViolation when the account lacks the operator role).
+    /// Not raised when this client disconnects.
+    /// </summary>
+    public event Action<WebSocketCloseStatus?, string?>? OnClosed;
+
     public async Task ConnectAsync(Uri wsUri, string? bearerToken, CancellationToken ct)
     {
         await DisconnectAsync(ct);
@@ -171,7 +178,10 @@ public sealed class OpenClawWebSocketClient : IAsyncDisposable
                 {
                     result = await ws.ReceiveAsync(buffer, ct);
                     if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        OnClosed?.Invoke(result.CloseStatus, result.CloseStatusDescription);
                         return;
+                    }
 
                     if (writer.WrittenCount + result.Count > _maxMessageBytes)
                         throw new InvalidOperationException("Inbound message too large.");

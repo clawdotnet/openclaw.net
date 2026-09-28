@@ -37,10 +37,12 @@ OpenClaw.NET 为浏览器侧 MCP App UI 暴露了一组面向 gateway 的 host �
 | 路由 | 用途 |
 |------|------|
 | `/apps/health` | 返回当前选中的 MCP App id，以及浏览器应连接的 gateway MCP 端点 |
-| `/apps/chat` | 把浏览器 host 的聊天请求桥接到现有 `GatewayAppRuntime`，并输出 `session`、`text`、`tool`、`result`、`done` 形状的 SSE |
-| `/apps/mcp/{appId}` | 把 MCP 请求代理到该 App 已经连接好的 `McpClient` |
+| `/apps/chat` | 把浏览器 host 的聊天请求桥接到现有 `GatewayAppRuntime`，并输出 `session`、`text`、`tool`、`result`、`done` 形状的 SSE。需要 `operator` 角色 |
+| `/apps/mcp/{appId}` | 把 MCP 请求代理到该 App 已经连接好的 `McpClient`。`tools/call` 需要 `operator` 角色；列表和读取对任何已认证角色仍可用 |
 
 关键点是：浏览器 UI 应连接 `/apps/mcp/{appId}`，而不是直接连接 MCP App 的原始上游 URL。这样浏览器触发的 MCP 调用与 Agent 触发的 MCP 调用才能落在同一条 OpenClaw 管理的会话上。
+
+`/apps/*` 路由使用 gateway 的常规认证。只有当 gateway 绑定在回环地址且 `AlwaysRequireAuth` 关闭时，才无需凭据即可访问；否则浏览器 host 必须携带令牌或浏览器会话。仅凭回环客户端 IP 不会被信任：在同机反向代理之后，每个调用方的 IP 都是回环地址。
 
 ### 会话复用行为
 

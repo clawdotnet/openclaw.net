@@ -104,6 +104,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _client.OnTextMessage += HandleInboundText;
         _client.OnEnvelopeReceived += HandleCanvasEnvelope;
         _client.OnError += err => AddSystemMessage($"Error: {err}");
+        _client.OnClosed += HandleServerClosed;
         Messages.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(HasMessages));
@@ -444,6 +445,23 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     private static string AppendNextStep(string? nextStep)
         => string.IsNullOrWhiteSpace(nextStep) ? string.Empty : $" {nextStep}";
+
+    // Show the gateway's reason: 1008 covers a missing operator role as well as rate and connection limits.
+    private void HandleServerClosed(System.Net.WebSockets.WebSocketCloseStatus? status, string? reason)
+    {
+        var message = string.IsNullOrWhiteSpace(reason)
+            ? "The gateway closed the connection."
+            : $"The gateway closed the connection: {reason}";
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_client.IsConnected)
+                return;
+
+            IsConnected = false;
+            Status = "Disconnected";
+            AddSystemMessageCore(message);
+        });
+    }
 
     private void AddSystemMessage(string text)
     {
