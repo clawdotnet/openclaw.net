@@ -45,18 +45,30 @@ internal sealed class OperatorAccountService
     private const string DirectoryName = "admin";
     private const string FileName = "operator-accounts.json";
 
+    // Token use is recorded as a login at most this often, so authenticated requests don't each rewrite the accounts file.
+    private static readonly TimeSpan TokenLastLoginInterval = TimeSpan.FromMinutes(1);
+
     private readonly string _path;
     private readonly Lock _gate = new();
     private readonly ILogger<OperatorAccountService> _logger;
+    private readonly TimeProvider _clock;
+    private readonly Func<string, string, string> _hashSecret;
+    private readonly Dictionary<string, VerifiedToken> _verifiedTokens = new(StringComparer.Ordinal);
     private StoreState? _cached;
 
-    public OperatorAccountService(string storagePath, ILogger<OperatorAccountService> logger)
+    public OperatorAccountService(
+        string storagePath,
+        ILogger<OperatorAccountService> logger,
+        TimeProvider? clock = null,
+        Func<string, string, string>? hashSecret = null)
     {
         var rootedStoragePath = Path.IsPathRooted(storagePath)
             ? storagePath
             : Path.GetFullPath(storagePath);
         _path = Path.Combine(rootedStoragePath, DirectoryName, FileName);
         _logger = logger;
+        _clock = clock ?? TimeProvider.System;
+        _hashSecret = hashSecret ?? Pbkdf2Hash;
     }
 
     public IReadOnlyList<OperatorAccountSummary> List()
@@ -108,8 +120,8 @@ internal sealed class OperatorAccountService
                 DisplayName = request.DisplayName?.Trim() ?? "",
                 Role = OperatorRoleNames.Normalize(request.Role),
                 Enabled = request.Enabled,
-                CreatedAtUtc = DateTimeOffset.UtcNow,
-                UpdatedAtUtc = DateTimeOffset.UtcNow,
+                CreatedAtUtc = _clock.GetUtcNow(),
+                UpdatedAtUtc = _clock.GetUtcNow(),
                 PasswordSalt = salt,
                 PasswordHash = HashSecret(password, salt)
             };
@@ -142,7 +154,7 @@ internal sealed class OperatorAccountService
                 account.PasswordHash = HashSecret(NormalizePassword(request.Password), salt);
             }
 
-            account.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            account.UpdatedAtUtc = _clock.GetUtcNow();
             SaveUnsafe(state);
             return MapSummary(account);
         }
@@ -176,8 +188,8 @@ internal sealed class OperatorAccountService
                 return null;
 
             var created = CreateTokenUnsafe(account, request.Label, request.ExpiresAtUtc);
-            account.LastLoginAtUtc = DateTimeOffset.UtcNow;
-            account.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            account.LastLoginAtUtc = _clock.GetUtcNow();
+            account.UpdatedAtUtc = _clock.GetUtcNow();
             SaveUnsafe(state);
 
             return new OperatorTokenExchangeResponse
@@ -199,7 +211,7 @@ internal sealed class OperatorAccountService
                 return null;
 
             var created = CreateTokenUnsafe(account, request.Label, request.ExpiresAtUtc);
-            account.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            account.UpdatedAtUtc = _clock.GetUtcNow();
             SaveUnsafe(state);
 
             return new OperatorAccountTokenCreateResponse
@@ -246,9 +258,9 @@ internal sealed class OperatorAccountService
 
             if (token.RevokedAtUtc is null)
             {
-                token.RevokedAtUtc = DateTimeOffset.UtcNow;
+                token.RevokedAtUtc = _clock.GetUtcNow();
                 if (account is not null)
-                    account.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                    account.UpdatedAtUtc = _clock.GetUtcNow();
                 SaveUnsafe(state);
             }
 
@@ -271,7 +283,7 @@ internal sealed class OperatorAccountService
             if (!SecretMatches(NormalizePassword(password), account.PasswordSalt, account.PasswordHash))
                 return false;
 
-            account.LastLoginAtUtc = DateTimeOffset.UtcNow;
+            account.LastLoginAtUtc = _clock.GetUtcNow();
             SaveUnsafe(state);
             identity = MapIdentity(account, OrganizationAuthModeNames.BrowserSession);
             return true;
@@ -285,9 +297,27 @@ internal sealed class OperatorAccountService
             return false;
 
         var tokenPrefix = GetTokenPrefix(token);
+        var tokenDigest = DigestToken(token);
         lock (_gate)
         {
             var state = LoadUnsafe();
+            var now = _clock.GetUtcNow();
+
+            // A token verified earlier skips PBKDF2, but its account and record are re-checked on every use.
+            if (_verifiedTokens.TryGetValue(tokenDigest, out var verified))
+            {
+                var verifiedAccount = state.Accounts.FirstOrDefault(item => string.Equals(item.Id, verified.AccountId, StringComparison.Ordinal));
+                var verifiedRecord = verifiedAccount?.Tokens.FirstOrDefault(item => string.Equals(item.Id, verified.TokenId, StringComparison.Ordinal));
+                if (verifiedAccount is not { Enabled: true } || verifiedRecord is null || !IsUsable(verifiedRecord, now))
+                {
+                    _verifiedTokens.Remove(tokenDigest);
+                    return false;
+                }
+
+                identity = AcceptTokenUnsafe(state, verifiedAccount, now);
+                return true;
+            }
+
             foreach (var account in state.Accounts)
             {
                 if (!account.Enabled)
@@ -295,18 +325,15 @@ internal sealed class OperatorAccountService
 
                 foreach (var tokenRecord in account.Tokens)
                 {
-                    if (tokenRecord.RevokedAtUtc is not null)
-                        continue;
-                    if (tokenRecord.ExpiresAtUtc is not null && tokenRecord.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+                    if (!IsUsable(tokenRecord, now))
                         continue;
                     if (!string.Equals(tokenRecord.TokenPrefix, tokenPrefix, StringComparison.Ordinal))
                         continue;
                     if (!SecretMatches(token, tokenRecord.SecretSalt, tokenRecord.SecretHash))
                         continue;
 
-                    account.LastLoginAtUtc = DateTimeOffset.UtcNow;
-                    SaveUnsafe(state);
-                    identity = MapIdentity(account, OrganizationAuthModeNames.AccountToken);
+                    _verifiedTokens[tokenDigest] = new VerifiedToken(account.Id, tokenRecord.Id);
+                    identity = AcceptTokenUnsafe(state, account, now);
                     return true;
                 }
             }
@@ -314,6 +341,24 @@ internal sealed class OperatorAccountService
 
         return false;
     }
+
+    private static bool IsUsable(StoredToken token, DateTimeOffset now)
+        => token.RevokedAtUtc is null && (token.ExpiresAtUtc is null || token.ExpiresAtUtc > now);
+
+    private OperatorIdentitySnapshot AcceptTokenUnsafe(StoreState state, StoredAccount account, DateTimeOffset now)
+    {
+        if (account.LastLoginAtUtc is not { } lastLogin || now - lastLogin >= TokenLastLoginInterval)
+        {
+            account.LastLoginAtUtc = now;
+            SaveUnsafe(state);
+        }
+
+        return MapIdentity(account, OrganizationAuthModeNames.AccountToken);
+    }
+
+    // Account tokens are 192-bit random secrets, so a fast digest identifies one safely; PBKDF2 adds nothing on a repeat use.
+    private static string DigestToken(string token)
+        => Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(token)));
 
     private StoreState LoadUnsafe()
     {
@@ -374,7 +419,7 @@ internal sealed class OperatorAccountService
             IsBootstrapAdmin = false
         };
 
-    private static CreatedToken CreateTokenUnsafe(StoredAccount account, string? label, DateTimeOffset? expiresAtUtc)
+    private CreatedToken CreateTokenUnsafe(StoredAccount account, string? label, DateTimeOffset? expiresAtUtc)
     {
         var token = $"oca_{Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant()}";
         var salt = GenerateSalt();
@@ -385,7 +430,7 @@ internal sealed class OperatorAccountService
             TokenPrefix = GetTokenPrefix(token),
             SecretSalt = salt,
             SecretHash = HashSecret(token, salt),
-            CreatedAtUtc = DateTimeOffset.UtcNow,
+            CreatedAtUtc = _clock.GetUtcNow(),
             ExpiresAtUtc = expiresAtUtc
         };
 
@@ -417,14 +462,17 @@ internal sealed class OperatorAccountService
     private static string GetTokenPrefix(string token)
         => token[..Math.Min(token.Length, TokenPrefixLength)];
 
-    private static string HashSecret(string secret, string saltHex)
+    private string HashSecret(string secret, string saltHex)
+        => _hashSecret(secret, saltHex);
+
+    private static string Pbkdf2Hash(string secret, string saltHex)
     {
         var secretBytes = System.Text.Encoding.UTF8.GetBytes(secret);
         var saltBytes = Convert.FromHexString(saltHex);
         return Convert.ToHexString(Rfc2898DeriveBytes.Pbkdf2(secretBytes, saltBytes, Pbkdf2Iterations, HashAlgorithmName.SHA256, HashBytes));
     }
 
-    private static bool SecretMatches(string candidate, string saltHex, string expectedHashHex)
+    private bool SecretMatches(string candidate, string saltHex, string expectedHashHex)
     {
         var actual = Convert.FromHexString(HashSecret(candidate, saltHex));
         var expected = Convert.FromHexString(expectedHashHex);
@@ -432,4 +480,6 @@ internal sealed class OperatorAccountService
     }
 
     private sealed record CreatedToken(string Secret, StoredToken Record);
+
+    private sealed record VerifiedToken(string AccountId, string TokenId);
 }
