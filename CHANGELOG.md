@@ -40,8 +40,9 @@ All notable changes to this project are tracked in this file.
   - `/ws`: closed with code 1008, which web chat reports as an authorization failure.
   - `POST /v1/chat/completions` and `POST /v1/responses`: 403 with an OpenAI-style `permission_error` body.
   - A2A execution paths: 403. Discovery stays public.
-  - `POST /apps/chat`: 403. It also no longer runs the agent for an unauthenticated caller whose client IP is loopback, which behind a same-host reverse proxy without `TrustForwardedHeaders` was every caller.
+  - `POST /apps/chat`: 403.
   - MCP `openclaw.send_message`, `openclaw.run_workflow`, and `openclaw.respond_workflow`: tool error result. Read-only MCP tools stay available to viewers.
+- Stopped trusting a loopback client IP on `/apps/health`, `/apps/chat`, and `/apps/mcp/{appId}`. Behind a same-host reverse proxy without `TrustForwardedHeaders`, every caller has a loopback IP, so these routes answered unauthenticated requests, including agent runs and MCP App tool calls, and ignored `AlwaysRequireAuth`. They now follow the gateway's bind-based rule: open only on a loopback-bound gateway without `AlwaysRequireAuth`.
 - Added `OpenClawWebSocketClient.OnClosed`, raised with the gateway's close status and reason. Companion now marks itself disconnected and shows the reason instead of appearing connected after the gateway closes the socket.
 - Bound tool-approval decisions to the original requester (`channelId` + `senderId`) for non-loopback/public binds.
 - Kept `POST /tools/approve` as an explicit admin override path.

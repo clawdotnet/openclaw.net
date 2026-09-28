@@ -42,6 +42,8 @@ OpenClaw.NET exposes a small gateway-facing host surface for browser-side MCP Ap
 
 The important detail is that browser UIs should connect to `/apps/mcp/{appId}`, not directly to the App's raw upstream MCP URL. That keeps browser-driven MCP calls and model-driven MCP calls on the same OpenClaw-managed session.
 
+The `/apps/*` routes use the gateway's normal authentication. They are open without credentials only when the gateway is bound to loopback and `AlwaysRequireAuth` is off. Otherwise the browser host must send a token or browser session. A loopback client IP is not trusted on its own: behind a same-host reverse proxy every caller has one.
+
 ### Session Reuse Behavior
 
 - `/apps/health` returns an `mcp` URL that points back to the gateway's own `/apps/mcp/{appId}` route.

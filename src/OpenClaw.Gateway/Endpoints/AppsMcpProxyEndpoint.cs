@@ -81,11 +81,9 @@ internal static class AppsMcpProxyEndpoint
     {
         app.MapMcp("/apps/mcp/{serverId}").AddEndpointFilter(async (ctx, next) =>
         {
+            // Same bind-based rule as AppsEndpoints: a loopback client IP alone is not trusted.
             var httpContext = ctx.HttpContext;
-            var ip = httpContext.Connection.RemoteIpAddress;
-            var authorized = (ip is not null && System.Net.IPAddress.IsLoopback(ip))
-                || EndpointHelpers.IsAuthorizedRequest(httpContext, startup.Config, startup.IsNonLoopbackBind);
-            if (!authorized)
+            if (!EndpointHelpers.IsAuthorizedRequest(httpContext, startup.Config, startup.IsNonLoopbackBind))
             {
                 httpContext.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 return Results.Empty;

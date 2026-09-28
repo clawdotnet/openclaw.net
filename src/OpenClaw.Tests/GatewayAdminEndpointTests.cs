@@ -43,6 +43,7 @@ using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Tools;
 using OpenClaw.Gateway.Mcp;
 using OpenClaw.Gateway.Models;
+using OpenClaw.McpApp;
 using OpenClaw.MicrosoftAgentFrameworkAdapter;
 using OpenClaw.Payments.Core;
 using Xunit;
@@ -440,19 +441,81 @@ public sealed partial class GatewayAdminEndpointTests
     [Fact]
     public async Task AppsChat_WhenLoopbackClientReachesNonLoopbackBindWithoutCredentials_ShouldNotRunAgent()
     {
-        // A same-host reverse proxy without trusted forwarded headers makes every caller look like loopback.
-        await using var harness = await CreateHarnessAsync(
-            nonLoopbackBind: true,
-            configureApp: app => app.Use(async (ctx, next) =>
-            {
-                ctx.Connection.RemoteIpAddress = IPAddress.Loopback;
-                await next(ctx);
-            }));
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true, configureApp: SimulateLoopbackClient);
 
         var response = await harness.Client.PostAsync("/apps/chat", JsonContent("""{"message":"hello"}"""));
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         harness.Runtime.AgentRuntime.DidNotReceiveWithAnyArgs().RunStreamingAsync(default!, default!, default);
+    }
+
+    [Theory]
+    [InlineData("GET", "/apps/health")]
+    [InlineData("POST", "/apps/mcp/inventory-app")]
+    public async Task AppsHostRoutes_WhenLoopbackClientReachesNonLoopbackBindWithoutCredentials_ShouldReturnUnauthorized(string method, string path)
+    {
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configureServices: AddMcpAppServices,
+            configureApp: SimulateLoopbackClient);
+
+        var response = await SendAppsHostRequestAsync(harness, method, path, bearerToken: null);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("GET", "/apps/health")]
+    [InlineData("POST", "/apps/mcp/inventory-app")]
+    public async Task AppsHostRoutes_WhenAlwaysRequireAuthOnLoopbackBindWithoutCredentials_ShouldReturnUnauthorized(string method, string path)
+    {
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: false,
+            configure: config => config.Security.AlwaysRequireAuth = true,
+            configureServices: AddMcpAppServices,
+            configureApp: SimulateLoopbackClient);
+
+        var response = await SendAppsHostRequestAsync(harness, method, path, bearerToken: null);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AppsHealth_WhenNonLoopbackBindWithBearerToken_ShouldSucceed()
+    {
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configureServices: AddMcpAppServices,
+            configureApp: SimulateLoopbackClient);
+
+        var response = await SendAppsHostRequestAsync(harness, "GET", "/apps/health", harness.AuthToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    private static void AddMcpAppServices(IServiceCollection services, GatewayConfig config)
+        => services.AddOpenClawMcpAppServices(config.McpApps);
+
+    // A same-host reverse proxy without trusted forwarded headers makes every caller look like loopback.
+    private static void SimulateLoopbackClient(WebApplication app)
+        => app.Use(async (ctx, next) =>
+        {
+            ctx.Connection.RemoteIpAddress = IPAddress.Loopback;
+            await next(ctx);
+        });
+
+    private static async Task<HttpResponseMessage> SendAppsHostRequestAsync(GatewayTestHarness harness, string method, string path, string? bearerToken)
+    {
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+        if (method == "POST")
+        {
+            request.Content = JsonContent("""{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}""");
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        }
+        if (bearerToken is not null)
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+        return await harness.Client.SendAsync(request);
     }
 
     [Theory]
