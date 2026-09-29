@@ -65,6 +65,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _operatorRole = OperatorRoleNames.Viewer;
 
+    private bool? _agentExecutionAllowedByGateway;
+
     [ObservableProperty]
     private string _operatorAuthMode = "account_token";
 
@@ -526,11 +528,22 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             SaveSettings();
 
             Status = "Connecting…";
+
+            // Ask the gateway first: an account it won't let run the agent would be admitted and then closed, so say why
+            // up front and keep the read-only status views. Only its answer counts, not the role: a viewer can still chat
+            // under Security.AllowViewerAgentExecution, and a gateway that doesn't report it decides at connect time.
+            await LoadAdminStatusAsyncInternal();
+            if (_agentExecutionAllowedByGateway == false)
+            {
+                Status = "Disconnected";
+                AddSystemMessage($"Signed in as {OperatorIdentity} with the {OperatorRole} role. Chat needs the operator role; ask an admin to change this account's role.");
+                return;
+            }
+
             await _client.ConnectAsync(uri, string.IsNullOrWhiteSpace(AuthToken) ? null : AuthToken, CancellationToken.None);
             IsConnected = true;
             Status = "Connected";
             await SendCanvasReadyAsync();
-            await LoadAdminStatusAsyncInternal();
             await LoadWhatsAppSetupAsync();
         }
         catch (Exception ex)
@@ -628,6 +641,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     private async Task LoadAdminStatusAsyncInternal()
     {
+        _agentExecutionAllowedByGateway = null;
         using var client = CreateAdminClient(out var error);
         if (client is null)
         {
@@ -647,8 +661,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         try
         {
             var auth = await client.GetAuthSessionAsync(CancellationToken.None);
-            var setup = await client.GetSetupStatusAsync(CancellationToken.None);
             ApplyOperatorIdentity(auth.AuthMode, auth.Role, auth.DisplayName, auth.Username, auth.IsBootstrapAdmin);
+            _agentExecutionAllowedByGateway = auth.CanExecuteAgent;
+            var setup = await client.GetSetupStatusAsync(CancellationToken.None);
             AdminStatus = auth.IsBootstrapAdmin
                 ? "Using bootstrap/breakglass admin auth."
                 : $"Authenticated as {auth.DisplayName ?? auth.Username ?? "operator"} via {auth.AuthMode}.";

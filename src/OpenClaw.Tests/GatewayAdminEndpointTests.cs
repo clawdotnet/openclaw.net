@@ -380,6 +380,32 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.Null(await ReceiveWithinAsync(ws, TimeSpan.FromMilliseconds(500)));
     }
 
+    [Fact]
+    public async Task WebSocketLive_WhenViewerAccountToken_ShouldCloseWithPolicyViolation()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var token = CreateAccountToken(harness, "live-viewer", OperatorRoleNames.Viewer);
+
+        using var ws = await ConnectWebSocketAsync(harness, token, "/ws/live");
+        var received = await ReceiveWithinAsync(ws, TimeSpan.FromSeconds(5));
+
+        Assert.NotNull(received);
+        Assert.Equal(WebSocketMessageType.Close, received.MessageType);
+        Assert.Equal(WebSocketCloseStatus.PolicyViolation, ws.CloseStatus);
+        Assert.Contains("operator", ws.CloseStatusDescription, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task WebSocketLive_WhenOperatorAccountToken_ShouldStayOpen()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var token = CreateAccountToken(harness, "live-operator", OperatorRoleNames.Operator);
+
+        using var ws = await ConnectWebSocketAsync(harness, token, "/ws/live");
+
+        Assert.Null(await ReceiveWithinAsync(ws, TimeSpan.FromMilliseconds(500)));
+    }
+
     [Theory]
     [InlineData("/v1/chat/completions", """{"messages":[{"role":"user","content":"hello"}]}""")]
     [InlineData("/v1/responses", """{"input":"hello"}""")]
@@ -626,6 +652,26 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.Contains("legacy-viewer", entry, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(OperatorRoleNames.Viewer, false, false)]
+    [InlineData(OperatorRoleNames.Operator, false, true)]
+    [InlineData(OperatorRoleNames.Viewer, true, true)]
+    public async Task AuthSession_ShouldReportWhetherTheCallerCanRunTheAgent(string role, bool allowViewerAgentExecution, bool expected)
+    {
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configure: config => config.Security.AllowViewerAgentExecution = allowViewerAgentExecution);
+        var token = CreateAccountToken(harness, $"session-{role}", role);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/auth/session");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        Assert.Equal(expected, payload.RootElement.GetProperty("canExecuteAgent").GetBoolean());
+    }
+
     [Fact]
     public async Task AgentExecution_WhenAllowViewerAgentExecutionWithoutCredentials_ShouldStillReject()
     {
@@ -719,12 +765,12 @@ public sealed partial class GatewayAdminEndpointTests
         return token!.Token;
     }
 
-    private static async Task<WebSocket> ConnectWebSocketAsync(GatewayTestHarness harness, string? bearerToken)
+    private static async Task<WebSocket> ConnectWebSocketAsync(GatewayTestHarness harness, string? bearerToken, string path = "/ws")
     {
         var client = harness.App.GetTestServer().CreateWebSocketClient();
         if (bearerToken is not null)
             client.ConfigureRequest = request => request.Headers.Authorization = $"Bearer {bearerToken}";
-        return await client.ConnectAsync(new Uri("ws://localhost/ws"), CancellationToken.None);
+        return await client.ConnectAsync(new Uri("ws://localhost" + path), CancellationToken.None);
     }
 
     // Returns null when nothing arrives in time, which for these tests means the server kept the connection open.

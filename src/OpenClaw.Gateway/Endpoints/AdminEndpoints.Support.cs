@@ -234,6 +234,7 @@ internal static partial class AdminEndpoints
             Username = auth.Username,
             DisplayName = auth.DisplayName,
             IsBootstrapAdmin = auth.IsBootstrapAdmin,
+            CanExecuteAgent = EndpointHelpers.AllowsAgentExecution(auth, startup),
             PublicBind = startup.IsNonLoopbackBind,
             AllowedAuthModes = [.. policy.AllowedAuthModes],
             EffectiveToolSurface = preset.Surface,

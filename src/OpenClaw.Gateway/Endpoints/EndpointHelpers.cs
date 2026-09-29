@@ -357,11 +357,17 @@ internal static class EndpointHelpers
 
     /// <summary>
     /// Surfaces that turn a request into agent input or another mutation (chat, the OpenAI-compatible API,
-    /// A2A, MCP Apps chat and tool calls, mutating MCP tools) require the same role as POST /api/integration/messages.
+    /// A2A, MCP Apps chat and tool calls, mutating MCP tools, the live model bridge) require the same role as
+    /// POST /api/integration/messages.
     /// Authentication alone is not enough: viewer credentials must stay read-only.
     /// Denials, and admissions under Security.AllowViewerAgentExecution, are logged with the account so
     /// admins can find identities that need the operator role.
     /// </summary>
+    // The rule CanExecuteAgent enforces, without its logging, so /auth/session can report it before a client tries.
+    internal static bool AllowsAgentExecution(OperatorAuthorizationResult auth, GatewayStartupContext startup)
+        => auth.IsAuthorized
+           && (IsRoleAllowed(auth.Role, "integration.mutate.agent", out _) || startup.Config.Security.AllowViewerAgentExecution);
+
     public static bool CanExecuteAgent(
         HttpContext ctx,
         GatewayStartupContext startup,
@@ -393,7 +399,7 @@ internal static class EndpointHelpers
         }
 
         logger.LogWarning(
-            "Denied {Action} for {AuthMode} account {AccountId} ({Username}) with role {Role}: running the agent requires the operator role.",
+            "Denied {Action} for {AuthMode} account {AccountId} ({Username}) with role {Role}: this action requires the operator role.",
             action, auth.AuthMode, auth.AccountId, auth.Username, auth.Role);
         return false;
     }

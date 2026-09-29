@@ -131,7 +131,7 @@ HTTP API 端点使用 `AuthorizeOperatorRequest` 方法（[EndpointHelpers.cs](.
 
 ### 3.2 WebSocket 认证流程
 
-WebSocket 端点 (`/ws`, `/ws/live`) 在第一步完成认证；`/ws` 随后执行聊天角色检查（第二步）并解析用户 ID（第三步）：
+WebSocket 端点 (`/ws`, `/ws/live`) 在第一步完成认证，随后执行角色检查（第二步）；`/ws` 还会解析用户 ID（第三步）：
 
 **第一步：`TryValidateWebSocketRequest` → `IsAuthorizedRequest`**
 
@@ -149,7 +149,7 @@ WebSocket 请求 (/ws)
   └─ 通过 ──→ 接受 WebSocket 连接
 ```
 
-**第二步（仅 `/ws`）：`EndpointHelpers.CanExecuteAgent`**
+**第二步：`EndpointHelpers.CanExecuteAgent`**
 
 每个 `/ws` 帧都会成为智能体输入，因此连接需要与 `POST /api/integration/messages` 相同的 `operator` 角色。角色通过 `AuthorizeOperatorRequest` 解析，与 HTTP API 使用同一认证链：
 
@@ -185,6 +185,7 @@ WebSocket 已连接
 | 入口 | 角色低于 operator 时 |
 |------|----------------------|
 | `/ws` | 先接受，再以 1008 (PolicyViolation) 关闭 |
+| `/ws/live` | 先接受，再以 1008 关闭。实时桥接不运行工具，但会消耗提供商凭据额度 |
 | `POST /v1/chat/completions`、`POST /v1/responses` | 403，返回 OpenAI 风格的 `permission_error` 响应体 |
 | A2A 执行路径（发现端点仍然公开） | 403 |
 | `POST /apps/chat` | 403 |
@@ -194,6 +195,8 @@ WebSocket 已连接
 引导令牌和开放回环会解析为 `admin`，不受影响。新建的操作员账户默认为 `viewer`，因此用于 Companion、CLI/TUI 聊天或 API 客户端的账户需要 `operator` 角色。
 
 每次拒绝都会在 `OpenClaw.Gateway.Authorization` 类别下记录一条警告日志，包含入口、认证方式、账户和角色（绝不包含凭据），便于管理员找出需要提升角色的账户。如需无中断迁移，可设置 `OpenClaw:Security:AllowViewerAgentExecution=true`，从日志中找出被放行的账户，为其授予 `operator` 角色，然后关闭该设置。该设置是临时的，将在下一个版本移除。
+
+`GET /auth/session` 会以 `canExecuteAgent` 字段报告这项检查的结果（包括 `AllowViewerAgentExecution` 的影响），客户端可以在连接前说明拒绝原因。Companion 会使用该字段；早于此字段的网关不会返回它。
 
 ### 3.4 `IsAuthorizedRequest` 详细逻辑
 

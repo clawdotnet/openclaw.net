@@ -1,8 +1,11 @@
+using System.Net;
 using System.Net.WebSockets;
+using System.Text;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using OpenClaw.Companion.Models;
 using OpenClaw.Companion.Services;
+using OpenClaw.Client;
 using OpenClaw.Companion.ViewModels;
 using Xunit;
 
@@ -64,6 +67,85 @@ public sealed class CompanionConnectionTests : IDisposable
         Assert.True(vm.IsConnected);
         Assert.Equal("Connected", vm.Status);
         Assert.DoesNotContain(vm.Messages, message => message.Role == ChatRole.System);
+    }
+
+    [AvaloniaFact]
+    public async Task Connect_WhenGatewayReportsAgentExecutionDenied_ShouldExplainWithoutOpeningChat()
+    {
+        var vm = CreateViewModelWithAuthSession("""{"authMode":"account_token","role":"viewer","username":"reader","canExecuteAgent":false}""");
+        vm.AuthToken = "viewer-token";
+
+        await vm.ConnectCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(vm.IsConnected);
+        Assert.Equal("Disconnected", vm.Status);
+        Assert.Contains(vm.Messages, m => m.Text.Contains("operator role", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(vm.Messages, m => m.Text.StartsWith("Connect failed", StringComparison.Ordinal));
+    }
+
+    [AvaloniaFact]
+    public async Task Connect_WhenGatewayAllowsViewerAgentExecution_ShouldAttemptChat()
+    {
+        // Security.AllowViewerAgentExecution lets a viewer chat, so the role alone must not stop Companion.
+        var vm = CreateViewModelWithAuthSession("""{"authMode":"account_token","role":"viewer","username":"reader","canExecuteAgent":true}""");
+        vm.AuthToken = "viewer-token";
+
+        await vm.ConnectCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Contains(vm.Messages, m => m.Text.StartsWith("Connect failed", StringComparison.Ordinal));
+        Assert.DoesNotContain(vm.Messages, m => m.Text.Contains("operator role", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [AvaloniaFact]
+    public async Task Connect_WhenGatewayDoesNotReportAgentExecution_ShouldAttemptChat()
+    {
+        // An older gateway reports only the role; it decides at connect time, so Companion must not guess.
+        var vm = CreateViewModelWithAuthSession("""{"authMode":"account_token","role":"viewer","username":"reader"}""");
+        vm.AuthToken = "viewer-token";
+
+        await vm.ConnectCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Contains(vm.Messages, m => m.Text.StartsWith("Connect failed", StringComparison.Ordinal));
+        Assert.DoesNotContain(vm.Messages, m => m.Text.Contains("operator role", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [AvaloniaFact]
+    public async Task Connect_WhenNoTokenLoaded_ShouldStillAttemptChat()
+    {
+        // Without a token the viewer role is only a placeholder, not something the gateway reported.
+        var vm = CreateViewModelWithAuthSession("""{"authMode":"account_token","role":"viewer"}""");
+
+        await vm.ConnectCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Contains(vm.Messages, m => m.Text.StartsWith("Connect failed", StringComparison.Ordinal));
+        Assert.DoesNotContain(vm.Messages, m => m.Text.Contains("operator role", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private MainWindowViewModel CreateViewModelWithAuthSession(string authSessionJson)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "openclaw-companion-connection-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        _tempDirs.Add(dir);
+        var vm = new MainWindowViewModel(
+            new SettingsStore(dir),
+            new GatewayWebSocketClient(),
+            (baseUrl, authToken) => new OpenClawHttpClient(baseUrl, authToken, new HttpClient(new CallbackHandler(request =>
+                request.RequestUri!.AbsolutePath == "/auth/session"
+                    ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(authSessionJson, Encoding.UTF8, "application/json") }
+                    : new HttpResponseMessage(HttpStatusCode.NotFound)))));
+        // Nothing listens here, so an attempted chat connection fails fast and visibly.
+        vm.ServerUrl = "ws://127.0.0.1:9/ws";
+        return vm;
+    }
+
+    private sealed class CallbackHandler(Func<HttpRequestMessage, HttpResponseMessage> callback) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(callback(request));
     }
 
     private (MainWindowViewModel ViewModel, GatewayWebSocketClient Client) CreateConnectedViewModel()
