@@ -70,9 +70,9 @@ public sealed class CompanionConnectionTests : IDisposable
     }
 
     [AvaloniaFact]
-    public async Task Connect_WhenGatewayReportsViewerRole_ShouldExplainWithoutOpeningChat()
+    public async Task Connect_WhenGatewayReportsAgentExecutionDenied_ShouldExplainWithoutOpeningChat()
     {
-        var vm = CreateViewModelWithAuthSession("""{"authMode":"account_token","role":"viewer","username":"reader"}""");
+        var vm = CreateViewModelWithAuthSession("""{"authMode":"account_token","role":"viewer","username":"reader","canExecuteAgent":false}""");
         vm.AuthToken = "viewer-token";
 
         await vm.ConnectCommand.ExecuteAsync(null);
@@ -82,6 +82,34 @@ public sealed class CompanionConnectionTests : IDisposable
         Assert.Equal("Disconnected", vm.Status);
         Assert.Contains(vm.Messages, m => m.Text.Contains("operator role", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(vm.Messages, m => m.Text.StartsWith("Connect failed", StringComparison.Ordinal));
+    }
+
+    [AvaloniaFact]
+    public async Task Connect_WhenGatewayAllowsViewerAgentExecution_ShouldAttemptChat()
+    {
+        // Security.AllowViewerAgentExecution lets a viewer chat, so the role alone must not stop Companion.
+        var vm = CreateViewModelWithAuthSession("""{"authMode":"account_token","role":"viewer","username":"reader","canExecuteAgent":true}""");
+        vm.AuthToken = "viewer-token";
+
+        await vm.ConnectCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Contains(vm.Messages, m => m.Text.StartsWith("Connect failed", StringComparison.Ordinal));
+        Assert.DoesNotContain(vm.Messages, m => m.Text.Contains("operator role", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [AvaloniaFact]
+    public async Task Connect_WhenGatewayDoesNotReportAgentExecution_ShouldAttemptChat()
+    {
+        // An older gateway reports only the role; it decides at connect time, so Companion must not guess.
+        var vm = CreateViewModelWithAuthSession("""{"authMode":"account_token","role":"viewer","username":"reader"}""");
+        vm.AuthToken = "viewer-token";
+
+        await vm.ConnectCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Contains(vm.Messages, m => m.Text.StartsWith("Connect failed", StringComparison.Ordinal));
+        Assert.DoesNotContain(vm.Messages, m => m.Text.Contains("operator role", StringComparison.OrdinalIgnoreCase));
     }
 
     [AvaloniaFact]

@@ -196,6 +196,8 @@ WebSocket 已连接
 
 每次拒绝都会在 `OpenClaw.Gateway.Authorization` 类别下记录一条警告日志，包含入口、认证方式、账户和角色（绝不包含凭据），便于管理员找出需要提升角色的账户。如需无中断迁移，可设置 `OpenClaw:Security:AllowViewerAgentExecution=true`，从日志中找出被放行的账户，为其授予 `operator` 角色，然后关闭该设置。该设置是临时的，将在下一个版本移除。
 
+`GET /auth/session` 会以 `canExecuteAgent` 字段报告这项检查的结果（包括 `AllowViewerAgentExecution` 的影响），客户端可以在连接前说明拒绝原因。Companion 会使用该字段；早于此字段的网关不会返回它。
+
 ### 3.4 `IsAuthorizedRequest` 详细逻辑
 
 ```csharp
