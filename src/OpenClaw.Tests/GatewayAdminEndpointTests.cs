@@ -652,6 +652,26 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.Contains("legacy-viewer", entry, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(OperatorRoleNames.Viewer, false, false)]
+    [InlineData(OperatorRoleNames.Operator, false, true)]
+    [InlineData(OperatorRoleNames.Viewer, true, true)]
+    public async Task AuthSession_ShouldReportWhetherTheCallerCanRunTheAgent(string role, bool allowViewerAgentExecution, bool expected)
+    {
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configure: config => config.Security.AllowViewerAgentExecution = allowViewerAgentExecution);
+        var token = CreateAccountToken(harness, $"session-{role}", role);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/auth/session");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        Assert.Equal(expected, payload.RootElement.GetProperty("canExecuteAgent").GetBoolean());
+    }
+
     [Fact]
     public async Task AgentExecution_WhenAllowViewerAgentExecutionWithoutCredentials_ShouldStillReject()
     {
@@ -939,6 +959,84 @@ public sealed partial class GatewayAdminEndpointTests
 
         harness.Runtime.AgentRuntime.DidNotReceiveWithAnyArgs().RunStreamingAsync(default!, default!, default);
         Assert.Contains(events, evt => evt.Type == AgentStreamEventType.Error && evt.Content == SessionAccess.DeniedMessage);
+    }
+
+    [Theory]
+    [InlineData("/v1/chat/completions", """{"messages":[{"role":"user","content":"hello"}]}""")]
+    [InlineData("/v1/responses", """{"input":"hello"}""")]
+    public async Task OpenAiStableSession_WhenOwnedByAnotherBrowserAccount_ShouldReturnForbidden(string path, string body)
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (ownerToken, _) = CreateAccountTokenWithId(harness, "cookie-owner", OperatorRoleNames.Operator);
+        var (otherToken, _) = CreateAccountTokenWithId(harness, "cookie-other", OperatorRoleNames.Operator);
+        var (ownerCookie, _) = await LoginAsync(harness.Client, ownerToken);
+        var (otherCookie, _) = await LoginAsync(harness.Client, otherToken);
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns("ok");
+
+        // Browser sessions have no bearer token, so both accounts derive the stable session from the same client address.
+        async Task<HttpResponseMessage> SendAsync(string cookie)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent(body) };
+            request.Headers.Add("Cookie", cookie);
+            request.Headers.Add("X-OpenClaw-Session-Id", "shared-stable");
+            return await harness.Client.SendAsync(request);
+        }
+
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(ownerCookie)).StatusCode);
+        var denied = await SendAsync(otherCookie);
+
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        using var payload = await ReadJsonAsync(denied);
+        Assert.Equal("session_forbidden", payload.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Theory]
+    [InlineData("DELETE", "/admin/sessions/owned-admin")]
+    [InlineData("POST", "/admin/sessions/owned-admin/metadata")]
+    [InlineData("POST", "/admin/sessions/owned-admin/abort")]
+    [InlineData("POST", "/admin/branches/owned-admin:branch:b1/restore")]
+    [InlineData("POST", "/admin/sessions/owned-admin/recovery")]
+    public async Task SessionManagement_WhenSessionOwnedByAnotherAccount_ShouldReturnForbidden(string method, string path)
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (_, ownerId) = CreateAccountTokenWithId(harness, "manage-owner", OperatorRoleNames.Operator);
+        var (otherToken, _) = CreateAccountTokenWithId(harness, "manage-other", OperatorRoleNames.Operator);
+        await harness.MemoryStore.SaveSessionAsync(
+            new Session { Id = "owned-admin", ChannelId = "agentqi-mobile", SenderId = "owner", OwnerAccountId = ownerId },
+            CancellationToken.None);
+
+        using var request = new HttpRequestMessage(new HttpMethod(method), path) { Content = JsonContent("{}") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", otherToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.NotNull(await harness.MemoryStore.GetSessionAsync("owned-admin", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SessionManagement_WhenOwnerOrAdmin_ShouldAllowWrites()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (ownerToken, ownerId) = CreateAccountTokenWithId(harness, "manage-self", OperatorRoleNames.Operator);
+        var (adminToken, _) = CreateAccountTokenWithId(harness, "manage-admin", OperatorRoleNames.Admin);
+        await harness.MemoryStore.SaveSessionAsync(
+            new Session { Id = "owned-admin", ChannelId = "agentqi-mobile", SenderId = "owner", OwnerAccountId = ownerId },
+            CancellationToken.None);
+
+        using var metadata = new HttpRequestMessage(HttpMethod.Post, "/admin/sessions/owned-admin/metadata") { Content = JsonContent("""{"starred":true}""") };
+        metadata.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ownerToken);
+        Assert.Equal(HttpStatusCode.OK, (await harness.Client.SendAsync(metadata)).StatusCode);
+
+        using var delete = new HttpRequestMessage(HttpMethod.Delete, "/admin/sessions/owned-admin");
+        delete.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        Assert.Equal(HttpStatusCode.OK, (await harness.Client.SendAsync(delete)).StatusCode);
+        Assert.Null(await harness.MemoryStore.GetSessionAsync("owned-admin", CancellationToken.None));
     }
 
     [Fact]

@@ -308,6 +308,9 @@ internal static partial class AdminEndpoints
                 });
             }
 
+            if (await RejectUnlessSessionWriterAsync(runtime.SessionManager, sessionId, auth, ctx.RequestAborted) is { } restoreDenied)
+                return restoreDenied;
+
             var session = await runtime.SessionManager.LoadAsync(sessionId, ctx.RequestAborted);
             if (session is null)
             {
@@ -374,6 +377,8 @@ internal static partial class AdminEndpoints
             if (authResult.Failure is not null)
                 return authResult.Failure;
             var auth = authResult.Authorization!;
+            if (await RejectUnlessSessionWriterAsync(runtime.SessionManager, id, auth, ctx.RequestAborted) is { } metadataDenied)
+                return metadataDenied;
 
             var requestPayload = await ReadJsonBodyAsync(ctx, CoreJsonContext.Default.SessionMetadataUpdateRequest);
             if (requestPayload.Failure is not null)
@@ -455,12 +460,14 @@ internal static partial class AdminEndpoints
             return Results.Json(ids, CoreJsonContext.Default.ListString);
         });
 
-        app.MapPost("/admin/sessions/{id}/abort", (HttpContext ctx, string id) =>
+        app.MapPost("/admin/sessions/{id}/abort", async (HttpContext ctx, string id) =>
         {
             var authResult = AuthorizeOperator(ctx, startup, browserSessions, operations, requireCsrf: true, endpointScope: "admin.sessions.abort");
             if (authResult.Failure is not null)
                 return authResult.Failure;
             var auth = authResult.Authorization!;
+            if (await RejectUnlessSessionWriterAsync(runtime.SessionManager, id, auth, ctx.RequestAborted) is { } abortDenied)
+                return abortDenied;
             if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, "admin.control", out var blockedByPolicyId))
                 return Results.Json(new OperationStatusResponse { Success = false, Message = $"Rate limit exceeded by policy '{blockedByPolicyId}'." }, CoreJsonContext.Default.OperationStatusResponse, statusCode: StatusCodes.Status429TooManyRequests);
 
@@ -483,6 +490,8 @@ internal static partial class AdminEndpoints
             if (authResult.Failure is not null)
                 return authResult.Failure;
             var auth = authResult.Authorization!;
+            if (await RejectUnlessSessionWriterAsync(runtime.SessionManager, id, auth, ctx.RequestAborted) is { } deleteDenied)
+                return deleteDenied;
             if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, "admin.control", out var blockedByPolicyId))
                 return Results.Json(new OperationStatusResponse { Success = false, Message = $"Rate limit exceeded by policy '{blockedByPolicyId}'." }, CoreJsonContext.Default.OperationStatusResponse, statusCode: StatusCodes.Status429TooManyRequests);
 

@@ -17,6 +17,7 @@ using OpenClaw.Core.Observability;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Core.Security;
+using OpenClaw.Core.Sessions;
 using OpenClaw.Core.Skills;
 using OpenClaw.Core.Validation;
 using OpenClaw.Gateway;
@@ -206,6 +207,25 @@ internal static partial class AdminEndpoints
         });
     }
 
+    // Session writes follow the owner-or-admin rule the chat surfaces apply: an operator may change only sessions
+    // it created or that have no owner. Reads stay open to every role that can read sessions.
+    private static async Task<IResult?> RejectUnlessSessionWriterAsync(
+        SessionManager sessions,
+        string sessionId,
+        EndpointHelpers.OperatorAuthorizationResult auth,
+        CancellationToken ct)
+    {
+        var session = await sessions.LoadAsync(sessionId, ct);
+        var caller = EndpointHelpers.ToCaller(auth);
+        if (session is null || SessionAccess.CanWrite(session, caller.AccountId, caller.IsAdmin))
+            return null;
+
+        return Results.Json(
+            new OperationStatusResponse { Success = false, Error = SessionAccess.DeniedMessage },
+            CoreJsonContext.Default.OperationStatusResponse,
+            statusCode: StatusCodes.Status403Forbidden);
+    }
+
     private static AuthSessionResponse MapAuthSessionResponse(
         EndpointHelpers.OperatorAuthorizationResult auth,
         GatewayStartupContext startup,
@@ -234,6 +254,7 @@ internal static partial class AdminEndpoints
             Username = auth.Username,
             DisplayName = auth.DisplayName,
             IsBootstrapAdmin = auth.IsBootstrapAdmin,
+            CanExecuteAgent = EndpointHelpers.AllowsAgentExecution(auth, startup),
             PublicBind = startup.IsNonLoopbackBind,
             AllowedAuthModes = [.. policy.AllowedAuthModes],
             EffectiveToolSurface = preset.Surface,

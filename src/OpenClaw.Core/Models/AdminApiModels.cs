@@ -27,6 +27,12 @@ public sealed class AuthSessionResponse
     public string? Username { get; init; }
     public string? DisplayName { get; init; }
     public bool IsBootstrapAdmin { get; init; }
+
+    /// <summary>
+    /// Whether this caller may run the agent (chat over /ws, /v1/*, A2A, and the other agent surfaces).
+    /// Null from gateways that predate the field; those decide only when the client connects.
+    /// </summary>
+    public bool? CanExecuteAgent { get; init; }
     public bool PublicBind { get; init; }
     public string[] AllowedAuthModes { get; init; } = [];
     public string EffectiveToolSurface { get; init; } = "web";

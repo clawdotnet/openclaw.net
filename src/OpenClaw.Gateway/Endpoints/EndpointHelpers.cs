@@ -363,6 +363,11 @@ internal static class EndpointHelpers
     /// Denials, and admissions under Security.AllowViewerAgentExecution, are logged with the account so
     /// admins can find identities that need the operator role.
     /// </summary>
+    // The rule CanExecuteAgent enforces, without its logging, so /auth/session can report it before a client tries.
+    internal static bool AllowsAgentExecution(OperatorAuthorizationResult auth, GatewayStartupContext startup)
+        => auth.IsAuthorized
+           && (IsRoleAllowed(auth.Role, "integration.mutate.agent", out _) || startup.Config.Security.AllowViewerAgentExecution);
+
     public static bool CanExecuteAgent(
         HttpContext ctx,
         GatewayStartupContext startup,
@@ -416,7 +421,11 @@ internal static class EndpointHelpers
     internal static CallerAccount ResolveCaller(HttpContext ctx, GatewayStartupContext startup)
     {
         var browserSessions = ctx.RequestServices.GetRequiredService<BrowserSessionAuthService>();
-        var auth = AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
+        return ToCaller(AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false));
+    }
+
+    internal static CallerAccount ToCaller(OperatorAuthorizationResult auth)
+    {
         if (!auth.IsAuthorized)
             return default;
 

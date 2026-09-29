@@ -42,6 +42,7 @@ internal static partial class AdminEndpoints
                 requireCsrf: true, endpointScope: "admin.sessions.recovery.mutate");
             if (authorization.Failure is not null) return authorization.Failure;
             var auth = authorization.Authorization!;
+            if (await RejectUnlessSessionWriterAsync(services.Runtime.SessionManager, id, auth, ctx.RequestAborted) is { } denied) return denied;
             if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, services.Operations, auth, "admin.control", out _)) return Results.StatusCode(429);
             var body = await EndpointHelpers.TryReadBodyTextAsync(ctx, 100_000, ctx.RequestAborted);
             if (!body.Success) return Results.BadRequest();
