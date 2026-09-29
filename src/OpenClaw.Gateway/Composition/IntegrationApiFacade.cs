@@ -787,7 +787,14 @@ internal sealed class IntegrationApiFacade
         return rejected;
     }
 
-    public async Task<IntegrationMessageResponse> QueueMessageAsync(IntegrationMessageRequest request, CancellationToken cancellationToken)
+    /// <param name="authenticatedUserId">
+    /// The signed-in account resolved by the calling surface. It becomes the turn's identity; the request's
+    /// senderId is caller-supplied and only used for routing and display.
+    /// </param>
+    public async Task<IntegrationMessageResponse> QueueMessageAsync(
+        IntegrationMessageRequest request,
+        CancellationToken cancellationToken,
+        string? authenticatedUserId = null)
     {
         var effectiveChannelId = string.IsNullOrWhiteSpace(request.ChannelId) ? "integration-api" : request.ChannelId.Trim();
         var effectiveSenderId = string.IsNullOrWhiteSpace(request.SenderId) ? "http-client" : request.SenderId.Trim();
@@ -805,7 +812,8 @@ internal sealed class IntegrationApiFacade
             Type = "user_message",
             Text = request.Text,
             MessageId = request.MessageId,
-            ReplyToMessageId = request.ReplyToMessageId
+            ReplyToMessageId = request.ReplyToMessageId,
+            AuthenticatedUserId = authenticatedUserId
         };
 
         if (!_runtime.Pipeline.InboundWriter.TryWrite(message))

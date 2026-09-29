@@ -736,6 +736,154 @@ public sealed partial class GatewayAdminEndpointTests
         }
     }
 
+    [Fact]
+    public async Task IntegrationMessages_WhenAccountToken_ShouldStampAccountNotClaimedSender()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "rest-operator", OperatorRoleNames.Operator);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/integration/messages")
+        {
+            Content = JsonContent("""{"text":"hello","senderId":"someone-else","sessionId":"stamp-rest"}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.True(harness.Runtime.Pipeline.InboundReader.TryRead(out var queued));
+        Assert.Equal("someone-else", queued.SenderId);
+        Assert.Equal(accountId, queued.AuthenticatedUserId);
+    }
+
+    [Fact]
+    public async Task McpSendMessage_WhenAccountToken_ShouldStampAccountNotClaimedSender()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "mcp-operator", OperatorRoleNames.Operator);
+
+        using var result = await CallMcpToolAsync(harness, token, "openclaw.send_message", """{"text":"hello","senderId":"someone-else"}""");
+
+        Assert.False(result.RootElement.TryGetProperty("isError", out var isError) && isError.GetBoolean());
+        Assert.True(harness.Runtime.Pipeline.InboundReader.TryRead(out var queued));
+        Assert.Equal(accountId, queued.AuthenticatedUserId);
+    }
+
+    [Fact]
+    public async Task ChatCompletions_WhenAccountToken_ShouldRunTurnAsAccount()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "openai-identity", OperatorRoleNames.Operator);
+        Session? ran = null;
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns(callInfo =>
+            {
+                ran = callInfo.Arg<Session>();
+                return Task.FromResult("ok");
+            });
+
+        var response = await SendChatCompletionAsync(harness, token);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(accountId, ran?.AuthenticatedUserId);
+    }
+
+    [Fact]
+    public async Task AppsChat_WhenAccountToken_ShouldRunTurnAsAccount()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "apps-identity", OperatorRoleNames.Operator);
+        Session? ran = null;
+        harness.Runtime.AgentRuntime.RunStreamingAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                ran = callInfo.Arg<Session>();
+                return NoAgentEvents();
+            });
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/apps/chat") { Content = JsonContent("""{"message":"hello","sessionId":"stamp-apps"}""") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await harness.Client.SendAsync(request);
+        await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(accountId, ran?.AuthenticatedUserId);
+    }
+
+    [Fact]
+    public async Task A2AExecution_WhenAccountToken_ShouldExposeCallerAccountToHandlers()
+    {
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configureServices: (services, _) => services.Configure<MafOptions>(options => options.EnableA2A = true),
+            configureApp: app => app.MapPost("/a2a", () => Results.Text(A2ACallerContext.AccountId ?? "")));
+        var (token, accountId) = CreateAccountTokenWithId(harness, "a2a-identity", OperatorRoleNames.Operator);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/a2a") { Content = JsonContent("{}") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(accountId, await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task A2ABridge_WhenCallerAccountKnown_ShouldRunTurnAsAccount()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        Session? ran = null;
+        harness.Runtime.AgentRuntime.RunStreamingAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                ran = callInfo.Arg<Session>();
+                return NoAgentEvents();
+            });
+        var bridge = new OpenClawA2AExecutionBridge(new GatewayRuntimeHolder { Runtime = harness.Runtime }, NullLogger<OpenClawA2AExecutionBridge>.Instance);
+
+        A2ACallerContext.AccountId = "acct-a2a";
+        try
+        {
+            await bridge.ExecuteStreamingAsync(
+                new OpenClaw.MicrosoftAgentFrameworkAdapter.A2A.OpenClawA2AExecutionRequest
+                {
+                    SessionId = "stamp-a2a",
+                    ChannelId = "a2a",
+                    SenderId = "claimed-context",
+                    UserText = "hello"
+                },
+                (_, _) => ValueTask.CompletedTask,
+                CancellationToken.None);
+        }
+        finally
+        {
+            A2ACallerContext.AccountId = null;
+        }
+
+        Assert.Equal("acct-a2a", ran?.AuthenticatedUserId);
+    }
+
+    private static async IAsyncEnumerable<AgentStreamEvent> NoAgentEvents()
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
+
+    private static (string Token, string AccountId) CreateAccountTokenWithId(GatewayTestHarness harness, string username, string role)
+    {
+        var operatorAccounts = harness.App.Services.GetRequiredService<OperatorAccountService>();
+        var account = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = username,
+            Password = "P@ssw0rd123!",
+            Role = role
+        });
+        return (operatorAccounts.CreateToken(account.Id, new OperatorAccountTokenCreateRequest { Label = username })!.Token, account.Id);
+    }
+
     private static async Task<JsonDocument> CallMcpToolAsync(GatewayTestHarness harness, string bearerToken, string toolName, string argumentsJson)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")

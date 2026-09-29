@@ -404,6 +404,18 @@ internal static class EndpointHelpers
         return false;
     }
 
+    /// <summary>
+    /// The signed-in account behind a request, used as the identity of the turns it starts (per-user capability
+    /// scope and the userId passed to MCP servers) in place of any caller-supplied sender id.
+    /// Null for open loopback and bootstrap callers, which have no account and are admin-equivalent.
+    /// </summary>
+    public static string? ResolveAuthenticatedAccountId(HttpContext ctx, GatewayStartupContext startup)
+    {
+        var browserSessions = ctx.RequestServices.GetRequiredService<BrowserSessionAuthService>();
+        var auth = AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
+        return auth.IsAuthorized && !string.IsNullOrWhiteSpace(auth.AccountId) ? auth.AccountId : null;
+    }
+
     public static async Task WriteOperatorRoleRequiredAsync(HttpContext ctx)
     {
         ctx.Response.StatusCode = StatusCodes.Status403Forbidden;

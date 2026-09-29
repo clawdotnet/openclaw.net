@@ -238,6 +238,23 @@ return false;  // 401 Unauthorized
 
 ---
 
+### 3.5 轮次身份
+
+`Session.AuthenticatedUserId` 是一个轮次运行时所用的身份。它划分按用户的能力绑定范围，并以 `_meta.userId` 传给 MCP 服务器。为空时，二者回退到会话的 `SenderId`。
+
+运行轮次的入口会根据已登录账户设置它（`EndpointHelpers.ResolveAuthenticatedAccountId`），绝不采用调用方提供的发送者 ID：
+
+| 入口 | 身份来源 |
+|------|----------|
+| `POST /api/integration/messages`、MCP `openclaw.send_message` | 请求的账户；请求体中的 `senderId` 只用于路由和显示 |
+| `/ws` | 连接时解析出的账户 |
+| `POST /v1/chat/completions`、`POST /v1/responses`、`POST /apps/chat` | 请求的账户 |
+| A2A 执行 | 请求的账户；A2A 的 `contextId` 只作为发送者 ID |
+
+开放回环和引导令牌调用方没有账户，因此它们的轮次不带账户身份运行。
+
+来自外部发送者且不带账户的管道轮次同样不带账户身份运行，不会继承此前写入该会话的账户。例如，Telegram 用户的轮次绝不会以曾向该 Telegram 会话发消息的操作员身份运行。系统、定时、自动化和后台续跑轮次代表会话执行，保留会话原有身份。
+
 ## 四、中间件管道
 
 认证相关的中间件在 `Program.cs` 中按以下顺序注册：
