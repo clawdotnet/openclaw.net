@@ -126,6 +126,38 @@ public sealed class OperatorAccountServiceTests : IDisposable
         Assert.Equal(_clock.Now, PersistedLastLogin(accountId));
     }
 
+    [Fact]
+    public void TryAuthenticateToken_WhenLastLoginWriteFails_TriesAgainOnTheNextRequest()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Uses Unix directory permissions to make the accounts file unwritable.");
+            return;
+        }
+
+        var (accounts, _, token) = CreateOperatorToken();
+        Assert.True(accounts.TryAuthenticateToken(token.Token, out _));
+        _clock.Now = _clock.Now.AddMinutes(2);
+
+        var adminDirectory = Path.Combine(_storagePath, "admin");
+        var originalMode = File.GetUnixFileMode(adminDirectory);
+        File.SetUnixFileMode(adminDirectory, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            if (DirectoryIsWritable(adminDirectory))
+                Assert.Skip("Directory permissions are not enforced for this user.");
+
+            Assert.Throws<InvalidOperationException>(() => accounts.TryAuthenticateToken(token.Token, out _));
+
+            // A write that failed must not count as recorded, or requests for the next minute would skip it.
+            Assert.Throws<InvalidOperationException>(() => accounts.TryAuthenticateToken(token.Token, out _));
+        }
+        finally
+        {
+            File.SetUnixFileMode(adminDirectory, originalMode);
+        }
+    }
+
     private (OperatorAccountService Accounts, string AccountId, OperatorAccountTokenCreateResponse Token) CreateOperatorToken()
     {
         var accounts = CreateService();
@@ -136,6 +168,21 @@ public sealed class OperatorAccountServiceTests : IDisposable
             Role = OperatorRoleNames.Operator
         });
         return (accounts, account.Id, accounts.CreateToken(account.Id, new OperatorAccountTokenCreateRequest { Label = "cache" })!);
+    }
+
+    private static bool DirectoryIsWritable(string directory)
+    {
+        var probe = Path.Combine(directory, $".probe-{Guid.NewGuid():N}");
+        try
+        {
+            File.WriteAllText(probe, "");
+            File.Delete(probe);
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     // A fresh instance reads what was written to disk, not the first instance's in-memory state.

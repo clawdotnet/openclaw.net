@@ -349,8 +349,18 @@ internal sealed class OperatorAccountService
     {
         if (account.LastLoginAtUtc is not { } lastLogin || now - lastLogin >= TokenLastLoginInterval)
         {
+            var previous = account.LastLoginAtUtc;
             account.LastLoginAtUtc = now;
-            SaveUnsafe(state);
+            try
+            {
+                SaveUnsafe(state);
+            }
+            catch
+            {
+                // Only a saved login starts the interval; otherwise the next minute of requests would skip the write.
+                account.LastLoginAtUtc = previous;
+                throw;
+            }
         }
 
         return MapIdentity(account, OrganizationAuthModeNames.AccountToken);
