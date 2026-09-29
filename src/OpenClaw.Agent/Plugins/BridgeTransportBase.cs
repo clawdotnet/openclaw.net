@@ -9,7 +9,11 @@ namespace OpenClaw.Agent.Plugins;
 
 public abstract class BridgeTransportBase : IBridgeTransport
 {
+    private const string ConnectionClosedMessage = "The plugin bridge connection closed before the request completed.";
+
     private readonly ConcurrentDictionary<string, TaskCompletionSource<BridgeResponse>> _pending = new();
+    private readonly Lock _pendingGate = new();
+    private bool _closed;
     private readonly ILogger _logger;
     private int _nextId;
     private TextReader? _reader;
@@ -49,7 +53,16 @@ public abstract class BridgeTransportBase : IBridgeTransport
         var tcs = new TaskCompletionSource<BridgeResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         using var reg = ct.Register(() => tcs.TrySetCanceled(ct));
-        _pending[id] = tcs;
+
+        // Registration and closure share a lock, so a request is either failed by the closure or refused here;
+        // none can slip in after the reader has stopped and wait out the timeout.
+        lock (_pendingGate)
+        {
+            if (_closed)
+                throw new InvalidOperationException(ConnectionClosedMessage);
+
+            _pending[id] = tcs;
+        }
 
         try
         {
@@ -77,7 +90,7 @@ public abstract class BridgeTransportBase : IBridgeTransport
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
-        CancelPendingRequests();
+        FailPendingRequests();
         await DisposeCoreAsync();
         if (_readLoop is not null)
         {
@@ -132,15 +145,23 @@ public abstract class BridgeTransportBase : IBridgeTransport
             // Stream closed while process exited or transport disposed.
         }
 
-        CancelPendingRequests();
+        FailPendingRequests();
     }
 
-    protected void CancelPendingRequests()
+    // Fail rather than cancel: the caller did not cancel, and a cancellation would be reported as a tool timeout.
+    // Not an IOException either, so the hybrid transport does not resend a request the child may already have run.
+    protected void FailPendingRequests()
     {
-        foreach (var kvp in _pending)
-            kvp.Value.TrySetCanceled();
+        TaskCompletionSource<BridgeResponse>[] pending;
+        lock (_pendingGate)
+        {
+            _closed = true;
+            pending = [.. _pending.Values];
+            _pending.Clear();
+        }
 
-        _pending.Clear();
+        foreach (var tcs in pending)
+            tcs.TrySetException(new InvalidOperationException(ConnectionClosedMessage));
     }
 
     private static string Truncate(string value, int maxChars)

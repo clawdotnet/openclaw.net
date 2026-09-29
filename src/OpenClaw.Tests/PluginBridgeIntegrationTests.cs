@@ -1492,10 +1492,10 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
                 execute: async (_pluginId, params) => {
                   if (params.kill) {
                     setTimeout(() => process.exit(0), 20);
-                    return "restarting";
+                    return `restarting:${process.pid}`;
                   }
 
-                  return `echo:${params.text ?? "ok"}`;
+                  return `echo:${params.text ?? "ok"}:${process.pid}`;
                 }
               });
             };
@@ -1511,12 +1511,17 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
         var tools = await host.LoadAsync(null, TestContext.Current.CancellationToken);
         var tool = Assert.Single(tools);
 
-        Assert.Equal("echo:first", await tool.ExecuteAsync("""{"text":"first"}""", TestContext.Current.CancellationToken));
+        Assert.StartsWith("echo:first:", await tool.ExecuteAsync("""{"text":"first"}""", TestContext.Current.CancellationToken), StringComparison.Ordinal);
         for (var attempt = 1; attempt <= 5; attempt++)
         {
-            Assert.Equal("restarting", await tool.ExecuteAsync("""{"kill":true}""", TestContext.Current.CancellationToken));
-            var expected = $"echo:after-{attempt}";
-            string? actual = null;
+            var killed = await tool.ExecuteAsync("""{"kill":true}""", TestContext.Current.CancellationToken);
+            Assert.StartsWith("restarting:", killed, StringComparison.Ordinal);
+            var killedPid = killed["restarting:".Length..];
+
+            // The dying child can still answer during its last 20 ms, so only a reply from a new process
+            // proves the restart. Waiting for one also keeps the next kill from reaching the dying child.
+            var expectedPrefix = $"echo:after-{attempt}:";
+            var actual = "";
             var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
             while (DateTimeOffset.UtcNow < deadline)
             {
@@ -1531,13 +1536,15 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
                     actual = ex.Message;
                 }
 
-                if (string.Equals(actual, expected, StringComparison.Ordinal))
+                if (actual.StartsWith(expectedPrefix, StringComparison.Ordinal) &&
+                    !string.Equals(actual[expectedPrefix.Length..], killedPid, StringComparison.Ordinal))
                     break;
 
                 await Task.Delay(50, TestContext.Current.CancellationToken);
             }
 
-            Assert.Equal(expected, actual);
+            Assert.StartsWith(expectedPrefix, actual, StringComparison.Ordinal);
+            Assert.NotEqual(killedPid, actual[expectedPrefix.Length..]);
         }
     }
 
