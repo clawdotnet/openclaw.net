@@ -196,6 +196,8 @@ Bootstrap tokens and open loopback resolve to `admin` and are unaffected. New op
 
 Each denial is logged as a warning under the `OpenClaw.Gateway.Authorization` category, naming the surface, auth mode, account, and role (never the credential), so admins can find the accounts to promote. To migrate without an outage, set `OpenClaw:Security:AllowViewerAgentExecution=true`, watch the log for the admitted accounts, grant them `operator`, then turn the setting off. The setting is temporary and will be removed in the next release.
 
+`GET /auth/session` reports the result of this check as `canExecuteAgent`, including the effect of `AllowViewerAgentExecution`, so clients can explain a refusal before connecting. Companion uses it; a gateway that predates the field omits it.
+
 ### 3.4 `IsAuthorizedRequest` — Detailed Logic
 
 ```csharp
