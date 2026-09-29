@@ -102,6 +102,11 @@ All notable changes to this project are tracked in this file.
 - WebChat token persistence now defaults to session-only storage (`sessionStorage`).
 - Added a `Remember` toggle to opt into persistent token storage (`localStorage`).
 
+### Plugin Bridge
+
+- A request outstanding when a plugin's Node.js process exits now fails with "The plugin bridge connection closed before the request completed." Previously it was reported as a cancellation, so the tool executor recorded a crashed plugin as a tool timeout and advised raising `Tooling.ToolTimeoutSeconds`, and a crash during the restart handshake stopped the restart retries. It is deliberately not an `IOException`, so the hybrid transport does not resend a request the child may already have run.
+- Fixed a race in `BridgeTransportModes_RestartAfterChildExit`: it now waits for a reply from the replacement process before the next kill, instead of accepting a reply from the child that was about to exit.
+
 ### Tests
 
 - Added `ToolApprovalServiceTests` for requester-bound approvals and admin override behavior.

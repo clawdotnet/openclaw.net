@@ -77,7 +77,7 @@ public abstract class BridgeTransportBase : IBridgeTransport
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
-        CancelPendingRequests();
+        FailPendingRequests();
         await DisposeCoreAsync();
         if (_readLoop is not null)
         {
@@ -132,13 +132,15 @@ public abstract class BridgeTransportBase : IBridgeTransport
             // Stream closed while process exited or transport disposed.
         }
 
-        CancelPendingRequests();
+        FailPendingRequests();
     }
 
-    protected void CancelPendingRequests()
+    // Fail rather than cancel: the caller did not cancel, and a cancellation would be reported as a tool timeout.
+    // Not an IOException either, so the hybrid transport does not resend a request the child may already have run.
+    protected void FailPendingRequests()
     {
         foreach (var kvp in _pending)
-            kvp.Value.TrySetCanceled();
+            kvp.Value.TrySetException(new InvalidOperationException("The plugin bridge connection closed before the request completed."));
 
         _pending.Clear();
     }
