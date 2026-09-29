@@ -78,7 +78,8 @@ public sealed class WebSocketChannel : IChannelAdapter
         string clientId,
         IPAddress? remoteIp,
         CancellationToken ct,
-        string? authenticatedUserId = null)
+        string? authenticatedUserId = null,
+        bool authenticatedUserIsAdmin = false)
     {
         if (!TryAddConnection(clientId, ws, remoteIp, out var state))
         {
@@ -132,6 +133,7 @@ public sealed class WebSocketChannel : IChannelAdapter
                     SenderId = clientId,
                     RequestCancellation = ct,
                     AuthenticatedUserId = authenticatedUserId,
+                    AuthenticatedUserIsAdmin = authenticatedUserIsAdmin,
                     SessionId = parsed.SessionId,
                     Type = parsed.Type,
                     Text = parsed.Text ?? "",

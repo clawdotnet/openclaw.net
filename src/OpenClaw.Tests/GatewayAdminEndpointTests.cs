@@ -866,6 +866,225 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.Equal("acct-a2a", ran?.AuthenticatedUserId);
     }
 
+    [Fact]
+    public async Task IntegrationMessages_WhenSessionOwnedByAnotherAccount_ShouldRejectUnlessAdmin()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (_, ownerId) = CreateAccountTokenWithId(harness, "rest-owner", OperatorRoleNames.Operator);
+        var (otherToken, _) = CreateAccountTokenWithId(harness, "rest-other", OperatorRoleNames.Operator);
+        var (adminToken, _) = CreateAccountTokenWithId(harness, "rest-admin", OperatorRoleNames.Admin);
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync("owned-rest", "agentqi-mobile", "owner", CancellationToken.None, ownerAccountId: ownerId);
+
+        async Task<HttpResponseMessage> PostAsync(string token)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/integration/messages")
+            {
+                Content = JsonContent("""{"text":"hello","sessionId":"owned-rest"}""")
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            return await harness.Client.SendAsync(request);
+        }
+
+        var denied = await PostAsync(otherToken);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.False(harness.Runtime.Pipeline.InboundReader.TryRead(out _));
+
+        var admitted = await PostAsync(adminToken);
+        Assert.Equal(HttpStatusCode.Accepted, admitted.StatusCode);
+        Assert.True(harness.Runtime.Pipeline.InboundReader.TryRead(out var queued));
+        Assert.True(queued.AuthenticatedUserIsAdmin);
+    }
+
+    [Fact]
+    public async Task McpSendMessage_WhenSessionOwnedByAnotherAccount_ShouldReturnToolError()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (_, ownerId) = CreateAccountTokenWithId(harness, "mcp-owner", OperatorRoleNames.Operator);
+        var (otherToken, _) = CreateAccountTokenWithId(harness, "mcp-other", OperatorRoleNames.Operator);
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync("owned-mcp", "agentqi-mobile", "owner", CancellationToken.None, ownerAccountId: ownerId);
+
+        using var result = await CallMcpToolAsync(harness, otherToken, "openclaw.send_message", """{"text":"hello","sessionId":"owned-mcp"}""");
+
+        Assert.True(result.RootElement.GetProperty("isError").GetBoolean());
+        Assert.Contains("another account", result.RootElement.GetProperty("content")[0].GetProperty("text").GetString(), StringComparison.Ordinal);
+        Assert.False(harness.Runtime.Pipeline.InboundReader.TryRead(out _));
+    }
+
+    [Fact]
+    public async Task AppsChat_WhenSessionOwnedByAnotherAccount_ShouldReturnForbidden()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (_, ownerId) = CreateAccountTokenWithId(harness, "apps-owner", OperatorRoleNames.Operator);
+        var (otherToken, _) = CreateAccountTokenWithId(harness, "apps-other", OperatorRoleNames.Operator);
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync("owned-apps", "apps", "owned-apps", CancellationToken.None, ownerAccountId: ownerId);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/apps/chat") { Content = JsonContent("""{"message":"hello","sessionId":"owned-apps"}""") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", otherToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        harness.Runtime.AgentRuntime.DidNotReceiveWithAnyArgs().RunStreamingAsync(default!, default!, default);
+    }
+
+    [Fact]
+    public async Task A2ABridge_WhenSessionOwnedByAnotherAccount_ShouldNotRunAgent()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync("owned-a2a", "a2a", "ctx", CancellationToken.None, ownerAccountId: "acct-owner");
+        var bridge = new OpenClawA2AExecutionBridge(new GatewayRuntimeHolder { Runtime = harness.Runtime }, NullLogger<OpenClawA2AExecutionBridge>.Instance);
+        var events = new List<AgentStreamEvent>();
+
+        A2ACallerContext.AccountId = "acct-other";
+        try
+        {
+            await bridge.ExecuteStreamingAsync(
+                new OpenClaw.MicrosoftAgentFrameworkAdapter.A2A.OpenClawA2AExecutionRequest
+                {
+                    SessionId = "owned-a2a",
+                    ChannelId = "a2a",
+                    SenderId = "ctx",
+                    UserText = "hello"
+                },
+                (evt, _) =>
+                {
+                    events.Add(evt);
+                    return ValueTask.CompletedTask;
+                },
+                CancellationToken.None);
+        }
+        finally
+        {
+            A2ACallerContext.AccountId = null;
+        }
+
+        harness.Runtime.AgentRuntime.DidNotReceiveWithAnyArgs().RunStreamingAsync(default!, default!, default);
+        Assert.Contains(events, evt => evt.Type == AgentStreamEventType.Error && evt.Content == SessionAccess.DeniedMessage);
+    }
+
+    [Theory]
+    [InlineData("/v1/chat/completions", """{"messages":[{"role":"user","content":"hello"}]}""")]
+    [InlineData("/v1/responses", """{"input":"hello"}""")]
+    public async Task OpenAiStableSession_WhenOwnedByAnotherBrowserAccount_ShouldReturnForbidden(string path, string body)
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (ownerToken, _) = CreateAccountTokenWithId(harness, "cookie-owner", OperatorRoleNames.Operator);
+        var (otherToken, _) = CreateAccountTokenWithId(harness, "cookie-other", OperatorRoleNames.Operator);
+        var (ownerCookie, _) = await LoginAsync(harness.Client, ownerToken);
+        var (otherCookie, _) = await LoginAsync(harness.Client, otherToken);
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns("ok");
+
+        // Browser sessions have no bearer token, so both accounts derive the stable session from the same client address.
+        async Task<HttpResponseMessage> SendAsync(string cookie)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent(body) };
+            request.Headers.Add("Cookie", cookie);
+            request.Headers.Add("X-OpenClaw-Session-Id", "shared-stable");
+            return await harness.Client.SendAsync(request);
+        }
+
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(ownerCookie)).StatusCode);
+        var denied = await SendAsync(otherCookie);
+
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        using var payload = await ReadJsonAsync(denied);
+        Assert.Equal("session_forbidden", payload.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Theory]
+    [InlineData("DELETE", "/admin/sessions/owned-admin")]
+    [InlineData("POST", "/admin/sessions/owned-admin/metadata")]
+    [InlineData("POST", "/admin/sessions/owned-admin/abort")]
+    [InlineData("POST", "/admin/branches/owned-admin:branch:b1/restore")]
+    [InlineData("POST", "/admin/sessions/owned-admin/recovery")]
+    public async Task SessionManagement_WhenSessionOwnedByAnotherAccount_ShouldReturnForbidden(string method, string path)
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (_, ownerId) = CreateAccountTokenWithId(harness, "manage-owner", OperatorRoleNames.Operator);
+        var (otherToken, _) = CreateAccountTokenWithId(harness, "manage-other", OperatorRoleNames.Operator);
+        await harness.MemoryStore.SaveSessionAsync(
+            new Session { Id = "owned-admin", ChannelId = "agentqi-mobile", SenderId = "owner", OwnerAccountId = ownerId },
+            CancellationToken.None);
+
+        using var request = new HttpRequestMessage(new HttpMethod(method), path) { Content = JsonContent("{}") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", otherToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.NotNull(await harness.MemoryStore.GetSessionAsync("owned-admin", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SessionManagement_WhenOwnerOrAdmin_ShouldAllowWrites()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (ownerToken, ownerId) = CreateAccountTokenWithId(harness, "manage-self", OperatorRoleNames.Operator);
+        var (adminToken, _) = CreateAccountTokenWithId(harness, "manage-admin", OperatorRoleNames.Admin);
+        await harness.MemoryStore.SaveSessionAsync(
+            new Session { Id = "owned-admin", ChannelId = "agentqi-mobile", SenderId = "owner", OwnerAccountId = ownerId },
+            CancellationToken.None);
+
+        using var metadata = new HttpRequestMessage(HttpMethod.Post, "/admin/sessions/owned-admin/metadata") { Content = JsonContent("""{"starred":true}""") };
+        metadata.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ownerToken);
+        Assert.Equal(HttpStatusCode.OK, (await harness.Client.SendAsync(metadata)).StatusCode);
+
+        using var delete = new HttpRequestMessage(HttpMethod.Delete, "/admin/sessions/owned-admin");
+        delete.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        Assert.Equal(HttpStatusCode.OK, (await harness.Client.SendAsync(delete)).StatusCode);
+        Assert.Null(await harness.MemoryStore.GetSessionAsync("owned-admin", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ChatCompletions_WhenAccountToken_ShouldRecordSessionOwner()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "openai-owner", OperatorRoleNames.Operator);
+        Session? ran = null;
+        harness.Runtime.AgentRuntime.RunAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>())
+            .Returns(callInfo =>
+            {
+                ran = callInfo.Arg<Session>();
+                return Task.FromResult("ok");
+            });
+
+        await SendChatCompletionAsync(harness, token);
+
+        Assert.Equal(accountId, ran?.OwnerAccountId);
+    }
+
+    [Fact]
+    public async Task IntegrationSessions_WhenOwnerIsMe_ShouldListOnlyCallerOwnedSessions()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "list-owner", OperatorRoleNames.Viewer);
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync("mine-active", "agentqi-mobile", "me", CancellationToken.None, ownerAccountId: accountId);
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync("theirs-active", "agentqi-mobile", "them", CancellationToken.None, ownerAccountId: "acct-someone-else");
+        await harness.MemoryStore.SaveSessionAsync(new Session { Id = "mine-stored", ChannelId = "agentqi-mobile", SenderId = "me", OwnerAccountId = accountId }, CancellationToken.None);
+        await harness.MemoryStore.SaveSessionAsync(new Session { Id = "unowned-stored", ChannelId = "telegram", SenderId = "t" }, CancellationToken.None);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/integration/sessions?owner=me");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        var active = payload.RootElement.GetProperty("active").EnumerateArray().Select(static item => item.GetProperty("id").GetString()!).ToArray();
+        var persisted = payload.RootElement.GetProperty("persisted").GetProperty("items").EnumerateArray().Select(static item => item.GetProperty("id").GetString()!).ToArray();
+        Assert.Equal(["mine-active"], active);
+        Assert.Equal(["mine-stored"], persisted);
+        Assert.Equal(accountId, payload.RootElement.GetProperty("active")[0].GetProperty("ownerAccountId").GetString());
+    }
+
     private static async IAsyncEnumerable<AgentStreamEvent> NoAgentEvents()
     {
         await Task.CompletedTask;

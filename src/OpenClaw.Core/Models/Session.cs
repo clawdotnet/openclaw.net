@@ -35,6 +35,12 @@ public sealed class Session
     /// </summary>
     public string? AuthenticatedUserId { get; set; }
 
+    /// <summary>
+    /// Account that created the session, set once at creation and never reassigned. Owned sessions accept turns
+    /// only from the owner or an admin; sessions created without an account (channels, cron, older data) stay unowned.
+    /// </summary>
+    public string? OwnerAccountId { get; set; }
+
     public StableSessionBindingInfo? StableSessionBinding { get; set; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset LastActiveAt { get; set; } = DateTimeOffset.UtcNow;

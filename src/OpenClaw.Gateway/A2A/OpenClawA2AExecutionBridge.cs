@@ -1,5 +1,6 @@
 using OpenClaw.Core.Middleware;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Mcp;
 using OpenClaw.MicrosoftAgentFrameworkAdapter.A2A;
 
@@ -28,9 +29,18 @@ internal sealed class OpenClawA2AExecutionBridge : IOpenClawA2AExecutionBridge
             request.SessionId,
             request.ChannelId,
             request.SenderId,
-            cancellationToken);
+            cancellationToken,
+            A2ACallerContext.AccountId);
 
         await using var sessionLock = await runtime.SessionManager.AcquireSessionLockAsync(session.Id, cancellationToken);
+
+        // A2A task ids can name an existing session, so apply the same ownership rule as the other surfaces.
+        if (!SessionAccess.CanWrite(session, A2ACallerContext.AccountId, A2ACallerContext.IsAdmin))
+        {
+            await onEvent(AgentStreamEvent.ErrorOccurred(SessionAccess.DeniedMessage), cancellationToken);
+            await onEvent(AgentStreamEvent.Complete(), cancellationToken);
+            return;
+        }
 
         // The A2A request's SenderId is the caller's contextId, so the turn's identity comes from the signed-in account.
         session.AuthenticatedUserId = A2ACallerContext.AccountId;

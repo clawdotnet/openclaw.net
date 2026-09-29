@@ -1586,6 +1586,103 @@ public sealed class GatewayWorkersTests
         Assert.Equal("acct-123", sessionManager.TryGetActive("telegram", "sender-1")?.AuthenticatedUserId);
     }
 
+    [Fact]
+    public async Task Start_OwnedSession_RecordsCreatorAndRejectsOtherAccountsExceptAdmins()
+    {
+        var storagePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "openclaw-worker-tests", Guid.NewGuid().ToString("N"));
+        var store = new FileMemoryStore(storagePath, 4);
+        var config = new GatewayConfig
+        {
+            Memory = new MemoryConfig { StoragePath = storagePath },
+            Tooling = new ToolingConfig { EnableBrowserTool = false },
+            Channels = new ChannelsConfig { Telegram = new TelegramChannelConfig { DmPolicy = "open" } }
+        };
+        var sessionManager = new SessionManager(store, config, NullLogger.Instance);
+        var heartbeatService = new HeartbeatService(config, store, sessionManager, NullLogger<HeartbeatService>.Instance);
+        var pipeline = new MessagePipeline();
+        await using var adapter = new RecordingChannelAdapter("telegram");
+        var agentRuntime = Substitute.For<IAgentRuntime>();
+        var turns = 0;
+        agentRuntime.RunTurnAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<System.Text.Json.JsonElement?>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref turns);
+                return Task.FromResult(AgentTurnResult.Completed("ok"));
+            });
+        var runtimeMetrics = new OpenClaw.Core.Observability.RuntimeMetrics();
+        var providerRegistry = new LlmProviderRegistry();
+        var providerPolicies = new ProviderPolicyService(storagePath, NullLogger<ProviderPolicyService>.Instance);
+        var runtimeEvents = new RuntimeEventStore(storagePath, NullLogger<RuntimeEventStore>.Instance);
+        var operations = new RuntimeOperationsState
+        {
+            ProviderPolicies = providerPolicies,
+            ProviderRegistry = providerRegistry,
+            LlmExecution = new GatewayLlmExecutionService(
+                config,
+                providerRegistry,
+                providerPolicies,
+                runtimeEvents,
+                runtimeMetrics,
+                new OpenClaw.Core.Observability.ProviderUsageTracker(),
+                NullLogger<GatewayLlmExecutionService>.Instance),
+            PluginHealth = new PluginHealthService(storagePath, NullLogger<PluginHealthService>.Instance),
+            ApprovalGrants = new ToolApprovalGrantStore(storagePath, NullLogger<ToolApprovalGrantStore>.Instance),
+            RuntimeEvents = runtimeEvents,
+            OperatorAudit = new OperatorAuditStore(storagePath, NullLogger<OperatorAuditStore>.Instance),
+            WebhookDeliveries = new WebhookDeliveryStore(storagePath, NullLogger<WebhookDeliveryStore>.Instance),
+            ActorRateLimits = new ActorRateLimitService(storagePath, NullLogger<ActorRateLimitService>.Instance),
+            SessionMetadata = new SessionMetadataStore(storagePath, NullLogger<SessionMetadataStore>.Instance)
+        };
+
+        using var lifetime = new TestApplicationLifetime();
+        GatewayWorkers.Start(
+            lifetime,
+            NullLogger.Instance,
+            workerCount: 1,
+            isNonLoopbackBind: false,
+            sessionManager,
+            new ConcurrentDictionary<string, SemaphoreSlim>(),
+            new ConcurrentDictionary<string, DateTimeOffset>(),
+            pipeline,
+            new MiddlewarePipeline([]),
+            new WebSocketChannel(config.WebSocket),
+            agentRuntime,
+            new Dictionary<string, IChannelAdapter>(StringComparer.Ordinal) { ["telegram"] = adapter },
+            config,
+            cronScheduler: null,
+            heartbeatService,
+            new ToolApprovalService(),
+            new ApprovalAuditStore(storagePath, NullLogger<ApprovalAuditStore>.Instance),
+            new OpenClaw.Core.Security.PairingManager(storagePath, NullLogger<OpenClaw.Core.Security.PairingManager>.Instance),
+            new ChatCommandProcessor(sessionManager),
+            operations);
+
+        async Task<string> SendAsync(string accountId, bool isAdmin, string messageId)
+        {
+            await pipeline.InboundWriter.WriteAsync(new InboundMessage
+            {
+                ChannelId = "telegram",
+                SenderId = "shared-sender",
+                SessionId = "owned-by-worker",
+                Text = "hello",
+                MessageId = messageId,
+                AuthenticatedUserId = accountId,
+                AuthenticatedUserIsAdmin = isAdmin
+            });
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            return (await adapter.ReadAsync(timeout.Token)).Text;
+        }
+
+        Assert.Equal("ok", await SendAsync("acct-a", isAdmin: false, "m1"));
+        Assert.Equal("acct-a", (await sessionManager.LoadAsync("owned-by-worker", CancellationToken.None))!.OwnerAccountId);
+
+        Assert.Equal(SessionAccess.DeniedMessage, await SendAsync("acct-b", isAdmin: false, "m2"));
+        Assert.Equal(1, Volatile.Read(ref turns));
+
+        Assert.Equal("ok", await SendAsync("acct-admin", isAdmin: true, "m3"));
+        Assert.Equal(2, Volatile.Read(ref turns));
+    }
+
     private static HeartbeatConfigDto CreateManagedHeartbeatConfig()
         => new()
         {

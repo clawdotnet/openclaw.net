@@ -65,9 +65,11 @@ internal static partial class OpenAiEndpoints
                 ? CreateStableSessionBinding(stableSessionId!, requesterKey)
                 : null;
             var requestId = $"oai-resp:{Guid.NewGuid():N}";
+            var caller = EndpointHelpers.ResolveCaller(ctx, startup);
+            var accountId = caller.AccountId;
             var session = stableBinding is not null
-                ? await runtime.SessionManager.GetOrCreateByIdAsync(BuildScopedStableSessionId(stableBinding), "openai-responses", requesterKey, ctx.RequestAborted)
-                : await runtime.SessionManager.GetOrCreateAsync("openai-responses", requestId, ctx.RequestAborted);
+                ? await runtime.SessionManager.GetOrCreateByIdAsync(BuildScopedStableSessionId(stableBinding), "openai-responses", requesterKey, ctx.RequestAborted, accountId)
+                : await runtime.SessionManager.GetOrCreateAsync("openai-responses", requestId, ctx.RequestAborted, accountId);
             IAsyncDisposable? stableSessionLock = null;
             var persistStableSessionOnExit = false;
             ToolApprovalCallback? approvalCallback = null;
@@ -84,12 +86,15 @@ internal static partial class OpenAiEndpoints
                         return;
                     }
 
+                    if (await TryRejectOtherAccountsSessionAsync(ctx, session, caller))
+                        return;
+
                     persistStableSessionOnExit = true;
                 }
 
                 // The turn runs as the signed-in account: it scopes per-user capability bindings and is the
                 // userId MCP servers see. Callers without an account (open loopback, bootstrap) run without one.
-                session.AuthenticatedUserId = EndpointHelpers.ResolveAuthenticatedAccountId(ctx, startup);
+                session.AuthenticatedUserId = accountId;
 
                 var httpMwCtx = new MessageContext
                 {

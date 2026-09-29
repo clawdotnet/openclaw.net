@@ -1,6 +1,7 @@
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Sessions;
 
 namespace OpenClaw.Gateway.Endpoints;
 
@@ -13,6 +14,9 @@ internal static partial class OpenAiEndpoints
     // OpenAI-shaped so SDK clients surface the message instead of a bare status.
     private const string OperatorRoleRequiredErrorJson =
         $$$"""{"error":{"message":"{{{EndpointHelpers.OperatorRoleRequiredMessage}}}","type":"permission_error","code":"insufficient_role"}}""";
+
+    private const string SessionForbiddenErrorJson =
+        $$$"""{"error":{"message":"{{{SessionAccess.DeniedMessage}}}","type":"permission_error","code":"session_forbidden"}}""";
 
     public static void MapOpenClawOpenAiEndpoints(
         this WebApplication app,
@@ -31,6 +35,19 @@ internal static partial class OpenAiEndpoints
         ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
         ctx.Response.ContentType = "application/json";
         await ctx.Response.WriteAsync(OperatorRoleRequiredErrorJson, ctx.RequestAborted);
+        return true;
+    }
+
+    // A stable session is keyed by the bearer token's hash or, for browser sessions, the client address, so two
+    // signed-in accounts behind one address can derive the same session. The owner check keeps them apart.
+    private static async Task<bool> TryRejectOtherAccountsSessionAsync(HttpContext ctx, Session session, EndpointHelpers.CallerAccount caller)
+    {
+        if (SessionAccess.CanWrite(session, caller.AccountId, caller.IsAdmin))
+            return false;
+
+        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+        ctx.Response.ContentType = "application/json";
+        await ctx.Response.WriteAsync(SessionForbiddenErrorJson, ctx.RequestAborted);
         return true;
     }
 

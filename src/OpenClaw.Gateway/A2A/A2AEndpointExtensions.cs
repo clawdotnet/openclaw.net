@@ -80,7 +80,9 @@ internal static class A2AEndpointExtensions
                     return;
                 }
 
-                A2ACallerContext.AccountId = EndpointHelpers.ResolveAuthenticatedAccountId(ctx, startup);
+                var caller = EndpointHelpers.ResolveCaller(ctx, startup);
+                A2ACallerContext.AccountId = caller.AccountId;
+                A2ACallerContext.IsAdmin = caller.IsAdmin;
 
                 if (!runtime.Operations.ActorRateLimits.TryConsume(
                         "ip",

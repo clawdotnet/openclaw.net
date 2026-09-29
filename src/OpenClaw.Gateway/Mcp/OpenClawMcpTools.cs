@@ -3,6 +3,7 @@ using System.Text.Json;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
 using OpenClaw.Gateway.Endpoints;
@@ -305,17 +306,21 @@ internal sealed class OpenClawMcpTools
         [Description("Optional reply-to message ID.")] string? replyToMessageId = null,
         CancellationToken ct = default)
     {
-        var caller = RequireOperator("openclaw.send_message");
+        var caller = EndpointHelpers.ResolveCaller(RequireOperator("openclaw.send_message"), _startup);
+        var request = new IntegrationMessageRequest
+        {
+            Text = text,
+            ChannelId = channelId,
+            SenderId = senderId,
+            SessionId = sessionId,
+            MessageId = messageId,
+            ReplyToMessageId = replyToMessageId
+        };
+        if (!await _facade.CanWriteSessionAsync(request, caller.AccountId, caller.IsAdmin, ct))
+            throw new McpException(SessionAccess.DeniedMessage);
+
         return JsonSerializer.Serialize(
-            await _facade.QueueMessageAsync(new IntegrationMessageRequest
-            {
-                Text = text,
-                ChannelId = channelId,
-                SenderId = senderId,
-                SessionId = sessionId,
-                MessageId = messageId,
-                ReplyToMessageId = replyToMessageId
-            }, ct, EndpointHelpers.ResolveAuthenticatedAccountId(caller, _startup)),
+            await _facade.QueueMessageAsync(request, ct, caller.AccountId, caller.IsAdmin),
             CoreJsonContext.Default.IntegrationMessageResponse);
     }
 

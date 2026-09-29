@@ -255,6 +255,25 @@ Open loopback and bootstrap callers have no account, so their turns run without 
 
 A pipeline turn from an external sender without an account runs without one too. It does not inherit the account of whoever wrote to the session before. For example, a Telegram user's turn never runs as an operator who posted into that Telegram session. System, scheduled, automation, and background-continuation turns act on the session's behalf and keep its identity.
 
+### 3.6 Session Ownership
+
+A session created by a signed-in account records it as `Session.OwnerAccountId`. The owner is set once, at creation, and never reassigned.
+
+| Session | Who can post to it |
+|---------|--------------------|
+| Owned | The owner and admins. Other accounts are refused on every surface: REST returns 403, MCP returns a tool error, `/apps/chat` returns 403, `/v1/*` stable sessions return 403 with code `session_forbidden`, A2A returns an error event, and pipeline turns (including `/ws`) get a reply saying the conversation belongs to another account |
+| Unowned (created by channels, cron, bootstrap or loopback callers, or before ownership existed) | Anyone allowed to post. Writing to an unowned session never claims it |
+
+Callers without an account (bootstrap, open loopback, channel and system turns) are not restricted by ownership. They are admin-equivalent, or they address sessions by their own keys.
+
+The same rule covers session management: deleting a session (`DELETE /admin/sessions/{id}`), changing its metadata, aborting its run, restoring one of its branches, and guided recovery return 403 for other non-admin accounts. Promoting a session to an automation only reads it and is unaffected.
+
+Reading stays open to every role that can read sessions, so dashboards and audit are unaffected.
+
+`GET /api/integration/sessions?owner=me` lists only the caller's own sessions, active and persisted. `SessionSummary.ownerAccountId` carries the owner. Callers without an account own no sessions.
+
+`/v1/*` stable sessions (`X-OpenClaw-Session-Id`) are keyed by the bearer token's hash or, for browser sessions, the client address, so two signed-in accounts behind one address can derive the same session; the owner check keeps them apart. `/ws` resolves its caller the same way as the other surfaces, so a loopback-bound gateway that still requires auth (`AlwaysRequireAuth` or OIDC) records owners and enforces them.
+
 ## 4. Middleware Pipeline
 
 Authentication middleware is registered in `Program.cs` in the following order:

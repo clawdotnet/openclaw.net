@@ -54,6 +54,9 @@ public sealed record InboundMessage
     /// </summary>
     public string? AuthenticatedUserId { get; init; }
 
+    /// <summary>True when <see cref="AuthenticatedUserId"/> holds the admin role, which may write to any owned session.</summary>
+    public bool AuthenticatedUserIsAdmin { get; init; }
+
     /// <summary>
     /// Multiple media attachments (e.g. several images in one message).
     /// When present, each attachment generates its own marker line in the pipeline text.

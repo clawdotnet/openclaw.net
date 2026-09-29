@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Nodes;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
 using OpenClaw.McpApp;
@@ -81,8 +82,15 @@ internal static class AppsEndpoints
             var sessionId = string.IsNullOrWhiteSpace(requestedSessionId)
                 ? $"apps-{Guid.NewGuid():N}"
                 : requestedSessionId!;
-            var session = await runtime.SessionManager.GetOrCreateByIdAsync(sessionId, "apps", sessionId, ct);
-            session.AuthenticatedUserId = EndpointHelpers.ResolveAuthenticatedAccountId(ctx, startup);
+            var caller = EndpointHelpers.ResolveCaller(ctx, startup);
+            var session = await runtime.SessionManager.GetOrCreateByIdAsync(sessionId, "apps", sessionId, ct, caller.AccountId);
+            if (!SessionAccess.CanWrite(session, caller.AccountId, caller.IsAdmin))
+            {
+                await EndpointHelpers.WriteForbiddenAsync(ctx, SessionAccess.DeniedMessage);
+                return;
+            }
+
+            session.AuthenticatedUserId = caller.AccountId;
 
             await SendAsync(ctx, new JsonObject { ["type"] = "session", ["sessionId"] = sessionId }, ct);
 
