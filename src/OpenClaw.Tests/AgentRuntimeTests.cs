@@ -3175,7 +3175,9 @@ public class AgentRuntimeTests
             _ = argumentsJson;
             try
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(1500), ct);
+                // Wait only for cancellation. The cap makes a missing step token fail instead of hang,
+                // and stays well below the executor's 30 s tool timeout so that timeout cannot mask it.
+                await Task.Delay(TimeSpan.FromSeconds(10), ct);
                 return "not-timeout";
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
