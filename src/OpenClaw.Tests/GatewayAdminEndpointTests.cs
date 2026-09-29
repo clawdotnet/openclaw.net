@@ -652,6 +652,26 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.Contains("legacy-viewer", entry, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(OperatorRoleNames.Viewer, false, false)]
+    [InlineData(OperatorRoleNames.Operator, false, true)]
+    [InlineData(OperatorRoleNames.Viewer, true, true)]
+    public async Task AuthSession_ShouldReportWhetherTheCallerCanRunTheAgent(string role, bool allowViewerAgentExecution, bool expected)
+    {
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configure: config => config.Security.AllowViewerAgentExecution = allowViewerAgentExecution);
+        var token = CreateAccountToken(harness, $"session-{role}", role);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/auth/session");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = await ReadJsonAsync(response);
+        Assert.Equal(expected, payload.RootElement.GetProperty("canExecuteAgent").GetBoolean());
+    }
+
     [Fact]
     public async Task AgentExecution_WhenAllowViewerAgentExecutionWithoutCredentials_ShouldStillReject()
     {
