@@ -76,7 +76,8 @@ internal static partial class OpenAiEndpoints
                 ? CreateStableSessionBinding(stableSessionId!, requesterKey)
                 : null;
             var requestId = $"oai-http:{Guid.NewGuid():N}";
-            var accountId = EndpointHelpers.ResolveAuthenticatedAccountId(ctx, startup);
+            var caller = EndpointHelpers.ResolveCaller(ctx, startup);
+            var accountId = caller.AccountId;
             var session = stableBinding is not null
                 ? await runtime.SessionManager.GetOrCreateByIdAsync(BuildScopedStableSessionId(stableBinding), "openai-http", requesterKey, ctx.RequestAborted, accountId)
                 : await runtime.SessionManager.GetOrCreateAsync("openai-http", requestId, ctx.RequestAborted, accountId);
@@ -95,6 +96,9 @@ internal static partial class OpenAiEndpoints
                         await ctx.Response.WriteAsync(bindingError ?? "Stable session binding is inconsistent with the current requester scope.", ctx.RequestAborted);
                         return;
                     }
+
+                    if (await TryRejectOtherAccountsSessionAsync(ctx, session, caller))
+                        return;
 
                     persistStableSessionOnExit = true;
                 }

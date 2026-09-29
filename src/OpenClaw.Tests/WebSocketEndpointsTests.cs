@@ -13,12 +13,13 @@ namespace OpenClaw.Tests;
 public sealed class WebSocketEndpointsTests
 {
     [Fact]
-    public void TryResolveAuthorizedUserIdForWebSocket_PrefersAuthenticatedPrincipalClaim()
+    public void ResolveCaller_WhenOidcPrincipal_ReturnsSubject()
     {
         var config = new GatewayConfig
         {
             AuthToken = "bootstrap-token"
         };
+        config.Security.Oidc.Authority = "https://issuer.example";
         var startup = new GatewayStartupContext
         {
             Config = config,
@@ -39,14 +40,13 @@ public sealed class WebSocketEndpointsTests
             authenticationType: "oidc"))
         };
 
-        var ok = WebSocketEndpoints.TryResolveAuthorizedUserIdForWebSocket(ctx, startup, out var authenticatedUserId);
+        var authenticatedUserId = EndpointHelpers.ResolveCaller(ctx, startup).AccountId;
 
-        Assert.True(ok);
         Assert.Equal("oidc-user-1", authenticatedUserId);
     }
 
     [Fact]
-    public void TryResolveAuthorizedUserIdForWebSocket_AcceptsBrowserSessionAccountId()
+    public void ResolveCaller_WhenBrowserSession_ReturnsAccountId()
     {
         var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-websocket-endpoint-tests", Guid.NewGuid().ToString("N"));
         var config = new GatewayConfig
@@ -81,14 +81,50 @@ public sealed class WebSocketEndpointsTests
         };
         ctx.Request.Headers.Cookie = $"{BrowserSessionAuthService.CookieName}={ticket.SessionId}";
 
-        var ok = WebSocketEndpoints.TryResolveAuthorizedUserIdForWebSocket(ctx, startup, out var authenticatedUserId);
+        var authenticatedUserId = EndpointHelpers.ResolveCaller(ctx, startup).AccountId;
 
-        Assert.True(ok);
         Assert.Equal("acct-browser", authenticatedUserId);
     }
 
     [Fact]
-    public void TryResolveAuthorizedUserIdForWebSocket_AcceptsAccountTokenAccountId()
+    public void ResolveCaller_WhenLoopbackBindRequiresAuth_ReturnsAccountId()
+    {
+        // Loopback-bound but with AlwaysRequireAuth, so callers are authenticated accounts, not open loopback.
+        // Losing the account here would exempt /ws turns from the session owner check.
+        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-websocket-endpoint-tests", Guid.NewGuid().ToString("N"));
+        var config = new GatewayConfig { AuthToken = "bootstrap-token" };
+        config.Security.AlwaysRequireAuth = true;
+        var startup = new GatewayStartupContext
+        {
+            Config = config,
+            RuntimeState = RuntimeModeResolver.Resolve(config.Runtime, dynamicCodeSupported: true),
+            IsNonLoopbackBind = false
+        };
+
+        var operatorAccounts = new OperatorAccountService(storagePath, NullLogger<OperatorAccountService>.Instance);
+        var created = operatorAccounts.Create(new OperatorAccountCreateRequest
+        {
+            Username = "loopback-user",
+            Password = "P@ssw0rd123!",
+            Role = OperatorRoleNames.Operator
+        });
+        var token = operatorAccounts.CreateToken(created.Id, new OperatorAccountTokenCreateRequest { Label = "ws-loopback" });
+
+        var services = new ServiceCollection();
+        services.AddSingleton(new BrowserSessionAuthService(config));
+        services.AddSingleton(operatorAccounts);
+        services.AddSingleton(new OrganizationPolicyService(storagePath, NullLogger<OrganizationPolicyService>.Instance));
+
+        var ctx = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
+        ctx.Request.Headers.Authorization = $"Bearer {token!.Token}";
+
+        var authenticatedUserId = EndpointHelpers.ResolveCaller(ctx, startup).AccountId;
+
+        Assert.Equal(created.Id, authenticatedUserId);
+    }
+
+    [Fact]
+    public void ResolveCaller_WhenAccountToken_ReturnsAccountId()
     {
         var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-websocket-endpoint-tests", Guid.NewGuid().ToString("N"));
         var config = new GatewayConfig
@@ -127,9 +163,8 @@ public sealed class WebSocketEndpointsTests
         };
         ctx.Request.Headers.Authorization = $"Bearer {token!.Token}";
 
-        var ok = WebSocketEndpoints.TryResolveAuthorizedUserIdForWebSocket(ctx, startup, out var authenticatedUserId);
+        var authenticatedUserId = EndpointHelpers.ResolveCaller(ctx, startup).AccountId;
 
-        Assert.True(ok);
         Assert.Equal(created.Id, authenticatedUserId);
     }
 }

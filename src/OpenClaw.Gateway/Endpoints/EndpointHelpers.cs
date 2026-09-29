@@ -421,7 +421,11 @@ internal static class EndpointHelpers
     internal static CallerAccount ResolveCaller(HttpContext ctx, GatewayStartupContext startup)
     {
         var browserSessions = ctx.RequestServices.GetRequiredService<BrowserSessionAuthService>();
-        var auth = AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
+        return ToCaller(AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false));
+    }
+
+    internal static CallerAccount ToCaller(OperatorAuthorizationResult auth)
+    {
         if (!auth.IsAuthorized)
             return default;
 

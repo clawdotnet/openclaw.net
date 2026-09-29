@@ -1,5 +1,4 @@
 using System.Net.WebSockets;
-using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using OpenClaw.Core.Security;
@@ -33,9 +32,10 @@ internal static class WebSocketEndpoints
             }
 
             var clientId = ctx.Connection.Id;
-            TryResolveAuthorizedUserIdForWebSocket(ctx, startup, out var userId);
-            var isAdmin = EndpointHelpers.ResolveCaller(ctx, startup).IsAdmin;
-            await runtime.WebSocketChannel.HandleConnectionAsync(ws, clientId, ctx.Connection.RemoteIpAddress, ctx.RequestAborted, userId, isAdmin);
+            // Resolve the caller as the other surfaces do, so a loopback-bound gateway that still requires auth
+            // (AlwaysRequireAuth or OIDC) stamps the account and the session owner check applies to /ws turns.
+            var caller = EndpointHelpers.ResolveCaller(ctx, startup);
+            await runtime.WebSocketChannel.HandleConnectionAsync(ws, clientId, ctx.Connection.RemoteIpAddress, ctx.RequestAborted, caller.AccountId, caller.IsAdmin);
         });
 
         app.Map("/ws/live", async (HttpContext ctx) =>
@@ -111,29 +111,6 @@ internal static class WebSocketEndpoints
             return false;
         }
 
-        return true;
-    }
-
-    internal static bool TryResolveAuthorizedUserIdForWebSocket(HttpContext ctx, GatewayStartupContext startup, out string? authenticatedUserId)
-    {
-        authenticatedUserId = null;
-
-        if (!startup.IsNonLoopbackBind)
-            return true;
-
-        if (ctx.User.Identity?.IsAuthenticated == true)
-        {
-            authenticatedUserId = (ctx.User.FindFirst(ClaimTypes.NameIdentifier) ?? ctx.User.FindFirst("sub"))?.Value;
-            if (!string.IsNullOrWhiteSpace(authenticatedUserId))
-                return true;
-        }
-
-        var browserSessions = ctx.RequestServices.GetRequiredService<BrowserSessionAuthService>();
-        var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
-        if (!auth.IsAuthorized)
-            return false;
-
-        authenticatedUserId = auth.AccountId;
         return true;
     }
 
