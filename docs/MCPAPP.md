@@ -49,7 +49,7 @@ The `/apps/*` routes use the gateway's normal authentication. They are open with
 - `/apps/health` returns an `mcp` URL that points back to the gateway's own `/apps/mcp/{appId}` route.
 - `/apps/mcp/{appId}` forwards `tools/list`, `resources/list`, `resources/read`, and `tools/call` to the App already loaded in `McpAppRegistry`.
 - When the browser includes `?sessionId=...` on the MCP endpoint URL, OpenClaw injects that value into `tools/call` as `_meta.sessionId` before forwarding upstream.
-- `/apps/chat` creates or resumes a gateway session with that same id and streams host-friendly SSE frames back to the browser.
+- `/apps/chat` creates or resumes a gateway session with that same id and streams host-friendly SSE frames back to the browser. Turns on one session run one at a time: a second request for the same id waits until the first turn finishes. The session is saved after each turn.
 
 This is the bridge that lets a rich MCP App UI and the Agent collaborate against the same App session instead of creating two unrelated MCP connections.
 

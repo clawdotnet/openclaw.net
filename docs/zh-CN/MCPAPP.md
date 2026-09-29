@@ -49,7 +49,7 @@ OpenClaw.NET 为浏览器侧 MCP App UI 暴露了一组面向 gateway 的 host �
 - `/apps/health` 返回的 `mcp` 字段指向 gateway 自己的 `/apps/mcp/{appId}` 路由。
 - `/apps/mcp/{appId}` 会把 `tools/list`、`resources/list`、`resources/read`、`tools/call` 转发给 `McpAppRegistry` 中已加载的 App。
 - 如果浏览器在 MCP 端点 URL 上带了 `?sessionId=...`，OpenClaw 会在转发 `tools/call` 前把它注入到 `_meta.sessionId`。
-- `/apps/chat` 会用同一个 session id 创建或恢复 gateway 会话，并把 host 友好的 SSE 事件流回浏览器。
+- `/apps/chat` 会用同一个 session id 创建或恢复 gateway 会话，并把 host 友好的 SSE 事件流回浏览器。同一会话的轮次依次执行：对同一 id 的第二个请求会等待第一轮结束。每轮结束后会保存会话。
 
 这就是交互式 MCP App UI 和 Agent 能够围绕同一个 App 会话协作的桥梁，而不是各自单独建一条不相关的 MCP 连接。
 

@@ -84,6 +84,9 @@ internal static class AppsEndpoints
                 : requestedSessionId!;
             var caller = EndpointHelpers.ResolveCaller(ctx, startup);
             var session = await runtime.SessionManager.GetOrCreateByIdAsync(sessionId, "apps", sessionId, ct, caller.AccountId);
+
+            // One turn at a time per session, as on the other surfaces: a second request waits for the first to finish.
+            await using var sessionLock = await runtime.SessionManager.AcquireSessionLockAsync(session.Id, ct);
             if (!SessionAccess.CanWrite(session, caller.AccountId, caller.IsAdmin))
             {
                 await EndpointHelpers.WriteForbiddenAsync(ctx, SessionAccess.DeniedMessage);
@@ -128,6 +131,11 @@ internal static class AppsEndpoints
             catch (Exception ex)
             {
                 await SendAsync(ctx, new JsonObject { ["type"] = "error", ["error"] = ex.Message }, ct);
+            }
+            finally
+            {
+                // Saved even when the client disconnects mid-turn, so the history the turn produced is kept.
+                await runtime.SessionManager.PersistAsync(session, CancellationToken.None, sessionLockHeld: true);
             }
         });
     }
