@@ -1521,7 +1521,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             // The dying child can still answer during its last 20 ms, so only a reply from a new process
             // proves the restart. Waiting for one also keeps the next kill from reaching the dying child.
             var expectedPrefix = $"echo:after-{attempt}:";
-            string? actual = null;
+            var actual = "";
             var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
             while (DateTimeOffset.UtcNow < deadline)
             {
@@ -1543,7 +1543,6 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
                 await Task.Delay(50, TestContext.Current.CancellationToken);
             }
 
-            Assert.NotNull(actual);
             Assert.StartsWith(expectedPrefix, actual, StringComparison.Ordinal);
             Assert.NotEqual(killedPid, actual[expectedPrefix.Length..]);
         }
