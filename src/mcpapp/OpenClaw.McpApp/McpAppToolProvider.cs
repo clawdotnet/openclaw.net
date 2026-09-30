@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -12,7 +13,7 @@ namespace OpenClaw.McpApp;
 /// Each instance represents a single tool from a single MCP App.
 /// Registered into the <see cref="OpenClaw.Agent.Plugins.NativePluginRegistry"/>.
 /// </summary>
-public sealed class McpAppNativeTool : ITool
+public sealed class McpAppNativeTool : IToolWithContext
 {
     private readonly McpClient _client;
     private readonly string _remoteName;
@@ -47,6 +48,12 @@ public sealed class McpAppNativeTool : ITool
     public IMcpAppInfoProvider App => _app;
 
     public async ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        => await ExecuteCoreAsync(argumentsJson, context: null, ct);
+
+    public async ValueTask<string> ExecuteAsync(string argumentsJson, ToolExecutionContext context, CancellationToken ct)
+        => await ExecuteCoreAsync(argumentsJson, context, ct);
+
+    private async ValueTask<string> ExecuteCoreAsync(string argumentsJson, ToolExecutionContext? context, CancellationToken ct)
     {
         try
         {
@@ -56,13 +63,34 @@ public sealed class McpAppNativeTool : ITool
             if (argsDoc.RootElement.ValueKind != JsonValueKind.Object)
                 return $"Error: Invalid JSON arguments for MCP App tool '{Name}': root must be an object.";
 
-            var argsDict = new Dictionary<string, object?>(StringComparer.Ordinal);
+            var argsDict = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
             foreach (var prop in argsDoc.RootElement.EnumerateObject())
             {
-                argsDict[prop.Name] = ConvertJsonElement(prop.Value);
+                argsDict[prop.Name] = prop.Value.Clone();
             }
 
-            var response = await _client.CallToolAsync(_remoteName, argsDict, progress: null, cancellationToken: ct);
+            var session = context?.Session ?? ToolSessionContextScope.Current;
+            JsonObject? meta = null;
+            if (session is not null)
+            {
+                meta = new JsonObject
+                {
+                    ["userId"] = JsonValue.Create(session.AuthenticatedUserId ?? session.SenderId),
+                    ["sessionId"] = JsonValue.Create(session.Id),
+                };
+            }
+
+            var callParams = new CallToolRequestParams
+            {
+                Name = _remoteName,
+                Arguments = argsDict,
+                Meta = meta,
+            };
+
+            var response = await _client.SendRequestAsync<CallToolRequestParams, CallToolResult>(
+                RequestMethods.ToolsCall,
+                callParams,
+                cancellationToken: ct);
             var text = FormatResponseContent(response, _suppressStructuredContent);
             var isError = response.IsError ?? false;
             return isError ? $"Error: {text}" : text;
@@ -79,19 +107,6 @@ public sealed class McpAppNativeTool : ITool
         {
             return $"Error: MCP App tool '{Name}' from '{_app.AppId}' failed: {ex.Message}";
         }
-    }
-
-    private static object? ConvertJsonElement(JsonElement element)
-    {
-        return element.ValueKind switch
-        {
-            JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number => element.Clone(),
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.Null => null,
-            _ => element.Clone(),
-        };
     }
 
     private static string FormatResponseContent(CallToolResult response, bool suppressStructuredContent)

@@ -37,11 +37,15 @@ internal static class AgentExecutionContextScope
     {
         var prior = CurrentValue.Value;
         CurrentValue.Value = context;
-        return new RestoreScope(prior);
+        return new RestoreScope(prior, ToolSessionContextScope.Push(context.Session));
     }
 
-    private sealed class RestoreScope(AgentExecutionContext? prior) : IDisposable
+    private sealed class RestoreScope(AgentExecutionContext? prior, IDisposable sessionScope) : IDisposable
     {
-        public void Dispose() => CurrentValue.Value = prior;
+        public void Dispose()
+        {
+            CurrentValue.Value = prior;
+            sessionScope.Dispose();
+        }
     }
 }
