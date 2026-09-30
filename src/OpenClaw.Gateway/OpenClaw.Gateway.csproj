@@ -51,11 +51,11 @@
        resolution conflicts in Gateway builds. -->
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.MicrosoftAgentFrameworkAdapter\OpenClaw.MicrosoftAgentFrameworkAdapter.csproj" />
-    <PackageReference Include="A2A" Version="1.0.0-preview2" />
-    <PackageReference Include="A2A.AspNetCore" Version="1.0.0-preview2" />
-    <PackageReference Include="Microsoft.Agents.AI" Version="1.10.0" />
-    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A" Version="1.10.0-preview.260610.1" />
-    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A.AspNetCore" Version="1.10.0-preview.260610.1" />
+    <PackageReference Include="A2A" />
+    <PackageReference Include="A2A.AspNetCore" />
+    <PackageReference Include="Microsoft.Agents.AI" />
+    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A" />
+    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A.AspNetCore" />
   </ItemGroup>
   <ItemGroup Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">
     <ProjectReference Include="..\OpenClawNet.Sandbox.OpenSandbox\OpenClawNet.Sandbox.OpenSandbox.csproj" />
@@ -68,24 +68,24 @@
     <DefineConstants>$(DefineConstants);OPENCLAW_VAULT_EXCLUDED</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Anthropic" Version="12.29.1" />
+    <PackageReference Include="Anthropic" />
     <!-- Dashboard hosting is done manually via PhysicalFileProvider + URL rewrite in PipelineExtensions.cs.
          Microsoft.AspNetCore.Components.WebAssembly.Server is intentionally NOT referenced because
          its Static Web Assets integration conflicts with our ReferenceOutputAssembly=false approach. -->
-    <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
-    <PackageReference Include="GeminiDotnet.Extensions.AI" Version="0.25.0" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
-	<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
-    <PackageReference Include="Microsoft.OpenApi" Version="2.9.0" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.0.0" />
-    <PackageReference Include="ModelContextProtocol.Extensions.Tasks" Version="2.0.0" />
-    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
-    <PackageReference Include="QRCoder" Version="1.8.0" />
-    <PackageReference Include="TickerQ" Version="10.4.0" />
+    <PackageReference Include="BouncyCastle.Cryptography" />
+    <PackageReference Include="GeminiDotnet.Extensions.AI" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.OpenApi" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <PackageReference Include="ModelContextProtocol.Extensions.Tasks" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="QRCoder" />
+    <PackageReference Include="TickerQ" />
   </ItemGroup>
 
   <ItemGroup>

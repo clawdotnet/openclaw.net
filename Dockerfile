@@ -12,6 +12,7 @@ WORKDIR /src
 # Copy build props for layer caching
 COPY Directory.Build.props ./
 COPY Directory.Build.targets ./
+COPY Directory.Packages.props ./
 COPY src/OpenClaw.Core/Directory.Build.targets src/OpenClaw.Core/
 
 # Copy csproj files individually for restore caching

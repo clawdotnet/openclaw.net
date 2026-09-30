@@ -24,6 +24,7 @@ public sealed class InteractiveStartupRecoveryTests
 
         try
         {
+            Environment.SetEnvironmentVariable("OPENCLAW_WORKSPACE", null);
             Environment.SetEnvironmentVariable("MODEL_PROVIDER_KEY", "test-key");
             var input = new StringReader("y\n\n\n\n");
             using var output = new StringWriter();

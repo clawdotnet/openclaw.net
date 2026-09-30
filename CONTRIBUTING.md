@@ -7,8 +7,16 @@ For project governance, maintainer roles, sponsorship boundaries, branch protect
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell), available as `pwsh` on `PATH`, for script execution tests and central package policy checks
 - Git
 - A C# editor (VS Code with C# Dev Kit, Visual Studio, or Rider)
+
+Windows PowerShell 5.1 (`powershell.exe`) does not replace `pwsh`. With the .NET SDK installed, you can install PowerShell as a global tool:
+
+```bash
+dotnet tool install --global PowerShell
+pwsh --version
+```
 
 ## Build & Test
 
@@ -25,6 +33,24 @@ dotnet test OpenClaw.Net.slnx --configuration Release --no-build
 # First deterministic runtime smoke
 dotnet run --project samples/OpenClaw.HelloAgent -c Release --no-build
 ```
+
+## NuGet Dependencies
+
+NuGet dependency versions are managed in the root [Directory.Packages.props](Directory.Packages.props). Add or update a `PackageVersion` there, and keep project `PackageReference` items versionless. Keep conditions, `PrivateAssets`, and `IncludeAssets` on the project reference; a central version declaration does not add a dependency to a project.
+
+Do not introduce nested central files, `VersionOverride`, global package references, project-local central management settings, or conditional central versions. Each package must have one unconditional `PackageVersion Include` declaration with a fixed version; `PackageVersion Update` items and floating versions are not allowed. Transitive pinning is disabled. The `PackageVersion` property used by `dotnet pack -p:PackageVersion=...` controls our published package version and is separate from central dependency version items.
+
+The MCP packages are aligned to `2.2.0`, and `Microsoft.Extensions.Http` and `Microsoft.Extensions.Logging.Abstractions` to `10.0.10` across projects. The Semantic Kernel adapter is pinned to its previously resolved `1.80.1` version. Packages with independent release schedules need not share the same version number. Central management does not change the existing NativeAOT/JIT or optional integration boundaries.
+
+Run the policy self-tests and project evaluation checks before restoring:
+
+```powershell
+pwsh -File eng/verify-central-packages.ps1 -SelfTest
+pwsh -File eng/verify-central-packages.ps1
+pwsh -File eng/verify-central-packages.ps1 -Configuration Debug
+```
+
+CI also evaluates the optional integration configuration. The checks cover source XML and evaluated references, but do not replace restore, build, tests, or publish checks. If restore reports `NU1507` for multiple package sources, review the effective NuGet configuration and use approved package source mapping rather than suppressing the diagnostic.
 
 ## Code Style
 
