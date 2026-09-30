@@ -31,6 +31,7 @@ public sealed class McpAppTests : IAsyncDisposable
 
     // ── McpAppManifest ──────────────────────────────────────────
 
+    /// <summary>Verifies that manifest serialization preserves configured fields.</summary>
     [Fact]
     public void Manifest_SerializeAndDeserialize_RoundTrips()
     {
@@ -73,6 +74,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Equal("test.", deserialized.ToolNamePrefix);
     }
 
+    /// <summary>Verifies default manifest values when optional JSON fields are omitted.</summary>
     [Fact]
     public void Manifest_Deserialize_MinimalJson_DefaultsSensibly()
     {
@@ -89,6 +91,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Contains("tools", manifest.Capabilities);
     }
 
+    /// <summary>Verifies deserialization of the stdio command and its arguments.</summary>
     [Fact]
     public void Manifest_Deserialize_WithStdioTransport_ReadsCommandAndArgs()
     {
@@ -121,6 +124,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Equal("test-key", manifest.Headers["x-api-key"]);
     }
 
+    /// <summary>Verifies that malformed manifest JSON raises a JSON parsing error.</summary>
     [Fact]
     public void Manifest_Deserialize_InvalidJson_ThrowsJsonException()
     {
@@ -131,6 +135,7 @@ public sealed class McpAppTests : IAsyncDisposable
 
     // ── McpAppInstallState ──────────────────────────────────────
 
+    /// <summary>Verifies the lifecycle and metadata defaults of a new installation state.</summary>
     [Fact]
     public void InstallState_NewState_HasCorrectDefaults()
     {
@@ -153,6 +158,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Equal(0, state.DiscoveredPromptCount);
     }
 
+    /// <summary>Verifies that lifecycle transitions record their corresponding timestamps.</summary>
     [Fact]
     public void InstallState_LifecycleTransitions_UpdateTimestamps()
     {
@@ -176,6 +182,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Equal(discoveredAt, state.DiscoveredAt); // DiscoveredAt never changes
     }
 
+    /// <summary>Verifies that an installation records validation failures before loading.</summary>
     [Fact]
     public void InstallState_ValidationErrors_PreventLoading()
     {
@@ -196,6 +203,7 @@ public sealed class McpAppTests : IAsyncDisposable
 
     // ── McpAppInfoProvider ──────────────────────────────────────
 
+    /// <summary>Verifies that app information exposes the manifest's identity and configuration.</summary>
     [Fact]
     public void InfoProvider_BasicProperties_ReflectManifest()
     {
@@ -228,6 +236,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Empty(provider.GetPromptDescriptors());
     }
 
+    /// <summary>Verifies that an unnamed app uses its identifier as its display name.</summary>
     [Fact]
     public void InfoProvider_NameFallback_UsesIdWhenNameIsNull()
     {
@@ -243,6 +252,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Equal("no-name-app", provider.DisplayName);
     }
 
+    /// <summary>Verifies descriptor storage and counts for tools, resources, and prompts.</summary>
     [Fact]
     public void InfoProvider_DescriptorManagement_TracksCounts()
     {
@@ -335,6 +345,7 @@ public sealed class McpAppTests : IAsyncDisposable
 
     // ── McpAppDiscovery ─────────────────────────────────────────
 
+    /// <summary>Verifies that disabled discovery does not return any apps.</summary>
     [Fact]
     public void Discovery_Disabled_ReturnsEmptyList()
     {
@@ -346,6 +357,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Empty(results);
     }
 
+    /// <summary>Verifies that nonexistent discovery paths are ignored.</summary>
     [Fact]
     public void Discovery_NonExistentPath_ReturnsEmptyList()
     {
@@ -361,6 +373,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Empty(results);
     }
 
+    /// <summary>Verifies discovery and validation of an app with a valid manifest.</summary>
     [Fact]
     public void Discovery_ValidManifest_DiscoversApp()
     {
@@ -399,6 +412,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies that discovery finds manifests in nested app directories.</summary>
     [Fact]
     public void Discovery_MultipleAppsInNestedDirectories_FindsAll()
     {
@@ -445,6 +459,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies validation errors for manifests missing required fields.</summary>
     [Fact]
     public void Discovery_MissingRequiredFields_ReturnsInvalidState()
     {
@@ -481,6 +496,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies rejection of an unknown manifest transport.</summary>
     [Fact]
     public void Discovery_InvalidTransport_ReturnsValidationError()
     {
@@ -512,6 +528,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies rejection of the unsupported in-process transport.</summary>
     [Fact]
     public void Discovery_InProcessTransport_ReturnsValidationError()
     {
@@ -544,6 +561,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies that discovery skips malformed manifest JSON.</summary>
     [Fact]
     public void Discovery_InvalidJson_IsSkipped()
     {
@@ -571,6 +589,7 @@ public sealed class McpAppTests : IAsyncDisposable
 
     // ── McpAppDiscovery - Allow/Deny Filtering ─────────────────
 
+    /// <summary>Verifies that an allowlist admits matching app identifiers.</summary>
     [Fact]
     public void IsAppAllowed_AllowlistAllowsSpecificApps()
     {
@@ -589,6 +608,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Equal(McpAppLifecycle.Disabled, denied.Lifecycle);
     }
 
+    /// <summary>Verifies that a wildcard allowlist admits any app identifier.</summary>
     [Fact]
     public void IsAppAllowed_WildcardAllowlist_AllowsAll()
     {
@@ -603,6 +623,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.True(discovery.IsAppAllowed(CreateState("whatever")));
     }
 
+    /// <summary>Verifies that a deny rule overrides a matching allow rule.</summary>
     [Fact]
     public void IsAppAllowed_DenyWinsOverAllow()
     {
@@ -619,6 +640,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.False(discovery.IsAppAllowed(CreateState("also-blocked")));
     }
 
+    /// <summary>Verifies wildcard matching in app allowlist patterns.</summary>
     [Fact]
     public void IsAppAllowed_GlobPatterns_MatchWildcards()
     {
@@ -634,6 +656,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.True(discovery.IsAppAllowed(CreateState("normal-app")));
     }
 
+    /// <summary>Verifies that an app-specific disabled entry prevents loading.</summary>
     [Fact]
     public void IsAppAllowed_EntryConfigDisablesApp()
     {
@@ -652,6 +675,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Equal(McpAppLifecycle.Disabled, disabledState.Lifecycle);
     }
 
+    /// <summary>Verifies that empty legacy allow and deny lists admit all apps.</summary>
     [Fact]
     public void IsAppAllowed_EmptyAllowAndDeny_AllowsAll()
     {
@@ -661,6 +685,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.True(discovery.IsAppAllowed(CreateState("anything")));
     }
 
+    /// <summary>Verifies that an empty strict allowlist denies all apps.</summary>
     [Fact]
     public void IsAppAllowed_StrictEmptyAllowlist_DeniesAll()
     {
@@ -679,6 +704,7 @@ public sealed class McpAppTests : IAsyncDisposable
             e => e.Contains("allowlist", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>Verifies fail-closed behavior for unsupported allowlist semantics.</summary>
     [Fact]
     public void IsAppAllowed_UnsupportedAllowlistSemantics_DeniesApp()
     {
@@ -699,6 +725,7 @@ public sealed class McpAppTests : IAsyncDisposable
 
     // ── McpAppNativeTool (with HTTP MCP server) ────────────────
 
+    /// <summary>Verifies remote execution without injecting user or session metadata when no context exists.</summary>
     [Fact]
     public async Task NativeTool_Execute_InvokesRemoteTool()
     {
@@ -749,6 +776,9 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies session metadata forwarding, identity precedence, and separation from tool arguments.</summary>
+    /// <param name="useExplicitContext">Whether to supply an explicit session that overrides the ambient session.</param>
+    /// <param name="authenticatedUserId">The authenticated identity, or null to test fallback to the sender identifier.</param>
     [Theory]
     [InlineData(false, null)]
     [InlineData(false, "oidc-user-42")]
@@ -810,6 +840,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Equal(1, sentArguments.GetProperty("productId").GetInt32());
     }
 
+    /// <summary>Verifies that disposing nested Agent scopes restores each preceding tool session.</summary>
     [Fact]
     public void NativeTool_SessionScope_RestoresPriorSession()
     {
@@ -829,6 +860,9 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Same(prior, ToolSessionContextScope.Current);
     }
 
+    /// <summary>Creates a minimal Agent execution context for session-scoping tests.</summary>
+    /// <param name="session">The session to expose through the Agent scope.</param>
+    /// <returns>An execution context with empty invocation and token-budget state.</returns>
     private static AgentExecutionContext CreateAgentContext(Session session) => new()
     {
         Session = session,
@@ -839,6 +873,7 @@ public sealed class McpAppTests : IAsyncDisposable
         ToolInvocations = [],
     };
 
+    /// <summary>Verifies that JSON tool arguments are accepted by the remote MCP tool.</summary>
     [Fact]
     public async Task NativeTool_Execute_WithArguments_InvokesCorrectly()
     {
@@ -882,6 +917,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies that malformed tool arguments produce an error result.</summary>
     [Fact]
     public async Task NativeTool_Execute_InvalidJson_ReturnsError()
     {
@@ -924,6 +960,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies that an array is rejected where a tool argument object is required.</summary>
     [Fact]
     public async Task NativeTool_Execute_ArrayJson_ReturnsError()
     {
@@ -966,6 +1003,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies preservation of UI metadata in connected tool descriptors.</summary>
     [Fact]
     public async Task Server_ConnectAsync_PreservesToolUiMetadata()
     {
@@ -999,6 +1037,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies that local tool names are sanitized for model-facing use.</summary>
     [Fact]
     public async Task Server_ConnectAsync_SanitizesLlmToolNames()
     {
@@ -1034,6 +1073,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies normalization and retention of tools with missing input schemas.</summary>
     [Fact]
     public async Task Server_ConnectAsync_ToolMissingInputSchema_IsNormalizedAndRetained()
     {
@@ -1067,6 +1107,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies that tools with non-object input schemas are omitted.</summary>
     [Fact]
     public async Task Server_ConnectAsync_ToolWithNonObjectSchema_IsSkipped()
     {
@@ -1098,6 +1139,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies that browser-only tools are not registered for Agent use.</summary>
     [Fact]
     public async Task RegisterMcpAppToolsAsync_SkipsAppOnlyTools()
     {
@@ -1134,6 +1176,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies that registered UI tools suppress structured output sent to the model.</summary>
     [Fact]
     public async Task RegisterMcpAppToolsAsync_UiToolsSuppressStructuredContent()
     {
@@ -1175,6 +1218,7 @@ public sealed class McpAppTests : IAsyncDisposable
 
     // ── McpAppServer ────────────────────────────────────────────
 
+    /// <summary>Verifies capability enumeration when an MCP App connects.</summary>
     [Fact]
     public async Task Server_ConnectAsync_EnumeratesAllCapabilities()
     {
@@ -1209,6 +1253,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies that repeated connections reuse the existing app information provider.</summary>
     [Fact]
     public async Task Server_ConnectAsync_Twice_ReturnsSameProvider()
     {
@@ -1241,6 +1286,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies that disconnecting an app transitions its lifecycle to stopped.</summary>
     [Fact]
     public async Task Server_DisconnectAsync_TransitionsToStopped()
     {
@@ -1277,6 +1323,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies that an invalid stdio command fails and records a failed lifecycle state.</summary>
     [Fact]
     public async Task Server_ConnectWithInvalidCommand_FailsWithFailedState()
     {
@@ -1304,6 +1351,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.NotNull(state.LastError);
     }
 
+    /// <summary>Verifies that disposing an app server disconnects its MCP client.</summary>
     [Fact]
     public async Task Server_Dispose_DisconnectsClient()
     {
@@ -1332,6 +1380,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Null(infoProvider.Client);
     }
 
+    /// <summary>Verifies application of the manifest's local tool name prefix.</summary>
     [Fact]
     public async Task Server_ToolNamePrefix_IsAppliedFromManifest()
     {
@@ -1365,6 +1414,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies that an entry-configured tool prefix overrides the manifest prefix.</summary>
     [Fact]
     public async Task Server_ToolNamePrefix_EntryConfigOverridesManifest()
     {
@@ -1399,6 +1449,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies case-insensitive handling of transport overrides.</summary>
     [Fact]
     public async Task Server_TransportOverride_IsCaseInsensitive()
     {
@@ -1434,6 +1485,7 @@ public sealed class McpAppTests : IAsyncDisposable
 
     // ── McpAppRegistry ─────────────────────────────────────────
 
+    /// <summary>Verifies that the registry loads apps discovered from valid manifests.</summary>
     [Fact]
     public async Task Registry_LoadAllAsync_WithValidManifests_LoadsApps()
     {
@@ -1470,6 +1522,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies that looking up an unknown app returns null.</summary>
     [Fact]
     public async Task Registry_GetApp_ReturnsNullForUnknownApp()
     {
@@ -1482,6 +1535,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Null(registry.GetApp("non-existent"));
     }
 
+    /// <summary>Verifies that repeated registry loads do not reconnect already loaded apps.</summary>
     [Fact]
     public async Task Registry_LoadAllAsync_OnlyLoadsOnce()
     {
@@ -1527,6 +1581,7 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Verifies server cleanup and safe repeated disposal of the registry.</summary>
     [Fact]
     public async Task Registry_Dispose_CleansUpServers()
     {
@@ -1543,6 +1598,7 @@ public sealed class McpAppTests : IAsyncDisposable
 
     // ── Config Models ───────────────────────────────────────────
 
+    /// <summary>Verifies default discovery, enablement, and allowlist settings.</summary>
     [Fact]
     public void McpAppsConfig_DefaultSettings()
     {
@@ -1556,6 +1612,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Empty(config.Entries);
     }
 
+    /// <summary>Verifies default enablement and unset per-app configuration overrides.</summary>
     [Fact]
     public void McpAppEntryConfig_DefaultSettings()
     {
@@ -1573,6 +1630,7 @@ public sealed class McpAppTests : IAsyncDisposable
 
     // ── Descriptor Models ───────────────────────────────────────
 
+    /// <summary>Verifies the default input schema and absent UI resource URI of a tool descriptor.</summary>
     [Fact]
     public void ToolDescriptor_DefaultSchemaText()
     {
@@ -1587,6 +1645,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Null(descriptor.UiResourceUri);
     }
 
+    /// <summary>Verifies explicit UI resource classification and its default value.</summary>
     [Fact]
     public void ResourceDescriptor_IsUiResource()
     {
@@ -1610,6 +1669,7 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.False(jsonResource.IsUiResource);
     }
 
+    /// <summary>Verifies prompt argument storage and required-argument flags.</summary>
     [Fact]
     public void PromptDescriptor_WithArguments()
     {
@@ -1633,6 +1693,8 @@ public sealed class McpAppTests : IAsyncDisposable
 
     // ── Helpers ─────────────────────────────────────────────────
 
+    /// <summary>Creates an isolated directory for test manifests.</summary>
+    /// <returns>The path of the newly created temporary directory.</returns>
     private static string CreateTempDir()
     {
         var path = Path.Combine(Path.GetTempPath(), "openclaw-mcpapp-tests", Guid.NewGuid().ToString("N"));
@@ -1640,6 +1702,10 @@ public sealed class McpAppTests : IAsyncDisposable
         return path;
     }
 
+    /// <summary>Creates a temporary app directory containing the supplied manifest.</summary>
+    /// <param name="dirName">The app subdirectory name.</param>
+    /// <param name="manifest">The manifest to serialize into the directory.</param>
+    /// <returns>The path of the app directory.</returns>
     private static string CreateTempManifestDir(string dirName, McpAppManifest manifest)
     {
         var dir = Path.Combine(CreateTempDir(), dirName);
@@ -1648,6 +1714,9 @@ public sealed class McpAppTests : IAsyncDisposable
         return dir;
     }
 
+    /// <summary>Writes a manifest using the app discovery filename and generated JSON serializer.</summary>
+    /// <param name="directory">The existing destination directory.</param>
+    /// <param name="manifest">The manifest to serialize.</param>
     private static void WriteManifestFile(string directory, McpAppManifest manifest)
     {
         var path = Path.Combine(directory, McpAppDiscovery.ManifestFileName);
@@ -1655,6 +1724,8 @@ public sealed class McpAppTests : IAsyncDisposable
         File.WriteAllText(path, json);
     }
 
+    /// <summary>Attempts recursive test-directory cleanup without propagating cleanup failures.</summary>
+    /// <param name="path">The directory to remove if it exists.</param>
     private static void TryDeleteDirectory(string path)
     {
         try
@@ -1668,6 +1739,9 @@ public sealed class McpAppTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Creates a minimal installation state with synthetic paths for an app identifier.</summary>
+    /// <param name="appId">The identifier used in the manifest and synthetic paths.</param>
+    /// <returns>An installation state suitable for tests that do not read its manifest file.</returns>
     private static McpAppInstallState CreateState(string appId)
         => new()
         {
@@ -1678,6 +1752,9 @@ public sealed class McpAppTests : IAsyncDisposable
 
     // ── MCP Server test infrastructure ──────────────────────────
 
+    /// <summary>Starts a stateless HTTP MCP test server and tracks its protocol requests.</summary>
+    /// <typeparam name="TTools">The tool class to register with the server.</typeparam>
+    /// <returns>The MCP endpoint URL and its request tracker.</returns>
     private async Task<(string ServerUrl, McpAppCallTracker Tracker)> StartMcpServerAsync<TTools>()
         where TTools : class
     {
@@ -1709,6 +1786,8 @@ public sealed class McpAppTests : IAsyncDisposable
         return ($"{address.TrimEnd('/')}/mcp", tracker);
     }
 
+    /// <summary>Starts a server advertising model-visible and app-only UI tool metadata.</summary>
+    /// <returns>The MCP endpoint URL.</returns>
     private async Task<string> StartMetadataMcpServerAsync()
     {
         var builder = WebApplication.CreateSlimBuilder();
@@ -1769,6 +1848,8 @@ public sealed class McpAppTests : IAsyncDisposable
         return app.Urls.Single().TrimEnd('/') + "/mcp";
     }
 
+    /// <summary>Starts a server advertising tools with a valid schema and a missing schema.</summary>
+    /// <returns>The MCP endpoint URL.</returns>
     private async Task<string> StartMcpServerWithMissingToolInputSchemaAsync()
     {
         var builder = WebApplication.CreateSlimBuilder();
@@ -1808,6 +1889,8 @@ public sealed class McpAppTests : IAsyncDisposable
         return app.Urls.Single().TrimEnd('/') + "/mcp";
     }
 
+    /// <summary>Starts a server advertising object and non-object tool input schemas.</summary>
+    /// <returns>The MCP endpoint URL.</returns>
     private async Task<string> StartMcpServerWithMixedInputSchemasAsync()
     {
         var builder = WebApplication.CreateSlimBuilder();
@@ -1848,6 +1931,9 @@ public sealed class McpAppTests : IAsyncDisposable
         return app.Urls.Single().TrimEnd('/') + "/mcp";
     }
 
+    /// <summary>Counts MCP POST methods and captures tool parameters without consuming the request body.</summary>
+    /// <param name="context">The incoming HTTP request context.</param>
+    /// <param name="tracker">The counters and last tool-call parameters to update.</param>
     private static async Task TrackMcpMethodAsync(HttpContext context, McpAppCallTracker tracker)
     {
         if (!context.Request.Path.StartsWithSegments("/mcp", StringComparison.Ordinal))
@@ -1893,6 +1979,7 @@ public sealed class McpAppTests : IAsyncDisposable
         public int PromptListCalls { get; set; }
     }
 
+    /// <summary>Disposes all HTTP test servers started by this test instance.</summary>
     public async ValueTask DisposeAsync()
     {
         foreach (var app in _apps)
@@ -1905,6 +1992,9 @@ public sealed class McpAppTests : IAsyncDisposable
 [McpServerToolType]
 file sealed class GroceryMcpTools
 {
+    /// <summary>Returns a fixed store fixture, or a single-store fixture when an identifier is supplied.</summary>
+    /// <param name="id">An optional identifier that selects the single-store fixture.</param>
+    /// <returns>A JSON array containing fixture stores.</returns>
     [McpServerTool(Name = "get_stores", ReadOnly = true)]
     [Description("Get stores in the chain. Pass id to fetch a single store, or omit it to list all stores.")]
     public static string GetStores(int? id = null)
@@ -1914,6 +2004,9 @@ file sealed class GroceryMcpTools
         return """[{"id":1,"name":"Downtown Market","city":"Portland","state":"OR"},{"id":2,"name":"Uptown Grocery","city":"Seattle","state":"WA"}]""";
     }
 
+    /// <summary>Returns a fixed product fixture, or a single-product fixture when an identifier is supplied.</summary>
+    /// <param name="id">An optional identifier that selects the single-product fixture.</param>
+    /// <returns>A JSON array containing fixture products.</returns>
     [McpServerTool(Name = "get_products", ReadOnly = true)]
     [Description("Get products. Pass id to fetch a single product, or omit it to list products.")]
     public static string GetProducts(int? id = null)
@@ -1923,6 +2016,10 @@ file sealed class GroceryMcpTools
         return """[{"id":1,"name":"Organic Milk","sku":"MILK-001","unitPrice":4.99},{"id":2,"name":"Whole Wheat Bread","sku":"BREAD-002","unitPrice":3.49}]""";
     }
 
+    /// <summary>Returns a fixed inventory fixture regardless of the supplied filters.</summary>
+    /// <param name="storeId">An optional store filter accepted for argument-binding tests.</param>
+    /// <param name="productId">An optional product filter accepted for argument-binding tests.</param>
+    /// <returns>A JSON array containing the fixture inventory row.</returns>
     [McpServerTool(Name = "get_inventory", ReadOnly = true)]
     [Description("Get inventory rows. Pass storeId and/or productId to filter.")]
     public static string GetInventory(int? storeId = null, int? productId = null)
@@ -1930,6 +2027,8 @@ file sealed class GroceryMcpTools
         return """[{"storeId":1,"productId":1,"quantityOnHand":42,"reorderThreshold":10,"lastRestocked":"2025-06-01T00:00:00Z"}]""";
     }
 
+    /// <summary>Returns a dashboard fixture with text and structured content.</summary>
+    /// <returns>An MCP result containing a fixed dashboard snapshot.</returns>
     [McpServerTool(Name = "show_store_inventory_dashboard")]
     [Description("Render an interactive multi-store inventory dashboard.")]
     public static CallToolResult ShowDashboard()
