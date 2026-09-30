@@ -16,7 +16,6 @@ Authentication configuration lives under the `OpenClaw.Security` node in `appset
 |-------|------|---------|-------------|
 | `AuthToken` | `string?` | `null` | Static bootstrap token. When `null`, bootstrap auth is disabled |
 | `AlwaysRequireAuth` | `bool` | `false` | When `true`, even loopback-bound requests must carry valid credentials |
-| `AllowViewerAgentExecution` | `bool` | `false` | **Temporary, to be removed in the next release.** When `true`, identities below `operator` can still run the agent (see [3.3](#33-role-required-for-agent-execution)). Each such request is logged and `admin posture` reports the risk |
 | `AuthMode` | `string` | `"token"` | Authentication mode: `"token"` or `"oidc"` |
 | `AllowQueryStringToken` | `bool` | `false` | Whether to accept tokens from the `?token=` query string parameter |
 | `BrowserSessionIdleMinutes` | `int` | `60` | Idle timeout for browser admin sessions (minutes) |
@@ -194,9 +193,11 @@ WebSocket connected
 
 Bootstrap tokens and open loopback resolve to `admin` and are unaffected. New operator accounts default to `viewer`, so accounts used for Companion, CLI/TUI chat, or API clients need the `operator` role.
 
-Each denial is logged as a warning under the `OpenClaw.Gateway.Authorization` category, naming the surface, auth mode, account, and role (never the credential), so admins can find the accounts to promote. To migrate without an outage, set `OpenClaw:Security:AllowViewerAgentExecution=true`, watch the log for the admitted accounts, grant them `operator`, then turn the setting off. The setting is temporary and will be removed in the next release.
+Each denial is logged as a warning under the `OpenClaw.Gateway.Authorization` category, naming the surface, auth mode, account, and role (never the credential), so admins can find the accounts to promote.
 
-`GET /auth/session` reports the result of this check as `canExecuteAgent`, including the effect of `AllowViewerAgentExecution`, so clients can explain a refusal before connecting. Companion uses it; a gateway that predates the field omits it.
+The temporary `OpenClaw:Security:AllowViewerAgentExecution` migration switch has been removed. Before upgrading, grant `operator` to accounts that need to chat or run the agent. Remove the retired key from JSON configuration, command-line arguments, and environment variables (`OpenClaw__Security__AllowViewerAgentExecution`), even if its value is `false`; the gateway refuses to start while the key is present. Viewer accounts retain read-only access.
+
+`GET /auth/session` reports the result of the authorization and role check as `canExecuteAgent`, so clients can explain a refusal before connecting. Companion uses it; a gateway that predates the field omits it.
 
 ### 3.4 `IsAuthorizedRequest` — Detailed Logic
 

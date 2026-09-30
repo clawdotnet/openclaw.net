@@ -85,11 +85,10 @@ public sealed class CompanionConnectionTests : IDisposable
     }
 
     [AvaloniaFact]
-    public async Task Connect_WhenGatewayAllowsViewerAgentExecution_ShouldAttemptChat()
+    public async Task Connect_WhenGatewayAllowsOperatorAgentExecution_ShouldAttemptChat()
     {
-        // Security.AllowViewerAgentExecution lets a viewer chat, so the role alone must not stop Companion.
-        var vm = CreateViewModelWithAuthSession("""{"authMode":"account_token","role":"viewer","username":"reader","canExecuteAgent":true}""");
-        vm.AuthToken = "viewer-token";
+        var vm = CreateViewModelWithAuthSession("""{"authMode":"account_token","role":"operator","username":"runner","canExecuteAgent":true}""");
+        vm.AuthToken = "operator-token";
 
         await vm.ConnectCommand.ExecuteAsync(null);
         Dispatcher.UIThread.RunJobs();
