@@ -98,7 +98,7 @@ McpAppServer
   Produces an IMcpAppInfoProvider
         │
         ▼
-McpAppNativeTool (implements ITool)
+McpAppNativeTool (implements IToolWithContext)
   Registered in NativePluginRegistry
   Agent can call MCP App tools the same as built-in tools
 ```
@@ -269,14 +269,17 @@ Discovered ──→ Validated ──→ Loaded ──→ Running
 
 ## Tool Bridging
 
-Every tool discovered from an MCP App is registered into the `NativePluginRegistry` via `McpAppNativeTool` (which implements `ITool`):
+Every tool discovered from an MCP App is registered into the `NativePluginRegistry` via `McpAppNativeTool` (which implements `IToolWithContext`, extending `ITool`):
 
 - **Registration ID**: `mcpapp:{appId}` (e.g. `mcpapp:grocery-inventory`)
 - **Tool name prefix**: automatically applied from the manifest's `toolNamePrefix`
+- **Session metadata**: Agent tool calls forward `_meta.sessionId` and `_meta.userId`, preferring the explicit `ToolExecutionContext` session over the ambient runtime session. `userId` uses `AuthenticatedUserId` when available, otherwise `SenderId`. These values are protocol metadata, not tool arguments; calls without a session do not inject either value.
 - **Visibility handling**: tools marked with MCP App visibility metadata such as `"ui": { "visibility": ["app"] }` stay available to the browser host but are not registered as model-visible Agent tools
 - **Error handling**: invalid JSON arguments and remote execution errors return result text prefixed with `Error:`
 - **Schema strictness**: tools with missing/defaulted `inputSchema` are skipped at enumeration time instead of silently normalized
 - **Structured output**: supports both text content and structured content from MCP tools, except that UI tools suppress `structuredContent` when OpenClaw feeds results back into the model
+
+Session metadata forwarding uses a lightweight Core `AsyncLocal` scope bridged by the Agent runtime. MCP App retains its Core-only project dependency, with no reflection-based or JIT-only additions.
 
 ```csharp
 // Internal flow — automatically executed during Gateway startup

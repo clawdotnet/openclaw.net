@@ -10,9 +10,11 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using OpenClaw.Agent;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Observability;
 using OpenClaw.Core.Plugins;
 using OpenClaw.Gateway.Mcp;
 using OpenClaw.McpApp;
@@ -735,12 +737,107 @@ public sealed class McpAppTests : IAsyncDisposable
             var result = await nativeTool.ExecuteAsync("{}", TestContext.Current.CancellationToken);
             Assert.DoesNotContain("Error:", result);
             Assert.True(calls.CallCalls >= 1);
+            if (calls.LastCallParams!.Value.TryGetProperty("_meta", out var meta))
+            {
+                Assert.False(meta.TryGetProperty("userId", out _));
+                Assert.False(meta.TryGetProperty("sessionId", out _));
+            }
         }
         finally
         {
             await server.DisposeAsync();
         }
     }
+
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(false, "oidc-user-42")]
+    [InlineData(true, null)]
+    [InlineData(true, "oidc-user-42")]
+    public async Task NativeTool_Execute_ForwardsSessionMetadata(bool useExplicitContext, string? authenticatedUserId)
+    {
+        var (serverUrl, calls) = await StartMcpServerAsync<GroceryMcpTools>();
+        var state = new McpAppInstallState
+        {
+            Manifest = new McpAppManifest
+            {
+                Id = "test-grocery",
+                Version = "1.0",
+                Transport = "http",
+                Url = serverUrl,
+            },
+            ManifestPath = "/f/openclaw.mcpapp.json",
+            RootPath = "/f",
+        };
+        await using var server = new McpAppServer(state, null, NullLogger<McpAppServer>.Instance);
+        var infoProvider = await server.ConnectAsync(TestContext.Current.CancellationToken);
+        var descriptor = Assert.Single(infoProvider.GetToolDescriptors(), t => t.RemoteName == "get_inventory");
+        ITool nativeTool = new McpAppNativeTool(
+            infoProvider.Client!,
+            descriptor.LocalName,
+            descriptor.RemoteName,
+            descriptor.Description,
+            descriptor.InputSchemaText,
+            infoProvider);
+        var session = new Session
+        {
+            Id = "mcp-app-session",
+            ChannelId = "test-channel",
+            SenderId = "route-sender",
+            AuthenticatedUserId = authenticatedUserId,
+        };
+        var ambientSession = useExplicitContext
+            ? new Session { Id = "ambient-session", ChannelId = "test-channel", SenderId = "ambient-user" }
+            : session;
+        using var scope = AgentExecutionContextScope.Push(CreateAgentContext(ambientSession));
+        const string arguments = """{"storeId":1,"productId":1}""";
+
+        var result = useExplicitContext
+            ? await Assert.IsAssignableFrom<IToolWithContext>(nativeTool).ExecuteAsync(
+                arguments,
+                new ToolExecutionContext { Session = session, TurnContext = new TurnContext() },
+                TestContext.Current.CancellationToken)
+            : await nativeTool.ExecuteAsync(arguments, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("Error:", result);
+        var callParams = calls.LastCallParams!.Value;
+        var meta = callParams.GetProperty("_meta");
+        Assert.Equal(session.Id, meta.GetProperty("sessionId").GetString());
+        Assert.Equal(authenticatedUserId ?? session.SenderId, meta.GetProperty("userId").GetString());
+        var sentArguments = callParams.GetProperty("arguments");
+        Assert.Equal(2, sentArguments.EnumerateObject().Count());
+        Assert.Equal(1, sentArguments.GetProperty("storeId").GetInt32());
+        Assert.Equal(1, sentArguments.GetProperty("productId").GetInt32());
+    }
+
+    [Fact]
+    public void NativeTool_SessionScope_RestoresPriorSession()
+    {
+        var prior = ToolSessionContextScope.Current;
+        var outer = new Session { Id = "outer", ChannelId = "test", SenderId = "outer-user" };
+        var inner = new Session { Id = "inner", ChannelId = "test", SenderId = "inner-user" };
+
+        using (AgentExecutionContextScope.Push(CreateAgentContext(outer)))
+        {
+            Assert.Same(outer, ToolSessionContextScope.Current);
+            using (AgentExecutionContextScope.Push(CreateAgentContext(inner)))
+            {
+                Assert.Same(inner, ToolSessionContextScope.Current);
+            }
+            Assert.Same(outer, ToolSessionContextScope.Current);
+        }
+        Assert.Same(prior, ToolSessionContextScope.Current);
+    }
+
+    private static AgentExecutionContext CreateAgentContext(Session session) => new()
+    {
+        Session = session,
+        TurnContext = new TurnContext(),
+        SystemPromptLength = 0,
+        SkillPromptLength = 0,
+        SessionTokenBudget = 0,
+        ToolInvocations = [],
+    };
 
     [Fact]
     public async Task NativeTool_Execute_WithArguments_InvokesCorrectly()
@@ -1775,6 +1872,7 @@ public sealed class McpAppTests : IAsyncDisposable
                 break;
             case "tools/call":
                 tracker.CallCalls++;
+                tracker.LastCallParams = document.RootElement.GetProperty("params").Clone();
                 break;
             case "resources/list":
                 tracker.ResourceListCalls++;
@@ -1790,6 +1888,7 @@ public sealed class McpAppTests : IAsyncDisposable
         public int InitializeCalls { get; set; }
         public int ListCalls { get; set; }
         public int CallCalls { get; set; }
+        public JsonElement? LastCallParams { get; set; }
         public int ResourceListCalls { get; set; }
         public int PromptListCalls { get; set; }
     }
