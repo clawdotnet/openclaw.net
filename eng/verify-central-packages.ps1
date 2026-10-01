@@ -34,16 +34,15 @@ function Assert-PackageSource {
     }
 
     foreach ($version in $Document.SelectNodes("//*[local-name()='ItemGroup']/*[local-name()='PackageVersion']")) {
-        if ($version.HasAttribute('Update') -or $version.SelectSingleNode('ancestor-or-self::*[@Condition]')) {
+        if ($version.HasAttribute('Update') -or
+            $version.SelectSingleNode('ancestor-or-self::*[@Condition]') -or
+            $version.SelectSingleNode('./*[@Condition]')) {
             throw "${Path}: Central package versions must be unconditional Include items."
         }
         $value = $version.GetAttribute('Version')
         if (-not $value) {
             $metadata = $version.SelectSingleNode("./*[local-name()='Version']")
             if ($metadata) {
-                if ($metadata.HasAttribute('Condition')) {
-                    throw "${Path}: Central package versions must be unconditional Include items."
-                }
                 $value = $metadata.InnerText
             }
         }
@@ -114,6 +113,9 @@ if ($SelfTest) {
     Assert-Rejected { Assert-PackageSource ([xml]'<Project><ItemGroup Condition="true"><PackageVersion Include="Example" Version="1.0.0" /></ItemGroup></Project>') 'Directory.Packages.props' $true }
     Assert-Rejected { Assert-PackageSource ([xml]'<Project><ItemGroup><PackageVersion Include="Example" Version="1.0.0" Condition="true" /></ItemGroup></Project>') 'Directory.Packages.props' $true }
     Assert-Rejected { Assert-PackageSource ([xml]'<Project><ItemGroup><PackageVersion Include="Example"><Version Condition="true">1.0.0</Version></PackageVersion></ItemGroup></Project>') 'Directory.Packages.props' $true }
+    Assert-Rejected { Assert-PackageSource ([xml]'<Project><ItemGroup><PackageVersion Include="Example" Version="1.0.0"><Version Condition="true">2.0.0</Version></PackageVersion></ItemGroup></Project>') 'Directory.Packages.props' $true }
+    Assert-Rejected { Assert-PackageSource ([xml]'<Project><ItemGroup><PackageVersion Include="Example"><Version>1.0.0</Version><Version Condition="true">2.0.0</Version></PackageVersion></ItemGroup></Project>') 'Directory.Packages.props' $true }
+    Assert-Rejected { Assert-PackageSource ([xml]'<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003"><ItemGroup><PackageVersion Include="Example" Version="1.0.0"><Version Condition="true">2.0.0</Version></PackageVersion></ItemGroup></Project>') 'Directory.Packages.props' $true }
 
     $evaluation = [pscustomobject]@{
         Properties = [pscustomobject]@{
