@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text.Json;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -22,7 +23,7 @@ public sealed class NacosRouterFixtureState
     public HashSet<string> SucceedUseServers { get; } = new(StringComparer.Ordinal);
 
     // Issue #233: timestamps of every use_tool call, for backoff assertions.
-    public List<DateTimeOffset> UseTimestamps { get; } = [];
+    public List<long> UseTimestamps { get; } = [];
 }
 
 // Parameters and prose envelopes follow the pinned upstream Python Router.
@@ -58,7 +59,7 @@ public sealed class FakeNacosRouterMcpTools(NacosRouterFixtureState state)
     [McpServerTool(Name = "use_tool"), Description("Proxy an installed tool.")]
     public CallToolResult Use(string mcp_server_name, string mcp_tool_name, string @params)
     {
-        state.UseTimestamps.Add(DateTimeOffset.UtcNow);
+        state.UseTimestamps.Add(Stopwatch.GetTimestamp());
         state.Calls.Add("use:" + mcp_server_name + ":" + mcp_tool_name);
         var serverOk = mcp_server_name == "weather-mcp" || state.SucceedUseServers.Contains(mcp_server_name);
         var invalid = !serverOk || mcp_tool_name != "get_weather";
