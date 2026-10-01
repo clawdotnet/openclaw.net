@@ -628,39 +628,13 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.DoesNotContain(token, entry, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task AgentExecution_WhenViewerAndAllowViewerAgentExecution_ShouldRunAgentAndLog()
-    {
-        var logs = new CapturingLoggerProvider();
-        await using var harness = await CreateHarnessAsync(
-            nonLoopbackBind: true,
-            configure: config => config.Security.AllowViewerAgentExecution = true,
-            configureServices: (services, _) => services.AddSingleton<ILoggerProvider>(logs));
-        var token = CreateAccountToken(harness, "legacy-viewer", OperatorRoleNames.Viewer);
-        harness.Runtime.AgentRuntime.RunAsync(
-                Arg.Any<Session>(),
-                Arg.Any<string>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<ToolApprovalCallback?>(),
-                Arg.Any<JsonElement?>())
-            .Returns("viewer reply");
-
-        var response = await SendChatCompletionAsync(harness, token);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var entry = Assert.Single(logs.Warnings, message => message.Contains("AllowViewerAgentExecution", StringComparison.Ordinal));
-        Assert.Contains("legacy-viewer", entry, StringComparison.Ordinal);
-    }
-
     [Theory]
-    [InlineData(OperatorRoleNames.Viewer, false, false)]
-    [InlineData(OperatorRoleNames.Operator, false, true)]
-    [InlineData(OperatorRoleNames.Viewer, true, true)]
-    public async Task AuthSession_ShouldReportWhetherTheCallerCanRunTheAgent(string role, bool allowViewerAgentExecution, bool expected)
+    [InlineData(OperatorRoleNames.Viewer, false)]
+    [InlineData(OperatorRoleNames.Operator, true)]
+    [InlineData(OperatorRoleNames.Admin, true)]
+    public async Task AuthSession_ShouldReportWhetherTheCallerCanRunTheAgent(string role, bool expected)
     {
-        await using var harness = await CreateHarnessAsync(
-            nonLoopbackBind: true,
-            configure: config => config.Security.AllowViewerAgentExecution = allowViewerAgentExecution);
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
         var token = CreateAccountToken(harness, $"session-{role}", role);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/auth/session");
@@ -673,33 +647,13 @@ public sealed partial class GatewayAdminEndpointTests
     }
 
     [Fact]
-    public async Task AgentExecution_WhenAllowViewerAgentExecutionWithoutCredentials_ShouldStillReject()
+    public async Task AgentExecution_WhenInvalidCredentials_ShouldReject()
     {
-        await using var harness = await CreateHarnessAsync(
-            nonLoopbackBind: true,
-            configure: config => config.Security.AllowViewerAgentExecution = true);
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
 
         var response = await SendChatCompletionAsync(harness, bearerToken: "not-a-real-token");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task AdminPosture_WhenAllowViewerAgentExecution_ShouldReportRisk()
-    {
-        await using var harness = await CreateHarnessAsync(
-            nonLoopbackBind: true,
-            configure: config => config.Security.AllowViewerAgentExecution = true);
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/posture");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
-        var response = await harness.Client.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var payload = await ReadJsonAsync(response);
-        Assert.Contains(
-            payload.RootElement.GetProperty("riskFlags").EnumerateArray().Select(static item => item.GetString()).OfType<string>(),
-            flag => flag == "viewer_agent_execution_allowed");
     }
 
     private static async Task<HttpResponseMessage> SendChatCompletionAsync(GatewayTestHarness harness, string bearerToken)
@@ -7837,8 +7791,7 @@ public sealed partial class GatewayAdminEndpointTests
         var html = await File.ReadAllTextAsync(adminHtmlPath);
 
         Assert.Contains("id=\"operator-account-role-hint\"", html, StringComparison.Ordinal);
-        Assert.Contains("Read-only by default: can't chat or run the agent", html, StringComparison.Ordinal);
-        Assert.Contains("Security.AllowViewerAgentExecution is a temporary migration exception", html, StringComparison.Ordinal);
+        Assert.Contains("Read-only: can't chat or run the agent", html, StringComparison.Ordinal);
         Assert.Contains("operatorAccountRoleInput.addEventListener('change', updateOperatorAccountRoleHint)", html, StringComparison.Ordinal);
     }
 

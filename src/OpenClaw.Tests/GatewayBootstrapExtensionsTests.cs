@@ -8,6 +8,50 @@ namespace OpenClaw.Tests;
 
 public sealed class GatewayBootstrapExtensionsTests
 {
+    [Theory]
+    [InlineData("AllowViewerAgentExecution", "true")]
+    [InlineData("AllowViewerAgentExecution", "false")]
+    [InlineData("AllowViewerAgentExecution", "")]
+    [InlineData("AllowViewerAgentExecution", null)]
+    [InlineData("allowvieweragentexecution", "true")]
+    [InlineData("AllowViewerAgentExecution", "invalid-setting-value")]
+    public void LoadGatewayConfig_RemovedViewerExecutionSetting_ThrowsWithMigrationInstructions(string key, string? value)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"OpenClaw:Security:{key}"] = value
+            })
+            .Build();
+
+        var error = Assert.Throws<InvalidOperationException>(() => GatewayBootstrapExtensions.LoadGatewayConfig(configuration));
+
+        Assert.Contains("OpenClaw:Security:AllowViewerAgentExecution has been removed", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Remove this key", error.Message, StringComparison.Ordinal);
+        Assert.Contains("grant the operator role", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("invalid-setting-value", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LoadGatewayConfig_RemovedViewerExecutionEnvironmentVariable_Throws()
+    {
+        var prefix = $"OPENCLAW_TEST_{Guid.NewGuid():N}_";
+        var variable = prefix + "OpenClaw__Security__AllowViewerAgentExecution";
+        Environment.SetEnvironmentVariable(variable, "true");
+        try
+        {
+            var configuration = new ConfigurationBuilder().AddEnvironmentVariables(prefix).Build();
+
+            var error = Assert.Throws<InvalidOperationException>(() => GatewayBootstrapExtensions.LoadGatewayConfig(configuration));
+
+            Assert.Contains("OpenClaw:Security:AllowViewerAgentExecution has been removed", error.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, null);
+        }
+    }
+
     [Fact]
     public void LoadGatewayConfig_LegacyTelegramConfigWithoutUpdateMode_DefaultsToWebhook()
     {

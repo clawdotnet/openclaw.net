@@ -99,12 +99,6 @@ internal static class SecurityPostureBuilder
             recommendations.Add("Enable Discord interaction signature validation before exposing a public bind.");
         }
 
-        if (config.Security.AllowViewerAgentExecution)
-        {
-            riskFlags.Add("viewer_agent_execution_allowed");
-            recommendations.Add("Grant the operator role to accounts that chat or run the agent, then turn off OpenClaw:Security:AllowViewerAgentExecution. The setting is temporary and will be removed.");
-        }
-
         if (browserAvailability.ConfiguredEnabled && !browserAvailability.Registered)
         {
             riskFlags.Add("browser_tool_unavailable");

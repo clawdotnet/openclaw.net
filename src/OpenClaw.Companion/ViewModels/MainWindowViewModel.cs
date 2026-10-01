@@ -530,8 +530,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             Status = "Connecting…";
 
             // Ask the gateway first: an account it won't let run the agent would be admitted and then closed, so say why
-            // up front and keep the read-only status views. Only its answer counts, not the role: a viewer can still chat
-            // under Security.AllowViewerAgentExecution, and a gateway that doesn't report it decides at connect time.
+            // up front and keep the read-only status views. Only its answer counts: a gateway that doesn't report
+            // canExecuteAgent decides at connect time.
             await LoadAdminStatusAsyncInternal();
             if (_agentExecutionAllowedByGateway == false)
             {

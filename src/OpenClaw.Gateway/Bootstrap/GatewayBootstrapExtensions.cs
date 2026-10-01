@@ -152,6 +152,14 @@ internal static class GatewayBootstrapExtensions
     internal static GatewayConfig LoadGatewayConfig(IConfiguration configuration, bool loadPersistedSettings = true)
     {
         var openClawSection = configuration.GetSection("OpenClaw");
+        if (openClawSection.GetSection("Security").GetChildren()
+            .Any(section => string.Equals(section.Key, "AllowViewerAgentExecution", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException(
+                "OpenClaw:Security:AllowViewerAgentExecution has been removed. " +
+                "Remove this key from configuration and grant the operator role to accounts that need to chat or run the agent.");
+        }
+
         var config = openClawSection.Get<GatewayConfig>() ?? new GatewayConfig();
         ApplyConfiguredLlmOverrides(openClawSection, config);
         ApplyConfiguredToolingOverrides(openClawSection, config);

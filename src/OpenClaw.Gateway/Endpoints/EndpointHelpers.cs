@@ -360,13 +360,12 @@ internal static class EndpointHelpers
     /// A2A, MCP Apps chat and tool calls, mutating MCP tools, the live model bridge) require the same role as
     /// POST /api/integration/messages.
     /// Authentication alone is not enough: viewer credentials must stay read-only.
-    /// Denials, and admissions under Security.AllowViewerAgentExecution, are logged with the account so
-    /// admins can find identities that need the operator role.
+    /// Denials are logged with the account so admins can find identities that need the operator role.
     /// </summary>
     // The rule CanExecuteAgent enforces, without its logging, so /auth/session can report it before a client tries.
-    internal static bool AllowsAgentExecution(OperatorAuthorizationResult auth, GatewayStartupContext startup)
+    internal static bool AllowsAgentExecution(OperatorAuthorizationResult auth)
         => auth.IsAuthorized
-           && (IsRoleAllowed(auth.Role, "integration.mutate.agent", out _) || startup.Config.Security.AllowViewerAgentExecution);
+           && IsRoleAllowed(auth.Role, "integration.mutate.agent", out _);
 
     public static bool CanExecuteAgent(
         HttpContext ctx,
@@ -376,7 +375,7 @@ internal static class EndpointHelpers
     {
         var browserSessions = ctx.RequestServices.GetRequiredService<BrowserSessionAuthService>();
         var auth = AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf);
-        if (auth.IsAuthorized && IsRoleAllowed(auth.Role, "integration.mutate.agent", out _))
+        if (AllowsAgentExecution(auth))
             return true;
 
         var logger = ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("OpenClaw.Gateway.Authorization");
@@ -388,14 +387,6 @@ internal static class EndpointHelpers
                 "Denied {Action}: the credential is not accepted by the operator authorization chain (for example a bootstrap token disabled by organization policy).",
                 action);
             return false;
-        }
-
-        if (startup.Config.Security.AllowViewerAgentExecution)
-        {
-            logger.LogWarning(
-                "Allowed {Action} for {AuthMode} account {AccountId} ({Username}) with role {Role} only because Security.AllowViewerAgentExecution is on. Grant the operator role before that setting is removed.",
-                action, auth.AuthMode, auth.AccountId, auth.Username, auth.Role);
-            return true;
         }
 
         logger.LogWarning(
