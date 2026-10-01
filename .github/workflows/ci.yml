@@ -76,6 +76,13 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Verify central package policy
+        shell: pwsh
+        run: |
+          ./eng/verify-central-packages.ps1 -SelfTest
+          ./eng/verify-central-packages.ps1
+          ./eng/verify-central-packages.ps1 -Configuration Debug
+
       - name: Restore solution
         run: dotnet restore OpenClaw.Net.slnx
 
@@ -93,6 +100,10 @@ jobs:
 
       - name: HelloAgent smoke
         run: dotnet run --project samples/OpenClaw.HelloAgent -c Release --no-build
+
+      - name: Verify optional integration package policy
+        shell: pwsh
+        run: ./eng/verify-central-packages.ps1 -BuildProperties OpenClawEnableOpenSandbox=true,OpenClawEnableMempalace=true,OpenClawEnableNacos=true,OpenClawEnableNacosEvents=true
 
       - name: Restore optional integrations
         run: dotnet restore OpenClaw.Net.slnx -p:OpenClawEnableOpenSandbox=true -p:OpenClawEnableMempalace=true

@@ -11,10 +11,10 @@
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="VaultSharp" Version="1.17.5.1" />
-    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.9" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.9" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.9" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    <PackageReference Include="VaultSharp" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 </Project>

@@ -15,6 +15,7 @@ on:
       - 'src/OpenClaw.Gateway/**'
       - 'src/OpenClaw.Tests/**'
       - 'Directory.Build.*'
+      - 'Directory.Packages.props'
   pull_request:
     branches: [main]
     paths: *paths
