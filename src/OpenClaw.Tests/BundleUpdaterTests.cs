@@ -205,7 +205,8 @@ public sealed class BundleUpdaterTests : IDisposable
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, true))
             foreach (var file in new[] { "cli/openclaw", "gateway/OpenClaw.Gateway", "companion/OpenClaw.Companion" })
             {
-                using var writer = new StreamWriter(archive.CreateEntry(file).Open(), new UTF8Encoding(false));
+                var entryName = file + (OperatingSystem.IsWindows() ? ".exe" : "");
+                using var writer = new StreamWriter(archive.CreateEntry(entryName).Open(), new UTF8Encoding(false));
                 writer.Write(failingComponent is not null && file.StartsWith(failingComponent + "/", StringComparison.Ordinal)
                     ? "#!/bin/sh\necho smoke-stdout\necho smoke-stderr >&2\nexit 7\n" : "#!/bin/sh\nexit 0\n");
             }

@@ -3,7 +3,7 @@
   <ItemGroup><InternalsVisibleTo Include="OpenClaw.Tests" /></ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../OpenClaw.Core/OpenClaw.Core.csproj" />
-    <PackageReference Include="RedNb.Nacos.DependencyInjection" Version="2.1.0" />
+    <PackageReference Include="RedNb.Nacos.DependencyInjection" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 </Project>

@@ -49,11 +49,11 @@
     <None Include="../OpenClaw.Plugins.Mempalace/openclaw.native-plugin.json" Link="Fixtures/mempalace/openclaw.native-plugin.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Agents.AI" Version="1.10.0" />
-    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A" Version="1.10.0-preview.260610.1" />
-    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A.AspNetCore" Version="1.10.0-preview.260610.1" />
-    <PackageReference Include="A2A" Version="1.0.0-preview2" />
-    <PackageReference Include="A2A.AspNetCore" Version="1.0.0-preview2" />
+    <PackageReference Include="Microsoft.Agents.AI" />
+    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A" />
+    <PackageReference Include="Microsoft.Agents.AI.Hosting.A2A.AspNetCore" />
+    <PackageReference Include="A2A" />
+    <PackageReference Include="A2A.AspNetCore" />
   </ItemGroup>
   <ItemGroup Condition="'$(OpenClawEnableOpenSandbox)' == 'true'">
     <ProjectReference Include="..\OpenClawNet.Sandbox.OpenSandbox\OpenClawNet.Sandbox.OpenSandbox.csproj" />
@@ -67,13 +67,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
-    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.9" />
-    <PackageReference Include="Avalonia.Headless.XUnit" Version="12.0.4" />
-    <PackageReference Include="NSubstitute" Version="5.3.0" />
-	<PackageReference Include="xunit.v3" Version="3.2.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <PackageReference Include="Avalonia.Headless.XUnit" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
