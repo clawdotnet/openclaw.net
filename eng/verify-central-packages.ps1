@@ -40,7 +40,12 @@ function Assert-PackageSource {
         $value = $version.GetAttribute('Version')
         if (-not $value) {
             $metadata = $version.SelectSingleNode("./*[local-name()='Version']")
-            if ($metadata) { $value = $metadata.InnerText }
+            if ($metadata) {
+                if ($metadata.HasAttribute('Condition')) {
+                    throw "${Path}: Central package versions must be unconditional Include items."
+                }
+                $value = $metadata.InnerText
+            }
         }
         if ($value.Contains('*')) {
             throw "${Path}: Floating package versions are not allowed."
@@ -108,6 +113,7 @@ if ($SelfTest) {
     Assert-Rejected { Assert-PackageSource ([xml]'<Project><ItemGroup><PackageVersion Update="Example" Version="1.0.0" /></ItemGroup></Project>') 'Directory.Packages.props' $true }
     Assert-Rejected { Assert-PackageSource ([xml]'<Project><ItemGroup Condition="true"><PackageVersion Include="Example" Version="1.0.0" /></ItemGroup></Project>') 'Directory.Packages.props' $true }
     Assert-Rejected { Assert-PackageSource ([xml]'<Project><ItemGroup><PackageVersion Include="Example" Version="1.0.0" Condition="true" /></ItemGroup></Project>') 'Directory.Packages.props' $true }
+    Assert-Rejected { Assert-PackageSource ([xml]'<Project><ItemGroup><PackageVersion Include="Example"><Version Condition="true">1.0.0</Version></PackageVersion></ItemGroup></Project>') 'Directory.Packages.props' $true }
 
     $evaluation = [pscustomobject]@{
         Properties = [pscustomobject]@{
