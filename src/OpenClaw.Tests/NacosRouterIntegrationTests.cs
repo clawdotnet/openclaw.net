@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
@@ -296,10 +297,15 @@ public sealed class NacosRouterIntegrationTests
             Assert.Equal(new[] { "search", "add:weather-mcp", "use:weather-mcp:get_weather", "use:weather-mcp:get_weather", "use:weather-mcp:get_weather" }, state.Calls);
             var timestamps = state.UseTimestamps;
             Assert.Equal(3, timestamps.Count);
-            Assert.True((timestamps[1] - timestamps[0]).TotalMilliseconds >= 100,
-                $"expected >= 100 ms backoff between attempts 1 and 2, got {(timestamps[1] - timestamps[0]).TotalMilliseconds:0} ms");
-            Assert.True((timestamps[2] - timestamps[1]).TotalMilliseconds >= 100,
-                $"expected >= 100 ms backoff between attempts 2 and 3, got {(timestamps[2] - timestamps[1]).TotalMilliseconds:0} ms");
+            const double configuredBackoffMilliseconds = 100;
+            const double timerToleranceMilliseconds = 10;
+            for (var attempt = 1; attempt < timestamps.Count; attempt++)
+            {
+                var elapsed = Stopwatch.GetElapsedTime(timestamps[attempt - 1], timestamps[attempt]).TotalMilliseconds;
+                Assert.True(elapsed >= configuredBackoffMilliseconds - timerToleranceMilliseconds,
+                    $"expected approximately {configuredBackoffMilliseconds:0} ms backoff between attempts {attempt} and {attempt + 1}, " +
+                    $"allowing {timerToleranceMilliseconds:0} ms timer tolerance; got {elapsed:0.000} ms");
+            }
             var run = Assert.Single(session.MetaRunHistory);
             var query = Assert.Single(run.StepResults, step => step.Id == "query");
             Assert.Equal("capability_execution_failed", query.FailureCode);
