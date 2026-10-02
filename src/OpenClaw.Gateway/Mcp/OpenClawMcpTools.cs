@@ -306,7 +306,9 @@ internal sealed class OpenClawMcpTools
         [Description("Optional reply-to message ID.")] string? replyToMessageId = null,
         CancellationToken ct = default)
     {
-        var caller = EndpointHelpers.ResolveCaller(RequireOperator("openclaw.send_message"), _startup);
+        var ctx = RequireOperator("openclaw.send_message");
+        var caller = EndpointHelpers.ResolveCaller(ctx, _startup);
+        var callerCredentialContext = EndpointHelpers.ResolveMcpCallerCredentialContext(ctx, _startup);
         var request = new IntegrationMessageRequest
         {
             Text = text,
@@ -320,7 +322,7 @@ internal sealed class OpenClawMcpTools
             throw new McpException(SessionAccess.DeniedMessage);
 
         return JsonSerializer.Serialize(
-            await _facade.QueueMessageAsync(request, ct, caller.AccountId, caller.IsAdmin),
+            await _facade.QueueMessageAsync(request, ct, caller.AccountId, caller.IsAdmin, callerCredentialContext),
             CoreJsonContext.Default.IntegrationMessageResponse);
     }
 

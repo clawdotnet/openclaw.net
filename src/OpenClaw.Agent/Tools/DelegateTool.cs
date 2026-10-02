@@ -180,7 +180,11 @@ public sealed class DelegateTool : IToolWithContext
 
         try
         {
-            var result = await subAgent.RunAsync(subSession, fullTask, ct);
+            var result = await subAgent.RunAsync(
+                subSession,
+                fullTask,
+                ct,
+                callerCredentialContext: context?.McpCallerCredentialContext);
             FinalizeDelegation(subSession, parentSummary, status: "completed", result, error: null);
             await _memory.SaveSessionAsync(subSession, ct);
             _logger?.LogInformation("Sub-agent '{Profile}' completed (depth {Depth}), response length={Length}",
