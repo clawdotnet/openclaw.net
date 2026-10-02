@@ -43,6 +43,7 @@ public sealed class GatewayConfig
     public RoutingConfig Routing { get; set; } = new();
     public McpAppsConfig McpApps { get; set; } = new();
     public McpCompatibilityConfig McpCompatibility { get; set; } = new();
+    public MetaInvocationsConfig MetaInvocations { get; set; } = new();
     public DeploymentConfig Deployment { get; set; } = new();
     public TailscaleConfig Tailscale { get; set; } = new();
     public GmailPubSubConfig GmailPubSub { get; set; } = new();
@@ -89,6 +90,11 @@ public sealed class McpCompatibilityConfig
 {
     public bool EnableDiscoveryFirst { get; set; } = true;
     public bool ForceLegacyInitialize { get; set; } = false;
+}
+
+public sealed class MetaInvocationsConfig
+{
+    public int RetentionDays { get; set; } = 30;
 }
 
 public sealed class TokenCostRateConfig

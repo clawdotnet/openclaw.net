@@ -147,7 +147,7 @@ NativeAOT support and upstream compatibility depend on the feature you enable. C
 | Experimental | Embedded local model sidecars and adapter-oriented package paths. |
 | JIT-only | Dynamically loaded native .NET plugins. |
 
-For framework and agent interoperability, see [Microsoft Agent Framework](docs/integrations/microsoft-agent-framework.md), [A2A](docs/a2a.md), and [workflow backends](docs/workflow-backends.md). For interactive MCP App hosting, use the documented [gateway host routes](docs/MCPAPP.md).
+For framework and agent interoperability, see [Microsoft Agent Framework](docs/integrations/microsoft-agent-framework.md), [A2A](docs/a2a.md), and [workflow backends](docs/workflow-backends.md). For direct MetaSkill API calls, see the [MetaSkill invocation API](docs/integrations/meta-skill-invocation-api.md) or its [简体中文版](docs/zh-CN/integrations/meta-skill-invocation-api.md). For interactive MCP App hosting, use the documented [gateway host routes](docs/MCPAPP.md).
 
 ## Security
 

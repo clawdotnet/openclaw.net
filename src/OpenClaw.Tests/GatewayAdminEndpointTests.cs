@@ -850,6 +850,152 @@ public sealed partial class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task MetaInvocationEndpoint_WhenSkillIsNamed_ShouldInvokeRuntimeDirectly()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "meta-invoke-direct", OperatorRoleNames.Operator);
+        const string sessionId = "meta-invoke-direct-session";
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync(
+            sessionId, "integration-api", "meta-invoke-direct", CancellationToken.None, ownerAccountId: accountId);
+        harness.Runtime.AgentRuntime.InvokeMetaSkillAsync(
+                Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult("direct DAG result"));
+
+        using var response = await PostMetaInvocationAsync(
+            harness, token, "direct-key", "named-skill", "explicit input", sessionId);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("direct DAG result", document.RootElement.GetProperty("result").GetString());
+        await harness.Runtime.AgentRuntime.Received(1).InvokeMetaSkillAsync(
+            Arg.Is<Session>(session => session.Id == sessionId),
+            "named-skill",
+            "explicit input",
+            Arg.Any<CancellationToken>());
+        Assert.False(harness.Runtime.Pipeline.InboundReader.TryRead(out _));
+    }
+
+    [Fact]
+    public async Task MetaInvocationEndpoint_WhenSameKeyAndBodyAreReplayed_ShouldReturnOriginalResult()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "meta-invoke-replay", OperatorRoleNames.Operator);
+        const string sessionId = "meta-invoke-replay-session";
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync(
+            sessionId, "integration-api", "meta-invoke-replay", CancellationToken.None, ownerAccountId: accountId);
+        harness.Runtime.AgentRuntime.InvokeMetaSkillAsync(
+                Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult("persisted DAG result"));
+
+        using var firstResponse = await PostMetaInvocationAsync(
+            harness, token, "replay-key", "named-skill", "same input", sessionId);
+        using var firstDocument = JsonDocument.Parse(await firstResponse.Content.ReadAsStringAsync());
+        using var replayResponse = await PostMetaInvocationAsync(
+            harness, token, "replay-key", "named-skill", "same input", sessionId);
+        using var replayDocument = JsonDocument.Parse(await replayResponse.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, replayResponse.StatusCode);
+        Assert.Equal(firstDocument.RootElement.GetProperty("invocationId").GetString(), replayDocument.RootElement.GetProperty("invocationId").GetString());
+        Assert.Equal("persisted DAG result", replayDocument.RootElement.GetProperty("result").GetString());
+        await harness.Runtime.AgentRuntime.Received(1).InvokeMetaSkillAsync(
+            Arg.Any<Session>(), "named-skill", "same input", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task MetaInvocationEndpoint_WhenSameKeyHasDifferentBody_ShouldReturnConflict()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "meta-invoke-conflict", OperatorRoleNames.Operator);
+        const string sessionId = "meta-invoke-conflict-session";
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync(
+            sessionId, "integration-api", "meta-invoke-conflict", CancellationToken.None, ownerAccountId: accountId);
+        harness.Runtime.AgentRuntime.InvokeMetaSkillAsync(
+                Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult("first result"));
+
+        using var firstResponse = await PostMetaInvocationAsync(
+            harness, token, "conflict-key", "named-skill", "first input", sessionId);
+        using var conflictResponse = await PostMetaInvocationAsync(
+            harness, token, "conflict-key", "named-skill", "different input", sessionId);
+        using var conflictDocument = JsonDocument.Parse(await conflictResponse.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, conflictResponse.StatusCode);
+        Assert.Contains("different request", conflictDocument.RootElement.GetProperty("error").GetString(), StringComparison.Ordinal);
+        Assert.False(conflictDocument.RootElement.TryGetProperty("result", out _));
+        await harness.Runtime.AgentRuntime.Received(1).InvokeMetaSkillAsync(
+            Arg.Any<Session>(), "named-skill", "first input", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task MetaInvocationEndpoint_WhenDuplicateArrivesDuringExecution_ShouldNotInvokeRuntimeTwice()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "meta-invoke-concurrent", OperatorRoleNames.Operator);
+        const string sessionId = "meta-invoke-concurrent-session";
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync(
+            sessionId, "integration-api", "meta-invoke-concurrent", CancellationToken.None, ownerAccountId: accountId);
+        var executionStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completeExecution = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        harness.Runtime.AgentRuntime.InvokeMetaSkillAsync(
+                Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                executionStarted.TrySetResult();
+                return completeExecution.Task;
+            });
+
+        var firstResponseTask = PostMetaInvocationAsync(
+            harness, token, "concurrent-key", "named-skill", "same input", sessionId);
+        await executionStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var duplicateResponseTask = PostMetaInvocationAsync(
+            harness, token, "concurrent-key", "named-skill", "same input", sessionId);
+        var duplicateFinishedBeforeExecution = await Task.WhenAny(
+            duplicateResponseTask,
+            Task.Delay(TimeSpan.FromSeconds(2))) == duplicateResponseTask;
+        completeExecution.TrySetResult("completed DAG result");
+
+        using var firstResponse = await firstResponseTask;
+        using var duplicateResponse = await duplicateResponseTask;
+        using var firstDocument = JsonDocument.Parse(await firstResponse.Content.ReadAsStringAsync());
+        using var duplicateDocument = JsonDocument.Parse(await duplicateResponse.Content.ReadAsStringAsync());
+
+        Assert.True(duplicateFinishedBeforeExecution, "Duplicate invocation should return while the first DAG is still running.");
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, duplicateResponse.StatusCode);
+        Assert.Equal("Running", duplicateDocument.RootElement.GetProperty("status").GetString());
+        Assert.Equal(firstDocument.RootElement.GetProperty("invocationId").GetString(), duplicateDocument.RootElement.GetProperty("invocationId").GetString());
+        await harness.Runtime.AgentRuntime.Received(1).InvokeMetaSkillAsync(
+            Arg.Any<Session>(), "named-skill", "same input", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task MetaInvocationEndpoint_WhenCallerDoesNotOwnSession_ShouldRejectBeforeClaimingKey()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (_, ownerId) = CreateAccountTokenWithId(harness, "meta-invoke-owner", OperatorRoleNames.Operator);
+        var (callerToken, callerId) = CreateAccountTokenWithId(harness, "meta-invoke-non-owner", OperatorRoleNames.Operator);
+        const string sessionId = "meta-invoke-not-owned-session";
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync(
+            sessionId, "integration-api", "meta-invoke-owner", CancellationToken.None, ownerAccountId: ownerId);
+        harness.Runtime.AgentRuntime.InvokeMetaSkillAsync(
+                Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult("owned result"));
+
+        using var deniedResponse = await PostMetaInvocationAsync(
+            harness, callerToken, "unclaimed-key", "named-skill", "same input", sessionId);
+        session.OwnerAccountId = callerId;
+        using var admittedResponse = await PostMetaInvocationAsync(
+            harness, callerToken, "unclaimed-key", "named-skill", "same input", sessionId);
+
+        Assert.Equal(HttpStatusCode.Forbidden, deniedResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, admittedResponse.StatusCode);
+        await harness.Runtime.AgentRuntime.Received(1).InvokeMetaSkillAsync(
+            Arg.Any<Session>(), "named-skill", "same input", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task McpSendMessage_WhenSessionOwnedByAnotherAccount_ShouldReturnToolError()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -8269,6 +8415,23 @@ public sealed partial class GatewayAdminEndpointTests
     private static StringContent JsonContent(string json)
         => new(json, Encoding.UTF8, "application/json");
 
+    private static async Task<HttpResponseMessage> PostMetaInvocationAsync(
+        GatewayTestHarness harness,
+        string bearerToken,
+        string idempotencyKey,
+        string skill,
+        string? input,
+        string sessionId)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/integration/meta-invocations")
+        {
+            Content = JsonContent(JsonSerializer.Serialize(new { skill, input, sessionId }))
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+        request.Headers.Add("Idempotency-Key", idempotencyKey);
+        return await harness.Client.SendAsync(request);
+    }
+
     private static void ConfigureNoToolDefaultProfile(GatewayConfig config)
     {
         config.Models.DefaultProfile = "ollama-general";
@@ -8593,6 +8756,8 @@ public sealed partial class GatewayAdminEndpointTests
         var memoryStore = memoryStoreFactory?.Invoke(storagePath) ?? new FileMemoryStore(storagePath, maxCachedSessions: 8);
         var sessionManager = new SessionManager(memoryStore, config, NullLogger.Instance);
         var heartbeatService = new HeartbeatService(config, memoryStore, sessionManager, NullLogger<HeartbeatService>.Instance);
+        builder.Services.AddSingleton(new MetaInvocationStore(storagePath, config.MetaInvocations.RetentionDays));
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<MetaInvocationStore>());
         builder.Services.AddSingleton<IMemoryStore>(memoryStore);
         builder.Services.AddSingleton<ISessionAdminStore>(_ => (ISessionAdminStore)memoryStore);
         var featureStore = new FileFeatureStore(storagePath);

@@ -550,6 +550,32 @@ public sealed class ConfigValidatorTests
     }
 
     [Fact]
+    public void Validate_MetaInvocationRetentionDaysBelowMinimum_ReturnsError()
+    {
+        var config = new GatewayConfig
+        {
+            MetaInvocations = new MetaInvocationsConfig { RetentionDays = 0 }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, e => e.Contains("MetaInvocations.RetentionDays", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_MetaInvocationRetentionDaysAtDefault_IsAccepted()
+    {
+        var config = new GatewayConfig
+        {
+            MetaInvocations = new MetaInvocationsConfig { RetentionDays = 30 }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(errors, e => e.Contains("MetaInvocations.RetentionDays", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_CompactionThresholdMustExceedMaxHistoryTurns_ReturnsError()
     {
         var config = new GatewayConfig

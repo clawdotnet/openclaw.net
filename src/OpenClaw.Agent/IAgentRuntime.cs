@@ -42,6 +42,12 @@ public interface IAgentRuntime
         JsonElement? responseSchema = null,
         string? correlationId = null);
 
+    Task<string> InvokeMetaSkillAsync(
+        Session session,
+        string skillName,
+        string? input,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<string>> ReloadSkillsAsync(CancellationToken ct = default);
 
     IAsyncEnumerable<AgentStreamEvent> RunStreamingAsync(

@@ -110,6 +110,9 @@ public static class ConfigValidator
         if (config.Memory.Retention.MaxItemsPerSweep < 10)
             errors.Add($"Memory.Retention.MaxItemsPerSweep must be >= 10 (got {config.Memory.Retention.MaxItemsPerSweep}).");
 
+        if (config.MetaInvocations.RetentionDays < 1)
+            errors.Add($"MetaInvocations.RetentionDays must be >= 1 (got {config.MetaInvocations.RetentionDays}).");
+
         // Sessions
         if (config.MaxConcurrentSessions < 1)
             errors.Add($"MaxConcurrentSessions must be >= 1 (got {config.MaxConcurrentSessions}).");
