@@ -33,7 +33,9 @@ public sealed class McpDelegatedHttpClientFactory
                 staticHeaders[name] = value;
         }
 
-        var httpClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+        var httpClient = new HttpClient(
+            new HttpClientHandler { AllowAutoRedirect = false },
+            disposeHandler: true)
         {
             Timeout = TimeSpan.FromSeconds(requestTimeoutSeconds)
         };
