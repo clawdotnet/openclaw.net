@@ -20,6 +20,11 @@ public sealed class McpDelegatedHttpClientFactory
         ArgumentException.ThrowIfNullOrWhiteSpace(delegatedAccessToken);
         if (requestTimeoutSeconds <= 0)
             throw new ArgumentOutOfRangeException(nameof(requestTimeoutSeconds), "Request timeout must be positive.");
+        if (endpoint.Scheme != Uri.UriSchemeHttps &&
+            (endpoint.Scheme != Uri.UriSchemeHttp || !endpoint.IsLoopback))
+        {
+            throw new ArgumentException("MCP delegated endpoints must use HTTPS unless they use loopback HTTP.", nameof(endpoint));
+        }
 
         var staticHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (name, value) in headers)
@@ -28,7 +33,7 @@ public sealed class McpDelegatedHttpClientFactory
                 staticHeaders[name] = value;
         }
 
-        var httpClient = new HttpClient
+        var httpClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
         {
             Timeout = TimeSpan.FromSeconds(requestTimeoutSeconds)
         };

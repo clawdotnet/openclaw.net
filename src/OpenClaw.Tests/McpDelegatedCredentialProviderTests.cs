@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using OpenClaw.Core.Models;
@@ -41,6 +42,39 @@ public sealed class McpDelegatedCredentialProviderTests
         using var provider = services.BuildServiceProvider();
 
         Assert.IsType<McpDelegatedCredentialProvider>(provider.GetRequiredService<IMcpDelegatedCredentialProvider>());
+    }
+
+    [Fact]
+    public void AddOpenClawSecurityServices_DisablesTokenExchangeRedirects()
+    {
+        var startup = new GatewayStartupContext
+        {
+            Config = new GatewayConfig(),
+            RuntimeState = new GatewayRuntimeState
+            {
+                RequestedMode = "jit",
+                EffectiveMode = GatewayRuntimeMode.Jit,
+                DynamicCodeSupported = true
+            },
+            IsNonLoopbackBind = false
+        };
+        var handlerFilter = new CapturingHttpMessageHandlerBuilderFilter();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOpenClawSecurityServices(startup);
+        services.AddSingleton<IHttpMessageHandlerBuilderFilter>(handlerFilter);
+
+        using var provider = services.BuildServiceProvider();
+        using var httpClient = provider.GetRequiredService<IHttpClientFactory>()
+            .CreateClient(nameof(IMcpDelegatedCredentialProvider));
+
+        var redirectsEnabled = handlerFilter.PrimaryHandler switch
+        {
+            HttpClientHandler handler => handler.AllowAutoRedirect,
+            SocketsHttpHandler handler => handler.AllowAutoRedirect,
+            _ => throw new InvalidOperationException("The token exchange client has an unexpected primary handler.")
+        };
+        Assert.False(redirectsEnabled);
     }
 
     [Fact]
@@ -337,6 +371,18 @@ public sealed class McpDelegatedCredentialProviderTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => callback(request, cancellationToken);
+    }
+
+    private sealed class CapturingHttpMessageHandlerBuilderFilter : IHttpMessageHandlerBuilderFilter
+    {
+        public HttpMessageHandler? PrimaryHandler { get; private set; }
+
+        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next)
+            => builder =>
+            {
+                next(builder);
+                PrimaryHandler = builder.PrimaryHandler;
+            };
     }
 
     private sealed class CapturingLogger<T> : ILogger<T>

@@ -29,7 +29,8 @@ internal static class SecurityServicesExtensions
             services.AddAuthorization();
         }
 
-        services.AddHttpClient<IMcpDelegatedCredentialProvider, McpDelegatedCredentialProvider>();
+        services.AddHttpClient<IMcpDelegatedCredentialProvider, McpDelegatedCredentialProvider>()
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddSingleton<ToolApprovalService>();
         services.AddSingleton(sp =>
             new PairingManager(
