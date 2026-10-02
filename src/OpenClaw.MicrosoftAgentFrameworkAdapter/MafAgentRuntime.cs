@@ -18,6 +18,7 @@ using OpenClaw.Core.Models;
 using OpenClaw.Core.Models.Goal;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Services;
+using OpenClaw.Core.Security;
 using OpenClaw.Core.Skills;
 using OpenClaw.Core.Skills.Meta;
 
@@ -94,7 +95,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
             auditLog: context.ToolAuditLog,
             toolGovernance: context.ToolGovernance,
             interceptors: context.Interceptors,
-            metaInvokeExecutor: (session, skillName, input, token) => ExecuteMetaSkillAsync(session, skillName, input, token));
+            contextualMetaInvokeExecutor: (session, skillName, input, token, callerContext) => ExecuteMetaSkillWithCallerContextAsync(session, skillName, input, token, callerContext));
         _options = options;
         _agentFactory = agentFactory;
         _sessionStateStore = sessionStateStore;
@@ -240,9 +241,10 @@ public sealed class MafAgentRuntime : IAgentRuntime
         CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
         System.Text.Json.JsonElement? responseSchema = null,
-        string? correlationId = null)
+        string? correlationId = null,
+        McpCallerCredentialContext? callerCredentialContext = null)
     {
-        var result = await RunTurnAsync(session, userMessage, ct, approvalCallback, responseSchema, correlationId);
+        var result = await RunTurnAsync(session, userMessage, ct, approvalCallback, responseSchema, correlationId, callerCredentialContext);
         return result.Text;
     }
 
@@ -252,7 +254,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
         CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
         System.Text.Json.JsonElement? responseSchema = null,
-        string? correlationId = null)
+        string? correlationId = null,
+        McpCallerCredentialContext? callerCredentialContext = null)
     {
         if (_toolExecutor.PrepareAudienceTurn(session, userMessage) is { } audienceRejection)
             return Agent.AgentTurnResult.Completed(audienceRejection);
@@ -335,6 +338,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                     SkillPromptLength = _skillPromptLength,
                     SessionTokenBudget = _sessionTokenBudget,
                     ToolInvocations = toolInvocations,
+                    McpCallerCredentialContext = callerCredentialContext,
                     TurnTokenUsageObserver = _turnTokenUsageObserver,
                     RecordContractTurnUsage = _recordContractTurnUsage,
                     ApprovalCallback = approvalCallback
@@ -470,7 +474,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
         string userMessage,
         [EnumeratorCancellation] CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
-        string? correlationId = null)
+        string? correlationId = null,
+        McpCallerCredentialContext? callerCredentialContext = null)
     {
         if (!_options.EnableStreaming)
             throw new NotSupportedException("MAF streaming is disabled for this runtime.");
@@ -575,6 +580,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                     mafSession,
                     turnCtx,
                     approvalCallback,
+                    callerCredentialContext,
                     eventChannel.Writer,
                     () =>
                     {
@@ -669,6 +675,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         AgentSession mafSession,
         TurnContext turnCtx,
         ToolApprovalCallback? approvalCallback,
+        McpCallerCredentialContext? callerCredentialContext,
         ChannelWriter<AgentStreamEvent> writer,
         Action disposeTurnRoutingScope,
         CancellationToken ct)
@@ -689,6 +696,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 SkillPromptLength = _skillPromptLength,
                 SessionTokenBudget = _sessionTokenBudget,
                 ToolInvocations = toolInvocations,
+                McpCallerCredentialContext = callerCredentialContext,
                 TurnTokenUsageObserver = _turnTokenUsageObserver,
                 RecordContractTurnUsage = _recordContractTurnUsage,
                 ApprovalCallback = approvalCallback,
@@ -1045,7 +1053,15 @@ public sealed class MafAgentRuntime : IAgentRuntime
             + "[/Meta Routing Hint]";
     }
 
-    private async Task<string> ExecuteMetaSkillAsync(Session session, string skillName, string? input, CancellationToken ct)
+    private Task<string> ExecuteMetaSkillAsync(Session session, string skillName, string? input, CancellationToken ct)
+        => ExecuteMetaSkillWithCallerContextAsync(session, skillName, input, ct, callerCredentialContext: null);
+
+    private async Task<string> ExecuteMetaSkillWithCallerContextAsync(
+        Session session,
+        string skillName,
+        string? input,
+        CancellationToken ct,
+        McpCallerCredentialContext? callerCredentialContext)
     {
         if (!_metaSkillsEnabled)
             return "Error: Meta skill invocation is disabled by runtime policy.";
@@ -1172,6 +1188,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                     conditionEvaluator,
                     toolArgumentResolver,
                     routePlanner,
+                    callerCredentialContext,
                     ct))
             {
                 continue;
@@ -1194,7 +1211,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
                     conditionEvaluator,
                     toolArgumentResolver,
                     routePlanner,
-                    ExecuteFanOutChildAsync,
+                    (skill, template, childId, childInput, childContext, fanOutSession, fanOutTurnCtx, token) =>
+                        ExecuteFanOutChildAsync(skill, template, childId, childInput, childContext, fanOutSession, fanOutTurnCtx, callerCredentialContext, token),
                     (msg, ex) => _logger?.LogWarning(ex, "{FanOutMessage}", msg),
                     ct))
             {
@@ -1340,6 +1358,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                                 toolArgsJson,
                                 session,
                                 turnCtx,
+                                callerCredentialContext,
                                 ct);
                         stepSw.Stop();
 
@@ -2005,6 +2024,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         MetaConditionEvaluator conditionEvaluator,
         MetaToolArgumentResolver toolArgumentResolver,
         MetaRoutePlanner routePlanner,
+        McpCallerCredentialContext? callerCredentialContext,
         CancellationToken ct)
     {
         if (pending.Count < 2)
@@ -2102,6 +2122,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                 candidate.ToolArgsJson,
                 session,
                 turnCtx,
+                callerCredentialContext,
                 ct);
             stepSw.Stop();
             return new MetaParallelToolStepExecution(candidate.Step, toolResult, stepSw.Elapsed.TotalMilliseconds);
@@ -2141,6 +2162,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         MetaExecutionContext childContext,
         Session session,
         TurnContext turnCtx,
+        McpCallerCredentialContext? callerCredentialContext,
         CancellationToken ct)
     {
         switch (NormalizeMetaStepKind(template.Kind))
@@ -2175,6 +2197,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
                     toolArgsJson,
                     session,
                     turnCtx,
+                    callerCredentialContext,
                     ct);
 
                 var completed = string.Equals(result.ResultStatus, ToolResultStatuses.Completed, StringComparison.Ordinal);
@@ -2607,6 +2630,7 @@ public sealed class MafAgentRuntime : IAgentRuntime
         string toolArgsJson,
         Session session,
         TurnContext turnCtx,
+        McpCallerCredentialContext? callerCredentialContext,
         CancellationToken ct)
     {
         var maxAttempts = Math.Max(1, step.Retry.MaxAttempts);
@@ -2628,7 +2652,8 @@ public sealed class MafAgentRuntime : IAgentRuntime
                     approvalCallback: null,
                     ct: effectiveCt,
                     onDelta: null,
-                    toolCallCount: 1); // A retry still executes a single tool.
+                    toolCallCount: 1,
+                    callerCredentialContext: callerCredentialContext); // A retry still executes a single tool.
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {

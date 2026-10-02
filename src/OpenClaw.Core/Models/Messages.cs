@@ -1,3 +1,5 @@
+using OpenClaw.Core.Security;
+
 namespace OpenClaw.Core.Models;
 
 /// <summary>
@@ -32,6 +34,8 @@ public sealed record InboundMessage
     public DateTimeOffset ReceivedAt { get; init; } = DateTimeOffset.UtcNow;
     [System.Text.Json.Serialization.JsonIgnore]
     public CancellationToken RequestCancellation { get; init; } = CancellationToken.None;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public McpCallerCredentialContext? McpCallerCredentialContext { get; init; }
 
     // Group chat fields
     public bool IsGroup { get; init; }

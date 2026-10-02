@@ -164,6 +164,15 @@ public sealed class McpAppDiscovery(McpAppsConfig config, ILogger<McpAppDiscover
             // Validate required fields
             ValidateManifest(state);
 
+            if (_config.Entries.TryGetValue(manifest.Id, out var entry) &&
+                entry.DelegatedCredentials is { Enabled: true } &&
+                entry.Transport is null &&
+                !string.Equals(manifest.Transport, "http", StringComparison.OrdinalIgnoreCase))
+            {
+                state.IsValid = false;
+                state.ValidationErrors.Add("DelegatedCredentials requires the resolved MCP App transport to be 'http'.");
+            }
+
             if (!state.IsValid)
             {
                 _logger.LogWarning("McpApp '{AppId}' at {Path} has validation errors: {Errors}",

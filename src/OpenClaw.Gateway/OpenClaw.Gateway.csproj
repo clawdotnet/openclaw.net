@@ -24,7 +24,7 @@
          NETSDK1022 "duplicate Content items". -->
     <DefaultItemExcludes>$(DefaultItemExcludes);skills\**</DefaultItemExcludes>
     <!-- Optional protocol packages can carry transitive AOT warnings; keep package-level warnings suppressed while surfacing project-owned trim diagnostics. -->
-    <NoWarn>$(NoWarn);IL2104;IL3000;IL3002;IL3053</NoWarn>
+    <NoWarn>$(NoWarn);IL2104;IL3000;IL3002;IL3053;MCP9005</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\OpenClaw.Core\OpenClaw.Core.csproj" />
@@ -76,6 +76,8 @@
     <PackageReference Include="GeminiDotnet.Extensions.AI" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" />
     <PackageReference Include="Microsoft.OpenApi" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
     <PackageReference Include="ModelContextProtocol.Extensions.Tasks" />

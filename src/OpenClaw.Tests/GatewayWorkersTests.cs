@@ -4,6 +4,7 @@ using System.Net;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using OpenClaw.Agent;
@@ -13,6 +14,7 @@ using OpenClaw.Core.Memory;
 using OpenClaw.Core.Middleware;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Pipeline;
+using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Extensions;
@@ -449,7 +451,18 @@ public sealed class GatewayWorkersTests
         var socket = new TestWebSocket();
         Assert.True(wsChannel.TryAddConnectionForTest("ws-user", socket, IPAddress.Loopback, useJsonEnvelope: true));
         var agentRuntime = Substitute.For<IAgentRuntime>();
-        agentRuntime.RunStreamingAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>())
+        var callerCredentialContext = new McpCallerCredentialContext(
+            "websocket-oidc-access-token-marker",
+            "ws-user",
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        McpCallerCredentialContext? receivedCallerCredentialContext = null;
+        agentRuntime.RunStreamingAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<string?>(),
+                Arg.Do<McpCallerCredentialContext?>(context => receivedCallerCredentialContext = context))
             .Returns(StreamVerboseTestEvents());
         var toolApprovalService = new ToolApprovalService();
         var approvalAuditStore = new ApprovalAuditStore(storagePath, NullLogger<ApprovalAuditStore>.Instance);
@@ -509,7 +522,8 @@ public sealed class GatewayWorkersTests
             SenderId = "ws-user",
             SessionId = "sess-stream",
             Text = "hello",
-            MessageId = "msg-stream"
+            MessageId = "msg-stream",
+            McpCallerCredentialContext = callerCredentialContext
         });
 
         await WaitForAsync(
@@ -529,6 +543,7 @@ public sealed class GatewayWorkersTests
         Assert.True(doneIndex >= 0, "Expected assistant_done event.");
         Assert.True(footerIndex < doneIndex, "Verbose footer should be emitted before assistant_done.");
         Assert.Equal("typing_stop", envelopes[^1]);
+        Assert.Same(callerCredentialContext, receivedCallerCredentialContext);
     }
 
     [Fact]
@@ -1480,7 +1495,7 @@ public sealed class GatewayWorkersTests
     }
 
     [Fact]
-    public async Task Start_PersistsAuthenticatedUserIdFromInboundMessage()
+    public async Task Start_PassesCallerContextToRuntime_AndPersistsAuthenticatedUserId()
     {
         var storagePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "openclaw-worker-tests", Guid.NewGuid().ToString("N"));
         var store = new FileMemoryStore(storagePath, 4);
@@ -1510,7 +1525,21 @@ public sealed class GatewayWorkersTests
         var wsChannel = new WebSocketChannel(config.WebSocket);
         await using var adapter = new RecordingChannelAdapter("telegram");
         var agentRuntime = Substitute.For<IAgentRuntime>();
-        agentRuntime.RunTurnAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<ToolApprovalCallback?>(), Arg.Any<JsonElement?>())
+        var gatewayLogger = new CapturingLogger();
+        var callerCredentialContext = new McpCallerCredentialContext(
+            "integration-oidc-access-token-marker",
+            "acct-123",
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        var receivedCallerCredentialContexts = new ConcurrentQueue<McpCallerCredentialContext?>();
+        var receivedSessions = new ConcurrentQueue<Session>();
+        agentRuntime.RunTurnAsync(
+            Arg.Do<Session>(session => receivedSessions.Enqueue(session)),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<JsonElement?>(),
+                Arg.Any<string?>(),
+                Arg.Do<McpCallerCredentialContext?>(context => receivedCallerCredentialContexts.Enqueue(context)))
             .Returns(AgentTurnResult.Completed("ok"));
         var toolApprovalService = new ToolApprovalService();
         var approvalAuditStore = new ApprovalAuditStore(storagePath, NullLogger<ApprovalAuditStore>.Instance);
@@ -1544,7 +1573,7 @@ public sealed class GatewayWorkersTests
         using var lifetime = new TestApplicationLifetime();
         GatewayWorkers.Start(
             lifetime,
-            NullLogger.Instance,
+            gatewayLogger,
             workerCount: 1,
             isNonLoopbackBind: false,
             sessionManager,
@@ -1567,17 +1596,51 @@ public sealed class GatewayWorkersTests
             commandProcessor,
             operations);
 
-        await pipeline.InboundWriter.WriteAsync(new InboundMessage
+        var inboundMessage = new InboundMessage
         {
             ChannelId = "telegram",
             SenderId = "sender-1",
             AuthenticatedUserId = "acct-123",
             Text = "hello",
-            MessageId = "msg-1"
-        });
+            MessageId = "msg-1",
+            McpCallerCredentialContext = callerCredentialContext
+        };
+        var serializedMessage = JsonSerializer.Serialize(inboundMessage, CoreJsonContext.Default.InboundMessage);
+        var recoveredMessage = JsonSerializer.Deserialize(serializedMessage, CoreJsonContext.Default.InboundMessage);
+        Assert.NotNull(recoveredMessage);
+        Assert.Null(recoveredMessage.McpCallerCredentialContext);
+        Assert.DoesNotContain("integration-oidc-access-token-marker", serializedMessage, StringComparison.Ordinal);
+
+        await pipeline.InboundWriter.WriteAsync(inboundMessage);
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         _ = await adapter.ReadAsync(timeout.Token);
+        Assert.True(receivedCallerCredentialContexts.TryDequeue(out var receivedValidContext));
+        Assert.Same(callerCredentialContext, receivedValidContext);
+        Assert.True(receivedSessions.TryDequeue(out var receivedSession));
+        var serializedSession = JsonSerializer.Serialize(receivedSession, CoreJsonContext.Default.Session);
+        Assert.DoesNotContain("integration-oidc-access-token-marker", serializedSession, StringComparison.Ordinal);
+
+        await pipeline.InboundWriter.WriteAsync(new InboundMessage
+        {
+            ChannelId = "telegram",
+            SenderId = "sender-1",
+            AuthenticatedUserId = "acct-123",
+            Text = "expired context",
+            MessageId = "msg-2",
+            McpCallerCredentialContext = new McpCallerCredentialContext(
+                "expired-oidc-access-token-marker",
+                "acct-123",
+                DateTimeOffset.UtcNow.AddSeconds(-1))
+        });
+        using var secondTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        _ = await adapter.ReadAsync(secondTimeout.Token);
+        Assert.True(receivedCallerCredentialContexts.TryDequeue(out var receivedExpiredContext));
+        Assert.Null(receivedExpiredContext);
+        Assert.Empty(receivedCallerCredentialContexts);
+        var logMessages = string.Join(Environment.NewLine, gatewayLogger.Messages);
+        Assert.DoesNotContain("integration-oidc-access-token-marker", logMessages, StringComparison.Ordinal);
+
         await WaitForAsync(
             () => string.Equals(sessionManager.TryGetActive("telegram", "sender-1")?.AuthenticatedUserId, "acct-123", StringComparison.Ordinal),
             TimeSpan.FromSeconds(2),
@@ -1732,6 +1795,29 @@ public sealed class GatewayWorkersTests
         }
 
         throw new TimeoutException(message);
+    }
+
+    private sealed class CapturingLogger : ILogger
+    {
+        private readonly ConcurrentQueue<string> _messages = new();
+
+        public IReadOnlyCollection<string> Messages => _messages.ToArray();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            _messages.Enqueue(formatter(state, exception));
+            if (exception is not null)
+                _messages.Enqueue(exception.ToString());
+        }
     }
 
     private static async IAsyncEnumerable<AgentStreamEvent> StreamVerboseTestEvents()

@@ -2,7 +2,7 @@
 
 ## 状态
 
-设计内容已在对话中确认；本文档等待用户审阅，审阅通过后再编写实现计划。
+设计内容已在对话中确认；实现计划见 [2026-10-02-mcp-per-call-delegated-credentials.md](../plans/2026-10-02-mcp-per-call-delegated-credentials.md)。
 
 ## 背景
 

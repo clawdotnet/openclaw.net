@@ -188,6 +188,41 @@ public sealed class McpServerConfig
     public string? ToolNamePrefix { get; set; }
     public int StartupTimeoutSeconds { get; set; } = 15;
     public int RequestTimeoutSeconds { get; set; } = 60;
+    public McpDelegatedCredentialsConfig? DelegatedCredentials { get; set; }
+}
+
+/// <summary>Trusted per-endpoint policy for obtaining delegated credentials for MCP HTTP calls.</summary>
+public sealed class McpDelegatedCredentialsConfig
+{
+    /// <summary>Whether delegated credentials are enabled for this endpoint.</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>Credential mode: <c>token_exchange</c> or <c>gateway_signed</c>.</summary>
+    public string? Mode { get; set; }
+
+    /// <summary>Trusted token audience for the MCP endpoint.</summary>
+    public string? Audience { get; set; }
+
+    /// <summary>Minimum scopes requested for the delegated credential.</summary>
+    public string[] Scopes { get; set; } = [];
+
+    /// <summary>Trusted OAuth token exchange endpoint. Used only by <c>token_exchange</c>.</summary>
+    public string? TokenEndpoint { get; set; }
+
+    /// <summary>OAuth client identifier. Used only by <c>token_exchange</c>.</summary>
+    public string? ClientId { get; set; }
+
+    /// <summary>Reference to the OAuth client secret. Secret material must not be stored here.</summary>
+    public string? ClientSecretRef { get; set; }
+
+    /// <summary>Issuer for gateway-signed delegated credentials.</summary>
+    public string? Issuer { get; set; }
+
+    /// <summary>Reference to the gateway signing key. Key material must not be stored here.</summary>
+    public string? SigningKeyRef { get; set; }
+
+    /// <summary>Lifetime of gateway-signed delegated credentials, in seconds.</summary>
+    public int LifetimeSeconds { get; set; }
 }
 
 /// <summary>
@@ -251,6 +286,9 @@ public sealed class McpAppEntryConfig
 
     /// <summary>Extra environment variables for this app instance.</summary>
     public Dictionary<string, string> Environment { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Trusted delegated credential policy for this app's MCP HTTP endpoint.</summary>
+    public McpDelegatedCredentialsConfig? DelegatedCredentials { get; set; }
 }
 
 public static class McpServerConfigExtensions

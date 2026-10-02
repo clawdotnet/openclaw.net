@@ -7,6 +7,7 @@ using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
+using OpenClaw.Core.Security;
 using OpenClaw.Core.Skills;
 using Xunit;
 
@@ -208,7 +209,8 @@ public sealed class DelegateToolTests
             CancellationToken ct,
             ToolApprovalCallback? approvalCallback = null,
             JsonElement? responseSchema = null,
-            string? correlationId = null)
+            string? correlationId = null,
+            McpCallerCredentialContext? callerCredentialContext = null)
         {
             _ = userMessage;
             _ = ct;
@@ -224,7 +226,8 @@ public sealed class DelegateToolTests
             CancellationToken ct,
             ToolApprovalCallback? approvalCallback = null,
             JsonElement? responseSchema = null,
-            string? correlationId = null)
+            string? correlationId = null,
+            McpCallerCredentialContext? callerCredentialContext = null)
         {
             _ = userMessage;
             _ = ct;
@@ -245,7 +248,8 @@ public sealed class DelegateToolTests
             string userMessage,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct,
             ToolApprovalCallback? approvalCallback = null,
-            string? correlationId = null)
+            string? correlationId = null,
+            McpCallerCredentialContext? callerCredentialContext = null)
         {
             _ = session;
             _ = userMessage;

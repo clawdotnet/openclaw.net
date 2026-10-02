@@ -61,6 +61,78 @@ There are two primary ways to add new capabilities to your agent:
 | Payment & Mempalace | `payment`, `mempalace_kg` |
 | Streaming & Test | `stream_echo` (env-gated), bridged plugin tools (dynamic) |
 
+## MCP Delegated Credentials
+
+MCP delegated credentials are disabled unless a trusted Gateway entry explicitly sets `DelegatedCredentials.Enabled=true`. Use the `DelegatedCredentials` block on an HTTP `OpenClaw.Plugins.Mcp.Servers.<id>` entry or an `OpenClaw.McpApps.Entries.<appId>` entry. The same policy fields and either mode can be used in both locations.
+
+This feature is per-call credential delegation, not a complete MCP OAuth authorization flow or OAuth 2.1 implementation. The caller must already have a validated OIDC bearer context. In `token_exchange` mode, the Gateway sends an RFC 8693 OAuth 2.0 Token Exchange grant to the configured token endpoint, using the caller's access token as the subject token. This optional extension flow requires an authorization server that supports RFC 8693; see the [authentication support boundary](AUTHENTICATION.md#oauth-21-support-boundary) for the overall OAuth 2.1 scope.
+
+In `gateway_signed` mode, the Gateway signs a project-specific JWT for the downstream MCP service to validate. This is not an OAuth access token issued by an authorization server.
+
+OAuth 2.0 Token Exchange (RFC 8693) example for a remote MCP server:
+
+```json
+{
+  "OpenClaw": {
+    "Plugins": {
+      "Mcp": {
+        "Enabled": true,
+        "Servers": {
+          "inventory": {
+            "Enabled": true,
+            "Transport": "http",
+            "Url": "https://mcp.example.com/mcp",
+            "DelegatedCredentials": {
+              "Enabled": true,
+              "Mode": "token_exchange",
+              "Audience": "inventory-api",
+              "Scopes": ["inventory.read"],
+              "TokenEndpoint": "https://identity.example.com/oauth/token",
+              "ClientId": "openclaw-gateway",
+              "ClientSecretRef": "env:STRATEGOS_CLIENT_SECRET"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Gateway-signed example for an MCP App entry:
+
+```json
+{
+  "OpenClaw": {
+    "McpApps": {
+      "Enabled": true,
+      "Entries": {
+        "grocery-inventory": {
+          "Enabled": true,
+          "Transport": "http",
+          "Url": "https://mcp.example.com/grocery",
+          "DelegatedCredentials": {
+            "Enabled": true,
+            "Mode": "gateway_signed",
+            "Audience": "inventory-api",
+            "Scopes": ["inventory.read"],
+            "Issuer": "https://gateway.example.com",
+            "SigningKeyRef": "env:MCP_DELEGATION_SIGNING_KEY",
+            "LifetimeSeconds": 60
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+For `token_exchange`, configure `Audience`, `Scopes`, `TokenEndpoint`, `ClientId`, and `ClientSecretRef`. For `gateway_signed`, configure `Audience`, `Scopes`, `Issuer`, `SigningKeyRef`, and a positive `LifetimeSeconds`. Keep secret material out of config; use a supported secret reference such as `env:NAME`. The caller must have a validated, unexpired OIDC bearer context. Caller and delegated expiry are checked before the upstream tool call; expired credentials fail closed and require a fresh authenticated request. Caller credentials are memory-only and are not carried in sessions or durable delayed work.
+
+Delegation never falls back to another credential mode or a configured static `Authorization` header. Upstream 401/403 responses are not retried with static credentials. An MCP App manifest cannot opt itself into delegation; only the trusted Gateway `McpApps.Entries[appId].DelegatedCredentials` policy can. Entries without opt-in continue using their existing shared MCP client and static headers.
+
+When using `gateway_signed`, the downstream MCP service (for example, Strategos) must independently trust the configured issuer and validate the signature, audience, expiry, and scopes. OpenClaw issues the credential; it does not validate the downstream service's credentials.
+
 ---
 
 ## 🏗 Core Tools

@@ -6,6 +6,16 @@ OpenClaw.NET Gateway 支持多层认证体系，涵盖静态令牌、OIDC/JWT Be
 
 ---
 
+## OAuth 2.1 支持边界
+
+OpenClaw.NET 不声明完整符合 OAuth 2.1，不提供通用 OAuth 授权服务器，也不签发 OAuth token。配置 OIDC Authority 后，Gateway 可以验证外部签发的 OIDC JWT Bearer 令牌；这属于资源服务器侧的令牌验证。WebChat 浏览器客户端支持对接外部身份提供方的 OIDC Authorization Code + PKCE (S256) 登录；用户认证及授权码/token 签发由外部提供方负责。此客户端流程仅适用于 WebChat；其他前端如需交互式登录，需各自集成 OIDC 客户端；Gateway 不提供授权服务器。授权端点与 token 签发仍由外部身份提供方负责。
+
+对于 MCP 按次调用委托，Gateway 可以作为客户端向配置的端点发送 RFC 8693 token exchange 请求，也可以为配置的下游服务签发 Gateway 签名 JWT。Token exchange 是可选的 OAuth 2.0 扩展；当前这条特定流程不代表 OpenClaw.NET 完整实现了 OAuth 2.1 或 RFC 8693。Gateway 签名凭据是项目自有的独立机制，不是由授权服务器签发的 OAuth access token。配置详情见 [MCP 委托凭据](TOOLS_GUIDE.md#mcp-委托凭据)。
+
+截至 2026-10-02，OAuth 2.1 规范仍是 IETF 正在推进的 Internet-Draft，尚未发布为 RFC。当前版本和状态请查阅 [IETF Datatracker](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)。
+
+---
+
 ## 一、配置模型
 
 认证配置位于 `appsettings.json` 的 `OpenClaw.Security` 节点下。

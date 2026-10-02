@@ -710,6 +710,47 @@ public sealed partial class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task IntegrationMessages_WhenOidcBearer_ShouldBindCallerContextToQueuedMessage()
+    {
+        const string accessToken = "integration-oidc-access-token-marker";
+        const string subject = "integration-oidc-subject";
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var principal = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+        [
+            new System.Security.Claims.Claim("sub", subject),
+            new System.Security.Claims.Claim("exp", expiresAt.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, OperatorRoleNames.Operator)
+        ],
+        authenticationType: "oidc"));
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configure: config =>
+            {
+                config.Security.AuthMode = SecurityAuthModeNames.Oidc;
+                config.Security.Oidc.Authority = "https://issuer.example";
+            },
+            configureApp: app => app.Use(async (ctx, next) =>
+            {
+                ctx.User = principal;
+                await next(ctx);
+            }));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/integration/messages")
+        {
+            Content = JsonContent("""{"text":"hello","senderId":"oidc-sender"}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.True(harness.Runtime.Pipeline.InboundReader.TryRead(out var queued));
+        var callerContext = Assert.IsType<OpenClaw.Core.Security.McpCallerCredentialContext>(queued.McpCallerCredentialContext);
+        Assert.Equal(accessToken, callerContext.OidcAccessToken);
+        Assert.Equal(subject, callerContext.Subject);
+        Assert.Equal(expiresAt.ToUnixTimeSeconds(), callerContext.ExpiresAtUtc.ToUnixTimeSeconds());
+    }
+
+    [Fact]
     public async Task McpSendMessage_WhenAccountToken_ShouldStampAccountNotClaimedSender()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);

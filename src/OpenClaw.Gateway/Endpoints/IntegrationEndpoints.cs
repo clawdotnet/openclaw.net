@@ -867,6 +867,7 @@ internal static class IntegrationEndpoints
             }
 
             var caller = EndpointHelpers.ResolveCaller(ctx, startup);
+            var callerCredentialContext = EndpointHelpers.ResolveMcpCallerCredentialContext(ctx, startup);
             if (!await facade.CanWriteSessionAsync(request, caller.AccountId, caller.IsAdmin, ctx.RequestAborted))
             {
                 return Results.Json(
@@ -876,7 +877,7 @@ internal static class IntegrationEndpoints
             }
 
             return Results.Json(
-                await facade.QueueMessageAsync(request, ctx.RequestAborted, caller.AccountId, caller.IsAdmin),
+                await facade.QueueMessageAsync(request, ctx.RequestAborted, caller.AccountId, caller.IsAdmin, callerCredentialContext),
                 CoreJsonContext.Default.IntegrationMessageResponse,
                 statusCode: StatusCodes.Status202Accepted);
         });

@@ -1,5 +1,6 @@
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Core.Plugins;
+using OpenClaw.Core.Security;
 using OpenClaw.McpApp;
 using OpenClaw.McpApp.Shared;
 using System.Linq;
@@ -23,6 +24,14 @@ internal static class McpAppToolRegistrationExtensions
         NativePluginRegistry nativeRegistry,
         McpAppsConfig config,
         CancellationToken ct = default)
+        => await RegisterMcpAppToolsAsync(appRegistry, nativeRegistry, config, delegatedToolInvoker: null, ct);
+
+    public static async Task RegisterMcpAppToolsAsync(
+        this McpAppRegistry appRegistry,
+        NativePluginRegistry nativeRegistry,
+        McpAppsConfig config,
+        IMcpDelegatedToolInvoker? delegatedToolInvoker,
+        CancellationToken ct = default)
     {
         if (!config.Enabled)
             return;
@@ -31,6 +40,7 @@ internal static class McpAppToolRegistrationExtensions
 
         foreach (var app in appRegistry.Apps)
         {
+            config.Entries.TryGetValue(app.AppId, out var entryConfig);
             var pluginId = $"mcpapp:{app.AppId}";
             var displayName = app.DisplayName;
 
@@ -46,7 +56,9 @@ internal static class McpAppToolRegistrationExtensions
                     tool.Description,
                     tool.InputSchemaText,
                     app,
-                    suppressStructuredContent: !string.IsNullOrWhiteSpace(tool.UiResourceUri));
+                    suppressStructuredContent: !string.IsNullOrWhiteSpace(tool.UiResourceUri),
+                    delegatedToolInvoker: delegatedToolInvoker,
+                    delegatedCredentials: entryConfig?.DelegatedCredentials);
 
                 nativeRegistry.RegisterExternalTool(nativeTool, pluginId, displayName);
             }
