@@ -12,6 +12,7 @@ using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
+using OpenClaw.Core.Security;
 using OpenClaw.Core.Skills;
 using OpenClaw.MicrosoftAgentFrameworkAdapter;
 using OpenClaw.Routing.Onnx;
@@ -2603,6 +2604,63 @@ public sealed class MafAdapterTests
     }
 
     [Fact]
+    public async Task MafAgentRuntime_RunAsync_CallerCredentialContext_ReachesConcurrentMetaSkillTools()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-caller-context-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var tracker = new MafConcurrencyTracker();
+            var firstTool = new CallerContextCaptureMafTool("first_tool", tracker, 120);
+            var secondTool = new CallerContextCaptureMafTool("second_tool", tracker, 120);
+            var skills = new SkillDefinition[]
+            {
+                new()
+                {
+                    Name = "meta-flow",
+                    Description = "meta flow",
+                    Instructions = "...",
+                    Location = "/skills/meta-flow",
+                    Kind = SkillKind.Meta,
+                    FinalTextMode = "step:first",
+                    Composition = new MetaSkillComposition
+                    {
+                        Steps =
+                        [
+                            new MetaSkillStepDefinition { Id = "first", Kind = "tool_call", Tool = "first_tool", WithJson = """{"continue_on_error":true}""" },
+                            new MetaSkillStepDefinition { Id = "second", Kind = "tool_call", Tool = "second_tool", WithJson = """{"continue_on_error":true}""" }
+                        ]
+                    }
+                }
+            };
+            var runtime = CreateRuntime(
+                storagePath,
+                new MetaInvokeTestLlmExecutionService("meta-flow", "hello"),
+                new MafOptions(),
+                tools: [new MetaInvokeTool(() => skills), firstTool, secondTool],
+                skills: skills);
+            var session = CreateSession("maf-meta-caller-context");
+            var callerContext = new McpCallerCredentialContext("test-token", "test-subject", DateTimeOffset.UtcNow.AddMinutes(5));
+
+            var result = await runtime.RunAsync(
+                session,
+                "run meta flow",
+                TestContext.Current.CancellationToken,
+                callerCredentialContext: callerContext);
+
+            Assert.Equal("done", result);
+            Assert.Same(callerContext, firstTool.CallerCredentialContext);
+            Assert.Same(callerContext, secondTool.CallerCredentialContext);
+            Assert.True(tracker.MaxConcurrent >= 2, $"Expected MaxConcurrent >= 2, actual: {tracker.MaxConcurrent}");
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task MafAgentRuntime_ExecuteMetaSkillAsync_LlmChatContinueOnError_AppliesRouteCompletion()
     {
         var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-meta-continue-route-tests", Guid.NewGuid().ToString("N"));
@@ -4159,6 +4217,39 @@ public sealed class MafAdapterTests
         }
     }
 
+    private sealed class CallerContextCaptureMafTool(string name, MafConcurrencyTracker tracker, int delayMs) : IToolWithContext
+    {
+        private McpCallerCredentialContext? _callerCredentialContext;
+
+        public string Name => name;
+        public string Description => "Captures the caller credential context.";
+        public string ParameterSchema => """{"type":"object"}""";
+        public McpCallerCredentialContext? CallerCredentialContext => Volatile.Read(ref _callerCredentialContext);
+
+        public async ValueTask<string> ExecuteAsync(string argumentsJson, ToolExecutionContext context, CancellationToken ct)
+        {
+            _ = argumentsJson;
+            Interlocked.CompareExchange(ref _callerCredentialContext, context.McpCallerCredentialContext, null);
+            tracker.Enter();
+            try
+            {
+                await Task.Delay(delayMs, ct);
+                return name;
+            }
+            finally
+            {
+                tracker.Exit();
+            }
+        }
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        {
+            _ = argumentsJson;
+            _ = ct;
+            return ValueTask.FromResult("missing-context");
+        }
+    }
+
     private sealed class EchoArgumentsMafTool(string name) : ITool
     {
         public string Name => name;
@@ -4538,6 +4629,68 @@ public sealed class MafAdapterTests
                 ProviderId = "test-maf",
                 ModelId = "maf-test-model",
                 Response = new ChatResponse([new ChatMessage(ChatRole.Assistant, "ok")])
+            });
+        }
+
+        public Task<LlmStreamingExecutionResult> StartStreamingAsync(
+            Session session,
+            IReadOnlyList<ChatMessage> messages,
+            ChatOptions options,
+            TurnContext turnContext,
+            LlmExecutionEstimate estimate,
+            CancellationToken ct)
+        {
+            _ = session;
+            _ = messages;
+            _ = options;
+            _ = turnContext;
+            _ = estimate;
+            _ = ct;
+            return Task.FromResult(new LlmStreamingExecutionResult
+            {
+                ProviderId = "test-maf",
+                ModelId = "maf-test-model",
+                Updates = AsyncEnumerable.Empty<ChatResponseUpdate>()
+            });
+        }
+    }
+
+    private sealed class MetaInvokeTestLlmExecutionService(string skillName, string input) : ILlmExecutionService
+    {
+        private int _callCount;
+
+        public CircuitState DefaultCircuitState => CircuitState.Closed;
+
+        public Task<LlmExecutionResult> GetResponseAsync(
+            Session session,
+            IReadOnlyList<ChatMessage> messages,
+            ChatOptions options,
+            TurnContext turnContext,
+            LlmExecutionEstimate estimate,
+            CancellationToken ct)
+        {
+            _ = session;
+            _ = messages;
+            _ = options;
+            _ = turnContext;
+            _ = estimate;
+            _ = ct;
+            var response = Interlocked.Increment(ref _callCount) == 1
+                ? new ChatResponse([new ChatMessage(ChatRole.Assistant, new AIContent[]
+                {
+                    new FunctionCallContent("call_meta_invoke", "meta_invoke", new Dictionary<string, object?>
+                    {
+                        ["skill"] = skillName,
+                        ["input"] = input
+                    })
+                })])
+                : new ChatResponse([new ChatMessage(ChatRole.Assistant, "done")]);
+
+            return Task.FromResult(new LlmExecutionResult
+            {
+                ProviderId = "test-maf",
+                ModelId = "maf-test-model",
+                Response = response
             });
         }
 

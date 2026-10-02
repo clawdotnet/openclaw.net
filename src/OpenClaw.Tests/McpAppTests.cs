@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.ComponentModel;
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -10,12 +11,14 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using NSubstitute;
 using OpenClaw.Agent;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Plugins;
+using OpenClaw.Core.Security;
 using OpenClaw.Gateway.Mcp;
 using OpenClaw.McpApp;
 using OpenClaw.McpApp.Models;
@@ -231,6 +234,9 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.True(provider.HasUi);
         Assert.Equal("ui://my-app/main.html", provider.UiResourceUri);
         Assert.Null(provider.Client);
+        Assert.Equal("stdio", provider.Transport);
+        Assert.Null(provider.HttpEndpoint);
+        Assert.Empty(provider.StaticHeaders);
         Assert.Empty(provider.GetToolDescriptors());
         Assert.Empty(provider.GetResourceDescriptors());
         Assert.Empty(provider.GetPromptDescriptors());
@@ -405,6 +411,45 @@ public sealed class McpAppTests : IAsyncDisposable
             Assert.Equal(McpAppLifecycle.Validated, state.Lifecycle);
             Assert.Equal(dir, state.RootPath);
             Assert.Equal(Path.Combine(dir, McpAppDiscovery.ManifestFileName), state.ManifestPath);
+        }
+        finally
+        {
+            TryDeleteDirectory(dir);
+        }
+    }
+
+    [Fact]
+    public void Discovery_DelegatedCredentials_RejectsManifestWithNonHttpTransportWhenNoOverride()
+    {
+        var dir = CreateTempManifestDir("delegated-stdio-app", new McpAppManifest
+        {
+            Id = "delegated-stdio-app",
+            Version = "1.0.0",
+            Transport = "stdio",
+            Command = "mcp-server"
+        });
+        try
+        {
+            var config = new McpAppsConfig
+            {
+                Enabled = true,
+                DiscoveryPaths = [dir],
+                Entries = new Dictionary<string, McpAppEntryConfig>(StringComparer.Ordinal)
+                {
+                    ["delegated-stdio-app"] = new()
+                    {
+                        DelegatedCredentials = new McpDelegatedCredentialsConfig { Enabled = true }
+                    }
+                }
+            };
+            var discovery = new McpAppDiscovery(config, NullLogger<McpAppDiscovery>.Instance);
+
+            var results = discovery.Discover();
+
+            var state = Assert.Single(results);
+            Assert.False(state.IsValid);
+            Assert.Contains(state.ValidationErrors,
+                error => error.Contains("DelegatedCredentials", StringComparison.Ordinal));
         }
         finally
         {
@@ -873,6 +918,19 @@ public sealed class McpAppTests : IAsyncDisposable
         ToolInvocations = [],
     };
 
+    private static ToolExecutionContext CreateToolExecutionContext(McpCallerCredentialContext caller)
+        => new()
+        {
+            Session = new Session
+            {
+                Id = "delegated-app-session",
+                ChannelId = "test-channel",
+                SenderId = caller.Subject
+            },
+            TurnContext = new TurnContext(),
+            McpCallerCredentialContext = caller
+        };
+
     /// <summary>Verifies that JSON tool arguments are accepted by the remote MCP tool.</summary>
     [Fact]
     public async Task NativeTool_Execute_WithArguments_InvokesCorrectly()
@@ -1209,6 +1267,164 @@ public sealed class McpAppTests : IAsyncDisposable
 
             Assert.Contains("called:show_dashboard", result, StringComparison.Ordinal);
             Assert.DoesNotContain("\"ok\":true", result, StringComparison.Ordinal);
+        }
+        finally
+        {
+            TryDeleteDirectory(dir);
+        }
+    }
+
+    [Fact]
+    public async Task RegisterMcpAppToolsAsync_TrustedHttpEntry_UsesIsolatedCredentialsAndSanitizesFailures()
+    {
+        var (serverUrl, receivedCalls) = await StartMcpServerWithCallHeaderCaptureAsync<GroceryMcpTools>();
+        var dir = CreateTempManifestDir("delegated-app", new McpAppManifest
+        {
+            Id = "delegated-app",
+            Version = "1.0",
+            Transport = "http",
+            Url = "http://127.0.0.1:1/manifest-endpoint",
+            Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Authorization"] = "Bearer manifest-static-token",
+                ["X-App-Static"] = "manifest-header-value"
+            }
+        });
+        var config = new McpAppsConfig
+        {
+            Enabled = true,
+            DiscoveryPaths = [dir],
+            Entries = new Dictionary<string, McpAppEntryConfig>(StringComparer.Ordinal)
+            {
+                ["delegated-app"] = new()
+                {
+                    Transport = "streamable-http",
+                    Url = serverUrl,
+                    RequestTimeoutSeconds = 47,
+                    DelegatedCredentials = new McpDelegatedCredentialsConfig
+                    {
+                        Enabled = true,
+                        Mode = "token_exchange",
+                        Audience = "inventory-api",
+                        Scopes = ["inventory.read"]
+                    }
+                }
+            }
+        };
+        var credentialProvider = Substitute.For<IMcpDelegatedCredentialProvider>();
+        var credentialRequests = 0;
+        credentialProvider.GetCredentialAsync(
+                Arg.Any<McpDelegatedCredentialsConfig>(),
+                Arg.Any<McpCallerCredentialContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var requestNumber = Interlocked.Increment(ref credentialRequests);
+                if (requestNumber > 2)
+                {
+                    return Task.FromException<McpDelegatedCredential>(new InvalidOperationException(
+                        "caller-token-marker delegated-token-marker"));
+                }
+
+                var caller = call.Arg<McpCallerCredentialContext>();
+                return Task.FromResult(new McpDelegatedCredential(
+                    $"delegated-{caller.Subject}",
+                    DateTimeOffset.UtcNow.AddMinutes(5)));
+            });
+        var invoker = new McpDelegatedToolInvoker(credentialProvider, new McpDelegatedHttpClientFactory());
+
+        try
+        {
+            await using var registry = new McpAppRegistry(
+                config,
+                new McpAppDiscovery(config, NullLogger<McpAppDiscovery>.Instance),
+                NullLoggerFactory.Instance);
+            using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
+
+            await registry.RegisterMcpAppToolsAsync(
+                nativeRegistry,
+                config,
+                invoker,
+                TestContext.Current.CancellationToken);
+
+            var app = Assert.Single(registry.Apps);
+            Assert.Equal("http", app.Transport);
+            Assert.Equal(new Uri(serverUrl), app.HttpEndpoint);
+            Assert.Equal(47, app.RequestTimeoutSeconds);
+            Assert.Equal("Bearer manifest-static-token", app.StaticHeaders["Authorization"]);
+            Assert.Equal("manifest-header-value", app.StaticHeaders["X-App-Static"]);
+
+            var tool = Assert.IsAssignableFrom<IToolWithContext>(Assert.Single(nativeRegistry.Tools, t => t.Name == "get_stores"));
+            var firstCaller = new McpCallerCredentialContext("caller-token-one", "caller-one", DateTimeOffset.UtcNow.AddMinutes(5));
+            var secondCaller = new McpCallerCredentialContext("caller-token-two", "caller-two", DateTimeOffset.UtcNow.AddMinutes(5));
+            var results = await Task.WhenAll(
+                tool.ExecuteAsync("{}", CreateToolExecutionContext(firstCaller), TestContext.Current.CancellationToken).AsTask(),
+                tool.ExecuteAsync("{}", CreateToolExecutionContext(secondCaller), TestContext.Current.CancellationToken).AsTask());
+
+            Assert.All(results, result => Assert.DoesNotContain("Error:", result));
+            var callsByAuthorization = receivedCalls.ToDictionary(call => call.Authorization);
+            Assert.Equal(2, callsByAuthorization.Count);
+            Assert.Equal("manifest-header-value", callsByAuthorization["Bearer delegated-caller-one"].StaticHeader);
+            Assert.Equal("manifest-header-value", callsByAuthorization["Bearer delegated-caller-two"].StaticHeader);
+            Assert.DoesNotContain("Bearer manifest-static-token", callsByAuthorization.Keys);
+            Assert.DoesNotContain("Bearer caller-token-one", callsByAuthorization.Keys);
+            Assert.DoesNotContain("Bearer caller-token-two", callsByAuthorization.Keys);
+
+            var failedResult = await tool.ExecuteAsync(
+                "{}",
+                CreateToolExecutionContext(new McpCallerCredentialContext(
+                    "caller-token-marker",
+                    "caller-three",
+                    DateTimeOffset.UtcNow.AddMinutes(5))),
+                TestContext.Current.CancellationToken);
+            Assert.Equal("Error: MCP_DELEGATED_CREDENTIAL_PROVIDER_FAILED", failedResult);
+            Assert.DoesNotContain("caller-token-marker", failedResult, StringComparison.Ordinal);
+            Assert.DoesNotContain("delegated-token-marker", failedResult, StringComparison.Ordinal);
+            Assert.Equal(2, receivedCalls.Count);
+        }
+        finally
+        {
+            TryDeleteDirectory(dir);
+        }
+    }
+
+    [Fact]
+    public async Task RegisterMcpAppToolsAsync_WithoutTrustedPolicy_UsesSharedClientAndManifestAuthorization()
+    {
+        var (serverUrl, receivedCalls) = await StartMcpServerWithCallHeaderCaptureAsync<GroceryMcpTools>(expectedCallCount: 1);
+        var dir = CreateTempManifestDir("static-auth-app", new McpAppManifest
+        {
+            Id = "static-auth-app",
+            Version = "1.0",
+            Transport = "http",
+            Url = serverUrl,
+            Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Authorization"] = "Bearer manifest-static-token",
+                ["X-App-Static"] = "manifest-header-value"
+            }
+        });
+        var config = new McpAppsConfig { Enabled = true, DiscoveryPaths = [dir] };
+
+        try
+        {
+            await using var registry = new McpAppRegistry(
+                config,
+                new McpAppDiscovery(config, NullLogger<McpAppDiscovery>.Instance),
+                NullLoggerFactory.Instance);
+            using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
+
+            await registry.RegisterMcpAppToolsAsync(nativeRegistry, config, TestContext.Current.CancellationToken);
+
+            var tool = Assert.IsAssignableFrom<IToolWithContext>(Assert.Single(nativeRegistry.Tools, t => t.Name == "get_stores"));
+            var caller = new McpCallerCredentialContext("caller-token", "caller", DateTimeOffset.UtcNow.AddMinutes(5));
+            var result = await tool.ExecuteAsync("{}", CreateToolExecutionContext(caller), TestContext.Current.CancellationToken);
+
+            Assert.DoesNotContain("Error:", result);
+            var call = Assert.Single(receivedCalls);
+            Assert.Equal("Bearer manifest-static-token", call.Authorization);
+            Assert.Equal("manifest-header-value", call.StaticHeader);
+            Assert.DoesNotContain("caller-token", call.Authorization, StringComparison.Ordinal);
         }
         finally
         {
@@ -1625,7 +1841,64 @@ public sealed class McpAppTests : IAsyncDisposable
         Assert.Null(entry.ToolNamePrefix);
         Assert.Null(entry.StartupTimeoutSeconds);
         Assert.Null(entry.RequestTimeoutSeconds);
+        Assert.Null(entry.DelegatedCredentials);
         Assert.Empty(entry.Environment);
+    }
+
+    /// <summary>Verifies delegated credential policies default to disabled and round-trip through generated JSON metadata.</summary>
+    [Fact]
+    public void McpDelegatedCredentialsConfig_DefaultsDisabledAndRoundTrips()
+    {
+        var policy = new McpDelegatedCredentialsConfig();
+
+        Assert.False(policy.Enabled);
+        Assert.Empty(policy.Scopes);
+        Assert.Equal(0, policy.LifetimeSeconds);
+
+        var serverConfig = new McpServerConfig
+        {
+            Transport = "http",
+            Url = "https://mcp.example/tools",
+            DelegatedCredentials = new McpDelegatedCredentialsConfig
+            {
+                Enabled = true,
+                Mode = "token_exchange",
+                Audience = "strategos",
+                Scopes = ["inventory.read"],
+                TokenEndpoint = "https://identity.example/token",
+                ClientId = "openclaw-gateway",
+                ClientSecretRef = "env:STRATEGOS_CLIENT_SECRET"
+            }
+        };
+        var serverJson = JsonSerializer.Serialize(serverConfig, CoreJsonContext.Default.McpServerConfig);
+        var restoredServer = JsonSerializer.Deserialize(serverJson, CoreJsonContext.Default.McpServerConfig);
+
+        Assert.NotNull(restoredServer?.DelegatedCredentials);
+        Assert.Equal("token_exchange", restoredServer.DelegatedCredentials.Mode);
+        Assert.Equal("strategos", restoredServer.DelegatedCredentials.Audience);
+        Assert.Equal(["inventory.read"], restoredServer.DelegatedCredentials.Scopes);
+
+        var appEntry = new McpAppEntryConfig
+        {
+            Transport = "http",
+            DelegatedCredentials = new McpDelegatedCredentialsConfig
+            {
+                Enabled = true,
+                Mode = "gateway_signed",
+                Audience = "strategos",
+                Scopes = ["inventory.read"],
+                Issuer = "https://gateway.example",
+                SigningKeyRef = "env:DELEGATION_SIGNING_KEY",
+                LifetimeSeconds = 60
+            }
+        };
+        var appJson = JsonSerializer.Serialize(appEntry, CoreJsonContext.Default.McpAppEntryConfig);
+        var restoredAppEntry = JsonSerializer.Deserialize(appJson, CoreJsonContext.Default.McpAppEntryConfig);
+
+        Assert.NotNull(restoredAppEntry?.DelegatedCredentials);
+        Assert.Equal("gateway_signed", restoredAppEntry.DelegatedCredentials.Mode);
+        Assert.Equal("https://gateway.example", restoredAppEntry.DelegatedCredentials.Issuer);
+        Assert.Equal(60, restoredAppEntry.DelegatedCredentials.LifetimeSeconds);
     }
 
     // ── Descriptor Models ───────────────────────────────────────
@@ -1784,6 +2057,58 @@ public sealed class McpAppTests : IAsyncDisposable
         _apps.Add(app);
         var address = app.Urls.Single();
         return ($"{address.TrimEnd('/')}/mcp", tracker);
+    }
+
+    private async Task<(string ServerUrl, ConcurrentQueue<McpAppCallHeaders> Calls)> StartMcpServerWithCallHeaderCaptureAsync<TTools>(int expectedCallCount = 2)
+        where TTools : class
+    {
+        var calls = new ConcurrentQueue<McpAppCallHeaders>();
+        var expectedCallsReceived = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var callCount = 0;
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddMcpServer(options =>
+            {
+                options.ServerInfo = new Implementation
+                {
+                    Name = "delegated-mcp-app-test",
+                    Version = "1.0.0"
+                };
+            })
+            .WithHttpTransport(options => options.Stateless = true)
+            .WithTools<TTools>();
+        var app = builder.Build();
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/mcp", StringComparison.Ordinal)
+                && HttpMethods.IsPost(context.Request.Method))
+            {
+                context.Request.EnableBuffering();
+                using var document = await JsonDocument.ParseAsync(
+                    context.Request.Body,
+                    cancellationToken: context.RequestAborted);
+                context.Request.Body.Position = 0;
+                if (document.RootElement.TryGetProperty("method", out var method)
+                    && method.GetString() == "tools/call")
+                {
+                    calls.Enqueue(new McpAppCallHeaders(
+                        context.Request.Headers.Authorization.ToString(),
+                        context.Request.Headers["X-App-Static"].ToString()));
+                    if (Interlocked.Increment(ref callCount) == expectedCallCount)
+                        expectedCallsReceived.TrySetResult(true);
+
+                    await expectedCallsReceived.Task.WaitAsync(TimeSpan.FromSeconds(5), context.RequestAborted);
+                }
+            }
+
+            await next();
+        });
+        app.MapMcp("/mcp");
+
+        await app.StartAsync();
+        _apps.Add(app);
+        var address = app.Urls.Single();
+        return ($"{address.TrimEnd('/')}/mcp", calls);
     }
 
     /// <summary>Starts a server advertising model-visible and app-only UI tool metadata.</summary>
@@ -1984,6 +2309,19 @@ public sealed class McpAppTests : IAsyncDisposable
     {
         foreach (var app in _apps)
             await app.DisposeAsync();
+    }
+
+    private sealed record McpAppCallHeaders(string Authorization, string StaticHeader);
+
+    private sealed class CallerSubjectCredentialProvider : IMcpDelegatedCredentialProvider
+    {
+        public Task<McpDelegatedCredential> GetCredentialAsync(
+            McpDelegatedCredentialsConfig policy,
+            McpCallerCredentialContext caller,
+            CancellationToken ct)
+            => Task.FromResult(new McpDelegatedCredential(
+                $"delegated-{caller.Subject}",
+                DateTimeOffset.UtcNow.AddMinutes(5)));
     }
 }
 

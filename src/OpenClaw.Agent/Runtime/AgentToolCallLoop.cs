@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.AI;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Agent;
 
@@ -15,12 +16,13 @@ internal sealed class AgentToolCallLoop(OpenClawToolExecutor toolExecutor, bool 
         TurnContext turnCtx,
         bool isStreaming,
         ToolApprovalCallback? approvalCallback,
-        CancellationToken ct)
+        CancellationToken ct,
+        McpCallerCredentialContext? callerCredentialContext = null)
     {
         if (parallelToolExecution && toolCalls.Count > 1)
-            return await ExecuteToolCallsParallelAsync(toolCalls, session, turnCtx, isStreaming, approvalCallback, ct);
+            return await ExecuteToolCallsParallelAsync(toolCalls, session, turnCtx, isStreaming, approvalCallback, ct, callerCredentialContext);
 
-        return await ExecuteToolCallsSequentialAsync(toolCalls, session, turnCtx, isStreaming, approvalCallback, ct);
+        return await ExecuteToolCallsSequentialAsync(toolCalls, session, turnCtx, isStreaming, approvalCallback, ct, callerCredentialContext);
     }
 
     public async IAsyncEnumerable<AgentToolLoopUpdate> ExecuteStreamingToolCallsAsync(
@@ -28,7 +30,8 @@ internal sealed class AgentToolCallLoop(OpenClawToolExecutor toolExecutor, bool 
         Session session,
         TurnContext turnCtx,
         ToolApprovalCallback? approvalCallback,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct,
+        McpCallerCredentialContext? callerCredentialContext = null)
     {
         var hasStreamingTool = toolCalls.Any(c => toolExecutor.SupportsStreaming(c.Name));
 
@@ -61,7 +64,8 @@ internal sealed class AgentToolCallLoop(OpenClawToolExecutor toolExecutor, bool 
                             approvalCallback,
                             ct,
                             onDelta: async chunk => await channel.Writer.WriteAsync(chunk, ct),
-                            toolCallCount: toolCalls.Count);
+                            toolCallCount: toolCalls.Count,
+                            callerCredentialContext: callerCredentialContext);
                         return (execution, execution.ToFunctionResultContent(call.CallId));
                     }
                     finally
@@ -100,7 +104,7 @@ internal sealed class AgentToolCallLoop(OpenClawToolExecutor toolExecutor, bool 
                 yield return AgentToolLoopUpdate.Event(AgentStreamEvent.ToolStarted(call.Name, argsJson));
             }
 
-            var batch = await ExecuteToolCallsAsync(toolCalls, session, turnCtx, isStreaming: true, approvalCallback, ct);
+            var batch = await ExecuteToolCallsAsync(toolCalls, session, turnCtx, isStreaming: true, approvalCallback, ct, callerCredentialContext);
 
             foreach (var inv in batch.Invocations)
                 yield return AgentToolLoopUpdate.Event(CreateToolCompletedEvent(inv));
@@ -118,7 +122,7 @@ internal sealed class AgentToolCallLoop(OpenClawToolExecutor toolExecutor, bool 
             yield return AgentToolLoopUpdate.Event(AgentStreamEvent.ToolStarted(call.Name, argsJson));
 
             var (invocation, result) = await ExecuteSingleToolCallAsync(
-                call, session, turnCtx, isStreaming: true, approvalCallback, ct, onDelta: null, toolCallCount: toolCalls.Count);
+                call, session, turnCtx, isStreaming: true, approvalCallback, ct, onDelta: null, toolCallCount: toolCalls.Count, callerCredentialContext);
             sequentialInvocations.Add(invocation);
             sequentialResults.Add(result);
 
@@ -145,14 +149,15 @@ internal sealed class AgentToolCallLoop(OpenClawToolExecutor toolExecutor, bool 
         TurnContext turnCtx,
         bool isStreaming,
         ToolApprovalCallback? approvalCallback,
-        CancellationToken ct)
+        CancellationToken ct,
+        McpCallerCredentialContext? callerCredentialContext)
     {
         var invocations = new List<ToolInvocation>(toolCalls.Count);
         var toolResults = new List<FunctionResultContent>(toolCalls.Count);
 
         foreach (var call in toolCalls)
         {
-            var (invocation, result) = await ExecuteSingleToolCallAsync(call, session, turnCtx, isStreaming, approvalCallback, ct, onDelta: null, toolCallCount: toolCalls.Count);
+            var (invocation, result) = await ExecuteSingleToolCallAsync(call, session, turnCtx, isStreaming, approvalCallback, ct, onDelta: null, toolCallCount: toolCalls.Count, callerCredentialContext);
             invocations.Add(invocation);
             toolResults.Add(result);
         }
@@ -166,7 +171,8 @@ internal sealed class AgentToolCallLoop(OpenClawToolExecutor toolExecutor, bool 
         TurnContext turnCtx,
         bool isStreaming,
         ToolApprovalCallback? approvalCallback,
-        CancellationToken ct)
+        CancellationToken ct,
+        McpCallerCredentialContext? callerCredentialContext)
     {
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
@@ -174,7 +180,7 @@ internal sealed class AgentToolCallLoop(OpenClawToolExecutor toolExecutor, bool 
         {
             try
             {
-                return await ExecuteSingleToolCallAsync(call, session, turnCtx, isStreaming, approvalCallback, linkedCts.Token, onDelta: null, toolCallCount: toolCalls.Count);
+                return await ExecuteSingleToolCallAsync(call, session, turnCtx, isStreaming, approvalCallback, linkedCts.Token, onDelta: null, toolCallCount: toolCalls.Count, callerCredentialContext);
             }
             catch (Exception)
             {
@@ -213,7 +219,8 @@ internal sealed class AgentToolCallLoop(OpenClawToolExecutor toolExecutor, bool 
         ToolApprovalCallback? approvalCallback,
         CancellationToken ct,
         Func<string, ValueTask>? onDelta,
-        int toolCallCount)
+        int toolCallCount,
+        McpCallerCredentialContext? callerCredentialContext)
     {
         var result = await toolExecutor.ExecuteAsync(
             call,
@@ -223,7 +230,8 @@ internal sealed class AgentToolCallLoop(OpenClawToolExecutor toolExecutor, bool 
             approvalCallback,
             ct,
             onDelta,
-            toolCallCount);
+            toolCallCount,
+            callerCredentialContext: callerCredentialContext);
 
         return (result.Invocation, result.ToFunctionResultContent(call.CallId));
     }

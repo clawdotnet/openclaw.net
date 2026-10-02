@@ -1,6 +1,7 @@
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Agent;
 
@@ -12,6 +13,7 @@ internal sealed class AgentExecutionContext
     public required int SkillPromptLength { get; init; }
     public required long SessionTokenBudget { get; init; }
     public required List<ToolInvocation> ToolInvocations { get; init; }
+        public McpCallerCredentialContext? McpCallerCredentialContext { get; init; }
     public ITurnTokenUsageObserver? TurnTokenUsageObserver { get; init; }
     public Action<Session, string, string, long, long>? RecordContractTurnUsage { get; init; }
     public ToolApprovalCallback? ApprovalCallback { get; init; }

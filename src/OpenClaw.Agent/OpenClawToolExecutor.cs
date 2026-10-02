@@ -57,6 +57,7 @@ public sealed class OpenClawToolExecutor
     private readonly IToolGovernanceService _toolGovernance;
     private readonly IPlanExecuteVerifyOrchestrator _planExecuteVerify;
     private readonly Func<Session, string, string?, CancellationToken, Task<string>>? _metaInvokeExecutor;
+    private readonly Func<Session, string, string?, CancellationToken, McpCallerCredentialContext?, Task<string>>? _contextualMetaInvokeExecutor;
 
     public OpenClawToolExecutor(
         IReadOnlyList<ITool> tools,
@@ -77,7 +78,8 @@ public sealed class OpenClawToolExecutor
         IToolGovernanceService? toolGovernance = null,
         IPlanExecuteVerifyOrchestrator? planExecuteVerify = null,
         Func<Session, string, string?, CancellationToken, Task<string>>? metaInvokeExecutor = null,
-        IReadOnlyList<IToolResultInterceptor>? interceptors = null)
+        IReadOnlyList<IToolResultInterceptor>? interceptors = null,
+        Func<Session, string, string?, CancellationToken, McpCallerCredentialContext?, Task<string>>? contextualMetaInvokeExecutor = null)
     {
         _toolsByName = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         _toolDeclarations = tools.Select(CreateDeclaration).Cast<AITool>().ToArray();
@@ -109,6 +111,7 @@ public sealed class OpenClawToolExecutor
         _toolGovernance = toolGovernance ?? new NoopToolGovernanceService();
         _planExecuteVerify = planExecuteVerify ?? NoopPlanExecuteVerifyOrchestrator.Instance;
         _metaInvokeExecutor = metaInvokeExecutor;
+        _contextualMetaInvokeExecutor = contextualMetaInvokeExecutor;
         _interceptors = interceptors;
     }
 
@@ -213,13 +216,14 @@ public sealed class OpenClawToolExecutor
         ToolApprovalCallback? approvalCallback,
         CancellationToken ct,
         Func<string, ValueTask>? onDelta = null,
-        int toolCallCount = 1)
+        int toolCallCount = 1,
+        McpCallerCredentialContext? callerCredentialContext = null)
     {
         var argsJson = call.Arguments is not null
             ? JsonSerializer.Serialize(call.Arguments, CoreJsonContext.Default.IDictionaryStringObject)
             : "{}";
 
-        return await ExecuteAsync(call.Name, argsJson, call.CallId, session, turnCtx, isStreaming, approvalCallback, ct, onDelta, toolCallCount);
+        return await ExecuteAsync(call.Name, argsJson, call.CallId, session, turnCtx, isStreaming, approvalCallback, ct, onDelta, toolCallCount, callerCredentialContext: callerCredentialContext);
     }
 
     public async Task<ToolExecutionResult> ExecuteAsync(
@@ -232,7 +236,8 @@ public sealed class OpenClawToolExecutor
         ToolApprovalCallback? approvalCallback,
         CancellationToken ct,
         Func<string, ValueTask>? onDelta = null,
-        int toolCallCount = 1, ITool? boundCapabilityTool = null)
+        int toolCallCount = 1, ITool? boundCapabilityTool = null,
+        McpCallerCredentialContext? callerCredentialContext = null)
     {
         using var activity = Telemetry.ActivitySource.StartActivity("Agent.ExecuteTool");
         activity?.SetTag("tool.name", toolName);
@@ -645,18 +650,20 @@ public sealed class OpenClawToolExecutor
                 if (_toolTimeoutSeconds > 0) actionTimeout.CancelAfter(TimeSpan.FromSeconds(_toolTimeoutSeconds));
                 dispatchStarted = true;
                 result = await durableTool.ExecuteWithIdempotencyAsync(executionArgsJson, action.Id,
-                    new ToolExecutionContext { Session = session, TurnContext = turnCtx, IdempotencyKey = action.Id }, actionTimeout.Token);
+                    new ToolExecutionContext { Session = session, TurnContext = turnCtx, IdempotencyKey = action.Id, McpCallerCredentialContext = callerCredentialContext }, actionTimeout.Token);
             }
             else if (onDelta is not null && tool is IStreamingTool streamingTool)
             {
                 dispatchStarted = true;
                 result = await ExecuteStreamingToolCollectAsync(streamingTool, executionArgsJson, onDelta, ct);
             }
-            else if (_metaInvokeExecutor is not null &&
+            else if ((_metaInvokeExecutor is not null || _contextualMetaInvokeExecutor is not null) &&
                 string.Equals(tool.Name, "meta_invoke", StringComparison.Ordinal) &&
                 TryGetMetaInvokeArguments(executionArgsJson, out var requestedSkill, out var requestedInput))
             {
-                result = await _metaInvokeExecutor(session, requestedSkill!, requestedInput, ct);
+                result = _contextualMetaInvokeExecutor is not null
+                    ? await _contextualMetaInvokeExecutor(session, requestedSkill!, requestedInput, ct, callerCredentialContext)
+                    : await _metaInvokeExecutor!(session, requestedSkill!, requestedInput, ct);
                 if (result.Contains("disabled by runtime policy", StringComparison.OrdinalIgnoreCase))
                 {
                     toolFailed = true;
@@ -667,7 +674,7 @@ public sealed class OpenClawToolExecutor
                 }
             }
             else
-                result = await ExecuteToolWithRoutingAsync(tool, executionArgsJson, session, turnCtx, ct, () => dispatchStarted = true);
+                result = await ExecuteToolWithRoutingAsync(tool, executionArgsJson, session, turnCtx, ct, callerCredentialContext, () => dispatchStarted = true);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -1149,12 +1156,14 @@ public sealed class OpenClawToolExecutor
         string argsJson,
         Session session,
         TurnContext turnCtx,
-        CancellationToken ct, Action dispatchStarting)
+        CancellationToken ct,
+        McpCallerCredentialContext? callerCredentialContext,
+        Action dispatchStarting)
     {
         Task<string> DispatchLocalAsync()
         {
             dispatchStarting();
-            return ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct);
+            return ExecuteToolWithTimeoutAsync(tool, argsJson, session, turnCtx, ct, callerCredentialContext);
         }
         if (!_executionRouter.TryResolveRoute(tool, out var route, out var template, out var legacySandboxRoute, out var sandboxMode))
         {
@@ -1379,12 +1388,14 @@ public sealed class OpenClawToolExecutor
         string argsJson,
         Session session,
         TurnContext turnCtx,
-        CancellationToken ct)
+        CancellationToken ct,
+        McpCallerCredentialContext? callerCredentialContext)
     {
         var context = new ToolExecutionContext
         {
             Session = session,
-            TurnContext = turnCtx
+            TurnContext = turnCtx,
+            McpCallerCredentialContext = callerCredentialContext
         };
 
         if (_toolTimeoutSeconds <= 0)

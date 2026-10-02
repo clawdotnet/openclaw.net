@@ -86,7 +86,11 @@ internal static partial class RuntimeInitializationExtensions
         await using var mcpAppStartupCleanup = new AsyncStartupCleanupGuard();
         if (config.McpApps.Enabled)
         {
-            await services.McpAppRegistry.RegisterMcpAppToolsAsync(services.NativeRegistry, config.McpApps, app.Lifetime.ApplicationStopping);
+            await services.McpAppRegistry.RegisterMcpAppToolsAsync(
+                services.NativeRegistry,
+                config.McpApps,
+                app.Services.GetRequiredService<IMcpDelegatedToolInvoker>(),
+                app.Lifetime.ApplicationStopping);
             mcpAppStartupCleanup.Register(() => services.McpAppRegistry.DisposeAsync());
         }
         LlmClientFactory.ResetDynamicProviders();

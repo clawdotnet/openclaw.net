@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Collections.ObjectModel;
 using ModelContextProtocol.Client;
 using OpenClaw.McpApp.Models;
 
@@ -32,6 +33,18 @@ public interface IMcpAppInfoProvider
 
     /// <summary>Whether the app has an MCP App UI bundle.</summary>
     bool HasUi { get; }
+
+    /// <summary>The effective transport selected for the connected app.</summary>
+    string Transport { get; }
+
+    /// <summary>The resolved HTTP endpoint, or null for non-HTTP transports.</summary>
+    Uri? HttpEndpoint { get; }
+
+    /// <summary>Static headers resolved for the connected app's HTTP transport.</summary>
+    IReadOnlyDictionary<string, string> StaticHeaders { get; }
+
+    /// <summary>The effective request timeout in seconds.</summary>
+    int RequestTimeoutSeconds { get; }
 
     /// <summary>
     /// URI of the main UI resource (only when <see cref="HasUi"/> is true).
@@ -155,10 +168,21 @@ public sealed class McpAppInfoProvider : IMcpAppInfoProvider
     private readonly List<McpAppResourceDescriptor> _resourceDescriptors = [];
     private readonly List<McpAppPromptDescriptor> _promptDescriptors = [];
 
-    public McpAppInfoProvider(McpAppInstallState state, McpClient? client = null)
+    public McpAppInfoProvider(
+        McpAppInstallState state,
+        McpClient? client = null,
+        string? transport = null,
+        Uri? httpEndpoint = null,
+        Dictionary<string, string>? staticHeaders = null,
+        int? requestTimeoutSeconds = null)
     {
         State = state;
         Client = client;
+        Transport = transport ?? state.Manifest.Transport;
+        HttpEndpoint = httpEndpoint;
+        StaticHeaders = new ReadOnlyDictionary<string, string>(
+            new Dictionary<string, string>(staticHeaders ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase));
+        RequestTimeoutSeconds = requestTimeoutSeconds ?? state.Manifest.RequestTimeoutSeconds;
     }
 
     public string AppId => Manifest.Id;
@@ -168,6 +192,10 @@ public sealed class McpAppInfoProvider : IMcpAppInfoProvider
     public McpAppManifest Manifest => State.Manifest;
     public McpAppInstallState State { get; }
     public bool HasUi => Manifest.HasUi;
+    public string Transport { get; }
+    public Uri? HttpEndpoint { get; }
+    public IReadOnlyDictionary<string, string> StaticHeaders { get; }
+    public int RequestTimeoutSeconds { get; }
     public string? UiResourceUri => Manifest.UiResourceUri;
     public McpClient? Client { get; private set; }
 

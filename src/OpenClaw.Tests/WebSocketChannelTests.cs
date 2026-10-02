@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text.Json;
 using OpenClaw.Channels;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -513,6 +514,38 @@ public sealed class WebSocketChannelTests
         var env = JsonSerializer.Deserialize(payload, CoreJsonContext.Default.WsServerEnvelope);
         Assert.Equal("error", env!.Type);
         Assert.Equal("Rate limit exceeded", env.Text);
+    }
+
+    [Fact]
+    public async Task HandleConnectionAsync_BindsCallerCredentialContextToEveryFrame()
+    {
+        var channel = new WebSocketChannel(new WebSocketConfig());
+        var ws = new TestWebSocket();
+        ws.QueueReceiveText("first frame");
+        ws.QueueReceiveText("second frame");
+        var messages = new List<InboundMessage>();
+        var context = new McpCallerCredentialContext(
+            "ws-oidc-access-token-marker",
+            "ws-oidc-subject",
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        channel.OnMessageReceived += (message, _) =>
+        {
+            messages.Add(message);
+            return ValueTask.CompletedTask;
+        };
+
+        await channel.HandleConnectionAsync(
+            ws,
+            "client",
+            IPAddress.Loopback,
+            TestContext.Current.CancellationToken,
+            callerCredentialContext: context);
+
+        Assert.Equal(2, messages.Count);
+        Assert.Equal("first frame", messages[0].Text);
+        Assert.Equal("second frame", messages[1].Text);
+        Assert.Same(context, messages[0].McpCallerCredentialContext);
+        Assert.Same(context, messages[1].McpCallerCredentialContext);
     }
 
     [Fact]

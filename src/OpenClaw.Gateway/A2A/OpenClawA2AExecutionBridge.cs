@@ -83,7 +83,11 @@ internal sealed class OpenClawA2AExecutionBridge : IOpenClawA2AExecutionBridge
 
         try
         {
-            await foreach (var evt in runtime.AgentRuntime.RunStreamingAsync(session, messageContext.Text, cancellationToken))
+            await foreach (var evt in runtime.AgentRuntime.RunStreamingAsync(
+                session,
+                messageContext.Text,
+                cancellationToken,
+                callerCredentialContext: A2ACallerContext.McpCallerCredentialContext))
                 await onEvent(evt, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

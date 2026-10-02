@@ -3,6 +3,7 @@ using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Security;
 using OpenClaw.Gateway.Bootstrap;
+using OpenClaw.Gateway.Security;
 
 namespace OpenClaw.Gateway.Composition;
 
@@ -28,6 +29,8 @@ internal static class SecurityServicesExtensions
             services.AddAuthorization();
         }
 
+        services.AddHttpClient<IMcpDelegatedCredentialProvider, McpDelegatedCredentialProvider>()
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddSingleton<ToolApprovalService>();
         services.AddSingleton(sp =>
             new PairingManager(

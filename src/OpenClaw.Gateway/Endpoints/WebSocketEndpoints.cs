@@ -35,7 +35,15 @@ internal static class WebSocketEndpoints
             // Resolve the caller as the other surfaces do, so a loopback-bound gateway that still requires auth
             // (AlwaysRequireAuth or OIDC) stamps the account and the session owner check applies to /ws turns.
             var caller = EndpointHelpers.ResolveCaller(ctx, startup);
-            await runtime.WebSocketChannel.HandleConnectionAsync(ws, clientId, ctx.Connection.RemoteIpAddress, ctx.RequestAborted, caller.AccountId, caller.IsAdmin);
+            var callerCredentialContext = EndpointHelpers.ResolveMcpCallerCredentialContext(ctx, startup);
+            await runtime.WebSocketChannel.HandleConnectionAsync(
+                ws,
+                clientId,
+                ctx.Connection.RemoteIpAddress,
+                ctx.RequestAborted,
+                caller.AccountId,
+                caller.IsAdmin,
+                callerCredentialContext);
         });
 
         app.Map("/ws/live", async (HttpContext ctx) =>

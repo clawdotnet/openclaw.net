@@ -4,6 +4,8 @@ using System.Text.Json.Serialization;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Plugins;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Agent.Tools;
 
@@ -13,7 +15,13 @@ public sealed class McpNativeTool(
     string remoteName,
     string description,
     string parameterSchema,
-    bool suppressStructuredContent = false) : IToolWithContext
+    bool suppressStructuredContent = false,
+    IMcpDelegatedToolInvoker? delegatedToolInvoker = null,
+    McpDelegatedCredentialsConfig? delegatedCredentials = null,
+    string? endpointId = null,
+    Uri? endpoint = null,
+    IReadOnlyDictionary<string, string>? staticHeaders = null,
+    int requestTimeoutSeconds = 60) : IToolWithContext
 {
     public string Name => localName;
     public string Description => description;
@@ -58,13 +66,40 @@ public sealed class McpNativeTool(
                 Meta      = meta,
             };
 
-            var response = await client.SendRequestAsync<CallToolRequestParams, CallToolResult>(
-                RequestMethods.ToolsCall,
-                callParams,
-                cancellationToken: ct);
+            string text;
+            bool isError;
+            if (delegatedCredentials?.Enabled == true)
+            {
+                if (delegatedToolInvoker is null || string.IsNullOrWhiteSpace(endpointId) || endpoint is null)
+                    throw new InvalidOperationException("Delegated MCP invocation is enabled without a configured HTTP invoker endpoint.");
 
-            var text = FormatResponseContent(response, suppressStructuredContent);
-            var isError = response.IsError ?? false;
+                var delegatedResponse = await delegatedToolInvoker.InvokeAsync(
+                    new McpDelegatedToolCallRequest
+                    {
+                        EndpointId = endpointId,
+                        Endpoint = endpoint,
+                        StaticHeaders = staticHeaders ?? new Dictionary<string, string>(),
+                        RequestTimeoutSeconds = requestTimeoutSeconds,
+                        Policy = delegatedCredentials,
+                        RemoteToolName = remoteName,
+                        ArgumentsJson = string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson,
+                        CallerCredentialContext = context?.McpCallerCredentialContext,
+                        SuppressStructuredContent = suppressStructuredContent
+                    },
+                    ct);
+                text = delegatedResponse.ResponseText;
+                isError = delegatedResponse.IsError;
+            }
+            else
+            {
+                var response = await client.SendRequestAsync<CallToolRequestParams, CallToolResult>(
+                    RequestMethods.ToolsCall,
+                    callParams,
+                    cancellationToken: ct);
+                text = FormatResponseContent(response, suppressStructuredContent);
+                isError = response.IsError ?? false;
+            }
+
             // The ToolOutcomeException + "mcp_tool_error" FailureCode path only fires
             // when the caller supplies a ToolExecutionContext (the meta-skill executor
             // route through IToolWithContext). Direct ITool.ExecuteAsync(argsJson, ct)
@@ -88,9 +123,15 @@ public sealed class McpNativeTool(
         {
             throw;
         }
+        catch (McpDelegatedToolInvocationException ex)
+        {
+            return $"Error: {ex.FailureCode}";
+        }
         catch (Exception ex)
         {
-            return $"Error: MCP tool '{localName}' failed: {ex.Message}";
+            return delegatedCredentials?.Enabled == true
+                ? "Error: MCP_DELEGATED_INVOCATION_FAILED"
+                : $"Error: MCP tool '{localName}' failed: {ex.Message}";
         }
     }
 

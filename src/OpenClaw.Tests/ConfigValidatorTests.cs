@@ -769,6 +769,201 @@ public sealed class ConfigValidatorTests
     }
 
     [Fact]
+    public void Validate_McpDelegatedCredentials_AcceptsValidHttpModes()
+    {
+        var config = CreateGatewayConfigWithMcpServers(
+            ("exchange", new McpServerConfig
+            {
+                Transport = "http",
+                Url = "https://mcp.example/tools",
+                DelegatedCredentials = CreateValidTokenExchangePolicy()
+            }),
+            ("signed", new McpServerConfig
+            {
+                Transport = "http",
+                Url = "https://mcp.example/signed",
+                DelegatedCredentials = CreateValidGatewaySignedPolicy()
+            }));
+        config.McpApps = new McpAppsConfig
+        {
+            Enabled = true,
+            Entries = new Dictionary<string, McpAppEntryConfig>(StringComparer.Ordinal)
+            {
+                ["inventory"] = new()
+                {
+                    Transport = "http",
+                    DelegatedCredentials = CreateValidGatewaySignedPolicy()
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(errors, error => error.Contains("DelegatedCredentials", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_McpDelegatedCredentials_RejectsNonHttpMcpTransport()
+    {
+        var config = CreateGatewayConfigWithMcpServers(
+            ("demo", new McpServerConfig
+            {
+                Transport = "stdio",
+                Command = "mcp-server",
+                DelegatedCredentials = CreateValidTokenExchangePolicy()
+            }));
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("Plugins.Mcp.Servers.demo.DelegatedCredentials", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_McpDelegatedCredentials_RequiresAudienceAndScopes()
+    {
+        var policy = CreateValidTokenExchangePolicy();
+        policy.Audience = " ";
+        policy.Scopes = [];
+        var config = CreateGatewayConfigWithMcpServers(
+            ("demo", new McpServerConfig
+            {
+                Transport = "http",
+                Url = "https://mcp.example/tools",
+                DelegatedCredentials = policy
+            }));
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("DelegatedCredentials.Audience", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("DelegatedCredentials.Scopes", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_McpDelegatedCredentials_RequiresModeSpecificSettings()
+    {
+        var config = CreateGatewayConfigWithMcpServers(
+            ("exchange", new McpServerConfig
+            {
+                Transport = "http",
+                Url = "https://mcp.example/exchange",
+                DelegatedCredentials = new McpDelegatedCredentialsConfig
+                {
+                    Enabled = true,
+                    Mode = "token_exchange",
+                    Audience = "strategos",
+                    Scopes = ["inventory.read"]
+                }
+            }),
+            ("signed", new McpServerConfig
+            {
+                Transport = "http",
+                Url = "https://mcp.example/signed",
+                DelegatedCredentials = new McpDelegatedCredentialsConfig
+                {
+                    Enabled = true,
+                    Mode = "gateway_signed",
+                    Audience = "strategos",
+                    Scopes = ["inventory.read"],
+                    LifetimeSeconds = 0
+                }
+            }));
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("Servers.exchange.DelegatedCredentials.TokenEndpoint", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("Servers.exchange.DelegatedCredentials.ClientId", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("Servers.exchange.DelegatedCredentials.ClientSecretRef", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("Servers.signed.DelegatedCredentials.Issuer", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("Servers.signed.DelegatedCredentials.SigningKeyRef", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("Servers.signed.DelegatedCredentials.LifetimeSeconds", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_McpDelegatedCredentials_RejectsUnsupportedMode()
+    {
+        var policy = CreateValidTokenExchangePolicy();
+        policy.Mode = "implicit";
+        var config = CreateGatewayConfigWithMcpServers(
+            ("demo", new McpServerConfig
+            {
+                Transport = "http",
+                Url = "https://mcp.example/tools",
+                DelegatedCredentials = policy
+            }));
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("DelegatedCredentials.Mode", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_McpAppDelegatedCredentials_RejectsExplicitNonHttpTransport()
+    {
+        var config = new GatewayConfig
+        {
+            McpApps = new McpAppsConfig
+            {
+                Enabled = true,
+                Entries = new Dictionary<string, McpAppEntryConfig>(StringComparer.Ordinal)
+                {
+                    ["inventory"] = new()
+                    {
+                        Transport = "stdio",
+                        DelegatedCredentials = CreateValidTokenExchangePolicy()
+                    }
+                }
+            }
+        };
+
+        var errors = ConfigValidator.Validate(config);
+
+        Assert.Contains(errors, error => error.Contains("McpApps.Entries.inventory.DelegatedCredentials", StringComparison.Ordinal));
+    }
+
+    private static GatewayConfig CreateGatewayConfigWithMcpServers(params (string Id, McpServerConfig Config)[] servers)
+    {
+        var serverConfigs = new Dictionary<string, McpServerConfig>(StringComparer.Ordinal);
+        foreach (var (id, serverConfig) in servers)
+            serverConfigs[id] = serverConfig;
+
+        return new GatewayConfig
+        {
+            Plugins = new PluginsConfig
+            {
+                Mcp = new McpPluginsConfig
+                {
+                    Enabled = true,
+                    Servers = serverConfigs
+                }
+            }
+        };
+    }
+
+    private static McpDelegatedCredentialsConfig CreateValidTokenExchangePolicy()
+        => new()
+        {
+            Enabled = true,
+            Mode = "token_exchange",
+            Audience = "strategos",
+            Scopes = ["inventory.read"],
+            TokenEndpoint = "https://identity.example/token",
+            ClientId = "openclaw-gateway",
+            ClientSecretRef = "env:STRATEGOS_CLIENT_SECRET"
+        };
+
+    private static McpDelegatedCredentialsConfig CreateValidGatewaySignedPolicy()
+        => new()
+        {
+            Enabled = true,
+            Mode = "gateway_signed",
+            Audience = "strategos",
+            Scopes = ["inventory.read"],
+            Issuer = "https://gateway.example",
+            SigningKeyRef = "env:DELEGATION_SIGNING_KEY",
+            LifetimeSeconds = 60
+        };
+
+    [Fact]
     public void Validate_OpenSandboxProviderWithoutEndpoint_ReturnsError()
     {
         var config = new GatewayConfig

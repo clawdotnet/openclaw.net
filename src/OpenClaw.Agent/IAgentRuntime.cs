@@ -1,5 +1,6 @@
 using System.Text.Json;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 using OpenClaw.Core.Skills;
 
 namespace OpenClaw.Agent;
@@ -27,7 +28,8 @@ public interface IAgentRuntime
         CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
         JsonElement? responseSchema = null,
-        string? correlationId = null);
+        string? correlationId = null,
+        McpCallerCredentialContext? callerCredentialContext = null);
 
     /// <summary>
     /// Runs a single agent turn and returns structured result metadata
@@ -40,7 +42,8 @@ public interface IAgentRuntime
         CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
         JsonElement? responseSchema = null,
-        string? correlationId = null);
+        string? correlationId = null,
+        McpCallerCredentialContext? callerCredentialContext = null);
 
     Task<IReadOnlyList<string>> ReloadSkillsAsync(CancellationToken ct = default);
 
@@ -49,7 +52,8 @@ public interface IAgentRuntime
         string userMessage,
         CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
-        string? correlationId = null);
+        string? correlationId = null,
+        McpCallerCredentialContext? callerCredentialContext = null);
 
     Task ApplyMcpToolChangesAsync(
         IReadOnlyList<OpenClaw.Core.Abstractions.ITool> toAdd,

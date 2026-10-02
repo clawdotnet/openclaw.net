@@ -50,7 +50,8 @@ public sealed class MafToolAdapter : AIFunction
             cancellationToken,
             onDelta: streamEventWriter is null
                 ? null
-                : async chunk => await streamEventWriter(AgentStreamEvent.ToolDelta(_tool.Name, chunk), cancellationToken));
+                : async chunk => await streamEventWriter(AgentStreamEvent.ToolDelta(_tool.Name, chunk), cancellationToken),
+            callerCredentialContext: executionContext.McpCallerCredentialContext);
 
         executionContext.ToolInvocations.Add(result.Invocation);
 

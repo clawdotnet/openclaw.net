@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -9,18 +10,21 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol;
+using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Agent.Tools;
 using NSubstitute;
 using OpenClaw.Agent;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Plugins;
 using Xunit;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Mcp;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Tests;
 
@@ -28,6 +32,128 @@ namespace OpenClaw.Tests;
 public sealed class McpServerToolRegistryTests : IAsyncDisposable
 {
     private readonly List<WebApplication> _apps = [];
+
+    [Fact]
+    public async Task McpDelegatedHttpClientFactory_ConcurrentClients_KeepAuthorizationIsolated()
+    {
+        var (serverUrl, receivedCalls) = await StartMcpServerWithCallHeaderCaptureAsync<DelegatedCredentialMcpTools>();
+        var factory = new McpDelegatedHttpClientFactory();
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["X-Static"] = "shared-header-value",
+            ["Authorization"] = "Bearer static-configured-token"
+        };
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        var firstClientTask = factory.CreateAsync(
+            "first", new Uri(serverUrl), headers, 30, "delegated-token-one", cancellationToken);
+        var secondClientTask = factory.CreateAsync(
+            "second", new Uri(serverUrl), headers, 30, "delegated-token-two", cancellationToken);
+        var clients = await Task.WhenAll(firstClientTask, secondClientTask);
+        await using var firstClient = clients[0];
+        await using var secondClient = clients[1];
+
+        await Task.WhenAll(
+            firstClient.CallToolAsync("ping", cancellationToken: cancellationToken).AsTask(),
+            secondClient.CallToolAsync("ping", cancellationToken: cancellationToken).AsTask());
+
+        var callsByAuthorization = receivedCalls.ToDictionary(call => call.Authorization);
+        Assert.Equal(2, callsByAuthorization.Count);
+        Assert.Equal("shared-header-value", callsByAuthorization["Bearer delegated-token-one"].StaticHeader);
+        Assert.Equal("shared-header-value", callsByAuthorization["Bearer delegated-token-two"].StaticHeader);
+        Assert.DoesNotContain("Bearer static-configured-token", callsByAuthorization.Keys);
+    }
+
+    [Fact]
+    public async Task RegisterToolsAsync_DelegatedHttpServer_UsesCallerCredentialPerCall()
+    {
+        var (serverUrl, receivedCalls) = await StartMcpServerWithCallHeaderCaptureAsync<DelegatedCredentialMcpTools>();
+        var credentialProvider = new CallerSubjectCredentialProvider();
+        var invoker = new McpDelegatedToolInvoker(credentialProvider, new McpDelegatedHttpClientFactory());
+        using var registry = new McpServerToolRegistry(
+            CreateMcpPluginsConfig(serverUrl, delegatedCredentialsEnabled: true),
+            NullLogger<McpServerToolRegistry>.Instance,
+            invoker);
+        using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
+
+        await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
+
+        var tool = Assert.IsAssignableFrom<IToolWithContext>(Assert.Single(nativeRegistry.Tools));
+        var firstCaller = new McpCallerCredentialContext("caller-token-one", "caller-one", DateTimeOffset.UtcNow.AddMinutes(5));
+        var secondCaller = new McpCallerCredentialContext("caller-token-two", "caller-two", DateTimeOffset.UtcNow.AddMinutes(5));
+        var results = await Task.WhenAll(
+            tool.ExecuteAsync("{}", CreateToolExecutionContext(firstCaller), TestContext.Current.CancellationToken).AsTask(),
+            tool.ExecuteAsync("{}", CreateToolExecutionContext(secondCaller), TestContext.Current.CancellationToken).AsTask());
+
+        Assert.All(results, result => Assert.Equal("pong", result));
+        var callsByAuthorization = receivedCalls.ToDictionary(call => call.Authorization);
+        Assert.Equal(2, callsByAuthorization.Count);
+        Assert.Equal("static-header-value", callsByAuthorization["Bearer delegated-caller-one"].StaticHeader);
+        Assert.Equal("static-header-value", callsByAuthorization["Bearer delegated-caller-two"].StaticHeader);
+        Assert.DoesNotContain("Bearer static-configured-token", callsByAuthorization.Keys);
+        Assert.DoesNotContain("Bearer caller-token-one", callsByAuthorization.Keys);
+        Assert.DoesNotContain("Bearer caller-token-two", callsByAuthorization.Keys);
+        Assert.Equal(2, credentialProvider.Subjects.Count);
+        Assert.Contains("caller-one", credentialProvider.Subjects);
+        Assert.Contains("caller-two", credentialProvider.Subjects);
+    }
+
+    [Fact]
+    public async Task RegisterToolsAsync_HttpServerWithoutDelegation_PreservesStaticAuthorization()
+    {
+        var (serverUrl, receivedCalls) = await StartMcpServerWithCallHeaderCaptureAsync<DelegatedCredentialMcpTools>(expectedCallCount: 1);
+        using var registry = new McpServerToolRegistry(
+            CreateMcpPluginsConfig(serverUrl, delegatedCredentialsEnabled: false),
+            NullLogger<McpServerToolRegistry>.Instance);
+        using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
+
+        await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
+
+        var tool = Assert.IsAssignableFrom<IToolWithContext>(Assert.Single(nativeRegistry.Tools));
+        var caller = new McpCallerCredentialContext("caller-token", "caller", DateTimeOffset.UtcNow.AddMinutes(5));
+        var result = await tool.ExecuteAsync("{}", CreateToolExecutionContext(caller), TestContext.Current.CancellationToken);
+
+        Assert.Equal("pong", result);
+        var call = Assert.Single(receivedCalls);
+        Assert.Equal("Bearer static-configured-token", call.Authorization);
+        Assert.Equal("static-header-value", call.StaticHeader);
+        Assert.DoesNotContain("caller-token", call.Authorization, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RegisterToolsAsync_DelegatedProviderFailure_DoesNotExposeExceptionDetails()
+    {
+        var (serverUrl, receivedCalls) = await StartMcpServerWithCallHeaderCaptureAsync<DelegatedCredentialMcpTools>(expectedCallCount: 1);
+        var credentialProvider = Substitute.For<IMcpDelegatedCredentialProvider>();
+        credentialProvider.GetCredentialAsync(
+                Arg.Any<McpDelegatedCredentialsConfig>(),
+                Arg.Any<McpCallerCredentialContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns<Task<McpDelegatedCredential>>(_ => throw new InvalidOperationException(
+                "caller-token-marker delegated-token-marker"));
+        var invoker = new McpDelegatedToolInvoker(credentialProvider, new McpDelegatedHttpClientFactory());
+        using var registry = new McpServerToolRegistry(
+            CreateMcpPluginsConfig(serverUrl, delegatedCredentialsEnabled: true),
+            NullLogger<McpServerToolRegistry>.Instance,
+            invoker);
+        using var nativeRegistry = new NativePluginRegistry(new NativePluginsConfig(), NullLogger.Instance, new ToolingConfig());
+
+        await registry.RegisterToolsAsync(nativeRegistry, TestContext.Current.CancellationToken);
+
+        var tool = Assert.IsAssignableFrom<IToolWithContext>(Assert.Single(nativeRegistry.Tools));
+        var result = await tool.ExecuteAsync(
+            "{}",
+            CreateToolExecutionContext(new McpCallerCredentialContext(
+                "caller-token-marker",
+                "caller-subject",
+                DateTimeOffset.UtcNow.AddMinutes(5))),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("Error: MCP_DELEGATED_CREDENTIAL_PROVIDER_FAILED", result);
+        Assert.DoesNotContain("caller-token-marker", result, StringComparison.Ordinal);
+        Assert.DoesNotContain("delegated-token-marker", result, StringComparison.Ordinal);
+        Assert.Empty(receivedCalls);
+    }
 
     [Fact]
     public async Task ReloadWorkspaceServersAsync_AddsNewWorkspaceTools_AndRemovesDeletedOnes()
@@ -946,6 +1072,60 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
         return ($"{address.TrimEnd('/')}/mcp", tracker, receivedHeaders);
     }
 
+    private async Task<(string ServerUrl, ConcurrentQueue<ReceivedMcpCallHeaders> ReceivedCalls)> StartMcpServerWithCallHeaderCaptureAsync<TTools>(int expectedCallCount = 2)
+        where TTools : class
+    {
+        var receivedCalls = new ConcurrentQueue<ReceivedMcpCallHeaders>();
+        var bothCallsReceived = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var callCount = 0;
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddMcpServer(options =>
+            {
+                options.ServerInfo = new Implementation
+                {
+                    Name = "demo",
+                    Version = "1.0.0"
+                };
+            })
+            .WithHttpTransport(options => { options.Stateless = true; })
+            .WithTools<TTools>();
+        var app = builder.Build();
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/mcp", StringComparison.Ordinal) &&
+                HttpMethods.IsPost(context.Request.Method))
+            {
+                context.Request.EnableBuffering();
+                using var document = await JsonDocument.ParseAsync(
+                    context.Request.Body,
+                    cancellationToken: context.RequestAborted);
+                context.Request.Body.Position = 0;
+
+                if (document.RootElement.TryGetProperty("method", out var methodElement) &&
+                    methodElement.ValueKind == JsonValueKind.String &&
+                    methodElement.GetString() == "tools/call")
+                {
+                    receivedCalls.Enqueue(new ReceivedMcpCallHeaders(
+                        context.Request.Headers["Authorization"].ToString(),
+                        context.Request.Headers["X-Static"].ToString()));
+                    if (Interlocked.Increment(ref callCount) == expectedCallCount)
+                        bothCallsReceived.TrySetResult(true);
+
+                    await bothCallsReceived.Task.WaitAsync(TimeSpan.FromSeconds(5), context.RequestAborted);
+                }
+            }
+
+            await next();
+        });
+        app.MapMcp("/mcp");
+
+        await app.StartAsync();
+        _apps.Add(app);
+        var address = app.Urls.Single();
+        return ($"{address.TrimEnd('/')}/mcp", receivedCalls);
+    }
+
     private static async Task TrackMcpMethodAsync(HttpContext context, McpCallTracker tracker, TimeSpan? toolsListDelay)
     {
         if (!context.Request.Path.StartsWithSegments("/mcp", StringComparison.Ordinal))
@@ -987,6 +1167,64 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
         public int CallCalls { get; set; }
     }
 
+    private sealed record ReceivedMcpCallHeaders(string Authorization, string StaticHeader);
+
+    private sealed class CallerSubjectCredentialProvider : IMcpDelegatedCredentialProvider
+    {
+        private readonly ConcurrentQueue<string> _subjects = new();
+
+        public IReadOnlyCollection<string> Subjects => _subjects.ToArray();
+
+        public Task<McpDelegatedCredential> GetCredentialAsync(
+            McpDelegatedCredentialsConfig policy,
+            McpCallerCredentialContext caller,
+            CancellationToken ct)
+        {
+            _subjects.Enqueue(caller.Subject);
+            return Task.FromResult(new McpDelegatedCredential(
+                $"delegated-{caller.Subject}",
+                DateTimeOffset.UtcNow.AddMinutes(5)));
+        }
+    }
+
+    private static McpPluginsConfig CreateMcpPluginsConfig(string serverUrl, bool delegatedCredentialsEnabled)
+        => new()
+        {
+            Enabled = true,
+            Servers = new Dictionary<string, McpServerConfig>(StringComparer.Ordinal)
+            {
+                ["demo"] = new()
+                {
+                    Enabled = true,
+                    Transport = "http",
+                    Url = serverUrl,
+                    RequestTimeoutSeconds = 30,
+                    Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["Authorization"] = "Bearer static-configured-token",
+                        ["X-Static"] = "static-header-value"
+                    },
+                    DelegatedCredentials = delegatedCredentialsEnabled
+                        ? new McpDelegatedCredentialsConfig
+                        {
+                            Enabled = true,
+                            Mode = "token_exchange",
+                            Audience = "inventory-api",
+                            Scopes = ["inventory.read"]
+                        }
+                        : null
+                }
+            }
+        };
+
+    private static ToolExecutionContext CreateToolExecutionContext(McpCallerCredentialContext caller)
+        => new()
+        {
+            Session = null!,
+            TurnContext = null!,
+            McpCallerCredentialContext = caller
+        };
+
     private static McpServerToolRegistry CreateRegistryWithConfig(bool enabled)
         => new(
             new McpPluginsConfig
@@ -1010,6 +1248,14 @@ public sealed class McpServerToolRegistryTests : IAsyncDisposable
         [McpServerTool(Name = "echo", ReadOnly = true), Description("Demo echo tool")]
         public string Echo([Description("text")] string text)
             => $"demo:{text}";
+    }
+
+    [McpServerToolType]
+    private sealed class DelegatedCredentialMcpTools
+    {
+        [McpServerTool(Name = "ping", ReadOnly = true)]
+        public string Ping()
+            => "pong";
     }
 
     [McpServerToolType]

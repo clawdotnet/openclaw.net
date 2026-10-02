@@ -80,19 +80,36 @@ internal static class A2AEndpointExtensions
                     return;
                 }
 
-                var caller = EndpointHelpers.ResolveCaller(ctx, startup);
-                A2ACallerContext.AccountId = caller.AccountId;
-                A2ACallerContext.IsAdmin = caller.IsAdmin;
-
-                if (!runtime.Operations.ActorRateLimits.TryConsume(
-                        "ip",
-                        EndpointHelpers.GetRemoteIpKey(ctx),
-                        "a2a_http",
-                        out _))
+                var previousAccountId = A2ACallerContext.AccountId;
+                var previousIsAdmin = A2ACallerContext.IsAdmin;
+                var previousCallerCredentialContext = A2ACallerContext.McpCallerCredentialContext;
+                try
                 {
-                    ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-                    return;
+                    var caller = EndpointHelpers.ResolveCaller(ctx, startup);
+                    A2ACallerContext.AccountId = caller.AccountId;
+                    A2ACallerContext.IsAdmin = caller.IsAdmin;
+                    A2ACallerContext.McpCallerCredentialContext = EndpointHelpers.ResolveMcpCallerCredentialContext(ctx, startup);
+
+                    if (!runtime.Operations.ActorRateLimits.TryConsume(
+                            "ip",
+                            EndpointHelpers.GetRemoteIpKey(ctx),
+                            "a2a_http",
+                            out _))
+                    {
+                        ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                        return;
+                    }
+
+                    await next(ctx);
                 }
+                finally
+                {
+                    A2ACallerContext.AccountId = previousAccountId;
+                    A2ACallerContext.IsAdmin = previousIsAdmin;
+                    A2ACallerContext.McpCallerCredentialContext = previousCallerCredentialContext;
+                }
+
+                return;
             }
 
             await next(ctx);

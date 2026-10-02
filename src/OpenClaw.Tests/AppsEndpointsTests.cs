@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -106,6 +107,51 @@ public sealed class AppsEndpointsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Chat_ValidatedOidcBearer_PassesCallerContextToRuntime()
+    {
+        const string accessToken = "apps-oidc-access-token-marker";
+        const string subject = "apps-oidc-subject";
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", subject),
+            new Claim("exp", expiresAt.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new Claim(ClaimTypes.Role, OperatorRoleNames.Operator)
+        ],
+        authenticationType: "oidc"));
+        McpCallerCredentialContext? callerContext = null;
+        var agentRuntime = Substitute.For<IAgentRuntime>();
+        agentRuntime.RunStreamingAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<string?>(),
+                Arg.Do<McpCallerCredentialContext?>(context => callerContext = context))
+            .Returns(_ => StreamEvents());
+
+        await using var harness = await StartGatewayAsync(
+            null,
+            agentRuntime,
+            authenticatedPrincipal: principal,
+            oidcAuthority: "https://issuer.example");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/apps/chat")
+        {
+            Content = JsonContent.Create(new { message = "hello", sessionId = "apps-oidc" })
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+        var response = await harness.Client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        await response.Content.ReadAsStringAsync();
+
+        Assert.NotNull(callerContext);
+        Assert.Equal(accessToken, callerContext.OidcAccessToken);
+        Assert.Equal(subject, callerContext.Subject);
+        Assert.Equal(expiresAt.ToUnixTimeSeconds(), callerContext.ExpiresAtUtc.ToUnixTimeSeconds());
+    }
+
+    [Fact]
     public async Task Chat_ConcurrentTurnsOnSameSession_RunOneAtATime()
     {
         var firstTurnStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -203,7 +249,12 @@ public sealed class AppsEndpointsTests : IAsyncDisposable
         return $"{app.Urls.Single().TrimEnd('/')}/mcp";
     }
 
-    private async Task<AppsGatewayTestHarness> StartGatewayAsync(string? upstreamUrl, IAgentRuntime agentRuntime, IMemoryStore? store = null)
+    private async Task<AppsGatewayTestHarness> StartGatewayAsync(
+        string? upstreamUrl,
+        IAgentRuntime agentRuntime,
+        IMemoryStore? store = null,
+        ClaimsPrincipal? authenticatedPrincipal = null,
+        string? oidcAuthority = null)
     {
         var config = new GatewayConfig
         {
@@ -211,6 +262,11 @@ public sealed class AppsEndpointsTests : IAsyncDisposable
             AuthToken = "test-token",
             McpApps = new McpAppsConfig { Enabled = false }
         };
+        if (oidcAuthority is not null)
+        {
+            config.Security.AuthMode = SecurityAuthModeNames.Oidc;
+            config.Security.Oidc.Authority = oidcAuthority;
+        }
 
         if (!string.IsNullOrWhiteSpace(upstreamUrl))
         {
@@ -254,6 +310,14 @@ public sealed class AppsEndpointsTests : IAsyncDisposable
 
         var runtime = CreateRuntime(config, agentRuntime, store ?? new TestMemoryStore());
         var app = builder.Build();
+        if (authenticatedPrincipal is not null)
+        {
+            app.Use(async (ctx, next) =>
+            {
+                ctx.User = authenticatedPrincipal;
+                await next();
+            });
+        }
         app.MapOpenClawAppsEndpoints(startup, runtime);
         await app.StartAsync();
         _apps.Add(app);

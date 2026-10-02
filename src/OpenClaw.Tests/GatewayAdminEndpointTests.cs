@@ -1,9 +1,11 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.WebSockets;
 using System.Runtime.CompilerServices;
+using System.Security.Claims;
 using System.Threading.Channels;
 using System.Text.RegularExpressions;
 using System.Text;
@@ -710,6 +712,47 @@ public sealed partial class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task IntegrationMessages_WhenOidcBearer_ShouldBindCallerContextToQueuedMessage()
+    {
+        const string accessToken = "integration-oidc-access-token-marker";
+        const string subject = "integration-oidc-subject";
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var principal = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+        [
+            new System.Security.Claims.Claim("sub", subject),
+            new System.Security.Claims.Claim("exp", expiresAt.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, OperatorRoleNames.Operator)
+        ],
+        authenticationType: "oidc"));
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configure: config =>
+            {
+                config.Security.AuthMode = SecurityAuthModeNames.Oidc;
+                config.Security.Oidc.Authority = "https://issuer.example";
+            },
+            configureBeforeAuth: app => app.Use(async (ctx, next) =>
+            {
+                ctx.User = principal;
+                await next(ctx);
+            }));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/integration/messages")
+        {
+            Content = JsonContent("""{"text":"hello","senderId":"oidc-sender"}""")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.True(harness.Runtime.Pipeline.InboundReader.TryRead(out var queued));
+        var callerContext = Assert.IsType<OpenClaw.Core.Security.McpCallerCredentialContext>(queued.McpCallerCredentialContext);
+        Assert.Equal(accessToken, callerContext.OidcAccessToken);
+        Assert.Equal(subject, callerContext.Subject);
+        Assert.Equal(expiresAt.ToUnixTimeSeconds(), callerContext.ExpiresAtUtc.ToUnixTimeSeconds());
+    }
+
+    [Fact]
     public async Task McpSendMessage_WhenAccountToken_ShouldStampAccountNotClaimedSender()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
@@ -720,6 +763,46 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.False(result.RootElement.TryGetProperty("isError", out var isError) && isError.GetBoolean());
         Assert.True(harness.Runtime.Pipeline.InboundReader.TryRead(out var queued));
         Assert.Equal(accountId, queued.AuthenticatedUserId);
+    }
+
+    [Fact]
+    public async Task McpSendMessage_WhenOidcBearer_ShouldBindCallerContextToQueuedMessage()
+    {
+        const string accessToken = "mcp-oidc-access-token-marker";
+        const string subject = "mcp-oidc-subject";
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", subject),
+            new Claim("exp", expiresAt.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
+            new Claim(ClaimTypes.Role, OperatorRoleNames.Operator)
+        ],
+        authenticationType: "oidc"));
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configure: config =>
+            {
+                config.Security.AuthMode = SecurityAuthModeNames.Oidc;
+                config.Security.Oidc.Authority = "https://issuer.example";
+            },
+            configureBeforeAuth: app => app.Use(async (ctx, next) =>
+            {
+                ctx.User = principal;
+                await next(ctx);
+            }));
+
+        using var result = await CallMcpToolAsync(
+            harness,
+            accessToken,
+            "openclaw.send_message",
+            """{"text":"hello","senderId":"oidc-sender"}""");
+
+        Assert.False(result.RootElement.TryGetProperty("isError", out var isError) && isError.GetBoolean());
+        Assert.True(harness.Runtime.Pipeline.InboundReader.TryRead(out var queued));
+        var callerContext = Assert.IsType<McpCallerCredentialContext>(queued.McpCallerCredentialContext);
+        Assert.Equal(accessToken, callerContext.OidcAccessToken);
+        Assert.Equal(subject, callerContext.Subject);
+        Assert.Equal(expiresAt.ToUnixTimeSeconds(), callerContext.ExpiresAtUtc.ToUnixTimeSeconds());
     }
 
     [Fact]
@@ -786,19 +869,70 @@ public sealed partial class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task A2AExecution_WhenOidcBearer_ShouldExposeCallerCredentialToHandlers()
+    {
+        const string accessToken = "a2a-oidc-access-token-marker";
+        const string subject = "a2a-oidc-subject";
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", subject),
+            new Claim("exp", expiresAt.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
+            new Claim(ClaimTypes.Role, OperatorRoleNames.Operator)
+        ],
+        authenticationType: "oidc"));
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configure: config =>
+            {
+                config.Security.AuthMode = SecurityAuthModeNames.Oidc;
+                config.Security.Oidc.Authority = "https://issuer.example";
+            },
+            configureServices: (services, _) => services.Configure<MafOptions>(options => options.EnableA2A = true),
+            configureBeforeAuth: app => app.Use(async (ctx, next) =>
+            {
+                ctx.User = principal;
+                await next(ctx);
+            }),
+            configureApp: app => app.MapPost(
+                "/a2a",
+                () => Results.Text(A2ACallerContext.McpCallerCredentialContext?.OidcAccessToken ?? "")));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/a2a") { Content = JsonContent("{}") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        var response = await harness.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(accessToken, await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task A2ABridge_WhenCallerAccountKnown_ShouldRunTurnAsAccount()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
         Session? ran = null;
-        harness.Runtime.AgentRuntime.RunStreamingAsync(Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        McpCallerCredentialContext? receivedCallerContext = null;
+        harness.Runtime.AgentRuntime.RunStreamingAsync(
+                Arg.Any<Session>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<ToolApprovalCallback?>(),
+                Arg.Any<string?>(),
+                Arg.Any<McpCallerCredentialContext?>())
             .Returns(callInfo =>
             {
                 ran = callInfo.Arg<Session>();
+                receivedCallerContext = callInfo.ArgAt<McpCallerCredentialContext?>(5);
                 return NoAgentEvents();
             });
         var bridge = new OpenClawA2AExecutionBridge(new GatewayRuntimeHolder { Runtime = harness.Runtime }, NullLogger<OpenClawA2AExecutionBridge>.Instance);
+        var callerCredentialContext = new McpCallerCredentialContext(
+            "a2a-bridge-token-marker",
+            "a2a-bridge-subject",
+            DateTimeOffset.UtcNow.AddMinutes(5));
 
         A2ACallerContext.AccountId = "acct-a2a";
+        A2ACallerContext.McpCallerCredentialContext = callerCredentialContext;
         try
         {
             await bridge.ExecuteStreamingAsync(
@@ -815,9 +949,11 @@ public sealed partial class GatewayAdminEndpointTests
         finally
         {
             A2ACallerContext.AccountId = null;
+            A2ACallerContext.McpCallerCredentialContext = null;
         }
 
         Assert.Equal("acct-a2a", ran?.AuthenticatedUserId);
+        Assert.Same(callerCredentialContext, receivedCallerContext);
     }
 
     [Fact]
@@ -8531,9 +8667,17 @@ public sealed partial class GatewayAdminEndpointTests
         Func<string, IMemoryStore>? memoryStoreFactory = null,
         Action<IServiceCollection, GatewayConfig>? configureServices = null,
         GatewayRuntimeState? runtimeStateOverride = null,
-        Action<WebApplication>? configureApp = null)
+        Action<WebApplication>? configureApp = null,
+        Action<WebApplication>? configureBeforeAuth = null)
     {
-        return await CreateHarnessAsyncInternal(nonLoopbackBind, configure, memoryStoreFactory, configureServices, runtimeStateOverride, configureApp);
+        return await CreateHarnessAsyncInternal(
+            nonLoopbackBind,
+            configure,
+            memoryStoreFactory,
+            configureServices,
+            runtimeStateOverride,
+            configureApp,
+            configureBeforeAuth);
     }
 
     private static async Task<GatewayTestHarness> CreateHarnessAsyncInternal(
@@ -8542,7 +8686,8 @@ public sealed partial class GatewayAdminEndpointTests
         Func<string, IMemoryStore>? memoryStoreFactory,
         Action<IServiceCollection, GatewayConfig>? configureServices,
         GatewayRuntimeState? runtimeStateOverride,
-        Action<WebApplication>? configureApp)
+        Action<WebApplication>? configureApp,
+        Action<WebApplication>? configureBeforeAuth)
     {
         var storagePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "openclaw-admin-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(storagePath);
@@ -8657,6 +8802,7 @@ public sealed partial class GatewayAdminEndpointTests
         var app = builder.Build();
         var runtime = CreateRuntime(config, storagePath, memoryStore, sessionManager, heartbeatService);
         app.InitializeMcpRuntime(runtime);
+        configureBeforeAuth?.Invoke(app);
         app.UseOpenClawMcpAuth(startup, runtime);
         app.UseOpenClawA2AAuth(startup, runtime);
         configureApp?.Invoke(app);

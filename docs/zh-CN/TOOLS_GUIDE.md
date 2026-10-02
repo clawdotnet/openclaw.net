@@ -60,6 +60,78 @@
 | 支付与 Mempalace | `payment`、`mempalace_kg` |
 | 流式与测试 | `stream_echo`（环境变量启用）、桥接插件工具（动态） |
 
+## MCP 委托凭据
+
+默认禁用 MCP 委托凭据。只有受信任的 Gateway 配置显式设置 `DelegatedCredentials.Enabled=true` 才会启用。可将 `DelegatedCredentials` 配置在 HTTP MCP 服务的 `OpenClaw:Plugins:Mcp:Servers:<id>` 条目，或 MCP App 的 `OpenClaw:McpApps:Entries:<appId>` 条目中。两种位置都支持以下两种模式。
+
+此功能是按次调用的凭据委托，不是完整的 MCP OAuth 授权流程或 OAuth 2.1 实现。调用方必须已经提供经过验证的 OIDC bearer context。在 `token_exchange` 模式下，Gateway 会向配置的 token endpoint 发送 RFC 8693 定义的 OAuth 2.0 Token Exchange grant，并将调用方 access token 作为 subject token。该可选扩展流程要求授权服务器支持 RFC 8693；OAuth 2.1 整体支持范围见[认证支持边界](AUTHENTICATION.md#oauth-21-支持边界)。
+
+在 `gateway_signed` 模式下，Gateway 会为下游 MCP 服务签发项目自有的 JWT，并由下游服务独立验证。这不是授权服务器签发的 OAuth access token。
+
+远程 MCP 服务使用 OAuth 2.0 Token Exchange（RFC 8693）的示例：
+
+```json
+{
+   "OpenClaw": {
+      "Plugins": {
+         "Mcp": {
+            "Enabled": true,
+            "Servers": {
+               "inventory": {
+                  "Enabled": true,
+                  "Transport": "http",
+                  "Url": "https://mcp.example.com/mcp",
+                  "DelegatedCredentials": {
+                     "Enabled": true,
+                     "Mode": "token_exchange",
+                     "Audience": "inventory-api",
+                     "Scopes": ["inventory.read"],
+                     "TokenEndpoint": "https://identity.example.com/oauth/token",
+                     "ClientId": "openclaw-gateway",
+                     "ClientSecretRef": "env:STRATEGOS_CLIENT_SECRET"
+                  }
+               }
+            }
+         }
+      }
+   }
+}
+```
+
+MCP App 条目使用 Gateway 签名凭据的示例：
+
+```json
+{
+   "OpenClaw": {
+      "McpApps": {
+         "Enabled": true,
+         "Entries": {
+            "grocery-inventory": {
+               "Enabled": true,
+               "Transport": "http",
+               "Url": "https://mcp.example.com/grocery",
+               "DelegatedCredentials": {
+                  "Enabled": true,
+                  "Mode": "gateway_signed",
+                  "Audience": "inventory-api",
+                  "Scopes": ["inventory.read"],
+                  "Issuer": "https://gateway.example.com",
+                  "SigningKeyRef": "env:MCP_DELEGATION_SIGNING_KEY",
+                  "LifetimeSeconds": 60
+               }
+            }
+         }
+      }
+   }
+}
+```
+
+`token_exchange` 必须配置 `Audience`、`Scopes`、`TokenEndpoint`、`ClientId` 和 `ClientSecretRef`；`gateway_signed` 必须配置 `Audience`、`Scopes`、`Issuer`、`SigningKeyRef` 和正数 `LifetimeSeconds`。配置中不要放置密钥明文，使用 `env:NAME` 等受支持的 secret reference。调用方必须提供经过验证且尚未过期的 OIDC bearer context。上游工具调用前会再次检查调用方和委托凭据的过期时间；过期后 fail closed，必须通过新的已认证请求重试。调用方凭据仅保存在内存中，不会写入会话或延迟任务。
+
+委托失败时不会切换到另一凭据模式，也不会回退到静态 `Authorization` header；上游 401/403 不会触发静态凭据重试。MCP App manifest 不能自行启用委托，只有受信任的 Gateway `McpApps.Entries[appId].DelegatedCredentials` 配置可以启用。未显式启用的条目继续使用原有共享 MCP client 和静态 headers。
+
+使用 `gateway_signed` 时，下游 MCP 服务（例如 Strategos）必须独立信任配置的 issuer，并验证签名、audience、expiry 和 scopes。OpenClaw 负责签发凭据，不负责验证下游服务的凭据。
+
 ---
 
 ## 🏗 核心工具

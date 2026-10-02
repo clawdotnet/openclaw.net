@@ -264,7 +264,8 @@ internal static partial class OpenAiEndpoints
                         userText ?? "",
                         ctx.RequestAborted,
                         approvalCallback: approvalCallback,
-                        correlationId: correlationId))
+                        correlationId: correlationId,
+                        callerCredentialContext: EndpointHelpers.ResolveMcpCallerCredentialContext(ctx, startup)))
                     {
                         if (evt.Type == AgentStreamEventType.TextDelta && !string.IsNullOrEmpty(evt.Content))
                         {
@@ -352,7 +353,8 @@ internal static partial class OpenAiEndpoints
                         userText ?? "",
                         ctx.RequestAborted,
                         approvalCallback: approvalCallback,
-                        correlationId: correlationId);
+                        correlationId: correlationId,
+                        callerCredentialContext: EndpointHelpers.ResolveMcpCallerCredentialContext(ctx, startup));
 
                     var response = new OpenAiChatCompletionResponse
                     {

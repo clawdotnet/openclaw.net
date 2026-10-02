@@ -99,7 +99,11 @@ internal static class AppsEndpoints
 
             try
             {
-                await foreach (var evt in runtime.AgentRuntime.RunStreamingAsync(session, userText, ct))
+                await foreach (var evt in runtime.AgentRuntime.RunStreamingAsync(
+                    session,
+                    userText,
+                    ct,
+                    callerCredentialContext: EndpointHelpers.ResolveMcpCallerCredentialContext(ctx, startup)))
                 {
                     switch (evt.Type)
                     {
