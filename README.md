@@ -124,6 +124,8 @@ Tool: echo(hello): ok
 | Decision routing | Opt-in [hosted Jev](docs/jev-routing.md) or [local Laya](docs/laya-routing.md) routing, with shadow evaluation, safety floors, and fallback to the existing policy. Laya active routing requires a calibration artifact. |
 | Tools and channels | 80+ native and optional tool surfaces for files, web, sessions, databases, email, home automation, and more; adapters for Telegram, WhatsApp, Teams, Slack, Discord, and other channels. The active set depends on configuration. |
 | Extensions | MCP servers and interactive MCP Apps, reusable `SKILL.md` packages, first-party .NET integrations, and supported OpenClaw TS/JS plugins. |
+| MetaSkills | Reusable, auditable DAG workflows that compose skills, tools, and LLM calls with dependency-aware scheduling, parallel steps, fallbacks, and user-input checkpoints. See the [MetaSkills guide](docs/meta-skills.md). |
+| MetaSkill API | Direct invocation of a named MetaSkill DAG in an existing session, with durable idempotency and result replay. See the [invocation API](docs/integrations/meta-skill-invocation-api.md). |
 | Long-running work | Session-scoped `/goal` continuation, `/loop` recurring prompts, and optional durable workflow backends. |
 | Structured project memory | Optional [Fractal Memory](docs/FRACTAL_MEMORY.md) capture, review, import, handoff, and resume workflows through agent tools, CLI, and admin API. Writes are opt-in and agent approvals are enabled by default. |
 | Review and observability | Tool approvals, diagnostics, audit and trajectory exports, passive harness contracts, evidence bundles, and optional Plan-Execute-Verify execution. |
