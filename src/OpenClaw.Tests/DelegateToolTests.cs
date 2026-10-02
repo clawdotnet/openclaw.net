@@ -7,6 +7,7 @@ using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Memory;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
+using OpenClaw.Core.Security;
 using OpenClaw.Core.Skills;
 using Xunit;
 
@@ -178,6 +179,72 @@ public sealed class DelegateToolTests
         }
     }
 
+    [Fact]
+    public async Task ExecuteAsync_WhenContextHasCallerCredential_ShouldForwardWithoutPersistingCredential()
+    {
+        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-delegate-credential-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var delegation = new DelegationConfig
+            {
+                Enabled = true,
+                Profiles = new Dictionary<string, AgentProfile>(StringComparer.Ordinal)
+                {
+                    ["reviewer"] = new() { Name = "reviewer" }
+                }
+            };
+            var memoryStore = new FileMemoryStore(storagePath, 4);
+            McpCallerCredentialContext? receivedCallerContext = null;
+            var tool = new DelegateTool(
+                new TestChatClient(),
+                [new TestTool()],
+                memoryStore,
+                new LlmProviderConfig { Provider = "test", Model = "test-model" },
+                delegation,
+                logger: NullLogger.Instance,
+                runtimeFactory: (_, _, _) => new FakeRuntime(
+                    "delegated-result",
+                    captureCallerContext: context => receivedCallerContext = context));
+            const string tokenMarker = "delegate-caller-token-marker";
+            var callerContext = new McpCallerCredentialContext(
+                tokenMarker,
+                "caller-subject",
+                DateTimeOffset.UtcNow.AddMinutes(5));
+            var parentSession = new Session
+            {
+                Id = "parent-session",
+                ChannelId = "api",
+                SenderId = "operator"
+            };
+
+            var result = await tool.ExecuteAsync(
+                """{"profile":"reviewer","task":"Inspect the change"}""",
+                new ToolExecutionContext
+                {
+                    Session = parentSession,
+                    TurnContext = new TurnContext { SessionId = parentSession.Id, ChannelId = parentSession.ChannelId },
+                    McpCallerCredentialContext = callerContext
+                },
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal("delegated-result", result);
+            Assert.Same(callerContext, receivedCallerContext);
+            var childSessionId = Assert.Single(parentSession.DelegatedSessions).SessionId;
+            var persisted = await memoryStore.GetSessionAsync(childSessionId, TestContext.Current.CancellationToken);
+            Assert.NotNull(persisted);
+            Assert.DoesNotContain(
+                tokenMarker,
+                JsonSerializer.Serialize(persisted, CoreJsonContext.Default.Session),
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
     private sealed class TestTool : ITool
     {
         public string Name => "test_tool";
@@ -194,7 +261,10 @@ public sealed class DelegateToolTests
         }
     }
 
-    private sealed class FakeRuntime(string response, Action<Session>? mutateSession = null) : IAgentRuntime
+    private sealed class FakeRuntime(
+        string response,
+        Action<Session>? mutateSession = null,
+        Action<McpCallerCredentialContext?>? captureCallerContext = null) : IAgentRuntime
     {
         public CircuitState CircuitBreakerState => CircuitState.Closed;
 
@@ -208,12 +278,14 @@ public sealed class DelegateToolTests
             CancellationToken ct,
             ToolApprovalCallback? approvalCallback = null,
             JsonElement? responseSchema = null,
-            string? correlationId = null)
+            string? correlationId = null,
+            McpCallerCredentialContext? callerCredentialContext = null)
         {
             _ = userMessage;
             _ = ct;
             _ = approvalCallback;
             _ = responseSchema;
+            captureCallerContext?.Invoke(callerCredentialContext);
             mutateSession?.Invoke(session);
             return Task.FromResult(response);
         }
@@ -224,7 +296,8 @@ public sealed class DelegateToolTests
             CancellationToken ct,
             ToolApprovalCallback? approvalCallback = null,
             JsonElement? responseSchema = null,
-            string? correlationId = null)
+            string? correlationId = null,
+            McpCallerCredentialContext? callerCredentialContext = null)
         {
             _ = userMessage;
             _ = ct;
@@ -258,7 +331,8 @@ public sealed class DelegateToolTests
             string userMessage,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct,
             ToolApprovalCallback? approvalCallback = null,
-            string? correlationId = null)
+            string? correlationId = null,
+            McpCallerCredentialContext? callerCredentialContext = null)
         {
             _ = session;
             _ = userMessage;

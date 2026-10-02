@@ -6,6 +6,16 @@ The OpenClaw.NET Gateway provides a multi-layered authentication system supporti
 
 ---
 
+## OAuth 2.1 Support Boundary
+
+OpenClaw.NET does not claim full OAuth 2.1 conformance, provide a general-purpose OAuth authorization server, or issue OAuth tokens. The Gateway can validate externally issued OIDC JWT Bearer tokens when an OIDC Authority is configured; this is resource-server-side token validation. The WebChat browser client supports an OIDC Authorization Code + PKCE (S256) sign-in flow against an external identity provider, which handles user authentication and authorization-code/token issuance. This client flow is specific to WebChat; other frontends need their own OIDC client integration, and the Gateway is not an authorization server. Authorization endpoints and token issuance remain the responsibility of the external identity provider.
+
+For per-call MCP delegation, the Gateway can act as a client for a configured RFC 8693 token-exchange request, or issue a Gateway-signed JWT for a configured downstream service. Token exchange is an optional OAuth 2.0 extension and this specific flow does not make OpenClaw.NET a complete OAuth 2.1 or RFC 8693 implementation. Gateway-signed credentials are a separate project-specific mechanism, not OAuth access tokens issued by an authorization server. See [MCP Delegated Credentials](TOOLS_GUIDE.md#mcp-delegated-credentials) for configuration details.
+
+As of 2026-10-02, the OAuth 2.1 specification is still an active IETF Internet-Draft, not a published RFC. Check the [IETF Datatracker](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) for its current version and status.
+
+---
+
 ## 1. Configuration Model
 
 Authentication configuration lives under the `OpenClaw.Security` node in `appsettings.json`.

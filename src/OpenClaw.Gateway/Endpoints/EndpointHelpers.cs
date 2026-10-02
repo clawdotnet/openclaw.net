@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Globalization;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Features;
@@ -402,6 +404,47 @@ internal static class EndpointHelpers
     /// </summary>
     public static string? ResolveAuthenticatedAccountId(HttpContext ctx, GatewayStartupContext startup)
         => ResolveCaller(ctx, startup).AccountId;
+
+    public static McpCallerCredentialContext? ResolveMcpCallerCredentialContext(HttpContext ctx, GatewayStartupContext startup)
+    {
+        if (string.IsNullOrWhiteSpace(startup.Config.Security.Oidc.Authority)
+            || ctx.User.Identity?.IsAuthenticated != true)
+        {
+            return null;
+        }
+
+        if (!AuthenticationHeaderValue.TryParse(ctx.Request.Headers.Authorization.ToString(), out var authorization)
+            || !string.Equals(authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(authorization.Parameter))
+        {
+            return null;
+        }
+
+        var subject = ctx.User.FindFirstValue("sub");
+        if (string.IsNullOrWhiteSpace(subject))
+            subject = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(subject))
+            return null;
+
+        var expiresAtValue = ctx.User.FindFirstValue("exp") ?? ctx.User.FindFirstValue(ClaimTypes.Expiration);
+        if (!long.TryParse(expiresAtValue, NumberStyles.None, CultureInfo.InvariantCulture, out var expiresAtUnixSeconds))
+            return null;
+
+        DateTimeOffset expiresAtUtc;
+        try
+        {
+            expiresAtUtc = DateTimeOffset.FromUnixTimeSeconds(expiresAtUnixSeconds);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
+
+        if (expiresAtUtc <= DateTimeOffset.UtcNow)
+            return null;
+
+        return new McpCallerCredentialContext(authorization.Parameter, subject, expiresAtUtc);
+    }
 
     internal readonly record struct CallerAccount(string? AccountId, bool IsAdmin);
 

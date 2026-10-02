@@ -1,6 +1,7 @@
 using OpenClaw.Agent.Plugins;
 using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Mcp;
 using OpenClaw.Core.Skills.Meta;
@@ -40,7 +41,10 @@ internal static class ToolServicesExtensions
         services.AddSingleton(sp =>
             new McpServerToolRegistry(
                 startup.Config.Plugins.Mcp,
-                sp.GetRequiredService<ILoggerFactory>().CreateLogger<McpServerToolRegistry>()));
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger<McpServerToolRegistry>(),
+                sp.GetRequiredService<IMcpDelegatedToolInvoker>()));
+        services.AddSingleton<McpDelegatedHttpClientFactory>();
+        services.AddTransient<IMcpDelegatedToolInvoker, McpDelegatedToolInvoker>();
 
         services.AddSingleton<CapabilityBindingCache>();
         services.AddSingleton<ICapabilityInvalidationSink>(sp => sp.GetRequiredService<CapabilityBindingCache>());

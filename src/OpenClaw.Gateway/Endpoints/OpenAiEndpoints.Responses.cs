@@ -388,7 +388,8 @@ internal static partial class OpenAiEndpoints
                             session,
                             req.Input,
                             ctx.RequestAborted,
-                            approvalCallback: approvalCallback))
+                            approvalCallback: approvalCallback,
+                            callerCredentialContext: EndpointHelpers.ResolveMcpCallerCredentialContext(ctx, startup)))
                         {
                             if (evt.Type == AgentStreamEventType.TextDelta && !string.IsNullOrEmpty(evt.Content))
                             {
@@ -587,7 +588,8 @@ internal static partial class OpenAiEndpoints
                         session,
                         req.Input,
                         ctx.RequestAborted,
-                        approvalCallback: approvalCallback);
+                        approvalCallback: approvalCallback,
+                        callerCredentialContext: EndpointHelpers.ResolveMcpCallerCredentialContext(ctx, startup));
                     var addedTurns = session.History.Skip(historyStartIndex).ToArray();
 
                     var response = new OpenAiResponseResponse

@@ -5,6 +5,7 @@ using OpenClaw.Agent.Routing;
 using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 using OpenClaw.Core.Skills;
 using System.Reflection;
 using System.Text.Json;
@@ -46,6 +47,40 @@ public class AgentRuntimeTests
         Assert.Equal("Hello from AI", result);
         Assert.Contains(session.History, t => t.Role == "user" && t.Content == "Hello");
         Assert.Contains(session.History, t => t.Role == "assistant" && t.Content == "Hello from AI");
+    }
+
+    [Fact]
+    public async Task RunAsync_CallerCredentialContext_ReachesToolExecutionContext()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        var tool = new CallerContextCaptureTool("context_tool");
+        var toolCallResponse = new ChatResponse(new[]
+        {
+            new ChatMessage(ChatRole.Assistant, new AIContent[]
+            {
+                new FunctionCallContent("call_context_1", "context_tool", new Dictionary<string, object?>())
+            })
+        });
+        var finalResponse = new ChatResponse([new ChatMessage(ChatRole.Assistant, "done")]);
+        var callCount = 0;
+        chatClient.GetResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(),
+            Arg.Any<ChatOptions>(),
+            Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(Interlocked.Increment(ref callCount) == 1 ? toolCallResponse : finalResponse));
+
+        var agent = new AgentRuntime(chatClient, [tool], _memory, _config, maxHistoryTurns: 10);
+        var session = new Session { Id = "sess-caller-context", SenderId = "user1", ChannelId = "test-channel" };
+        var callerContext = new McpCallerCredentialContext("test-token", "test-subject", DateTimeOffset.UtcNow.AddMinutes(5));
+
+        var result = await agent.RunAsync(
+            session,
+            "use context tool",
+            TestContext.Current.CancellationToken,
+            callerCredentialContext: callerContext);
+
+        Assert.Equal("done", result);
+        Assert.Same(callerContext, tool.CallerCredentialContext);
     }
 
     [Fact]
@@ -3132,6 +3167,29 @@ public class AgentRuntimeTests
         {
             Interlocked.Increment(ref _callCount);
             return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class CallerContextCaptureTool(string name) : IToolWithContext
+    {
+        public string Name { get; } = name;
+        public string Description => "Captures the caller credential context.";
+        public string ParameterSchema => """{"type":"object"}""";
+        public McpCallerCredentialContext? CallerCredentialContext { get; private set; }
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, ToolExecutionContext context, CancellationToken ct)
+        {
+            _ = argumentsJson;
+            _ = ct;
+            CallerCredentialContext = context.McpCallerCredentialContext;
+            return ValueTask.FromResult("captured");
+        }
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        {
+            _ = argumentsJson;
+            _ = ct;
+            return ValueTask.FromResult("missing-context");
         }
     }
 

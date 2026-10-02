@@ -178,7 +178,7 @@ public sealed class AgentRuntime : IAgentRuntime
             planExecuteVerify: planExecuteVerify,
             auditLog: toolAuditLog,
             interceptors: interceptors,
-            metaInvokeExecutor: (session, skillName, input, token) => ExecuteMetaSkillAsync(session, skillName, input, token));
+            contextualMetaInvokeExecutor: (session, skillName, input, token, callerContext) => ExecuteMetaSkillWithCallerContextAsync(session, skillName, input, token, callerContext));
         _sessionTokenBudget = sessionTokenBudget;
         _estimateTokenBudgetAdmission = gatewayConfig?.EnableEstimatedTokenAdmissionControl ?? false;
         _fractalMemory = gatewayConfig?.Memory.Fractal;
@@ -277,9 +277,10 @@ public sealed class AgentRuntime : IAgentRuntime
         Session session, string userMessage, CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
         JsonElement? responseSchema = null,
-        string? correlationId = null)
+        string? correlationId = null,
+        McpCallerCredentialContext? callerCredentialContext = null)
     {
-        var result = await RunTurnAsync(session, userMessage, ct, approvalCallback, responseSchema, correlationId);
+        var result = await RunTurnAsync(session, userMessage, ct, approvalCallback, responseSchema, correlationId, callerCredentialContext);
         return result.Text;
     }
 
@@ -295,7 +296,8 @@ public sealed class AgentRuntime : IAgentRuntime
         Session session, string userMessage, CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
         JsonElement? responseSchema = null,
-        string? correlationId = null)
+        string? correlationId = null,
+        McpCallerCredentialContext? callerCredentialContext = null)
     {
         if (_toolExecutor.PrepareAudienceTurn(session, userMessage) is { } audienceRejection)
             return AgentTurnResult.Completed(audienceRejection);
@@ -560,7 +562,7 @@ public sealed class AgentRuntime : IAgentRuntime
 
             // Execute tool calls (parallel or sequential based on config)
             var (invocations, toolResults) = await ExecuteToolCallsAsync(
-                toolCalls, session, turnCtx, isStreaming: false, approvalCallback, ct);
+                toolCalls, session, turnCtx, isStreaming: false, approvalCallback, ct, callerCredentialContext);
 
             // Feed all tool calls as a single assistant message, then all results as a single tool message
             messages.Add(new ChatMessage(ChatRole.Assistant, toolCalls.Cast<AIContent>().ToList()));
@@ -606,7 +608,8 @@ public sealed class AgentRuntime : IAgentRuntime
         Session session, string userMessage,
         [EnumeratorCancellation] CancellationToken ct,
         ToolApprovalCallback? approvalCallback = null,
-        string? correlationId = null)
+        string? correlationId = null,
+        McpCallerCredentialContext? callerCredentialContext = null)
     {
         if (_toolExecutor.PrepareAudienceTurn(session, userMessage) is { } audienceRejection)
         {
@@ -828,7 +831,7 @@ public sealed class AgentRuntime : IAgentRuntime
 
             // Execute tool calls.
             AgentToolBatchExecution? completedBatch = null;
-            await foreach (var update in _toolLoop.ExecuteStreamingToolCallsAsync(toolCalls, session, turnCtx, approvalCallback, ct))
+            await foreach (var update in _toolLoop.ExecuteStreamingToolCallsAsync(toolCalls, session, turnCtx, approvalCallback, ct, callerCredentialContext))
             {
                 if (update.StreamEvent is not null) yield return update.StreamEvent.Value;
                 if (update.Batch is not null) completedBatch = update.Batch;
@@ -881,9 +884,10 @@ public sealed class AgentRuntime : IAgentRuntime
 
     private async Task<(List<ToolInvocation> Invocations, List<FunctionResultContent> Results)> ExecuteToolCallsAsync(
         List<FunctionCallContent> toolCalls, Session session, TurnContext turnCtx,
-        bool isStreaming, ToolApprovalCallback? approvalCallback, CancellationToken ct)
+        bool isStreaming, ToolApprovalCallback? approvalCallback, CancellationToken ct,
+        McpCallerCredentialContext? callerCredentialContext)
     {
-        var batch = await _toolLoop.ExecuteToolCallsAsync(toolCalls, session, turnCtx, isStreaming, approvalCallback, ct);
+        var batch = await _toolLoop.ExecuteToolCallsAsync(toolCalls, session, turnCtx, isStreaming, approvalCallback, ct, callerCredentialContext);
         return (batch.Invocations, batch.Results);
     }
 
@@ -1277,7 +1281,15 @@ public sealed class AgentRuntime : IAgentRuntime
             + "[/Meta Routing Hint]";
     }
 
-    private async Task<string> ExecuteMetaSkillAsync(Session session, string skillName, string? input, CancellationToken ct)
+    private Task<string> ExecuteMetaSkillAsync(Session session, string skillName, string? input, CancellationToken ct)
+        => ExecuteMetaSkillWithCallerContextAsync(session, skillName, input, ct, callerCredentialContext: null);
+
+    private async Task<string> ExecuteMetaSkillWithCallerContextAsync(
+        Session session,
+        string skillName,
+        string? input,
+        CancellationToken ct,
+        McpCallerCredentialContext? callerCredentialContext)
     {
         if (!_metaSkillsEnabled)
             return "Error: Meta skill invocation is disabled by runtime policy.";
@@ -1405,6 +1417,7 @@ public sealed class AgentRuntime : IAgentRuntime
                     conditionEvaluator,
                     toolArgumentResolver,
                     routePlanner,
+                    callerCredentialContext,
                     ct))
             {
                 continue;
@@ -1427,7 +1440,8 @@ public sealed class AgentRuntime : IAgentRuntime
                     conditionEvaluator,
                     toolArgumentResolver,
                     routePlanner,
-                    ExecuteFanOutChildAsync,
+                    (skill, template, childId, childInput, childContext, fanOutSession, fanOutTurnCtx, token) =>
+                        ExecuteFanOutChildAsync(skill, template, childId, childInput, childContext, fanOutSession, fanOutTurnCtx, callerCredentialContext, token),
                     (msg, ex) => _logger?.LogWarning(ex, "{FanOutMessage}", msg),
                     ct))
             {
@@ -1573,6 +1587,7 @@ public sealed class AgentRuntime : IAgentRuntime
                                 toolArgsJson,
                                 session,
                                 turnCtx,
+                                callerCredentialContext,
                                 ct);
                         stepSw.Stop();
 
@@ -2240,6 +2255,7 @@ public sealed class AgentRuntime : IAgentRuntime
         MetaConditionEvaluator conditionEvaluator,
         MetaToolArgumentResolver toolArgumentResolver,
         MetaRoutePlanner routePlanner,
+        McpCallerCredentialContext? callerCredentialContext,
         CancellationToken ct)
     {
         if (pending.Count < 2)
@@ -2337,6 +2353,7 @@ public sealed class AgentRuntime : IAgentRuntime
                 candidate.ToolArgsJson,
                 session,
                 turnCtx,
+                callerCredentialContext,
                 ct);
             stepSw.Stop();
             return new MetaParallelToolStepExecution(candidate.Step, toolResult, stepSw.Elapsed.TotalMilliseconds);
@@ -2376,6 +2393,7 @@ public sealed class AgentRuntime : IAgentRuntime
         MetaExecutionContext childContext,
         Session session,
         TurnContext turnCtx,
+        McpCallerCredentialContext? callerCredentialContext,
         CancellationToken ct)
     {
         switch (NormalizeMetaStepKind(template.Kind))
@@ -2410,6 +2428,7 @@ public sealed class AgentRuntime : IAgentRuntime
                     toolArgsJson,
                     session,
                     turnCtx,
+                    callerCredentialContext,
                     ct);
 
                 var completed = string.Equals(result.ResultStatus, ToolResultStatuses.Completed, StringComparison.Ordinal);
@@ -2841,6 +2860,7 @@ public sealed class AgentRuntime : IAgentRuntime
         string toolArgsJson,
         Session session,
         TurnContext turnCtx,
+        McpCallerCredentialContext? callerCredentialContext,
         CancellationToken ct)
     {
         var maxAttempts = Math.Max(1, step.Retry.MaxAttempts);
@@ -2862,7 +2882,8 @@ public sealed class AgentRuntime : IAgentRuntime
                     approvalCallback: null,
                     ct: effectiveCt,
                     onDelta: null,
-                    toolCallCount: 1); // A retry still executes a single tool.
+                    toolCallCount: 1,
+                    callerCredentialContext: callerCredentialContext); // A retry still executes a single tool.
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {

@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Channels;
 
@@ -79,7 +80,8 @@ public sealed class WebSocketChannel : IChannelAdapter
         IPAddress? remoteIp,
         CancellationToken ct,
         string? authenticatedUserId = null,
-        bool authenticatedUserIsAdmin = false)
+        bool authenticatedUserIsAdmin = false,
+        McpCallerCredentialContext? callerCredentialContext = null)
     {
         if (!TryAddConnection(clientId, ws, remoteIp, out var state))
         {
@@ -134,6 +136,7 @@ public sealed class WebSocketChannel : IChannelAdapter
                     RequestCancellation = ct,
                     AuthenticatedUserId = authenticatedUserId,
                     AuthenticatedUserIsAdmin = authenticatedUserIsAdmin,
+                    McpCallerCredentialContext = callerCredentialContext,
                     SessionId = parsed.SessionId,
                     Type = parsed.Type,
                     Text = parsed.Text ?? "",

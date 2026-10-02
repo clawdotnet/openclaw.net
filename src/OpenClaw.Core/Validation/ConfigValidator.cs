@@ -266,8 +266,11 @@ public static class ConfigValidator
                     if (transport is not ("stdio" or "http"))
                     {
                         errors.Add($"Plugins.Mcp.Servers.{serverId}.Transport must be 'stdio' or 'http'.");
+                        ValidateMcpDelegatedCredentials(server.DelegatedCredentials, $"Plugins.Mcp.Servers.{serverId}", false, errors);
                         continue;
                     }
+
+                    ValidateMcpDelegatedCredentials(server.DelegatedCredentials, $"Plugins.Mcp.Servers.{serverId}", transport == "http", errors);
 
                     if (server.StartupTimeoutSeconds < 1)
                         errors.Add($"Plugins.Mcp.Servers.{serverId}.StartupTimeoutSeconds must be >= 1 (got {server.StartupTimeoutSeconds}).");
@@ -285,6 +288,20 @@ public static class ConfigValidator
                         errors.Add($"Plugins.Mcp.Servers.{serverId}.Url must be an absolute http(s) URL when Transport='http'.");
                     }
                 }
+            }
+        }
+
+        if (config.McpApps.Enabled && config.McpApps.Entries is not null)
+        {
+            foreach (var (appId, appEntry) in config.McpApps.Entries)
+            {
+                if (appEntry is null || !appEntry.Enabled)
+                    continue;
+
+                bool? isHttpTransport = appEntry.Transport is null
+                    ? null
+                    : appEntry.Transport.Trim().Equals("http", StringComparison.OrdinalIgnoreCase);
+                ValidateMcpDelegatedCredentials(appEntry.DelegatedCredentials, $"McpApps.Entries.{appId}", isHttpTransport, errors);
             }
         }
 
@@ -498,6 +515,48 @@ public static class ConfigValidator
             var maxPrefix = address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128;
             if (prefixLength < 0 || prefixLength > maxPrefix)
                 errors.Add($"{path}.BlockedCidrs entry '{cidr}' has an invalid prefix length.");
+        }
+    }
+
+    private static void ValidateMcpDelegatedCredentials(
+        McpDelegatedCredentialsConfig? policy,
+        string endpointPath,
+        bool? isHttpTransport,
+        List<string> errors)
+    {
+        if (policy is not { Enabled: true })
+            return;
+
+        var policyPath = $"{endpointPath}.DelegatedCredentials";
+        if (isHttpTransport == false)
+            errors.Add($"{policyPath} can only be enabled for an HTTP MCP endpoint.");
+
+        if (string.IsNullOrWhiteSpace(policy.Audience))
+            errors.Add($"{policyPath}.Audience must be set.");
+        if (policy.Scopes is null || policy.Scopes.Length == 0 || policy.Scopes.Any(string.IsNullOrWhiteSpace))
+            errors.Add($"{policyPath}.Scopes must contain at least one non-empty scope.");
+
+        if (string.Equals(policy.Mode, "token_exchange", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Uri.TryCreate(policy.TokenEndpoint, UriKind.Absolute, out var tokenEndpoint) || tokenEndpoint.Scheme != Uri.UriSchemeHttps)
+                errors.Add($"{policyPath}.TokenEndpoint must be an absolute https URL.");
+            if (string.IsNullOrWhiteSpace(policy.ClientId))
+                errors.Add($"{policyPath}.ClientId must be set.");
+            if (string.IsNullOrWhiteSpace(policy.ClientSecretRef))
+                errors.Add($"{policyPath}.ClientSecretRef must be set.");
+        }
+        else if (string.Equals(policy.Mode, "gateway_signed", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(policy.Issuer))
+                errors.Add($"{policyPath}.Issuer must be set.");
+            if (string.IsNullOrWhiteSpace(policy.SigningKeyRef))
+                errors.Add($"{policyPath}.SigningKeyRef must be set.");
+            if (policy.LifetimeSeconds < 1)
+                errors.Add($"{policyPath}.LifetimeSeconds must be >= 1 (got {policy.LifetimeSeconds}).");
+        }
+        else
+        {
+            errors.Add($"{policyPath}.Mode must be 'token_exchange' or 'gateway_signed'.");
         }
     }
 

@@ -19,6 +19,7 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
 {
     private readonly McpPluginsConfig _config;
     private readonly ILogger _logger;
+    private readonly IMcpDelegatedToolInvoker? _delegatedToolInvoker;
     private readonly SemaphoreSlim _loadSemaphore = new(1, 1);
     private readonly object _disposeGate = new();
     private readonly List<DiscoveredMcpTool> _tools = [];
@@ -37,10 +38,14 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
     /// <summary>
     /// Creates a registry for configured MCP servers.
     /// </summary>
-    public McpServerToolRegistry(McpPluginsConfig config, ILogger logger)
+    public McpServerToolRegistry(
+        McpPluginsConfig config,
+        ILogger logger,
+        IMcpDelegatedToolInvoker? delegatedToolInvoker = null)
     {
         _config = config;
         _logger = logger;
+        _delegatedToolInvoker = delegatedToolInvoker;
     }
 
     /// <summary>
@@ -224,7 +229,21 @@ public sealed class McpServerToolRegistry : IDisposable, IAsyncDisposable
                 {
                     discoveredTools.Add(new DiscoveredMcpTool(
                         pluginId,
-                        new McpNativeTool(client, tool.LocalName, tool.RemoteName, tool.Description, tool.InputSchemaText, tool.HasUi),
+                        new McpNativeTool(
+                            client,
+                            tool.LocalName,
+                            tool.RemoteName,
+                            tool.Description,
+                            tool.InputSchemaText,
+                            tool.HasUi,
+                            _delegatedToolInvoker,
+                            serverConfig.DelegatedCredentials,
+                            serverId,
+                            string.Equals(serverConfig.NormalizeTransport(), "http", StringComparison.Ordinal)
+                                ? new Uri(serverConfig.Url!)
+                                : null,
+                            ResolveHeaders(serverConfig.Headers),
+                            serverConfig.RequestTimeoutSeconds),
                         displayName));
                 }
             }

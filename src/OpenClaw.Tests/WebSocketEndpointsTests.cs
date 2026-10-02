@@ -2,7 +2,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Security.Claims;
+using System.Text.Json;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Endpoints;
@@ -35,14 +37,63 @@ public sealed class WebSocketEndpointsTests
             RequestServices = services.BuildServiceProvider(),
             User = new ClaimsPrincipal(new ClaimsIdentity(
             [
-                new Claim(ClaimTypes.NameIdentifier, "oidc-user-1")
+                new Claim(ClaimTypes.NameIdentifier, "oidc-user-1"),
+                new Claim("exp", DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture))
             ],
             authenticationType: "oidc"))
         };
+        const string accessToken = "websocket-oidc-token-marker";
+        ctx.Request.Headers.Authorization = $"Bearer {accessToken}";
 
         var authenticatedUserId = EndpointHelpers.ResolveCaller(ctx, startup).AccountId;
+        var credentialContext = EndpointHelpers.ResolveMcpCallerCredentialContext(ctx, startup);
 
         Assert.Equal("oidc-user-1", authenticatedUserId);
+        Assert.NotNull(credentialContext);
+        Assert.Equal(accessToken, credentialContext.OidcAccessToken);
+        Assert.Equal("oidc-user-1", credentialContext.Subject);
+    }
+
+    [Fact]
+    public void ResolveMcpCallerCredentialContext_WhenPrincipalUnauthenticated_ReturnsNull()
+    {
+        var config = new GatewayConfig();
+        config.Security.Oidc.Authority = "https://issuer.example";
+        var startup = new GatewayStartupContext
+        {
+            Config = config,
+            RuntimeState = RuntimeModeResolver.Resolve(config.Runtime, dynamicCodeSupported: true),
+            IsNonLoopbackBind = true
+        };
+        var ctx = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity())
+        };
+        ctx.Request.Headers.Authorization = "Bearer static-gateway-token";
+
+        var credentialContext = EndpointHelpers.ResolveMcpCallerCredentialContext(ctx, startup);
+
+        Assert.Null(credentialContext);
+    }
+
+    [Fact]
+    public void InboundMessage_JsonSerialization_DoesNotExposeCallerCredentialToken()
+    {
+        const string accessToken = "websocket-oidc-token-marker";
+        var message = new InboundMessage
+        {
+            ChannelId = "websocket",
+            SenderId = "client-1",
+            Text = "hello",
+            McpCallerCredentialContext = new McpCallerCredentialContext(
+                accessToken,
+                "oidc-user-1",
+                DateTimeOffset.UtcNow.AddMinutes(5))
+        };
+
+        var json = JsonSerializer.Serialize(message, CoreJsonContext.Default.InboundMessage);
+
+        Assert.DoesNotContain(accessToken, json, StringComparison.Ordinal);
     }
 
     [Fact]

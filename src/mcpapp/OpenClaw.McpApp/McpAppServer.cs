@@ -58,16 +58,21 @@ public sealed class McpAppServer : IAsyncDisposable
             var manifest = _state.Manifest;
             var transport = ResolveTransport();
             var timeout = ResolveStartupTimeout();
+            var requestTimeout = ResolveRequestTimeout();
+            var endpoint = string.Equals(transport, "http", StringComparison.Ordinal)
+                ? new Uri(_entryConfig?.Url ?? manifest.Url!)
+                : null;
+            var headers = ResolveHeaders();
 
             _logger.LogInformation("Connecting to McpApp '{AppId}' via {Transport}", manifest.Id, transport);
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeout));
 
-            _client = await CreateClientAsync(transport, manifest, timeoutCts.Token);
+            _client = await CreateClientAsync(transport, manifest, endpoint, headers, timeoutCts.Token);
 
             // Build the info provider
-            _infoProvider = new McpAppInfoProvider(_state, _client);
+            _infoProvider = new McpAppInfoProvider(_state, _client, transport, endpoint, headers, requestTimeout);
 
             // Enumerate capabilities
             await EnumerateToolsAsync(timeoutCts.Token);
@@ -335,7 +340,12 @@ public sealed class McpAppServer : IAsyncDisposable
     private int ResolveRequestTimeout()
         => _entryConfig?.RequestTimeoutSeconds ?? _state.Manifest.RequestTimeoutSeconds;
 
-    private async Task<McpClient> CreateClientAsync(string transport, McpAppManifest manifest, CancellationToken ct)
+    private async Task<McpClient> CreateClientAsync(
+        string transport,
+        McpAppManifest manifest,
+        Uri? endpoint,
+        Dictionary<string, string>? headers,
+        CancellationToken ct)
     {
         IClientTransport clientTransport = transport switch
         {
@@ -349,8 +359,8 @@ public sealed class McpAppServer : IAsyncDisposable
             }),
             "http" => new HttpClientTransport(new HttpClientTransportOptions
             {
-                Endpoint = new Uri(_entryConfig?.Url ?? manifest.Url!),
-                AdditionalHeaders = ResolveHeaders(),
+                Endpoint = endpoint ?? throw new InvalidOperationException($"HTTP endpoint is missing for app '{manifest.Id}'."),
+                AdditionalHeaders = headers,
                 Name = manifest.Id,
             }),
             _ => throw new InvalidOperationException($"Unsupported MCP transport '{transport}' for app '{manifest.Id}'.")

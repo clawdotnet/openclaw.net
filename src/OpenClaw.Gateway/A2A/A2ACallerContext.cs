@@ -1,3 +1,5 @@
+using OpenClaw.Core.Security;
+
 namespace OpenClaw.Gateway.A2A;
 
 /// <summary>
@@ -8,6 +10,7 @@ internal static class A2ACallerContext
 {
     private static readonly AsyncLocal<string?> CurrentAccountId = new();
     private static readonly AsyncLocal<bool> CurrentIsAdmin = new();
+    private static readonly AsyncLocal<McpCallerCredentialContext?> CurrentMcpCallerCredentialContext = new();
 
     public static string? AccountId
     {
@@ -20,5 +23,11 @@ internal static class A2ACallerContext
     {
         get => CurrentIsAdmin.Value;
         set => CurrentIsAdmin.Value = value;
+    }
+
+    public static McpCallerCredentialContext? McpCallerCredentialContext
+    {
+        get => CurrentMcpCallerCredentialContext.Value;
+        set => CurrentMcpCallerCredentialContext.Value = value;
     }
 }

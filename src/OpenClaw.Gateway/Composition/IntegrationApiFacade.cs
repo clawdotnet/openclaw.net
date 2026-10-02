@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Core.Compatibility;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Models;
@@ -816,7 +817,8 @@ internal sealed class IntegrationApiFacade
         IntegrationMessageRequest request,
         CancellationToken cancellationToken,
         string? authenticatedUserId = null,
-        bool authenticatedUserIsAdmin = false)
+        bool authenticatedUserIsAdmin = false,
+        McpCallerCredentialContext? callerCredentialContext = null)
     {
         var (effectiveChannelId, effectiveSenderId, effectiveSessionId) = ResolveTarget(request);
 
@@ -832,7 +834,8 @@ internal sealed class IntegrationApiFacade
             MessageId = request.MessageId,
             ReplyToMessageId = request.ReplyToMessageId,
             AuthenticatedUserId = authenticatedUserId,
-            AuthenticatedUserIsAdmin = authenticatedUserIsAdmin
+            AuthenticatedUserIsAdmin = authenticatedUserIsAdmin,
+            McpCallerCredentialContext = callerCredentialContext
         };
 
         if (!_runtime.Pipeline.InboundWriter.TryWrite(message))

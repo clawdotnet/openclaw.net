@@ -620,6 +620,11 @@ internal sealed class GatewayInboundMessageWorker
                             // Register session cancellation source so /stop can abort in-flight execution.
                             var abortCts = abortRegistry?.Register(session.Id, processingCt);
                             var executionCt = abortCts?.Token ?? processingCt;
+                            var callerCredentialContext = !Background.BackgroundExecutionLimiter.IsBackgroundContinuation(msg)
+                                && msg.McpCallerCredentialContext is { } messageCallerContext
+                                && messageCallerContext.ExpiresAtUtc > DateTimeOffset.UtcNow
+                                    ? messageCallerContext
+                                    : null;
 
                             if (useStreaming)
                             {
@@ -657,7 +662,11 @@ internal sealed class GatewayInboundMessageWorker
                                     }
 
                                     await foreach (var evt in agentRuntime.RunStreamingAsync(
-                                        session, messageText, executionCt, approvalCallback: approvalCallback))
+                                        session,
+                                        messageText,
+                                        executionCt,
+                                        approvalCallback: approvalCallback,
+                                        callerCredentialContext: callerCredentialContext))
                                     {
                                         if (string.Equals(evt.EnvelopeType, "assistant_done", StringComparison.Ordinal))
                                         {
@@ -819,7 +828,12 @@ internal sealed class GatewayInboundMessageWorker
 
                                     historyCountBefore = session.History.Count;
 
-                                    turnResult = await agentRuntime.RunTurnAsync(session, messageText, executionCt, approvalCallback: approvalCallback);
+                                    turnResult = await agentRuntime.RunTurnAsync(
+                                        session,
+                                        messageText,
+                                        executionCt,
+                                        approvalCallback: approvalCallback,
+                                        callerCredentialContext: callerCredentialContext);
                                     responseText = turnResult.Text;
                                 }
                                 finally

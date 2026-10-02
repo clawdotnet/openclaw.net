@@ -4,6 +4,8 @@ using System.Text.Json.Serialization;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Plugins;
+using OpenClaw.Core.Security;
 using OpenClaw.McpApp.Shared;
 
 namespace OpenClaw.McpApp;
@@ -19,6 +21,8 @@ public sealed class McpAppNativeTool : IToolWithContext
     private readonly string _remoteName;
     private readonly IMcpAppInfoProvider _app;
     private readonly bool _suppressStructuredContent;
+    private readonly IMcpDelegatedToolInvoker? _delegatedToolInvoker;
+    private readonly McpDelegatedCredentialsConfig? _delegatedCredentials;
 
     public McpAppNativeTool(
         McpClient client,
@@ -27,12 +31,16 @@ public sealed class McpAppNativeTool : IToolWithContext
         string description,
         string parameterSchema,
         IMcpAppInfoProvider app,
-        bool suppressStructuredContent = false)
+        bool suppressStructuredContent = false,
+        IMcpDelegatedToolInvoker? delegatedToolInvoker = null,
+        McpDelegatedCredentialsConfig? delegatedCredentials = null)
     {
         _client = client;
         _remoteName = remoteName;
         _app = app;
         _suppressStructuredContent = suppressStructuredContent;
+        _delegatedToolInvoker = delegatedToolInvoker;
+        _delegatedCredentials = delegatedCredentials;
         Name = localName;
         Description = description;
         ParameterSchema = parameterSchema;
@@ -87,12 +95,44 @@ public sealed class McpAppNativeTool : IToolWithContext
                 Meta = meta,
             };
 
-            var response = await _client.SendRequestAsync<CallToolRequestParams, CallToolResult>(
-                RequestMethods.ToolsCall,
-                callParams,
-                cancellationToken: ct);
-            var text = FormatResponseContent(response, _suppressStructuredContent);
-            var isError = response.IsError ?? false;
+            string text;
+            bool isError;
+            if (_delegatedCredentials?.Enabled == true)
+            {
+                if (_delegatedToolInvoker is null ||
+                    !string.Equals(_app.Transport, "http", StringComparison.Ordinal) ||
+                    _app.HttpEndpoint is not { } endpoint)
+                {
+                    throw new InvalidOperationException("Delegated MCP App invocation requires a configured HTTP invoker endpoint.");
+                }
+
+                var delegatedResponse = await _delegatedToolInvoker.InvokeAsync(
+                    new McpDelegatedToolCallRequest
+                    {
+                        EndpointId = _app.AppId,
+                        Endpoint = endpoint,
+                        StaticHeaders = _app.StaticHeaders,
+                        RequestTimeoutSeconds = _app.RequestTimeoutSeconds,
+                        Policy = _delegatedCredentials,
+                        RemoteToolName = _remoteName,
+                        ArgumentsJson = string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson,
+                        CallerCredentialContext = context?.McpCallerCredentialContext,
+                        SuppressStructuredContent = _suppressStructuredContent
+                    },
+                    ct);
+                text = delegatedResponse.ResponseText;
+                isError = delegatedResponse.IsError;
+            }
+            else
+            {
+                var response = await _client.SendRequestAsync<CallToolRequestParams, CallToolResult>(
+                    RequestMethods.ToolsCall,
+                    callParams,
+                    cancellationToken: ct);
+                text = FormatResponseContent(response, _suppressStructuredContent);
+                isError = response.IsError ?? false;
+            }
+
             return isError ? $"Error: {text}" : text;
         }
         catch (JsonException ex)
@@ -103,9 +143,15 @@ public sealed class McpAppNativeTool : IToolWithContext
         {
             throw;
         }
+        catch (McpDelegatedToolInvocationException ex)
+        {
+            return $"Error: {ex.FailureCode}";
+        }
         catch (Exception ex)
         {
-            return $"Error: MCP App tool '{Name}' from '{_app.AppId}' failed: {ex.Message}";
+            return _delegatedCredentials?.Enabled == true
+                ? "Error: MCP_DELEGATED_INVOCATION_FAILED"
+                : $"Error: MCP App tool '{Name}' from '{_app.AppId}' failed: {ex.Message}";
         }
     }
 
