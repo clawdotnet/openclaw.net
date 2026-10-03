@@ -136,7 +136,7 @@ OpenClaw 可以将每个传入的用户回合分类为 `T0` 到 `T3`，并将该
 
 路由管理的运维 CLI 表面：
 
-- [cli/routing.md](cli/routing.md)
+- [cli/routing.md](../cli/routing.md)
 
 回退语义：
 

@@ -313,7 +313,7 @@ public static class ResolverAccessor
 }
 ```
 
-> 注：`Reset` 是 `internal`；`OpenClaw.Tests` 已通过 `InternalsVisibleTo("OpenClaw.Tests")` 看到它（见 [OpenClaw.Core.csproj:11](src/OpenClaw.Core/OpenClaw.Core.csproj)）。
+> 注：`Reset` 是 `internal`；`OpenClaw.Tests` 已通过 `InternalsVisibleTo("OpenClaw.Tests")` 看到它（见 [OpenClaw.Core.csproj:11](../../../src/OpenClaw.Core/OpenClaw.Core.csproj)）。
 
 - [ ] **Step 8: 跑测试确认通过**
 
@@ -652,7 +652,7 @@ public interface ISyncSecretProvider : ISecretProvider
 
 - [ ] **Step 8: EnvRawSecretProvider 实现 ISyncSecretProvider**
 
-修改 [src/OpenClaw.Core/Security/EnvRawSecretProvider.cs](src/OpenClaw.Core/Security/EnvRawSecretProvider.cs)：类签名改为 `public sealed class EnvRawSecretProvider : ISecretProvider, ISyncSecretProvider`，新增成员：
+修改 [src/OpenClaw.Core/Security/EnvRawSecretProvider.cs](../../../src/OpenClaw.Core/Security/EnvRawSecretProvider.cs)：类签名改为 `public sealed class EnvRawSecretProvider : ISecretProvider, ISyncSecretProvider`，新增成员：
 
 ```csharp
 public string? ResolveSync(string secretRef) => ResolveInternal(secretRef);
@@ -704,7 +704,7 @@ Expected: 11 个 SecretResolver 相关测试 + 其他 SecurityTests 全绿。**�
 
 - [ ] **Step 2: 重写 SecretResolver 为门面**
 
-替换 [src/OpenClaw.Core/Security/SecretResolver.cs](src/OpenClaw.Core/Security/SecretResolver.cs) 全部内容：
+替换 [src/OpenClaw.Core/Security/SecretResolver.cs](../../../src/OpenClaw.Core/Security/SecretResolver.cs) 全部内容：
 
 ```csharp
 using Microsoft.Extensions.Logging;
@@ -950,7 +950,7 @@ Vault / OpenBao 后端密钥解析，基于 [VaultSharp](https://github.com/raja
 
 - [ ] **Step 3: 加入 slnx**
 
-修改 [OpenClaw.Net.slnx](OpenClaw.Net.slnx)：在 `/src/` Folder 内追加项目条目（位置：紧邻 `OpenClaw.SemanticKernelAdapter`）：
+修改 [OpenClaw.Net.slnx](../../../OpenClaw.Net.slnx)：在 `/src/` Folder 内追加项目条目（位置：紧邻 `OpenClaw.SemanticKernelAdapter`）：
 
 ```xml
 <Project Path="src/OpenClaw.Security.Vault/OpenClaw.Security.Vault.csproj" />
@@ -1173,7 +1173,7 @@ public sealed class VaultNotConfiguredException : SecretResolutionException
 
 - [ ] **Step 5: 在 ConfigValidator 中新增 Vault 校验**
 
-打开 [src/OpenClaw.Core/Validation/ConfigValidator.cs](src/OpenClaw.Core/Validation/ConfigValidator.cs)；找到 `Validate` 主方法或合适位置，新增方法：
+打开 [src/OpenClaw.Core/Validation/ConfigValidator.cs](../../../src/OpenClaw.Core/Validation/ConfigValidator.cs)；找到 `Validate` 主方法或合适位置，新增方法：
 
 ```csharp
 private static IEnumerable<string> ValidateVaultSecurity(VaultSecurityOptions v, SecurityOptions sec)
@@ -2452,7 +2452,7 @@ git commit -m "feat(vault): add VaultRefPrewarmService for startup pre-warm"
 
 - [ ] **Step 1: 找到 AddOpenClawBootstrapAsync 末尾位置**
 
-打开 [src/OpenClaw.Gateway/Bootstrap/GatewayBootstrapExtensions.cs](src/OpenClaw.Gateway/Bootstrap/GatewayBootstrapExtensions.cs)；找到 `var sp = builder.Services.BuildServiceProvider()` 之前或合适位置（构建 `IServiceProvider` 之前**不**能调 `Use`——必须在 `builder.Build()` 之后）。
+打开 [src/OpenClaw.Gateway/Bootstrap/GatewayBootstrapExtensions.cs](../../../src/OpenClaw.Gateway/Bootstrap/GatewayBootstrapExtensions.cs)；找到 `var sp = builder.Services.BuildServiceProvider()` 之前或合适位置（构建 `IServiceProvider` 之前**不**能调 `Use`——必须在 `builder.Build()` 之后）。
 
 最常见模式：在 `AddOpenClawBootstrapAsync` 的最后阶段，构造完 `WebApplication` 后立刻调 `ResolverAccessor.Use(app.Services)`。
 

@@ -307,7 +307,7 @@ Commands:
 - `exec_readonly_json`
 - `exec_workspace_write`
 
-Reference: [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive)
+Reference: [Codex non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode)
 
 ### Gemini CLI
 

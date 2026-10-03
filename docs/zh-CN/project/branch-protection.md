@@ -44,7 +44,7 @@ NativeAOT 发布检查很有价值，但可以根据运行时可靠性和发布�
 
 ## CODEOWNERS 关系
 
-仓库使用 [.github/CODEOWNERS](../../.github/CODEOWNERS) 为以下内容路由审查请求：
+仓库使用 [.github/CODEOWNERS](../../../.github/CODEOWNERS) 为以下内容路由审查请求：
 
 - 运行时核心
 - 网关和安全敏感接口

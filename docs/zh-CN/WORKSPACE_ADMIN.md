@@ -86,5 +86,5 @@ OpenClaw.NET 在 `/admin/workspace/*` 下暴露一组管理端点，用于工作
 
 - [MCP App](MCPAPP.md) — 基于清单发现的 MCP Apps（与工作区 MCP 分开）
 - [术语表](GLOSSARY.md) — 工作区管理定义
-- [安全](../SECURITY.md) — 整体安全态势
+- [安全](../../SECURITY.md) — 整体安全态势
 - [企业频道](ENTERPRISE_CHANNELS.md) — 企业 IM 频道适配器

@@ -7,9 +7,9 @@ Microsoft 公开参考资料目前展示了操作拦截和 .NET `GovernanceKerne
 相关上游参考资料：
 
 - [microsoft/agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit)
-- [Agent OS README](https://github.com/microsoft/agent-governance-toolkit/blob/main/packages/agent-os/README.md)
-- [Quickstart](https://github.com/microsoft/agent-governance-toolkit/blob/main/QUICKSTART.md)
-- [FAQ](https://github.com/microsoft/agent-governance-toolkit/blob/main/FAQ.md)
+- [Agent OS README](https://github.com/microsoft/agent-governance-toolkit/blob/main/agent-governance-python/agent-os/README.md)
+- [Quickstart](https://microsoft.github.io/agent-governance-toolkit/quickstart/)
+- [FAQ](https://github.com/microsoft/agent-governance-toolkit/blob/main/docs/FAQ.md)
 
 ## 本地配置
 

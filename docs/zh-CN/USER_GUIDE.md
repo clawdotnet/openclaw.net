@@ -2,7 +2,7 @@
 
 欢迎阅读 **OpenClaw.NET** 用户指南！本文档将带你了解核心概念、通过 API 密钥配置你首选的 AI 提供商，以及部署你的第一个 Agent。
 
-> 从早期版本升级？请参阅本指南末尾的[破坏性更改](#breaking-changes)。
+> 从早期版本升级？请参阅[英文用户指南中的破坏性更改](../USER_GUIDE.md#breaking-changes)。
 
 ## 推荐的首次运行
 

@@ -96,6 +96,6 @@ OpenClaw.NET 为飞书（Lark）、钉钉和企业微信提供一等企业 IM �
 
 - [能力矩阵](CAPABILITY_MATRIX.md) — 频道能力通道
 - [术语表](GLOSSARY.md) — 企业频道定义
-- [安全](../SECURITY.md) — 整体安全态势
+- [安全](../../SECURITY.md) — 整体安全态势
 - [Teams 设置](TEAMS_SETUP.md) — Microsoft Teams 频道
 - [WhatsApp 设置](WHATSAPP_SETUP.md) — WhatsApp 频道

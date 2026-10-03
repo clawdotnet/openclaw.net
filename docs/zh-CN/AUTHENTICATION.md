@@ -120,7 +120,7 @@ OpenClaw.NET 不声明完整符合 OAuth 2.1，不提供通用 OAuth 授权服�
 
 ### 3.1 HTTP API 认证流程
 
-HTTP API 端点使用 `AuthorizeOperatorRequest` 方法（[EndpointHelpers.cs](../src/OpenClaw.Gateway/Endpoints/EndpointHelpers.cs#L83)）：
+HTTP API 端点使用 `AuthorizeOperatorRequest` 方法（[EndpointHelpers.cs](../../src/OpenClaw.Gateway/Endpoints/EndpointHelpers.cs#L83)）：
 
 ```
 请求进入
@@ -403,16 +403,16 @@ if (!resp.ok) {
 
 | 文件 | 说明 |
 |------|------|
-| [GatewayConfig.cs](../src/OpenClaw.Core/Models/GatewayConfig.cs) | 认证配置模型（`SecurityConfig`, `OidcConfig`） |
-| [SecurityServicesExtensions.cs](../src/OpenClaw.Gateway/Composition/SecurityServicesExtensions.cs) | JWT Bearer 认证注册 |
-| [Program.cs](../src/OpenClaw.Gateway/Program.cs) | 中间件管道配置 |
-| [EndpointHelpers.cs](../src/OpenClaw.Gateway/Endpoints/EndpointHelpers.cs) | `IsAuthorizedRequest`, `AuthorizeOperatorRequest` |
-| [WebSocketEndpoints.cs](../src/OpenClaw.Gateway/Endpoints/WebSocketEndpoints.cs) | WebSocket 认证与用户解析 |
-| [GatewaySecurity.cs](../src/OpenClaw.Gateway/GatewaySecurity.cs) | 令牌提取与验证工具 |
-| [BrowserSessionAuthService.cs](../src/OpenClaw.Gateway/BrowserSessionAuthService.cs) | 浏览器会话管理 |
-| [OperatorAccountService.cs](../src/OpenClaw.Gateway/OperatorAccountService.cs) | 操作员账户与令牌管理 |
-| [OrganizationPolicyService.cs](../src/OpenClaw.Gateway/OrganizationPolicyService.cs) | 认证方式白名单策略 |
-| [webchat.js](../src/OpenClaw.Gateway/wwwroot/webchat.js) | 前端认证逻辑 |
+| [GatewayConfig.cs](../../src/OpenClaw.Core/Models/GatewayConfig.cs) | 认证配置模型（`SecurityConfig`, `OidcConfig`） |
+| [SecurityServicesExtensions.cs](../../src/OpenClaw.Gateway/Composition/SecurityServicesExtensions.cs) | JWT Bearer 认证注册 |
+| [Program.cs](../../src/OpenClaw.Gateway/Program.cs) | 中间件管道配置 |
+| [EndpointHelpers.cs](../../src/OpenClaw.Gateway/Endpoints/EndpointHelpers.cs) | `IsAuthorizedRequest`, `AuthorizeOperatorRequest` |
+| [WebSocketEndpoints.cs](../../src/OpenClaw.Gateway/Endpoints/WebSocketEndpoints.cs) | WebSocket 认证与用户解析 |
+| [GatewaySecurity.cs](../../src/OpenClaw.Gateway/GatewaySecurity.cs) | 令牌提取与验证工具 |
+| [BrowserSessionAuthService.cs](../../src/OpenClaw.Gateway/BrowserSessionAuthService.cs) | 浏览器会话管理 |
+| [OperatorAccountService.cs](../../src/OpenClaw.Gateway/OperatorAccountService.cs) | 操作员账户与令牌管理 |
+| [OrganizationPolicyService.cs](../../src/OpenClaw.Gateway/OrganizationPolicyService.cs) | 认证方式白名单策略 |
+| [webchat.js](../../src/OpenClaw.Gateway/wwwroot/webchat.js) | 前端认证逻辑 |
 
 ---
 
