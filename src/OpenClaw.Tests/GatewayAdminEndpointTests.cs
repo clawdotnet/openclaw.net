@@ -1016,6 +1016,34 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.False(harness.Runtime.Pipeline.InboundReader.TryRead(out _));
     }
 
+    [Fact]
+    public async Task MetaInvocationEndpoint_WhenExecutionCompletes_ShouldPersistRestoredSessionState()
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "meta-invoke-persist", OperatorRoleNames.Operator);
+        const string sessionId = "meta-invoke-persist-session";
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync(
+            sessionId, "integration-api", "meta-invoke-persist", CancellationToken.None, ownerAccountId: accountId);
+        session.AuthenticatedUserId = "pre-existing-user";
+        harness.Runtime.AgentRuntime.InvokeMetaSkillAsync(
+                Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callInfo.ArgAt<Session>(0).ModelOverride = "persisted-meta-state";
+                return Task.FromResult("direct DAG result");
+            });
+
+        using var response = await PostMetaInvocationAsync(
+            harness, token, "persist-key", "named-skill", "explicit input", sessionId);
+        harness.Runtime.SessionManager.RemoveActive(sessionId);
+        var reloaded = await harness.Runtime.SessionManager.LoadAsync(sessionId, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(reloaded);
+        Assert.Equal("persisted-meta-state", reloaded.ModelOverride);
+        Assert.Equal("pre-existing-user", reloaded.AuthenticatedUserId);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

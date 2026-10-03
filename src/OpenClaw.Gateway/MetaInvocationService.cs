@@ -75,37 +75,40 @@ public sealed class MetaInvocationService(
             }
 
             var authenticatedUserId = session.AuthenticatedUserId;
+            string result;
             try
             {
                 session.AuthenticatedUserId = accountId;
-                var result = await agentRuntime.InvokeMetaSkillAsync(session, request.Skill, request.Input, cancellationToken);
-                try
-                {
-                    await store.CompleteAsync(callerId, idempotencyKey, result, CancellationToken.None);
-                }
-                catch (Exception exception)
-                {
-                    logger.LogError(exception,
-                        "Failed to persist the completed result for MetaSkill invocation {InvocationId}.",
-                        claim.Record.InvocationId);
-                    const string error = "MetaSkill execution completed, but its result could not be persisted; do not retry automatically.";
-                    var persisted = await TryMarkUncertainAsync(callerId, idempotencyKey, error, claim.Record.InvocationId);
-                    var responseError = persisted
-                        ? error
-                        : $"{error} The uncertain state could not be persisted either.";
-                    return new MetaInvocationExecutionResult(
-                        StatusCodes.Status409Conflict,
-                        ToResponse(claim.Record with { Status = MetaInvocationStatus.Uncertain, Error = responseError }, result: null));
-                }
-
-                return new MetaInvocationExecutionResult(
-                    StatusCodes.Status200OK,
-                    ToResponse(claim.Record with { Status = MetaInvocationStatus.Completed, Result = result, Error = null }));
+                result = await agentRuntime.InvokeMetaSkillAsync(session, request.Skill, request.Input, cancellationToken);
             }
             finally
             {
                 session.AuthenticatedUserId = authenticatedUserId;
             }
+
+            try
+            {
+                await sessionManager.PersistAsync(session, CancellationToken.None, sessionLockHeld: true);
+                await store.CompleteAsync(callerId, idempotencyKey, result, CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(exception,
+                    "Failed to persist the session or completed result for MetaSkill invocation {InvocationId}.",
+                    claim.Record.InvocationId);
+                const string error = "MetaSkill execution completed, but its session or result could not be persisted; do not retry automatically.";
+                var persisted = await TryMarkUncertainAsync(callerId, idempotencyKey, error, claim.Record.InvocationId);
+                var responseError = persisted
+                    ? error
+                    : $"{error} The uncertain state could not be persisted either.";
+                return new MetaInvocationExecutionResult(
+                    StatusCodes.Status409Conflict,
+                    ToResponse(claim.Record with { Status = MetaInvocationStatus.Uncertain, Error = responseError }, result: null));
+            }
+
+            return new MetaInvocationExecutionResult(
+                StatusCodes.Status200OK,
+                ToResponse(claim.Record with { Status = MetaInvocationStatus.Completed, Result = result, Error = null }));
         }
         catch (Exception exception)
         {
