@@ -56,6 +56,8 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [SESSIONS.md](SESSIONS.md) | Session lifecycle, the `SessionManager`, `sessions_spawn` / `sessions_yield` / `sessions` tools, and per-turn token accounting semantics (turn/session/runtime/provider views). |
 | [CANVAS_A2UI.md](CANVAS_A2UI.md) | Supported Canvas and A2UI behavior for agent-rendered visual workspaces. |
 | [integrations/microsoft-agent-framework.md](integrations/microsoft-agent-framework.md) | Supported optional Microsoft Agent Framework runtime adapter, runtime selection, A2A setup, and migration from old experimental config. |
+| [integrations/meta-skill-invocation-api.md](integrations/meta-skill-invocation-api.md) | Authenticated direct MetaSkill invocation, idempotency behavior, response states, and recovery expectations. |
+| [zh-CN/integrations/meta-skill-invocation-api.md](zh-CN/integrations/meta-skill-invocation-api.md) | MetaSkill 直接调用 API 的身份验证、幂等行为、响应状态和恢复说明（简体中文）。 |
 | [workflow-backends.md](workflow-backends.md) | Durable workflow delegation, `maf-durable-http`, integration API and MCP tools, status model, and sample host. |
 | [a2a.md](a2a.md) | A2A v1 discovery, endpoint, authentication, and deployment contract through the Microsoft Agent Framework adapter. |
 | [MODEL_PROFILES.md](MODEL_PROFILES.md) | Provider-agnostic named model profiles, including Gemma-family setups. |

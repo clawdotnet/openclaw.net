@@ -4,6 +4,7 @@ using OpenClaw.Core.Sessions;
 using System.Text.Json;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
+using OpenClaw.Gateway.Models;
 using OpenClaw.Payments.Abstractions;
 using OpenClaw.Payments.Core;
 
@@ -19,6 +20,66 @@ internal static class IntegrationEndpoints
         var browserSessions = app.Services.GetRequiredService<BrowserSessionAuthService>();
         var facade = IntegrationApiFacade.Create(startup, runtime, app.Services);
         var group = app.MapGroup("/api/integration").WithTags("OpenClaw Integration");
+
+        group.MapPost("/meta-invocations", async (HttpContext ctx) =>
+        {
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.mutate", requireCsrf: true);
+            if (failure is not null)
+                return failure;
+
+            var idempotencyHeaders = ctx.Request.Headers["Idempotency-Key"];
+            if (idempotencyHeaders.Count != 1 || string.IsNullOrWhiteSpace(idempotencyHeaders[0]))
+                return BadIntegrationRequest("Idempotency-Key header is required.");
+            var idempotencyKey = idempotencyHeaders[0]!;
+            if (idempotencyKey.Length > 200)
+                return BadIntegrationRequest("Idempotency-Key must not exceed 200 characters.");
+
+            MetaSkillInvocationRequest? request;
+            try
+            {
+                request = await JsonSerializer.DeserializeAsync(
+                    ctx.Request.Body,
+                    MetaInvocationJsonContext.Default.MetaSkillInvocationRequest,
+                    ctx.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                return BadIntegrationRequest("Invalid JSON request body.");
+            }
+            catch (NotSupportedException)
+            {
+                return BadIntegrationRequest("Invalid JSON request body.");
+            }
+
+            if (request is null)
+                return BadIntegrationRequest("request body is required.");
+            if (string.IsNullOrWhiteSpace(request.Skill))
+                return BadIntegrationRequest("skill is required.");
+            if (string.IsNullOrWhiteSpace(request.SessionId))
+                return BadIntegrationRequest("sessionId is required.");
+
+            var caller = EndpointHelpers.ResolveCaller(ctx, startup);
+            var outcome = await facade.InvokeMetaSkillAsync(
+                caller.AccountId ?? "bootstrap",
+                caller.AccountId,
+                caller.IsAdmin,
+                idempotencyKey,
+                request,
+                ctx.RequestAborted);
+
+            if (outcome.Response is not null)
+            {
+                return Results.Json(
+                    outcome.Response,
+                    MetaInvocationJsonContext.Default.MetaInvocationResponse,
+                    statusCode: outcome.StatusCode);
+            }
+
+            return Results.Json(
+                new OperationStatusResponse { Success = false, Error = outcome.Error },
+                CoreJsonContext.Default.OperationStatusResponse,
+                statusCode: outcome.StatusCode);
+        });
 
         group.MapGet("/capabilities", (HttpContext ctx) =>
         {

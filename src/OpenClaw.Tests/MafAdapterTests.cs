@@ -913,6 +913,65 @@ public sealed class MafAdapterTests
     }
 
     [Fact]
+    public async Task InvokeMetaSkillAsync_WhenSkillIsExplicit_ShouldExecuteThatMetaSkillDag()
+    {
+        var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-explicit-meta-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+
+        try
+        {
+            var firstTool = new ArgumentEchoMafTool("first_tool");
+            var secondTool = new ArgumentEchoMafTool("second_tool");
+
+            static SkillDefinition CreateMetaSkill(string name, string toolName) => new()
+            {
+                Name = name,
+                Description = name,
+                Instructions = "...",
+                Location = $"/skills/{name}",
+                Kind = SkillKind.Meta,
+                FinalTextMode = "step:invoke",
+                Composition = new MetaSkillComposition
+                {
+                    Steps =
+                    [
+                        new MetaSkillStepDefinition
+                        {
+                            Id = "invoke",
+                            Kind = "tool_call",
+                            Tool = toolName,
+                            WithJson = """{"value":"{{input}}"}"""
+                        }
+                    ]
+                }
+            };
+
+            var runtime = CreateRuntime(
+                storagePath,
+                new TestLlmExecutionService(),
+                new MafOptions(),
+                tools: [firstTool, secondTool],
+                skills: [CreateMetaSkill("first-skill", firstTool.Name), CreateMetaSkill("second-skill", secondTool.Name)]);
+            var session = CreateSession("maf-explicit-meta-session");
+
+            var result = await runtime.InvokeMetaSkillAsync(
+                session,
+                "second-skill",
+                "explicit input",
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(0, firstTool.CallCount);
+            Assert.Equal(1, secondTool.CallCount);
+            Assert.Contains("explicit input", secondTool.LastArguments, StringComparison.Ordinal);
+            Assert.Contains("explicit input", result, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task MafAgentRuntime_ExecuteMetaSkillAsync_StructuredMode_MissingDependency_ReturnsStructuredError()
     {
         var storagePath = Path.Join(Path.GetTempPath(), "openclaw-maf-meta-structured-tests", Guid.NewGuid().ToString("N"));
@@ -4132,6 +4191,23 @@ public sealed class MafAdapterTests
 
     private static string NormalizeJson(JsonElement element)
         => JsonSerializer.Serialize(element, new JsonSerializerOptions { WriteIndented = false });
+
+    private sealed class ArgumentEchoMafTool(string name) : ITool
+    {
+        public int CallCount { get; private set; }
+        public string LastArguments { get; private set; } = string.Empty;
+        public string Name { get; } = name;
+        public string Description => "Returns its arguments for the MetaSkill test.";
+        public string ParameterSchema => """{"type":"object","properties":{"value":{"type":"string"}}}""";
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        {
+            _ = ct;
+            CallCount++;
+            LastArguments = argumentsJson;
+            return ValueTask.FromResult(argumentsJson);
+        }
+    }
 
     private sealed class TestTool(string name = "echo_tool") : ITool
     {

@@ -11,6 +11,10 @@ internal static class SecurityServicesExtensions
 {
     public static IServiceCollection AddOpenClawSecurityServices(this IServiceCollection services, GatewayStartupContext startup)
     {
+        services.AddSingleton(sp => new MetaInvocationStore(
+            startup.Config.Memory.StoragePath,
+            startup.Config.MetaInvocations.RetentionDays));
+        services.AddHostedService(sp => sp.GetRequiredService<MetaInvocationStore>());
         services.AddSingleton(sp => new DeviceEnrollmentService(sp.GetRequiredService<OperatorAccountService>(), TimeProvider.System));
         // Register OIDC/JWT Bearer authentication when an OIDC Authority is configured,
         // regardless of AuthMode. This allows JWT tokens (e.g. from the web chat's

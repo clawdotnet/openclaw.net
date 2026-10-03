@@ -165,7 +165,7 @@ Routing CLI 详细命令见 [../cli/routing.md](../cli/routing.md)。
 
 ## Dashboard 入口
 
-仪表板现在提供了一个只读的动态路由页面：[src/OpenClaw.Dashboard/Pages/DynamicRouting.razor](../src/OpenClaw.Dashboard/Pages/DynamicRouting.razor)，并且已经通过 [src/OpenClaw.Dashboard/Layout/NavMenu.razor](../src/OpenClaw.Dashboard/Layout/NavMenu.razor) 加入管理侧导航。
+仪表板现在提供了一个只读的动态路由页面：[src/OpenClaw.Dashboard/Pages/DynamicRouting.razor](../../src/OpenClaw.Dashboard/Pages/DynamicRouting.razor)，并且已经通过 [src/OpenClaw.Dashboard/Layout/NavMenu.razor](../../src/OpenClaw.Dashboard/Layout/NavMenu.razor) 加入管理侧导航。
 
 这个页面直接展示 `admin/providers` 的实时视图，包括：
 

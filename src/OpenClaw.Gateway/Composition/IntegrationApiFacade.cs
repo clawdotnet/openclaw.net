@@ -6,6 +6,7 @@ using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Bootstrap;
+using OpenClaw.Gateway.Models;
 using OpenClaw.Gateway.Workflows;
 
 namespace OpenClaw.Gateway.Composition;
@@ -25,6 +26,7 @@ internal sealed class IntegrationApiFacade
     private readonly GatewayMaintenanceRuntimeService? _maintenanceService;
     private readonly AgentWorkflowRegistry _workflows;
     private readonly IGoalService? _goalService;
+    private readonly MetaInvocationService _metaInvocationService;
 
     public static IntegrationApiFacade Create(
         GatewayStartupContext startup,
@@ -58,7 +60,13 @@ internal sealed class IntegrationApiFacade
             toolPresetResolver,
             textToSpeechService,
             maintenanceService,
-            workflows, services.GetService<IGoalService>());
+            workflows,
+            new MetaInvocationService(
+                services.GetRequiredService<MetaInvocationStore>(),
+                runtime.SessionManager,
+                runtime.AgentRuntime,
+                services.GetRequiredService<ILogger<MetaInvocationService>>()),
+            services.GetService<IGoalService>());
     }
 
     public IntegrationApiFacade(
@@ -74,6 +82,7 @@ internal sealed class IntegrationApiFacade
         TextToSpeechService? textToSpeechService,
         GatewayMaintenanceRuntimeService? maintenanceService,
         AgentWorkflowRegistry workflows,
+        MetaInvocationService metaInvocationService,
         IGoalService? goalService = null)
     {
         _goalService = goalService;
@@ -89,7 +98,17 @@ internal sealed class IntegrationApiFacade
         _textToSpeechService = textToSpeechService;
         _maintenanceService = maintenanceService;
         _workflows = workflows;
+        _metaInvocationService = metaInvocationService;
     }
+
+    public Task<MetaInvocationExecutionResult> InvokeMetaSkillAsync(
+        string callerId,
+        string? accountId,
+        bool isAdmin,
+        string idempotencyKey,
+        MetaSkillInvocationRequest request,
+        CancellationToken cancellationToken)
+        => _metaInvocationService.InvokeAsync(callerId, accountId, isAdmin, idempotencyKey, request, cancellationToken);
 
     public IntegrationStatusResponse BuildStatusResponse()
     {

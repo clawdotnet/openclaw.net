@@ -51,6 +51,8 @@ OpenClaw.NET 是你今天就可以使用的运行时和仓库。AgentQiX 是未�
 - **Codebase Harness Map**，通过 `openclaw harness map` 生成项目、模块、端点、工具、provider、频道、配置和测试的被动静态仓库地图
 - **OpenClaw SkillKit**，通过 `openclaw skill` 进行本地优先的技能编写、验证、评审、打包和演练执行规划
 - **一流 MCP App 支持**，通过 manifest 发现第三方 MCP App，管理生命周期、桥接工具并暴露交互式 UI 资源
+- **MetaSkill 多步任务编排**，将 Skills、工具和 LLM 调用组织为可复用、可审计的依赖 DAG，支持并行执行、失败回退和人工输入暂停（[用户指南](docs/zh-CN/meta-skill-user-guide.md)）
+- **MetaSkill 调用 API**，可在现有会话中直接执行指定的 DAG，并通过幂等键持久化去重和重放结果（[API 文档](docs/zh-CN/integrations/meta-skill-invocation-api.md)）
 - **会话级 `/goal` 自动继续机制**，用于需要持续执行直到完成、阻塞或达到预算限制的长任务
 - **TokenJuice 输出压缩**，在工具输出进入模型上下文前进行确定性、规则驱动的压缩
 - **一流的可选 Microsoft Agent Framework 适配器**，通过 `Runtime.Orchestrator=maf` 使用，无需特殊构建

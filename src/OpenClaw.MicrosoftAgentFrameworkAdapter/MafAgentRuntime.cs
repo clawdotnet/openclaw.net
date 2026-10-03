@@ -248,6 +248,13 @@ public sealed class MafAgentRuntime : IAgentRuntime
         return result.Text;
     }
 
+    public Task<string> InvokeMetaSkillAsync(
+        Session session,
+        string skillName,
+        string? input,
+        CancellationToken cancellationToken = default)
+        => ExecuteMetaSkillWithCallerContextAsync(session, skillName, input, cancellationToken, callerCredentialContext: null);
+
     public async Task<Agent.AgentTurnResult> RunTurnAsync(
         Session session,
         string userMessage,

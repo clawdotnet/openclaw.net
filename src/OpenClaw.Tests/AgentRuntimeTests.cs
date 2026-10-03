@@ -620,6 +620,56 @@ public class AgentRuntimeTests
     }
 
     [Fact]
+    public async Task InvokeMetaSkillAsync_WhenSkillIsExplicit_ShouldExecuteThatMetaSkillDag()
+    {
+        var firstTool = new ArgumentEchoTool("first_tool");
+        var secondTool = new ArgumentEchoTool("second_tool");
+
+        static SkillDefinition CreateMetaSkill(string name, string toolName) => new()
+        {
+            Name = name,
+            Description = name,
+            Instructions = "...",
+            Location = $"/skills/{name}",
+            Kind = SkillKind.Meta,
+            FinalTextMode = "step:invoke",
+            Composition = new MetaSkillComposition
+            {
+                Steps =
+                [
+                    new MetaSkillStepDefinition
+                    {
+                        Id = "invoke",
+                        Kind = "tool_call",
+                        Tool = toolName,
+                        WithJson = """{"value":"{{input}}"}"""
+                    }
+                ]
+            }
+        };
+
+        var runtime = new AgentRuntime(
+            _chatClient,
+            [firstTool, secondTool],
+            _memory,
+            _config,
+            maxHistoryTurns: 5,
+            skills: [CreateMetaSkill("first-skill", firstTool.Name), CreateMetaSkill("second-skill", secondTool.Name)]);
+        var session = new Session { Id = "explicit-meta-session", SenderId = "user1", ChannelId = "test-channel" };
+
+        var result = await runtime.InvokeMetaSkillAsync(
+            session,
+            "second-skill",
+            "explicit input",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, firstTool.CallCount);
+        Assert.Equal(1, secondTool.CallCount);
+        Assert.Contains("explicit input", secondTool.LastArguments, StringComparison.Ordinal);
+        Assert.Contains("explicit input", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ExecuteMetaSkillAsync_ToolStepFailure_StopsWhenContinueOnErrorIsFalse()
     {
         var failingTool = new ThrowingTool("failing_tool", "boom");
@@ -3085,6 +3135,23 @@ public class AgentRuntimeTests
         var task = method!.Invoke(runtime, [session, skillName, input, ct]) as Task<string>;
         Assert.NotNull(task);
         return await task!;
+    }
+
+    private sealed class ArgumentEchoTool(string name) : ITool
+    {
+        public int CallCount { get; private set; }
+        public string LastArguments { get; private set; } = string.Empty;
+        public string Name { get; } = name;
+        public string Description => "Returns its arguments for the MetaSkill test.";
+        public string ParameterSchema => """{"type":"object","properties":{"value":{"type":"string"}}}""";
+
+        public ValueTask<string> ExecuteAsync(string argumentsJson, CancellationToken ct)
+        {
+            _ = ct;
+            CallCount++;
+            LastArguments = argumentsJson;
+            return ValueTask.FromResult(argumentsJson);
+        }
     }
 
     private sealed class CountingTool(string name, string result) : ITool

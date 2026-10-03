@@ -307,6 +307,19 @@ public sealed class DelegateToolTests
             return Task.FromResult(AgentTurnResult.Completed(response));
         }
 
+        public Task<string> InvokeMetaSkillAsync(
+            Session session,
+            string skillName,
+            string? input,
+            CancellationToken cancellationToken = default)
+        {
+            _ = skillName;
+            _ = input;
+            _ = cancellationToken;
+            mutateSession?.Invoke(session);
+            return Task.FromResult(response);
+        }
+
         public Task<IReadOnlyList<string>> ReloadSkillsAsync(CancellationToken ct = default)
         {
             _ = ct;
