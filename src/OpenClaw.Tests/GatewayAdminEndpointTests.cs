@@ -675,6 +675,9 @@ public sealed partial class GatewayAdminEndpointTests
         public IEnumerable<string> Warnings
             => _entries.Where(static entry => entry.Level == LogLevel.Warning).Select(static entry => entry.Message);
 
+        public IEnumerable<string> Errors
+            => _entries.Where(static entry => entry.Level == LogLevel.Error).Select(static entry => entry.Message);
+
         public ILogger CreateLogger(string categoryName) => new CapturingLogger(_entries);
 
         public void Dispose()
@@ -991,8 +994,9 @@ public sealed partial class GatewayAdminEndpointTests
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
         var (token, accountId) = CreateAccountTokenWithId(harness, "meta-invoke-direct", OperatorRoleNames.Operator);
         const string sessionId = "meta-invoke-direct-session";
-        await harness.Runtime.SessionManager.GetOrCreateByIdAsync(
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync(
             sessionId, "integration-api", "meta-invoke-direct", CancellationToken.None, ownerAccountId: accountId);
+        session.AuthenticatedUserId = "pre-existing-user";
         harness.Runtime.AgentRuntime.InvokeMetaSkillAsync(
                 Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult("direct DAG result"));
@@ -1008,7 +1012,62 @@ public sealed partial class GatewayAdminEndpointTests
             "named-skill",
             "explicit input",
             Arg.Any<CancellationToken>());
+        Assert.Equal("pre-existing-user", session.AuthenticatedUserId);
         Assert.False(harness.Runtime.Pipeline.InboundReader.TryRead(out _));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MetaInvocationEndpoint_WhenRuntimeFailsOrCancels_ShouldRestoreAuthenticatedUserId(bool cancelExecution)
+    {
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);
+        var (token, accountId) = CreateAccountTokenWithId(harness, "meta-invoke-restore", OperatorRoleNames.Operator);
+        const string sessionId = "meta-invoke-restore-session";
+        var session = await harness.Runtime.SessionManager.GetOrCreateByIdAsync(
+            sessionId, "integration-api", "meta-invoke-restore", CancellationToken.None, ownerAccountId: accountId);
+        session.AuthenticatedUserId = "pre-existing-user";
+        var invocation = harness.Runtime.AgentRuntime.InvokeMetaSkillAsync(
+            Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        if (cancelExecution)
+            invocation.Returns(Task.FromCanceled<string>(new CancellationToken(canceled: true)));
+        else
+            invocation.Returns<Task<string>>(_ => throw new InvalidOperationException("runtime failed"));
+
+        using var response = await PostMetaInvocationAsync(
+            harness, token, "restore-key", "named-skill", "input", sessionId);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("pre-existing-user", session.AuthenticatedUserId);
+    }
+
+    [Fact]
+    public async Task MetaInvocationEndpoint_WhenTerminalStateCannotBePersisted_ShouldReturnConflict()
+    {
+        var logs = new CapturingLoggerProvider();
+        await using var harness = await CreateHarnessAsync(
+            nonLoopbackBind: true,
+            configureServices: (services, _) => services.AddSingleton<ILoggerProvider>(logs));
+        var (token, accountId) = CreateAccountTokenWithId(harness, "meta-invoke-persistence", OperatorRoleNames.Operator);
+        const string sessionId = "meta-invoke-persistence-session";
+        await harness.Runtime.SessionManager.GetOrCreateByIdAsync(
+            sessionId, "integration-api", "meta-invoke-persistence", CancellationToken.None, ownerAccountId: accountId);
+        harness.Runtime.AgentRuntime.InvokeMetaSkillAsync(
+                Arg.Any<Session>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await File.WriteAllTextAsync(Path.Combine(harness.StoragePath, "meta-invocations.json"), "invalid ledger");
+                return "runtime result";
+            });
+
+        using var response = await PostMetaInvocationAsync(
+            harness, token, "persistence-key", "named-skill", "input", sessionId);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("persist", document.RootElement.GetProperty("error").GetString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(logs.Errors, message => message.Contains("completed result", StringComparison.Ordinal));
+        Assert.Contains(logs.Errors, message => message.Contains("uncertain state", StringComparison.Ordinal));
     }
 
     [Fact]

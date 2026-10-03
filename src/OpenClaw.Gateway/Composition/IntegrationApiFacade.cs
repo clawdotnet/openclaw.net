@@ -64,7 +64,8 @@ internal sealed class IntegrationApiFacade
             new MetaInvocationService(
                 services.GetRequiredService<MetaInvocationStore>(),
                 runtime.SessionManager,
-                runtime.AgentRuntime),
+                runtime.AgentRuntime,
+                services.GetRequiredService<ILogger<MetaInvocationService>>()),
             services.GetService<IGoalService>());
     }
 
