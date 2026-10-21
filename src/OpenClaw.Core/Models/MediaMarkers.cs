@@ -1,20 +1,41 @@
 namespace OpenClaw.Core.Models;
 
+/// <summary>
+/// Marker kinds. The numeric values are persisted — see the remarks.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <see cref="ChatAttachmentRef.Kind"/> is written into session history as its ordinal, because
+/// <c>CoreJsonContext</c> has no string-enum converter. That makes the numbers below an on-disk
+/// contract rather than an implementation detail: without the explicit values, inserting a kind
+/// anywhere but the end would silently reinterpret every stored session, and nothing would fail —
+/// the wrong media class would simply be sent to the provider on the next load.
+/// </para>
+/// <para>
+/// So each value is spelled out. New kinds take the next free number and are appended; existing
+/// numbers are never reused or renumbered, even for a kind that is retired.
+/// <c>MediaMarkerKindPersistenceTests</c> pins them. Note what an explicit value does to the usual
+/// mistake: a mid-list insertion written without a value does not shift its neighbours, it becomes an
+/// <em>alias</em> of whichever kind already owns <c>previous + 1</c>. That is still wrong — the two
+/// kinds become interchangeable — so the tests reject duplicate numbers, and a <c>switch</c> over the
+/// kinds usually rejects the alias at compile time as an unreachable arm.
+/// </para>
+/// </remarks>
 public enum MediaMarkerKind : byte
 {
-    ImageUrl,
-    ImagePath,
-    FileUrl,
-    FilePath,
-    TelegramImageFileId,
-    TelegramVideoFileId,
-    TelegramAudioFileId,
-    TelegramDocumentFileId,
-    TelegramStickerFileId,
-    VideoUrl,
-    AudioUrl,
-    DocumentUrl,
-    StickerUrl
+    ImageUrl = 0,
+    ImagePath = 1,
+    FileUrl = 2,
+    FilePath = 3,
+    TelegramImageFileId = 4,
+    TelegramVideoFileId = 5,
+    TelegramAudioFileId = 6,
+    TelegramDocumentFileId = 7,
+    TelegramStickerFileId = 8,
+    VideoUrl = 9,
+    AudioUrl = 10,
+    DocumentUrl = 11,
+    StickerUrl = 12
 }
 
 public sealed record MediaMarker(MediaMarkerKind Kind, string Value);
