@@ -325,7 +325,7 @@ P1 已实现（`src/OpenClaw.Tests/AttachmentReferenceTests.cs`）的用例标�
 | 去重 | 同一来源在窗口内出现两次 → 只产生一个 `DataContent`，且只读一次盘 | ✅ P2（按来源，非摘要） |
 | 资产缺失 | 尺寸探测返回 null、`FailureMode = placeholder` → 占位符，不抛 | ✅ P2 |
 | 资产缺失 + fail | 同上但 `FailureMode = fail` → 抛出 `AttachmentUnavailableException`（带 `Attachment`） | ✅ P2 |
-| MAF parity | 同一 fixture 在两个运行时下构建的消息，`AIContent` 种类与顺序一致 | ✅ P2（结构等价，见下） |
+| MAF parity | 同一 fixture 在两个运行时下构建的消息，`AIContent` 种类与顺序一致 | ✅ P2（结构等价）；后续补了真夹具 `RuntimeParityTests`，见 P2 偏差 3 |
 | 云端形态 | 本地文件引用内联后不出现 `file://`（断言所有 `UriContent.Uri.Scheme != "file"`） | ✅ P2 |
 | 回滚开关 | `ReferenceMode = false` → 新会话也走 legacy 路径，**连 `file://` 一起退化回去** | ✅ P2 |
 | 远端不占预算 | `[IMAGE_URL:]` 在 `MaxInlineBytesPerRequest = 1` 下仍然内联为 `UriContent`，且零读盘 | ✅ P2 |
@@ -400,7 +400,9 @@ P1 单独可发布且行为等价，这是刻意的——格式变更与行为�
 
 2. **去重键从「摘要」改成「来源」。** 原文 `DeduplicateByDigest`，实现与配置都叫 `DeduplicateBySource`。算摘要要先读字节，而**读字节正是要避免的动作**：一张 30 MB 的图如果为了让判重先算一次 SHA-256，预算就成了摆设。改为按归一化来源判重（本地路径 `Path.GetFullPath` + Windows 下忽略大小写；远端 `Uri.AbsoluteUri` 区分大小写），零 IO、零内存。代价：同一个文件被复制成两个路径时不会被判重。
 
-3. **架构测试未补，MAF parity 只能做到结构等价。** 原文要求「同一 fixture 在两个运行时下构建的消息一致」。`MafAgentRuntime` 的构造需要 `MafOptions` / `MafAgentFactory` / `MafSessionStateStore` / `MafTelemetryAdapter` 整套 MAF 服务图，为本轮造这个夹具的收益低于它带来的脆弱性。改为：断言 `AgentPromptContextAssembler` 产出的历史部分与 `ChatMessageComposer` 完全一致（`Both_runtimes_compose_history_through_one_implementation`），再靠「MAF 侧已无自建消息逻辑」这个结构性事实兜住。架构测试留到 P3 与「禁止第二处 marker 解析」一起补。
+3. **架构测试与双运行时夹具都推迟了。** 原文要求「同一 fixture 在两个运行时下构建的消息一致」。当时 `MafAgentRuntime` 的构造需要 `MafOptions` / `MafAgentFactory` / `MafSessionStateStore` / `MafTelemetryAdapter` 整套 MAF 服务图，为本轮造这个夹具的收益低于它带来的脆弱性。改为：断言 `AgentPromptContextAssembler` 产出的历史部分与 `ChatMessageComposer` 完全一致（`Both_runtimes_compose_history_through_one_implementation`），再靠「MAF 侧已无自建消息逻辑」这个结构性事实兜住。架构测试留到 P3 与「禁止第二处 marker 解析」一起补。
+
+   **双运行时夹具后来补上了**（`RuntimeParityTests`）。当初「需要整套服务图」这个判断**是错的**：最小图（空 service provider、无工具无技能、一个录制的 `ILlmExecutionService`）就能跑完一轮，`AgentRuntime` 那边更省。夹具钉三件事——落盘 turn 逐字段一致（kind/value/mimeType/fileName/assetId）、两边都把缓存字节送到模型、`ReferenceMode=false` 时两边同样回退成 marker 文本；并且用变异验证过：把 MAF 写入路径硬编码 `true` 只红第三条，硬编码 `false` 只红前两条。唯一没法消除的不对称是**捕获点**（自研走 `IChatClient`，MAF 走 `ILlmExecutionService`），这也是夹具按「每运行时一个 harness」而不是「每断言一个」写的原因。
 
 ### 实现期发现的两处连带修改
 
