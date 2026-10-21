@@ -297,7 +297,8 @@ Composer 遍历历史窗口
   - 三个根都查过：仓库内 `src/OpenClaw.Gateway/skills`（11 个技能）、部署的托管根 `~/.openclaw/skills`（1 个：`it-contract-review`）、`extensions`（空）。workspace 根配的是容器路径 `/home/node/.openclaw/workspace`，本机不存在、无内容。全部没有按 marker 判断的逻辑。
   - 侧向收益：预览文本以前会把 `[IMAGE_URL:…]` 连同真实 URL 一起打进技能输出，现在只剩纯文本。
   - 已固化为格式级测试 `Persisted_history_stays_readable_for_role_and_content_consumers`：断言 `role`/`content` 仍在、`content` 内无 marker、`attachments` 结构可读。**它守不住第三方技能自己的判断逻辑**，只能保证格式层面的加法约定。
-  - 一个附带事实：`CoreJsonContext` 没有字符串枚举转换器，`attachments[].kind` 落盘为**枚举序号**。外部脚本读它时不能假设跨版本稳定（重排 `MediaMarkerKind` 会改变含义）——需要用就按 `value`/`assetId`，或先补 `JsonStringEnumConverter`。
+  - **已修**：`attachments[].kind` 原本落盘为**枚举序号**（`CoreJsonContext` 没有字符串枚举转换器）。现在 `MediaMarkerKind` 上挂了 `[JsonConverter(typeof(JsonStringEnumConverter<MediaMarkerKind>))]`，新写入是 `"kind":"ImagePath"`，外部脚本与运维直接可读。**旧数据（数字）仍能读**——转换器两种形态都接受，`History_written_before_the_switch_still_reads_its_ordinal` 钉住这条，否则升级会静默孤立所有既有会话。代价与两条契约记在 `MediaMarkerKindPersistenceTests` 与枚举的注释里：数字只为读旧会话、名字为所有新会话，两者都只能追加/不能改名。
+  - **两个升级期后果，都是刻意的**：① **回滚到升级前版本时，升级期间写入的会话旧版本解析不了**（`kind` 是 `required`，读到字符串抛 `JsonException`）；② `MafSessionStateStore.ComputeHistoryHash` 是对 history 的 JSON 取 SHA256，格式一变哈希就变，所以升级后每个会话的 MAF sidecar 会**一次性**被丢弃并重建（日志有 `history hash mismatch`）。丢的只是 MAF 侧的 agent 状态，history 本体在会话文件里不受影响，下一次保存就带上新哈希。
 
 ## 测试计划
 

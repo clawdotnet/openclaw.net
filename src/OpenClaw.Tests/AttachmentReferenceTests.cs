@@ -321,8 +321,10 @@ public sealed class AttachmentReferenceTests
         // The attachment is discoverable, with the id the inliner and operators both use.
         var attachment = Assert.Single(turn.GetProperty("attachments").EnumerateArray());
 
-        // CoreJsonContext has no string-enum converter, so Kind is written as its ordinal.
-        Assert.Equal(MediaMarkerKind.ImagePath, (MediaMarkerKind)attachment.GetProperty("kind").GetInt32());
+        // Kind is written by name, so a consumer (or an operator reading a session file) does not need a
+        // mapping table to know the media class. History from before the converter still carries the
+        // ordinal and still reads — MediaMarkerKindPersistenceTests pins both forms.
+        Assert.Equal(nameof(MediaMarkerKind.ImagePath), attachment.GetProperty("kind").GetString());
         Assert.Equal(cached, attachment.GetProperty("value").GetString());
         Assert.Equal($"{AttachmentReferences.MediaAssetIdPrefix}0123456789abcdef", attachment.GetProperty("assetId").GetString());
     }

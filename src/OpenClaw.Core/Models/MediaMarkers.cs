@@ -1,26 +1,35 @@
+using System.Text.Json.Serialization;
+
 namespace OpenClaw.Core.Models;
 
 /// <summary>
-/// Marker kinds. The numeric values are persisted — see the remarks.
+/// Marker kinds. Both the names and the numbers are persisted — see the remarks.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="ChatAttachmentRef.Kind"/> is written into session history as its ordinal, because
-/// <c>CoreJsonContext</c> has no string-enum converter. That makes the numbers below an on-disk
-/// contract rather than an implementation detail: without the explicit values, inserting a kind
-/// anywhere but the end would silently reinterpret every stored session, and nothing would fail —
-/// the wrong media class would simply be sent to the provider on the next load.
+/// <see cref="ChatAttachmentRef.Kind"/> goes into session history as its <em>name</em>
+/// (<c>"kind": "ImagePath"</c>), because this converter is applied to the type. History written before
+/// the converter existed carries the ordinal instead (<c>"kind": 1</c>), and
+/// <see cref="JsonStringEnumConverter{TEnum}"/> still reads that form, so both load.
 /// </para>
 /// <para>
-/// So each value is spelled out. New kinds take the next free number and are appended; existing
-/// numbers are never reused or renumbered, even for a kind that is retired.
-/// <c>MediaMarkerKindPersistenceTests</c> pins them. Note what an explicit value does to the usual
+/// That makes <b>two</b> on-disk contracts, and they fail differently. The numbers only matter for
+/// reading old sessions, but nothing would notice a change to them: the marker text protocol uses
+/// names, the reference path uses the enum, and both keep working after a renumber — only an
+/// already-written session would be misread, as the wrong media class, silently, on the next load. The
+/// names now matter for every session written from here on, and renaming a member is the quiet way to
+/// break them, since the compiler only sees the identifier.
+/// </para>
+/// <para>
+/// So: append new kinds, never renumber, never reuse a retired number, never rename an existing member.
+/// <c>MediaMarkerKindPersistenceTests</c> pins all of it. Note what an explicit value does to the usual
 /// mistake: a mid-list insertion written without a value does not shift its neighbours, it becomes an
 /// <em>alias</em> of whichever kind already owns <c>previous + 1</c>. That is still wrong — the two
 /// kinds become interchangeable — so the tests reject duplicate numbers, and a <c>switch</c> over the
 /// kinds usually rejects the alias at compile time as an unreachable arm.
 /// </para>
 /// </remarks>
+[JsonConverter(typeof(JsonStringEnumConverter<MediaMarkerKind>))]
 public enum MediaMarkerKind : byte
 {
     ImageUrl = 0,
