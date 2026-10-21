@@ -307,7 +307,7 @@
                                     </Border>
                                 </Grid>
                                 <TextBlock Text="AgentQi Companion for OpenClaw.NET" Classes="muted" FontSize="12" IsVisible="{Binding IsDarkTheme, Converter={StaticResource InverseBool}}" />
-                                <TextBlock Classes="welcome-title" Text="A little help. A lot of possibility." FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <TextBlock Classes="welcome-title" Text="A little help. A lot of possibilities." FontWeight="SemiBold" TextWrapping="Wrap" />
                                 <TextBlock Text="Bring a question, work through an idea, or put your assistant to work. Everything you need is close by." Classes="muted" FontSize="15" TextWrapping="Wrap" LineHeight="24" />
                                 <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="12" Margin="0,12,0,0">
                                     <Button Classes="suggestion" Command="{Binding BeginChatSetupCommand}"><StackPanel Spacing="6"><TextBlock Text="Set up my assistant  →" FontWeight="SemiBold" /><TextBlock Text="Choose a model and get connected" Classes="muted" TextWrapping="Wrap" /></StackPanel></Button>
