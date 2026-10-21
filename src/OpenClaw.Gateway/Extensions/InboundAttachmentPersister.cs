@@ -119,7 +119,7 @@ internal static class InboundAttachmentPersister
                     MediaMarkerProtocol.Format(new MediaMarker(marker.Kind, asset.Path)),
                     StringComparison.Ordinal);
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or MediaAssetTooLargeException)
             {
                 logger.LogDebug(
                     exception,

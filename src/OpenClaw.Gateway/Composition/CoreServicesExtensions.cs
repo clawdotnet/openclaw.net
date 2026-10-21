@@ -160,7 +160,12 @@ internal static class CoreServicesExtensions
             new SessionMetadataStore(
                 config.Memory.StoragePath,
                 sp.GetRequiredService<ILogger<SessionMetadataStore>>()));
-        services.AddSingleton(sp => new MediaCacheStore(config.Multimodal.MediaCachePath));
+        services.AddSingleton(sp => new MediaCacheStore(config.Multimodal.MediaCachePath, config.Multimodal.MediaCache));
+        services.AddSingleton<MediaCacheSweeperService>(sp => new MediaCacheSweeperService(
+            sp.GetRequiredService<MediaCacheStore>(),
+            sp.GetRequiredService<ILogger<MediaCacheSweeperService>>()));
+        services.AddSingleton<IMediaCacheCoordinator>(sp => sp.GetRequiredService<MediaCacheSweeperService>());
+        services.AddHostedService(sp => sp.GetRequiredService<MediaCacheSweeperService>());
         services.AddSingleton<GeminiMultimodalService>();
         services.AddSingleton<GeminiAudioTranscriptionProvider>();
         services.AddSingleton<IAudioTranscriptionProvider>(sp => sp.GetRequiredService<GeminiAudioTranscriptionProvider>());
@@ -289,7 +294,6 @@ internal static class CoreServicesExtensions
                 config.Memory.StoragePath,
                 sp.GetRequiredService<ILogger<McpConfigStore>>()));
         services.AddSingleton<McpWatcherHolder>();
-        services.AddSingleton(sp => new MediaCacheStore(config.Multimodal.MediaCachePath));
         services.AddSingleton<GatewayLlmExecutionService>();
         services.AddSingleton<PromptCacheWarmService>();
         services.AddHostedService(sp => sp.GetRequiredService<PromptCacheWarmService>());

@@ -19,6 +19,58 @@ public sealed class MultimodalConfig
     /// docs/superpowers/specs/2026-10-19-attachment-by-reference-design.md.
     /// </summary>
     public AttachmentConfig Attachments { get; set; } = new();
+
+    /// <summary>
+    /// Limits on what <see cref="MediaCachePath"/> is allowed to accumulate.
+    /// </summary>
+    public MediaCacheConfig MediaCache { get; set; } = new();
+}
+
+/// <summary>
+/// Bounds on the media cache directory: how large one asset may be and how much the directory may
+/// hold before old assets are removed.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The cache is written by several paths — channel uploads, provider-generated audio, extracted video
+/// frames, files an agent publishes — and each one used to write whatever it was handed. Nothing ever
+/// removed anything either, so the directory grew for the lifetime of the deployment.
+/// </para>
+/// <para>
+/// <see cref="MaxFileBytes"/> is a policy ceiling: an asset bigger than this is refused, and the caller
+/// degrades (the attachment stays a path, or the upload answers 413). <see cref="RetentionDays"/> and
+/// <see cref="MaxTotalBytes"/> are enforced by a periodic sweep, not at write time — a full cache must
+/// not start rejecting writes that are individually fine.
+/// </para>
+/// <para>
+/// Setting <see cref="RetentionDays"/> to zero or less disables the sweep entirely, which is the
+/// pre-existing behaviour. That is a deliberate escape hatch for deployments that archive the directory
+/// themselves and would rather OpenClaw not delete anything.
+/// </para>
+/// </remarks>
+public sealed class MediaCacheConfig
+{
+    /// <summary>
+    /// Largest single asset accepted into the cache. Applies to every writer, and is also the ceiling
+    /// the upload endpoint advertises.
+    /// </summary>
+    public long MaxFileBytes { get; set; } = 50L * 1024 * 1024;
+
+    /// <summary>
+    /// How long an asset is kept, measured from when it was written. A session that still references an
+    /// expired asset keeps working: the reference falls back to a placeholder once the file is gone.
+    /// </summary>
+    public int RetentionDays { get; set; } = 7;
+
+    /// <summary>
+    /// Total bytes of asset data the directory may hold. When the sweep finds more, it removes the
+    /// oldest assets first until the total fits. Metadata sidecars are not counted: they are a few
+    /// hundred bytes each and always removed together with their asset.
+    /// </summary>
+    public long MaxTotalBytes { get; set; } = 2L * 1024 * 1024 * 1024;
+
+    /// <summary>How often the sweep runs. Only used when <see cref="RetentionDays"/> is positive.</summary>
+    public int SweepIntervalMinutes { get; set; } = 60;
 }
 
 /// <summary>
