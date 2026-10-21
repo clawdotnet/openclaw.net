@@ -150,7 +150,9 @@ public sealed class MafAgentRuntime : IAgentRuntime
         // Same composer, same policy object shape as AgentRuntime: attachment inlining must not differ
         // by runtime, which is the whole reason this stopped being duplicated code.
         _messageComposer = new ChatMessageComposer(
-            AttachmentInlinePolicy.FromConfig(context.Config.Multimodal.Attachments),
+            AttachmentInlinePolicy.FromConfig(
+                context.Config.Multimodal.Attachments,
+                context.Config.Multimodal.MediaCachePath),
             logger: logger);
         _chatClient = new MafExecutionServiceChatClient(
             context.LlmExecutionService,

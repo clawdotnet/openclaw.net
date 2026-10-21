@@ -162,7 +162,28 @@ public sealed class AttachmentInliner
     {
         ArgumentNullException.ThrowIfNull(policy);
         _policy = policy;
-        _byteSource = byteSource ?? FileSystemAttachmentByteSource.Instance;
+        _byteSource = CreateByteSource(policy, byteSource);
+    }
+
+    /// <summary>
+    /// Default reader, wrapped so that a cache asset recorded under an older cache root is still found.
+    /// </summary>
+    /// <remarks>
+    /// Wrapping happens here rather than at the call sites so a caller that supplies a policy with a
+    /// <see cref="AttachmentInlinePolicy.CacheRoot"/> gets the behaviour without remembering to pass a
+    /// byte source — the two runtimes construct this the same way and neither should have to know.
+    /// An explicitly supplied source is wrapped too, rather than replacing the behaviour: "which reader"
+    /// and "which root" are independent questions, and silently dropping one because the other was
+    /// answered is how a configuration ends up having no effect.
+    /// </remarks>
+    private static IAttachmentByteSource CreateByteSource(
+        AttachmentInlinePolicy policy,
+        IAttachmentByteSource? byteSource)
+    {
+        var inner = byteSource ?? FileSystemAttachmentByteSource.Instance;
+        return policy.CacheRoot is null
+            ? inner
+            : new MediaCacheRelocationByteSource(policy.CacheRoot, inner);
     }
 
     /// <summary>

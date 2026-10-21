@@ -58,6 +58,17 @@ public sealed record AttachmentInlinePolicy
     public string FailureMode { get; init; } = "placeholder";
 
     /// <summary>
+    /// Full path of the media-cache root currently in use, or <see langword="null"/> when the caller did
+    /// not supply one (tests, and configurations with no cache).
+    /// </summary>
+    /// <remarks>
+    /// Only used to retry a cache-shaped reference that no longer exists at its recorded location — see
+    /// <see cref="MediaCacheRelocationByteSource"/>. It is not a general search path: the retry is
+    /// restricted to file names that match the asset-id contract, and only the file name is carried over.
+    /// </remarks>
+    public string? CacheRoot { get; init; }
+
+    /// <summary>
     /// True when an unreadable attachment must abort the turn instead of degrading to a placeholder.
     /// </summary>
     public bool FailOnUnavailable =>
@@ -67,10 +78,18 @@ public sealed record AttachmentInlinePolicy
     /// Maps configuration onto a policy. Negative or nonsensical values are clamped rather than
     /// rejected: a bad config should soften the cost ceiling, not break every turn.
     /// </summary>
-    public static AttachmentInlinePolicy FromConfig(AttachmentConfig? config)
+    /// <param name="config">Attachment settings; absent means <see cref="Default"/>.</param>
+    /// <param name="mediaCacheRoot">
+    /// <see cref="MultimodalConfig.MediaCachePath"/> as configured. Resolved to a full path here, and
+    /// dropped when it cannot be resolved — an unusable cache root must not stop construction, and it
+    /// only costs the relocation retry, not correctness.
+    /// </param>
+    public static AttachmentInlinePolicy FromConfig(AttachmentConfig? config, string? mediaCacheRoot = null)
     {
+        var cacheRoot = NormalizeRoot(mediaCacheRoot);
+
         if (config is null)
-            return Default;
+            return cacheRoot is null ? Default : Default with { CacheRoot = cacheRoot };
 
         return new AttachmentInlinePolicy
         {
@@ -81,8 +100,32 @@ public sealed record AttachmentInlinePolicy
             DeduplicateBySource = config.DeduplicateBySource,
             FailureMode = string.IsNullOrWhiteSpace(config.FailureMode)
                 ? Default.FailureMode
-                : config.FailureMode.Trim()
+                : config.FailureMode.Trim(),
+            CacheRoot = cacheRoot
         };
+    }
+
+    private static string? NormalizeRoot(string? root)
+    {
+        if (string.IsNullOrWhiteSpace(root))
+            return null;
+
+        try
+        {
+            return Path.GetFullPath(root);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+        catch (PathTooLongException)
+        {
+            return null;
+        }
     }
 }
 

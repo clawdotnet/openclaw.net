@@ -218,7 +218,9 @@ public sealed class AgentRuntime : IAgentRuntime
             appendContractSnapshot, logger);
         _modelExecutor = new AgentModelExecutor(chatClient, config, _circuitBreaker, llmExecutionService, _accounting, logger);
         _messageComposer = new ChatMessageComposer(
-            AttachmentInlinePolicy.FromConfig(gatewayConfig?.Multimodal.Attachments),
+            AttachmentInlinePolicy.FromConfig(
+                gatewayConfig?.Multimodal.Attachments,
+                gatewayConfig?.Multimodal.MediaCachePath),
             logger: logger);
         _contextAssembler = new AgentPromptContextAssembler(memory, requireToolApproval, recall, profileStore,
             profilesConfig, contextBudgetPlanner, _fractalMemory, metrics, logger, _memoryRecallPrefix, _messageComposer);
