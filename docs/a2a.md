@@ -54,7 +54,7 @@ OpenClaw's A2A surface includes the protocol task model.
 Implementation notes for operators:
 
 - task state is stored in an in-memory `ITaskStore` (not durable across process restarts)
-- A2A server run mode is `DisallowBackground`, so background task execution is intentionally disabled
+- OpenClaw's custom handler executes requests through the adapter bridge; streaming requests emit task lifecycle events, but a client disconnect ends the response stream and does not necessarily cancel bridge execution, which may continue afterward
 
 ## Agent Names
 

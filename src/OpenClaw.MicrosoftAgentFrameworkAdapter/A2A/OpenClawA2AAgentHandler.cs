@@ -112,8 +112,8 @@ public sealed class OpenClawA2AAgentHandler : IAgentHandler
         var deltaCount = 0;
         string? pendingDelta = null;
 
-        await updater.SubmitAsync(cancellationToken);
-        await updater.StartWorkAsync(null!, cancellationToken);
+        await updater.SubmitAsync(cancellationToken: cancellationToken);
+        await updater.StartWorkAsync(null!, cancellationToken: cancellationToken);
 
         try
         {
@@ -175,7 +175,7 @@ public sealed class OpenClawA2AAgentHandler : IAgentHandler
 
             await updater.FailAsync(
                 CreateAgentMessage("A2A request failed.", taskId, contextId),
-                cancellationToken);
+                cancellationToken: cancellationToken);
             return;
         }
 
@@ -199,7 +199,9 @@ public sealed class OpenClawA2AAgentHandler : IAgentHandler
                     cancellationToken: cancellationToken);
             }
 
-            await updater.FailAsync(CreateAgentMessage(errorMessage, taskId, contextId), cancellationToken);
+            await updater.FailAsync(
+                CreateAgentMessage(errorMessage, taskId, contextId),
+                cancellationToken: cancellationToken);
             return;
         }
 
@@ -230,7 +232,7 @@ public sealed class OpenClawA2AAgentHandler : IAgentHandler
 
         await updater.CompleteAsync(
             CreateAgentMessage(responseText.ToString(), taskId, contextId),
-            cancellationToken);
+            cancellationToken: cancellationToken);
     }
 
     public async Task CancelAsync(
@@ -249,7 +251,7 @@ public sealed class OpenClawA2AAgentHandler : IAgentHandler
             ? taskId
             : context.ContextId;
         var updater = new TaskUpdater(eventQueue, taskId, contextId);
-        await updater.CancelAsync(cancellationToken);
+        await updater.CancelAsync(cancellationToken: cancellationToken);
     }
 
     private static string ExtractUserText(RequestContext context)
