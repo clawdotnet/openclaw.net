@@ -52,7 +52,8 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...
 
   build-and-test:
-    runs-on: ubuntu-latest
+    # Playwright 1.60 supports Ubuntu through 24.04; ubuntu-latest moved to 26.04.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
