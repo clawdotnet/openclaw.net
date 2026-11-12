@@ -1,5 +1,6 @@
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
+using System.Text.Json;
 
 namespace OpenClaw.Gateway.Workflows;
 
@@ -12,6 +13,17 @@ internal sealed class AgentWorkflowRegistry : IDisposable
         GatewayConfig config,
         RuntimeEventStore events,
         ILoggerFactory loggerFactory)
+        : this(config, events, loggerFactory, null, null, TimeProvider.System)
+    {
+    }
+
+    public AgentWorkflowRegistry(
+        GatewayConfig config,
+        RuntimeEventStore events,
+        ILoggerFactory loggerFactory,
+        IWorkflowAccessTokenProvider? tokenProvider,
+        IHttpClientFactory? httpClientFactory,
+        TimeProvider timeProvider)
     {
         _runners = new Dictionary<string, IAgentWorkflowRunner>(StringComparer.OrdinalIgnoreCase);
         if (!config.Workflows.Enabled)
@@ -33,11 +45,14 @@ internal sealed class AgentWorkflowRegistry : IDisposable
             if (_runners.ContainsKey(normalizedBackendId))
                 throw new InvalidOperationException($"Duplicate workflow backend id '{normalizedBackendId}' after trimming whitespace.");
 
-            _runners[normalizedBackendId] = new MafDurableHttpWorkflowRunner(
-                normalizedBackendId,
-                backendConfig,
-                events,
-                loggerFactory.CreateLogger<MafDurableHttpWorkflowRunner>());
+            var frozen = JsonSerializer.Deserialize(
+                JsonSerializer.Serialize(backendConfig, CoreJsonContext.Default.WorkflowBackendConfig),
+                CoreJsonContext.Default.WorkflowBackendConfig)
+                ?? throw new InvalidOperationException("Workflow backend configuration could not be copied.");
+            _runners[normalizedBackendId] = httpClientFactory is null
+                ? new MafDurableHttpWorkflowRunner(normalizedBackendId, frozen, events, loggerFactory.CreateLogger<MafDurableHttpWorkflowRunner>())
+                : new MafDurableHttpWorkflowRunner(normalizedBackendId, frozen, events, loggerFactory.CreateLogger<MafDurableHttpWorkflowRunner>(),
+                    tokenProvider, httpClientFactory.CreateClient("workflow-backend"), timeProvider);
         }
     }
 
@@ -76,6 +91,22 @@ internal sealed class AgentWorkflowRegistry : IDisposable
 
         throw new KeyNotFoundException($"Workflow backend '{backendId}' was not found.");
     }
+
+    public Task<AgentWorkflowRunResult> RunAsync(string backendId, AgentWorkflowRequest request,
+        WorkflowExecutionContext? executionContext, CancellationToken cancellationToken)
+        => GetRunner(backendId).RunAsync(request, executionContext, cancellationToken);
+
+    public Task<AgentWorkflowRunSnapshot> GetAsync(string backendId, string runId,
+        WorkflowExecutionContext? executionContext, CancellationToken cancellationToken)
+        => GetRunner(backendId).GetAsync(runId, executionContext, cancellationToken);
+
+    public Task<AgentWorkflowRunSnapshot> RespondAsync(string backendId, string runId, AgentWorkflowResponse response,
+        WorkflowExecutionContext? executionContext, CancellationToken cancellationToken)
+        => GetRunner(backendId).RespondAsync(runId, response, executionContext, cancellationToken);
+
+    public IAsyncEnumerable<AgentWorkflowEvent> StreamAsync(string backendId, string runId,
+        WorkflowExecutionContext? executionContext, CancellationToken cancellationToken)
+        => GetRunner(backendId).StreamAsync(runId, executionContext, cancellationToken);
 
     public void Dispose()
     {

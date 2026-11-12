@@ -57,6 +57,9 @@ internal static class SecurityServicesExtensions
         services.AddHttpClient("workflow-token-exchange", client => client.Timeout = TimeSpan.FromSeconds(30))
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddSingleton<WorkflowTokenExchangeClient>();
+        services.AddSingleton<IWorkflowAccessTokenProvider, WorkflowAccessTokenProvider>();
+        services.AddHttpClient("workflow-backend")
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddSingleton<ToolApprovalService>();
         services.AddSingleton(sp =>
             new PairingManager(
