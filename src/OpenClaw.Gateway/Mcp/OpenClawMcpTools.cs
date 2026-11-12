@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using OpenClaw.Core.Models;
@@ -7,6 +8,7 @@ using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
 using OpenClaw.Gateway.Endpoints;
+using OpenClaw.Gateway.Workflows;
 
 namespace OpenClaw.Gateway.Mcp;
 
@@ -21,12 +23,15 @@ internal sealed class OpenClawMcpTools
     private readonly IntegrationApiFacade _facade;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly GatewayStartupContext _startup;
+    private readonly WorkflowCallerContextFactory _workflowCallerContextFactory;
 
-    public OpenClawMcpTools(IntegrationApiFacade facade, IHttpContextAccessor httpContextAccessor, GatewayStartupContext startup)
+    public OpenClawMcpTools(IntegrationApiFacade facade, IHttpContextAccessor httpContextAccessor, GatewayStartupContext startup,
+        WorkflowCallerContextFactory workflowCallerContextFactory)
     {
         _facade = facade;
         _httpContextAccessor = httpContextAccessor;
         _startup = startup;
+        _workflowCallerContextFactory = workflowCallerContextFactory;
     }
 
     [McpServerTool(Name = "openclaw.get_dashboard", ReadOnly = true),
@@ -220,8 +225,8 @@ internal sealed class OpenClawMcpTools
         CancellationToken ct = default)
     {
         RequireOperator("openclaw.run_workflow");
-        return JsonSerializer.Serialize(
-            await _facade.RunWorkflowAsync(
+        return await ExecuteWorkflowAsync(
+            () => _facade.RunWorkflowAsync(
                 workflowId,
                 new AgentWorkflowRequest
                 {
@@ -231,6 +236,7 @@ internal sealed class OpenClawMcpTools
                     SenderId = senderId,
                     SessionId = sessionId
                 },
+                _workflowCallerContextFactory.Create(_httpContextAccessor.HttpContext, workflowId),
                 ct),
             CoreJsonContext.Default.AgentWorkflowRunResult);
     }
@@ -241,8 +247,9 @@ internal sealed class OpenClawMcpTools
         [Description("Configured workflow backend ID.")] string workflowId,
         [Description("Workflow run ID.")] string runId,
         CancellationToken ct)
-        => JsonSerializer.Serialize(
-            await _facade.GetWorkflowRunAsync(workflowId, runId, ct),
+        => await ExecuteWorkflowAsync(
+            () => _facade.GetWorkflowRunAsync(workflowId, runId,
+                _workflowCallerContextFactory.Create(_httpContextAccessor.HttpContext, workflowId), ct),
             CoreJsonContext.Default.AgentWorkflowRunSnapshot);
 
     [McpServerTool(Name = "openclaw.respond_workflow"),
@@ -258,8 +265,8 @@ internal sealed class OpenClawMcpTools
         CancellationToken ct = default)
     {
         RequireOperator("openclaw.respond_workflow");
-        return JsonSerializer.Serialize(
-            await _facade.RespondWorkflowRunAsync(
+        return await ExecuteWorkflowAsync(
+            () => _facade.RespondWorkflowRunAsync(
                 workflowId,
                 runId,
                 new AgentWorkflowResponse
@@ -270,8 +277,21 @@ internal sealed class OpenClawMcpTools
                     ActorId = actorId,
                     Payload = ParsePayloadJson(payloadJson)
                 },
+                _workflowCallerContextFactory.Create(_httpContextAccessor.HttpContext, workflowId),
                 ct),
             CoreJsonContext.Default.AgentWorkflowRunSnapshot);
+    }
+
+    private static async Task<string> ExecuteWorkflowAsync<T>(Func<Task<T>> operation, JsonTypeInfo<T> typeInfo)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(await operation(), typeInfo);
+        }
+        catch (WorkflowDelegationException failure)
+        {
+            throw new McpException(failure.ErrorCode);
+        }
     }
 
     [McpServerTool(Name = "openclaw.query_runtime_events", ReadOnly = true),

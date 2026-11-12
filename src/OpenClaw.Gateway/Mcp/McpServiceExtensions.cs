@@ -65,6 +65,7 @@ internal static class McpServiceExtensions
 
     internal static McpTaskExecutionMode GetTaskExecutionMode(string? toolName, bool hasMatchedPrimitive = true)
         => !hasMatchedPrimitive || toolName is "openclaw.run_workflow"
+            or "openclaw.get_workflow_run"
             or "openclaw.respond_workflow"
             or "openclaw.send_message"
             ? McpTaskExecutionMode.Synchronous

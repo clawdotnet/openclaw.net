@@ -92,11 +92,12 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.Empty(server.BackendRequests);
     }
 
-    private static Task<GatewayTestHarness> CreateWorkflowHarnessAsync(WorkflowDelegationTestServer server, string mode)
+    private static Task<GatewayTestHarness> CreateWorkflowHarnessAsync(WorkflowDelegationTestServer server, string mode, bool legacySession = false)
         => CreateHarnessAsync(true, config =>
         {
             config.Security.Oidc.Authority = server.Authority.ToString();
             config.Security.Oidc.Audience = "gateway-api";
+            config.McpCompatibility.ForceLegacyInitialize = legacySession;
             config.Workflows.Enabled = true;
             config.Workflows.Backends["review"] = new()
             {

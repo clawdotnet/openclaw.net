@@ -216,9 +216,10 @@ public sealed class AppsMcpProxyEndpointTests : IAsyncDisposable
 
     [Theory]
     [InlineData("openclaw.run_workflow")]
+    [InlineData("openclaw.get_workflow_run")]
     [InlineData("openclaw.respond_workflow")]
     [InlineData("openclaw.send_message")]
-    public void GatewayMcpServer_MutatingTools_RunSynchronously(string toolName)
+    public void GatewayMcpServer_WorkflowsAndMutatingTools_RunSynchronously(string toolName)
         => Assert.Equal(McpTaskExecutionMode.Synchronous, McpServiceExtensions.GetTaskExecutionMode(toolName));
 
     [Fact]
