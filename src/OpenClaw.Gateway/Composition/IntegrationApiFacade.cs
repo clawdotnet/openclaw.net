@@ -645,6 +645,18 @@ internal sealed class IntegrationApiFacade
             RunState = await _automationService.GetRunStateAsync(automationId, cancellationToken)
         };
 
+    public Task<AgentWorkflowRunResult> RunWorkflowAsync(string workflowId, AgentWorkflowRequest request,
+        WorkflowExecutionContext? executionContext, CancellationToken cancellationToken)
+        => _workflows.RunAsync(workflowId, request, executionContext, cancellationToken);
+
+    public Task<AgentWorkflowRunSnapshot> GetWorkflowRunAsync(string workflowId, string runId,
+        WorkflowExecutionContext? executionContext, CancellationToken cancellationToken)
+        => _workflows.GetAsync(workflowId, runId, executionContext, cancellationToken);
+
+    public Task<AgentWorkflowRunSnapshot> RespondWorkflowRunAsync(string workflowId, string runId, AgentWorkflowResponse response,
+        WorkflowExecutionContext? executionContext, CancellationToken cancellationToken)
+        => _workflows.RespondAsync(workflowId, runId, response, executionContext, cancellationToken);
+
     public async Task<IntegrationAutomationRunsResponse> GetAutomationRunsAsync(string automationId, CancellationToken cancellationToken)
         => new()
         {

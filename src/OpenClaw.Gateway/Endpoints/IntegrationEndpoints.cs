@@ -4,6 +4,7 @@ using OpenClaw.Core.Sessions;
 using System.Text.Json;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
+using OpenClaw.Gateway.Workflows;
 using OpenClaw.Gateway.Models;
 using OpenClaw.Payments.Abstractions;
 using OpenClaw.Payments.Core;
@@ -12,6 +13,10 @@ namespace OpenClaw.Gateway.Endpoints;
 
 internal static class IntegrationEndpoints
 {
+    private static IResult WorkflowDelegationFailure(WorkflowDelegationException failure)
+        => Results.Json(new OperationStatusResponse { Success = false, Error = failure.ErrorCode },
+            CoreJsonContext.Default.OperationStatusResponse, statusCode: failure.StatusCode);
+
     public static void MapOpenClawIntegrationEndpoints(
         this WebApplication app,
         GatewayStartupContext startup,
@@ -443,9 +448,14 @@ internal static class IntegrationEndpoints
             try
             {
                 return Results.Json(
-                    await facade.RunWorkflowAsync(workflowId, request, ctx.RequestAborted),
+                    await facade.RunWorkflowAsync(workflowId, request,
+                        ctx.RequestServices.GetRequiredService<WorkflowCallerContextFactory>().Create(ctx, workflowId), ctx.RequestAborted),
                     CoreJsonContext.Default.AgentWorkflowRunResult,
                     statusCode: StatusCodes.Status202Accepted);
+            }
+            catch (WorkflowDelegationException ex)
+            {
+                return WorkflowDelegationFailure(ex);
             }
             catch (KeyNotFoundException ex)
             {
@@ -466,8 +476,13 @@ internal static class IntegrationEndpoints
             try
             {
                 return Results.Json(
-                    await facade.GetWorkflowRunAsync(workflowId, runId, ctx.RequestAborted),
+                    await facade.GetWorkflowRunAsync(workflowId, runId,
+                        ctx.RequestServices.GetRequiredService<WorkflowCallerContextFactory>().Create(ctx, workflowId), ctx.RequestAborted),
                     CoreJsonContext.Default.AgentWorkflowRunSnapshot);
+            }
+            catch (WorkflowDelegationException ex)
+            {
+                return WorkflowDelegationFailure(ex);
             }
             catch (KeyNotFoundException ex)
             {
@@ -510,8 +525,13 @@ internal static class IntegrationEndpoints
             try
             {
                 return Results.Json(
-                    await facade.RespondWorkflowRunAsync(workflowId, runId, response, ctx.RequestAborted),
+                    await facade.RespondWorkflowRunAsync(workflowId, runId, response,
+                        ctx.RequestServices.GetRequiredService<WorkflowCallerContextFactory>().Create(ctx, workflowId), ctx.RequestAborted),
                     CoreJsonContext.Default.AgentWorkflowRunSnapshot);
+            }
+            catch (WorkflowDelegationException ex)
+            {
+                return WorkflowDelegationFailure(ex);
             }
             catch (KeyNotFoundException ex)
             {
