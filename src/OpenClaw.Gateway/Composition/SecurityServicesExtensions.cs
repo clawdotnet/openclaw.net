@@ -54,6 +54,9 @@ internal static class SecurityServicesExtensions
 
         services.AddHttpClient<IMcpDelegatedCredentialProvider, McpDelegatedCredentialProvider>()
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+        services.AddHttpClient("workflow-token-exchange", client => client.Timeout = TimeSpan.FromSeconds(30))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+        services.AddSingleton<WorkflowTokenExchangeClient>();
         services.AddSingleton<ToolApprovalService>();
         services.AddSingleton(sp =>
             new PairingManager(
