@@ -1217,6 +1217,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(Dictionary<string, AgentProfile>))]
 [JsonSerializable(typeof(WorkflowsConfig))]
 [JsonSerializable(typeof(WorkflowBackendConfig))]
+[JsonSerializable(typeof(WorkflowAuthenticationConfig))]
 [JsonSerializable(typeof(Dictionary<string, WorkflowBackendConfig>))]
 [JsonSerializable(typeof(TelegramChannelConfig))]
 [JsonSerializable(typeof(CronConfig))]

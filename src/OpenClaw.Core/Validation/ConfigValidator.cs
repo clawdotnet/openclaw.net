@@ -218,7 +218,7 @@ public static class ConfigValidator
             }
         }
 
-        ValidateWorkflows(config.Workflows, errors);
+        ValidateWorkflows(config, errors);
 
         // Middleware
         if (config.SessionTokenBudget < 0)
@@ -894,8 +894,9 @@ public static class ConfigValidator
             errors.Add($"{path}.ApiKey must be set when Provider='aperture' and AuthMode is not 'tailnet-identity'.");
     }
 
-    private static void ValidateWorkflows(WorkflowsConfig config, List<string> errors)
+    private static void ValidateWorkflows(GatewayConfig gateway, List<string> errors)
     {
+        var config = gateway.Workflows;
         if (!config.Enabled)
             return;
 
@@ -916,6 +917,8 @@ public static class ConfigValidator
 
             if (!backend.Enabled)
                 continue;
+
+            WorkflowAuthenticationValidator.Validate(backendId, backend, gateway, errors);
 
             var kind = string.IsNullOrWhiteSpace(backend.Kind)
                 ? AgentWorkflowBackendKinds.MafDurableHttp
