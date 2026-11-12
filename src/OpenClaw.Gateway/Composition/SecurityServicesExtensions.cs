@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenClaw.Core.ExternalCli;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Security;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Security;
+using OpenClaw.Gateway.Workflows;
 
 namespace OpenClaw.Gateway.Composition;
 
@@ -11,6 +13,8 @@ internal static class SecurityServicesExtensions
 {
     public static IServiceCollection AddOpenClawSecurityServices(this IServiceCollection services, GatewayStartupContext startup)
     {
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        services.AddSingleton(sp => new WorkflowCallerContextFactory(startup.Config, sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton(sp => new MetaInvocationStore(
             startup.Config.Memory.StoragePath,
             startup.Config.MetaInvocations.RetentionDays));
@@ -31,6 +35,21 @@ internal static class SecurityServicesExtensions
                     options.RequireHttpsMetadata = startup.Config.Security.Oidc.RequireHttpsMetadata;
                 });
             services.AddAuthorization();
+            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+            {
+                var validated = options.Events.OnTokenValidated;
+                var failed = options.Events.OnAuthenticationFailed;
+                options.Events.OnTokenValidated = async context =>
+                {
+                    await validated(context);
+                    await WorkflowCallerContextFactory.CaptureValidatedTokenAsync(context);
+                };
+                options.Events.OnAuthenticationFailed = async context =>
+                {
+                    WorkflowCallerContextFactory.ClearValidatedToken(context.HttpContext);
+                    await failed(context);
+                };
+            });
         }
 
         services.AddHttpClient<IMcpDelegatedCredentialProvider, McpDelegatedCredentialProvider>()
