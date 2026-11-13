@@ -1,13 +1,13 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using NCrontab;
-using TickerQ.Utilities;
 
 namespace OpenClaw.Core.Loops;
 
 /// <summary>
 /// Manages /loop command lifecycle using an internal registry of loop entries.
-/// The AgentLoopJob TickerFunction ticks every minute and polls this scheduler
+/// The AgentLoopJob TickerFunction ticks every second and polls this scheduler
 /// for due entries.
 ///
 /// One loop per session (idempotent — new registration replaces old).
@@ -16,13 +16,15 @@ namespace OpenClaw.Core.Loops;
 public sealed class ClawLoopScheduler : ILoopControlService
 {
     private readonly ILogger<ClawLoopScheduler> _logger;
+    private readonly TimeProvider _clock;
 
     // sessionId → LoopEntry (idempotent: one entry per session)
     private readonly ConcurrentDictionary<string, LoopEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
 
-    public ClawLoopScheduler(ILogger<ClawLoopScheduler> logger)
+    public ClawLoopScheduler(ILogger<ClawLoopScheduler> logger, TimeProvider? clock = null)
     {
         _logger = logger;
+        _clock = clock ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -30,10 +32,22 @@ public sealed class ClawLoopScheduler : ILoopControlService
     /// </summary>
     public Task ScheduleLoopAsync(string sessionId, string cronExpression, string prompt, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         var schedule = ParseCronExpression(cronExpression);
-        var entry = new LoopEntry(sessionId, prompt, cronExpression, schedule);
+        var entry = new LoopEntry(sessionId, prompt, cronExpression, schedule, _clock.GetUtcNow());
         _entries.AddOrUpdate(sessionId, _ => entry, (_, _) => entry);
         _logger.LogInformation("Loop scheduled for session {SessionId} with cron '{Cron}'", sessionId, cronExpression);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Schedules a fixed duration from registration, without rounding to calendar boundaries.</summary>
+    public Task ScheduleIntervalLoopAsync(string sessionId, string interval, string prompt, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var duration = ParseInterval(interval);
+        var entry = new LoopEntry(sessionId, prompt, duration, _clock.GetUtcNow());
+        _entries.AddOrUpdate(sessionId, _ => entry, (_, _) => entry);
+        _logger.LogInformation("Loop scheduled for session {SessionId} every {Interval}", sessionId, duration);
         return Task.CompletedTask;
     }
 
@@ -68,7 +82,7 @@ public sealed class ClawLoopScheduler : ILoopControlService
     {
         if (_entries.TryGetValue(sessionId, out var entry))
             return Task.FromResult<string?>(
-                $"Loop active — cron: {entry.CronExpression}, prompt: \"{entry.Prompt}\", " +
+                $"Loop active — {entry.ScheduleDescription}, prompt: \"{entry.Prompt}\", " +
                 $"scheduled at: {entry.ScheduledAt:O}");
         return Task.FromResult<string?>(null);
     }
@@ -95,26 +109,41 @@ public sealed class ClawLoopScheduler : ILoopControlService
         return results;
     }
 
-    /// <summary>
-    /// Converts a user-facing interval (e.g. "5m", "30s", "2h") to a 6-field cron expression.
-    /// </summary>
-    public static string IntervalToCron(string interval)
+    internal IReadOnlyList<LoopEntry> GetDueEntries() => GetDueEntries(_clock.GetUtcNow());
+
+    public static TimeSpan ParseInterval(string interval)
     {
         if (string.IsNullOrWhiteSpace(interval))
             throw new ArgumentException("Interval must not be empty.", nameof(interval));
-
-        var unit = interval[^1];
-        if (!int.TryParse(interval.AsSpan(0, interval.Length - 1), out var val) || val <= 0)
+        interval = interval.Trim();
+        if (!int.TryParse(interval.AsSpan(0, interval.Length - 1), NumberStyles.None, CultureInfo.InvariantCulture, out var value) || value <= 0)
             throw new ArgumentException($"Invalid interval: {interval}", nameof(interval));
-
-        return unit switch
+        var seconds = char.ToLowerInvariant(interval[^1]) switch
         {
-            's' when val >= 60 => $"*/{val / 60} * * * *",
-            's' => $"*/{val} * * * * *",
-            'm' => $"*/{val} * * * *",
-            'h' => $"0 */{val} * * *",
-            _ => throw new ArgumentException($"Unknown interval unit: {unit}", nameof(interval))
+            's' => (long)value,
+            'm' => value * 60L,
+            'h' => value * 3600L,
+            _ => throw new ArgumentException($"Unknown interval unit: {interval[^1]}", nameof(interval))
         };
+        if (seconds > 365L * 24 * 3600)
+            throw new ArgumentException("Loop intervals must not exceed 365 days.", nameof(interval));
+        return TimeSpan.FromSeconds(seconds);
+    }
+
+    /// <summary>
+    /// Converts only intervals that cron can represent exactly. Duration scheduling should use
+    /// ScheduleIntervalLoopAsync instead, which also anchors the first run to registration time.
+    /// </summary>
+    public static string IntervalToCron(string interval)
+    {
+        var seconds = (long)ParseInterval(interval).TotalSeconds;
+        if (seconds < 60 && 60 % seconds == 0)
+            return $"*/{seconds} * * * * *";
+        if (seconds % 60 == 0 && seconds < 3600 && 3600 % seconds == 0)
+            return $"*/{seconds / 60} * * * *";
+        if (seconds % 3600 == 0 && seconds <= 86400 && 86400 % seconds == 0)
+            return $"0 */{seconds / 3600} * * *";
+        throw new ArgumentException("This duration cannot be represented exactly by cron. Use ScheduleIntervalLoopAsync.", nameof(interval));
     }
 }
 
@@ -126,20 +155,34 @@ public sealed class LoopEntry
     public string SessionId { get; }
     public string Prompt { get; }
     public string CronExpression { get; }
+    public TimeSpan? Interval { get; }
+    public string ScheduleDescription => Interval is { } interval ? $"interval: {interval}" : $"cron: {CronExpression}";
     public DateTimeOffset ScheduledAt { get; }
 
     private readonly object _gate = new();
-    private readonly CrontabSchedule _schedule;
+    private readonly CrontabSchedule? _schedule;
     private DateTimeOffset _nextOccurrence;
 
-    public LoopEntry(string sessionId, string prompt, string cronExpression, CrontabSchedule schedule)
+    public LoopEntry(string sessionId, string prompt, string cronExpression, CrontabSchedule schedule, DateTimeOffset? scheduledAt = null)
     {
         SessionId = sessionId;
         Prompt = prompt;
         CronExpression = cronExpression;
         _schedule = schedule;
-        ScheduledAt = DateTimeOffset.UtcNow;
+        ScheduledAt = scheduledAt ?? DateTimeOffset.UtcNow;
         _nextOccurrence = _schedule.GetNextOccurrence(ScheduledAt.UtcDateTime);
+    }
+
+    public LoopEntry(string sessionId, string prompt, TimeSpan interval, DateTimeOffset scheduledAt)
+    {
+        if (interval <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(interval));
+        SessionId = sessionId;
+        Prompt = prompt;
+        CronExpression = "";
+        Interval = interval;
+        ScheduledAt = scheduledAt;
+        _nextOccurrence = scheduledAt.Add(interval);
     }
 
     /// <summary>
@@ -153,7 +196,10 @@ public sealed class LoopEntry
             if (now.UtcDateTime < _nextOccurrence)
                 return false;
 
-            _nextOccurrence = _schedule.GetNextOccurrence(now.UtcDateTime);
+            // Skip missed runs, preserving the original cadence instead of drifting with each poll.
+            _nextOccurrence = Interval is { } interval
+                ? _nextOccurrence.AddTicks(((now - _nextOccurrence).Ticks / interval.Ticks + 1) * interval.Ticks)
+                : _schedule!.GetNextOccurrence(now.UtcDateTime);
             return true;
         }
     }

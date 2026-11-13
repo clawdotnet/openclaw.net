@@ -187,6 +187,7 @@ public sealed class PaymentRuntimeTests
 
         var result = await runtime.ExecuteMachinePaymentAsync(new MachinePaymentRequest
         {
+            IdempotencyKey = "fixture-payment",
             ProviderId = "mock",
             Environment = PaymentEnvironments.Test,
             Challenge = new MachinePaymentChallenge
@@ -205,6 +206,84 @@ public sealed class PaymentRuntimeTests
         Assert.NotNull(secret);
         Assert.Contains("payment_mock_secret_token", secret!.Resolve(PaymentSecretField.AuthorizationHeader), StringComparison.Ordinal);
         Assert.Null(await runtime.RetrieveMachineAuthorizationOnceAsync(result.PaymentId, TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
+    [InlineData("test", "live", 100, true, false)]
+    [InlineData("live", "test", 100, true, false)]
+    [InlineData("live", "live", 101, true, false)]
+    [InlineData("live", "live", 100, false, false)]
+    [InlineData("live", "live", 100, true, true)]
+    [InlineData("test", "test", 101, false, true)]
+    public async Task MoneyMovement_WhenApprovalModeOrCapChanges_ShouldOnlyDispatchAuthorizedCommands(
+        string requested, string configured, long amount, bool approved, bool shouldRun)
+    {
+        var runner = new StaticLinkRunner(new LinkCliCommandResult { ExitCode = 0, Stdout = "{}" });
+        var provider = new StripeLinkPaymentProvider(new StripeLinkOptions { Mode = configured }, runner);
+        var runtime = new PaymentRuntimeService([provider], new InMemoryPaymentSecretVault(),
+            new DefaultPaymentPolicy(maxLiveAmountMinor: 100), new InMemoryPaymentAuditSink(),
+            new StaticPaymentApprovalService(approved), defaultProviderId: provider.ProviderId);
+        var context = new PaymentExecutionContext { Environment = configured };
+        var ct = TestContext.Current.CancellationToken;
+        var card = new VirtualCardRequest { MerchantName = "Fixture", AmountMinor = amount, Currency = "USD", Environment = requested };
+        var payment = new MachinePaymentRequest
+        {
+            IdempotencyKey = "fixture-payment",
+            Environment = requested,
+            Challenge = new MachinePaymentChallenge { MerchantName = "Fixture", AmountMinor = amount, Currency = "USD" }
+        };
+
+        if (shouldRun)
+        {
+            var handle = await runtime.IssueVirtualCardAsync(card, context, ct);
+            await runtime.ExecuteMachinePaymentAsync(payment, context, ct);
+            Assert.Equal(configured, handle.Environment);
+            Assert.Equal(2, runner.Commands.Count);
+            Assert.All(runner.Commands, args => Assert.Equal(configured, args[Array.IndexOf(args, "--mode") + 1]));
+        }
+        else
+        {
+            await Assert.ThrowsAsync<PaymentPolicyDeniedException>(() => runtime.IssueVirtualCardAsync(card, context, ct).AsTask());
+            await Assert.ThrowsAsync<PaymentPolicyDeniedException>(() => runtime.ExecuteMachinePaymentAsync(payment, context, ct).AsTask());
+            Assert.Empty(runner.Commands);
+        }
+    }
+
+    [Fact]
+    public async Task ResolveSecret_WhenCallerDowngradesLiveHandle_ShouldRequireLiveApproval()
+    {
+        var vault = new InMemoryPaymentSecretVault();
+        var ct = TestContext.Current.CancellationToken;
+        await vault.StoreAsync(new PaymentSecret("handle", "mock", pan: "4242424242424242", environment: "live"),
+            TimeSpan.FromMinutes(1), retrieveOnce: false, ct);
+        var runtime = new PaymentRuntimeService([new MockPaymentProvider()], vault, new DefaultPaymentPolicy(),
+            new InMemoryPaymentAuditSink(), approval: null, defaultProviderId: "mock");
+        var request = new ApprovalRequest
+        {
+            Action = PaymentActions.BrowserSentinelFill, Summary = "Fill card", ProviderId = "caller", Environment = "test"
+        };
+
+        await Assert.ThrowsAsync<PaymentPolicyDeniedException>(() =>
+            runtime.ResolveSecretFieldForApprovedBoundaryAsync("handle", PaymentSecretField.Pan, request, ct).AsTask());
+    }
+
+    [Fact]
+    public async Task RetrieveOnce_WhenReadersCompete_ShouldReturnExactlyOneSecret()
+    {
+        var vault = new InMemoryPaymentSecretVault();
+        var ct = TestContext.Current.CancellationToken;
+        for (var round = 0; round < 64; round++)
+        {
+            await vault.StoreAsync(new PaymentSecret("one", "mock"), TimeSpan.FromMinutes(1), retrieveOnce: true, ct);
+            var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var readers = Enumerable.Range(0, 16).Select(async _ =>
+            {
+                await start.Task;
+                return await vault.TryRetrieveAsync("one", "test", ct);
+            }).ToArray();
+            start.SetResult();
+            Assert.Single((await Task.WhenAll(readers)).OfType<PaymentSecret>());
+        }
     }
 
     [Fact]
@@ -364,6 +443,7 @@ public sealed class PaymentRuntimeTests
     private sealed class StaticLinkRunner : ILinkCliCommandRunner
     {
         private readonly LinkCliCommandResult _result;
+        public List<string[]> Commands { get; } = [];
 
         public StaticLinkRunner(LinkCliCommandResult result)
         {
@@ -371,7 +451,10 @@ public sealed class PaymentRuntimeTests
         }
 
         public ValueTask<LinkCliCommandResult> RunAsync(string executable, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string> environment, TimeSpan timeout, CancellationToken ct)
-            => ValueTask.FromResult(_result);
+        {
+            Commands.Add(arguments.ToArray());
+            return ValueTask.FromResult(_result);
+        }
     }
 
     private sealed class ChallengeThenOkHandler : HttpMessageHandler

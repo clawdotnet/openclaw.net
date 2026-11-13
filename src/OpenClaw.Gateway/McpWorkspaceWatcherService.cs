@@ -21,6 +21,7 @@ internal sealed class McpWorkspaceWatcherService : IMcpWorkspaceReloadTrigger, I
     private readonly McpConfigStore _configStore;
     private readonly CapabilityBindingCache _bindingCache;
     private readonly string? _workspacePath;
+    private readonly bool _enabled;
     private readonly Channel<bool> _reloadChannel = Channel.CreateUnbounded<bool>(new UnboundedChannelOptions
     {
         SingleReader = true,
@@ -38,7 +39,8 @@ internal sealed class McpWorkspaceWatcherService : IMcpWorkspaceReloadTrigger, I
         string? workspacePath,
         ILogger<McpWorkspaceWatcherService> logger,
         McpConfigStore configStore,
-        CapabilityBindingCache bindingCache)
+        CapabilityBindingCache bindingCache,
+        bool enabled = true)
     {
         _registry = registry;
         _agentRuntime = agentRuntime;
@@ -46,16 +48,21 @@ internal sealed class McpWorkspaceWatcherService : IMcpWorkspaceReloadTrigger, I
         _configStore = configStore;
         _workspacePath = workspacePath;
         _bindingCache = bindingCache;
+        _enabled = enabled;
     }
 
-    public void TriggerReload() => _reloadChannel.Writer.TryWrite(true);
+    public void TriggerReload()
+    {
+        if (_enabled)
+            _reloadChannel.Writer.TryWrite(true);
+    }
 
     public void Start(CancellationToken stoppingToken)
     {
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (_started)
+            if (!_enabled || _started)
                 return;
 
             _started = true;

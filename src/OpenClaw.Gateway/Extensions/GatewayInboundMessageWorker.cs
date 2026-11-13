@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Agent;
+using OpenClaw.Agent.Tools;
 using OpenClaw.Channels;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Middleware;
@@ -686,7 +687,7 @@ internal sealed class GatewayInboundMessageWorker
                                     session.ResponseMode = originalResponseMode;
                                 }
 
-                                // Upload files written by write_file by scanning history (same as non-streaming path).
+                                // Collect attachments returned by publish_file by scanning history (same as non-streaming path).
                                 var streamFileUploads = new List<StoredMediaAsset>();
                                 if (mediaCache is not null)
                                 {
@@ -696,15 +697,9 @@ internal sealed class GatewayInboundMessageWorker
                                         if (hturn.ToolCalls is null) continue;
                                         foreach (var call in hturn.ToolCalls)
                                         {
-                                            if (call.Result is null || !call.Result.Contains("[FILE_PATH:", StringComparison.Ordinal))
-                                                continue;
-                                            var (fileMarkers, _) = MediaMarkerProtocol.Extract(call.Result);
-                                            foreach (var marker in fileMarkers.Where(m => m.Kind == MediaMarkerKind.FilePath))
-                                            {
-                                                var fileAsset = await TryUploadFilePathAsync(marker.Value, config, mediaCache, processingCt);
-                                                if (fileAsset is not null)
-                                                    streamFileUploads.Add(fileAsset);
-                                            }
+                                            var asset = await TryCollectPublishedFileAsync(call, config, mediaCache, processingCt);
+                                            if (asset is not null)
+                                                streamFileUploads.Add(asset);
                                         }
                                     }
                                 }
@@ -841,7 +836,7 @@ internal sealed class GatewayInboundMessageWorker
                                     session.ResponseMode = originalResponseMode;
                                 }
 
-                                // Upload files written by write_file tool results and build asset list
+                                // Collect attachments returned by publish_file tool results and build asset list
                                 // BEFORE persisting, so FILE_URL markers are injected into history for replay.
                                 var nonStreamFileUploads = new List<StoredMediaAsset>();
                                 if (mediaCache is not null)
@@ -852,15 +847,9 @@ internal sealed class GatewayInboundMessageWorker
                                         if (hturn.ToolCalls is null) continue;
                                         foreach (var call in hturn.ToolCalls)
                                         {
-                                            if (call.Result is null || !call.Result.Contains("[FILE_PATH:", StringComparison.Ordinal))
-                                                continue;
-                                            var (fileMarkers, _) = MediaMarkerProtocol.Extract(call.Result);
-                                            foreach (var marker in fileMarkers.Where(m => m.Kind == MediaMarkerKind.FilePath))
-                                            {
-                                                var fileAsset = await TryUploadFilePathAsync(marker.Value, config, mediaCache, processingCt);
-                                                if (fileAsset is not null)
-                                                    nonStreamFileUploads.Add(fileAsset);
-                                            }
+                                            var asset = await TryCollectPublishedFileAsync(call, config, mediaCache, processingCt);
+                                            if (asset is not null)
+                                                nonStreamFileUploads.Add(asset);
                                         }
                                     }
                                 }
@@ -1479,44 +1468,21 @@ internal sealed class GatewayInboundMessageWorker
         return result.ToString();
     }
 
-    // Reads a file from disk (validating it is within an allowed write root) and stores it
-    // in the media cache, returning the stored asset. Returns null if the file does not
-    // exist or the path is outside all allowed write roots.
-    private static async Task<StoredMediaAsset?> TryUploadFilePathAsync(
-        string filePath,
-        GatewayConfig config,
-        MediaCacheStore mediaCache,
-        CancellationToken ct)
+    internal static async Task<StoredMediaAsset?> TryCollectPublishedFileAsync(
+        ToolInvocation call, GatewayConfig config, MediaCacheStore mediaCache, CancellationToken ct)
     {
+        if (call.ToolName != "publish_file" || call.ResultStatus != ToolResultStatuses.Completed || call.Result is null)
+            return null;
+
+        // The native publisher appends one terminal marker after authorizing the source.
+        var lastLine = call.Result[(call.Result.LastIndexOf('\n') + 1)..];
+        if (!MediaMarkerProtocol.TryParseMarker(lastLine, out var marker) || marker.Kind != MediaMarkerKind.FilePath)
+            return null;
+
         try
         {
-            var fullPath = Path.GetFullPath(filePath);
-
-            var roots = config.Tooling.AllowedWriteRoots;
-            if (roots.Length == 0)
-                return null;
-
-            var pathAllowed = false;
-            foreach (var root in roots)
-            {
-                if (root == "*")
-                {
-                    pathAllowed = true;
-                    break;
-                }
-
-                var fullRoot = Path.GetFullPath(root);
-                if (fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase) &&
-                    (fullPath.Length == fullRoot.Length ||
-                     fullPath[fullRoot.Length] == Path.DirectorySeparatorChar ||
-                     fullPath[fullRoot.Length] == Path.AltDirectorySeparatorChar))
-                {
-                    pathAllowed = true;
-                    break;
-                }
-            }
-
-            if (!pathAllowed || !File.Exists(fullPath))
+            var fullPath = ToolPathPolicy.ResolveRealPath(marker.Value);
+            if (!ToolPathPolicy.IsWriteAllowed(config.Tooling, fullPath) || !File.Exists(fullPath))
                 return null;
 
             var bytes = await File.ReadAllBytesAsync(fullPath, ct);

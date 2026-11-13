@@ -71,6 +71,7 @@ internal static class PaymentCommands
                 RequireYesForLive(env, parsed.HasFlag("--yes"));
                 var request = new MachinePaymentRequest
                 {
+                    IdempotencyKey = Required(parsed, "--idempotency-key"),
                     ProviderId = provider,
                     FundingSourceId = parsed.GetOption("--funding-source"),
                     Environment = env,
@@ -193,7 +194,7 @@ internal static class PaymentCommands
               openclaw payment setup [--provider <id>] [--json]
               openclaw payment funding list [--provider <id>] [--test|--environment live] [--json]
               openclaw payment virtual-card issue --merchant <name> --amount-minor <n> [--currency USD] [--funding-source <id>] [--provider <id>] [--test|--environment live] [--yes] [--json]
-              openclaw payment execute --amount-minor <n> [--merchant <name>] [--resource-url <url>] [--currency USD] [--provider <id>] [--test|--environment live] [--yes] [--json]
+              openclaw payment execute --idempotency-key <key> --amount-minor <n> [--merchant <name>] [--resource-url <url>] [--currency USD] [--provider <id>] [--test|--environment live] [--yes] [--json]
               openclaw payment status --id <payment-or-handle-id> [--provider <id>] [--json]
 
             Notes:

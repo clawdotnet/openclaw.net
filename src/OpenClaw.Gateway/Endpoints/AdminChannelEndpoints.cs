@@ -38,9 +38,10 @@ internal static class AdminChannelEndpoints
         // Returns the currently effective config for the named channel.
         app.MapGet("/admin/channels/{channel}", (HttpContext ctx, string channel) =>
         {
-            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
-            if (!auth.IsAuthorized)
-                return Results.Unauthorized();
+            var access = EndpointHelpers.AuthorizeOperatorEndpoint(ctx, startup, browserSessions, operations,
+                requireCsrf: false, endpointScope: "admin.channels.config");
+            if (access.Failure is not null)
+                return access.Failure;
 
             return channel switch
             {
@@ -63,15 +64,10 @@ internal static class AdminChannelEndpoints
         // Applies a full in-memory config replacement and reconnects the channel.
         app.MapPost("/admin/channels/{channel}/update", async (HttpContext ctx, string channel) =>
         {
-            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: true);
-            if (!auth.IsAuthorized)
-                return Results.Unauthorized();
-
-            if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, "admin.channels", out var blockedByPolicyId))
-                return Results.Json(
-                    new OperationStatusResponse { Success = false, Error = $"Rate limit exceeded by policy '{blockedByPolicyId}'." },
-                    CoreJsonContext.Default.OperationStatusResponse,
-                    statusCode: StatusCodes.Status429TooManyRequests);
+            var access = EndpointHelpers.AuthorizeOperatorEndpoint(ctx, startup, browserSessions, operations,
+                requireCsrf: true, endpointScope: "admin.channels.config", rateLimitScope: "admin.control");
+            if (access.Failure is not null)
+                return access.Failure;
 
             return channel switch
             {
@@ -94,15 +90,10 @@ internal static class AdminChannelEndpoints
         // Clears the in-memory + persisted override so the channel falls back to appsettings.
         app.MapDelete("/admin/channels/{channel}/override", async (HttpContext ctx, string channel) =>
         {
-            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: true);
-            if (!auth.IsAuthorized)
-                return Results.Unauthorized();
-
-            if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, "admin.channels", out var blockedByPolicyId))
-                return Results.Json(
-                    new OperationStatusResponse { Success = false, Error = $"Rate limit exceeded by policy '{blockedByPolicyId}'." },
-                    CoreJsonContext.Default.OperationStatusResponse,
-                    statusCode: StatusCodes.Status429TooManyRequests);
+            var access = EndpointHelpers.AuthorizeOperatorEndpoint(ctx, startup, browserSessions, operations,
+                requireCsrf: true, endpointScope: "admin.channels.config", rateLimitScope: "admin.control");
+            if (access.Failure is not null)
+                return access.Failure;
 
             switch (channel)
             {

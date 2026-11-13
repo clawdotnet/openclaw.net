@@ -77,32 +77,9 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
     public FeishuChannelConfig GetEffectiveConfig() => _runtimeOverride ?? _initialConfig;
 
     /// <summary>
-    /// Returns the effective config with resolved credentials back-filled so the admin UI can display them.
-    /// <c>AppSecret</c> is populated from the resolved <c>_appSecret</c> value (which may come from <c>AppSecretRef</c>).
+    /// Returns the configured values and references for the admin editor.
     /// </summary>
-    public FeishuChannelConfig GetEffectiveConfigForAdmin()
-    {
-        var cfg = _runtimeOverride ?? _initialConfig;
-        if (!string.IsNullOrEmpty(_appSecret) && string.IsNullOrEmpty(cfg.AppSecret))
-        {
-            // Return a copy with the resolved secret filled in so it appears in the admin response.
-            return new FeishuChannelConfig
-            {
-                Enabled                = cfg.Enabled,
-                AppId                  = cfg.AppId,
-                AppIdRef               = cfg.AppIdRef,
-                AppSecret              = _appSecret,
-                AppSecretRef           = cfg.AppSecretRef,
-                GroupPolicy            = cfg.GroupPolicy,
-                AllowedFromUserIds     = cfg.AllowedFromUserIds,
-                AllowedGroupIds        = cfg.AllowedGroupIds,
-                MaxInboundChars        = cfg.MaxInboundChars,
-                RequireMentionInGroup  = cfg.RequireMentionInGroup,
-                ExposeInboundMediaUrls = cfg.ExposeInboundMediaUrls,
-            };
-        }
-        return cfg;
-    }
+    public FeishuChannelConfig GetEffectiveConfigForAdmin() => GetEffectiveConfig();
 
     /// <summary>
     /// Applies a config override in memory WITHOUT reconnecting.

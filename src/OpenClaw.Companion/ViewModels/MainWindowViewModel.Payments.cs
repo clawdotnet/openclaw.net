@@ -39,6 +39,9 @@ public sealed partial class MainWindowViewModel
     private string _virtualCardFundingSourceId = "";
 
     [ObservableProperty]
+    private string _machinePaymentReference = "";
+
+    [ObservableProperty]
     private string _machinePaymentMerchantName = "";
 
     [ObservableProperty]
@@ -167,6 +170,12 @@ public sealed partial class MainWindowViewModel
     [RelayCommand]
     private async Task ExecuteMachinePaymentAsync()
     {
+        if (string.IsNullOrWhiteSpace(MachinePaymentReference) || MachinePaymentReference.Length > 200)
+        {
+            PaymentsStatus = "Enter a payment reference of up to 200 characters. Reuse the same reference when retrying a purchase.";
+            return;
+        }
+
         if (!long.TryParse(MachinePaymentAmountMinor, out var amountMinor) || amountMinor <= 0)
         {
             PaymentsStatus = "Payment amount must be a positive minor-unit integer.";
@@ -188,6 +197,7 @@ public sealed partial class MainWindowViewModel
 
             var result = await client.ExecuteMachinePaymentAsync(new MachinePaymentRequest
             {
+                IdempotencyKey = MachinePaymentReference,
                 ProviderId = EmptyToNull(PaymentProvider),
                 Environment = PaymentEnvironment,
                 FundingSourceId = EmptyToNull(MachinePaymentFundingSourceId),

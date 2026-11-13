@@ -1,5 +1,6 @@
 using System.Text.Json;
 using OpenClaw.Payments.Abstractions;
+using OpenClaw.Payments.Core;
 
 namespace OpenClaw.Payments.StripeLink;
 
@@ -69,7 +70,7 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
 
     public async ValueTask<IReadOnlyList<FundingSource>> ListFundingSourcesAsync(PaymentExecutionContext context, CancellationToken ct)
     {
-        var result = await RunJsonAsync(["funding-sources", "list", "--json", "--mode", _options.Mode], ct);
+        var result = await RunJsonAsync(["funding-sources", "list", "--json", "--mode", GetAuthorizedMode(context)], ct);
         if (result.ExitCode != 0)
             throw new InvalidOperationException($"Stripe Link funding source list failed: {result.Stderr}");
 
@@ -84,7 +85,7 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
             "issue",
             "--json",
             "--mode",
-            _options.Mode,
+            GetAuthorizedMode(context),
             "--merchant",
             request.MerchantName,
             "--amount",
@@ -110,7 +111,7 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
             "execute",
             "--json",
             "--mode",
-            _options.Mode,
+            GetAuthorizedMode(context),
             "--amount",
             request.Challenge.AmountMinor.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "--currency",
@@ -130,11 +131,20 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
 
     public async ValueTask<PaymentStatus> GetPaymentStatusAsync(string paymentIdOrHandleId, PaymentExecutionContext context, CancellationToken ct)
     {
-        var result = await RunJsonAsync(["status", "--json", "--mode", _options.Mode, "--id", paymentIdOrHandleId], ct);
+        var result = await RunJsonAsync(["status", "--json", "--mode", GetAuthorizedMode(context), "--id", paymentIdOrHandleId], ct);
         if (result.ExitCode != 0)
             throw new InvalidOperationException($"Stripe Link status failed: {result.Stderr}");
 
         return ParseStatus(result.Stdout, paymentIdOrHandleId);
+    }
+
+    private string GetAuthorizedMode(PaymentExecutionContext context)
+    {
+        var configured = PaymentEnvironments.Normalize(_options.Mode);
+        if (PaymentEnvironments.Normalize(context.Environment) != configured)
+            throw new PaymentPolicyDeniedException($"Requested payment environment does not match the configured Stripe Link mode '{configured}'.");
+
+        return configured;
     }
 
     private ValueTask<LinkCliCommandResult> RunJsonAsync(IReadOnlyList<string> arguments, CancellationToken ct)

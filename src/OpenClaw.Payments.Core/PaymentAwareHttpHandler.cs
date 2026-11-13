@@ -6,6 +6,8 @@ namespace OpenClaw.Payments.Core;
 
 public sealed class PaymentAwareHttpHandler : DelegatingHandler
 {
+    public static readonly HttpRequestOptionsKey<string> IdempotencyKeyOption = new("OpenClaw.PaymentIdempotencyKey");
+
     private readonly PaymentRuntimeService _payments;
     private readonly PaymentExecutionContext _context;
     private readonly string _providerId;
@@ -43,6 +45,10 @@ public sealed class PaymentAwareHttpHandler : DelegatingHandler
         response.Dispose();
         var result = await _payments.ExecuteMachinePaymentAsync(new MachinePaymentRequest
         {
+            IdempotencyKey = request.Options.TryGetValue(IdempotencyKeyOption, out var key)
+                ? key
+                : string.IsNullOrWhiteSpace(challenge.ChallengeId) ? null
+                    : FilePaymentIdempotencyStore.GetId(request.RequestUri.ToString(), challenge.ChallengeId),
             ProviderId = _providerId,
             Challenge = challenge with
             {

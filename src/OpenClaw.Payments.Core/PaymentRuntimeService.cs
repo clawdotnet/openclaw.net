@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using OpenClaw.Payments.Abstractions;
 
 namespace OpenClaw.Payments.Core;
@@ -6,6 +8,7 @@ public sealed class PaymentRuntimeService
 {
     private readonly Dictionary<string, IPaymentProvider> _providers;
     private readonly IPaymentSecretVault _vault;
+    private readonly IPaymentIdempotencyStore _idempotency;
     private readonly IPaymentPolicy _policy;
     private readonly IPaymentAuditSink _audit;
     private readonly IPaymentApprovalService? _approval;
@@ -19,10 +22,12 @@ public sealed class PaymentRuntimeService
         IPaymentAuditSink audit,
         IPaymentApprovalService? approval = null,
         string? defaultProviderId = null,
-        TimeSpan? secretTtl = null)
+        TimeSpan? secretTtl = null,
+        IPaymentIdempotencyStore? idempotencyStore = null)
     {
         _providers = providers.ToDictionary(p => p.ProviderId, StringComparer.OrdinalIgnoreCase);
         _vault = vault;
+        _idempotency = idempotencyStore ?? new InMemoryPaymentIdempotencyStore();
         _policy = policy;
         _audit = audit;
         _approval = approval;
@@ -118,6 +123,7 @@ public sealed class PaymentRuntimeService
         PaymentExecutionContext context,
         CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(request.Challenge);
         var provider = ResolveProvider(request.ProviderId ?? request.Challenge.ProviderId);
         var effectiveContext = NormalizeContext(context, request.Environment);
         ValidateMachinePaymentRequest(request);
@@ -132,27 +138,57 @@ public sealed class PaymentRuntimeService
             effectiveContext);
 
         await RequireApprovalOrPolicyAllowAsync(approval, ct);
-        await _audit.RecordAsync(new PaymentAuditEvent
+        var normalizedRequest = request with
         {
-            EventType = "machine_payment_attempted",
             ProviderId = provider.ProviderId,
-            MerchantName = request.Challenge.MerchantName,
-            AmountMinor = request.Challenge.AmountMinor,
-            Currency = request.Challenge.Currency,
-            Environment = effectiveContext.Environment
+            Environment = effectiveContext.Environment,
+            Challenge = request.Challenge with
+            {
+                ProviderId = provider.ProviderId,
+                SafeMetadata = new Dictionary<string, string>((request.Challenge.SafeMetadata ?? []).OrderBy(p => p.Key, StringComparer.Ordinal))
+            }
+        };
+        var fingerprint = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
+            normalizedRequest, PaymentJsonContext.Default.MachinePaymentRequest)));
+        var scope = JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["provider"] = provider.ProviderId.ToLowerInvariant(),
+            ["environment"] = effectiveContext.Environment,
+            ["caller"] = effectiveContext.CallerId ?? "",
+            ["channel"] = effectiveContext.CallerId is null ? effectiveContext.ChannelId ?? "" : "",
+            ["sender"] = effectiveContext.CallerId is null ? effectiveContext.SenderId ?? "" : "",
+            ["workspace"] = effectiveContext.WorkspaceId ?? ""
+        }, PaymentJsonContext.Default.DictionaryStringString);
+        MachinePaymentProviderResult? providerResult = null;
+        var result = await _idempotency.ExecuteOnceAsync(scope, request.IdempotencyKey!, fingerprint, async dispatchCt =>
+        {
+            await _audit.RecordAsync(new PaymentAuditEvent
+            {
+                EventType = "machine_payment_attempted",
+                ProviderId = provider.ProviderId,
+                MerchantName = request.Challenge.MerchantName,
+                AmountMinor = request.Challenge.AmountMinor,
+                Currency = request.Challenge.Currency,
+                Environment = effectiveContext.Environment
+            }, dispatchCt);
+            try
+            {
+                providerResult = await provider.ExecuteMachinePaymentAsync(normalizedRequest, effectiveContext, dispatchCt);
+                return providerResult.Result;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException and not PaymentPolicyDeniedException)
+            {
+                throw new PaymentIdempotencyException("payment_outcome_unknown",
+                    "Payment provider outcome is unknown. Reconcile with the provider before making another payment. Do not retry with a new key.", ex);
+            }
         }, ct);
 
-        var providerResult = await provider.ExecuteMachinePaymentAsync(request with
-        {
-            ProviderId = provider.ProviderId,
-            Environment = effectiveContext.Environment
-        }, effectiveContext, ct);
-
-        if (providerResult.ScopedAuthorizationSecret is not null)
+        // Replays never replenish a consumed or expired one-time authorization secret.
+        if (providerResult?.ScopedAuthorizationSecret is not null)
         {
             var secret = PrepareSecretForVault(
                 providerResult.ScopedAuthorizationSecret,
-                providerResult.Result.PaymentId,
+                result.PaymentId,
                 provider.ProviderId,
                 effectiveContext.Environment,
                 DateTimeOffset.UtcNow.AddMinutes(5));
@@ -161,18 +197,21 @@ public sealed class PaymentRuntimeService
 
         await _audit.RecordAsync(new PaymentAuditEvent
         {
-            EventType = providerResult.Result.Status.Equals("completed", StringComparison.OrdinalIgnoreCase)
-                ? "machine_payment_completed"
-                : "machine_payment_failed",
+            EventType = providerResult is null ? "machine_payment_replayed" : result.Status.ToLowerInvariant() switch
+            {
+                "completed" => "machine_payment_completed",
+                "failed" or "declined" or "canceled" => "machine_payment_failed",
+                _ => "machine_payment_pending"
+            },
             ProviderId = provider.ProviderId,
-            PaymentId = providerResult.Result.PaymentId,
-            MerchantName = providerResult.Result.MerchantName,
-            AmountMinor = providerResult.Result.AmountMinor,
-            Currency = providerResult.Result.Currency,
-            Status = providerResult.Result.Status,
+            PaymentId = result.PaymentId,
+            MerchantName = result.MerchantName,
+            AmountMinor = result.AmountMinor,
+            Currency = result.Currency,
+            Status = result.Status,
             Environment = effectiveContext.Environment
         }, ct);
-        return providerResult.Result;
+        return result;
     }
 
     public async ValueTask<PaymentStatus> GetPaymentStatusAsync(
@@ -208,10 +247,8 @@ public sealed class PaymentRuntimeService
             ?? throw new InvalidOperationException("Payment secret is missing, expired, or revoked.");
         var effectiveApproval = approval with
         {
-            ProviderId = string.IsNullOrWhiteSpace(approval.ProviderId) ? secret.ProviderId : approval.ProviderId,
-            Environment = string.IsNullOrWhiteSpace(approval.Environment)
-                ? secret.Environment
-                : PaymentEnvironments.Normalize(approval.Environment)
+            ProviderId = secret.ProviderId,
+            Environment = secret.Environment
         };
 
         await _audit.RecordAsync(new PaymentAuditEvent
@@ -375,6 +412,8 @@ public sealed class PaymentRuntimeService
             throw new ArgumentException("amount_minor must be greater than 0.", nameof(request));
         if (string.IsNullOrWhiteSpace(request.Challenge.Currency))
             throw new ArgumentException("currency is required.", nameof(request));
+        if (string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.IdempotencyKey.Length > 200)
+            throw new ArgumentException("idempotencyKey is required and must not exceed 200 characters. Reuse it for retries of the same payment.", nameof(request));
     }
 
     private static PaymentSecret PrepareSecretForVault(

@@ -152,14 +152,15 @@ public sealed class TelegramChannel : IChannelAdapter
 
     public async ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(outbound.Text)) return;
+        if (string.IsNullOrWhiteSpace(outbound.Text))
+            throw new ChannelDeliveryException("Telegram message is empty.", canRetry: false);
 
         if (!TelegramChatId.TryCreate(outbound.RecipientId, out var chatId))
         {
-            _logger.LogWarning("Telegram SendAsync aborted: RecipientId is not configured.");
-            return;
+            throw new ChannelDeliveryException("Telegram recipient is invalid.", canRetry: false);
         }
 
+        var deliveredParts = 0;
         var replyToMessageId = TryParseReplyToMessageId(outbound.ReplyToMessageId);
         try
         {
@@ -174,14 +175,14 @@ public sealed class TelegramChannel : IChannelAdapter
                 var text = markers.Count == 0 ? outbound.Text : remaining;
                 if (string.IsNullOrWhiteSpace(text))
                 {
-                    _logger.LogWarning("Telegram SendAsync skipped unsupported media-only message to {ChatId}.", chatId);
-                    return;
+                    throw new ChannelDeliveryException("Telegram message contains no supported media or text.", canRetry: false);
                 }
 
                 var first = true;
                 foreach (var chunk in ChunkText(text, MaxMessageChars))
                 {
                     await SendMessageAsync(chatId, chunk, first ? replyToMessageId : null, ct);
+                    deliveredParts++;
                     first = false;
                 }
 
@@ -200,12 +201,16 @@ public sealed class TelegramChannel : IChannelAdapter
                 var cap = i == 0 && request.SupportsCaption ? captionForMedia : null;
                 captionSentAsCaption = captionSentAsCaption || cap is not null;
                 await SendMediaAsync(chatId, request, cap, i == 0 ? replyToMessageId : null, ct);
+                deliveredParts++;
             }
 
             if (caption is not null && !captionSentAsCaption)
             {
                 foreach (var chunk in ChunkText(caption, MaxMessageChars))
+                {
                     await SendMessageAsync(chatId, chunk, replyToMessageId: null, ct);
+                    deliveredParts++;
+                }
             }
 
             // If caption was truncated, send remainder as a follow-up message.
@@ -213,12 +218,31 @@ public sealed class TelegramChannel : IChannelAdapter
             {
                 var rest = caption[(MaxCaptionChars - 1)..].Trim();
                 foreach (var chunk in ChunkText(rest, MaxMessageChars))
+                {
                     await SendMessageAsync(chatId, chunk, replyToMessageId: null, ct);
+                    deliveredParts++;
+                }
             }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ChannelDeliveryException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send Telegram message to {ChatId}", chatId);
+            var rejected = ex is TelegramBotApiException { ConfirmedRejection: true };
+            var retryable = ex is TelegramBotApiException apiError && IsRetryable(apiError.ErrorCode);
+            throw new ChannelDeliveryException(
+                $"Telegram send failed after {deliveredParts} delivered part(s).",
+                canRetry: rejected && retryable,
+                deliveredParts: deliveredParts,
+                outcomeUnknown: !rejected,
+                innerException: ex,
+                retryAfter: (ex as TelegramBotApiException)?.RetryAfter);
         }
     }
 
@@ -231,8 +255,8 @@ public sealed class TelegramChannel : IChannelAdapter
             Text = text,
             ReplyToMessageId = replyToMessageId
         };
-        var response = await _http.PostAsJsonAsync(url, payload, TelegramJsonContext.Default.TelegramMessagePayload, ct);
-        response.EnsureSuccessStatusCode();
+        using var response = await _http.PostAsJsonAsync(url, payload, TelegramJsonContext.Default.TelegramMessagePayload, ct);
+        using var document = await EnsureBotApiSuccessAsync(response, ct);
         _logger.LogInformation("Sent Telegram message to {ChatId}", chatId);
     }
 
@@ -300,8 +324,9 @@ public sealed class TelegramChannel : IChannelAdapter
             retryAfter = TimeSpan.FromSeconds(retryAfterSeconds);
         }
 
+        var confirmedRejection = root.TryGetProperty("ok", out var failedOk) && failedOk.ValueKind == JsonValueKind.False;
         document.Dispose();
-        throw new TelegramBotApiException(errorCode, description ?? "unknown error", retryAfter);
+        throw new TelegramBotApiException(errorCode, description ?? "unknown error", retryAfter, confirmedRejection: confirmedRejection);
     }
 
     private static bool IsRetryable(int errorCode)
@@ -367,8 +392,8 @@ public sealed class TelegramChannel : IChannelAdapter
 
         request.Apply(payload);
 
-        var response = await _http.PostAsJsonAsync(url, payload, TelegramJsonContext.Default.TelegramMediaPayload, ct);
-        response.EnsureSuccessStatusCode();
+        using var response = await _http.PostAsJsonAsync(url, payload, TelegramJsonContext.Default.TelegramMediaPayload, ct);
+        using var document = await EnsureBotApiSuccessAsync(response, ct);
         _logger.LogInformation("Sent Telegram {MediaType} to {ChatId}", request.MediaType, chatId);
     }
 
@@ -407,13 +432,16 @@ internal sealed class TelegramBotApiException : Exception
         int errorCode,
         string description,
         TimeSpan? retryAfter,
-        Exception? innerException = null)
+        Exception? innerException = null,
+        bool confirmedRejection = false)
         : base($"Telegram Bot API request failed ({errorCode}): {description}", innerException)
     {
         ErrorCode = errorCode;
         RetryAfter = retryAfter;
+        ConfirmedRejection = confirmedRejection;
     }
 
+    public bool ConfirmedRejection { get; }
     public int ErrorCode { get; }
     public TimeSpan? RetryAfter { get; }
 }

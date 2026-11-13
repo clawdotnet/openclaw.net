@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Abstractions;
+using OpenClaw.Core.Models;
 using OpenClaw.Core.Pipeline;
 
 namespace OpenClaw.Gateway.Extensions;
@@ -29,36 +30,60 @@ internal sealed class GatewayOutboundDeliveryWorker
                             continue;
                         }
 
-                        const int maxDeliveryAttempts = 2;
-                        for (var attempt = 1; attempt <= maxDeliveryAttempts; attempt++)
+                        try
                         {
-                            try
+                            if (await DeliverAsync(adapter, outbound, logger, lifetime.ApplicationStopping) &&
+                                heartbeatService.IsManagedHeartbeatJob(outbound.CronJobName))
                             {
-                                await adapter.SendAsync(outbound, lifetime.ApplicationStopping);
-                                if (heartbeatService.IsManagedHeartbeatJob(outbound.CronJobName))
-                                    heartbeatService.RecordDeliverySucceeded(outbound.SessionId);
-                                break;
+                                heartbeatService.RecordDeliverySucceeded(outbound.SessionId);
                             }
-                            catch (OperationCanceledException) when (lifetime.ApplicationStopping.IsCancellationRequested)
-                            {
-                                return;
-                            }
-                            catch (Exception ex)
-                            {
-                                if (attempt < maxDeliveryAttempts)
-                                {
-                                    logger.LogWarning(ex, "Outbound send failed for channel {ChannelId}, retrying…", outbound.ChannelId);
-                                    await Task.Delay(500, lifetime.ApplicationStopping);
-                                }
-                                else
-                                {
-                                    logger.LogError(ex, "Outbound send failed for channel {ChannelId} after {Attempts} attempts", outbound.ChannelId, maxDeliveryAttempts);
-                                }
-                            }
+                        }
+                        catch (OperationCanceledException) when (lifetime.ApplicationStopping.IsCancellationRequested)
+                        {
+                            return;
                         }
                     }
                 }
             }, lifetime.ApplicationStopping);
         }
+    }
+
+    internal static async Task<bool> DeliverAsync(
+        IChannelAdapter adapter, OutboundMessage outbound, ILogger logger, CancellationToken ct,
+        Func<TimeSpan, CancellationToken, Task>? retryDelay = null)
+    {
+        const int maxDeliveryAttempts = 2;
+        for (var attempt = 1; attempt <= maxDeliveryAttempts; attempt++)
+        {
+            try
+            {
+                await adapter.SendAsync(outbound, ct);
+                return true;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (ChannelDeliveryException ex) when (!ex.CanRetry)
+            {
+                logger.LogError(ex,
+                    "Outbound delivery stopped for {ChannelId}. Delivered parts: {DeliveredParts}; outcome unknown: {OutcomeUnknown}. Automatic retry is unsafe or the rejection is permanent.",
+                    outbound.ChannelId, ex.DeliveredParts, ex.OutcomeUnknown);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                if (attempt == maxDeliveryAttempts)
+                {
+                    logger.LogError(ex, "Outbound send failed for channel {ChannelId} after {Attempts} attempts", outbound.ChannelId, attempt);
+                    return false;
+                }
+                logger.LogWarning(ex, "Outbound send failed for channel {ChannelId}, retrying…", outbound.ChannelId);
+                var delay = ex is ChannelDeliveryException { RetryAfter: { } retryAfter } && retryAfter > TimeSpan.Zero
+                    ? retryAfter : TimeSpan.FromMilliseconds(500);
+                await (retryDelay?.Invoke(delay, ct) ?? Task.Delay(delay, ct));
+            }
+        }
+        return false;
     }
 }

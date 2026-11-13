@@ -87,7 +87,7 @@ public sealed class OperatorAccountCreateRequest
     public string? DisplayName { get; init; }
     public string Role { get; init; } = OperatorRoleNames.Viewer;
     public string? Password { get; init; }
-    public bool Enabled { get; init; } = true;
+    public bool Enabled { get; set; } = true;
 }
 
 public sealed class OperatorAccountUpdateRequest

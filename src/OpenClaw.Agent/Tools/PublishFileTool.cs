@@ -8,13 +8,8 @@ namespace OpenClaw.Agent.Tools;
 /// Publishes a file from the local filesystem (including temp/cache directories)
 /// to the media store so the user can download it via /media/{id}.
 ///
-/// If the source file is not within an AllowedWriteRoot (e.g. /tmp), the tool
-/// copies it to {WorkspaceRoot}/.downloads/ first so GatewayWorkers can pick
-/// it up with TryUploadFilePathAsync, which only reads from AllowedWriteRoots.
-///
-/// GatewayWorkers scans every ToolCall.Result for [FILE_PATH:] markers after each
-/// turn, uploads the bytes to MediaCacheStore, and delivers a file_attachment
-/// WebSocket envelope to the client — no extra plumbing needed.
+/// A source outside the allowed write roots is staged in the workspace downloads
+/// directory. The gateway collects the terminal file marker from a completed publish_file call.
 /// </summary>
 public sealed class PublishFileTool : ITool
 {

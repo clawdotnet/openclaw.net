@@ -21,7 +21,7 @@ internal sealed class MediaCacheStore
     {
         var id = $"media_{Guid.NewGuid():N}"[..22];
         var extension = GuessExtension(mediaType, fileName);
-        var assetPath = Path.Combine(_rootPath, id + extension);
+        var assetPath = Path.Combine(_rootPath, id + ".payload" + extension);
         await File.WriteAllBytesAsync(assetPath, data.ToArray(), ct);
 
         var asset = new StoredMediaAsset
@@ -46,7 +46,11 @@ internal sealed class MediaCacheStore
             return null;
 
         var json = await File.ReadAllTextAsync(metadataPath, ct);
-        return JsonSerializer.Deserialize(json, CoreJsonContext.Default.StoredMediaAsset);
+        var asset = JsonSerializer.Deserialize(json, CoreJsonContext.Default.StoredMediaAsset);
+        // Legacy JSON uploads overwrote their payload with the metadata file.
+        return asset is not null && !string.Equals(asset.Path, metadataPath, StringComparison.OrdinalIgnoreCase)
+            ? asset
+            : null;
     }
 
     private static string GuessExtension(string mediaType, string fileName)

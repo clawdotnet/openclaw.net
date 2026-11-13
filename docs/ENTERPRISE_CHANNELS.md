@@ -78,6 +78,8 @@ Channel configuration can be managed at runtime through admin endpoints without 
 | `POST` | `/admin/channels/{channelId}/update` | Update channel config |
 | `DELETE` | `/admin/channels/{channelId}/override` | Remove channel config override |
 
+Reading and modifying these channel configurations require the admin role. Feishu returns configured secret references to its editor. Resolved reference values remain inside the channel runtime.
+
 Overrides written through the admin API are persisted in `ChannelConfigStore` and take precedence over file-based configuration. They survive gateway restarts.
 
 ## Feishu Message Deduplication

@@ -17,7 +17,7 @@ Agent actions:
 - `setup_status`
 - `list_funding_sources`
 - `issue_virtual_card`
-- `execute_machine_payment`
+- `execute_machine_payment` requires `idempotency_key`, a stable reference reused for every retry of the same purchase
 - `get_payment_status`
 
 Tool results are allow-listed safe metadata only: provider, handle id, last4, merchant, timestamps, status, and provider references. The tool never returns PAN, CVV, cardholder details, authorization headers, shared payment tokens, provider secrets, or raw provider JSON.
@@ -33,3 +33,5 @@ Virtual card browser fills use sentinels such as:
 The model may emit those strings, but raw values resolve only inside the approved browser fill boundary.
 
 The mock provider is deterministic for local development and tests. The Stripe Link provider wraps `link-cli` when available and reports clean setup status when it is missing.
+
+Machine-payment retries replay the saved result. Conflicting request details return `idempotency_conflict`. If a payment is still running or its provider outcome is uncertain, the tool returns `payment_outcome_unknown` and does not dispatch another payment. Reconcile with the provider before attempting a different key. See [retry safety](../security/payments.md#machine-payment-retry-safety).

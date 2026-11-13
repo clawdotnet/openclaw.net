@@ -44,7 +44,8 @@ internal sealed class SlackWebhookHandler
         string? timestampHeader,
         string? signatureHeader,
         Func<InboundMessage, CancellationToken, ValueTask> enqueue,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<bool>? tryBeginDelivery = null)
     {
         if (_config.ValidateSignature)
         {
@@ -67,6 +68,9 @@ internal sealed class SlackWebhookHandler
 
         if (!string.Equals(wrapper.Type, "event_callback", StringComparison.Ordinal))
             return new WebhookResponse(200, "OK");
+
+        if (tryBeginDelivery is not null && !tryBeginDelivery())
+            return new WebhookResponse(200, "Duplicate ignored.");
 
         var evt = wrapper.Event;
         if (evt is null)

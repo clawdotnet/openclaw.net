@@ -5,7 +5,7 @@ using TickerQ.Utilities.Base;
 namespace OpenClaw.Core.Loops;
 
 /// <summary>
-/// TickerQ function that ticks every minute and dispatches due loop prompts.
+/// TickerQ function that ticks every second and dispatches due loop prompts.
 /// Polls ClawLoopScheduler.GetDueEntries() and delegates to IAgentLoopDispatcher.
 /// Cuts OTel context on each tick to prevent span nesting across iterations.
 /// </summary>
@@ -25,7 +25,7 @@ public sealed class AgentLoopJob
         _logger = logger;
     }
 
-    [TickerFunction("AgentLoopExecutor", cronExpression: "* * * * *")]
+    [TickerFunction("AgentLoopExecutor", cronExpression: "* * * * * *")]
     public async Task ExecuteAsync(TickerFunctionContext context, CancellationToken ct)
     {
         // Cut OTel context to prevent nested span chains across loop iterations
@@ -33,8 +33,7 @@ public sealed class AgentLoopJob
 
         try
         {
-            var now = DateTimeOffset.UtcNow;
-            var dueEntries = _scheduler.GetDueEntries(now);
+            var dueEntries = _scheduler.GetDueEntries();
 
             foreach (var entry in dueEntries)
             {

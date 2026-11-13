@@ -16,10 +16,14 @@ public static class PaymentServiceCollectionExtensions
         bool denyLiveWithoutApprovalService = true,
         long? maxLiveAmountMinor = null,
         string mockProviderId = "mock",
-        string mockFundingDisplay = "Mock Visa ending 4242")
+        string mockFundingDisplay = "Mock Visa ending 4242",
+        string? idempotencyStoragePath = null)
     {
         _ = PaymentEnvironments.Normalize(environment);
         services.TryAddSingleton<IPaymentSecretVault, InMemoryPaymentSecretVault>();
+        services.TryAddSingleton<IPaymentIdempotencyStore>(_ => idempotencyStoragePath is null
+            ? new InMemoryPaymentIdempotencyStore()
+            : new FilePaymentIdempotencyStore(idempotencyStoragePath));
         services.TryAddSingleton<IPaymentAuditSink, InMemoryPaymentAuditSink>();
         services.TryAddSingleton<IPaymentPolicy>(_ => new DefaultPaymentPolicy(
             allowTestModeWithoutApproval,
@@ -35,7 +39,8 @@ public static class PaymentServiceCollectionExtensions
             sp.GetRequiredService<IPaymentAuditSink>(),
             sp.GetService<IPaymentApprovalService>(),
             defaultProviderId,
-            secretTtl));
+            secretTtl,
+            sp.GetRequiredService<IPaymentIdempotencyStore>()));
         services.TryAddSingleton<PaymentSentinelSubstitutionService>();
         return services;
     }

@@ -69,3 +69,11 @@ Webhook mode requires a public HTTPS URL reachable by Telegram. The gateway itse
   }
 }
 ```
+
+## Outbound delivery outcomes
+
+A send succeeds only after Telegram returns a successful Bot API envelope. HTTP success with `ok: false` is a failure. Invalid recipients and unsupported media-only messages fail explicitly.
+
+The gateway retries an explicitly rejected transient request only when no message parts have been delivered. A permanent rejection stops retries. A partial send or uncertain transport outcome is reported as failed and is not automatically replayed, because retrying the whole message could duplicate delivered parts. Shutdown cancellation propagates normally. Heartbeat delivery timestamps are recorded only after a successful send.
+
+Failure logs include the number of delivered parts and whether the remaining outcome is unknown. This does not add durable delivery receipts or an outbound recovery queue.

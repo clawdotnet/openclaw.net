@@ -234,6 +234,8 @@ public sealed record ApprovalResult
 
 public sealed record PaymentExecutionContext
 {
+    /// <summary>Trusted caller identity used to scope payment retry keys.</summary>
+    public string? CallerId { get; init; }
     public string? SessionId { get; init; }
     public string? ChannelId { get; init; }
     public string? SenderId { get; init; }
