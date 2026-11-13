@@ -31,8 +31,23 @@ public sealed class WorkflowBackendConfig
     public string? BaseUrl { get; set; }
     public string? WorkflowName { get; set; }
     public string? ApiTokenSecret { get; set; }
+    public WorkflowAuthenticationConfig Authentication { get; set; } = new();
     public int PollIntervalSeconds { get; set; } = 2;
     public int TimeoutSeconds { get; set; } = 120;
+}
+
+public sealed class WorkflowAuthenticationConfig
+{
+    public string Mode { get; set; } = "static";
+    public string? TokenEndpoint { get; set; }
+    public string? ClientId { get; set; }
+    public string? ClientSecretRef { get; set; }
+    public string[] Scopes { get; set; } = [];
+    public string? Audience { get; set; }
+    public string? Resource { get; set; }
+    public string? UserAssertionProfile { get; set; }
+    public Dictionary<string, string> AccessTokenClaims { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, string> UserDelegationClaims { get; set; } = new(StringComparer.Ordinal);
 }
 
 public sealed class AgentWorkflowBackendSummary

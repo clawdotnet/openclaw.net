@@ -10,21 +10,25 @@ public sealed class OwnedProcessTests
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var logPath = Path.Combine(temporaryDirectory.Path, "process.log");
+        var (fileName, arguments) = OperatingSystem.IsWindows()
+            ? (Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe",
+                new[] { "/d", "/c", "echo owned-process-stdout & echo owned-process-stderr 1>&2" })
+            : ("/bin/sh", new[] { "-c", "printf '%s\\n' owned-process-stdout; printf '%s\\n' owned-process-stderr >&2" });
 
         await using (var process = OwnedProcess.Start(
-            "dotnet",
-            ["--version"],
+            fileName,
+            arguments,
             temporaryDirectory.Path,
             new Dictionary<string, string?>(),
             logPath))
         {
             await process.WaitForExitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+            Assert.Equal(0, process.ExitCode);
         }
 
-        Assert.Contains(
-            "10.0.",
-            await File.ReadAllTextAsync(logPath, TestContext.Current.CancellationToken),
-            StringComparison.Ordinal);
+        var log = await File.ReadAllTextAsync(logPath, TestContext.Current.CancellationToken);
+        Assert.Contains("owned-process-stdout", log, StringComparison.Ordinal);
+        Assert.Contains("owned-process-stderr", log, StringComparison.Ordinal);
     }
 
     [Fact]

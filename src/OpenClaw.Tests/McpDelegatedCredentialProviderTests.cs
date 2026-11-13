@@ -78,6 +78,39 @@ public sealed class McpDelegatedCredentialProviderTests
     }
 
     [Fact]
+    public void AddOpenClawSecurityServices_DisablesWorkflowBackendCookiesAndRedirects()
+    {
+        var startup = new GatewayStartupContext
+        {
+            Config = new GatewayConfig(),
+            RuntimeState = new GatewayRuntimeState
+            {
+                RequestedMode = "jit",
+                EffectiveMode = GatewayRuntimeMode.Jit,
+                DynamicCodeSupported = true
+            },
+            IsNonLoopbackBind = false
+        };
+        var handlerFilter = new CapturingHttpMessageHandlerBuilderFilter();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOpenClawSecurityServices(startup);
+        services.AddSingleton<IHttpMessageHandlerBuilderFilter>(handlerFilter);
+
+        using var provider = services.BuildServiceProvider();
+        using var httpClient = provider.GetRequiredService<IHttpClientFactory>().CreateClient("workflow-backend");
+
+        var (redirectsEnabled, cookiesEnabled) = handlerFilter.PrimaryHandler switch
+        {
+            HttpClientHandler handler => (handler.AllowAutoRedirect, handler.UseCookies),
+            SocketsHttpHandler handler => (handler.AllowAutoRedirect, handler.UseCookies),
+            _ => throw new InvalidOperationException("The workflow backend has an unexpected primary handler.")
+        };
+        Assert.False(redirectsEnabled);
+        Assert.False(cookiesEnabled);
+    }
+
+    [Fact]
     public async Task TokenExchange_PostsConfiguredGrantAndReturnsCredential()
     {
         Dictionary<string, string>? submittedFields = null;

@@ -262,6 +262,7 @@ public sealed class CoreServicesExtensionsTests
             services.AddOpenClawCoreServices(startup);
             services.AddOpenClawSecurityServices(startup);
 
+            services.AddSingleton<IHostApplicationLifetime>(new TestHostApplicationLifetime(CancellationToken.None));
             using var provider = services.BuildServiceProvider(new ServiceProviderOptions
             {
                 ValidateOnBuild = true,
@@ -269,6 +270,7 @@ public sealed class CoreServicesExtensionsTests
             });
 
             Assert.NotNull(provider.GetRequiredService<GatewayLlmExecutionService>());
+            Assert.NotNull(provider.GetRequiredService<OpenClaw.Gateway.Workflows.AgentWorkflowRegistry>());
         }
         finally
         {

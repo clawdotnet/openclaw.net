@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Text.Json;
+using System.ComponentModel;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using OpenClaw.Agent.Memory;
@@ -237,6 +239,91 @@ public sealed class FractalMemoryWorkflowTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fixture.Provider.BuildContextAsync("projects/demo", 500, cts.Token));
     }
 
+    [Fact]
+    public async Task DeleteRootAsync_WhenServerIsStillExiting_ShouldWaitBeforeDeletingRoot()
+    {
+        var root = Path.Join(Path.GetTempPath(), "fractal fixture " + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var start = new ProcessStartInfo("node")
+        {
+            WorkingDirectory = root,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false
+        };
+        start.ArgumentList.Add("-e");
+        start.ArgumentList.Add("process.stdin.once('data', () => setTimeout(() => process.exit(0), 500)); process.stdout.write('ready\\n');");
+        using var process = Process.Start(start)!;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            Assert.Equal("ready", await process.StandardOutput.ReadLineAsync(timeout.Token));
+            await process.StandardInput.WriteLineAsync("exit");
+
+            await StdioFixture.DeleteRootAsync(root, process);
+
+            Assert.True(process.HasExited);
+            Assert.False(Directory.Exists(root));
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(timeout.Token);
+            }
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task StdioFixtureDispose_WhenServerProcessAlreadyExited_ShouldStillDeleteRoot()
+    {
+        var fixture = new StdioFixture();
+        using var process = Process.Start(new ProcessStartInfo("node")
+        {
+            UseShellExecute = false,
+            ArgumentList = { "-e", "process.exit(0)" }
+        })!;
+        await process.WaitForExitAsync();
+        await File.WriteAllTextAsync(Path.Join(fixture.Root, "server.pid"),
+            process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        try
+        {
+            await fixture.DisposeAsync();
+
+            Assert.False(Directory.Exists(fixture.Root));
+        }
+        finally
+        {
+            if (Directory.Exists(fixture.Root))
+                Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteRootAsync_WhenProcessHandleIsUnavailable_ShouldStillDeleteRoot()
+    {
+        var root = Path.Join(Path.GetTempPath(), "fractal fixture " + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        using var process = new Process();
+        try
+        {
+            await StdioFixture.DeleteRootAsync(root, process);
+
+            Assert.False(Directory.Exists(root));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
     private sealed class StdioFixture : IAsyncDisposable
     {
         public string Root { get; } = Path.Join(Path.GetTempPath(), "fractal fixture " + Guid.NewGuid().ToString("N"));
@@ -254,8 +341,62 @@ public sealed class FractalMemoryWorkflowTests
         }
         public async ValueTask DisposeAsync()
         {
-            await Provider.DisposeAsync();
-            Directory.Delete(Root, recursive: true);
+            var pidFile = Path.Join(Root, "server.pid");
+            Process? serverProcess = null;
+            try
+            {
+                if (File.Exists(pidFile))
+                {
+                    try
+                    {
+                        serverProcess = Process.GetProcessById(
+                            int.Parse(await File.ReadAllTextAsync(pidFile), System.Globalization.CultureInfo.InvariantCulture));
+                        // Bind the child handle before MCP disposes its Windows cmd.exe wrapper.
+                        _ = serverProcess.SafeHandle;
+                    }
+                    catch (Exception exception) when (IsProcessUnavailable(exception))
+                    {
+                        serverProcess?.Dispose();
+                        serverProcess = null;
+                    }
+                }
+            }
+            finally
+            {
+                using var process = serverProcess;
+                try
+                {
+                    await Provider.DisposeAsync();
+                }
+                finally
+                {
+                    await DeleteRootAsync(Root, process);
+                }
+            }
         }
+
+        public static async Task DeleteRootAsync(string root, Process? serverProcess)
+        {
+            try
+            {
+                if (serverProcess is not null)
+                {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    _ = serverProcess.SafeHandle;
+                    await serverProcess.WaitForExitAsync(timeout.Token);
+                }
+            }
+            catch (Exception exception) when (IsProcessUnavailable(exception))
+            {
+                Debug.WriteLine($"Fractal-memory fixture process was already unavailable: {exception.Message}");
+            }
+            finally
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+
+        private static bool IsProcessUnavailable(Exception exception)
+            => exception is ArgumentException or InvalidOperationException or Win32Exception;
     }
 }
