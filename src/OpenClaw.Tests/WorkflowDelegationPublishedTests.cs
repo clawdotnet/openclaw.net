@@ -60,7 +60,8 @@ public sealed class WorkflowDelegationPublishedTests
         var userB = server.IssueUserToken("published-b", true);
         var denied = server.IssueUserToken("published-service", false);
         var output = new ConcurrentQueue<string>();
-        Process? process = null;
+        using var process = new Process();
+        var processStarted = false;
         try
         {
             await File.WriteAllTextAsync(configPath,
@@ -74,10 +75,11 @@ public sealed class WorkflowDelegationPublishedTests
             start.ArgumentList.Add(configPath);
             start.Environment["SSL_CERT_FILE"] = server.TrustBundlePath;
             start.Environment["WORKFLOW_PUBLISHED_SECRET"] = secret;
-            process = new Process { StartInfo = start };
+            process.StartInfo = start;
             process.OutputDataReceived += (_, args) => { if (args.Data is not null) output.Enqueue(args.Data); };
             process.ErrorDataReceived += (_, args) => { if (args.Data is not null) output.Enqueue(args.Data); };
             Assert.True(process.Start());
+            processStarted = true;
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
             using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{config.Port}/") };
@@ -138,11 +140,10 @@ public sealed class WorkflowDelegationPublishedTests
         }
         finally
         {
-            if (process is not null)
+            if (processStarted)
             {
                 if (!process.HasExited) process.Kill(entireProcessTree: true);
                 await process.WaitForExitAsync(CancellationToken.None);
-                process.Dispose();
             }
             try
             {

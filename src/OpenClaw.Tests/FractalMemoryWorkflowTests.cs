@@ -388,6 +388,7 @@ public sealed class FractalMemoryWorkflowTests
             }
             catch (Exception exception) when (IsProcessUnavailable(exception))
             {
+                Debug.WriteLine($"Fractal-memory fixture process was already unavailable: {exception.Message}");
             }
             finally
             {
