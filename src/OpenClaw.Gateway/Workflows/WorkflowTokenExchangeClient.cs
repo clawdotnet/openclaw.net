@@ -81,12 +81,16 @@ internal sealed class WorkflowTokenExchangeClient(
                 parsed.ExpiresIn is not (>= 1 and <= 86400) ||
                 string.Equals(authentication.Mode, "token-exchange", StringComparison.OrdinalIgnoreCase) && parsed.IssuedTokenType != AccessTokenType)
                 throw Failure(backendId);
+            var defaultScopeRequested = authentication.Scopes.Any(IsDefaultScope);
             if (parsed.Scope is not null)
             {
                 var returned = parsed.Scope.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
-                if (!authentication.Scopes.All(returned.Contains))
+                if (!authentication.Scopes.Where(static scope => !IsDefaultScope(scope)).All(returned.Contains) ||
+                    defaultScopeRequested && !returned.Any(static scope => !IsDefaultScope(scope)))
                     throw Failure(backendId);
             }
+            else if (defaultScopeRequested)
+                throw Failure(backendId);
             return new(accessToken, started, timeProvider.GetUtcNow(), parsed.ExpiresIn.Value);
         }
         catch (JsonException)
@@ -124,6 +128,9 @@ internal sealed class WorkflowTokenExchangeClient(
 
     private static string EncodeFormValue(string value)
         => Uri.EscapeDataString(value).Replace("%20", "+", StringComparison.Ordinal);
+
+    private static bool IsDefaultScope(string scope)
+        => scope.EndsWith("/.default", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsBearerToken(string value)
     {

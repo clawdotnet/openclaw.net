@@ -58,6 +58,18 @@ public sealed class WorkflowTokenExchangeTests
         Assert.DoesNotContain("delegated-user-token", result.ToString());
     }
 
+    [Fact]
+    public async Task ExchangeAsync_WhenEntraDefaultScopeIsExpanded_ShouldAcceptGrantedScopes()
+    {
+        var auth = WorkflowDelegationTestSupport.CreateAuthentication("entra-obo");
+        auth.Scopes = ["https://graph.microsoft.com/.default", "workflow.read"];
+
+        var result = await ExchangeAsync(auth, (_, _) =>
+            Task.FromResult(Json("""{"access_token":"delegated-user-token","token_type":"Bearer","expires_in":300,"scope":"User.Read workflow.read"}""")));
+
+        Assert.Equal("delegated-user-token", result.AccessToken);
+    }
+
     [Theory]
     [InlineData("""{"access_token":"","token_type":"Bearer","expires_in":300}""")]
     [InlineData("""{"access_token":"bad\r\ntoken","token_type":"Bearer","expires_in":300}""")]
