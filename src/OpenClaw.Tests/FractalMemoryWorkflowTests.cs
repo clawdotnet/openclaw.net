@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -237,6 +238,46 @@ public sealed class FractalMemoryWorkflowTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fixture.Provider.BuildContextAsync("projects/demo", 500, cts.Token));
     }
 
+    [Fact]
+    public async Task DeleteRootAsync_WhenServerIsStillExiting_ShouldWaitBeforeDeletingRoot()
+    {
+        var root = Path.Join(Path.GetTempPath(), "fractal fixture " + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var start = new ProcessStartInfo("node")
+        {
+            WorkingDirectory = root,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false
+        };
+        start.ArgumentList.Add("-e");
+        start.ArgumentList.Add("process.stdin.once('data', () => setTimeout(() => process.exit(0), 500)); process.stdout.write('ready\\n');");
+        using var process = Process.Start(start)!;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            Assert.Equal("ready", await process.StandardOutput.ReadLineAsync(timeout.Token));
+            await process.StandardInput.WriteLineAsync("exit");
+
+            await StdioFixture.DeleteRootAsync(root, process);
+
+            Assert.True(process.HasExited);
+            Assert.False(Directory.Exists(root));
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(timeout.Token);
+            }
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     private sealed class StdioFixture : IAsyncDisposable
     {
         public string Root { get; } = Path.Join(Path.GetTempPath(), "fractal fixture " + Guid.NewGuid().ToString("N"));
@@ -254,8 +295,24 @@ public sealed class FractalMemoryWorkflowTests
         }
         public async ValueTask DisposeAsync()
         {
+            var pidFile = Path.Join(Root, "server.pid");
+            using var serverProcess = File.Exists(pidFile)
+                ? Process.GetProcessById(int.Parse(await File.ReadAllTextAsync(pidFile), System.Globalization.CultureInfo.InvariantCulture))
+                : null;
+            // Bind the child handle before MCP disposes its Windows cmd.exe wrapper.
+            _ = serverProcess?.SafeHandle;
             await Provider.DisposeAsync();
-            Directory.Delete(Root, recursive: true);
+            await DeleteRootAsync(Root, serverProcess);
+        }
+
+        public static async Task DeleteRootAsync(string root, Process? serverProcess)
+        {
+            if (serverProcess is not null)
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await serverProcess.WaitForExitAsync(timeout.Token);
+            }
+            Directory.Delete(root, recursive: true);
         }
     }
 }
