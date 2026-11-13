@@ -155,7 +155,7 @@ public sealed partial class GatewayAdminEndpointTests
             form.Add(new ByteArrayContent(data.ToArray()), "file", "employee.zip");
             using var response = await harness.Client.PostAsync("/admin/digital-employee/upload", form);
             Assert.Equal(expected, response.StatusCode);
-            Assert.Equal(expected == HttpStatusCode.OK, File.Exists(Path.Combine(root, "AGENTS.md")));
+            Assert.Equal(expected == HttpStatusCode.OK, File.Exists(Path.Join(root, "AGENTS.md")));
         }
         finally
         {
@@ -211,11 +211,11 @@ public sealed partial class GatewayAdminEndpointTests
         var root = CreateSafeTempDirectory("workspace-boundary");
         try
         {
-            var workspace = Directory.CreateDirectory(Path.Combine(root, "workspace")).FullName;
-            var outside = Path.Combine(root, "outside.txt");
+            var workspace = Directory.CreateDirectory(Path.Join(root, "workspace")).FullName;
+            var outside = Path.Join(root, "outside.txt");
             File.WriteAllText(outside, "original");
-            File.CreateSymbolicLink(Path.Combine(workspace, "link.txt"), outside);
-            File.WriteAllText(Path.Combine(workspace, "inside.txt"), "inside");
+            File.CreateSymbolicLink(Path.Join(workspace, "link.txt"), outside);
+            File.WriteAllText(Path.Join(workspace, "inside.txt"), "inside");
             await using var harness = await CreateHarnessAsync(true, config => config.Tooling.WorkspaceRoot = workspace);
             harness.Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
             using var upload = new MultipartFormDataContent();
@@ -300,13 +300,13 @@ public sealed partial class GatewayAdminEndpointTests
             var store = new MediaCacheStore(root);
             foreach (var extension in new[] { ".txt", ".json" })
             {
-                var path = Path.Combine(root, "legacy" + extension);
+                var path = Path.Join(root, "legacy" + extension);
                 File.WriteAllText(path, "original");
                 var asset = new StoredMediaAsset
                 {
                     Id = "legacy", Path = path, MediaType = "text/plain", FileName = "old" + extension, SizeBytes = 8
                 };
-                await File.WriteAllTextAsync(Path.Combine(root, "legacy.json"),
+                await File.WriteAllTextAsync(Path.Join(root, "legacy.json"),
                     System.Text.Json.JsonSerializer.Serialize(asset, CoreJsonContext.Default.StoredMediaAsset), ct);
                 var loaded = await store.GetAsync("legacy", ct);
                 if (extension == ".json")
