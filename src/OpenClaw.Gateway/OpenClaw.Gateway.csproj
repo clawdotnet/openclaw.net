@@ -116,7 +116,7 @@
       <_DashboardPublishWwwroot>$(_DashboardPublishDir)\wwwroot</_DashboardPublishWwwroot>
     </PropertyGroup>
     <RemoveDir Directories="$(_DashboardPublishDir)" />
-    <Exec Command="dotnet publish &quot;$(_DashboardProject)&quot; -c $(Configuration) -o &quot;$(_DashboardPublishDir)&quot; --nologo -v q" />
+    <Exec Command="dotnet publish &quot;$(_DashboardProject)&quot; -c $(Configuration) -o &quot;$(_DashboardPublishDir)&quot; --nologo -v q" WorkingDirectory="$(MSBuildStartupDirectory)" />
     <ItemGroup>
       <_DashboardPublishFiles Include="$(_DashboardPublishWwwroot)\**\*" />
     </ItemGroup>
@@ -146,7 +146,7 @@
       <_DashboardPublishWwwrootPub>$(_DashboardPublishDirPub)\wwwroot</_DashboardPublishWwwrootPub>
     </PropertyGroup>
     <RemoveDir Directories="$(_DashboardPublishDirPub);$(PublishDir)wwwroot\dashboard" />
-    <Exec Command="dotnet publish &quot;$(_DashboardProjectPub)&quot; -c $(Configuration) -o &quot;$(_DashboardPublishDirPub)&quot; --nologo -v q" />
+    <Exec Command="dotnet publish &quot;$(_DashboardProjectPub)&quot; -c $(Configuration) -o &quot;$(_DashboardPublishDirPub)&quot; --nologo -v q" WorkingDirectory="$(MSBuildStartupDirectory)" />
     <ItemGroup>
       <_DashboardPublishPubFiles Include="$(_DashboardPublishWwwrootPub)\**\*" />
     </ItemGroup>

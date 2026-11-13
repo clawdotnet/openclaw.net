@@ -1,5 +1,8 @@
 // Minimal stdio MCP peer for transport and compatibility regression tests.
 import { createInterface } from 'node:readline';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+writeFileSync(join(process.cwd(), 'server.pid'), String(process.pid));
 const mode = process.argv[2];
 const base = ['search', 'open', 'recent', 'export', 'validate', 'handoff_create', 'index_refresh'];
 const workflows = ['read', 'list', 'attention', 'decisions', 'context', 'resume', 'handoff_list',

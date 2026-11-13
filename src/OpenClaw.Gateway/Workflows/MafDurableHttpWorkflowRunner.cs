@@ -17,6 +17,9 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
     private readonly ILogger<MafDurableHttpWorkflowRunner> _logger;
     private readonly HttpClient _http;
     private readonly string? _apiToken;
+    private readonly IWorkflowAccessTokenProvider? _tokenProvider;
+    private readonly TimeProvider _timeProvider;
+    private bool IsDelegated => !string.Equals(_config.Authentication.Mode, "static", StringComparison.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _lastRecordedStatuses = new(StringComparer.Ordinal);
     private bool _disposed;
 
@@ -25,14 +28,31 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
         WorkflowBackendConfig config,
         RuntimeEventStore events,
         ILogger<MafDurableHttpWorkflowRunner> logger)
+        : this(backendId, config, events, logger, null,
+            HttpClientFactory.Create(allowAutoRedirect: false), TimeProvider.System)
+    {
+    }
+
+    public MafDurableHttpWorkflowRunner(
+        string backendId,
+        WorkflowBackendConfig config,
+        RuntimeEventStore events,
+        ILogger<MafDurableHttpWorkflowRunner> logger,
+        IWorkflowAccessTokenProvider? tokenProvider,
+        HttpClient httpClient,
+        TimeProvider timeProvider)
     {
         BackendId = backendId;
         WorkflowId = string.IsNullOrWhiteSpace(config.WorkflowName) ? backendId : config.WorkflowName.Trim();
         _config = config;
         _events = events;
         _logger = logger;
-        _apiToken = SecretResolver.Resolve(config.ApiTokenSecret, logger);
-        _http = HttpClientFactory.Create(allowAutoRedirect: false);
+        _tokenProvider = tokenProvider;
+        _timeProvider = timeProvider;
+        _apiToken = IsDelegated ? null : SecretResolver.Resolve(config.ApiTokenSecret, logger);
+        if (IsDelegated && tokenProvider is null)
+            throw new InvalidOperationException("A delegated workflow backend requires a token provider.");
+        _http = httpClient;
         _http.Timeout = TimeSpan.FromSeconds(Math.Clamp(config.TimeoutSeconds, 5, 3600));
         _http.BaseAddress = BuildBaseAddress(config.BaseUrl);
     }
@@ -51,11 +71,17 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
             Enabled = _config.Enabled
         };
 
-    public async Task<AgentWorkflowRunResult> RunAsync(
+    public Task<AgentWorkflowRunResult> RunAsync(
         AgentWorkflowRequest request,
         CancellationToken cancellationToken = default)
+        => RunAsync(request, null, cancellationToken);
+
+    public async Task<AgentWorkflowRunResult> RunAsync(
+        AgentWorkflowRequest request,
+        WorkflowExecutionContext? executionContext,
+        CancellationToken cancellationToken)
     {
-        var backendRequest = WithBackendMetadata(request);
+        var backendRequest = WithBackendMetadata(request, executionContext);
         var result = NormalizeRunResult(
             await SendAsync(
                 HttpMethod.Post,
@@ -63,6 +89,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
                 backendRequest,
                 CoreJsonContext.Default.AgentWorkflowRequest,
                 CoreJsonContext.Default.AgentWorkflowRunResult,
+                executionContext,
                 cancellationToken));
 
         RecordEvent(result.RunId, "run_started", result.Status, $"Workflow '{WorkflowId}' started.");
@@ -70,33 +97,55 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
         return result;
     }
 
-    public async Task<AgentWorkflowRunSnapshot> GetAsync(
+    public Task<AgentWorkflowRunSnapshot> GetAsync(
         string runId,
         CancellationToken cancellationToken = default)
+        => GetAsync(runId, null, cancellationToken);
+
+    public async Task<AgentWorkflowRunSnapshot> GetAsync(
+        string runId,
+        WorkflowExecutionContext? executionContext,
+        CancellationToken cancellationToken)
     {
         var snapshot = NormalizeSnapshot(
             await SendAsync(
                 HttpMethod.Get,
                 $"api/workflows/{Uri.EscapeDataString(WorkflowId)}/status/{Uri.EscapeDataString(runId)}",
                 CoreJsonContext.Default.AgentWorkflowRunSnapshot,
+                executionContext,
                 cancellationToken));
 
         RecordStatus(snapshot.RunId, snapshot.Status, snapshot.Events);
         return snapshot;
     }
 
-    public async Task<AgentWorkflowRunSnapshot> RespondAsync(
+    public Task<AgentWorkflowRunSnapshot> RespondAsync(
         string runId,
         AgentWorkflowResponse response,
         CancellationToken cancellationToken = default)
+        => RespondAsync(runId, response, null, cancellationToken);
+
+    public async Task<AgentWorkflowRunSnapshot> RespondAsync(
+        string runId,
+        AgentWorkflowResponse response,
+        WorkflowExecutionContext? executionContext,
+        CancellationToken cancellationToken)
     {
+        var backendResponse = IsDelegated && executionContext is not null
+            ? new AgentWorkflowResponse
+            {
+                PortId = response.PortId, Payload = response.Payload, Approved = response.Approved,
+                Comment = response.Comment, ActorId = executionContext.Subject, Metadata = response.Metadata
+            }
+            : response;
         var snapshot = NormalizeSnapshot(
             await SendAsync(
                 HttpMethod.Post,
                 $"api/workflows/{Uri.EscapeDataString(WorkflowId)}/respond/{Uri.EscapeDataString(runId)}",
-                response,
+                backendResponse,
                 CoreJsonContext.Default.AgentWorkflowResponse,
                 CoreJsonContext.Default.AgentWorkflowRunSnapshot,
+                executionContext,
                 cancellationToken));
 
         RecordEvent(runId, "response_sent", snapshot.Status, $"Response sent to workflow '{WorkflowId}' port '{response.PortId}'.");
@@ -104,9 +153,15 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
         return snapshot;
     }
 
+    public IAsyncEnumerable<AgentWorkflowEvent> StreamAsync(
+        string runId,
+        CancellationToken cancellationToken = default)
+        => StreamAsync(runId, null, cancellationToken);
+
     public async IAsyncEnumerable<AgentWorkflowEvent> StreamAsync(
         string runId,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        WorkflowExecutionContext? executionContext,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         string? lastStatus = null;
@@ -114,7 +169,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
 
         while (true)
         {
-            var snapshot = await GetAsync(runId, cancellationToken);
+            var snapshot = await GetAsync(runId, executionContext, cancellationToken);
             foreach (var evt in snapshot.Events.Where(evt => seen.Add(evt.Id)))
                 yield return evt;
 
@@ -135,7 +190,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
             if (IsTerminal(snapshot.Status))
                 yield break;
 
-            await Task.Delay(delay, cancellationToken);
+            await Task.Delay(delay, _timeProvider, cancellationToken);
         }
     }
 
@@ -152,6 +207,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
         HttpMethod method,
         string path,
         JsonTypeInfo<TResponse> responseTypeInfo,
+        WorkflowExecutionContext? executionContext,
         CancellationToken cancellationToken)
         => SendAsync<object, TResponse>(
             method,
@@ -159,6 +215,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
             payload: null,
             requestTypeInfo: null,
             responseTypeInfo,
+            executionContext,
             cancellationToken);
 
     private async Task<TResponse> SendAsync<TRequest, TResponse>(
@@ -167,10 +224,20 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
         TRequest? payload,
         JsonTypeInfo<TRequest>? requestTypeInfo,
         JsonTypeInfo<TResponse> responseTypeInfo,
+        WorkflowExecutionContext? executionContext,
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(method, path);
-        if (!string.IsNullOrWhiteSpace(_apiToken))
+        if (IsDelegated)
+        {
+            ValidateCaller(executionContext);
+            var token = await _tokenProvider!.GetAsync(BackendId, _config.Authentication, executionContext!, cancellationToken);
+            ValidateCaller(executionContext);
+            if (_timeProvider.GetUtcNow() >= token.ExpiresAtUtc)
+                throw new WorkflowDelegationException("workflow_token_exchange_failed", StatusCodes.Status502BadGateway);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
+        }
+        else if (!string.IsNullOrWhiteSpace(_apiToken))
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiToken);
 
         if (payload is not null && requestTypeInfo is not null)
@@ -189,6 +256,8 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
                 "Workflow backend {BackendId} returned HTTP {StatusCode}.",
                 BackendId,
                 (int)response.StatusCode);
+            if (IsDelegated && response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+                throw new WorkflowDelegationException("workflow_backend_auth_denied", (int)response.StatusCode);
             throw new InvalidOperationException(
                 $"Workflow backend '{BackendId}' returned HTTP {(int)response.StatusCode}.");
         }
@@ -198,7 +267,17 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
         return parsed ?? throw new InvalidOperationException($"Workflow backend '{BackendId}' returned an empty response.");
     }
 
-    private AgentWorkflowRequest WithBackendMetadata(AgentWorkflowRequest request)
+    private void ValidateCaller(WorkflowExecutionContext? caller)
+    {
+        if (caller is null || !string.Equals(caller.BackendId, BackendId, StringComparison.OrdinalIgnoreCase) ||
+            caller.ExpiresAtUtc <= _timeProvider.GetUtcNow())
+        {
+            _logger.LogWarning("Workflow backend {BackendId} requires a valid delegated caller.", BackendId);
+            throw new WorkflowDelegationException("workflow_user_auth_required", StatusCodes.Status401Unauthorized);
+        }
+    }
+
+    private AgentWorkflowRequest WithBackendMetadata(AgentWorkflowRequest request, WorkflowExecutionContext? executionContext)
     {
         var metadata = request.Metadata is null
             ? new Dictionary<string, string>(StringComparer.Ordinal)
@@ -210,7 +289,7 @@ internal sealed class MafDurableHttpWorkflowRunner : IAgentWorkflowRunner, IDisp
             Input = request.Input,
             Payload = request.Payload,
             ChannelId = request.ChannelId,
-            SenderId = request.SenderId,
+            SenderId = IsDelegated && executionContext is not null ? executionContext.Subject : request.SenderId,
             SessionId = request.SessionId,
             Metadata = metadata
         };

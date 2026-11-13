@@ -34,6 +34,12 @@ dotnet test OpenClaw.Net.slnx --configuration Release --no-build
 dotnet run --project samples/OpenClaw.HelloAgent -c Release --no-build
 ```
 
+When multiple SDKs are installed, run verification from a directory whose
+`global.json` selects .NET 10. The gateway's nested Dashboard publish uses that
+same startup directory so it does not select a different SDK from the project path.
+An isolated verification directory can hold this SDK selection without changing
+the machine-wide default or the repository configuration.
+
 ## NuGet Dependencies
 
 NuGet dependency versions are managed in the root [Directory.Packages.props](Directory.Packages.props). Add or update a `PackageVersion` there, and keep project `PackageReference` items versionless. Keep conditions, `PrivateAssets`, and `IncludeAssets` on the project reference; a central version declaration does not add a dependency to a project.

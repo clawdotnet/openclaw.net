@@ -34,7 +34,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
-          go-version: "1.26.10"
+          go-version: "1.26.11"
           cache-dependency-path: src/whatsapp-whatsmeow-worker/go.sum
 
       - name: Check Go module tidiness
@@ -101,6 +101,13 @@ jobs:
 
       - name: HelloAgent smoke
         run: dotnet run --project samples/OpenClaw.HelloAgent -c Release --no-build
+
+      - name: Publish JIT gateway and verify user-delegated workflows
+        run: |
+          dotnet publish src/OpenClaw.Gateway/OpenClaw.Gateway.csproj -c Release -r linux-x64 -p:PublishAot=false -o artifacts/workflow-jit/gateway
+          export OPENCLAW_WORKFLOW_GATEWAY_EXE="$PWD/artifacts/workflow-jit/gateway/OpenClaw.Gateway"
+          dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj -c Release --filter "Category=WorkflowPublished" --results-directory artifacts/test-results/workflow-jit --logger "trx;LogFileName=workflow-delegation-jit.trx"
+          python3 -c 'import sys, xml.etree.ElementTree as ET; c = ET.parse(sys.argv[1]).find(".//{*}Counters"); assert c is not None and int(c.attrib["executed"]) == 2 and int(c.attrib["passed"]) == 2 and int(c.attrib["failed"]) == 0 and int(c.attrib.get("notExecuted", "0")) == 0, "Expected exactly two executed, passing workflow publish cases"' artifacts/test-results/workflow-jit/workflow-delegation-jit.trx
 
       - name: Verify optional integration package policy
         shell: pwsh
@@ -170,6 +177,19 @@ jobs:
         run: |
           chmod +x ./eng/verify-aot-maf-smoke.sh
           ./eng/verify-aot-maf-smoke.sh
+
+      - name: Verify published NativeAOT user-delegated workflows
+        run: |
+          export OPENCLAW_WORKFLOW_GATEWAY_EXE="$PWD/artifacts/aot/gateway/OpenClaw.Gateway"
+          dotnet test src/OpenClaw.Tests/OpenClaw.Tests.csproj -c Release --filter "Category=WorkflowPublished" --results-directory artifacts/test-results/workflow-aot --logger "trx;LogFileName=workflow-delegation-aot.trx"
+          python3 -c 'import sys, xml.etree.ElementTree as ET; c = ET.parse(sys.argv[1]).find(".//{*}Counters"); assert c is not None and int(c.attrib["executed"]) == 2 and int(c.attrib["passed"]) == 2 and int(c.attrib["failed"]) == 0 and int(c.attrib.get("notExecuted", "0")) == 0, "Expected exactly two executed, passing workflow publish cases"' artifacts/test-results/workflow-aot/workflow-delegation-aot.trx
+
+      - name: Upload workflow NativeAOT test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: workflow-aot-test-results
+          path: artifacts/test-results/workflow-aot/*.trx
 
       - name: Upload gateway artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

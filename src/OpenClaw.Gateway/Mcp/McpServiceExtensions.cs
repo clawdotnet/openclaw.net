@@ -6,6 +6,7 @@ using OpenClaw.Core.Abstractions;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
 using OpenClaw.Gateway.Endpoints;
+using OpenClaw.Gateway.Workflows;
 
 namespace OpenClaw.Gateway.Mcp;
 
@@ -23,6 +24,8 @@ internal static class McpServiceExtensions
         GatewayStartupContext startup)
     {
         services.TryAddSingleton<GatewayRuntimeHolder>();
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        services.TryAddSingleton(sp => new WorkflowCallerContextFactory(startup.Config, sp.GetRequiredService<TimeProvider>()));
         // Mutating MCP tools check the caller's role; HTTP handlers run in the request's execution context.
         services.AddHttpContextAccessor();
 
@@ -62,6 +65,7 @@ internal static class McpServiceExtensions
 
     internal static McpTaskExecutionMode GetTaskExecutionMode(string? toolName, bool hasMatchedPrimitive = true)
         => !hasMatchedPrimitive || toolName is "openclaw.run_workflow"
+            or "openclaw.get_workflow_run"
             or "openclaw.respond_workflow"
             or "openclaw.send_message"
             ? McpTaskExecutionMode.Synchronous
