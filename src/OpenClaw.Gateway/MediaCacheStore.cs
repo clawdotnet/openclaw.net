@@ -21,7 +21,7 @@ internal sealed class MediaCacheStore
     {
         var id = $"media_{Guid.NewGuid():N}"[..22];
         var extension = GuessExtension(mediaType, fileName);
-        var assetPath = Path.Combine(_rootPath, id + ".payload" + extension);
+        var assetPath = Path.Join(_rootPath, id + ".payload" + extension);
         await File.WriteAllBytesAsync(assetPath, data.ToArray(), ct);
 
         var asset = new StoredMediaAsset
@@ -34,14 +34,14 @@ internal sealed class MediaCacheStore
             CreatedAtUtc = DateTimeOffset.UtcNow
         };
 
-        var metadataPath = Path.Combine(_rootPath, id + ".json");
+        var metadataPath = Path.Join(_rootPath, id + ".json");
         await File.WriteAllTextAsync(metadataPath, JsonSerializer.Serialize(asset, CoreJsonContext.Default.StoredMediaAsset), ct);
         return asset;
     }
 
     public async Task<StoredMediaAsset?> GetAsync(string id, CancellationToken ct)
     {
-        var metadataPath = Path.Combine(_rootPath, id + ".json");
+        var metadataPath = Path.Join(_rootPath, id + ".json");
         if (!File.Exists(metadataPath))
             return null;
 

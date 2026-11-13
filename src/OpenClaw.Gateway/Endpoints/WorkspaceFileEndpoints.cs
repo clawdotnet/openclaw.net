@@ -95,7 +95,6 @@ internal static class WorkspaceFileEndpoints
                 long totalUncompressed = 0;
                 try
                 {
-                    Directory.CreateDirectory(targetDir);
                     using var zip = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
                     foreach (var entry in zip.Entries.Where(static entry => !string.IsNullOrEmpty(entry.Name)))
                     {
@@ -115,9 +114,7 @@ internal static class WorkspaceFileEndpoints
 
                         if (!WorkspacePathHelpers.IsSafeWorkspacePath(entryFull, workspaceRoot))
                             continue;
-                        Directory.CreateDirectory(Path.GetDirectoryName(entryFull)!);
-
-                        await using var outStream = new FileStream(entryFull, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
+                        await using var outStream = SecureFileSystem.OpenForWriteUnderRoot(workspaceRoot, entryFull);
                         await using var entryStream = entry.Open();
                         await entryStream.CopyToAsync(outStream, ctx.RequestAborted);
                         extracted.Add(Path.GetRelativePath(workspaceRoot, entryFull).Replace('\\', '/'));
@@ -144,7 +141,6 @@ internal static class WorkspaceFileEndpoints
             var saved = new List<string>();
             try
             {
-                Directory.CreateDirectory(targetDir);
                 foreach (var file in files.Where(static file => file.Length != 0))
                 {
                     if (file.Length > MaxUploadBytes)
@@ -164,7 +160,7 @@ internal static class WorkspaceFileEndpoints
                             CoreJsonContext.Default.WorkspaceUploadResponse,
                             statusCode: StatusCodes.Status400BadRequest);
 
-                    await using var outStream = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
+                    await using var outStream = SecureFileSystem.OpenForWriteUnderRoot(workspaceRoot, destPath);
                     await file.CopyToAsync(outStream, ctx.RequestAborted);
                     saved.Add(Path.GetRelativePath(workspaceRoot, destPath).Replace('\\', '/'));
                 }
@@ -390,7 +386,7 @@ internal static class WorkspaceFileEndpoints
 
                 // ZIP finalization can write synchronously. Stage on disk so the HTTP
                 // response remains asynchronous and large workspaces stay out of memory.
-                var archivePath = Path.Combine(Path.GetTempPath(), $"openclaw-workspace-{Guid.NewGuid():N}.zip");
+                var archivePath = Path.Join(Path.GetTempPath(), $"openclaw-workspace-{Guid.NewGuid():N}.zip");
                 var archiveOptions = new FileStreamOptions
                 {
                     Mode = FileMode.CreateNew,
@@ -409,6 +405,9 @@ internal static class WorkspaceFileEndpoints
                         foreach (var filePath in Directory.EnumerateFiles(targetPath, "*", RecurseWithoutLinks))
                         {
                             ctx.RequestAborted.ThrowIfCancellationRequested();
+                            if (string.Equals(Path.GetFullPath(filePath), archivePath,
+                                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                                continue;
                             var entryName = Path.GetRelativePath(targetPath, filePath).Replace('\\', '/');
                             var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
                             await using var entryStream = entry.Open();

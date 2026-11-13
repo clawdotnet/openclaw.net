@@ -14,6 +14,7 @@ using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Security;
 using OpenClaw.Core.Sessions;
 using OpenClaw.Gateway;
+using OpenClaw.Gateway.Endpoints;
 
 namespace OpenClaw.Gateway.Extensions;
 
@@ -1481,14 +1482,30 @@ internal sealed class GatewayInboundMessageWorker
 
         try
         {
-            var fullPath = ToolPathPolicy.ResolveRealPath(marker.Value);
-            if (!ToolPathPolicy.IsWriteAllowed(config.Tooling, fullPath) || !File.Exists(fullPath))
+            var openedPath = ToolPathPolicy.ResolveRealPath(marker.Value);
+            if (!ToolPathPolicy.IsWriteAllowed(config.Tooling, openedPath))
                 return null;
 
-            var bytes = await File.ReadAllBytesAsync(fullPath, ct);
-            var fileName = Path.GetFileName(fullPath);
-            var mimeType = GuessMimeTypeFromExtension(Path.GetExtension(fullPath));
+            var authorizedRoot = config.Tooling.AllowedWriteRoots.Contains("*", StringComparer.Ordinal)
+                ? Path.GetPathRoot(openedPath)
+                : config.Tooling.AllowedWriteRoots
+                    .Select(ToolPathPolicy.ResolveRealPath)
+                    .FirstOrDefault(root => WorkspacePathHelpers.IsInsideDirectory(openedPath, root));
+            if (string.IsNullOrEmpty(authorizedRoot))
+                return null;
+
+            await using var openedFile = SecureFileSystem.OpenForReadUnderRoot(authorizedRoot, openedPath);
+
+            await using var contents = new MemoryStream();
+            await openedFile.CopyToAsync(contents, ct);
+            var bytes = contents.ToArray();
+            var fileName = Path.GetFileName(openedPath);
+            var mimeType = GuessMimeTypeFromExtension(Path.GetExtension(openedPath));
             return await mediaCache.SaveAsync(bytes.AsMemory(), mimeType, fileName, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {

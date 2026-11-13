@@ -7,8 +7,7 @@ namespace OpenClaw.Core.Loops;
 
 /// <summary>
 /// Manages /loop command lifecycle using an internal registry of loop entries.
-/// The AgentLoopJob TickerFunction ticks every second and polls this scheduler
-/// for due entries.
+/// The AgentLoopJob background worker polls this scheduler for due entries.
 ///
 /// One loop per session (idempotent — new registration replaces old).
 /// Implements ILoopControlService for termination signal handling.
@@ -96,7 +95,7 @@ public sealed class ClawLoopScheduler : ILoopControlService
 
     /// <summary>
     /// Returns loop entries that are due for execution at the given time.
-    /// Called by AgentLoopJob on each TickerQ tick.
+    /// Called by AgentLoopJob on each hosted polling tick.
     /// </summary>
     internal IReadOnlyList<LoopEntry> GetDueEntries(DateTimeOffset now)
     {
@@ -127,6 +126,8 @@ public sealed class ClawLoopScheduler : ILoopControlService
         };
         if (seconds > 365L * 24 * 3600)
             throw new ArgumentException("Loop intervals must not exceed 365 days.", nameof(interval));
+        if (seconds < 60)
+            throw new ArgumentException("Loop intervals must be at least 60 seconds.", nameof(interval));
         return TimeSpan.FromSeconds(seconds);
     }
 

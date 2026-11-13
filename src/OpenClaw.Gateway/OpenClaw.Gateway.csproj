@@ -5,6 +5,7 @@
     <OpenClawEnableOpenSandbox Condition="'$(OpenClawEnableOpenSandbox)' == ''">false</OpenClawEnableOpenSandbox>
     <OpenClawSkipDashboardBuild Condition="'$(OpenClawSkipDashboardBuild)' == ''">false</OpenClawSkipDashboardBuild>
     <PublishAot>true</PublishAot>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <StripSymbols>true</StripSymbols>
     <OptimizationPreference>Size</OptimizationPreference>
     <!-- Use Apple's current linker by default. Set this property to true only as an emergency macOS arm64 fallback. -->

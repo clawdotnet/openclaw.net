@@ -127,17 +127,6 @@ public sealed class PaymentRuntimeService
         var provider = ResolveProvider(request.ProviderId ?? request.Challenge.ProviderId);
         var effectiveContext = NormalizeContext(context, request.Environment);
         ValidateMachinePaymentRequest(request);
-        var approval = BuildApprovalRequest(
-            PaymentActions.ExecuteMachinePayment,
-            $"Execute machine payment for {request.Challenge.MerchantName ?? request.Challenge.ResourceUrl ?? "paid resource"} ({request.Challenge.AmountMinor} {request.Challenge.Currency}) using {provider.ProviderId}.",
-            provider.ProviderId,
-            request.Challenge.MerchantName,
-            request.Challenge.AmountMinor,
-            request.Challenge.Currency,
-            expiresAtUtc: null,
-            effectiveContext);
-
-        await RequireApprovalOrPolicyAllowAsync(approval, ct);
         var normalizedRequest = request with
         {
             ProviderId = provider.ProviderId,
@@ -159,21 +148,58 @@ public sealed class PaymentRuntimeService
             ["sender"] = effectiveContext.CallerId is null ? effectiveContext.SenderId ?? "" : "",
             ["workspace"] = effectiveContext.WorkspaceId ?? ""
         }, PaymentJsonContext.Default.DictionaryStringString);
+
+        var replay = await _idempotency.TryReplayAsync(scope, request.IdempotencyKey!, fingerprint, ct);
+        if (replay is not null)
+        {
+            await RecordMachinePaymentResultAsync(provider.ProviderId, replay, effectiveContext,
+                eventType: "machine_payment_replayed", ct);
+            return replay;
+        }
+
+        // Provider configuration checks must happen before an idempotency reservation,
+        // but a completed replay remains safe even if deployment settings later change.
+        if (provider is IPaymentProviderPreflight preflight)
+            preflight.ValidateMachinePayment(normalizedRequest, effectiveContext);
+
+        var approval = BuildApprovalRequest(
+            PaymentActions.ExecuteMachinePayment,
+            $"Execute machine payment for {request.Challenge.MerchantName ?? request.Challenge.ResourceUrl ?? "paid resource"} ({request.Challenge.AmountMinor} {request.Challenge.Currency}) using {provider.ProviderId}.",
+            provider.ProviderId,
+            request.Challenge.MerchantName,
+            request.Challenge.AmountMinor,
+            request.Challenge.Currency,
+            expiresAtUtc: null,
+            effectiveContext);
+        await RequireApprovalOrPolicyAllowAsync(approval, ct);
+        await _audit.RecordAsync(new PaymentAuditEvent
+        {
+            EventType = "machine_payment_attempted",
+            ProviderId = provider.ProviderId,
+            MerchantName = request.Challenge.MerchantName,
+            AmountMinor = request.Challenge.AmountMinor,
+            Currency = request.Challenge.Currency,
+            Environment = effectiveContext.Environment
+        }, ct);
+
         MachinePaymentProviderResult? providerResult = null;
         var result = await _idempotency.ExecuteOnceAsync(scope, request.IdempotencyKey!, fingerprint, async dispatchCt =>
         {
-            await _audit.RecordAsync(new PaymentAuditEvent
-            {
-                EventType = "machine_payment_attempted",
-                ProviderId = provider.ProviderId,
-                MerchantName = request.Challenge.MerchantName,
-                AmountMinor = request.Challenge.AmountMinor,
-                Currency = request.Challenge.Currency,
-                Environment = effectiveContext.Environment
-            }, dispatchCt);
             try
             {
                 providerResult = await provider.ExecuteMachinePaymentAsync(normalizedRequest, effectiveContext, dispatchCt);
+                if (providerResult.ScopedAuthorizationSecret is not null)
+                {
+                    var secret = PrepareSecretForVault(
+                        providerResult.ScopedAuthorizationSecret,
+                        providerResult.Result.PaymentId,
+                        provider.ProviderId,
+                        effectiveContext.Environment,
+                        DateTimeOffset.UtcNow.AddMinutes(5));
+                    // The payment already completed. Persist its one-time authorization
+                    // independently of a disconnected HTTP caller before publishing completion.
+                    await _vault.StoreAsync(secret, TimeSpan.FromMinutes(5), retrieveOnce: true, CancellationToken.None);
+                }
                 return providerResult.Result;
             }
             catch (Exception ex) when (ex is not OperationCanceledException and not PaymentPolicyDeniedException)
@@ -182,37 +208,33 @@ public sealed class PaymentRuntimeService
                     "Payment provider outcome is unknown. Reconcile with the provider before making another payment. Do not retry with a new key.", ex);
             }
         }, ct);
-
-        // Replays never replenish a consumed or expired one-time authorization secret.
-        if (providerResult?.ScopedAuthorizationSecret is not null)
+        var eventType = providerResult is null ? "machine_payment_replayed" : result.Status.ToLowerInvariant() switch
         {
-            var secret = PrepareSecretForVault(
-                providerResult.ScopedAuthorizationSecret,
-                result.PaymentId,
-                provider.ProviderId,
-                effectiveContext.Environment,
-                DateTimeOffset.UtcNow.AddMinutes(5));
-            await _vault.StoreAsync(secret, TimeSpan.FromMinutes(5), retrieveOnce: true, ct);
-        }
+            "completed" => "machine_payment_completed",
+            "failed" or "declined" or "canceled" => "machine_payment_failed",
+            _ => "machine_payment_pending"
+        };
+        await RecordMachinePaymentResultAsync(provider.ProviderId, result, effectiveContext, eventType, ct);
+        return result;
+    }
 
-        await _audit.RecordAsync(new PaymentAuditEvent
+    private ValueTask RecordMachinePaymentResultAsync(
+        string providerId,
+        MachinePaymentResult result,
+        PaymentExecutionContext context,
+        string eventType,
+        CancellationToken ct)
+        => _audit.RecordAsync(new PaymentAuditEvent
         {
-            EventType = providerResult is null ? "machine_payment_replayed" : result.Status.ToLowerInvariant() switch
-            {
-                "completed" => "machine_payment_completed",
-                "failed" or "declined" or "canceled" => "machine_payment_failed",
-                _ => "machine_payment_pending"
-            },
-            ProviderId = provider.ProviderId,
+            EventType = eventType,
+            ProviderId = providerId,
             PaymentId = result.PaymentId,
             MerchantName = result.MerchantName,
             AmountMinor = result.AmountMinor,
             Currency = result.Currency,
             Status = result.Status,
-            Environment = effectiveContext.Environment
+            Environment = context.Environment
         }, ct);
-        return result;
-    }
 
     public async ValueTask<PaymentStatus> GetPaymentStatusAsync(
         string paymentIdOrHandleId,

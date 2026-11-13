@@ -101,11 +101,6 @@ public sealed partial class GatewayAdminEndpointTests
         var viewer = CreateOperatorToken(harness, OperatorRoleNames.Viewer, "reader");
         var writer = CreateOperatorToken(harness, OperatorRoleNames.Operator, "writer");
 
-        using var denied = new HttpRequestMessage(HttpMethod.Post, "/media/upload");
-        denied.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewer);
-        using var deniedResponse = await harness.Client.SendAsync(denied);
-        Assert.Equal(HttpStatusCode.Forbidden, deniedResponse.StatusCode);
-
         foreach (var (name, mime, bytes) in new[]
         {
             ("fixture.json", "application/json", "{\"fixture\":true}"), ("fixture.svg", "image/svg+xml", "<svg/>")
@@ -114,7 +109,7 @@ public sealed partial class GatewayAdminEndpointTests
             using var form = new MultipartFormDataContent();
             form.Add(new StringContent(bytes, Encoding.UTF8, mime), "file", name);
             using var upload = new HttpRequestMessage(HttpMethod.Post, "/media/upload") { Content = form };
-            upload.Headers.Authorization = new AuthenticationHeaderValue("Bearer", writer);
+            upload.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewer);
             using var uploaded = await harness.Client.SendAsync(upload);
             Assert.Equal(HttpStatusCode.OK, uploaded.StatusCode);
             using var metadata = await ReadJsonAsync(uploaded);
@@ -126,6 +121,18 @@ public sealed partial class GatewayAdminEndpointTests
             Assert.Equal("attachment", downloaded.Content.Headers.ContentDisposition?.DispositionType);
             Assert.Contains("sandbox", Assert.Single(downloaded.Headers.GetValues("Content-Security-Policy")));
         }
+
+        using var mediaForm = new MultipartFormDataContent();
+        mediaForm.Add(new StringContent("audio", Encoding.UTF8, "audio/mpeg"), "file", "fixture.mp3");
+        using var mediaUpload = new HttpRequestMessage(HttpMethod.Post, "/media/upload") { Content = mediaForm };
+        mediaUpload.Headers.Authorization = new AuthenticationHeaderValue("Bearer", writer);
+        using var mediaUploaded = await harness.Client.SendAsync(mediaUpload);
+        using var mediaMetadata = await ReadJsonAsync(mediaUploaded);
+        using var mediaDownload = new HttpRequestMessage(HttpMethod.Get, mediaMetadata.RootElement.GetProperty("url").GetString());
+        mediaDownload.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewer);
+        using var mediaDownloaded = await harness.Client.SendAsync(mediaDownload);
+        var csp = Assert.Single(mediaDownloaded.Headers.GetValues("Content-Security-Policy"));
+        Assert.Contains("media-src 'self'", csp, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -229,11 +236,55 @@ public sealed partial class GatewayAdminEndpointTests
     }
 
     [Fact]
-    public void FeishuConfig_WhenAdminReadsReferences_ShouldKeepResolvedSecretsPrivate()
+    public void SecureFileSystem_WhenAncestorIsLink_ShouldRejectWriteAndBindReadToOpenedTarget()
     {
-        var config = new FeishuChannelConfig { AppSecretRef = "raw:synthetic-secret" };
-        var channel = new OpenClaw.Channels.FeishuChannel(config,
+        if (OperatingSystem.IsWindows())
+            return; // Creating links can require elevated privileges on Windows.
+
+        var root = CreateSafeTempDirectory("secure-file-handles");
+        try
+        {
+            var workspace = Directory.CreateDirectory(Path.Join(root, "workspace")).FullName;
+            var outside = Directory.CreateDirectory(Path.Join(root, "outside")).FullName;
+            File.WriteAllText(Path.Join(outside, "fixture.txt"), "outside");
+            var link = Path.Join(workspace, "linked");
+            Directory.CreateSymbolicLink(link, outside);
+
+            Assert.Throws<UnauthorizedAccessException>(() =>
+                SecureFileSystem.OpenForWriteUnderRoot(workspace, Path.Join(link, "created.txt")));
+            Assert.Throws<UnauthorizedAccessException>(() =>
+                SecureFileSystem.OpenForReadUnderRoot(workspace, Path.Join(link, "fixture.txt")));
+            var finalPath = ToolPathPolicy.ResolveRealPath(Path.Join(link, "fixture.txt"));
+            var resolvedOutside = ToolPathPolicy.ResolveRealPath(outside);
+            var stream = SecureFileSystem.OpenForReadUnderRoot(resolvedOutside, finalPath);
+            using (stream)
+            {
+                Assert.Equal(Path.Join(resolvedOutside, "fixture.txt"), finalPath);
+                using var reader = new StreamReader(stream);
+                Assert.Equal("outside", reader.ReadToEnd());
+            }
+            Assert.False(File.Exists(Path.Join(outside, "created.txt")));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task FeishuConfig_WhenAdminReadsReferences_ShouldKeepResolvedSecretsPrivate()
+    {
+        var config = new FeishuChannelConfig
+        {
+            Enabled = true,
+            AppId = "fixture-app",
+            AppSecretRef = "raw:synthetic-secret"
+        };
+        await using var channel = new OpenClaw.Channels.FeishuChannel(config,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<OpenClaw.Channels.FeishuChannel>.Instance);
+        using var stopped = new CancellationTokenSource();
+        stopped.Cancel();
+        await channel.StartAsync(stopped.Token);
         var result = channel.GetEffectiveConfigForAdmin();
         Assert.Equal(config.AppSecretRef, result.AppSecretRef);
         Assert.True(string.IsNullOrEmpty(result.AppSecret));

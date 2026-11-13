@@ -74,6 +74,24 @@ public sealed class TelegramDeliveryTests
     }
 
     [Fact]
+    public async Task DeliverAsync_WhenRetryAfterIsExcessive_ShouldCapDelay()
+    {
+        var calls = 0;
+        TimeSpan? observedDelay = null;
+        var adapter = Substitute.For<IChannelAdapter>();
+        adapter.SendAsync(Arg.Any<OutboundMessage>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ++calls == 1
+                ? ValueTask.FromException(new ChannelDeliveryException(
+                    "rate limited", canRetry: true, retryAfter: TimeSpan.MaxValue))
+                : ValueTask.CompletedTask);
+
+        Assert.True(await GatewayOutboundDeliveryWorker.DeliverAsync(
+            adapter, Message("hello"), NullLogger.Instance, TestContext.Current.CancellationToken,
+            (delay, _) => { observedDelay = delay; return Task.CompletedTask; }));
+        Assert.Equal(TimeSpan.FromSeconds(30), observedDelay);
+    }
+
+    [Fact]
     public async Task SendAsync_WhenSuccessBodyInvalid_ShouldReportUnknownOutcome()
     {
         using var http = new HttpClient(new Handler(_ => Response(200, "invalid json")));
@@ -129,6 +147,54 @@ public sealed class TelegramDeliveryTests
             pipeline.OutboundWriter.Complete();
             await nextMessage.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
             Assert.Null(heartbeat.LoadStatus()!.LastDeliveredAtUtc);
+            Assert.Equal(2, calls);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task OutboundWorker_WhenHeartbeatPersistenceFails_ShouldContinueDelivering()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "openclaw-heartbeat-persistence", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var config = new GatewayConfig { Memory = new MemoryConfig { StoragePath = root } };
+            var memory = new FileMemoryStore(root, 4);
+            var sessions = new SessionManager(memory, config, NullLogger.Instance);
+            var heartbeat = new HeartbeatService(config, memory, sessions, NullLogger<HeartbeatService>.Instance);
+            heartbeat.RecordResult(new Session { Id = "heartbeat:default", ChannelId = "telegram", SenderId = "1234" },
+                "Alert", suppressed: false, inputTokenDelta: 0, outputTokenDelta: 0);
+            File.Delete(heartbeat.StatusPath);
+            Directory.CreateDirectory(heartbeat.StatusPath);
+
+            var delivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var adapter = Substitute.For<IChannelAdapter>();
+            var calls = 0;
+            adapter.SendAsync(Arg.Any<OutboundMessage>(), Arg.Any<CancellationToken>())
+                .Returns(_ =>
+                {
+                    if (++calls == 2)
+                        delivered.TrySetResult();
+                    return ValueTask.CompletedTask;
+                });
+            var pipeline = new MessagePipeline();
+            var lifetime = Substitute.For<IHostApplicationLifetime>();
+            lifetime.ApplicationStopping.Returns(TestContext.Current.CancellationToken);
+            new GatewayOutboundDeliveryWorker().Start(lifetime, NullLogger.Instance, 1, pipeline,
+                new Dictionary<string, IChannelAdapter> { ["telegram"] = adapter }, heartbeat);
+            await pipeline.OutboundWriter.WriteAsync(new OutboundMessage
+            {
+                ChannelId = "telegram", RecipientId = "1234", Text = "Alert",
+                SessionId = "heartbeat:default", CronJobName = "heartbeat.default"
+            }, TestContext.Current.CancellationToken);
+            await pipeline.OutboundWriter.WriteAsync(Message("sentinel"), TestContext.Current.CancellationToken);
+            pipeline.OutboundWriter.Complete();
+
+            await delivered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
             Assert.Equal(2, calls);
         }
         finally

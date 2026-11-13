@@ -218,7 +218,11 @@ public sealed class PaymentRuntimeTests
     public async Task MoneyMovement_WhenApprovalModeOrCapChanges_ShouldOnlyDispatchAuthorizedCommands(
         string requested, string configured, long amount, bool approved, bool shouldRun)
     {
-        var runner = new StaticLinkRunner(new LinkCliCommandResult { ExitCode = 0, Stdout = "{}" });
+        var runner = new StaticLinkRunner(new LinkCliCommandResult
+        {
+            ExitCode = 0,
+            Stdout = """{"id":"fixture","payment_id":"payment-1","status":"completed"}"""
+        });
         var provider = new StripeLinkPaymentProvider(new StripeLinkOptions { Mode = configured }, runner);
         var runtime = new PaymentRuntimeService([provider], new InMemoryPaymentSecretVault(),
             new DefaultPaymentPolicy(maxLiveAmountMinor: 100), new InMemoryPaymentAuditSink(),
@@ -247,6 +251,29 @@ public sealed class PaymentRuntimeTests
             await Assert.ThrowsAsync<PaymentPolicyDeniedException>(() => runtime.ExecuteMachinePaymentAsync(payment, context, ct).AsTask());
             Assert.Empty(runner.Commands);
         }
+    }
+
+    [Fact]
+    public async Task ExecuteMachinePayment_WhenProviderResponseIsAmbiguous_ShouldRemainReserved()
+    {
+        var runner = new StaticLinkRunner(new LinkCliCommandResult { ExitCode = 0, Stdout = "{}" });
+        var provider = new StripeLinkPaymentProvider(new StripeLinkOptions(), runner);
+        var runtime = new PaymentRuntimeService([provider], new InMemoryPaymentSecretVault(),
+            new DefaultPaymentPolicy(), new InMemoryPaymentAuditSink(), defaultProviderId: provider.ProviderId);
+        var request = new MachinePaymentRequest
+        {
+            IdempotencyKey = "ambiguous-payment",
+            Challenge = new MachinePaymentChallenge { AmountMinor = 100, Currency = "USD" }
+        };
+
+        var first = await Assert.ThrowsAsync<PaymentIdempotencyException>(() =>
+            runtime.ExecuteMachinePaymentAsync(request, new(), TestContext.Current.CancellationToken).AsTask());
+        var replay = await Assert.ThrowsAsync<PaymentIdempotencyException>(() =>
+            runtime.ExecuteMachinePaymentAsync(request, new(), TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal("payment_outcome_unknown", first.Code);
+        Assert.Equal("payment_outcome_unknown", replay.Code);
+        Assert.Single(runner.Commands);
     }
 
     [Fact]
@@ -363,6 +390,46 @@ public sealed class PaymentRuntimeTests
     }
 
     [Fact]
+    public async Task PaymentAwareHttpHandler_WhenChallengeHasNoId_ShouldUseStableFallbackKey()
+    {
+        var runtime = CreateRuntime(new StaticPaymentApprovalService(true));
+        var handler = new PaymentAwareHttpHandler(
+            runtime,
+            new PaymentExecutionContext { Environment = PaymentEnvironments.Test },
+            "mock",
+            new ChallengeThenOkHandler(challenge: "merchant=Paid API;amount=42;currency=USD"));
+        using var client = new HttpClient(handler);
+
+        using var response = await client.GetAsync("https://example.test/paid");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PaymentAwareHttpHandler_WhenPaidChallengeRepeats_ShouldReportConsumedAuthorization()
+    {
+        var runtime = CreateRuntime(new StaticPaymentApprovalService(true));
+        using (var firstClient = new HttpClient(new PaymentAwareHttpHandler(
+                   runtime,
+                   new PaymentExecutionContext { Environment = PaymentEnvironments.Test },
+                   "mock",
+                   new ChallengeThenOkHandler())))
+        {
+            using var first = await firstClient.GetAsync("https://example.test/paid");
+            Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        }
+
+        using var replayClient = new HttpClient(new PaymentAwareHttpHandler(
+            runtime,
+            new PaymentExecutionContext { Environment = PaymentEnvironments.Test },
+            "mock",
+            new ChallengeThenOkHandler()));
+        var error = await Assert.ThrowsAsync<PaymentIdempotencyException>(() =>
+            replayClient.GetAsync("https://example.test/paid"));
+        Assert.Equal("payment_authorization_consumed", error.Code);
+    }
+
+    [Fact]
     public async Task FileMemoryStore_RedactsPersistedSessionWithoutMutatingLiveSession()
     {
         var runId = Guid.NewGuid().ToString("N");
@@ -461,12 +528,17 @@ public sealed class PaymentRuntimeTests
     {
         private readonly string? _expectedContent;
         private readonly HttpMethod? _expectedMethod;
+        private readonly string _challenge;
         private int _count;
 
-        public ChallengeThenOkHandler(string? expectedContent = null, HttpMethod? expectedMethod = null)
+        public ChallengeThenOkHandler(
+            string? expectedContent = null,
+            HttpMethod? expectedMethod = null,
+            string challenge = "challenge=ch_1;merchant=Paid API;amount=42;currency=USD")
         {
             _expectedContent = expectedContent;
             _expectedMethod = expectedMethod;
+            _challenge = challenge;
         }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -475,7 +547,7 @@ public sealed class PaymentRuntimeTests
             {
                 return new HttpResponseMessage(HttpStatusCode.PaymentRequired)
                 {
-                    Content = new StringContent("challenge=ch_1;merchant=Paid API;amount=42;currency=USD")
+                    Content = new StringContent(_challenge)
                 };
             }
 

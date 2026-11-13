@@ -41,7 +41,7 @@ internal static class WorkspacePathHelpers
         var current = root;
         foreach (var component in relative.Split(Path.DirectorySeparatorChar))
         {
-            current = Path.Combine(current, component);
+            current = Path.Join(current, component);
             if (new FileInfo(current).LinkTarget is not null)
                 return false;
         }

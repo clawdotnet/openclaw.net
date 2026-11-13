@@ -43,7 +43,12 @@ public sealed class WebhookDeliveryReservationTests
                 if (provider == "slack")
                 {
                     const string body = """{"type":"event_callback","event_id":"one","event":{"type":"message","user":"U1","channel":"C1","text":"hello"}}""";
-                    var handler = new SlackWebhookHandler(new SlackChannelConfig { ValidateSignature = true, SigningSecret = "fixture" },
+                    var handler = new SlackWebhookHandler(new SlackChannelConfig
+                    {
+                        ValidateSignature = true,
+                        SigningSecretRef = "raw:fixture",
+                        SigningSecret = "fixture"
+                    },
                         allowlists, recent, AllowlistSemantics.Legacy, NullLogger<SlackWebhookHandler>.Instance);
                     var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
                     var signature = valid ? "v0=" + GatewaySecurity.ComputeHmacSha256Hex("fixture", $"v0:{timestamp}:{body}") : "invalid";
@@ -69,7 +74,13 @@ public sealed class WebhookDeliveryReservationTests
                 {
                     var handler = new WhatsAppWebhookHandler(new WhatsAppChannelConfig
                     {
-                        Enabled = true, Type = provider, ValidateSignature = true, WebhookAppSecret = "fixture", BridgeToken = "fixture"
+                        Enabled = true,
+                        Type = provider,
+                        ValidateSignature = true,
+                        WebhookAppSecretRef = "raw:fixture",
+                        WebhookAppSecret = "fixture",
+                        BridgeTokenRef = "raw:fixture",
+                        BridgeToken = "fixture"
                     }, allowlists, recent, AllowlistSemantics.Legacy, NullLogger<WhatsAppWebhookHandler>.Instance);
                     var body = provider == "official"
                         ? """{"entry":[{"changes":[{"value":{"messages":[{"from":"15551234567","id":"one","type":"text","text":{"body":"hello"}}]}}]}]}"""

@@ -35,7 +35,15 @@ internal sealed class GatewayOutboundDeliveryWorker
                             if (await DeliverAsync(adapter, outbound, logger, lifetime.ApplicationStopping) &&
                                 heartbeatService.IsManagedHeartbeatJob(outbound.CronJobName))
                             {
-                                heartbeatService.RecordDeliverySucceeded(outbound.SessionId);
+                                try
+                                {
+                                    heartbeatService.RecordDeliverySucceeded(outbound.SessionId);
+                                }
+                                catch (Exception ex) when (ex is not OperationCanceledException)
+                                {
+                                    logger.LogError(ex,
+                                        "Failed to persist heartbeat delivery for session {SessionId}", outbound.SessionId);
+                                }
                             }
                         }
                         catch (OperationCanceledException) when (lifetime.ApplicationStopping.IsCancellationRequested)
@@ -71,7 +79,7 @@ internal sealed class GatewayOutboundDeliveryWorker
                     outbound.ChannelId, ex.DeliveredParts, ex.OutcomeUnknown);
                 return false;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 if (attempt == maxDeliveryAttempts)
                 {
@@ -80,7 +88,8 @@ internal sealed class GatewayOutboundDeliveryWorker
                 }
                 logger.LogWarning(ex, "Outbound send failed for channel {ChannelId}, retrying…", outbound.ChannelId);
                 var delay = ex is ChannelDeliveryException { RetryAfter: { } retryAfter } && retryAfter > TimeSpan.Zero
-                    ? retryAfter : TimeSpan.FromMilliseconds(500);
+                    ? TimeSpan.FromTicks(Math.Min(retryAfter.Ticks, TimeSpan.FromSeconds(30).Ticks))
+                    : TimeSpan.FromMilliseconds(500);
                 await (retryDelay?.Invoke(delay, ct) ?? Task.Delay(delay, ct));
             }
         }

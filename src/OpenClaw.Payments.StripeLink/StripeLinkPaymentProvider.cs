@@ -4,7 +4,7 @@ using OpenClaw.Payments.Core;
 
 namespace OpenClaw.Payments.StripeLink;
 
-public sealed class StripeLinkPaymentProvider : IPaymentProvider
+public sealed class StripeLinkPaymentProvider : IPaymentProvider, IPaymentProviderPreflight
 {
     private readonly StripeLinkOptions _options;
     private readonly ILinkCliCommandRunner _runner;
@@ -16,6 +16,9 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
     }
 
     public string ProviderId => _options.ProviderId;
+
+    public void ValidateMachinePayment(MachinePaymentRequest request, PaymentExecutionContext context)
+        => GetAuthorizedMode(context);
 
     public async ValueTask<PaymentSetupStatus> GetSetupStatusAsync(CancellationToken ct)
     {
@@ -227,7 +230,14 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
-        var paymentId = ReadString(root, "payment_id") ?? ReadString(root, "paymentId") ?? ReadString(root, "id") ?? $"stripe_mp_{Guid.NewGuid():N}";
+        var paymentId = ReadString(root, "payment_id") ?? ReadString(root, "paymentId") ?? ReadString(root, "id");
+        var status = ReadString(root, "status");
+        if (string.IsNullOrWhiteSpace(paymentId) || string.IsNullOrWhiteSpace(status))
+        {
+            throw new PaymentIdempotencyException(
+                "payment_outcome_unknown",
+                "Stripe Link returned an ambiguous payment response. Reconcile with the provider before retrying.");
+        }
         var auth = ReadString(root, "authorization_header") ?? ReadString(root, "authorizationHeader");
         var token = ReadString(root, "authorization_token") ?? ReadString(root, "authorizationToken") ?? ReadString(root, "token");
 
@@ -237,7 +247,7 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
             {
                 PaymentId = paymentId,
                 ProviderId = ProviderId,
-                Status = ReadString(root, "status") ?? "completed",
+                Status = status,
                 MerchantName = request.Challenge.MerchantName,
                 AmountMinor = request.Challenge.AmountMinor,
                 Currency = request.Challenge.Currency,

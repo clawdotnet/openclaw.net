@@ -142,19 +142,39 @@ internal static class DigitalEmployeeEndpoints
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            // ── Phase 2: ZIP-slip validation ──────────────────────────────────────────────────────
+            // ── Phase 2: ZIP-slip validation and bounded extraction ──────────────────────────────
             var workspaceRoot = Path.GetFullPath(workspacePath);
+            var mappedFiles = new List<(string Destination, byte[] Contents)>();
             try
             {
                 using var zip = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
-                foreach (var (_, destRel) in GetMappedFileEntries(zip, zipPrefix))
+                long actualExpandedBytes = 0;
+                var buffer = new byte[81920];
+                foreach (var (entry, destRel) in GetMappedFileEntries(zip, zipPrefix))
                 {
-                    var destFull = Path.GetFullPath(Path.Combine(workspaceRoot, destRel));
+                    var destFull = Path.GetFullPath(Path.Join(workspaceRoot, destRel));
                     if (!WorkspacePathHelpers.IsSafeWorkspacePath(destFull, workspaceRoot))
                         return Results.Json(
                             new DigitalEmployeeUploadResponse { Success = false, Error = "ZIP contains a path traversal entry and was rejected." },
                             CoreJsonContext.Default.DigitalEmployeeUploadResponse,
                             statusCode: StatusCodes.Status400BadRequest);
+
+                    await using var entryStream = entry.Open();
+                    await using var contents = new MemoryStream((int)Math.Min(entry.Length, MaxUploadBytes));
+                    while (true)
+                    {
+                        var read = await entryStream.ReadAsync(buffer, ctx.RequestAborted);
+                        if (read == 0)
+                            break;
+                        if (actualExpandedBytes + read > MaxUploadBytes)
+                            return Results.Json(
+                                new DigitalEmployeeUploadResponse { Success = false, Error = "Expanded archive exceeds upload limit." },
+                                CoreJsonContext.Default.DigitalEmployeeUploadResponse,
+                                statusCode: StatusCodes.Status400BadRequest);
+                        actualExpandedBytes += read;
+                        await contents.WriteAsync(buffer.AsMemory(0, read), ctx.RequestAborted);
+                    }
+                    mappedFiles.Add((destRel, contents.ToArray()));
                 }
             }
             catch (InvalidDataException)
@@ -170,18 +190,15 @@ internal static class DigitalEmployeeEndpoints
             var skillDirNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                using var zip = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
-                foreach (var (entry, destRel) in GetMappedFileEntries(zip, zipPrefix))
+                foreach (var (destRel, contents) in mappedFiles)
                 {
-                    var destFull = Path.GetFullPath(Path.Combine(workspaceRoot, destRel));
+                    var destFull = Path.GetFullPath(Path.Join(workspaceRoot, destRel));
                     // Recheck at extraction time before creating any directories.
                     if (!WorkspacePathHelpers.IsSafeWorkspacePath(destFull, workspaceRoot))
                         continue; // symlink/junction escape — skip silently
 
-                    Directory.CreateDirectory(Path.GetDirectoryName(destFull)!);
-                    using var entryStream = entry.Open();
-                    using var fs = new FileStream(destFull, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true);
-                    await entryStream.CopyToAsync(fs, ctx.RequestAborted);
+                    await using var fs = SecureFileSystem.OpenForWriteUnderRoot(workspaceRoot, destFull, 4096);
+                    await fs.WriteAsync(contents, ctx.RequestAborted);
 
                     var relNorm = Path.GetRelativePath(workspaceRoot, destFull).Replace('\\', '/');
                     installedFiles.Add(relNorm);

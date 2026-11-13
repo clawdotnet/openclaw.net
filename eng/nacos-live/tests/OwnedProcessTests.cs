@@ -21,10 +21,9 @@ public sealed class OwnedProcessTests
             await process.WaitForExitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
         }
 
-        Assert.Contains(
-            "10.0.",
-            await File.ReadAllTextAsync(logPath, TestContext.Current.CancellationToken),
-            StringComparison.Ordinal);
+        var output = (await File.ReadAllTextAsync(logPath, TestContext.Current.CancellationToken)).Trim();
+        Assert.True(Version.TryParse(output, out var version), $"Expected a .NET SDK version, but received '{output}'.");
+        Assert.True(version.Major >= 10, $"Expected .NET SDK 10 or newer, but received '{output}'.");
     }
 
     [Fact]

@@ -130,6 +130,44 @@ public sealed class PaymentIdempotencyTests : IDisposable
         Assert.Equal("pay-1", (await runtime.ExecuteMachinePaymentAsync(request, new() { CliConfirmed = true }, Ct)).PaymentId);
     }
 
+    [Fact]
+    public async Task ExecuteMachinePayment_WhenStripeModeMismatch_ShouldNotReserveKey()
+    {
+        var deniedRunner = Substitute.For<ILinkCliCommandRunner>();
+        var deniedProvider = new StripeLinkPaymentProvider(new StripeLinkOptions { Mode = PaymentEnvironments.Test }, deniedRunner);
+        var request = Request() with { ProviderId = deniedProvider.ProviderId, Environment = PaymentEnvironments.Live };
+
+        await Assert.ThrowsAsync<PaymentPolicyDeniedException>(() =>
+            CreateRuntime(deniedProvider).ExecuteMachinePaymentAsync(
+                request, new() { Environment = PaymentEnvironments.Live, CliConfirmed = true }, Ct).AsTask());
+
+        Assert.False(Directory.Exists(_directory));
+        await deniedRunner.DidNotReceive().RunAsync(
+            Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<string?>(),
+            Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteMachinePayment_WhenCompletedPaymentIsRetried_ShouldNotRequestApprovalAgain()
+    {
+        var provider = CreateProvider();
+        var approval = Substitute.For<IPaymentApprovalService>();
+        approval.RequestApprovalAsync(Arg.Any<ApprovalRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new ApprovalResult { Approved = true, Source = "fixture" });
+        var runtime = new PaymentRuntimeService([provider], new InMemoryPaymentSecretVault(),
+            new DefaultPaymentPolicy(), new InMemoryPaymentAuditSink(), approval,
+            defaultProviderId: provider.ProviderId, idempotencyStore: new FilePaymentIdempotencyStore(_directory));
+        var request = Request() with { Environment = PaymentEnvironments.Live };
+        var context = new PaymentExecutionContext { Environment = PaymentEnvironments.Live };
+
+        await runtime.ExecuteMachinePaymentAsync(request, context, Ct);
+        await runtime.ExecuteMachinePaymentAsync(request, context, Ct);
+
+        await approval.Received(1).RequestApprovalAsync(Arg.Any<ApprovalRequest>(), Arg.Any<CancellationToken>());
+        await provider.Received(1).ExecuteMachinePaymentAsync(
+            Arg.Any<MachinePaymentRequest>(), Arg.Any<PaymentExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -194,16 +232,21 @@ public sealed class PaymentIdempotencyTests : IDisposable
     {
         using var caller = CancellationTokenSource.CreateLinkedTokenSource(Ct);
         var provider = CreateProvider();
+        var vault = new InMemoryPaymentSecretVault();
         provider.ExecuteMachinePaymentAsync(Arg.Any<MachinePaymentRequest>(), Arg.Any<PaymentExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(_ => { caller.Cancel(); return Result(); });
+        var runtime = new PaymentRuntimeService([provider], vault, new DefaultPaymentPolicy(),
+            new InMemoryPaymentAuditSink(), defaultProviderId: provider.ProviderId,
+            idempotencyStore: new FilePaymentIdempotencyStore(_directory));
         try
         {
-            await CreateRuntime(provider).ExecuteMachinePaymentAsync(Request(), new(), caller.Token);
+            await runtime.ExecuteMachinePaymentAsync(Request(), new(), caller.Token);
         }
         catch (OperationCanceledException)
         {
-            // Post-payment vault or audit work may observe the caller's cancellation.
+            // Post-payment audit work may observe the caller's cancellation.
         }
+        Assert.NotNull(await vault.TryRetrieveAsync("pay-1", "test", Ct));
         Assert.Equal("pay-1", (await CreateRuntime(provider).ExecuteMachinePaymentAsync(Request(), new(), Ct)).PaymentId);
         await provider.Received(1).ExecuteMachinePaymentAsync(Arg.Any<MachinePaymentRequest>(), Arg.Any<PaymentExecutionContext>(), Arg.Any<CancellationToken>());
     }

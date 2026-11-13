@@ -38,8 +38,13 @@ public sealed partial class MainWindowViewModel
     [ObservableProperty]
     private string _virtualCardFundingSourceId = "";
 
-    [ObservableProperty]
     private string _machinePaymentReference = "";
+
+    public string MachinePaymentReference
+    {
+        get => _machinePaymentReference;
+        set => SetProperty(ref _machinePaymentReference, value);
+    }
 
     [ObservableProperty]
     private string _machinePaymentMerchantName = "";

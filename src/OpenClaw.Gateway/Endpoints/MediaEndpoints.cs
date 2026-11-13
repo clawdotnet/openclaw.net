@@ -21,7 +21,7 @@ internal static class MediaEndpoints
         {
             var access = EndpointHelpers.AuthorizeOperatorEndpoint(ctx, startup,
                 browserSessions, runtime.Operations,
-                requireCsrf: true, endpointScope: "integration.mutate.media");
+                requireCsrf: true, endpointScope: "integration.media.upload");
             if (access.Failure is not null)
                 return access.Failure;
 
@@ -88,7 +88,7 @@ internal static class MediaEndpoints
                 || asset.MediaType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
             // A direct navigation to active image content (including SVG) must be isolated
             // from the gateway origin, even when a caller supplied its MIME type.
-            ctx.Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'";
+            ctx.Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'";
             ctx.Response.Headers.XContentTypeOptions = "nosniff";
             var disposition = isInline ? "inline" : "attachment";
             ctx.Response.Headers.ContentDisposition = $"{disposition}; filename=\"{Uri.EscapeDataString(asset.FileName)}\"";

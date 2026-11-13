@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
+using System.Text;
 using OpenClaw.Payments.Abstractions;
 
 namespace OpenClaw.Payments.Core;
@@ -47,8 +49,7 @@ public sealed class PaymentAwareHttpHandler : DelegatingHandler
         {
             IdempotencyKey = request.Options.TryGetValue(IdempotencyKeyOption, out var key)
                 ? key
-                : string.IsNullOrWhiteSpace(challenge.ChallengeId) ? null
-                    : FilePaymentIdempotencyStore.GetId(request.RequestUri.ToString(), challenge.ChallengeId),
+                : CreateAutomaticIdempotencyKey(request, challenge, bufferedContent),
             ProviderId = _providerId,
             Challenge = challenge with
             {
@@ -61,7 +62,11 @@ public sealed class PaymentAwareHttpHandler : DelegatingHandler
         var secret = await _payments.RetrieveMachineAuthorizationOnceAsync(result.PaymentId, cancellationToken);
         var header = secret?.Resolve(PaymentSecretField.AuthorizationHeader);
         if (string.IsNullOrWhiteSpace(header))
-            throw new InvalidOperationException("Machine payment provider did not return scoped authorization.");
+        {
+            throw new PaymentIdempotencyException(
+                "payment_authorization_consumed",
+                "The payment was already completed, but its one-time authorization has been consumed. Reconcile the paid request before retrying.");
+        }
 
         using var retry = CloneRequest(request, bufferedContent);
         retry.Headers.Authorization = AuthenticationHeaderValue.Parse(header);
@@ -70,6 +75,23 @@ public sealed class PaymentAwareHttpHandler : DelegatingHandler
 
     private static HttpMessageHandler CreateDefaultHandler()
         => new HttpClientHandler();
+
+    private static string CreateAutomaticIdempotencyKey(
+        HttpRequestMessage request,
+        MachinePaymentChallenge challenge,
+        BufferedRequestContent? content)
+    {
+        var material = string.Join('\n',
+            request.Method.Method,
+            request.RequestUri!.ToString(),
+            challenge.ChallengeId ?? "",
+            challenge.ProviderId ?? "",
+            challenge.AmountMinor.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            challenge.Currency,
+            challenge.ResourceUrl ?? "",
+            content?.BodyHash ?? "");
+        return "auto-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
+    }
 
     private static HttpRequestMessage CloneRequest(HttpRequestMessage request, BufferedRequestContent? content)
     {
@@ -91,11 +113,13 @@ public sealed class PaymentAwareHttpHandler : DelegatingHandler
     {
         private readonly byte[] _body;
         private readonly KeyValuePair<string, IEnumerable<string>>[] _headers;
+        public string BodyHash { get; }
 
         private BufferedRequestContent(byte[] body, KeyValuePair<string, IEnumerable<string>>[] headers)
         {
             _body = body;
             _headers = headers;
+            BodyHash = Convert.ToHexString(SHA256.HashData(body));
         }
 
         public static async ValueTask<BufferedRequestContent?> CaptureAsync(HttpContent? content, CancellationToken ct)

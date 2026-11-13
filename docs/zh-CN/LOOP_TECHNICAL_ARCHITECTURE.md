@@ -1,11 +1,11 @@
 # OpenClaw.NET /loop 命令 — 技术架构文档
 
-> 基于 TickerQ 的会话级定时循环提示词注入机制。用户设置 /loop 后，系统按指定间隔自动向会话注入预设提示词并推进 Agent 轮次，支持幂等覆盖和双层语义自毁；当前活跃 loop 条目存储在内存中，进程重启后不会保留。
+> 基于轻量托管服务的会话级定时循环提示词注入机制。用户设置 /loop 后，系统按不短于 60 秒的指定间隔自动向会话注入预设提示词并推进 Agent 轮次；当前活跃 loop 条目存储在内存中，进程重启后不会保留。
 
-- **状态:** 已实现（分支: `Feature/Codex-loop`）
-- **提交:** `78d115e`、`bb58cf3`、`42acf7c`
-- **总变更:** +1,033 行，涉及 11 个文件
-- **测试:** 62 通过，0 失败
+- **状态:** 已实现
+- **最小间隔:** 60 秒
+- **持久化:** 仅内存保存；进程重启后活跃 loop 不会保留
+- **验证:** 由仓库中的 loop、命令和集成测试套件覆盖
 
 ---
 
@@ -15,7 +15,7 @@
 2. [架构总览](#2-架构总览)
 3. [组件清单](#3-组件清单)
 4. [Loop 生命周期状态机](#4-loop-生命周期状态机)
-5. [TickerQ 调度引擎](#5-tickerq-调度引擎)
+5. [托管调度引擎](#5-托管调度引擎)
 6. [双层语义终止检测](#6-双层语义终止检测)
 7. [CLI 命令与聊天频道](#7-cli-命令与聊天频道)
 8. [Gateway DI 与接线](#8-gateway-di-与接线)
@@ -35,7 +35,7 @@
 在日常开发与运维中，大量场景需要 Agent 按固定时间间隔自动执行任务：
 
 - **构建健康检查：** 每 5 分钟检查 CI 状态，发现问题即时报告
-- **日志轮询：** 每 30 秒扫描生产日志中的异常模式
+- **日志轮询：** 每 60 秒扫描生产日志中的异常模式
 - **周期性代码审查：** 每 2 小时审查最新提交的代码变更
 - **环境状态监控：** 每 1 小时检查服务器资源使用率
 
@@ -55,7 +55,7 @@
 
 | 特性 | Codex /loop | OpenClaw.NET /loop |
 |-------|-------------|---------------------|
-| 调度引擎 | 内存级定时器（随客户端消亡） | **TickerQ 分钟级轮询 + 内存 loop 注册表** |
+| 调度引擎 | 内存级定时器（随客户端消亡） | **托管服务每秒轮询 + 内存 loop 注册表** |
 | 重启恢复 | ❌ 丢失 | ❌ 活跃 loop 注册表重启后丢失（持久化待增强） |
 | 幂等覆盖 | ✅ 单 session 唯一 | ✅ 单 session 唯一 |
 | 语义自毁 | ✅ 关键词检测 | ✅ **双层检测（tool + 关键词）** |
@@ -87,15 +87,15 @@
 │  ┌──────────────────┐   ┌──────────────────────────────┐           │
 │  │ ClawLoopScheduler │──▶│ ConcurrentDictionary          │           │
 │  │  · ScheduleLoop   │   │   sessionId → LoopEntry       │           │
-│  │  · CancelLoop     │   │   (cron 表达式 + 状态追踪)     │           │
+│  │  · CancelLoop     │   │   (时长/cron + 下次触发)       │           │
 │  │  · GetLoopStatus  │   └──────────┬───────────────────┘           │
-│  └────────▲─────────┘               │ 每分钟 poll                    │
+│  └────────▲─────────┘               │ 每秒 poll                      │
 │           │                         ▼                                │
 │  ┌────────┴─────────┐   ┌──────────────────────────────┐           │
 │  │ ILoopControlService│  │ AgentLoopJob                  │           │
-│  │  · SignalComplete  │  │ [TickerFunction(              │           │
-│  └────────▲─────────┘   │   "AgentLoopExecutor",         │           │
-│           │              │   cronExpression: "* * * * *")]│           │
+│  │  · SignalComplete  │  │ BackgroundService +          │           │
+│  └────────▲─────────┘   │ PeriodicTimer（1 秒）          │           │
+│           │              │ DispatchDueAsync               │           │
 │  ┌────────┴─────────────┐──────────────────────────────┘           │
 │  │ LoopTerminationDetector                                           │
 │  │  路径 1 (主): loop_control tool → SignalComplete                 │
@@ -116,7 +116,7 @@
 
 **关键设计原则：**
 
-- **Core/Loops/** 是纯调度层，不依赖 Agent、Gateway，仅依赖 TickerQ + DI 抽象
+- **Core/Loops/** 是纯调度层，不依赖 Agent、Gateway，仅依赖 Hosting、Logging 与 DI 抽象
 - **AgentRuntime 零侵入**：loop prompt 通过 `MessagePipeline.InboundWriter` 注入，与普通用户消息走相同路径
 - **Goal 路径不受影响**：`/loop` 和 `/goal` 是独立的调度入口，共享 AgentRuntime 但生命周期管理完全隔离
 
@@ -129,9 +129,9 @@
 | `AgentLoopRequestPayload` | `Core/Loops/AgentLoopRequestPayload.cs` | 强类型 JSON payload record（sessionId + prompt），AOT 安全的源生成序列化 |
 | `IAgentLoopDispatcher` | `Core/Loops/IAgentLoopDispatcher.cs` | 派发接口：将 loop prompt 注入 session 并推进 turn |
 | `ILoopControlService` | `Core/Loops/ILoopControlService.cs` | 终止信号接口：接收 tool 或 detector 的完成通知 |
-| `ClawLoopScheduler` | `Core/Loops/ClawLoopScheduler.cs` | 调度门面：管理 `ConcurrentDictionary<string, LoopEntry>` 注册表，提供 Schedule/Cancel/Status + `IntervalToCron()` 静态方法 |
-| `LoopEntry` | `Core/Loops/ClawLoopScheduler.cs` | 单个 loop 条目：sessionId、prompt、cron 表达式、NCrontab 解析的 `CrontabSchedule`、下次触发时间 |
-| `AgentLoopJob` | `Core/Loops/AgentLoopJob.cs` | `[TickerFunction("AgentLoopExecutor", cronExpression: "* * * * *")]`：每分钟 poll 注册表，分发到期条目 |
+| `ClawLoopScheduler` | `Core/Loops/ClawLoopScheduler.cs` | 调度门面：管理 `ConcurrentDictionary<string, LoopEntry>` 注册表，提供时长与 cron 调度、Cancel/Status 和 `ParseInterval()` |
+| `LoopEntry` | `Core/Loops/ClawLoopScheduler.cs` | 单个 loop 条目：sessionId、prompt、固定时长或 NCrontab 调度、下次触发时间 |
+| `AgentLoopJob` | `Core/Loops/AgentLoopJob.cs` | 托管 `BackgroundService`：每秒轮询注册表并分发到期条目 |
 | `LoopTerminationDetector` | `Core/Loops/LoopTerminationDetector.cs` | 双层终止检测：结构化 tool 信号（主）+ `FrozenSet<string>` 关键词匹配（兜底） |
 | `LoopCommandParser` | `Core/Loops/LoopCommandParser.cs` | `[GeneratedRegex]` 编译期解析 `/loop <value><unit> <prompt>` 语法 |
 | `LoopAction` / `LoopCommand` | `Core/Loops/LoopCommandParser.cs` | 命令模型枚举（Schedule/Cancel/Status/Invalid）和 POCO |
@@ -149,7 +149,7 @@
 | 状态 | 含义 | 触发条件 |
 |-------|-------|---------|
 | **Scheduled** | loop 已注册，等待定时触发 | `/loop <interval> <prompt>` |
-| **Running** | 正在执行一个 loop turn | TickerQ 轮询 tick 发现到期条目 |
+| **Running** | 正在执行一个 loop turn | 托管服务轮询发现到期条目 |
 | **Overridden** | 被新的 `/loop` 命令替换 | 同一 session 再次 `/loop` |
 | **Terminated** | 已自动或手动取消（终态） | 语义检测触发 或 `/loop cancel` |
 
@@ -194,41 +194,40 @@
 
 ---
 
-## 5. TickerQ 调度引擎
+## 5. 托管调度引擎
 
 ### 架构选择
 
-TickerQ 10.4.0 的公开 API 不提供 `ICronTickerManager` 动态注册接口。因此采用 **编译期 `[TickerFunction]` + 内存注册表** 的混合方案：
+调度器采用 `BackgroundService`、`PeriodicTimer` 与内存注册表，无需为每个 session 创建独立系统定时器或持久化作业：
 
 ```plaintext
-编译期                                运行时
+托管 worker                            运行时注册表
 ┌──────────────────────────┐      ┌──────────────────────────┐
-│ [TickerFunction(          │      │ ClawLoopScheduler         │
-│   "AgentLoopExecutor",    │      │   ConcurrentDictionary    │
-│   cronExpression:         │────────▶  sessionId → LoopEntry   │
-│   "* * * * *")]           │ 每分钟 │   (cron + nextTrigger)   │
-│ AgentLoopJob.ExecuteAsync │ tick   │                          │
-└──────────────────────────┘      │ AgentLoopJob 每分钟 poll:  │
+│ AgentLoopJob              │      │ ClawLoopScheduler         │
+│ BackgroundService         │      │   ConcurrentDictionary    │
+│ PeriodicTimer（1 秒）      │────────▶ sessionId → LoopEntry   │
+│ DispatchDueAsync          │      │   (duration + nextRun)    │
+└──────────────────────────┘      │ AgentLoopJob 每秒 poll:    │
                                    │   var due = scheduler      │
                                    │     .GetDueEntries(now);   │
                                    │   foreach → DispatchAsync  │
                                    └──────────────────────────┘
 ```
 
-### Cron 表达式生成
+### 时长调度
 
-`ClawLoopScheduler.IntervalToCron()` 将用户友好格式转换为 6 字段 cron：
+`ScheduleIntervalLoopAsync()` 接受 60 秒至 365 天的整秒、整分钟或整小时输入，并以注册时间为固定节奏起点：
 
-| 用户输入 | Cron 表达式 | 语义 |
-|---------|-------------|------|
-| `5m` | `*/5 * * * *` | 每 5 分钟 |
-| `30s` | `*/30 * * * * *` | 30 秒 cron 表达式；实际 dispatch 由分钟级轮询观察 |
-| `120s` | `*/2 * * * *` | 每 120 秒 = 每 2 分钟 |
-| `1h` | `0 */1 * * *` | 每 1 小时（整点） |
+| 用户输入 | 语义 |
+|---------|------|
+| `60s` | 每 60 秒 |
+| `90s` | 每 90 秒 |
+| `45m` | 每 45 分钟 |
+| `25h` | 每 25 小时 |
 
 ### 重试与失败处理
 
-TickerQ 作业级重试未在此层实现——`AgentLoopJob` 内部 dispatch 异常被 catch 并记录 Error 日志，不抛给 TickerQ。单次 dispatch 失败不影响下次 tick。设计理念：loop 是心跳机制，错过一次不应影响后续。
+此层不实现作业级重试。`AgentLoopJob` 捕获并记录单次 dispatch 异常，因此一次失败不会停止托管 worker 或影响下一次 tick。
 
 ---
 
@@ -366,9 +365,9 @@ services.CommandProcessor.SetLoopCallback(async (session, text, ct) =>
 });
 ```
 
-### AgentLoopJob 发现
+### AgentLoopJob 托管
 
-TickerQ 通过 DI 容器自动发现标记了 `[TickerFunction]` 的类。`AgentLoopJob` 注册为 singleton 后，TickerQ 在启动时扫描并启动其 `ExecuteAsync` 方法上的 cron 定时器。
+`AgentLoopJob` 同时注册为 singleton 与 `IHostedService`；宿主只启动一个 worker 实例，并在测试或其他服务访问时复用该实例。
 
 ---
 
@@ -391,17 +390,16 @@ TickerQ 通过 DI 容器自动发现标记了 `[TickerFunction]` 的类。`Agent
 | `ClawLoopScheduler._entries` | `ConcurrentDictionary<string, LoopEntry>` — 线程安全的 AddOrUpdate/TryRemove |
 | `LoopEntry.IsDue()` | 单条目内 `_nextOccurrence` 比较和更新由单条目锁保护 |
 | Agent 层 | `AgentRuntime` 内部已有会话锁，同一 session 同一时刻只有一个 turn 执行 |
-| TickerQ | `[TickerFunction]` 触发分钟级轮询作业；每个 loop 的状态仍保存在内存注册表中 |
+| 托管 worker | `PeriodicTimer` 每秒触发一次轮询；每个 loop 的状态仍保存在内存注册表中 |
 
 ---
 
 ## 10. OTel 上下文斩断
 
-为防止 loop 多次迭代间形成嵌套 OpenTelemetry span 链（Codex 曾因此导致 34GB/天的日志膨胀），`AgentLoopJob.ExecuteAsync` 每次执行前显式斩断上下文：
+为防止 loop 多次迭代间形成嵌套 OpenTelemetry span 链，`AgentLoopJob.DispatchDueAsync` 在每次轮询前显式斩断上下文：
 
 ```csharp
-[TickerFunction("AgentLoopExecutor", cronExpression: "* * * * *")]
-public async Task ExecuteAsync(TickerFunctionContext context, CancellationToken ct)
+internal async Task DispatchDueAsync(CancellationToken ct)
 {
     // Cut OTel context to prevent nested span chains across loop iterations
     Activity.Current = null;
@@ -426,7 +424,7 @@ public async Task ExecuteAsync(TickerFunctionContext context, CancellationToken 
 | 维度 | /loop | /goal |
 |------|-------|-------|
 | 触发方式 | 外部定时器注入 prompt | 模型停止时自动续跑 |
-| 调度引擎 | TickerQ 分钟级轮询 + 内存注册表 | AgentRuntime 循环内联 |
+| 调度引擎 | 托管服务每秒轮询 + 内存注册表 | AgentRuntime 循环内联 |
 | 生命周期 | Scheduled → Running → Terminated | Active → Paused/Blocked/BudgetLimited → Complete |
 | 模型工具 | `loop_control`（仅 complete） | `get_goal`、`create_goal`、`update_goal` |
 | 预算系统 | 无 | Token 预算 + 基线机制 |
@@ -446,7 +444,7 @@ public async Task ExecuteAsync(TickerFunctionContext context, CancellationToken 
 | 组件 | AOT 安全检查 |
 |------|-------------|
 | `LoopCommandParser` | 使用 `[GeneratedRegex]` 编译期正则，无运行时 `new Regex()` |
-| `AgentLoopJob` | `[TickerFunction]` 由 TickerQ Source Generator 编译期处理 |
+| `AgentLoopJob` | 直接注册 `BackgroundService`，无需运行时发现或反射 |
 | `AgentLoopRequestPayload` | 使用 `System.Text.Json` + `[JsonPropertyName]` 源生成 |
 | `LoopTerminationDetector` | `FrozenSet<string>` 是 AOT 安全的编译期集合 |
 | `LoopControlTool` | 实现 `IToolWithContext` 接口（非反射注册，DI 显式 `AddSingleton`） |
@@ -462,16 +460,13 @@ public async Task ExecuteAsync(TickerFunctionContext context, CancellationToken 
 | 被测组件 | 测试文件 | 验证点 |
 |----------|---------|--------|
 | `LoopCommandParser` | `LoopCommandParserTests.cs` | 合法 schedule 解析（含中文 prompt）；cancel/stop/status 精确匹配；非法输入返回 Invalid；非 loop 命令返回 null |
-| `ClawLoopScheduler` | `ClawLoopSchedulerTests.cs` | Schedule → 条目存在；秒级 cron 可解析；非法 cron 统一为 `ArgumentException`；Cancel → 条目移除；SignalComplete → 通过显式接口取消；幂等覆盖；到期轮询；并发 `IsDue` 访问 |
+| `ClawLoopScheduler` | `ClawLoopSchedulerTests.cs` | Schedule → 条目存在；非法 cron 统一为 `ArgumentException`；Cancel → 条目移除；SignalComplete → 通过显式接口取消；幂等覆盖；到期轮询；并发 `IsDue` 访问 |
+| 间隔调度 | `LoopIntervalTests.cs` | 60 秒最小值；精确的耗时节奏；延迟 tick 不漂移且不补发；溢出与非法输入拒绝 |
 | `LoopTerminationDetector` | `LoopControlToolTests.cs` | 完整关键词命中触发 SignalComplete；子串不触发；空/null 文本返回 false；OnToolComplete 触发 SignalComplete |
 | `LoopControlTool` | `LoopControlToolTests.cs` | `status="complete"` 正确转发；非法 status 返回错误；无 session 上下文返回错误；工具元数据验证 |
 
-### 测试统计数据
-
-- **测试文件：** 3 个
-- **测试方法：** 62 个（含继承自 Goal 相关命名匹配的测试）
-- **通过率：** 100%
-- **Mock 框架：** NSubstitute
+loop 测试作为标准 `OpenClaw.Tests` 套件的一部分运行。行为变更应在该套件中
+补充回归覆盖，并保持与仓库 NativeAOT 验证路径兼容。
 
 ---
 
@@ -480,7 +475,7 @@ public async Task ExecuteAsync(TickerFunctionContext context, CancellationToken 
 ### 审批挂起协议（Phase 2）
 
 当 loop turn 中触发审批阻塞（`ToolApprovalCallback` 返回 false 或等待人工决策）时：
-- 利用 TickerQ 作业暂停/恢复能力
+- 为内存 loop 注册表增加显式暂停/恢复状态
 - 审批通过后自动唤醒 loop
 - 解决 Codex 级"Token 焚烧"问题（无人值守时反复重试审批请求）
 
@@ -494,4 +489,4 @@ public async Task ExecuteAsync(TickerFunctionContext context, CancellationToken 
 
 ### 持久化增强
 
-当前 loop 条目存储在内存 `ConcurrentDictionary` 中，重启后丢失。TickerQ 本身支持 EF Core 持久化——将 `LoopEntry` 序列化存入 TickerQ 数据库表，实现真正的跨重启持久化。
+当前 loop 条目存储在内存 `ConcurrentDictionary` 中，重启后丢失。后续可引入持久化存储，在启动时恢复 `LoopEntry` 与下一次触发时间。
