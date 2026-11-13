@@ -281,17 +281,13 @@ public sealed class FileMemoryStore : IMemoryStore, ISessionSnapshotSource, IMem
         {
             _logger?.LogWarning(
                 quarantineEx,
-                "Failed to quarantine corrupt session file {FilePath} for session {SessionId}",
-                filePath,
-                sessionId);
+                "Failed to quarantine a corrupt session file");
         }
 
         var effectivePath = quarantinePath ?? filePath;
         _logger?.LogError(
             ex,
-            "Session file for {SessionId} is corrupt or unreadable and was quarantined to {FilePath}",
-            sessionId,
-            effectivePath);
+            "A persisted session file is corrupt or unreadable; consult the returned corruption error for recovery details");
         return new MemoryStoreCorruptionException(
             $"Session '{sessionId}' could not be loaded because its persisted state is corrupt.",
             sessionId,

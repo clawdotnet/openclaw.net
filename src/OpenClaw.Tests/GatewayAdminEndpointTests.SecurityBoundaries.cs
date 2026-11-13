@@ -7,6 +7,7 @@ using OpenClaw.Agent.Tools;
 using OpenClaw.Core.Models;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Extensions;
+using OpenClaw.Gateway.Endpoints;
 using Xunit;
 
 namespace OpenClaw.Tests;
@@ -238,6 +239,39 @@ public sealed partial class GatewayAdminEndpointTests
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             using var zip = new ZipArchive(await response.Content.ReadAsStreamAsync());
             Assert.Equal("inside.txt", Assert.Single(zip.Entries).FullName);
+
+            using var fileResponse = await harness.Client.GetAsync("/admin/workspace/download?path=inside.txt");
+            Assert.Equal(HttpStatusCode.OK, fileResponse.StatusCode);
+            Assert.Equal("inside", await fileResponse.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task WriteDirectoryArchiveAsync_WhenValidatedDownloadDirectoryIsReplaced_ShouldRejectEscapeFromWorkspace()
+    {
+        if (OperatingSystem.IsWindows())
+            return; // Creating links can require elevated privileges on Windows.
+
+        var root = CreateSafeTempDirectory("download-directory-replacement");
+        try
+        {
+            var workspace = Directory.CreateDirectory(Path.Join(root, "workspace")).FullName;
+            var selected = Directory.CreateDirectory(Path.Join(workspace, "selected")).FullName;
+            var outside = Directory.CreateDirectory(Path.Join(root, "outside")).FullName;
+            File.WriteAllText(Path.Join(outside, "secret.txt"), "outside");
+            Assert.True(WorkspacePathHelpers.IsSafeWorkspacePath(selected, workspace));
+
+            // Simulate replacement after request validation but before archive enumeration/open.
+            Directory.Move(selected, Path.Join(workspace, "original"));
+            Directory.CreateSymbolicLink(selected, outside);
+            using var archive = new MemoryStream();
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                WorkspaceFileEndpoints.WriteDirectoryArchiveAsync(workspace, selected, archive,
+                    Path.Join(root, "download.zip"), TestContext.Current.CancellationToken));
         }
         finally
         {

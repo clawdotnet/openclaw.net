@@ -400,21 +400,7 @@ internal static class WorkspaceFileEndpoints
                 var archiveStream = new FileStream(archivePath, archiveOptions);
                 try
                 {
-                    using (var zip = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: true))
-                    {
-                        foreach (var filePath in Directory.EnumerateFiles(targetPath, "*", RecurseWithoutLinks))
-                        {
-                            ctx.RequestAborted.ThrowIfCancellationRequested();
-                            if (string.Equals(Path.GetFullPath(filePath), archivePath,
-                                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
-                                continue;
-                            var entryName = Path.GetRelativePath(targetPath, filePath).Replace('\\', '/');
-                            var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
-                            await using var entryStream = entry.Open();
-                            await using var fileStream = SecureFileSystem.OpenForReadUnderRoot(targetPath, filePath);
-                            await fileStream.CopyToAsync(entryStream, ctx.RequestAborted);
-                        }
-                    }
+                    await WriteDirectoryArchiveAsync(workspaceRoot, targetPath, archiveStream, archivePath, ctx.RequestAborted);
 
                     archiveStream.Position = 0;
                     return Results.Stream(archiveStream, "application/zip", zipName);
@@ -431,7 +417,8 @@ internal static class WorkspaceFileEndpoints
             {
                 var fileName = Path.GetFileName(targetPath);
                 var contentType = GetContentType(fileName);
-                return Results.File(targetPath, contentType, fileName, enableRangeProcessing: false);
+                return Results.Stream(SecureFileSystem.OpenForReadUnderRoot(workspaceRoot, targetPath),
+                    contentType, fileName, enableRangeProcessing: false);
             }
 
             return Results.Json(
@@ -440,6 +427,27 @@ internal static class WorkspaceFileEndpoints
                 statusCode: StatusCodes.Status404NotFound);
         });
 
+    }
+
+    internal static async Task WriteDirectoryArchiveAsync(
+        string workspaceRoot, string targetPath, Stream archiveStream, string archivePath,
+        CancellationToken cancellationToken)
+    {
+        using (var zip = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var filePath in Directory.EnumerateFiles(targetPath, "*", RecurseWithoutLinks))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (string.Equals(Path.GetFullPath(filePath), archivePath,
+                        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                    continue;
+                var entryName = Path.GetRelativePath(targetPath, filePath).Replace('\\', '/');
+                var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
+                await using var entryStream = entry.Open();
+                await using var fileStream = SecureFileSystem.OpenForReadUnderRoot(workspaceRoot, filePath);
+                await fileStream.CopyToAsync(entryStream, cancellationToken);
+            }
+        }
     }
 
     /// <summary>
