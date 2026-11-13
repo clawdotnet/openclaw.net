@@ -118,9 +118,16 @@ public sealed class PaymentRuntimeService
         }
     }
 
-    public async ValueTask<MachinePaymentResult> ExecuteMachinePaymentAsync(
+    public ValueTask<MachinePaymentResult> ExecuteMachinePaymentAsync(
         MachinePaymentRequest request,
         PaymentExecutionContext context,
+        CancellationToken ct)
+        => ExecuteMachinePaymentAsync(request, context, isAutomaticHttpIdempotencyKey: false, ct: ct);
+
+    internal async ValueTask<MachinePaymentResult> ExecuteMachinePaymentAsync(
+        MachinePaymentRequest request,
+        PaymentExecutionContext context,
+        bool isAutomaticHttpIdempotencyKey,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request.Challenge);
@@ -137,7 +144,7 @@ public sealed class PaymentRuntimeService
                 SafeMetadata = new Dictionary<string, string>((request.Challenge.SafeMetadata ?? []).OrderBy(p => p.Key, StringComparer.Ordinal))
             }
         };
-        var fingerprintRequest = request.IdempotencyKey!.StartsWith("auto-http-v1-", StringComparison.Ordinal)
+        var fingerprintRequest = isAutomaticHttpIdempotencyKey
             ? normalizedRequest with { Challenge = normalizedRequest.Challenge with { ChallengeId = null } }
             : normalizedRequest;
         var fingerprint = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(

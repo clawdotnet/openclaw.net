@@ -59,6 +59,24 @@ public sealed class PaymentIdempotencyTests : IDisposable
     }
 
     [Fact]
+    public async Task ExecuteMachinePayment_WhenExplicitKeyUsesAutomaticPrefix_ShouldKeepChallengeInFingerprint()
+    {
+        var provider = CreateProvider();
+        var runtime = CreateRuntime(provider);
+        var request = Request() with { IdempotencyKey = "auto-http-v1-order-1" };
+        await runtime.ExecuteMachinePaymentAsync(request, new(), Ct);
+
+        var error = await Assert.ThrowsAsync<PaymentIdempotencyException>(() =>
+            runtime.ExecuteMachinePaymentAsync(
+                request with { Challenge = request.Challenge with { ChallengeId = "challenge-2" } },
+                new(), Ct).AsTask());
+
+        Assert.Equal("idempotency_conflict", error.Code);
+        await provider.Received(1).ExecuteMachinePaymentAsync(
+            Arg.Any<MachinePaymentRequest>(), Arg.Any<PaymentExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ExecuteMachinePayment_WhenConcurrentRuntimesUseSameKey_ShouldDispatchOnce()
     {
         var provider = CreateProvider();

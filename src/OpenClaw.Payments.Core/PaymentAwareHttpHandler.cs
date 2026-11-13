@@ -45,10 +45,11 @@ public sealed class PaymentAwareHttpHandler : DelegatingHandler
             return response;
 
         response.Dispose();
+        var hasExplicitIdempotencyKey = request.Options.TryGetValue(IdempotencyKeyOption, out var explicitKey);
         var result = await _payments.ExecuteMachinePaymentAsync(new MachinePaymentRequest
         {
-            IdempotencyKey = request.Options.TryGetValue(IdempotencyKeyOption, out var key)
-                ? key
+            IdempotencyKey = hasExplicitIdempotencyKey
+                ? explicitKey
                 : CreateAutomaticIdempotencyKey(request, challenge, bufferedContent),
             ProviderId = _providerId,
             Challenge = challenge with
@@ -57,7 +58,7 @@ public sealed class PaymentAwareHttpHandler : DelegatingHandler
                 ProviderId = challenge.ProviderId ?? _providerId
             },
             Environment = _context.Environment
-        }, _context, cancellationToken);
+        }, _context, isAutomaticHttpIdempotencyKey: !hasExplicitIdempotencyKey, ct: cancellationToken);
 
         var secret = await _payments.RetrieveMachineAuthorizationOnceAsync(result.PaymentId, cancellationToken);
         var header = secret?.Resolve(PaymentSecretField.AuthorizationHeader);
