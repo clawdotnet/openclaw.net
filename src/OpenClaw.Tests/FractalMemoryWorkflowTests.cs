@@ -363,20 +363,14 @@ public sealed class FractalMemoryWorkflowTests
             }
             finally
             {
+                using var process = serverProcess;
                 try
                 {
                     await Provider.DisposeAsync();
                 }
                 finally
                 {
-                    try
-                    {
-                        await DeleteRootAsync(Root, serverProcess);
-                    }
-                    finally
-                    {
-                        serverProcess?.Dispose();
-                    }
+                    await DeleteRootAsync(Root, process);
                 }
             }
         }

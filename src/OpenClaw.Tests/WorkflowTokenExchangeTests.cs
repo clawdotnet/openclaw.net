@@ -147,10 +147,7 @@ public sealed class WorkflowTokenExchangeTests
         var body = new string(' ', 65537);
         var error = await Assert.ThrowsAsync<WorkflowDelegationException>(() =>
             ExchangeAsync(WorkflowDelegationTestSupport.CreateAuthentication("entra-obo"), (_, _) =>
-                Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StreamContent(new MemoryStream(Encoding.UTF8.GetBytes(body)))
-                })));
+                Task.FromResult(Stream(body))));
         Assert.Equal(502, error.StatusCode);
     }
 
@@ -176,6 +173,12 @@ public sealed class WorkflowTokenExchangeTests
 
     private static HttpResponseMessage Json(string body, HttpStatusCode status = HttpStatusCode.OK)
         => new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+
+    private static HttpResponseMessage Stream(string body)
+        => new(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new MemoryStream(Encoding.UTF8.GetBytes(body)))
+        };
 
     private static async Task<WorkflowTokenExchangeResult> ExchangeAsync(
         WorkflowAuthenticationConfig auth, Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> callback,

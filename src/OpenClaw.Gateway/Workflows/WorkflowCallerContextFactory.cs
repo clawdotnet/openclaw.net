@@ -65,8 +65,8 @@ internal sealed class WorkflowCallerContextFactory
             !Admits(policy, feature.Claims))
         {
             httpContext?.RequestServices?.GetService<ILogger<WorkflowCallerContextFactory>>()?
-                .LogWarning("Workflow backend {BackendId} rejected caller admission with {ErrorCode}.",
-                    backendId, "workflow_user_auth_required");
+                .LogWarning("Workflow caller admission was rejected with {ErrorCode}.",
+                    "workflow_user_auth_required");
             throw new WorkflowDelegationException("workflow_user_auth_required", StatusCodes.Status401Unauthorized);
         }
 

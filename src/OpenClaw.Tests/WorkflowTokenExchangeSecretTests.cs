@@ -23,7 +23,7 @@ public sealed class WorkflowTokenExchangeSecretTests : IDisposable
         using var http = new HttpClient(new RecordingHttpMessageHandler((_, _) =>
         {
             requests++;
-            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+            return Task.FromResult(CreateResponse());
         }));
         var logger = new RecordingWorkflowLogger<WorkflowTokenExchangeClient>();
         var exchange = new WorkflowTokenExchangeClient(new WorkflowTestHttpClientFactory(http), TimeProvider.System, logger);
@@ -38,6 +38,9 @@ public sealed class WorkflowTokenExchangeSecretTests : IDisposable
         Assert.DoesNotContain(logger.Messages, message => message.Contains("private-vault-path/key", StringComparison.Ordinal));
         Assert.Equal(0, requests);
     }
+
+    private static HttpResponseMessage CreateResponse()
+        => new(System.Net.HttpStatusCode.OK);
 
     private sealed class ThrowingResolver(bool unsupported) : ISecretResolver
     {

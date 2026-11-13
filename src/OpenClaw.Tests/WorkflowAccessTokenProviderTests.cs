@@ -98,7 +98,7 @@ public sealed class WorkflowAccessTokenProviderTests
     public async Task GetAsync_WhenFailureOccurs_ShouldAllowLaterRetry()
     {
         using var fixture = new Fixture((f, _) => Task.FromResult(f.Requests == 1
-            ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("{}") }
+            ? Response(HttpStatusCode.ServiceUnavailable)
             : Response(300)));
         await Assert.ThrowsAsync<WorkflowDelegationException>(() =>
             fixture.Provider.GetAsync("review", fixture.Auth, Caller(), TestContext.Current.CancellationToken));
@@ -166,7 +166,7 @@ public sealed class WorkflowAccessTokenProviderTests
     public async Task GetAsync_WhenRefreshFails_ShouldNotReuseOldToken()
     {
         using var fixture = new Fixture((f, _) => Task.FromResult(f.Requests == 1 ? Response(40)
-            : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("{}") }));
+            : Response(HttpStatusCode.ServiceUnavailable)));
         await fixture.Provider.GetAsync("review", fixture.Auth, Caller(), TestContext.Current.CancellationToken);
         fixture.Clock.Advance(TimeSpan.FromSeconds(20));
         await Assert.ThrowsAsync<WorkflowDelegationException>(() =>
@@ -181,6 +181,8 @@ public sealed class WorkflowAccessTokenProviderTests
     {
         Content = new StringContent($$"""{"access_token":"{{token}}","token_type":"Bearer","expires_in":{{lifetime}}}""", Encoding.UTF8, "application/json")
     };
+    private static HttpResponseMessage Response(HttpStatusCode status)
+        => new(status) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
 
     private sealed class Fixture : IDisposable
     {

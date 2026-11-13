@@ -23,15 +23,18 @@ public sealed partial class GatewayAdminEndpointTests
         await using var server = await WorkflowDelegationTestServer.StartAsync(TestContext.Current.CancellationToken);
         await using var harness = await CreateWorkflowHarnessAsync(server, mode);
         harness.Client.DefaultRequestHeaders.Authorization = new("Bearer", server.IssueUserToken("user-a", true));
-        using var started = await harness.Client.PostAsync("/api/integration/workflows/review/runs",
-            new StringContent("""{"input":"review","senderId":"forged"}""", Encoding.UTF8, "application/json"));
+        using var startContent = new StringContent(
+            """{"input":"review","senderId":"forged"}""", Encoding.UTF8, "application/json");
+        using var started = await harness.Client.PostAsync("/api/integration/workflows/review/runs", startContent);
         Assert.True(started.StatusCode == HttpStatusCode.Accepted,
             $"Start status {(int)started.StatusCode}; exchanges={server.ExchangeRequests.Count}; backend={server.BackendRequests.Count}; {await started.Content.ReadAsStringAsync()}");
         harness.Client.DefaultRequestHeaders.Authorization = new("Bearer", server.IssueUserToken("user-b", true));
         using var fetched = await harness.Client.GetAsync("/api/integration/workflows/review/runs/run-1");
         Assert.Equal(HttpStatusCode.OK, fetched.StatusCode);
-        using var responded = await harness.Client.PostAsync("/api/integration/workflows/review/runs/run-1/responses",
-            new StringContent("""{"portId":"approval","actorId":"forged","approved":true}""", Encoding.UTF8, "application/json"));
+        using var responseContent = new StringContent(
+            """{"portId":"approval","actorId":"forged","approved":true}""", Encoding.UTF8, "application/json");
+        using var responded = await harness.Client.PostAsync(
+            "/api/integration/workflows/review/runs/run-1/responses", responseContent);
         Assert.Equal(HttpStatusCode.OK, responded.StatusCode);
         Assert.Collection(server.BackendRequests,
             call =>
@@ -102,8 +105,9 @@ public sealed partial class GatewayAdminEndpointTests
         await using var server = await WorkflowDelegationTestServer.StartAsync(TestContext.Current.CancellationToken);
         await using var harness = await CreateWorkflowHarnessAsync(server, "entra-obo");
         harness.Client.DefaultRequestHeaders.Authorization = new("Bearer", server.IssueUserToken("user", true));
-        using var response = await harness.Client.PostAsync($"/api/integration/workflows/{backend}/runs",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await harness.Client.PostAsync(
+            $"/api/integration/workflows/{backend}/runs", requestContent);
         Assert.Equal(expected, (int)response.StatusCode);
         Assert.Empty(server.ExchangeRequests);
         Assert.Empty(server.BackendRequests);
@@ -115,8 +119,10 @@ public sealed partial class GatewayAdminEndpointTests
         await using var server = await WorkflowDelegationTestServer.StartAsync(TestContext.Current.CancellationToken);
         await using var harness = await CreateWorkflowHarnessAsync(server, "static");
         harness.Client.DefaultRequestHeaders.Authorization = new("Bearer", server.IssueUserToken("service", false));
-        using var response = await harness.Client.PostAsync("/api/integration/workflows/review/runs",
-            new StringContent("""{"input":"review","senderId":"original"}""", Encoding.UTF8, "application/json"));
+        using var requestContent = new StringContent(
+            """{"input":"review","senderId":"original"}""", Encoding.UTF8, "application/json");
+        using var response = await harness.Client.PostAsync(
+            "/api/integration/workflows/review/runs", requestContent);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         Assert.Empty(server.ExchangeRequests);
         var call = Assert.Single(server.BackendRequests);

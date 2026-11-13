@@ -22,9 +22,10 @@ public sealed partial class GatewayAdminEndpointTests
         harness.Client.DefaultRequestHeaders.Authorization = new("Bearer", server.IssueUserToken("user-a", true));
         await using var client = await CreateWorkflowMcpClientAsync(harness.Client);
         var tools = await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken);
-        foreach (var tool in tools.Where(tool => tool.Name is "openclaw.run_workflow" or "openclaw.get_workflow_run" or "openclaw.respond_workflow"))
+        foreach (var schema in tools
+                     .Where(tool => tool.Name is "openclaw.run_workflow" or "openclaw.get_workflow_run" or "openclaw.respond_workflow")
+                     .Select(tool => tool.JsonSchema.GetRawText()))
         {
-            var schema = tool.JsonSchema.GetRawText();
             foreach (var forbidden in new[] { "assertion", "executionContext", "accessToken", "callerContextFactory" })
                 Assert.DoesNotContain(forbidden, schema, StringComparison.OrdinalIgnoreCase);
         }
