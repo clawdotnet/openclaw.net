@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,7 +60,8 @@ public sealed partial class GatewayAdminEndpointTests
         using var response = await harness.Client.GetAsync("/api/integration/workflows/review/runs/run-1");
         Assert.Equal(status, (int)response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains(code, body, StringComparison.Ordinal);
+        using var parsed = JsonDocument.Parse(body);
+        Assert.Equal(code, parsed.RootElement.GetProperty("error").GetString());
         Assert.DoesNotContain("private-provider-error", body, StringComparison.Ordinal);
         Assert.Empty(server.BackendRequests);
         if (!eligible) Assert.Empty(server.ExchangeRequests);
@@ -92,6 +94,36 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.Empty(server.BackendRequests);
     }
 
+    [Theory]
+    [InlineData("unknown", """{"input":"review"}""", 404)]
+    [InlineData("review", "{broken-json", 400)]
+    public async Task WorkflowDelegation_WhenRequestInvalid_ShouldPreserveValidation(string backend, string json, int expected)
+    {
+        await using var server = await WorkflowDelegationTestServer.StartAsync(TestContext.Current.CancellationToken);
+        await using var harness = await CreateWorkflowHarnessAsync(server, "entra-obo");
+        harness.Client.DefaultRequestHeaders.Authorization = new("Bearer", server.IssueUserToken("user", true));
+        using var response = await harness.Client.PostAsync($"/api/integration/workflows/{backend}/runs",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+        Assert.Equal(expected, (int)response.StatusCode);
+        Assert.Empty(server.ExchangeRequests);
+        Assert.Empty(server.BackendRequests);
+    }
+
+    [Fact]
+    public async Task WorkflowDelegation_WhenStaticBackend_ShouldNotRequireUserAdmission()
+    {
+        await using var server = await WorkflowDelegationTestServer.StartAsync(TestContext.Current.CancellationToken);
+        await using var harness = await CreateWorkflowHarnessAsync(server, "static");
+        harness.Client.DefaultRequestHeaders.Authorization = new("Bearer", server.IssueUserToken("service", false));
+        using var response = await harness.Client.PostAsync("/api/integration/workflows/review/runs",
+            new StringContent("""{"input":"review","senderId":"original"}""", Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Empty(server.ExchangeRequests);
+        var call = Assert.Single(server.BackendRequests);
+        Assert.Equal("original", call.StartRequest!.SenderId);
+        Assert.Empty(call.Authorization);
+    }
+
     private static Task<GatewayTestHarness> CreateWorkflowHarnessAsync(WorkflowDelegationTestServer server, string mode, bool legacySession = false)
         => CreateHarnessAsync(true, config =>
         {
@@ -102,7 +134,7 @@ public sealed partial class GatewayAdminEndpointTests
             config.Workflows.Backends["review"] = new()
             {
                 BaseUrl = server.BackendBaseUrl.ToString(),
-                Authentication = new()
+                Authentication = mode == "static" ? new() : new()
                 {
                     Mode = mode, TokenEndpoint = server.TokenEndpoint.ToString(),
                     ClientId = "client", ClientSecretRef = "raw:test-fixture-secret", Scopes = ["workflow.read"],
