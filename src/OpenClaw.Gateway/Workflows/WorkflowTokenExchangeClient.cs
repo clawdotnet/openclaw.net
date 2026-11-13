@@ -76,7 +76,7 @@ internal sealed class WorkflowTokenExchangeClient(
                 throw Failure(backendId, denied);
             }
             if (parsed is null || parsed.Error is not null ||
-                string.IsNullOrWhiteSpace(parsed.AccessToken) ||
+                parsed.AccessToken is not { Length: > 0 } accessToken || !IsBearerToken(accessToken) ||
                 !string.Equals(parsed.TokenType, "Bearer", StringComparison.OrdinalIgnoreCase) ||
                 parsed.ExpiresIn is not (>= 1 and <= 86400) ||
                 string.Equals(authentication.Mode, "token-exchange", StringComparison.OrdinalIgnoreCase) && parsed.IssuedTokenType != AccessTokenType)
@@ -87,9 +87,13 @@ internal sealed class WorkflowTokenExchangeClient(
                 if (!authentication.Scopes.All(returned.Contains))
                     throw Failure(backendId);
             }
-            return new(parsed.AccessToken, started, timeProvider.GetUtcNow(), parsed.ExpiresIn.Value);
+            return new(accessToken, started, timeProvider.GetUtcNow(), parsed.ExpiresIn.Value);
         }
         catch (JsonException)
+        {
+            throw Failure(backendId);
+        }
+        catch (SecretResolutionException)
         {
             throw Failure(backendId);
         }
@@ -120,4 +124,17 @@ internal sealed class WorkflowTokenExchangeClient(
 
     private static string EncodeFormValue(string value)
         => Uri.EscapeDataString(value).Replace("%20", "+", StringComparison.Ordinal);
+
+    private static bool IsBearerToken(string value)
+    {
+        var token = value.AsSpan().TrimEnd('=');
+        if (token.IsEmpty)
+            return false;
+        foreach (var character in token)
+        {
+            if (!char.IsAsciiLetterOrDigit(character) && character is not ('-' or '.' or '_' or '~' or '+' or '/'))
+                return false;
+        }
+        return true;
+    }
 }

@@ -134,7 +134,9 @@ is not business authorization. The sample host does not implement these producti
 authorization requirements.
 
 Token acquisition has a 30-second budget, reads at most 65,536 response bytes, and
-accepts integer `expires_in` values from 1 to 86,400 seconds. Redirects are disabled.
+accepts integer `expires_in` values from 1 to 86,400 seconds and RFC 6750 bearer-token
+syntax. Malformed tokens and secret-resolution failures return the safe exchange
+error before caching or backend dispatch. Redirects are disabled.
 The process-local cache is bounded to 1,024 entries and 1,024 total waiters, isolated
 by issuer, subject, assertion hash, backend, and exchange parameters. Effective expiry
 is the earlier of assertion expiry and exchange-start time plus `expires_in`.

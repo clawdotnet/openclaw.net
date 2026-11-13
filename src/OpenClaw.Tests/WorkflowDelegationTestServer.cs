@@ -30,6 +30,7 @@ internal sealed class WorkflowDelegationTestServer : IAsyncDisposable
     public ConcurrentQueue<WorkflowCapturedBackendRequest> BackendRequests { get; } = new();
     public ConcurrentQueue<WorkflowCapturedExchangeRequest> ExchangeRequests { get; } = new();
     public string? OAuthError { get; set; }
+    public string? TokenResponseBody { get; set; }
     public int BackendStatusCode { get; set; } = 200;
 
     private WorkflowDelegationTestServer()
@@ -88,6 +89,8 @@ internal sealed class WorkflowDelegationTestServer : IAsyncDisposable
             ExchangeRequests.Enqueue(new(form.ToDictionary(pair => pair.Key, pair => pair.Value.ToString()), ctx.Request.Headers.Authorization.ToString()));
             if (OAuthError is not null)
                 return Results.Text($$"""{"error":"{{OAuthError}}","error_description":"private-provider-error"}""", "application/json", statusCode: 400);
+            if (TokenResponseBody is not null)
+                return Results.Text(TokenResponseBody, "application/json");
             var assertion = form["assertion"].FirstOrDefault() ?? form["subject_token"].FirstOrDefault()!;
             var subject = new JsonWebToken(assertion).Subject;
             return Results.Text($$"""{"access_token":"delegated-{{subject}}","token_type":"Bearer","expires_in":300,"issued_token_type":"urn:ietf:params:oauth:token-type:access_token"}""", "application/json");

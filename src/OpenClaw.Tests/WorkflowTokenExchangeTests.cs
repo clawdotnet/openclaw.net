@@ -60,6 +60,12 @@ public sealed class WorkflowTokenExchangeTests
 
     [Theory]
     [InlineData("""{"access_token":"","token_type":"Bearer","expires_in":300}""")]
+    [InlineData("""{"access_token":"bad\r\ntoken","token_type":"Bearer","expires_in":300}""")]
+    [InlineData("""{"access_token":"bad token","token_type":"Bearer","expires_in":300}""")]
+    [InlineData("""{"access_token":"bad\ttoken","token_type":"Bearer","expires_in":300}""")]
+    [InlineData("""{"access_token":"bad\u0080token","token_type":"Bearer","expires_in":300}""")]
+    [InlineData("""{"access_token":"bad=token","token_type":"Bearer","expires_in":300}""")]
+    [InlineData("""{"access_token":"==","token_type":"Bearer","expires_in":300}""")]
     [InlineData("""{"access_token":"token","token_type":"mac","expires_in":300}""")]
     [InlineData("""{"access_token":"token","token_type":"Bearer"}""")]
     [InlineData("""{"access_token":"token","token_type":"Bearer","expires_in":0}""")]
@@ -86,6 +92,14 @@ public sealed class WorkflowTokenExchangeTests
         var result = await ExchangeAsync(WorkflowDelegationTestSupport.CreateAuthentication("entra-obo"),
             (_, _) => Task.FromResult(Json($$"""{"access_token":"token","token_type":"Bearer","expires_in":{{lifetime}}}""")));
         Assert.Equal(lifetime, result.ExpiresInSeconds);
+    }
+
+    [Fact]
+    public async Task ExchangeAsync_WhenBearerUsesLegalAlphabetAndPadding_ShouldAccept()
+    {
+        var result = await ExchangeAsync(WorkflowDelegationTestSupport.CreateAuthentication("entra-obo"),
+            (_, _) => Task.FromResult(Json("""{"access_token":"abc-._~+/===","token_type":"Bearer","expires_in":300}""")));
+        Assert.Equal("abc-._~+/===", result.AccessToken);
     }
 
     [Theory]

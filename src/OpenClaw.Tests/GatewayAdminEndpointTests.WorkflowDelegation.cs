@@ -124,6 +124,29 @@ public sealed partial class GatewayAdminEndpointTests
         Assert.Empty(call.Authorization);
     }
 
+    [Fact]
+    public async Task WorkflowDelegation_WhenProviderTokenMalformed_ShouldNotCacheOrDispatch()
+    {
+        await using var server = await WorkflowDelegationTestServer.StartAsync(TestContext.Current.CancellationToken);
+        server.TokenResponseBody = """{"access_token":"bad\r\ntoken","token_type":"Bearer","expires_in":300}""";
+        await using var harness = await CreateWorkflowHarnessAsync(server, "entra-obo");
+        harness.Client.DefaultRequestHeaders.Authorization = new("Bearer", server.IssueUserToken("user", true));
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var response = await harness.Client.GetAsync("/api/integration/workflows/review/runs/run-1");
+            Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal("workflow_token_exchange_failed", body.RootElement.GetProperty("error").GetString());
+        }
+        Assert.Equal(2, server.ExchangeRequests.Count);
+        Assert.Empty(server.BackendRequests);
+        server.TokenResponseBody = null;
+        using var recovered = await harness.Client.GetAsync("/api/integration/workflows/review/runs/run-1");
+        Assert.Equal(HttpStatusCode.OK, recovered.StatusCode);
+        Assert.Equal(3, server.ExchangeRequests.Count);
+        Assert.Single(server.BackendRequests);
+    }
+
     private static Task<GatewayTestHarness> CreateWorkflowHarnessAsync(WorkflowDelegationTestServer server, string mode, bool legacySession = false)
         => CreateHarnessAsync(true, config =>
         {
