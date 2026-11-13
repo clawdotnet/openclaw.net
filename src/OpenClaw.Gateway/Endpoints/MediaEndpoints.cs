@@ -21,7 +21,7 @@ internal static class MediaEndpoints
         {
             var access = EndpointHelpers.AuthorizeOperatorEndpoint(ctx, startup,
                 browserSessions, runtime.Operations,
-                requireCsrf: true, endpointScope: "integration.media.upload");
+                requireCsrf: true, endpointScope: "integration.mutate.media.upload");
             if (access.Failure is not null)
                 return access.Failure;
 

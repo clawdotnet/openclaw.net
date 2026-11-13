@@ -74,7 +74,7 @@ public sealed class TelegramDeliveryTests
     }
 
     [Fact]
-    public async Task DeliverAsync_WhenRetryAfterIsExcessive_ShouldCapDelay()
+    public async Task DeliverAsync_WhenRetryAfterIsLong_ShouldHonorDelay()
     {
         var calls = 0;
         TimeSpan? observedDelay = null;
@@ -82,13 +82,30 @@ public sealed class TelegramDeliveryTests
         adapter.SendAsync(Arg.Any<OutboundMessage>(), Arg.Any<CancellationToken>())
             .Returns(_ => ++calls == 1
                 ? ValueTask.FromException(new ChannelDeliveryException(
-                    "rate limited", canRetry: true, retryAfter: TimeSpan.MaxValue))
+                    "rate limited", canRetry: true, retryAfter: TimeSpan.FromSeconds(60)))
                 : ValueTask.CompletedTask);
 
         Assert.True(await GatewayOutboundDeliveryWorker.DeliverAsync(
             adapter, Message("hello"), NullLogger.Instance, TestContext.Current.CancellationToken,
             (delay, _) => { observedDelay = delay; return Task.CompletedTask; }));
-        Assert.Equal(TimeSpan.FromSeconds(30), observedDelay);
+        Assert.Equal(TimeSpan.FromSeconds(60), observedDelay);
+    }
+
+    [Fact]
+    public async Task DeliverAsync_WhenSendIsCanceledWithoutShutdown_ShouldNotRetry()
+    {
+        var calls = 0;
+        var adapter = Substitute.For<IChannelAdapter>();
+        adapter.SendAsync(Arg.Any<OutboundMessage>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls++;
+                return ValueTask.FromException(new OperationCanceledException("transport timeout"));
+            });
+
+        Assert.False(await GatewayOutboundDeliveryWorker.DeliverAsync(
+            adapter, Message("hello"), NullLogger.Instance, TestContext.Current.CancellationToken));
+        Assert.Equal(1, calls);
     }
 
     [Fact]
@@ -113,7 +130,7 @@ public sealed class TelegramDeliveryTests
     [Fact]
     public async Task OutboundWorker_WhenTelegramRejectsHeartbeat_ShouldLeaveDeliveryTimestampUnset()
     {
-        var root = Path.Combine(Path.GetTempPath(), "openclaw-telegram-heartbeat", Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "openclaw-telegram-heartbeat", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
@@ -158,7 +175,7 @@ public sealed class TelegramDeliveryTests
     [Fact]
     public async Task OutboundWorker_WhenHeartbeatPersistenceFails_ShouldContinueDelivering()
     {
-        var root = Path.Combine(Path.GetTempPath(), "openclaw-heartbeat-persistence", Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "openclaw-heartbeat-persistence", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {

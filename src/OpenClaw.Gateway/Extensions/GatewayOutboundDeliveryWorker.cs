@@ -72,6 +72,13 @@ internal sealed class GatewayOutboundDeliveryWorker
             {
                 throw;
             }
+            catch (OperationCanceledException ex)
+            {
+                logger.LogError(ex,
+                    "Outbound send for {ChannelId} was canceled without shutdown. Outcome unknown; not retrying.",
+                    outbound.ChannelId);
+                return false;
+            }
             catch (ChannelDeliveryException ex) when (!ex.CanRetry)
             {
                 logger.LogError(ex,
@@ -88,11 +95,26 @@ internal sealed class GatewayOutboundDeliveryWorker
                 }
                 logger.LogWarning(ex, "Outbound send failed for channel {ChannelId}, retrying…", outbound.ChannelId);
                 var delay = ex is ChannelDeliveryException { RetryAfter: { } retryAfter } && retryAfter > TimeSpan.Zero
-                    ? TimeSpan.FromTicks(Math.Min(retryAfter.Ticks, TimeSpan.FromSeconds(30).Ticks))
+                    ? retryAfter
                     : TimeSpan.FromMilliseconds(500);
-                await (retryDelay?.Invoke(delay, ct) ?? Task.Delay(delay, ct));
+                if (retryDelay is not null)
+                    await retryDelay(delay, ct);
+                else
+                    await DelayWithCancellationAsync(delay, ct);
             }
         }
         return false;
+    }
+
+    private static async Task DelayWithCancellationAsync(TimeSpan delay, CancellationToken ct)
+    {
+        var remaining = delay;
+        var maximumChunk = TimeSpan.FromDays(20);
+        while (remaining > maximumChunk)
+        {
+            await Task.Delay(maximumChunk, ct);
+            remaining -= maximumChunk;
+        }
+        await Task.Delay(remaining, ct);
     }
 }

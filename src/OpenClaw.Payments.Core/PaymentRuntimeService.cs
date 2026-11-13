@@ -137,8 +137,11 @@ public sealed class PaymentRuntimeService
                 SafeMetadata = new Dictionary<string, string>((request.Challenge.SafeMetadata ?? []).OrderBy(p => p.Key, StringComparer.Ordinal))
             }
         };
+        var fingerprintRequest = request.IdempotencyKey!.StartsWith("auto-http-v1-", StringComparison.Ordinal)
+            ? normalizedRequest with { Challenge = normalizedRequest.Challenge with { ChallengeId = null } }
+            : normalizedRequest;
         var fingerprint = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
-            normalizedRequest, PaymentJsonContext.Default.MachinePaymentRequest)));
+            fingerprintRequest, PaymentJsonContext.Default.MachinePaymentRequest)));
         var scope = JsonSerializer.Serialize(new Dictionary<string, string>
         {
             ["provider"] = provider.ProviderId.ToLowerInvariant(),

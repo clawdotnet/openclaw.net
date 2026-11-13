@@ -48,9 +48,30 @@ internal sealed class MediaCacheStore
         var json = await File.ReadAllTextAsync(metadataPath, ct);
         var asset = JsonSerializer.Deserialize(json, CoreJsonContext.Default.StoredMediaAsset);
         // Legacy JSON uploads overwrote their payload with the metadata file.
-        return asset is not null && !string.Equals(asset.Path, metadataPath, StringComparison.OrdinalIgnoreCase)
+        return asset is not null && !IsMetadataPayloadCollision(asset.Path, metadataPath)
             ? asset
             : null;
+    }
+
+    private static bool IsMetadataPayloadCollision(string assetPath, string metadataPath)
+    {
+        if (string.Equals(assetPath, metadataPath, StringComparison.Ordinal))
+            return true;
+        if (!string.Equals(assetPath, metadataPath, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // A case-sensitive volume can contain both legacy `asset.JSON` payload and
+        // `asset.json` metadata entries. A case-insensitive volume exposes only one
+        // directory entry, even though both spellings can be opened successfully.
+        var directory = Path.GetDirectoryName(metadataPath)!;
+        var hasAssetEntry = false;
+        var hasMetadataEntry = false;
+        foreach (var entry in Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly))
+        {
+            hasAssetEntry |= string.Equals(entry, assetPath, StringComparison.Ordinal);
+            hasMetadataEntry |= string.Equals(entry, metadataPath, StringComparison.Ordinal);
+        }
+        return !hasAssetEntry || !hasMetadataEntry;
     }
 
     private static string GuessExtension(string mediaType, string fileName)

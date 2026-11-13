@@ -65,7 +65,7 @@ internal static partial class SecureFileSystem
         var descriptors = new List<int>();
         try
         {
-            var current = Open(root, directoryFlags, 0);
+            var current = Open(root, directoryFlags);
             if (current < 0)
                 ThrowLastError($"Unable to open trusted directory '{root}'.");
             descriptors.Add(current);
@@ -74,22 +74,36 @@ internal static partial class SecureFileSystem
             {
                 if (MkdirAt(current, component, 0x1C0) != 0 && Marshal.GetLastWin32Error() != 17)
                     ThrowLastError($"Unable to create destination directory '{component}'.");
-                var child = OpenAt(current, component, directoryFlags | UnixNoFollow(), 0);
+                var child = OpenAt(current, component, directoryFlags | UnixNoFollow());
                 if (child < 0)
                     throw new UnauthorizedAccessException($"Destination directory '{component}' is not a trusted directory.");
                 descriptors.Add(child);
                 current = child;
             }
 
-            var file = OpenAt(
+            var file = OpenOrCreateRegularFileAt(
                 current,
                 components[^1],
-                UnixWriteOnly() | UnixCreate() | UnixTruncate() | UnixNoFollow() | UnixCloseOnExec(),
-                0x180);
+                UnixWriteOnly() | UnixNoFollow() | UnixCloseOnExec());
             if (file < 0)
                 throw new UnauthorizedAccessException($"Destination file '{components[^1]}' could not be opened without following links.");
+            if (LockExclusive(file) != 0)
+            {
+                Close(file);
+                ThrowLastError($"Unable to lock destination file '{components[^1]}'.");
+            }
             var handle = new SafeFileHandle((nint)file, ownsHandle: true);
-            return new FileStream(handle, FileAccess.Write, bufferSize, isAsync: false);
+            try
+            {
+                var stream = new FileStream(handle, FileAccess.Write, bufferSize, isAsync: false);
+                stream.SetLength(0);
+                return stream;
+            }
+            catch
+            {
+                handle.Dispose();
+                throw;
+            }
         }
         finally
         {
@@ -103,12 +117,18 @@ internal static partial class SecureFileSystem
         var directoryHandles = new List<SafeFileHandle>();
         try
         {
-            directoryHandles.Add(OpenWindowsDirectory(root, allowTrustedRootReparsePoint: true));
             var current = root;
             foreach (var component in components[..^1])
             {
                 current = Path.Join(current, component);
                 Directory.CreateDirectory(current);
+            }
+
+            directoryHandles.Add(OpenWindowsDirectory(root, allowTrustedRootReparsePoint: true));
+            current = root;
+            foreach (var component in components[..^1])
+            {
+                current = Path.Join(current, component);
                 directoryHandles.Add(OpenWindowsDirectory(current, allowTrustedRootReparsePoint: false));
             }
 
@@ -149,21 +169,21 @@ internal static partial class SecureFileSystem
         var descriptors = new List<int>();
         try
         {
-            var current = Open(root, directoryFlags, 0);
+            var current = Open(root, directoryFlags);
             if (current < 0)
                 ThrowLastError($"Unable to open trusted directory '{root}'.");
             descriptors.Add(current);
 
             foreach (var component in components[..^1])
             {
-                var child = OpenAt(current, component, directoryFlags | UnixNoFollow(), 0);
+                var child = OpenAt(current, component, directoryFlags | UnixNoFollow());
                 if (child < 0)
                     throw new UnauthorizedAccessException($"Source directory '{component}' is not a trusted directory.");
                 descriptors.Add(child);
                 current = child;
             }
 
-            var file = OpenAt(current, components[^1], UnixReadOnly() | UnixNoFollow() | UnixCloseOnExec(), 0);
+            var file = OpenAt(current, components[^1], UnixReadOnly() | UnixNoFollow() | UnixCloseOnExec());
             if (file < 0)
                 throw new UnauthorizedAccessException($"Source file '{components[^1]}' could not be opened without following links.");
             var handle = new SafeFileHandle((nint)file, ownsHandle: true);
@@ -223,7 +243,9 @@ internal static partial class SecureFileSystem
         var handle = CreateFile(
             path,
             FileReadAttributes,
-            FileShareRead | FileShareWrite,
+            // Keep every checked ancestor immutable until the final file is open.
+            // Denying write and delete sharing blocks reparse mutation and replacement.
+            FileShareRead,
             0,
             OpenExisting,
             FileFlagBackupSemantics | FileFlagOpenReparsePoint,
@@ -257,13 +279,17 @@ internal static partial class SecureFileSystem
     private static int UnixReadOnly() => 0;
     private static int UnixWriteOnly() => 1;
     private static int UnixCreate() => OperatingSystem.IsMacOS() ? 0x200 : 0x40;
-    private static int UnixTruncate() => OperatingSystem.IsMacOS() ? 0x400 : 0x200;
     private static int UnixNoFollow() => OperatingSystem.IsMacOS() ? 0x100 : 0x20000;
     private static int UnixDirectory() => OperatingSystem.IsMacOS() ? 0x100000 : 0x10000;
     private static int UnixCloseOnExec() => OperatingSystem.IsMacOS() ? 0x1000000 : 0x80000;
 
     private static void ThrowLastError(string message)
         => throw new IOException(message, new Win32Exception(Marshal.GetLastWin32Error()));
+
+    private static int OpenOrCreateRegularFileAt(int directory, string path, int flags)
+        => OperatingSystem.IsMacOS()
+            ? OpenAtDarwin(directory, path, flags | UnixCreate(), 0x180)
+            : OpenAtWithMode(directory, path, flags | UnixCreate(), 0x180);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct FileAttributeTagInfo
@@ -273,10 +299,23 @@ internal static partial class SecureFileSystem
     }
 
     [LibraryImport("libc", EntryPoint = "open", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
-    private static partial int Open(string path, int flags, uint mode);
+    private static partial int Open(string path, int flags);
 
     [LibraryImport("libc", EntryPoint = "openat", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
-    private static partial int OpenAt(int directory, string path, int flags, uint mode);
+    private static partial int OpenAt(int directory, string path, int flags);
+
+    // Darwin ARM64 passes variadic arguments on the stack. Call the fixed-signature
+    // libc implementation rather than the public variadic openat wrapper when O_CREAT is set.
+    [LibraryImport("libc", EntryPoint = "__openat", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int OpenAtDarwin(int directory, string path, int flags, uint mode);
+
+    [LibraryImport("libc", EntryPoint = "openat", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int OpenAtWithMode(int directory, string path, int flags, uint mode);
+
+    [LibraryImport("libc", EntryPoint = "flock", SetLastError = true)]
+    private static partial int LockFile(int descriptor, int operation);
+
+    private static int LockExclusive(int descriptor) => LockFile(descriptor, 2);
 
     [LibraryImport("libc", EntryPoint = "mkdirat", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
     private static partial int MkdirAt(int directory, string path, uint mode);

@@ -10,7 +10,7 @@ namespace OpenClaw.Tests;
 
 public sealed class PaymentIdempotencyTests : IDisposable
 {
-    private readonly string _directory = Path.Combine(Path.GetTempPath(), "openclaw-payment-retries", Guid.NewGuid().ToString("N"));
+    private readonly string _directory = Path.Join(Path.GetTempPath(), "openclaw-payment-retries", Guid.NewGuid().ToString("N"));
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]

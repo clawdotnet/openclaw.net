@@ -406,7 +406,7 @@ public sealed class PaymentRuntimeTests
     }
 
     [Fact]
-    public async Task PaymentAwareHttpHandler_WhenPaidChallengeRepeats_ShouldReportConsumedAuthorization()
+    public async Task PaymentAwareHttpHandler_WhenChallengeRefreshes_ShouldReportConsumedAuthorization()
     {
         var runtime = CreateRuntime(new StaticPaymentApprovalService(true));
         using (var firstClient = new HttpClient(new PaymentAwareHttpHandler(
@@ -423,7 +423,7 @@ public sealed class PaymentRuntimeTests
             runtime,
             new PaymentExecutionContext { Environment = PaymentEnvironments.Test },
             "mock",
-            new ChallengeThenOkHandler()));
+            new ChallengeThenOkHandler(challenge: "challenge=ch_2;merchant=Paid API;amount=42;currency=USD")));
         var error = await Assert.ThrowsAsync<PaymentIdempotencyException>(() =>
             replayClient.GetAsync("https://example.test/paid"));
         Assert.Equal("payment_authorization_consumed", error.Code);

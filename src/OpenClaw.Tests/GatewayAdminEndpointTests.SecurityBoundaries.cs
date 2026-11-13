@@ -97,9 +97,18 @@ public sealed partial class GatewayAdminEndpointTests
     public async Task MediaUpload_WhenRoleOrFileTypeChanges_ShouldProtectAndPreserveDownloads()
     {
         await using var harness = await CreateHarnessAsync(true, configureServices: (services, config) =>
-            services.AddSingleton(new MediaCacheStore(Path.Combine(config.Memory.StoragePath, "test-media"))));
+            services.AddSingleton(new MediaCacheStore(Path.Join(config.Memory.StoragePath, "test-media"))));
         var viewer = CreateOperatorToken(harness, OperatorRoleNames.Viewer, "reader");
         var writer = CreateOperatorToken(harness, OperatorRoleNames.Operator, "writer");
+
+        using (var deniedForm = new MultipartFormDataContent())
+        {
+            deniedForm.Add(new StringContent("denied"), "file", "denied.txt");
+            using var deniedUpload = new HttpRequestMessage(HttpMethod.Post, "/media/upload") { Content = deniedForm };
+            deniedUpload.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewer);
+            using var denied = await harness.Client.SendAsync(deniedUpload);
+            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        }
 
         foreach (var (name, mime, bytes) in new[]
         {
@@ -109,7 +118,7 @@ public sealed partial class GatewayAdminEndpointTests
             using var form = new MultipartFormDataContent();
             form.Add(new StringContent(bytes, Encoding.UTF8, mime), "file", name);
             using var upload = new HttpRequestMessage(HttpMethod.Post, "/media/upload") { Content = form };
-            upload.Headers.Authorization = new AuthenticationHeaderValue("Bearer", viewer);
+            upload.Headers.Authorization = new AuthenticationHeaderValue("Bearer", writer);
             using var uploaded = await harness.Client.SendAsync(upload);
             Assert.Equal(HttpStatusCode.OK, uploaded.StatusCode);
             using var metadata = await ReadJsonAsync(uploaded);
@@ -154,7 +163,8 @@ public sealed partial class GatewayAdminEndpointTests
             using var form = new MultipartFormDataContent();
             form.Add(new ByteArrayContent(data.ToArray()), "file", "employee.zip");
             using var response = await harness.Client.PostAsync("/admin/digital-employee/upload", form);
-            Assert.Equal(expected, response.StatusCode);
+            Assert.True(response.StatusCode == expected,
+                $"Expected {expected}, received {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
             Assert.Equal(expected == HttpStatusCode.OK, File.Exists(Path.Join(root, "AGENTS.md")));
         }
         finally
@@ -263,7 +273,45 @@ public sealed partial class GatewayAdminEndpointTests
                 using var reader = new StreamReader(stream);
                 Assert.Equal("outside", reader.ReadToEnd());
             }
+
+            var createdPath = Path.Join(workspace, "created.txt");
+            using (var created = SecureFileSystem.OpenForWriteUnderRoot(workspace, createdPath))
+                created.WriteByte(42);
+            Assert.Equal(
+                UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                File.GetUnixFileMode(createdPath));
             Assert.False(File.Exists(Path.Join(outside, "created.txt")));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SecureFileSystem_WhenConcurrentWritersOpenSameFile_ShouldSerializeBeforeTruncation()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var root = CreateSafeTempDirectory("secure-file-writers");
+        try
+        {
+            var path = Path.Join(root, "fixture.txt");
+            using var first = SecureFileSystem.OpenForWriteUnderRoot(root, path);
+            first.WriteByte(1);
+
+            var secondOpen = Task.Run(() => SecureFileSystem.OpenForWriteUnderRoot(root, path));
+            await Task.Delay(TimeSpan.FromMilliseconds(100), TestContext.Current.CancellationToken);
+            Assert.False(secondOpen.IsCompleted);
+
+            first.Dispose();
+            using (var second = await secondOpen.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken))
+            {
+                second.WriteByte(2);
+                second.Flush();
+            }
+            Assert.Equal([2], File.ReadAllBytes(path));
         }
         finally
         {
@@ -298,7 +346,7 @@ public sealed partial class GatewayAdminEndpointTests
         {
             var ct = TestContext.Current.CancellationToken;
             var store = new MediaCacheStore(root);
-            foreach (var extension in new[] { ".txt", ".json" })
+            foreach (var extension in new[] { ".txt", ".json", ".JSON" })
             {
                 var path = Path.Join(root, "legacy" + extension);
                 File.WriteAllText(path, "original");
@@ -309,7 +357,9 @@ public sealed partial class GatewayAdminEndpointTests
                 await File.WriteAllTextAsync(Path.Join(root, "legacy.json"),
                     System.Text.Json.JsonSerializer.Serialize(asset, CoreJsonContext.Default.StoredMediaAsset), ct);
                 var loaded = await store.GetAsync("legacy", ct);
-                if (extension == ".json")
+                var hasDistinctUppercasePayload = Directory.EnumerateFiles(root)
+                    .Any(entry => string.Equals(entry, Path.Join(root, "legacy.JSON"), StringComparison.Ordinal));
+                if (extension == ".json" || (extension == ".JSON" && !hasDistinctUppercasePayload))
                     Assert.Null(loaded);
                 else
                     Assert.Equal("original", File.ReadAllText(Assert.IsType<StoredMediaAsset>(loaded).Path));
@@ -328,13 +378,13 @@ public sealed partial class GatewayAdminEndpointTests
         try
         {
             var ct = TestContext.Current.CancellationToken;
-            var workspace = Directory.CreateDirectory(Path.Combine(root, "workspace")).FullName;
-            var cache = new MediaCacheStore(Path.Combine(root, "media"));
+            var workspace = Directory.CreateDirectory(Path.Join(root, "workspace")).FullName;
+            var cache = new MediaCacheStore(Path.Join(root, "media"));
             var config = new GatewayConfig();
             config.Tooling.WorkspaceRoot = workspace;
             config.Tooling.AllowedReadRoots = [root];
             config.Tooling.AllowedWriteRoots = [workspace];
-            var source = Path.Combine(root, "fixture.txt");
+            var source = Path.Join(root, "fixture.txt");
             File.WriteAllText(source, "authorized file");
             var publisher = new PublishFileTool(config.Tooling);
             var args = new System.Text.Json.Nodes.JsonObject { ["path"] = source }.ToJsonString();

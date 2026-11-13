@@ -20,7 +20,7 @@ public sealed class WebhookDeliveryReservationTests
     [InlineData("bridge")]
     public async Task ProviderWebhook_WhenInvalidRequestPrecedesRetry_ShouldReserveOnlyAuthenticatedDelivery(string provider)
     {
-        var root = Path.Combine(Path.GetTempPath(), "webhook-reservation-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "webhook-reservation-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {

@@ -84,12 +84,18 @@ public sealed class FilePaymentIdempotencyStore : IPaymentIdempotencyStore
 {
     private static readonly TimeSpan Retention = TimeSpan.FromDays(7);
     private readonly string _directory;
+    private readonly string _coordinationMutexName;
     private long _nextCleanupTimestamp;
 
     public FilePaymentIdempotencyStore(string directory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         _directory = Path.GetFullPath(directory);
+        var coordinationPath = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? _directory.ToUpperInvariant()
+            : _directory;
+        _coordinationMutexName = "OpenClaw.PaymentIdempotency." +
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(coordinationPath)));
     }
 
     public async ValueTask<MachinePaymentResult?> TryReplayAsync(
@@ -121,7 +127,8 @@ public sealed class FilePaymentIdempotencyStore : IPaymentIdempotencyStore
         {
             // Publication is atomic and exclusive: the complete, flushed temporary
             // file becomes visible only if the key is still absent.
-            if (!DirectoryDurability.TryPublishExclusive(temporary, path))
+            var published = UnderCoordinationLock(() => DirectoryDurability.TryPublishExclusive(temporary, path));
+            if (!published)
                 return await ReadReplayAsync(path, fingerprint, ct);
             DirectoryDurability.Flush(_directory);
 
@@ -157,7 +164,7 @@ public sealed class FilePaymentIdempotencyStore : IPaymentIdempotencyStore
 
     private async Task<MachinePaymentResult> ReadReplayAsync(string path, string fingerprint, CancellationToken ct)
     {
-        var json = await File.ReadAllTextAsync(path, ct);
+        var json = await ReadAllTextAllowDeleteAsync(path, ct);
         PaymentIdempotencyRecord? existing;
         try
         {
@@ -205,36 +212,86 @@ public sealed class FilePaymentIdempotencyStore : IPaymentIdempotencyStore
             return;
         }
 
-        var changed = false;
-        foreach (var path in Directory.EnumerateFiles(_directory, "*.json", SearchOption.TopDirectoryOnly))
+        UnderCoordinationLock(() =>
+        {
+            var changed = false;
+            foreach (var path in Directory.EnumerateFiles(_directory, "*.json", SearchOption.TopDirectoryOnly))
+            {
+                try
+                {
+                    var record = JsonSerializer.Deserialize(
+                        ReadAllTextAllowDelete(path), PaymentIdempotencyJsonContext.Default.PaymentIdempotencyRecord);
+                    if (record?.CompletedAtUtc is { } completedAt && completedAt <= now - Retention)
+                    {
+                        File.Delete(path);
+                        changed = true;
+                    }
+                }
+                catch (IOException)
+                {
+                    // Retention is best effort. Never delete an unreadable or inaccessible payment record.
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Retention is best effort. Never delete an unreadable or inaccessible payment record.
+                }
+                catch (JsonException)
+                {
+                    // Retention is best effort. Never delete an unreadable or inaccessible payment record.
+                }
+            }
+
+            if (changed)
+                DirectoryDurability.Flush(_directory);
+            return true;
+        });
+    }
+
+    private T UnderCoordinationLock<T>(Func<T> action)
+    {
+        using var mutex = new Mutex(initiallyOwned: false, _coordinationMutexName);
+        var ownsMutex = false;
+        try
         {
             try
             {
-                var record = JsonSerializer.Deserialize(
-                    File.ReadAllText(path), PaymentIdempotencyJsonContext.Default.PaymentIdempotencyRecord);
-                if (record?.CompletedAtUtc is { } completedAt && completedAt <= now - Retention)
-                {
-                    File.Delete(path);
-                    changed = true;
-                }
+                ownsMutex = mutex.WaitOne();
             }
-            catch (IOException)
+            catch (AbandonedMutexException)
             {
-                // Retention is best effort. Never delete an unreadable or inaccessible payment record.
+                ownsMutex = true;
             }
-            catch (UnauthorizedAccessException)
-            {
-                // Retention is best effort. Never delete an unreadable or inaccessible payment record.
-            }
-            catch (JsonException)
-            {
-                // Retention is best effort. Never delete an unreadable or inaccessible payment record.
-            }
+            return action();
         }
-
-        if (changed)
-            DirectoryDurability.Flush(_directory);
+        finally
+        {
+            if (ownsMutex)
+                mutex.ReleaseMutex();
+        }
     }
+
+    private static async Task<string> ReadAllTextAllowDeleteAsync(string path, CancellationToken ct)
+    {
+        await using var stream = OpenReadAllowDelete(path, FileOptions.Asynchronous);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return await reader.ReadToEndAsync(ct);
+    }
+
+    private static string ReadAllTextAllowDelete(string path)
+    {
+        using var stream = OpenReadAllowDelete(path, FileOptions.None);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return reader.ReadToEnd();
+    }
+
+    private static FileStream OpenReadAllowDelete(string path, FileOptions options)
+        => new(path, new FileStreamOptions
+        {
+            Mode = FileMode.Open,
+            Access = FileAccess.Read,
+            Share = FileShare.Read | FileShare.Delete,
+            Options = options
+        });
 
     private async Task<string> WriteTemporaryAsync(PaymentIdempotencyRecord record, CancellationToken ct)
     {

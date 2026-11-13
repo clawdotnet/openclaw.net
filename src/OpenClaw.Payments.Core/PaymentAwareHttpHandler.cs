@@ -84,13 +84,12 @@ public sealed class PaymentAwareHttpHandler : DelegatingHandler
         var material = string.Join('\n',
             request.Method.Method,
             request.RequestUri!.ToString(),
-            challenge.ChallengeId ?? "",
             challenge.ProviderId ?? "",
             challenge.AmountMinor.ToString(System.Globalization.CultureInfo.InvariantCulture),
             challenge.Currency,
             challenge.ResourceUrl ?? "",
             content?.BodyHash ?? "");
-        return "auto-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
+        return "auto-http-v1-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
     }
 
     private static HttpRequestMessage CloneRequest(HttpRequestMessage request, BufferedRequestContent? content)

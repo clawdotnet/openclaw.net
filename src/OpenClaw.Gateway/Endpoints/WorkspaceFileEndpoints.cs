@@ -411,7 +411,7 @@ internal static class WorkspaceFileEndpoints
                             var entryName = Path.GetRelativePath(targetPath, filePath).Replace('\\', '/');
                             var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
                             await using var entryStream = entry.Open();
-                            await using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 65536, useAsync: true);
+                            await using var fileStream = SecureFileSystem.OpenForReadUnderRoot(targetPath, filePath);
                             await fileStream.CopyToAsync(entryStream, ctx.RequestAborted);
                         }
                     }
